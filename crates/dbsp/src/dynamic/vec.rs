@@ -5,7 +5,7 @@ use std::{
     ops::{Deref, DerefMut, Index, IndexMut},
 };
 
-use rand::RngCore;
+use rand::{thread_rng, RngCore};
 
 use crate::{
     declare_trait_object,
@@ -272,6 +272,28 @@ declare_trait_object!(DynVec<T> = dyn Vector<T>
 where
     T: DataTrait + ?Sized
 );
+
+const APPROXIMATE_BYTE_SIZE_SAMPLE_SIZE: usize = 100;
+
+impl<T: DataTrait + ?Sized> DynVec<T> {
+    pub fn approximate_byte_size(&self) -> usize {
+        if self.len() <= APPROXIMATE_BYTE_SIZE_SAMPLE_SIZE {
+            return self.size_of().total_bytes();
+        }
+
+        let mut acc = 0;
+
+        self.sample_slice(
+            0,
+            self.len(),
+            &mut thread_rng(),
+            APPROXIMATE_BYTE_SIZE_SAMPLE_SIZE,
+            &mut |x| acc += x.size_of().total_bytes(),
+        );
+        let average = (acc as f64) / (APPROXIMATE_BYTE_SIZE_SAMPLE_SIZE as f64);
+        (average * self.len() as f64).round() as usize
+    }
+}
 
 impl<T: DataTraitTyped + ?Sized> Deref for DynVec<T> {
     type Target = LeanVec<T::Type>;

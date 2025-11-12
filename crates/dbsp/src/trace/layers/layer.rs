@@ -316,6 +316,12 @@ where
             }
         }
     }
+
+    fn approximate_byte_size(&self) -> usize {
+        self.keys.approximate_byte_size()
+            + self.offs.len() * std::mem::size_of::<O>()
+            + self.vals.approximate_byte_size()
+    }
 }
 
 impl<K, L, O> Display for Layer<K, L, O>
