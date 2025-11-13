@@ -6,18 +6,20 @@ import time
 from feldera import PipelineBuilder
 from tests import TEST_CLIENT, unique_pipeline_name
 
+
 def make_value(id: int, raw: str, computed: str) -> dict:
     return {
         "id": id,
         "background": 0,
         "raw_value": raw,
         "computed_value": computed,
-        "insert_delete": 1
+        "insert_delete": 1,
     }
+
 
 class TestUDF(unittest.TestCase):
     def test_local(self):
-        dir = "../demo/packaged/sql/";
+        dir = "../demo/packaged/sql/"
         # Read the file ../demo/packaged/sql/10-spreadsheet.sql
         with open(dir + "10-spreadsheet.sql", "r") as f:
             sql = f.read()
@@ -27,8 +29,11 @@ class TestUDF(unittest.TestCase):
             toml = f.read()
 
         pipeline = PipelineBuilder(
-            TEST_CLIENT, name=unique_pipeline_name("test_spreadsheet"), sql=sql, udf_rust=udfs,
-            udf_toml=toml
+            TEST_CLIENT,
+            name=unique_pipeline_name("test_spreadsheet"),
+            sql=sql,
+            udf_rust=udfs,
+            udf_toml=toml,
         ).create_or_replace()
 
         pipeline.start_paused()
@@ -57,13 +62,13 @@ class TestUDF(unittest.TestCase):
             make_value(91, "=OR(1>1,1<>1)", "FALSE"),
             make_value(92, "={1,2,3}+{1,2,3}", "{2,4,6}"),
             make_value(93, "=DAYS(P1, P2)", "-182"),
-            make_value(117, "=AND(\"test\",\"True\", 1, true)", "TRUE"),
+            make_value(117, '=AND("test","True", 1, true)', "TRUE"),
             make_value(118, "=SUM(1,2,3)", "6"),
             make_value(119, "=P1+5", "2019-03-06 02:00:00 +00:00"),
             make_value(170, "=PRODUCT(ABS(1),2*1, 3,4*1)", "24"),
-            make_value(196, "=RIGHT(\"apple\", 3)", "ple"),
-            make_value(222, "=LEFT(\"apple\", 3)", "app"),
-            make_value(1039999974, "42", "42")
+            make_value(196, '=RIGHT("apple", 3)', "ple"),
+            make_value(222, '=LEFT("apple", 3)', "app"),
+            make_value(1039999974, "42", "42"),
         ]
         assert output == expected
 
