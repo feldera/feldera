@@ -7,11 +7,14 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -1303,6 +1306,42 @@ public class Regression1Tests extends SqlIoTest {
                  (col4 <= 0.76 AND col4 > 1.83 OR (col1 >= 0.82) AND (col3 > 1)) AND ((col0 <= 7 AND col4 > 2.76))
                  OR col0 > 0 AND (col4 IS NULL) AND (col3 IN (5)) AND
                  col0 IN (SELECT col3 FROM tab0 WHERE col3 IS NULL)) OR (col0 IS NULL AND col0 = 7 AND col0 IS NULL)""");
+    }
+
+    @Test
+    public void intervalTest() {
+        var ccs = this.getCCS("""
+                CREATE TABLE interval_tbl(
+                id INT NOT NULL,
+                c1 TIMESTAMP,
+                c2 TIMESTAMP);
+                
+                CREATE LOCAL VIEW atbl_interval_months AS SELECT
+                id,
+                (c1 - c2)MONTH AS c1_minus_c2
+                FROM interval_tbl;
+                
+                CREATE LOCAL VIEW atbl_interval_seconds AS SELECT
+                id,
+                (c1 - c2)SECOND AS c1_minus_c2
+                FROM interval_tbl;
+                
+                CREATE LOCAL VIEW atbl_interval_seconds_res AS SELECT
+                id,
+                CAST(c1_minus_c2 AS VARCHAR) AS f_c1
+                FROM atbl_interval_seconds;
+                
+                CREATE LOCAL VIEW atbl_interval_months_res AS SELECT
+                id,
+                CAST(c1_minus_c2 AS VARCHAR) AS f_c1
+                FROM atbl_interval_months;
+                
+                CREATE VIEW V AS (SELECT * FROM atbl_interval_seconds_res) UNION ALL (SELECT * FROM atbl_interval_months_res);""");
+        ccs.step("INSERT INTO interval_tbl VALUES(0, '2014-11-05 08:27:00', '2024-12-05 12:45:00')", """
+                 id | f_c1 | weight
+                --------------------
+                 0  | -121| 1
+                 0  | -318226680.000000| 1""");
     }
 }
  

@@ -103,6 +103,9 @@ public final class DBSPBinaryExpression extends DBSPExpression {
         DBSPBinaryExpression otherExpression = other.as(DBSPBinaryExpression.class);
         if (otherExpression == null)
             return false;
+        if (this.opcode == DBSPOpcode.TS_SUB || this.opcode == DBSPOpcode.TS_ADD &&
+            !this.hasSameType(other))
+            return false;
         return this.opcode == otherExpression.opcode &&
                 context.equivalent(this.left, otherExpression.left) &&
                 context.equivalent(this.right, otherExpression.right);
