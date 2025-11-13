@@ -66,6 +66,9 @@ UNKNOWN.egg-info
 # clone of the benchmark repo
 gh-pages
 
+# JavaScript
+node_modules/
+
 # Playwright
 playwright-artifacts/
 playwright-snapshots/
@@ -85,3 +88,5 @@ playwright/.cache/
 
 # pnpm
 .pnpm-store
+
+.vite/
