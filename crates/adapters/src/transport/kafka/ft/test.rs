@@ -862,24 +862,26 @@ struct FtTestRound {
     expect_failure: bool,
     do_checkpoint: bool,
     delete_topics_afterward: bool,
+    add_partition_afterward: bool,
 }
 
 impl FtTestRound {
-    fn with_checkpoint(n_records: usize) -> Self {
-        Self {
-            n_records,
-            expect_failure: false,
-            do_checkpoint: true,
-            delete_topics_afterward: false,
+    fn new(n_records: usize, do_checkpoint: bool) -> Self {
+        {
+            Self {
+                n_records,
+                expect_failure: false,
+                do_checkpoint,
+                delete_topics_afterward: false,
+                add_partition_afterward: false,
+            }
         }
     }
+    fn with_checkpoint(n_records: usize) -> Self {
+        Self::new(n_records, true)
+    }
     fn without_checkpoint(n_records: usize) -> Self {
-        Self {
-            n_records,
-            expect_failure: false,
-            do_checkpoint: false,
-            delete_topics_afterward: false,
-        }
+        Self::new(n_records, false)
     }
     fn with_deleting_topics_afterward(self) -> Self {
         Self {
@@ -890,6 +892,12 @@ impl FtTestRound {
     fn with_failure_expected(self) -> Self {
         Self {
             expect_failure: true,
+            ..self
+        }
+    }
+    fn with_adding_partition_afterward(self) -> Self {
+        Self {
+            add_partition_afterward: true,
             ..self
         }
     }
@@ -905,7 +913,8 @@ impl FtTestRound {
 fn test_ft(topic: &str, rounds: &[FtTestRound], resume_earliest_if_data_expires: bool) {
     init_test_logger();
 
-    let mut kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+    let mut n_partitions = 1;
+    let mut kafka_resources = KafkaResources::create_topics(&[(topic, n_partitions as i32)]);
     sleep(Duration::from_secs(1));
     let producer = TestProducer::new();
     let tempdir = TempDir::new().unwrap();
@@ -979,24 +988,27 @@ fn test_ft(topic: &str, rounds: &[FtTestRound], resume_earliest_if_data_expires:
             expect_failure,
             do_checkpoint,
             delete_topics_afterward,
+            add_partition_afterward,
         },
     ) in rounds.iter().cloned().enumerate()
     {
-        println!(
-            "--- round {round}: add {n_records} records, {}{} --- ",
+        print!(
+            "--- round {round}: add {n_records} records, {}",
             if expect_failure {
                 "and expect failure on startup"
             } else if do_checkpoint {
                 "and checkpoint"
             } else {
                 "no checkpoint"
-            },
-            if delete_topics_afterward {
-                " and then delete and recreate the topic"
-            } else {
-                ""
             }
         );
+        if delete_topics_afterward {
+            print!(" and then delete and recreate the topic");
+        }
+        if add_partition_afterward {
+            print!(" and then add a partition");
+        }
+        println!();
 
         // Write records to the input topic.
         println!(
@@ -1115,6 +1127,14 @@ fn test_ft(topic: &str, rounds: &[FtTestRound], resume_earliest_if_data_expires:
             drop(kafka_resources);
             println!("recreating Kafka topic as empty");
             kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+        }
+        if add_partition_afterward {
+            println!(
+                "adding partition to topic (from {n_partitions} to {})",
+                n_partitions + 1
+            );
+            n_partitions += 1;
+            kafka_resources.add_partition(topic, n_partitions);
         }
         println!();
     }
@@ -1247,6 +1267,24 @@ fn ft_initially_zero_with_checkpoint() {
             FtTestRound::without_checkpoint(2500),
             FtTestRound::with_checkpoint(2500),
             FtTestRound::without_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+        ],
+        false,
+    );
+}
+
+#[test]
+fn ft_with_adding_partitions() {
+    test_ft(
+        "ft_with_adding_partitions",
+        &[
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500).with_adding_partition_afterward(),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::without_checkpoint(2500).with_adding_partition_afterward(),
+            FtTestRound::without_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500).with_adding_partition_afterward(),
             FtTestRound::with_checkpoint(2500),
         ],
         false,

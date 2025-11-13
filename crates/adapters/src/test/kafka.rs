@@ -147,11 +147,11 @@ impl KafkaResources {
         }
     }
 
-    pub fn add_partition(&self, topic: &str) {
-        block_on(
-            self.admin_client
-                .create_partitions(&[NewPartitions::new(topic, 1)], &AdminOptions::new()),
-        )
+    pub fn add_partition(&self, topic: &str, new_partition_count: usize) {
+        block_on(self.admin_client.create_partitions(
+            &[NewPartitions::new(topic, new_partition_count)],
+            &AdminOptions::new(),
+        ))
         .unwrap();
     }
 }
