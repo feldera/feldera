@@ -34,8 +34,7 @@ use rdkafka::{
 };
 use rdkafka::{Offset, TopicPartitionList};
 use serde::{Deserialize, Serialize};
-use std::cmp;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::error::Error;
 use std::hash::Hasher;
 use std::ops::Range;
@@ -445,13 +444,13 @@ impl KafkaFtInputReaderInner {
                 // Process messages for all partitions.
                 for (partition, receiver) in receivers.iter() {
                     let max = receiver.max_offset();
-                    while let Some(mut msg) = receiver.read(max) {
-                        let amt = msg.buffer.len();
+                    while let Some((offset, mut msg)) = receiver.read(max) {
+                        let amt = msg.len();
                         total += amt;
-                        hasher.add(partition, &msg.buffer);
+                        hasher.add(partition, &msg);
                         consumer.buffered(amt);
-                        msg.buffer.flush();
-                        if msg.offset == max {
+                        msg.flush();
+                        if offset == max {
                             incomplete_partitions.remove(partition);
                         }
                     }
@@ -575,23 +574,23 @@ impl KafkaFtInputReaderInner {
                 for ((partition, receiver), range) in
                     receivers.iter().zip(staged_offsets.iter_mut())
                 {
-                    if let Some(msg) = receiver.read(i64::MAX) {
+                    if let Some((offset, msg)) = receiver.read(i64::MAX) {
                         // Set the time when we start getting new data to be staged as ingestion timestamp.
                         if timestamp.is_none() {
                             timestamp = Some(Utc::now());
                         }
-                        let amt = msg.buffer.len();
+                        let amt = msg.len();
                         consumer.buffered(amt);
                         staged_amt += amt;
-                        staged_hasher.add(partition, &msg.buffer);
-                        if let Some(buffer) = msg.buffer {
+                        staged_hasher.add(partition, &msg);
+                        if let Some(buffer) = msg {
                             staged_inputs.push(buffer);
                         }
 
                         if range.is_empty() {
-                            *range = msg.offset..msg.offset + 1;
+                            *range = offset..offset + 1;
                         } else {
-                            range.end = msg.offset + 1;
+                            range.end = offset + 1;
                         }
                         read_data = true;
                     }
@@ -865,31 +864,6 @@ impl Metadata {
     }
 }
 
-struct Msg {
-    offset: i64,
-    buffer: Option<Box<dyn InputBuffer>>,
-}
-
-impl PartialEq for Msg {
-    fn eq(&self, other: &Self) -> bool {
-        self.offset == other.offset
-    }
-}
-
-impl Eq for Msg {}
-
-impl PartialOrd for Msg {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Msg {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.offset.cmp(&other.offset)
-    }
-}
-
 struct PartitionReceiver {
     partition: i32,
     queue: PartitionQueue<KafkaFtInputContext>,
@@ -916,7 +890,7 @@ struct PartitionReceiver {
     initial_next_offset: i64,
 
     /// Parsed messages and errors.
-    messages: Mutex<BTreeSet<Msg>>,
+    messages: Mutex<BTreeMap<i64, Option<Box<dyn InputBuffer>>>>,
 
     eof: AtomicBool,
     fatal_error: AtomicBool,
@@ -934,15 +908,15 @@ impl PartitionReceiver {
             max_offset: AtomicI64::new(i64::MIN),
             next_offset: AtomicI64::new(next_offset),
             initial_next_offset: next_offset,
-            messages: Mutex::new(BTreeSet::new()),
+            messages: Mutex::new(BTreeMap::new()),
             eof: AtomicBool::new(false),
             fatal_error: AtomicBool::new(false),
         }
     }
-    pub fn read(&self, max: i64) -> Option<Msg> {
+    pub fn read(&self, max: i64) -> Option<(i64, Option<Box<dyn InputBuffer>>)> {
         let mut messages = self.messages.lock().unwrap();
-        match messages.first() {
-            Some(msg) if msg.offset <= max => messages.pop_first(),
+        match messages.first_key_value() {
+            Some((offset, _)) if *offset <= max => messages.pop_first(),
             _ => None,
         }
     }
@@ -992,7 +966,7 @@ impl PartitionReceiver {
                     self.next_offset.store(offset + 1, Ordering::Relaxed);
                     let payload = message.payload().unwrap_or(&[]);
                     let (buffer, errors) = parser.parse(payload);
-                    self.messages.lock().unwrap().insert(Msg { offset, buffer });
+                    self.messages.lock().unwrap().insert(offset, buffer);
                     consumer.parse_errors(errors);
                 } else {
                     tracing::error!(
