@@ -4164,19 +4164,22 @@ impl Storage for Mutex<DbModel> {
 
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<Vec<(PipelineId, Version, String, String)>, DBError> {
-        let mut checksums: Vec<(PipelineId, Version, String, String)> = self
+    ) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError> {
+        let mut checksums: Vec<(PipelineId, Version, Option<String>, Option<String>)> = self
             .lock()
             .await
             .pipelines
             .values()
-            .filter(|pipeline| pipeline.program_status == ProgramStatus::Success)
+            .filter(|pipeline| {
+                pipeline.program_status == ProgramStatus::Success
+                    || pipeline.program_status == ProgramStatus::CompilingRust
+            })
             .map(|pipeline| {
                 (
                     pipeline.id,
                     pipeline.program_version,
-                    pipeline.program_binary_source_checksum.clone().unwrap(),
-                    pipeline.program_binary_integrity_checksum.clone().unwrap(),
+                    pipeline.program_binary_source_checksum.clone(),
+                    pipeline.program_binary_integrity_checksum.clone(),
                 )
             })
             .collect();

@@ -1135,7 +1135,7 @@ impl Storage for StoragePostgres {
 
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<Vec<(PipelineId, Version, String, String)>, DBError> {
+    ) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let pipeline_programs =

@@ -447,10 +447,11 @@ pub(crate) trait Storage {
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError>;
 
     /// Retrieves the list of fully compiled pipeline programs (pipeline identifier, program version,
-    /// program binary source checksum, program binary integrity checksum) across all tenants.
+    /// program binary source checksum, program binary integrity checksum) AND pipeline programs that
+    /// are currently being compiled (pipeline identifier, program version) across all tenants.
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<Vec<(PipelineId, Version, String, String)>, DBError>;
+    ) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError>;
 
     async fn get_support_bundle_data(
         &self,
