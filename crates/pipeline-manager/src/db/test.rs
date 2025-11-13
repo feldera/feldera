@@ -4070,10 +4070,10 @@ impl Storage for Mutex<DbModel> {
                             tid,
                             pipeline.id,
                             pipeline.program_version,
-                            &SqlCompilationInfo {
-                                exit_code: 0,
-                                messages: vec![],
-                            },
+                            &pipeline_complete
+                                .program_error
+                                .sql_compilation
+                                .expect("Pipeline should have already had its SQL compiled"),
                             &pipeline_complete
                                 .program_info
                                 .expect("Pipeline should have already had its SQL compiled"),
