@@ -98,8 +98,22 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             // aggregates
             new Func(SqlStdOperatorTable.AVG, "AVG", SqlLibrary.STANDARD, "aggregates#avg,aggregates#window-avg",
                     "runtime_aggtest/aggregate_tests/test_{avg,decimal_avg,empty_set}.py|runtime_aggtest/aggregate_tests3/test_un_int_avg.py", true),
-            new Func(SqlStdOperatorTable.ARG_MAX, "ARG_MAX", SqlLibrary.STANDARD, "aggregates#arg_max", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlStdOperatorTable.ARG_MIN, "ARG_MIN", SqlLibrary.STANDARD, "aggregates#arg_min", FunctionDocumentation.NO_FILE, true),
+            new Func(SqlStdOperatorTable.ARG_MAX, "ARG_MAX", SqlLibrary.STANDARD, "aggregates#arg_max",
+                    """
+                    runtime_aggtest/aggregate_tests/test_{arg_max,decimal_arg_max,empty_set,row_arg_max}.py|
+                    runtime_aggtest/aggregate_tests2/test_{charn_argmax,date_arg_max,interval_arg_max,time_arg_max,timestamp_arg_max}.py|
+                    runtime_aggtest/aggregate_tests3/test_{binary_arg_max,empty_set,un_int_arg_max,varbinary_arg_max}.py|
+                    runtime_aggtest/aggregate_tests4/test_{array_arg_max,map_arg_max,uuid,varchar_argmax,varcharn_argmax}.py|
+                    runtime_aggtest/aggregate_tests6/test_interval_mths_argmax.py
+                    """, true),
+            new Func(SqlStdOperatorTable.ARG_MIN, "ARG_MIN", SqlLibrary.STANDARD, "aggregates#arg_min",
+                    """
+                    runtime_aggtest/aggregate_tests/test_{arg_min,decimal_arg_min,empty_set,row_arg_min}.py|
+                    runtime_aggtest/aggregate_tests2/test_{charn_argmin,date_arg_min,interval_arg_min,time_arg_min,timestamp_arg_min}.py|
+                    runtime_aggtest/aggregate_tests3/test_{binary_arg_min,empty_set,un_int_arg_min,varbinary_arg_min}.py|
+                    runtime_aggtest/aggregate_tests4/test_{array_arg_min,map_arg_min,uuid,varchar_argmin,varcharn_argmin}.py|
+                    runtime_aggtest/aggregate_tests6/test_interval_mths_argmin.py
+                    """, true),
             new Func(SqlStdOperatorTable.BIT_AND, "BIT_AND", SqlLibrary.STANDARD, "aggregates#bit_and", FunctionDocumentation.NO_FILE, true),
             new Func(SqlStdOperatorTable.BIT_OR, "BIT_OR", SqlLibrary.STANDARD, "aggregates#bit_or", FunctionDocumentation.NO_FILE, true),
             new Func(SqlStdOperatorTable.BIT_XOR, "BIT_XOR", SqlLibrary.STANDARD, "aggregates#bit_xor", FunctionDocumentation.NO_FILE, true),
