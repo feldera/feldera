@@ -78,6 +78,9 @@ pub struct SupportBundleParameters {
 }
 
 impl Default for SupportBundleParameters {
+    /// Default enables all data collection types.
+    /// For production background collection, set `dataflow_graph: false`
+    /// to exclude expensive items.
     fn default() -> Self {
         Self {
             collect: true,
@@ -88,7 +91,7 @@ impl Default for SupportBundleParameters {
             stats: true,
             pipeline_config: true,
             system_config: true,
-            dataflow_graph: false,
+            dataflow_graph: true,
         }
     }
 }
@@ -578,6 +581,7 @@ impl SupportBundleData {
             }
         } else {
             error_entries.push(format!("⚠ circuit_profile.zip: {}", SKIPPED_BY_USER));
+            error_entries.push(format!("⚠ circuit_profile.json: {}", SKIPPED_BY_USER));
         }
 
         // Add heap profile
@@ -1085,8 +1089,11 @@ impl SupportDataCollector {
         tenant_id: TenantId,
         pipeline: &crate::db::types::pipeline::ExtendedPipelineDescrMonitoring,
     ) -> Result<SupportBundleData, Box<dyn std::error::Error + Send + Sync>> {
-        // Use default parameters for background collection (collect everything)
-        let params = SupportBundleParameters::default();
+        // Use background collection parameters (excludes expensive items like dataflow graphs)
+        let params = SupportBundleParameters {
+            dataflow_graph: false,
+            ..SupportBundleParameters::default()
+        };
         SupportBundleData::collect(
             &self.state,
             &self.http_client,
@@ -1272,7 +1279,7 @@ mod tests {
             pipeline_config: true,
             system_config: false,
             dataflow_graph: true,
-            collect: true
+            collect: true,
         };
 
         zip_entries.clear();
@@ -1902,5 +1909,323 @@ mod tests {
 
         // Signal shutdown
         let _ = shutdown_tx.send(true);
+    }
+
+    fn test_dataflow_value() -> serde_json::Value {
+        json!({
+          "calcite_plan": {
+            "example_count": {
+              "rels": [{
+                  "id": 1,
+                  "inputs": [
+                    1
+                  ],
+                  "relOp": "LogicalAggregate",
+                  "table": null,
+                  "condition": null,
+                  "joinType": null,
+                  "exprs": null,
+                  "fields": null,
+                  "all": null,
+                  "aggs": [
+                    {
+                      "agg": {
+                        "kind": "COUNT",
+                        "name": "COUNT",
+                        "syntax": "FUNCTION_STAR"
+                      },
+                      "distinct": false,
+                      "name": "num_rows",
+                      "operands": [],
+                      "type": {
+                        "nullable": false,
+                        "type": "BIGINT"
+                      }
+                    }
+                  ],
+                  "group": [],
+                }
+              ]
+            }
+          },
+          "mir": {
+            "s0": {
+              "calcite": {
+                "partial": 0
+              },
+              "table": null,
+              "view": null,
+              "inputs": [],
+              "operation": "constant",
+              "outputs": null,
+              "persistent_id": "8b384059bdb44ad811ab341cc5e2a59697f39aac7b463cab027b185db8105e73",
+              "positions": []
+            }
+          },
+          "sources": []
+        }
+        )
+    }
+
+    #[tokio::test]
+    async fn test_get_dataflow_graph() {
+        // Setup test database and server state
+        crate::ensure_default_crypto_provider();
+        let (db, _temp_dir) = setup_pg().await;
+        let db: Arc<Mutex<crate::db::storage_postgres::StoragePostgres>> = Arc::new(Mutex::new(db));
+        let state: Arc<ServerState> = Arc::new(ServerState::test_state(db.clone()).await);
+
+        // Create a tenant and pipeline
+        let tenant_record = TenantRecord::default();
+        let tenant_id = tenant_record.id;
+        let pipeline_id = PipelineId(Uuid::now_v7());
+        let pipeline_name = "test_dataflow_pipeline";
+
+        // Create a pipeline
+        let mut descr = PipelineDescr::test_descr();
+        descr.name = pipeline_name.to_string();
+        db.lock()
+            .await
+            .new_pipeline(tenant_id, pipeline_id.0, "v0", descr)
+            .await
+            .unwrap();
+
+        // Test 1: Pipeline without program_info should return error
+        let result = SupportBundleData::get_dataflow_graph(&state, tenant_id, pipeline_name).await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Pipeline has not been compiled yet"));
+
+        // Test 2: Set program status with program_info containing dataflow
+        db.lock()
+            .await
+            .transit_program_status_to_compiling_sql(tenant_id, pipeline_id, Version(1))
+            .await
+            .unwrap();
+
+        let program_info = json!({
+            "schema": {
+                "inputs": [],
+                "outputs": []
+            },
+            "input_connectors": {},
+            "output_connectors": {},
+            "main_rust": "fn main() {}",
+            "udf_stubs": "",
+            "dataflow": test_dataflow_value()
+        });
+
+        db.lock()
+            .await
+            .transit_program_status_to_sql_compiled(
+                tenant_id,
+                pipeline_id,
+                Version(1),
+                &SqlCompilationInfo::success(),
+                &program_info,
+            )
+            .await
+            .unwrap();
+
+        // Test 3: Pipeline with dataflow should return success
+        let result = SupportBundleData::get_dataflow_graph(&state, tenant_id, pipeline_name).await;
+        assert!(result.is_ok());
+
+        let dataflow_bytes = result.unwrap();
+        let retrieved_dataflow: serde_json::Value =
+            serde_json::from_slice(&dataflow_bytes).unwrap();
+        assert_eq!(retrieved_dataflow, test_dataflow_value());
+
+        // Test 4: Pipeline with program_info but no dataflow should return error
+        let program_info_without_dataflow = json!({
+            "schema": {
+                "inputs": [],
+                "outputs": []
+            },
+            "input_connectors": {},
+            "output_connectors": {},
+            "main_rust": "fn main() {}",
+            "udf_stubs": ""
+            // No dataflow field
+        });
+
+        // Create another pipeline
+        let pipeline_id_2 = PipelineId(Uuid::now_v7());
+        let pipeline_name_2 = "test_no_dataflow_pipeline";
+        let mut descr2 = PipelineDescr::test_descr();
+        descr2.name = pipeline_name_2.to_string();
+        db.lock()
+            .await
+            .new_pipeline(tenant_id, pipeline_id_2.0, "v0", descr2)
+            .await
+            .unwrap();
+
+        db.lock()
+            .await
+            .transit_program_status_to_compiling_sql(tenant_id, pipeline_id_2, Version(1))
+            .await
+            .unwrap();
+
+        db.lock()
+            .await
+            .transit_program_status_to_sql_compiled(
+                tenant_id,
+                pipeline_id_2,
+                Version(1),
+                &SqlCompilationInfo::success(),
+                &program_info_without_dataflow,
+            )
+            .await
+            .unwrap();
+
+        let result =
+            SupportBundleData::get_dataflow_graph(&state, tenant_id, pipeline_name_2).await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Dataflow graph not available for this pipeline"));
+    }
+
+    #[actix_web::test]
+    async fn test_support_bundle_data_collect() {
+        // Setup test database and server state
+        crate::ensure_default_crypto_provider();
+        let (db, _temp_dir) = setup_pg().await;
+        let db: Arc<Mutex<crate::db::storage_postgres::StoragePostgres>> = Arc::new(Mutex::new(db));
+        let state: Arc<ServerState> = Arc::new(ServerState::test_state(db.clone()).await);
+
+        // Create a tenant and pipeline
+        let tenant_record = TenantRecord::default();
+        let tenant_id = tenant_record.id;
+        let pipeline_id = PipelineId(Uuid::now_v7());
+        let pipeline_name = "test_collect_pipeline";
+
+        // Create a pipeline with program_info containing dataflow
+        let mut descr = PipelineDescr::test_descr();
+        descr.name = pipeline_name.to_string();
+        db.lock()
+            .await
+            .new_pipeline(tenant_id, pipeline_id.0, "v0", descr)
+            .await
+            .unwrap();
+
+        db.lock()
+            .await
+            .transit_program_status_to_compiling_sql(tenant_id, pipeline_id, Version(1))
+            .await
+            .unwrap();
+
+        let program_info = json!({
+            "schema": {
+                "inputs": [],
+                "outputs": []
+            },
+            "input_connectors": {},
+            "output_connectors": {},
+            "main_rust": "fn main() {}",
+            "udf_stubs": "",
+            "dataflow": test_dataflow_value()
+        });
+
+        db.lock()
+            .await
+            .transit_program_status_to_sql_compiled(
+                tenant_id,
+                pipeline_id,
+                Version(1),
+                &SqlCompilationInfo::success(),
+                &program_info,
+            )
+            .await
+            .unwrap();
+
+        let http_client = awc::Client::default();
+
+        // Test 1: Collect with default parameters (all enabled including dataflow_graph)
+        let params_all = SupportBundleParameters::default();
+        let bundle =
+            SupportBundleData::collect(&state, &http_client, tenant_id, pipeline_name, &params_all)
+                .await
+                .unwrap();
+
+        // Pipeline config and system config should succeed
+        assert!(bundle.pipeline_config.is_ok());
+        assert!(bundle.system_config.is_ok());
+
+        // Dataflow graph should succeed with default params
+        assert!(bundle.dataflow_graph.is_ok());
+        let dataflow_bytes = bundle.dataflow_graph.unwrap();
+        let retrieved_dataflow: serde_json::Value =
+            serde_json::from_slice(&dataflow_bytes).unwrap();
+        assert_eq!(retrieved_dataflow, test_dataflow_value());
+
+        // Test 2: Collect with dataflow_graph disabled
+        let params_no_dataflow = SupportBundleParameters {
+            dataflow_graph: false,
+            ..SupportBundleParameters::default()
+        };
+        let bundle = SupportBundleData::collect(
+            &state,
+            &http_client,
+            tenant_id,
+            pipeline_name,
+            &params_no_dataflow,
+        )
+        .await
+        .unwrap();
+
+        // Pipeline config and system config should still succeed
+        assert!(bundle.pipeline_config.is_ok());
+        assert!(bundle.system_config.is_ok());
+
+        // Dataflow graph should be skipped
+        assert!(bundle.dataflow_graph.is_err());
+        assert_eq!(
+            bundle.dataflow_graph.unwrap_err(),
+            SKIPPED_BY_USER.to_string()
+        );
+
+        // Test 3: Collect with custom parameters (only pipeline_config and dataflow_graph enabled)
+        let params_custom = SupportBundleParameters {
+            collect: true,
+            circuit_profile: false,
+            heap_profile: false,
+            metrics: false,
+            logs: false,
+            stats: false,
+            pipeline_config: true,
+            system_config: false,
+            dataflow_graph: true,
+        };
+
+        let bundle = SupportBundleData::collect(
+            &state,
+            &http_client,
+            tenant_id,
+            pipeline_name,
+            &params_custom,
+        )
+        .await
+        .unwrap();
+
+        // Only pipeline_config and dataflow_graph should have actual data
+        assert!(bundle.pipeline_config.is_ok());
+        assert!(bundle.dataflow_graph.is_ok());
+
+        // All others should be skipped
+        assert_eq!(
+            bundle.circuit_profile.unwrap_err(),
+            SKIPPED_BY_USER.to_string()
+        );
+        assert_eq!(
+            bundle.heap_profile.unwrap_err(),
+            SKIPPED_BY_USER.to_string()
+        );
+        assert_eq!(bundle.metrics.unwrap_err(), SKIPPED_BY_USER.to_string());
+        assert_eq!(bundle.logs.unwrap_err(), SKIPPED_BY_USER.to_string());
+        assert_eq!(bundle.stats.unwrap_err(), SKIPPED_BY_USER.to_string());
+        assert_eq!(
+            bundle.system_config.unwrap_err(),
+            SKIPPED_BY_USER.to_string()
+        );
     }
 }

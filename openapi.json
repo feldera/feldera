@@ -2376,7 +2376,7 @@
           "200": {
             "description": "Circuit performance profile in JSON format",
             "content": {
-              "application/zip": {
+              "application/json": {
                 "schema": {
                   "type": "object"
                 }

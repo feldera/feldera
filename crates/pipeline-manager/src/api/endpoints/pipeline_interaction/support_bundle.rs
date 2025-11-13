@@ -172,36 +172,20 @@ pub(crate) async fn get_pipeline_support_bundle(
         )
         .await?;
 
-    // When collect=true: collect all requested data from the running pipeline
-    // When collect=false: only collect dataflow graph because it is not stored in database for previous bundles
-    let collection_params = if support_bundle_params.collect {
-        support_bundle_params.clone()
-    } else {
-        // Create parameters that only collect dataflow graph
-        SupportBundleParameters {
-            collect: false,
-            circuit_profile: false,
-            heap_profile: false,
-            metrics: false,
-            logs: false,
-            stats: false,
-            pipeline_config: false,
-            system_config: false,
-            dataflow_graph: support_bundle_params.dataflow_graph,
-        }
+    // Only collect all requested data from the running pipeline if collect=true
+    if support_bundle_params.collect {
+        bundles.insert(
+            0,
+            SupportBundleData::collect(
+                &state,
+                &client,
+                *tenant_id,
+                &pipeline_name,
+                &support_bundle_params,
+            )
+            .await?,
+        );
     };
-
-    bundles.insert(
-        0,
-        SupportBundleData::collect(
-            &state,
-            &client,
-            *tenant_id,
-            &pipeline_name,
-            &collection_params,
-        )
-        .await?,
-    );
 
     let bundle = SupportBundleZip::create(&pipeline, bundles, &support_bundle_params).await?;
 
