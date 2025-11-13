@@ -174,7 +174,9 @@ public class ValueNumbering extends InnerVisitor {
     
     @Override
     public void postorder(DBSPBinaryExpression expression) {
-        Representation repr = this.getId(expression.left, expression, 0)
+        // For timestamp arithmetic operations the type of the result is important to discriminate the operation.
+        Representation repr = new Representation("(" + expression.type + ")", false)
+                .add(this.getId(expression.left, expression, 0))
                 .add(expression.opcode.toString())
                 .add(this.getId(expression.right, expression, 1));
         boolean expensive = switch (expression.opcode) {
