@@ -104,7 +104,7 @@ This guarantees that the client operation is eventually responsive, which enable
 it is a part of to not hang indefinitely on Feldera operations and instead be able to decide
 by itself whether and how to proceed. If no response is returned, the mechanism should generally
 retry. When a response is returned, the decision whether to retry can generally depend on the status
-code: especially the status codes 502, 503 and 504 should be considered as transient errors.
+code: especially the status codes 408, 502, 503 and 504 should be considered as transient errors.
 Finer grained retry decisions should be made by taking into account the application-level
 `error_code` if the response body was indeed a Feldera error response body.
 
