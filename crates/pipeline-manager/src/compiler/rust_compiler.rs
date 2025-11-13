@@ -1624,8 +1624,19 @@ async fn cleanup_rust_compilation(
     let pipeline_binaries_dir = rust_compilation_dir.join("pipeline-binaries");
     let valid_pipeline_binary_filenames: Vec<String> = existing_pipeline_programs.iter().map(
         |(pipeline_id, program_version, source_checksum, integrity_checksum)| {
-            format!("pipeline_{pipeline_id}_v{program_version}_sc_{source_checksum}_ic_{integrity_checksum}")
+            if let (Some(source_checksum), Some(integrity_checksum)) =
+                (source_checksum, integrity_checksum)
+            {
+                format!("pipeline_{pipeline_id}_v{program_version}_sc_{source_checksum}_ic_{integrity_checksum}")
+            } else {
+                // this is when program status is 'CompilingRust'
+                // when compiler server is uploading the binary over http, the status is still 'CompilingRust'
+                // we don't want to delete such binaries, hence we keep a more relaxed matching pattern
+                // if either of the checksums is missing
+                format!("pipeline_{pipeline_id}_v{program_version}_sc_")
+            }
         }).collect();
+
     if pipeline_binaries_dir.is_dir() {
         cleanup_specific_files(
             "Rust compilation pipeline binaries",
@@ -1633,7 +1644,10 @@ async fn cleanup_rust_compilation(
             Arc::new(
                 move |filename: &str, _metadata: Option<std::fs::Metadata>| {
                     if filename.starts_with("pipeline_") {
-                        if valid_pipeline_binary_filenames.contains(&filename.to_string()) {
+                        if valid_pipeline_binary_filenames
+                            .iter()
+                            .any(|f| filename.starts_with(f))
+                        {
                             CleanupDecision::Keep {
                                 motivation: filename.to_string(),
                             }

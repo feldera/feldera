@@ -1601,15 +1601,16 @@ pub(crate) async fn get_next_rust_compilation(
 }
 
 /// Retrieves the list of successfully compiled pipeline programs (pipeline identifier, program version,
-/// program binary source checksum, program binary integrity checksum) across all tenants.
+/// program binary source checksum, program binary integrity checksum) AND pipeline programs that
+/// are currently being compiled (pipeline identifier, program version) across all tenants.
 pub(crate) async fn list_pipeline_programs_across_all_tenants(
     txn: &Transaction<'_>,
-) -> Result<Vec<(PipelineId, Version, String, String)>, DBError> {
+) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError> {
     let stmt = txn
         .prepare_cached(
             "SELECT p.id, p.program_version, p.program_binary_source_checksum, p.program_binary_integrity_checksum
              FROM pipeline AS p
-             WHERE p.program_status = 'success'
+             WHERE p.program_status = 'success' OR p.program_status = 'compiling_rust'
              ORDER BY p.id ASC
             ",
         )
@@ -1621,8 +1622,8 @@ pub(crate) async fn list_pipeline_programs_across_all_tenants(
             (
                 PipelineId(row.get(0)),
                 Version(row.get(1)),
-                row.get::<_, String>(2),
-                row.get::<_, String>(3),
+                row.get::<_, Option<String>>(2),
+                row.get::<_, Option<String>>(3),
             )
         })
         .collect())
