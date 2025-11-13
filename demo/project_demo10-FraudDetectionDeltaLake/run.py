@@ -116,7 +116,7 @@ specifying an AWS access key and region.
                     "mode": "snapshot",
                     "aws_skip_signature": "true",
                 },
-            }
+            },
         }
     ]
 
@@ -132,7 +132,7 @@ specifying an AWS access key and region.
                     "aws_skip_signature": "true",
                     "timestamp_column": "unix_time",
                 },
-            }
+            },
         }
     ]
 
@@ -148,7 +148,7 @@ specifying an AWS access key and region.
                         "mode": "truncate",
                     }
                     | s3_credentials,
-                }
+                },
             }
         ]
     else:
@@ -205,7 +205,7 @@ specifying an AWS access key and region.
                     "mode": "snapshot",
                     "aws_skip_signature": "true",
                 },
-            }
+            },
         }
     ]
 
@@ -224,7 +224,7 @@ specifying an AWS access key and region.
                     "timestamp_column": "unix_time",
                     "aws_skip_signature": "true",
                 },
-            }
+            },
         }
     ]
 
@@ -240,7 +240,7 @@ specifying an AWS access key and region.
                         "mode": "truncate",
                     }
                     | s3_credentials,
-                }
+                },
             }
         ]
     else:
