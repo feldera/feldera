@@ -289,6 +289,20 @@ the checkpointed offsets.  It has no effect if fault tolerance is not
 enabled, or if exactly once fault tolerance is enabled, or at any time
 other than the point of resuming from a checkpoint.
 
+## Partition changes
+
+Kafka supports increasing, but not decreasing, the number of
+partitions in a topic.  Feldera will only read partitions that existed
+in a topic at the time that the pipeline was started or resumed from a
+checkpoint.  To make a running Feldera pipeline start to read newly
+added partitions, stop the pipeline with a checkpoint and then resume
+it.
+
+> If `partitions` is set to a list of partition numbers or
+`start_from` is set to a list of partition offsets, this is not
+possible.  Instead, force-stop the pipeline, clear its storage, change
+the configuration, and restart the pipeline from an empty state.
+
 ## Additional resources
 
 For more information, see:

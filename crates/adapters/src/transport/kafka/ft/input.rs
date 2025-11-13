@@ -34,6 +34,7 @@ use rdkafka::{
 };
 use rdkafka::{Offset, TopicPartitionList};
 use serde::{Deserialize, Serialize};
+use std::cmp;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::error::Error;
 use std::hash::Hasher;
@@ -245,10 +246,11 @@ impl KafkaFtInputReaderInner {
         // Start reading the partitions either at the resume point or at the
         // beginning.
         let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
+        let mut persisted_partitions = None;
         let initial_offsets = match resume_info {
             Some(metadata) => {
                 let offsets = metadata
-                    .parse(n_partitions)?
+                    .parse(n_partitions, &mut persisted_partitions)?
                     .into_iter()
                     .map(|range| range.end)
                     .collect::<Vec<_>>();
@@ -425,7 +427,8 @@ impl KafkaFtInputReaderInner {
 
         // Then replay as many steps as requested.
         while let Some((metadata, ())) = command_receiver.blocking_recv_replay()? {
-            let metadata = metadata.parse(n_partitions)?;
+            let n_offsets = metadata.offsets.len();
+            let metadata = metadata.parse(n_partitions, &mut persisted_partitions)?;
             let mut incomplete_partitions = HashSet::new();
             for (offsets, (partition, receiver)) in metadata.iter().zip(receivers.iter()) {
                 if !offsets.is_empty() {
@@ -437,7 +440,7 @@ impl KafkaFtInputReaderInner {
                 thread.unparker.unpark();
             }
             let mut total = BufferSize::empty();
-            let mut hasher = KafkaFtHasher::new(&partitions);
+            let mut hasher = KafkaFtHasher::new(&partitions[..n_offsets]);
             loop {
                 // Process messages for all partitions.
                 for (partition, receiver) in receivers.iter() {
@@ -819,11 +822,45 @@ pub(super) struct Metadata {
 }
 
 impl Metadata {
-    fn parse(self, n_partitions: usize) -> AnyResult<Vec<Range<i64>>> {
-        let offsets = self.offsets;
-        if offsets.len() != n_partitions {
-            bail!("topic has {n_partitions} partitions but metadata for replay has offsets for {} partitions", offsets.len());
+    fn parse(
+        self,
+        n_partitions: usize,
+        persisted_partitions: &mut Option<usize>,
+    ) -> AnyResult<Vec<Range<i64>>> {
+        // Kafka supports increasing the number of partitions in a topic, but
+        // not decreasing it.  If we are restarted with more partitions than we
+        // previously had, then we interpret checkpoints and journal entries as
+        // having empty ranges for the new partitions.  We log the discrepancy
+        // once at the beginning and once each time the number of journaled
+        // partitions increases.
+        //
+        // We disallow and fail if the number of partitions decreases, because
+        // Kafka doesn't support that either and we don't have a sensible way to
+        // recover from it (probably the lost partitions contained data and we
+        // can't recover it).
+        //
+        // We use `persisted_partitions` to ensure that the number of partitions
+        // increases monotonically.
+        let mut offsets = self.offsets;
+        let n_offsets = offsets.len();
+        if n_offsets > n_partitions {
+            bail!("metadata for replay has offsets for {n_offsets} partitions but topic has only {n_partitions} partitions; because Kafka does not allow partitions to be deleted, this implies that the topic has been deleted and recreated, which makes data loss likely");
         }
+
+        if let Some(persisted_partitions) = *persisted_partitions {
+            if n_offsets > persisted_partitions {
+                warn!("journaled partitions increased from {persisted_partitions} to {n_offsets}");
+            } else if n_offsets < persisted_partitions {
+                // Decreasing number of offsets indicates an inconsistency.
+                bail!("journaled partitions decreased from {persisted_partitions} to {n_offsets}");
+            }
+        } else if n_offsets != n_partitions {
+            warn!(
+                "topic partitions increased since the checkpoint from {n_offsets} to {n_partitions}; reading additional partitions from the start",
+            );
+        }
+        *persisted_partitions = Some(n_offsets);
+        offsets.extend((n_offsets..n_partitions).map(|_| 0..0));
         Ok(offsets)
     }
 }
@@ -842,13 +879,13 @@ impl PartialEq for Msg {
 impl Eq for Msg {}
 
 impl PartialOrd for Msg {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for Msg {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         self.offset.cmp(&other.offset)
     }
 }
