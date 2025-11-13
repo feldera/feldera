@@ -110,8 +110,7 @@ class HttpRequests:
                     logging.debug("got response: %s", str(resp))
                     return resp
                 except FelderaAPIError as err:
-                    # Only retry on 503 and 408
-                    if err.status_code in [503, 408]:
+                    if err.status_code in [408, 502, 503]:
                         if attempt < max_retries:
                             logging.warning(
                                 "HTTP %d received for %s, retrying (%d/%d)...",
@@ -120,7 +119,7 @@ class HttpRequests:
                                 attempt + 1,
                                 max_retries,
                             )
-                            time.sleep(2)  # backoff, adjust as needed
+                            time.sleep(min(2 << attempt, 64))
                             continue
                     raise  # re-raise for all other errors or if out of retries
                 except requests.exceptions.Timeout as err:
