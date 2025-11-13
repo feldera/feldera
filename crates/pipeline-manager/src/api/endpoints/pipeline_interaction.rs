@@ -18,61 +18,9 @@ use actix_web::{
 use feldera_types::query_params::MetricsParameters;
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
 use log::{debug, info};
-use std::io::Write;
 use std::time::Duration;
-use zip::write::{FileOptions, ZipWriter};
 
 pub mod support_bundle;
-
-/// Create a ZIP file containing multiple files
-///
-/// This helper function takes a list of (filename, content) pairs and packages them
-/// into a single ZIP file.
-///
-/// # Arguments
-/// * `files` - Iterator of (filename, file_content) pairs to include in the ZIP
-///
-/// # Returns
-/// * `Ok(Vec<u8>)` - The ZIP file as bytes
-/// * `Err(ManagerError)` - If ZIP creation fails
-fn create_zip<'a, I>(files: I) -> Result<Vec<u8>, ManagerError>
-where
-    I: IntoIterator<Item = (&'a str, &'a [u8])>,
-{
-    let files: Vec<_> = files.into_iter().collect();
-
-    // Estimate total size for pre-allocation
-    let total_size: usize = files.iter().map(|(_, content)| content.len()).sum();
-    let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::with_capacity(
-        total_size + 1024 * files.len(),
-    )));
-
-    for (filename, content) in files {
-        zip.start_file(filename, FileOptions::default())
-            .map_err(|e| {
-                ManagerError::from(ApiError::UnableToConnect {
-                    reason: format!("Failed to create ZIP entry '{}': {}", filename, e),
-                })
-            })?;
-
-        zip.write_all(content).map_err(|e| {
-            ManagerError::from(ApiError::UnableToConnect {
-                reason: format!("Failed to write ZIP entry '{}': {}", filename, e),
-            })
-        })?;
-    }
-
-    let zip_bytes = zip
-        .finish()
-        .map_err(|e| {
-            ManagerError::from(ApiError::UnableToConnect {
-                reason: format!("Failed to finalize ZIP file: {}", e),
-            })
-        })?
-        .into_inner();
-
-    Ok(zip_bytes)
-}
 
 /// Insert Data
 ///
@@ -796,7 +744,7 @@ pub(crate) async fn get_pipeline_circuit_profile(
     responses(
         (status = OK
             , description = "Circuit performance profile in JSON format"
-            , content_type = "application/zip"
+            , content_type = "application/json"
             , body = Object),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
@@ -825,8 +773,9 @@ pub(crate) async fn get_pipeline_circuit_json_profile(
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
 
-    // Get the JSON profile from the pipeline
-    let response = state
+    // Get the JSON profile from the pipeline and return it directly
+    // The Compress middleware will automatically compress the response based on Accept-Encoding
+    state
         .runner
         .forward_http_request_to_pipeline_by_name(
             client.as_ref(),
@@ -837,30 +786,7 @@ pub(crate) async fn get_pipeline_circuit_json_profile(
             request.query_string(),
             Some(Duration::from_secs(120)),
         )
-        .await?;
-
-    // If response is not successful, return it as-is
-    let status = response.status();
-    if !status.is_success() {
-        return Ok(response);
-    }
-
-    // Extract the JSON body
-    let body_bytes = actix_web::body::to_bytes(response.into_body())
         .await
-        .map_err(|e| {
-            ManagerError::from(ApiError::UnableToCreateSupportBundle {
-                reason: format!("Failed to read dump_json_profile response body: {}", e),
-            })
-        })?;
-
-    // Create a ZIP file containing the JSON profile
-    let zip_bytes = create_zip([("profile.json", body_bytes.as_ref())])?;
-
-    Ok(HttpResponse::Ok()
-        .content_type("application/zip")
-        .insert_header(header::ContentDisposition::attachment("profile.zip"))
-        .body(zip_bytes))
 }
 
 /// Get Dataflow Graph

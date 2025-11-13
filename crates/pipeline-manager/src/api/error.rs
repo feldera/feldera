@@ -24,6 +24,7 @@ pub enum ApiError {
     UnableToConnect { reason: String },
     LockTimeout { value: String, timeout: Duration },
     UnableToCreateSupportBundle { reason: String },
+    UnableToFetchCircuitProfile { reason: String },
     DataflowNotAvailable { pipeline_name: String },
     InvalidProgramInfo { error: String },
     ProgramNotCompiled { pipeline_name: String },
@@ -42,6 +43,7 @@ impl DetailedError for ApiError {
             Self::UnableToConnect { .. } => Cow::from("UnableToConnect"),
             Self::LockTimeout { .. } => Cow::from("LockTimeout"),
             Self::UnableToCreateSupportBundle { .. } => Cow::from("UnableToCreateSupportBundle"),
+            Self::UnableToFetchCircuitProfile { .. } => Cow::from("UnableToFetchCircuitProfile"),
             Self::DataflowNotAvailable { .. } => Cow::from("DataflowNotAvailable"),
             Self::InvalidProgramInfo { .. } => Cow::from("InvalidProgramInfo"),
             Self::ProgramNotCompiled { .. } => Cow::from("ProgramNotCompiled"),
@@ -89,6 +91,9 @@ impl Display for ApiError {
             Self::UnableToCreateSupportBundle { reason } => {
                 write!(f, "Unable to create support bundle: {reason}")
             }
+            Self::UnableToFetchCircuitProfile { reason } => {
+                write!(f, "Unable to fetch circuit profile: {reason}")
+            }
             Self::DataflowNotAvailable { pipeline_name } => {
                 write!(
                     f,
@@ -129,6 +134,7 @@ impl ResponseError for ApiError {
             Self::UnableToConnect { .. } => StatusCode::BAD_REQUEST,
             Self::LockTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UnableToCreateSupportBundle { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnableToFetchCircuitProfile { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::DataflowNotAvailable { .. } => StatusCode::NOT_FOUND,
             Self::InvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::ProgramNotCompiled { .. } => StatusCode::NOT_FOUND,

@@ -1272,6 +1272,7 @@ mod tests {
             pipeline_config: true,
             system_config: false,
             dataflow_graph: true,
+            collect: true
         };
 
         zip_entries.clear();

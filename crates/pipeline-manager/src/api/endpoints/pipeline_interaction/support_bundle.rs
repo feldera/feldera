@@ -214,5 +214,6 @@ pub(crate) async fn get_pipeline_support_bundle(
                 pipeline_name
             ),
         ))
+        .insert_header(actix_http::ContentEncoding::Identity)
         .body(bundle.buffer))
 }

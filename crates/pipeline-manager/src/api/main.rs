@@ -722,6 +722,7 @@ pub async fn run(
                         log!(log_level, "Request: {} {}", req.method(), req.path());
                         srv.call(req).map(log_response)
                     })
+                    .wrap(middleware::Compress::default())
                     .wrap(api_config.cors())
                     .service(api_scope().wrap(auth_middleware))
                     .service(public_scope())
@@ -753,6 +754,7 @@ pub async fn run(
                         trace!("Request: {} {}", req.method(), req.path());
                         srv.call(req).map(log_response)
                     })
+                    .wrap(middleware::Compress::default())
                     .wrap(api_config.cors())
                     .service(api_scope().wrap_fn(|req, srv| {
                         let req = crate::auth::tag_with_default_tenant_id(req);
