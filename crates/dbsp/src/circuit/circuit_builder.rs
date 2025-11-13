@@ -38,7 +38,7 @@ use crate::{
         operator_traits::{
             BinaryOperator, BinarySinkOperator, Data, ImportOperator, NaryOperator,
             QuaternaryOperator, SinkOperator, SourceOperator, StrictUnaryOperator, TernaryOperator,
-            UnaryOperator,
+            TernarySinkOperator, UnaryOperator,
         },
         runtime::Consensus,
         schedule::{
@@ -1895,6 +1895,33 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         I2: Data,
         Op: BinarySinkOperator<I1, I2>;
 
+    /// Add a binary sink operator (see [`BinarySinkOperator`]).
+    fn add_ternary_sink<I1, I2, I3, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+        input_stream3: &Stream<Self, I3>,
+    ) where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        Op: TernarySinkOperator<I1, I2, I3>;
+
+    /// Like [`Self::add_ternary_sink`], but overrides the ownership preferences
+    /// on input streams.
+    fn add_ternary_sink_with_preference<I1, I2, I3, Op>(
+        &self,
+        operator: Op,
+        input_stream1: (&Stream<Self, I1>, OwnershipPreference),
+        input_stream2: (&Stream<Self, I2>, OwnershipPreference),
+        input_stream3: (&Stream<Self, I3>, OwnershipPreference),
+    ) where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        Op: TernarySinkOperator<I1, I2, I3>;
+
     /// Add a unary operator (see [`UnaryOperator`]).
     fn add_unary_operator<I, O, Op>(
         &self,
@@ -3554,6 +3581,65 @@ where
         });
     }
 
+    /// Add a ternary sink operator (see [`TernarySinkOperator`]).
+    fn add_ternary_sink<I1, I2, I3, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+        input_stream3: &Stream<Self, I3>,
+    ) where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        Op: TernarySinkOperator<I1, I2, I3>,
+    {
+        let (preference1, preference2, preference3) = operator.input_preference();
+        self.add_ternary_sink_with_preference(
+            operator,
+            (input_stream1, preference1),
+            (input_stream2, preference2),
+            (input_stream3, preference3),
+        )
+    }
+
+    fn add_ternary_sink_with_preference<I1, I2, I3, Op>(
+        &self,
+        operator: Op,
+        input_stream1: (&Stream<Self, I1>, OwnershipPreference),
+        input_stream2: (&Stream<Self, I2>, OwnershipPreference),
+        input_stream3: (&Stream<Self, I3>, OwnershipPreference),
+    ) where
+        I1: Data,
+        I2: Data,
+        Op: BinarySinkOperator<I1, I2>,
+    {
+        let (input_stream1, input_preference1) = input_stream1;
+        let (input_stream2, input_preference2) = input_stream2;
+        let (input_stream3, input_preference3) = input_stream3;
+
+        self.add_node(|id| {
+            self.log_circuit_event(&CircuitEvent::operator(
+                GlobalNodeId::child_of(self, id),
+                operator.name(),
+                operator.location(),
+            ));
+
+            let node = TernarySinkNode::new(
+                operator,
+                input_stream1.clone(),
+                input_stream2.clone(),
+                input_stream3.clone(),
+                self.clone(),
+                id,
+            );
+            self.connect_stream(input_stream1, id, input_preference1);
+            self.connect_stream(input_stream2, id, input_preference2);
+            self.connect_stream(input_stream3, id, input_preference3);
+            (node, ())
+        });
+    }
+
     fn add_unary_operator<I, O, Op>(
         &self,
         operator: Op,
@@ -4817,6 +4903,187 @@ where
                 StreamValue::consume_token(self.input_stream1.val());
                 StreamValue::consume_token(self.input_stream2.val());
             };
+
+            Ok(self.operator.flush_progress())
+        })
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
+    }
+
+    fn clock_start(&mut self, scope: Scope) {
+        self.operator.clock_start(scope);
+    }
+
+    fn clock_end(&mut self, scope: Scope) {
+        self.operator.clock_end(scope);
+    }
+
+    fn init(&mut self) {
+        self.operator.init(&self.id);
+    }
+
+    fn metadata(&self, output: &mut OperatorMeta) {
+        self.operator.metadata(output);
+    }
+
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.operator.fixedpoint(scope)
+    }
+
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref(), files)
+    }
+
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
+
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+struct TernarySinkNode<C, I1, I2, I3, Op> {
+    id: GlobalNodeId,
+    operator: Op,
+    input_stream1: Stream<C, I1>,
+    input_stream2: Stream<C, I2>,
+    input_stream3: Stream<C, I3>,
+    labels: BTreeMap<String, String>,
+}
+
+impl<C, I1, I2, I3, Op> TernarySinkNode<C, I1, I2, I3, Op>
+where
+    I1: Clone,
+    I2: Clone,
+    I3: Clone,
+    Op: TernarySinkOperator<I1, I2, I3>,
+    C: Circuit,
+{
+    fn new(
+        operator: Op,
+        input_stream1: Stream<C, I1>,
+        input_stream2: Stream<C, I2>,
+        input_stream3: Stream<C, I3>,
+        circuit: C,
+        id: NodeId,
+    ) -> Self {
+        assert!(!input_stream1.ptr_eq(&input_stream2));
+        assert!(!input_stream1.ptr_eq(&input_stream3));
+        assert!(!input_stream2.ptr_eq(&input_stream3));
+
+        Self {
+            id: circuit.global_node_id().child(id),
+            operator,
+            input_stream1,
+            input_stream2,
+            input_stream3,
+            labels: BTreeMap::new(),
+        }
+    }
+}
+
+impl<C, I1, I2, I3, Op> Node for TernarySinkNode<C, I1, I2, I3, Op>
+where
+    C: Circuit,
+    I1: Clone + 'static,
+    I2: Clone + 'static,
+    I3: Clone + 'static,
+    Op: TernarySinkOperator<I1, I2, I3>,
+{
+    fn name(&self) -> Cow<'static, str> {
+        self.operator.name()
+    }
+
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
+    }
+
+    fn is_async(&self) -> bool {
+        self.operator.is_async()
+    }
+
+    fn is_input(&self) -> bool {
+        self.operator.is_input()
+    }
+
+    fn ready(&self) -> bool {
+        self.operator.ready()
+    }
+
+    fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
+        self.operator.register_ready_callback(cb);
+    }
+
+    // Justification: see StreamValue::take() comment.
+    #[allow(clippy::await_holding_refcell_ref)]
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
+        Box::pin(async {
+            let val1 = match StreamValue::take(self.input_stream1.val()) {
+                Some(val) => Cow::Owned(val),
+                None => Cow::Borrowed(StreamValue::peek(&self.input_stream1.get())),
+            };
+
+            let val2 = match StreamValue::take(self.input_stream2.val()) {
+                Some(val) => Cow::Owned(val),
+                None => Cow::Borrowed(StreamValue::peek(&self.input_stream2.get())),
+            };
+
+            let val3 = match StreamValue::take(self.input_stream3.val()) {
+                Some(val) => Cow::Owned(val),
+                None => Cow::Borrowed(StreamValue::peek(&self.input_stream3.get())),
+            };
+
+            self.operator.eval(val1, val2, val3).await;
+
+            StreamValue::consume_token(self.input_stream1.val());
+            StreamValue::consume_token(self.input_stream2.val());
+            StreamValue::consume_token(self.input_stream3.val());
 
             Ok(self.operator.flush_progress())
         })
