@@ -61,9 +61,11 @@ fn check_topics<C: ClientContext>(consumer: &Client<C>, topics: &[(&str, i32)]) 
             bail!("{topic} has {cur_partitions} partitions, waiting for {partitions}");
         }
         if partitions > 0 {
-            consumer
-                .fetch_watermarks(topic, 0, Duration::from_secs(1))
-                .map_err(|e| anyhow!("topic {topic}: {e}"))?;
+            for partition in 0..partitions {
+                consumer
+                    .fetch_watermarks(topic, partition, Duration::from_secs(1))
+                    .map_err(|e| anyhow!("topic {topic}: {e}"))?;
+            }
         }
     }
     Ok(())
