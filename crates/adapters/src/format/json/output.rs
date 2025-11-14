@@ -397,25 +397,20 @@ impl Encoder for JsonEncoder {
                         key_buffer.extend_from_slice(br#"}"#);
 
                         // Encode value.
-                        if w > 0 {
-                            if let Some(schema_str) = &self.value_schema_str {
-                                buffer.extend_from_slice(br#"{"schema":"#);
-                                buffer.extend_from_slice(schema_str.as_bytes());
-                                write!(buffer, r#","payload":{{"op":"c","after":"#)?;
-                            } else {
-                                write!(buffer, r#"{{"payload":{{"op":"c","after":"#)?;
-                            }
-
-                            cursor.serialize_key(&mut buffer)?;
-                            buffer.extend_from_slice(br#"}}"#);
-                        } else if let Some(schema_str) = &self.value_schema_str {
-                            write!(
-                                buffer,
-                                r#"{{"schema":{schema_str},"payload":{{"op":"d"}}}}"#
-                            )?;
+                        let (op, when) = if w > 0 {
+                            ("c", "after")
                         } else {
-                            write!(buffer, r#"{{"payload":{{"op":"d"}}}}"#)?;
+                            ("d", "before")
+                        };
+                        if let Some(schema_str) = &self.value_schema_str {
+                            buffer.extend_from_slice(br#"{"schema":"#);
+                            buffer.extend_from_slice(schema_str.as_bytes());
+                            write!(buffer, r#","payload":{{"op":"{op}","{when}":"#)?;
+                        } else {
+                            write!(buffer, r#"{{"payload":{{"op":"{op}","{when}":"#)?;
                         }
+                        cursor.serialize_key(&mut buffer)?;
+                        buffer.extend_from_slice(br#"}}"#);
                     }
                     _ => {
                         // Should never happen.  Unsupported formats are rejected during
@@ -619,14 +614,18 @@ mod test {
 
         fn update(insert: bool, value: Self::Val, _stream_id: u64, _sequence_num: u64) -> Self {
             DebeziumUpdate {
-                payload: DebeziumPayload {
-                    op: if insert {
-                        DebeziumOp::Create
-                    } else {
-                        DebeziumOp::Delete
-                    },
-                    before: None,
-                    after: if insert { Some(value) } else { None },
+                payload: if insert {
+                    DebeziumPayload {
+                        op: DebeziumOp::Create,
+                        before: None,
+                        after: Some(value),
+                    }
+                } else {
+                    DebeziumPayload {
+                        op: DebeziumOp::Delete,
+                        before: Some(value),
+                        after: None,
+                    }
                 },
             }
         }
@@ -917,7 +916,7 @@ mod test {
                 })),
                 json!({
                     "schema":{"type":"struct","fields":[{"field":"after","type":"struct","fields":[{"field":"id","type":"int64","optional":false},{"field":"b","type":"boolean","optional":false},{"field":"i","type":"int64","optional":true},{"field":"s","type":"string","optional":false}],"optional":true},{"field":"op","type":"string","optional":false}],"name":"Envelope"},
-                    "payload":{"op":"d"}
+                    "payload":{"op":"d", "before": {"b": false, "i": 10, "id": 1, "s": "bar"}}
                 }),
             ),
             (
