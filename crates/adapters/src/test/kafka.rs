@@ -153,6 +153,7 @@ impl KafkaResources {
             &AdminOptions::new(),
         ))
         .unwrap();
+        wait_for_completion(&self.admin_client, &[(topic, new_partition_count as i32)]);
     }
 }
 
