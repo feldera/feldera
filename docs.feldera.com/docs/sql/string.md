@@ -111,7 +111,7 @@ example.
     <td><a id="rlike"></a><code>string RLIKE pattern</code> and
         <code>string NOT RLIKE pattern</code></td>
     <td>The RLIKE expression returns true if <code>string</code> matches <code>pattern</code>.
-        The pattern is a standard Java regular expression.</td>
+        The pattern is a standard Rust regular expression.</td>
     <td><code>'string' RLIKE 's..i.*'</code> => <code>TRUE</code></td>
   </tr>
   <tr>
@@ -310,7 +310,12 @@ string `ILIKE` pattern
 
 string `NOT ILIKE` pattern
 
-The `ILIKE` expression performs a case-insensitive pattern match. If <code>pattern</code> does not contain percent signs or underscores, then the pattern represents the string itself, and `ILIKE` acts like the equals operator, ignoring character case. An underscore (`_`) in <code>pattern</code> matches any single character, while a percent sign (`%`) matches any sequence of zero or more characters.
+The `ILIKE` expression performs a case-insensitive pattern match. If
+<code>pattern</code> does not contain percent signs or underscores,
+then the pattern represents the string itself, and `ILIKE` acts like
+the equals operator, ignoring character case. An underscore (`_`) in
+<code>pattern</code> matches any single character, while a percent
+sign (`%`) matches any sequence of zero or more characters.
 
 Some examples:
 
@@ -328,19 +333,18 @@ SELECT 'ABC'     NOT ILIKE '_b_'   false
 ```
 When either argument or `ILIKE`, `NOT ILIKE` is `NULL`, the result is `NULL`.
 
-## POSIX regular expressions
+## Regular expressions
 
 Regular expressions are matched using the `RLIKE` function.  If either
-argument of `RLIKE` is `NULL`, the result is also `NULL`.
+argument of `RLIKE` is `NULL`, the result is also `NULL`.  The
+implementation is based on the Rust
+[`Regex`](https://docs.rs/regex/latest/regex/) library.  The full
+syntax supported is described in the [Rust
+documentation](https://docs.rs/regex/latest/regex/#syntax).
 
-The description below is from the [Postgres
+The description below uses fragments from the [Postgres
 documentation](https://www.postgresql.org/docs/15/functions-matching.html#FUNCTIONS-POSIX-REGEXP),
 where credit is given to Henry Spencer.
-
-POSIX regular expressions provide a more powerful means for pattern
-matching than the `LIKE` and `SIMILAR TO` operators.  Many Unix tools
-such as `egrep`, `sed`, or `awk` use a pattern matching language that
-is similar to the one described here.
 
 Currently our compiler does *not* support `SIMILAR TO` regular
 expressions.
@@ -420,15 +424,12 @@ The possible quantifiers and their meanings are shown the Table below.
 |`{`m`}`  | a sequence of exactly m matches of the atom|
 |`{`m`,}` | a sequence of m or more matches of the atom|
 |`{`m`,`n`}`| a sequence of m through n (inclusive) matches of the atom; m cannot exceed n|
-
-<!--
 |`*?`   | non-greedy version of *|
 |`+?`   | non-greedy version of +|
 |`??`   | non-greedy version of ?|
 |`{`m`}?` | non-greedy version of {m}|
 |`{`m`,}?`| non-greedy version of {m,}|
 |`{`m`,`n`}?` | non-greedy version of {m,n}|
--->
 
 A constraint matches an empty string, but matches only when specific
 conditions are met. A constraint can be used where an atom could be
@@ -440,14 +441,6 @@ described later.
 |----------|---------------|
 |`^`       |    matches at the beginning of the string |
 |`$`       |    matches at the end of the string       |
-
-<!--
-|(?=re)    |    positive lookahead matches at any point where a substring matching re begins (AREs only)
-|(?!re)    |    negative lookahead matches at any point where no substring matching re begins (AREs only)
-|(?<=re)   |    positive lookbehind matches at any point where a substring matching re ends (AREs only)
-|(?<!re)   |    negative lookbehind matches at any point where no substring matching re ends (AREs only)
--->
-
 
 ### Bracket Expressions
 
@@ -512,7 +505,7 @@ regular-expression function or operator.
 
 Escapes are special sequences beginning with `\` followed by an
 alphanumeric character.  Escapes come in several varieties: character
-entry, class shorthands, constraint escapes, and back references. A
+entry, class shorthands, and constraint escapes. A
 `\` followed by an alphanumeric character but not constituting a valid
 escape is illegal.
 
@@ -522,23 +515,12 @@ in the Table below.
 
 |Escape|        Description|
 |------|-------------------|
-|`\a`     |alert (bell) character, as in C|
-|`\b`     |backspace, as in C |
-|`\B`     |synonym for backslash (\) to help reduce the need for backslash doubling|
-|`\c`X    |(where X is any character) the character whose low-order 5 bits are the same as those of X, and whose other bits are all zero|
-|`\e`     |the character whose collating-sequence name is ESC, or failing that, the character with octal value 033 |
-|`\f`     |form feed, as in C |
 |`\n`     |newline, as in C |
 |`\r`     |carriage return, as in C |
 |`\t`     |horizontal tab, as in C |
 |`\u`wxyz |(where wxyz is exactly four hexadecimal digits) the character whose hexadecimal value is 0xwxyz |
-|`\v`     |vertical tab, as in C|
-|`\x`hhh  |(where hhh is any sequence of hexadecimal digits) the character whose hexadecimal value is 0xhhh (a single character no matter how many hexadecimal digits are used)|
+|`\x`hh   |(where hh is a pair of hexadecimal digits) the character whose hexadecimal value is 0xhh|
 |`\0`     |the character whose value is 0 (the null byte)|
-|`\`xy    |(where xy is exactly two octal digits, and is not a back reference) the character whose octal value is 0xy|
-|`\`xyz   |(where xyz is exactly three octal digits, and is not a back reference) the character whose octal value is 0xyz|
-
-Hexadecimal digits are 0-9, a-f, and A-F. Octal digits are 0-7.
 
 A constraint escape is a constraint, matching the empty string if
 specific conditions are met, written as an escape. They are shown in
@@ -546,27 +528,9 @@ the Table below.
 
 |Escape|Description|
 |------|-----------|
-|`\A`     |matches only at the beginning of the string (see Section 9.7.3.5 for how this differs from ^)|
-|`\m`     |matches only at the beginning of a word|
-|`\M`     |matches only at the end of a word|
-|`\y`     |matches only at the beginning or end of a word|
-|`\Y`     |matches only at a point that is not the beginning or end of a word|
-|`\Z`     |matches only at the end of the string|
-
-A back reference `(\`n`)` matches the same string matched by the
-previous parenthesized subexpression specified by the number n (see
-the Table below). For example, `([bc])\1` matches `bb` or `cc` but not
-`bc` or `cb`. The subexpression must entirely precede the back
-reference in the RE. Subexpressions are numbered in the order of their
-leading parentheses. Non-capturing parentheses do not define
-subexpressions. The back reference considers only the string
-characters matched by the referenced subexpression, not any
-constraints contained in it. For example, `(^\d)\1` will match `22`.
-
-|Escape|        Description|
-|------|-------------------|
-|`\`m     |(where m is a nonzero digit) a back reference to the m'th subexpression|
-|`\`mnn   |(where m is a nonzero digit, and nn is some more digits, and the decimal value mnn is not greater than the number of closing capturing parentheses seen so far) a back reference to the mnn'th subexpression|
+|`\A`  | matches only at the beginning of the string|
+|`\b`  | matches word boundaries|
+|`\B`  | not a word boundary|
 
 ### Capture groups
 
@@ -647,4 +611,3 @@ Bruce Springsteen
 
 Note that using `$2` instead of `$first` or `$1` instead of `$last`
 would produce the same result.
-
