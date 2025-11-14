@@ -711,6 +711,7 @@ fn test_parse_binary() {
 struct TestUuid {
     uuid1: Uuid,
     uuid2: Uuid,
+    varchar: String,
 }
 
 impl TestUuid {
@@ -721,7 +722,8 @@ impl TestUuid {
             "connect.name": "test_namespace.TestUuid",
             "fields": [
                 { "name": "uuid1", "type": "string" },
-                { "name": "uuid2", "type": {"type": "string", "logicalType": "uuid"} }
+                { "name": "uuid2", "type": {"type": "string", "logicalType": "uuid"} },
+                { "name": "varchar", "type": {"type": "string", "logicalType": "uuid"} }
             ]
         }"#
     }
@@ -730,6 +732,7 @@ impl TestUuid {
         vec![
             Field::new("uuid1".into(), ColumnType::uuid(false)),
             Field::new("uuid2".into(), ColumnType::uuid(false)),
+            Field::new("varchar".into(), ColumnType::varchar(false)),
         ]
     }
 
@@ -743,23 +746,27 @@ impl TestUuid {
     }
 }
 
-serialize_table_record!(TestUuid[2]{
+serialize_table_record!(TestUuid[3]{
     r#uuid1["uuid1"]: Uuid,
-    r#uuid2["uuid2"]: Uuid
+    r#uuid2["uuid2"]: Uuid,
+    r#varchar["varchar"]: String
 });
 
-deserialize_table_record!(TestUuid["TestUuid", 2] {
+deserialize_table_record!(TestUuid["TestUuid", 3] {
     (r#uuid1, "uuid1", false, Uuid, None),
-    (r#uuid2, "uuid2", false, Uuid, None)
+    (r#uuid2, "uuid2", false, Uuid, None),
+    (r#varchar, "varchar", false, String, None)
 });
 
 // Test for issue #4722: make sure that we can deserialize UUIDs from both plain string and logicalType uuid.
+// Test for issue #4837: deserialize logical UUID type into a string.
 #[test]
-fn test_issue4722() {
+fn test_issue4722_issue4837() {
     let schema = AvroSchema::parse_str(TestUuid::avro_schema()).unwrap();
     let vals = [TestUuid {
         uuid1: Uuid::from(uuid::uuid!("550e8400-e29b-41d4-a716-446655440000")),
         uuid2: Uuid::from(uuid::uuid!("550e8400-e29b-41d4-a716-446655440001")),
+        varchar: "550e8400-e29b-41d4-a716-446655440002".to_string(),
     }];
     let input_batches = vals
         .iter()

@@ -40,6 +40,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.Intern;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ImplementNow;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -67,7 +68,7 @@ public class CircuitOptimizer extends Passes {
     void createOptimizer() {
         CompilerOptions options = this.compiler().options;
         // Example dumping circuit to a png file
-        // this.add(ToDot.dumper(compiler, "x.png", 2));
+        // this.add(ToDot.dumper(compiler, "x.png", 3));
         // First part of optimizations may still synthesize some circuit components
         this.add(new ImplementNow(compiler));
         this.add(new DeterministicFunctions(compiler));
@@ -85,6 +86,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new UnusedFields(compiler));
         this.add(new Intern(compiler));
         this.add(new CSE(compiler));
+        this.add(new OptimizeWithGraph(compiler, g -> new CloneOperatorsWithFanout(compiler, g)));
         this.add(new ExpandAggregates(compiler, compiler.weightVar));
         this.add(new ExpandAggregateZero(compiler));
         this.add(new DeadCode(compiler, true));
@@ -142,7 +144,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new CSE(compiler));
         this.add(new ExpandJoins(compiler));
         this.add(new RemoveViewOperators(compiler, true));
-        this.add(new CircuitRewriter(compiler, new InnerCSE(compiler), false, InnerCSE::process));
+        this.add(new CircuitRewriter(compiler, new InnerCSE(compiler), true, InnerCSE::process));
         this.add(new CreateRuntimeErrorWrappers(compiler).getCircuitRewriter(true));
         this.add(new OptimizeWithGraph(compiler, g -> new StrayGC(compiler, g)));
         // The canonical form is needed if we want the Merkle hashes to be "stable".

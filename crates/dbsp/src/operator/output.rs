@@ -13,14 +13,17 @@ use crate::{
     typed_batch::{Spine, SpineSnapshot, TypedBatch},
     Batch, BatchReader, Circuit, Error, Runtime, Stream,
 };
-use feldera_storage::StoragePath;
+use feldera_storage::{FileCommitter, StoragePath};
 use std::{
     borrow::Cow,
     fmt::Debug,
     hash::{Hash, Hasher},
     marker::PhantomData,
     mem::transmute,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 use typedmap::TypedMapKey;
 
@@ -89,19 +92,31 @@ where
         &self,
         persistent_id: Option<&str>,
     ) -> OutputHandle<SpineSnapshot<B>> {
-        self.accumulate_output_persistent_with_gid(persistent_id).0
+        let (handle, enable_count, _) = self.accumulate_output_persistent_with_gid(persistent_id);
+        enable_count.fetch_add(1, Ordering::AcqRel);
+        handle
     }
 
+    /// Returns:
+    /// - The output handle.
+    /// - The enable count of the accumulator. Can be used to enable/disable the accumulator.
+    /// - The global node ID of the output operator.
     #[track_caller]
     pub fn accumulate_output_persistent_with_gid(
         &self,
         persistent_id: Option<&str>,
-    ) -> (OutputHandle<SpineSnapshot<B>>, GlobalNodeId) {
+    ) -> (
+        OutputHandle<SpineSnapshot<B>>,
+        Arc<AtomicUsize>,
+        GlobalNodeId,
+    ) {
         let (output, output_handle) = AccumulateOutput::<B>::new();
-        let gid = self.circuit().add_sink(output, &self.accumulate());
+
+        let (accumulated, enable_count) = self.accumulate_with_enable_count();
+        let gid = self.circuit().add_sink(output, &accumulated);
         self.circuit().set_persistent_node_id(&gid, persistent_id);
 
-        (output_handle, gid)
+        (output_handle, enable_count, gid)
     }
 }
 
@@ -222,7 +237,7 @@ where
                     .local_store()
                     .entry(OutputId::new(output_id))
                     .or_insert_with(|| {
-                        Self(Arc::new(OutputHandleInternal::new(runtime.num_workers())))
+                        Self(Arc::new(OutputHandleInternal::new(Runtime::num_workers())))
                     })
                     .value()
                     .clone()
@@ -379,13 +394,20 @@ where
         self.global_id = global_id.clone();
     }
 
-    fn checkpoint(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        pid: Option<&str>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         let as_bytes = to_bytes(&()).expect("Serializing () should work.");
 
-        Runtime::storage_backend()
-            .unwrap()
-            .write(&Self::checkpoint_file(base, pid), as_bytes)?;
+        files.push(
+            Runtime::storage_backend()
+                .unwrap()
+                .write(&Self::checkpoint_file(base, pid), as_bytes)?,
+        );
 
         Ok(())
     }
@@ -464,13 +486,20 @@ where
         self.global_id = global_id.clone();
     }
 
-    fn checkpoint(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        pid: Option<&str>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         let as_bytes = to_bytes(&()).expect("Serializing () should work.");
 
-        Runtime::storage_backend()
-            .unwrap()
-            .write(&Self::checkpoint_file(base, pid), as_bytes)?;
+        files.push(
+            Runtime::storage_backend()
+                .unwrap()
+                .write(&Self::checkpoint_file(base, pid), as_bytes)?,
+        );
 
         Ok(())
     }

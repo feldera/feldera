@@ -131,6 +131,10 @@ with `NULL` values are compared smaller than any other value.
     <td>Returns ifTrue if the condition evaluates to 'true', returns ifFalse otherwise.</td>
   </tr>
   <tr>
+    <td><a id="ifnull"></a><code>IFNULL( left, right )</code></td>
+    <td>Equivalent to <code>COALESCE(left, right)</code>.</td>
+  </tr>
+  <tr>
     <td><a id="least"></a><code>LEAST( expr [, expr ]* )</code></td>
     <td>The smallest of a number of expressions; if any argument is <code>NULL</code>, the result is <code>NULL</code>.</td>
   </tr>

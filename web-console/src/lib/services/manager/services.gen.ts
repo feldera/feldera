@@ -46,6 +46,9 @@ import type {
   PostPipelineActivateData,
   PostPipelineActivateError,
   PostPipelineActivateResponse,
+  PostPipelineApproveData,
+  PostPipelineApproveError,
+  PostPipelineApproveResponse,
   CheckpointPipelineData,
   CheckpointPipelineError,
   CheckpointPipelineResponse,
@@ -118,12 +121,18 @@ import type {
   PostPipelineInputConnectorActionData,
   PostPipelineInputConnectorActionError,
   PostPipelineInputConnectorActionResponse,
+  PostPipelineTestingData,
+  PostPipelineTestingError,
+  PostPipelineTestingResponse,
   GetPipelineTimeSeriesData,
   GetPipelineTimeSeriesError,
   GetPipelineTimeSeriesResponse,
   GetPipelineTimeSeriesStreamData,
   GetPipelineTimeSeriesStreamError,
   GetPipelineTimeSeriesStreamResponse,
+  PostUpdateRuntimeData,
+  PostUpdateRuntimeError,
+  PostUpdateRuntimeResponse,
   GetPipelineOutputConnectorStatusData,
   GetPipelineOutputConnectorStatusError,
   GetPipelineOutputConnectorStatusResponse
@@ -307,6 +316,21 @@ export const postPipelineActivate = (options: Options<PostPipelineActivateData>)
   return (options?.client ?? client).post<PostPipelineActivateResponse, PostPipelineActivateError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/activate'
+  })
+}
+
+/**
+ * Approves the pipeline to proceed with bootstrapping.
+ * This endpoint is used when a pipeline has been started with
+ * `bootstrap_policy=await_approval`, it is resuming from an existing checkpoint,
+ * but the pipeline has been modified since the checkpoint was made and is
+ * currently in the `AwaitingApproval` state awaiting user approval to proceed
+ * with bootstrapping.
+ */
+export const postPipelineApprove = (options: Options<PostPipelineApproveData>) => {
+  return (options?.client ?? client).post<PostPipelineApproveResponse, PostPipelineApproveError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/approve'
   })
 }
 
@@ -676,6 +700,17 @@ export const postPipelineInputConnectorAction = (
 }
 
 /**
+ * This endpoint is used as part of the test harness. Only available if the `testing`
+ * unstable feature is enabled. Do not use in production.
+ */
+export const postPipelineTesting = (options: Options<PostPipelineTestingData>) => {
+  return (options?.client ?? client).post<PostPipelineTestingResponse, PostPipelineTestingError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/testing'
+  })
+}
+
+/**
  * Retrieve time series for statistics of a running or paused pipeline.
  */
 export const getPipelineTimeSeries = (options: Options<GetPipelineTimeSeriesData>) => {
@@ -701,6 +736,36 @@ export const getPipelineTimeSeriesStream = (options: Options<GetPipelineTimeSeri
   >({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/time_series_stream'
+  })
+}
+
+/**
+ * Recompile a pipeline with the Feldera runtime version included in the
+ * currently installed Feldera platform.
+ *
+ * Use this endpoint after upgrading Feldera to rebuild pipelines that were
+ * compiled with older platform versions. In most cases, recompilation is not
+ * required; pipelines compiled with older versions will continue to run on the
+ * upgraded platform.
+ *
+ * Situations where recompilation may be necessary:
+ * - To benefit from the latest bug fixes and performance optimizations.
+ * - When backward-incompatible changes are introduced in Feldera. In this case,
+ * attempting to start a pipeline compiled with an unsupported version will
+ * result in an error.
+ *
+ * If the pipeline is already compiled with the current platform version,
+ * this operation is a no-op.
+ *
+ * Note that recompiling the pipeline with a new platform version may change its
+ * query plan. If the modified pipeline is started from an existing checkpoint,
+ * it may require bootstrapping parts of its state from scratch.  See Feldera
+ * documentation for details on the bootstrapping process.
+ */
+export const postUpdateRuntime = (options: Options<PostUpdateRuntimeData>) => {
+  return (options?.client ?? client).post<PostUpdateRuntimeResponse, PostUpdateRuntimeError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/update_runtime'
   })
 }
 

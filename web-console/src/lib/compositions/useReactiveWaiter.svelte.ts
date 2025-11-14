@@ -2,51 +2,52 @@ import { untrack } from 'svelte'
 
 // Types
 type ReactiveState<T> = () => T
-type Predicate<T> = (value: T) => boolean
+type Predicate<T, R> = (value: T) => { value: R } | null
 
 interface GlobalWaiterOptions {
   timeout?: number
 }
 
-interface WaiterOptions<T> {
-  predicate: Predicate<T>
+interface WaiterOptions<T, R> {
+  predicate: Predicate<T, R>
   timeout?: number
-  onSuccess?: (value: T) => void
+  onSuccess?: (value: R) => void
   onError?: (error: Error) => void
   onTimeout?: () => void
   immediate?: boolean
 }
 
-interface WaiterState<T> {
+interface WaiterState<T, R> {
   id: number
-  predicate: Predicate<T>
+  predicate: Predicate<T, R>
   timeoutId: NodeJS.Timer | null
   isWaiting: boolean
-  onSuccess: (value: T) => void
+  onSuccess: (value: R) => void
   onError: (error: Error) => void
   onTimeout: () => void
-  resolve: (value: T) => void
+  resolve: (value: R) => void
   reject: (error: Error) => void
 }
 
-interface Waiter<T> {
+interface Waiter<R> {
   readonly id: number
   readonly isWaiting: boolean
   readonly error: Error | null
-  waitFor: () => Promise<T>
+  waitFor: () => Promise<R>
   cancel: () => void
 }
 
 interface ReactiveWaiterHook<T> {
   readonly activeCount: number
   readonly isActive: boolean
-  createWaiter: (options: WaiterOptions<T>) => Waiter<T>
+  createWaiter: <R>(options: WaiterOptions<T, R>) => Waiter<R>
   cancelAll: () => void
 }
 
 /**
  * A generic Svelte 5 hook for waiting on reactive state predicates
  * Creates waiters that can lazily wait for specific conditions on reactive state
+ * Predicates return either null (keep waiting) or { value: T } (condition satisfied)
  */
 export function useReactiveWaiter<T>(
   reactiveState: ReactiveState<T>,
@@ -54,7 +55,7 @@ export function useReactiveWaiter<T>(
 ): ReactiveWaiterHook<T> {
   const { timeout: defaultTimeout } = options
 
-  let activeWaiters = $state(new Map<number, WaiterState<T>>())
+  let activeWaiters = $state(new Map<number, WaiterState<T, any>>())
   let waiterCounter = 0
 
   // Single effect that monitors all active waiters
@@ -68,7 +69,7 @@ export function useReactiveWaiter<T>(
       try {
         const predicateResult = waiter.predicate(currentValue)
 
-        if (predicateResult === true) {
+        if (predicateResult !== null) {
           // Predicate satisfied
           const { resolve, timeoutId, id, onSuccess } = waiter
 
@@ -85,10 +86,10 @@ export function useReactiveWaiter<T>(
           activeWaiters.delete(id)
 
           // Resolve the promise and call success callback
-          resolve(currentValue)
-          onSuccess(currentValue)
+          resolve(predicateResult.value)
+          onSuccess(predicateResult.value)
         }
-        // If predicate returns false, keep waiting (do nothing)
+        // If predicate returns null, keep waiting (do nothing)
       } catch (error) {
         // Predicate threw an error
         const { reject, timeoutId, id, onError } = waiter
@@ -128,7 +129,7 @@ export function useReactiveWaiter<T>(
     }
   })
 
-  const createWaiter = (waiterOptions: WaiterOptions<T>): Waiter<T> => {
+  const createWaiter = <R>(waiterOptions: WaiterOptions<T, R>): Waiter<R> => {
     const waiterId = ++waiterCounter
     const {
       predicate,
@@ -142,21 +143,21 @@ export function useReactiveWaiter<T>(
 
     let waiterError = $state<Error | null>(null)
 
-    const waitFor = (): Promise<T> => {
-      return new Promise<T>((resolve, reject) => {
+    const waitFor = (): Promise<R> => {
+      return new Promise<R>((resolve, reject) => {
         if (waiterOptions.immediate) {
           // Check if predicate is already satisfied
           try {
             const currentValue = untrack(() => reactiveState())
             const predicateResult = predicate(currentValue)
 
-            if (predicateResult === true) {
+            if (predicateResult !== null) {
               // Already satisfied
-              resolve(currentValue)
-              onSuccess(currentValue)
+              resolve(predicateResult.value)
+              onSuccess(predicateResult.value)
               return
             }
-            // If predicate returns false, continue to set up monitoring
+            // If predicate returns null, continue to set up monitoring
           } catch (error) {
             // Predicate threw during initial check
             const predicateError = error instanceof Error ? error : new Error(String(error))
@@ -167,7 +168,7 @@ export function useReactiveWaiter<T>(
         }
 
         // Create waiter state
-        const waiterState: WaiterState<T> = {
+        const waiterState: WaiterState<T, R> = {
           id: waiterId,
           predicate,
           timeoutId: null,
@@ -175,7 +176,7 @@ export function useReactiveWaiter<T>(
           onSuccess,
           onError,
           onTimeout,
-          resolve: (value: T) => {
+          resolve: (value: R) => {
             waiterError = null
             resolve(value)
           },
@@ -280,7 +281,7 @@ const readyWaiter = stateWaiter.createWaiter({
     if (state === 'error') {
       throw new Error('App is in error state');
     }
-    return state === 'ready';
+    return state === 'ready' ? { value: state } : null;
   },
   onSuccess: (state) => console.log('App is ready!', state),
   onError: (error) => console.error('Ready wait failed:', error.message),
@@ -290,9 +291,9 @@ const readyWaiter = stateWaiter.createWaiter({
 const updateWaiter = stateWaiter.createWaiter({
   predicate: state => {
     console.log('Checking if updated:', state);
-    // This will keep waiting while state is 'updating'
-    // and resolve when state becomes 'updated'
-    return state === 'updated';
+    // This will keep waiting while state is 'updating' (returns null)
+    // and resolve when state becomes 'updated' (returns { value: state })
+    return state === 'updated' ? { value: state } : null;
   },
   timeout: 10000, // Custom timeout for this waiter
   onSuccess: (state) => console.log('Update completed!', state),
@@ -325,7 +326,7 @@ const handleMultipleWaits = async () => {
   const waiter1 = stateWaiter.createWaiter({
     predicate: state => {
       if (state === 'error') throw new Error('State is error');
-      return state === 'ready';
+      return state === 'ready' ? { value: state } : null;
     },
     onSuccess: () => console.log('Waiter 1 succeeded'),
     onError: (error) => console.log('Waiter 1 failed:', error.message),
@@ -335,7 +336,7 @@ const handleMultipleWaits = async () => {
   const waiter2 = stateWaiter.createWaiter({
     predicate: state => {
       console.log('Waiter 2 checking state:', state);
-      return state === 'ready'; // Returns false for other states, keeps waiting
+      return state === 'ready' ? { value: state } : null; // Returns null for other states, keeps waiting
     },
     onSuccess: () => console.log('Waiter 2 succeeded'),
     timeout: 5000
@@ -347,7 +348,7 @@ const handleMultipleWaits = async () => {
       if (state.includes('error')) {
         throw new Error(`Invalid state: ${state}`);
       }
-      return state === 'ready';
+      return state === 'ready' ? { value: state } : null;
     },
     onSuccess: () => console.log('Waiter 3 succeeded'),
     onError: (error) => console.log('Waiter 3 failed:', error.message)

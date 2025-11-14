@@ -18,9 +18,3 @@ impl FileId {
         Self(self.0 + 1)
     }
 }
-
-/// An object that has a unique ID.
-pub trait HasFileId {
-    /// Returns the object's unique ID.
-    fn file_id(&self) -> FileId;
-}

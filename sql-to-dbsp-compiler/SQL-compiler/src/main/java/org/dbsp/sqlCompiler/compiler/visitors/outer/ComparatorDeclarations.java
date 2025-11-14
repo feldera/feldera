@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;

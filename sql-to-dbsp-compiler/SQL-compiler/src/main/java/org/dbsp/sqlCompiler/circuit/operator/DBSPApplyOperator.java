@@ -36,14 +36,15 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
     public DBSPApplyOperator(CalciteRelNode node, DBSPClosureExpression function,
                              DBSPType outputType, OutputPort input, @Nullable String comment) {
         super(node, "apply", function, outputType, false, input, comment, false);
-        Utilities.enforce(function.parameters.length == 1, "Expected 1 parameter for function " + function);
+        Utilities.enforce(function.parameters.length == 1,
+                () -> "Expected 1 parameter for function " + function);
         DBSPType paramType = function.parameters[0].getType().deref();
         Utilities.enforce(input.outputType().sameType(paramType),
-                "Parameter type " + paramType + " does not match input type " + input.outputType());
+                () -> "Parameter type " + paramType + " does not match input type " + input.outputType());
         noZsets(input.outputType());
         noZsets(this.outputType());
         Utilities.enforce(function.getResultType().sameType(outputType),
-                "Function return type " + function.getResultType() + " does not match output type " + outputType);
+                () -> "Function return type " + function.getResultType() + " does not match output type " + outputType);
     }
 
     public DBSPApplyOperator(CalciteRelNode node, DBSPClosureExpression function,
@@ -56,7 +57,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
             @Nullable DBSPExpression function, DBSPType outputType,
             List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, function, newInputs, outputType)) {
-            Utilities.enforce(newInputs.size() == 1, "Expected 1 input " + newInputs);
+            Utilities.enforce(newInputs.size() == 1, () -> "Expected 1 input " + newInputs);
             return new DBSPApplyOperator(
                     this.getRelNode(), toClosure(function),
                     newInputs.get(0), this.comment)

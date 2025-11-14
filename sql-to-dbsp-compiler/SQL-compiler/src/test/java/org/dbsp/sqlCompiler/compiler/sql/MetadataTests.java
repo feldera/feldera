@@ -47,6 +47,13 @@ import java.util.List;
 
 /** Tests about table and view metadata */
 public class MetadataTests extends BaseSQLTests {
+    @Override
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
+        options.ioOptions.trimInputs = true;
+        return options;
+    }
+
     File createTempJsonFile() throws IOException {
         File file = File.createTempFile("out", ".json", new File("."));
         file.deleteOnExit();
@@ -331,6 +338,48 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue4896() {
+        String sql = """
+               CREATE TABLE T (COL1 INT) WITH (
+                  'connectors' = '[{
+                    "url": "localhost"
+                  }]'
+               );""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;
+        compiler.submitStatementsForCompilation(sql);
+        // Force compilation
+        compiler.getFinalCircuit(true);
+        Assert.assertTrue(compiler.messages.toString().contains(
+                "warning: Unnamed connector: Connector nr. 1 for Table 't' does not have a name.\n" +
+                "It is recommended to name all connectors using the \"name\" property; " +
+                        "names will be required in the future."));
+
+        sql = """
+               CREATE TABLE T (COL1 INT) WITH (
+                  'connectors' = '[{
+                    "name": [],
+                    "url": "localhost"
+                  }]'
+               );""";
+        this.statementsFailingInCompilation(sql,
+                "Expected a string value for the connector \"name\" property");
+
+        sql = """
+               CREATE TABLE T (COL1 INT) WITH (
+                  'connectors' = '[{
+                    "name": "Bob",
+                    "url": "localhost"
+                  }, {
+                    "name": "Bob",
+                    "url": "localhost:8080"
+                  }]'
+               );""";
+        this.statementsFailingInCompilation(sql,
+                "Connector 'Bob' for Table 't' must have a unique name per table/view");
+    }
+
+    @Test
     public void stripProperties() throws IOException, SQLException {
         // Test that the properties are stripped from the generated Rust
         String sql = """
@@ -455,8 +504,6 @@ public class MetadataTests extends BaseSQLTests {
     @Test
     public void trimUnusedInputColumns() {
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        compiler.options.ioOptions.trimInputs = true;
         compiler.submitStatementsForCompilation("""
                 CREATE TABLE T(used INTEGER, unused INTEGER);
                 CREATE TABLE T1(used INTEGER, unused INTEGER) with ('materialized' = 'true');
@@ -474,13 +521,21 @@ public class MetadataTests extends BaseSQLTests {
         tuple = input.getDataOutputType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
         // Field 'unused' is not dropped from materialized tables
         Assert.assertEquals(2, tuple.size());
+
+        ObjectNode json = compiler.getIOMetadataAsJson();
+        JsonNode t1 = json.get("inputs").get(1);
+        Assert.assertEquals("t1", t1.get("name").asText());
+
+        JsonNode unused = t1.get("fields").get(1);
+        Assert.assertTrue(unused.get("unused").asBoolean());
+        JsonNode used = t1.get("fields").get(0);
+        Assert.assertFalse(used.get("unused").asBoolean());
     }
 
     @Test
     public void issue3427() {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
-        compiler.options.ioOptions.trimInputs = true;
         compiler.options.ioOptions.quiet = false;
         compiler.submitStatementsForCompilation("""
                 CREATE TABLE t1(c1 INTEGER);
@@ -913,9 +968,6 @@ public class MetadataTests extends BaseSQLTests {
                       Default: false
                     --noRust
                       Do not generate Rust output files
-                      Default: false
-                    --nowstream
-                      Implement NOW as a stream (true) or as an internal operator (false)
                       Default: false
                     --outputsAreSets
                       Ensure that outputs never contain duplicates

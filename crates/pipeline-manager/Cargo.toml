@@ -20,6 +20,8 @@ development = ["pg-client-config"]
 [dependencies]
 # Feldera
 feldera-types = { workspace = true }
+feldera-cloud1-client = { workspace = true }
+feldera-ir = { workspace = true }
 
 # Cryptography provider
 # Make sure this is the same rustls version used by other crates in the dependency tree.
@@ -61,6 +63,7 @@ tar = { workspace = true }
 flate2 = { workspace = true }
 base64 = { workspace = true }
 zip = { workspace = true }
+semver = { workspace = true }
 
 # Command-line interaction
 clap = { workspace = true }
@@ -103,6 +106,8 @@ tempfile = { workspace = true }
 # They are provided such that they are included in the workspace `Cargo.lock`.
 # Keep in-sync with `src/compiler/rust_compiler.rs`.
 compare = { workspace = true }
+sha2 = { workspace = true }
+
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 

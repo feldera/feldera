@@ -298,12 +298,10 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
         };
     }
 
-    /** Given an integer type, return the signed integer type that is just one size larger if it exists. */
+    /** Given an integer type, return a signed integer type that is larger */
     public static DBSPTypeCode largerSigned(DBSPTypeCode code) {
         return switch (code) {
-            case INT8, UINT8 -> INT16;
-            case INT16, UINT16 -> INT32;
-            case INT32, UINT32 -> INT64;
+            case INT8, UINT8, INT16, UINT16, INT32, UINT32 -> INT64;
             case INT64, UINT64 -> INT128;
             default -> code;
         };

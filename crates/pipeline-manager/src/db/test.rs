@@ -2,7 +2,7 @@ use crate::api::support_data_collector::SupportBundleData;
 use crate::auth::{generate_api_key, TenantRecord};
 use crate::db::error::DBError;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
-use crate::db::storage_postgres::StoragePostgres;
+use crate::db::storage_postgres::{is_pipeline_assigned_to_worker, StoragePostgres};
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId, ApiPermission};
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
@@ -25,10 +25,12 @@ use crate::db::types::utils::{
 use crate::db::types::version::Version;
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
-use feldera_types::config::{FtConfig, PipelineConfig, ResourceConfig, RuntimeConfig};
+use feldera_types::config::{FtConfig, PipelineConfig, ProgramIr, ResourceConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
-use feldera_types::runtime_status::{ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus};
+use feldera_types::runtime_status::{
+    BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus,
+};
 use log::info;
 use openssl::sha;
 use proptest::prelude::*;
@@ -257,11 +259,13 @@ struct RuntimeConfigPropVal {
     val10: Option<u64>,
     val11: Option<u64>,
     val12: Option<String>,
-    val13: Option<u64>,
-    val14: Option<u64>,
-    val15: bool,
+    val13: Option<String>,
+    val14: Option<String>,
+    val15: Option<u64>,
     val16: Option<u64>,
-    val17: Option<u64>,
+    val17: bool,
+    val18: Option<u64>,
+    val19: Option<u64>,
 }
 type ProgramConfigPropVal = (u8, bool, bool, bool);
 type ProgramInfoPropVal = (u8, u8, u8);
@@ -297,15 +301,17 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
                 memory_mb_max: val.val10,
                 storage_mb_max: val.val11,
                 storage_class: val.val12,
+                service_account_name: val.val13,
+                namespace: val.val14,
             },
-            clock_resolution_usecs: val.val13,
+            clock_resolution_usecs: val.val15,
             pin_cpus: Vec::new(),
-            provisioning_timeout_secs: val.val14,
+            provisioning_timeout_secs: val.val16,
             max_parallel_connector_init: None,
             init_containers: None,
-            checkpoint_during_suspend: val.val15,
-            http_workers: val.val16,
-            io_workers: val.val17,
+            checkpoint_during_suspend: val.val17,
+            http_workers: val.val18,
+            io_workers: val.val19,
             dev_tweaks: BTreeMap::new(),
             logging: None,
         })
@@ -347,7 +353,7 @@ fn map_val_to_limited_program_info(val: ProgramInfoPropVal) -> serde_json::Value
             udf_stubs: format!("udf-stubs-{}", val.2),
             input_connectors: BTreeMap::new(),
             output_connectors: BTreeMap::new(),
-            dataflow: serde_json::Value::Null,
+            dataflow: None,
         })
         .unwrap()
     }
@@ -468,6 +474,14 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
                 secrets_dir: None,
                 inputs: program_info.input_connectors,
                 outputs: program_info.output_connectors,
+                program_ir: Some(ProgramIr {
+                    mir: program_info
+                        .dataflow
+                        .as_ref()
+                        .map(|dataflow| dataflow.mir.clone())
+                        .unwrap_or_default(),
+                    program_schema: program_info.schema.clone(),
+                }),
             })
             .unwrap()
         }
@@ -542,7 +556,7 @@ fn arbitrary_runtime_desired_status() -> impl Strategy<Value = RuntimeDesiredSta
 fn limited_extended_runtime_status() -> impl Strategy<Value = ExtendedRuntimeStatus> {
     any::<(u64, u16, u64)>().prop_map(|(v1, v2, v3)| {
         let runtime_status = map_val_to_runtime_status(v1);
-        let runtime_status_details = format!("runtime-status-details-{v2}");
+        let runtime_status_details = json!(format!("runtime-status-details-{v2}"));
         let runtime_desired_status = map_val_to_runtime_desired_status(v3);
         ExtendedRuntimeStatus {
             runtime_status,
@@ -903,7 +917,7 @@ async fn pipeline_versioning() {
     handle
         .db
         .update_pipeline(
-            tenant_id, "example", &None, &None, "v0", &None, &None, &None, &None, &None,
+            tenant_id, "example", &None, &None, "v0", false, &None, &None, &None, &None, &None,
         )
         .await
         .unwrap();
@@ -921,6 +935,7 @@ async fn pipeline_versioning() {
             &None,
             &None,
             "v0",
+            false,
             &None,
             &Some("c1".to_string()),
             &Some("r1".to_string()),
@@ -943,6 +958,7 @@ async fn pipeline_versioning() {
             &None,
             &Some("d1".to_string()),
             "v0",
+            false,
             &None,
             &None,
             &None,
@@ -965,6 +981,7 @@ async fn pipeline_versioning() {
             &None,
             &None,
             "v0",
+            false,
             &None,
             &Some("c2".to_string()),
             &None,
@@ -988,6 +1005,7 @@ async fn pipeline_versioning() {
             &None,
             &None,
             "v0",
+            false,
             &None,
             &None,
             &Some("r2".to_string()),
@@ -1011,6 +1029,7 @@ async fn pipeline_versioning() {
             &None,
             &None,
             "v0",
+            false,
             &None,
             &None,
             &None,
@@ -1034,6 +1053,7 @@ async fn pipeline_versioning() {
             &None,
             &Some("d2".to_string()),
             "v0",
+            false,
             &None,
             &None,
             &None,
@@ -1063,6 +1083,7 @@ async fn pipeline_versioning() {
             &None,
             &None,
             "v0",
+            false,
             &None,
             &None,
             &None,
@@ -1086,6 +1107,7 @@ async fn pipeline_versioning() {
             &Some("example2".to_string()),
             &None,
             "v0",
+            false,
             &None,
             &None,
             &None,
@@ -1117,6 +1139,8 @@ async fn pipeline_versioning() {
             memory_mb_max: None,
             storage_mb_max: None,
             storage_class: None,
+            service_account_name: None,
+            namespace: None,
         },
         clock_resolution_usecs: None,
         pin_cpus: Vec::new(),
@@ -1138,6 +1162,7 @@ async fn pipeline_versioning() {
             &None,
             &None,
             "v0",
+            false,
             &Some(new_runtime_config.clone()),
             &None,
             &None,
@@ -1205,13 +1230,24 @@ async fn pipeline_program_compilation() {
     let handle = test_setup().await;
     let tenant_id = TenantRecord::default().id;
 
+    let worker_id = 0;
+    let total_workers = 1;
+
     // There is no program to compile
     assert_eq!(
-        handle.db.get_next_sql_compilation("v0").await.unwrap(),
+        handle
+            .db
+            .get_next_sql_compilation("v0", worker_id, total_workers)
+            .await
+            .unwrap(),
         None
     );
     assert_eq!(
-        handle.db.get_next_rust_compilation("v0").await.unwrap(),
+        handle
+            .db
+            .get_next_rust_compilation("v0", worker_id, total_workers)
+            .await
+            .unwrap(),
         None
     );
 
@@ -1255,7 +1291,11 @@ async fn pipeline_program_compilation() {
 
     // Initially, the next program to compile is the one with program status being pending the longest
     assert_eq!(
-        handle.db.get_next_sql_compilation("v0").await.unwrap(),
+        handle
+            .db
+            .get_next_sql_compilation("v0", worker_id, total_workers)
+            .await
+            .unwrap(),
         Some((tenant_id, pipeline1.clone()))
     );
 
@@ -1284,7 +1324,7 @@ async fn pipeline_program_compilation() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
-                dataflow: serde_json::Value::Null,
+                dataflow: None,
             })
             .unwrap(),
         )
@@ -1293,7 +1333,7 @@ async fn pipeline_program_compilation() {
     assert_eq!(
         handle
             .db
-            .get_next_rust_compilation("v0")
+            .get_next_rust_compilation("v0", worker_id, total_workers)
             .await
             .unwrap()
             .unwrap()
@@ -1325,7 +1365,11 @@ async fn pipeline_program_compilation() {
 
     // Next up, it should be pipeline2
     assert_eq!(
-        handle.db.get_next_sql_compilation("v0").await.unwrap(),
+        handle
+            .db
+            .get_next_sql_compilation("v0", worker_id, total_workers)
+            .await
+            .unwrap(),
         Some((tenant_id, pipeline2.clone()))
     );
 
@@ -1352,11 +1396,19 @@ async fn pipeline_program_compilation() {
 
     // There should be nothing left to compile
     assert_eq!(
-        handle.db.get_next_sql_compilation("v0").await.unwrap(),
+        handle
+            .db
+            .get_next_sql_compilation("v0", worker_id, total_workers)
+            .await
+            .unwrap(),
         None
     );
     assert_eq!(
-        handle.db.get_next_rust_compilation("v0").await.unwrap(),
+        handle
+            .db
+            .get_next_rust_compilation("v0", worker_id, total_workers)
+            .await
+            .unwrap(),
         None
     );
 }
@@ -1419,7 +1471,7 @@ async fn pipeline_deployment() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
-                dataflow: serde_json::Value::Null,
+                dataflow: None,
             })
             .unwrap(),
         )
@@ -1472,6 +1524,7 @@ async fn pipeline_deployment() {
             tenant_id,
             "example1",
             RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::default(),
         )
         .await
         .unwrap();
@@ -1485,8 +1538,7 @@ async fn pipeline_deployment() {
             serde_json::to_value(generate_pipeline_config(
                 pipeline1.id,
                 &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
-                &BTreeMap::default(),
-                &BTreeMap::default(),
+                &ProgramInfo::default(),
             ))
             .unwrap(),
         )
@@ -1501,7 +1553,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Initializing,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(""),
                 runtime_desired_status: RuntimeDesiredStatus::Paused,
             },
         )
@@ -1516,7 +1568,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Paused,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(""),
                 runtime_desired_status: RuntimeDesiredStatus::Paused,
             },
         )
@@ -1531,7 +1583,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Paused,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(""),
                 runtime_desired_status: RuntimeDesiredStatus::Running,
             },
         )
@@ -1546,7 +1598,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Paused,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(""),
                 runtime_desired_status: RuntimeDesiredStatus::Running,
             },
         )
@@ -1561,7 +1613,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Running,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(""),
                 runtime_desired_status: RuntimeDesiredStatus::Running,
             },
         )
@@ -1594,6 +1646,7 @@ async fn pipeline_deployment() {
             tenant_id,
             "example1",
             RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::default(),
         )
         .await
         .unwrap();
@@ -1607,8 +1660,7 @@ async fn pipeline_deployment() {
             serde_json::to_value(generate_pipeline_config(
                 pipeline1.id,
                 &serde_json::from_value(pipeline1.runtime_config).unwrap(),
-                &BTreeMap::default(),
-                &BTreeMap::default(),
+                &ProgramInfo::default(),
             ))
             .unwrap(),
         )
@@ -1623,7 +1675,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Initializing,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(""),
                 runtime_desired_status: RuntimeDesiredStatus::Paused,
             },
         )
@@ -1638,7 +1690,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Paused,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(""),
                 runtime_desired_status: RuntimeDesiredStatus::Paused,
             },
         )
@@ -1719,7 +1771,7 @@ async fn pipeline_provision_version_guard() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
-                dataflow: serde_json::Value::Null,
+                dataflow: None,
             })
             .unwrap(),
         )
@@ -1756,6 +1808,7 @@ async fn pipeline_provision_version_guard() {
             &None,
             &None,
             "v0",
+            false,
             &Some(
                 serde_json::to_value(RuntimeConfig {
                     workers: 10,
@@ -1799,8 +1852,7 @@ async fn pipeline_provision_version_guard() {
                   serde_json::to_value(generate_pipeline_config(
                       pipeline.id,
                       &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
-                      &BTreeMap::default(),
-                      &BTreeMap::default(),
+                      &ProgramInfo::default(),
                   )).unwrap(),
               )
               .await.unwrap_err(),
@@ -1809,7 +1861,7 @@ async fn pipeline_provision_version_guard() {
         handle.db
               .transit_deployment_resources_status_to_provisioned(tenant_id, pipeline.id, Version(1), "location1", ExtendedRuntimeStatus {
             runtime_status: RuntimeStatus::Initializing,
-            runtime_status_details: "".to_string(),
+            runtime_status_details: json!(""),
             runtime_desired_status: RuntimeDesiredStatus::Paused,
         })
               .await.unwrap_err(),
@@ -1819,7 +1871,7 @@ async fn pipeline_provision_version_guard() {
         handle.db
               .transit_deployment_resources_status_to_provisioned(tenant_id, pipeline.id, Version(1), "location1", ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Paused,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(""),
                 runtime_desired_status: RuntimeDesiredStatus::Paused,
         })
               .await.unwrap_err(),
@@ -1829,7 +1881,7 @@ async fn pipeline_provision_version_guard() {
         handle.db
               .transit_deployment_resources_status_to_provisioned(tenant_id, pipeline.id, Version(1), "location1", ExtendedRuntimeStatus {
             runtime_status: RuntimeStatus::Paused,
-            runtime_status_details: "".to_string(),
+            runtime_status_details: json!(""),
             runtime_desired_status: RuntimeDesiredStatus::Paused,
         })
               .await.unwrap_err(),
@@ -1859,8 +1911,7 @@ async fn pipeline_provision_version_guard() {
             serde_json::to_value(generate_pipeline_config(
                 pipeline.id,
                 &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
-                &BTreeMap::default(),
-                &BTreeMap::default(),
+                &ProgramInfo::default(),
             ))
             .unwrap(),
         )
@@ -1910,6 +1961,7 @@ enum StorageAction {
         #[proptest(strategy = "limited_uuid()")] Uuid,
         #[proptest(strategy = "limited_pipeline_name()")] String,
         #[proptest(strategy = "limited_platform_version()")] String,
+        bool,
         #[proptest(strategy = "limited_pipeline_descr()")] PipelineDescr,
     ),
     UpdatePipeline(
@@ -1918,6 +1970,7 @@ enum StorageAction {
         #[proptest(strategy = "limited_option_pipeline_name()")] Option<String>,
         Option<String>,
         #[proptest(strategy = "limited_platform_version()")] String,
+        bool,
         #[proptest(strategy = "limited_option_runtime_config()")] Option<serde_json::Value>,
         Option<String>,
         Option<String>,
@@ -2417,16 +2470,16 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.new_pipeline(tenant_id, new_id, &platform_version, pipeline_descr.clone()).await;
                                 check_response_pipeline(i, model_response, impl_response);
                             }
-                            StorageAction::NewOrUpdatePipeline(tenant_id, new_id, original_name, platform_version, pipeline_descr) => {
+                            StorageAction::NewOrUpdatePipeline(tenant_id, new_id, original_name, platform_version, bump_platform_version,pipeline_descr) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, pipeline_descr.clone()).await;
-                                let impl_response = handle.db.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, pipeline_descr.clone()).await;
+                                let model_response = model.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, bump_platform_version, pipeline_descr.clone()).await;
+                                let impl_response = handle.db.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, bump_platform_version, pipeline_descr.clone()).await;
                                 check_response_pipeline_with_created(i, model_response, impl_response);
                             }
-                            StorageAction::UpdatePipeline(tenant_id, original_name, name, description, platform_version, runtime_config, program_code, udf_rust, udf_toml, program_config) => {
+                            StorageAction::UpdatePipeline(tenant_id, original_name, name, description, platform_version, bump_platform_version, runtime_config, program_code, udf_rust, udf_toml, program_config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
-                                let impl_response = handle.db.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
+                                let model_response = model.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, bump_platform_version, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
+                                let impl_response = handle.db.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, bump_platform_version, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
                                 check_response_pipeline(i, model_response, impl_response);
                             }
                             StorageAction::DeletePipeline(tenant_id, pipeline_name) => {
@@ -2485,8 +2538,8 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::SetDeploymentResourcesDesiredStatusProvisioned(tenant_id, pipeline_name, initial) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial).await;
-                                let impl_response = handle.db.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial).await;
+                                let model_response = model.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial, BootstrapPolicy::default()).await;
+                                let impl_response = handle.db.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial, BootstrapPolicy::default()).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::SetDeploymentResourcesDesiredStatusStoppedIfNotProvisioned(tenant_id, pipeline_name) => {
@@ -2548,23 +2601,23 @@ fn db_impl_behaves_like_model() {
                                 check_response_pipelines_for_monitoring_with_tenant_id(i, model_response, impl_response);
                             }
                             StorageAction::ClearOngoingSqlCompilation(platform_version) => {
-                                let model_response = model.clear_ongoing_sql_compilation(&platform_version).await;
-                                let impl_response = handle.db.clear_ongoing_sql_compilation(&platform_version).await;
+                                let model_response = model.clear_ongoing_sql_compilation_for_worker(&platform_version, 0, 1).await;
+                                let impl_response = handle.db.clear_ongoing_sql_compilation_for_worker(&platform_version, 0, 1).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::GetNextSqlCompilation(platform_version) => {
-                                let model_response = model.get_next_sql_compilation(&platform_version).await;
-                                let impl_response = handle.db.get_next_sql_compilation(&platform_version).await;
+                                let model_response = model.get_next_sql_compilation(&platform_version, 0, 1).await;
+                                let impl_response = handle.db.get_next_sql_compilation(&platform_version, 0, 1).await;
                                 check_response_optional_pipeline_with_tenant_id(i, model_response, impl_response);
                             }
                             StorageAction::ClearOngoingRustCompilation(platform_version) => {
-                                let model_response = model.clear_ongoing_rust_compilation(&platform_version).await;
-                                let impl_response = handle.db.clear_ongoing_rust_compilation(&platform_version).await;
+                                let model_response = model.clear_ongoing_rust_compilation_for_worker(&platform_version, 0, 1).await;
+                                let impl_response = handle.db.clear_ongoing_rust_compilation_for_worker(&platform_version, 0, 1).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::GetNextRustCompilation(platform_version) => {
-                                let model_response = model.get_next_rust_compilation(&platform_version).await;
-                                let impl_response = handle.db.get_next_rust_compilation(&platform_version).await;
+                                let model_response = model.get_next_rust_compilation(&platform_version, 0, 1).await;
+                                let impl_response = handle.db.get_next_rust_compilation(&platform_version, 0, 1).await;
                                 check_response_optional_pipeline_with_tenant_id(i, model_response, impl_response);
                             }
                             StorageAction::ListPipelineProgramsAcrossAllTenants => {
@@ -2603,6 +2656,7 @@ trait ModelHelpers {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
+        bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
@@ -2623,6 +2677,7 @@ impl ModelHelpers for Mutex<DbModel> {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
+        bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
@@ -2759,11 +2814,10 @@ impl ModelHelpers for Mutex<DbModel> {
             }
             pipeline.description = description.clone();
         }
-        if *platform_version != pipeline.platform_version {
+        if *platform_version != pipeline.platform_version && bump_platform_version {
             version_increment = true;
             program_version_increment = true;
         }
-        pipeline.platform_version = platform_version.to_string();
         if let Some(runtime_config) = runtime_config {
             if *runtime_config != pipeline.runtime_config {
                 version_increment = true;
@@ -2821,6 +2875,8 @@ impl ModelHelpers for Mutex<DbModel> {
             pipeline.program_info = None;
             pipeline.program_binary_source_checksum = None;
             pipeline.program_binary_integrity_checksum = None;
+
+            pipeline.platform_version = platform_version.to_string();
         }
 
         // Insert into state (will overwrite)
@@ -2845,6 +2901,7 @@ fn convert_descriptor_to_monitoring(
         created_at: pipeline.created_at,
         version: pipeline.version,
         platform_version: pipeline.platform_version.clone(),
+        program_config: pipeline.program_config.clone(),
         program_version: pipeline.program_version,
         program_status: pipeline.program_status,
         program_status_since: pipeline.program_status_since,
@@ -2860,8 +2917,10 @@ fn convert_descriptor_to_monitoring(
         deployment_resources_desired_status_since: pipeline
             .deployment_resources_desired_status_since,
         deployment_runtime_status: pipeline.deployment_runtime_status,
+        deployment_runtime_status_details: pipeline.deployment_runtime_status_details,
         deployment_runtime_status_since: pipeline.deployment_runtime_status_since,
         deployment_runtime_desired_status: pipeline.deployment_runtime_desired_status,
+        bootstrap_policy: pipeline.bootstrap_policy,
         deployment_runtime_desired_status_since: pipeline.deployment_runtime_desired_status_since,
     }
 }
@@ -3229,9 +3288,11 @@ impl Storage for Mutex<DbModel> {
             deployment_resources_desired_status: ResourcesDesiredStatus::Stopped,
             deployment_resources_desired_status_since: now,
             deployment_runtime_status: None,
+            deployment_runtime_status_details: None,
             deployment_runtime_status_since: None,
             deployment_runtime_desired_status: None,
             deployment_runtime_desired_status_since: None,
+            bootstrap_policy: None,
         };
 
         // Insert into state
@@ -3249,6 +3310,7 @@ impl Storage for Mutex<DbModel> {
         new_id: Uuid,
         original_name: &str,
         platform_version: &str,
+        bump_platform_version: bool,
         pipeline: PipelineDescr,
     ) -> Result<(bool, ExtendedPipelineDescr), DBError> {
         match self.get_pipeline(tenant_id, original_name).await {
@@ -3260,6 +3322,7 @@ impl Storage for Mutex<DbModel> {
                     &Some(pipeline.name),
                     &Some(pipeline.description),
                     platform_version,
+                    bump_platform_version,
                     &Some(pipeline.runtime_config),
                     &Some(pipeline.program_code),
                     &Some(pipeline.udf_rust),
@@ -3291,6 +3354,7 @@ impl Storage for Mutex<DbModel> {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
+        bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
@@ -3304,6 +3368,7 @@ impl Storage for Mutex<DbModel> {
             name,
             description,
             platform_version,
+            bump_platform_version,
             runtime_config,
             program_code,
             udf_rust,
@@ -3311,6 +3376,21 @@ impl Storage for Mutex<DbModel> {
             program_config,
         )
         .await
+    }
+
+    async fn testing_force_update_platform_version(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        new_platform_version: &str,
+    ) -> Result<(), DBError> {
+        let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
+        pipeline.platform_version = new_platform_version.to_string();
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn delete_pipeline(
@@ -3565,6 +3645,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_name: &str,
         initial: RuntimeDesiredStatus,
+        bootstrap_policy: BootstrapPolicy,
     ) -> Result<PipelineId, DBError> {
         // Validate
         let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
@@ -3598,6 +3679,7 @@ impl Storage for Mutex<DbModel> {
 
         // Apply changes: update
         pipeline.deployment_initial = Some(initial);
+        pipeline.bootstrap_policy = Some(bootstrap_policy);
         pipeline.deployment_resources_desired_status = new_resources_desired_status;
         pipeline.deployment_resources_desired_status_since = Utc::now();
         self.lock()
@@ -3630,6 +3712,7 @@ impl Storage for Mutex<DbModel> {
             }
             pipeline.deployment_resources_desired_status = new_resources_desired_status;
             pipeline.deployment_resources_desired_status_since = Utc::now();
+            pipeline.bootstrap_policy = None;
             self.lock()
                 .await
                 .pipelines
@@ -3662,6 +3745,7 @@ impl Storage for Mutex<DbModel> {
         }
         pipeline.deployment_resources_desired_status = new_resources_desired_status;
         pipeline.deployment_resources_desired_status_since = Utc::now();
+        pipeline.bootstrap_policy = None;
         self.lock()
             .await
             .pipelines
@@ -3782,6 +3866,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_runtime_status_since = None;
         pipeline.deployment_runtime_desired_status = None;
         pipeline.deployment_runtime_desired_status_since = None;
+        pipeline.bootstrap_policy = None;
         self.lock()
             .await
             .pipelines
@@ -3910,11 +3995,21 @@ impl Storage for Mutex<DbModel> {
         Ok(result)
     }
 
-    async fn clear_ongoing_sql_compilation(&self, platform_version: &str) -> Result<(), DBError> {
+    async fn clear_ongoing_sql_compilation_for_worker(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<(), DBError> {
         let pipelines = self
             .list_pipelines_across_all_tenants_for_monitoring()
             .await?;
         for (tid, pipeline) in pipelines {
+            // Skip pipelines not assigned to this worker
+            if !is_pipeline_assigned_to_worker(pipeline.id, worker_id as u64, total_workers as u64)
+            {
+                continue;
+            }
             if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
                 if pipeline.platform_version == platform_version {
                     if pipeline.program_status == ProgramStatus::CompilingSql {
@@ -3935,6 +4030,67 @@ impl Storage for Mutex<DbModel> {
                         &None,
                         &None,
                         platform_version,
+                        true,
+                        &None,
+                        &None,
+                        &None,
+                        &None,
+                        &None,
+                    )
+                    .await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn clear_ongoing_rust_compilation_for_worker(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<(), DBError> {
+        let pipelines = self
+            .list_pipelines_across_all_tenants_for_monitoring()
+            .await?;
+        for (tid, pipeline) in pipelines {
+            // Skip pipelines not assigned to this worker
+            if !is_pipeline_assigned_to_worker(pipeline.id, worker_id as u64, total_workers as u64)
+            {
+                continue;
+            }
+            if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
+                if pipeline.platform_version == platform_version {
+                    if pipeline.program_status == ProgramStatus::CompilingRust {
+                        let pipeline_complete = self
+                            .get_pipeline_by_id(tid, pipeline.id)
+                            .await
+                            .expect("Pipeline should already exist");
+                        self.transit_program_status_to_sql_compiled(
+                            tid,
+                            pipeline.id,
+                            pipeline.program_version,
+                            &pipeline_complete
+                                .program_error
+                                .sql_compilation
+                                .expect("Pipeline should have already had its SQL compiled"),
+                            &pipeline_complete
+                                .program_info
+                                .expect("Pipeline should have already had its SQL compiled"),
+                        )
+                        .await?;
+                    }
+                } else if pipeline.program_status == ProgramStatus::SqlCompiled
+                    || pipeline.program_status == ProgramStatus::CompilingRust
+                {
+                    self.validate_and_apply_pipeline_update(
+                        true,
+                        tid,
+                        &pipeline.name,
+                        &None,
+                        &None,
+                        platform_version,
+                        true,
                         &None,
                         &None,
                         &None,
@@ -3951,6 +4107,8 @@ impl Storage for Mutex<DbModel> {
     async fn get_next_sql_compilation(
         &self,
         platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
         let mut pipelines: Vec<(TenantId, ExtendedPipelineDescr)> = self
             .lock()
@@ -3961,6 +4119,7 @@ impl Storage for Mutex<DbModel> {
                 p.deployment_resources_status == ResourcesStatus::Stopped
                     && p.program_status == ProgramStatus::Pending
                     && p.platform_version == platform_version
+                    && is_pipeline_assigned_to_worker(p.id, worker_id as u64, total_workers as u64)
             })
             .map(|((tid, _), pipeline)| (*tid, pipeline.clone()))
             .collect();
@@ -3974,50 +4133,11 @@ impl Storage for Mutex<DbModel> {
         Ok(Some((chosen.0, chosen.1)))
     }
 
-    async fn clear_ongoing_rust_compilation(&self, platform_version: &str) -> Result<(), DBError> {
-        let pipelines = self
-            .list_pipelines_across_all_tenants_for_monitoring()
-            .await?;
-        for (tid, pipeline) in pipelines {
-            if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
-                if pipeline.platform_version == platform_version {
-                    if pipeline.program_status == ProgramStatus::CompilingRust {
-                        let pipeline_complete = self.get_pipeline_by_id(tid, pipeline.id).await?;
-                        self.transit_program_status_to_sql_compiled(
-                            tid,
-                            pipeline.id,
-                            pipeline.program_version,
-                            &pipeline_complete.program_error.sql_compilation.unwrap(),
-                            &pipeline_complete.program_info.unwrap(),
-                        )
-                        .await?;
-                    }
-                } else if pipeline.program_status == ProgramStatus::SqlCompiled
-                    || pipeline.program_status == ProgramStatus::CompilingRust
-                {
-                    self.validate_and_apply_pipeline_update(
-                        true,
-                        tid,
-                        &pipeline.name,
-                        &None,
-                        &None,
-                        platform_version,
-                        &None,
-                        &None,
-                        &None,
-                        &None,
-                        &None,
-                    )
-                    .await?;
-                }
-            }
-        }
-        Ok(())
-    }
-
     async fn get_next_rust_compilation(
         &self,
         platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
         let mut pipelines: Vec<(TenantId, ExtendedPipelineDescr)> = self
             .lock()
@@ -4028,6 +4148,7 @@ impl Storage for Mutex<DbModel> {
                 p.deployment_resources_status == ResourcesStatus::Stopped
                     && p.program_status == ProgramStatus::SqlCompiled
                     && p.platform_version == platform_version
+                    && is_pipeline_assigned_to_worker(p.id, worker_id as u64, total_workers as u64)
             })
             .map(|((tid, _), pipeline)| (*tid, pipeline.clone()))
             .collect();
@@ -4043,19 +4164,22 @@ impl Storage for Mutex<DbModel> {
 
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<Vec<(PipelineId, Version, String, String)>, DBError> {
-        let mut checksums: Vec<(PipelineId, Version, String, String)> = self
+    ) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError> {
+        let mut checksums: Vec<(PipelineId, Version, Option<String>, Option<String>)> = self
             .lock()
             .await
             .pipelines
             .values()
-            .filter(|pipeline| pipeline.program_status == ProgramStatus::Success)
+            .filter(|pipeline| {
+                pipeline.program_status == ProgramStatus::Success
+                    || pipeline.program_status == ProgramStatus::CompilingRust
+            })
             .map(|pipeline| {
                 (
                     pipeline.id,
                     pipeline.program_version,
-                    pipeline.program_binary_source_checksum.clone().unwrap(),
-                    pipeline.program_binary_integrity_checksum.clone().unwrap(),
+                    pipeline.program_binary_source_checksum.clone(),
+                    pipeline.program_binary_integrity_checksum.clone(),
                 )
             })
             .collect();

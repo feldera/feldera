@@ -2,3 +2,5 @@ numpy==2.2.0
 pandas==2.2.3
 pyarrow==17.0.0
 pyiceberg[s3fs,glue,sql-sqlite]==0.8.1
+# Transitive dependency via pyiceberg.
+pydantic==2.11.10

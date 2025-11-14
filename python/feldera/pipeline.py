@@ -7,11 +7,13 @@ import pandas
 from uuid import UUID
 
 from typing import List, Dict, Callable, Optional, Generator, Mapping, Any
+from threading import Event
 from collections import deque
-from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
 from feldera.enums import (
+    BootstrapPolicy,
+    CompletionTokenStatus,
     PipelineFieldSelector,
     PipelineStatus,
     ProgramStatus,
@@ -26,7 +28,7 @@ from feldera.enums import (
 )
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.feldera_client import FelderaClient
-from feldera._callback_runner import _CallbackRunnerInstruction, CallbackRunner
+from feldera._callback_runner import CallbackRunner
 from feldera.output_handler import OutputHandler
 from feldera._helpers import ensure_dataframe_has_columns, chunk_dataframe
 from feldera.rest.sql_table import SQLTable
@@ -39,27 +41,12 @@ class Pipeline:
     def __init__(self, client: FelderaClient):
         self.client: FelderaClient = client
         self._inner: InnerPipeline | None = None
-        self.views_tx: List[Dict[str, Queue]] = []
 
     @staticmethod
     def _from_inner(inner: InnerPipeline, client: FelderaClient) -> "Pipeline":
         pipeline = Pipeline(client)
         pipeline._inner = inner
         return pipeline
-
-    def __setup_output_listeners(self):
-        """
-        Internal function used to set up the output listeners.
-
-        :meta private:
-        """
-
-        for view_queue in self.views_tx:
-            for view_name, queue in view_queue.items():
-                # sends a message to the callback runner to start listening
-                queue.put(_CallbackRunnerInstruction.PipelineStarted)
-                # block until the callback runner is ready
-                queue.join()
 
     def refresh(self, field_selector: PipelineFieldSelector):
         """
@@ -86,6 +73,30 @@ class Pipeline:
                 return PipelineStatus.NOT_FOUND
             else:
                 raise err
+
+    def wait_for_status(
+        self, expected_status: PipelineStatus, timeout: Optional[int] = None
+    ) -> None:
+        """
+        Wait for the pipeline to reach the specified status.
+
+        :param expected_status: The status to wait for
+        :param timeout: Maximum time to wait in seconds. If None, waits forever (default: None)
+        :raises TimeoutError: If the expected status is not reached within the timeout
+        """
+        start_time = time.time()
+
+        while True:
+            current_status = self.status()
+            if current_status == expected_status:
+                return
+
+            if timeout is not None and time.time() - start_time >= timeout:
+                raise TimeoutError(
+                    f"Pipeline did not reach {expected_status.name} status within {timeout} seconds"
+                )
+
+            time.sleep(1)
 
     def stats(self) -> PipelineStatistics:
         """Gets the pipeline metrics and performance counters."""
@@ -237,23 +248,21 @@ class Pipeline:
     def listen(self, view_name: str) -> OutputHandler:
         """
         Follow the change stream (i.e., the output) of the provided view.
-        Returns an output handler to read the changes.
+        Returns an output handle to read the changes.
 
-        When the pipeline is stopped, these listeners are dropped.
+        When the pipeline is stopped, the handle is dropped.
 
-        You must call this method before starting the pipeline to get the entire output of the view.
-        If this method is called once the pipeline has started, you will only get the output from that point onwards.
+        The handle will only receive changes from the point in time when the listener is created.
+        In order to receive all changes since the pipeline started, you can create the pipeline in the `PAUSED` state
+        using :meth:`start_paused`, attach listeners and unpause the pipeline using :meth:`resume`.
 
         :param view_name: The name of the view to listen to.
         """
 
-        queue: Optional[Queue] = None
-
         if self.status() not in [PipelineStatus.PAUSED, PipelineStatus.RUNNING]:
-            queue = Queue(maxsize=1)
-            self.views_tx.append({view_name: queue})
+            raise RuntimeError("Pipeline must be running or paused to listen to output")
 
-        handler = OutputHandler(self.client, self.name, view_name, queue)
+        handler = OutputHandler(self.client, self.name, view_name)
         handler.start()
 
         return handler
@@ -264,8 +273,9 @@ class Pipeline:
         """
         Run the given callback on each chunk of the output of the specified view.
 
-        You must call this method before starting the pipeline to operate on the entire output.
-        You can call this method after the pipeline has started, but you will only get the output from that point onwards.
+        The callback will only receive changes from the point in time when the listener is created.
+        In order to receive all changes since the pipeline started, you can create the pipeline in the `PAUSED` state
+        using :meth:`start_paused`, attach listeners and unpause the pipeline using :meth:`resume`.
 
         :param view_name: The name of the view.
         :param callback: The callback to run on each chunk. The callback should take two arguments:
@@ -283,17 +293,18 @@ class Pipeline:
 
         """
 
-        queue: Optional[Queue] = None
-
         if self.status() not in [PipelineStatus.RUNNING, PipelineStatus.PAUSED]:
-            queue = Queue(maxsize=1)
-            self.views_tx.append({view_name: queue})
+            raise RuntimeError("Pipeline must be running or paused to listen to output")
 
-        handler = CallbackRunner(self.client, self.name, view_name, callback, queue)
+        event = Event()
+        handler = CallbackRunner(
+            self.client, self.name, view_name, callback, lambda exception: None, event
+        )
         handler.start()
+        event.wait()
 
     def wait_for_completion(
-        self, force_stop: bool = False, timeout_s: Optional[float] = None
+        self, force_stop: bool = False, timeout_s: float | None = None
     ):
         """
         Block until the pipeline has completed processing all input records.
@@ -321,6 +332,7 @@ class Pipeline:
             PipelineStatus.RUNNING,
             PipelineStatus.INITIALIZING,
             PipelineStatus.PROVISIONING,
+            PipelineStatus.BOOTSTRAPPING,
         ]:
             raise RuntimeError("Pipeline must be running to wait for completion")
 
@@ -365,65 +377,10 @@ class Pipeline:
 
         return self.stats().global_metrics.pipeline_complete
 
-    def start(self, wait: bool = True, timeout_s: Optional[float] = None):
-        """
-        .. _start:
-
-        Starts this pipeline.
-
-        - The pipeline must be in STOPPED state to start.
-        - If the pipeline is in any other state, an error will be raised.
-        - If the pipeline is in PAUSED state, use `.meth:resume` instead.
-
-        :param timeout_s: The maximum time (in seconds) to wait for the
-            pipeline to start.
-        :param wait: Set True to wait for the pipeline to start. True by default
-
-        :raises RuntimeError: If the pipeline is not in STOPPED state.
-        """
-
-        status = self.status()
-        if status != PipelineStatus.STOPPED:
-            raise RuntimeError(
-                f"""Cannot start pipeline '{self.name}' in state \
-'{str(status.name)}'. The pipeline must be in STOPPED state before it can be \
-started. You can either stop the pipeline using the `Pipeline.stop()` \
-method or use `Pipeline.resume()` to resume a paused pipeline."""
-            )
-
-        if not wait:
-            if len(self.views_tx) > 0:
-                raise ValueError(
-                    "cannot start with 'wait=False' when output listeners are configured. Try setting 'wait=True'."
-                )
-
-            self.client.start_pipeline(self.name, wait=wait)
-
-            return
-
-        self.client.start_pipeline_as_paused(self.name, wait=wait, timeout_s=timeout_s)
-        self.__setup_output_listeners()
-        self.resume(timeout_s=timeout_s)
-
-    def restart(self, timeout_s: Optional[float] = None):
-        """
-        Restarts the pipeline.
-
-        This method forcibly **STOPS** the pipeline regardless of its current
-        state and then starts it again. No checkpoints are made when stopping
-        the pipeline.
-
-        :param timeout_s: The maximum time (in seconds) to wait for the
-            pipeline to restart.
-        """
-
-        self.stop(force=True, timeout_s=timeout_s)
-        self.start(timeout_s=timeout_s)
-
     def wait_for_idle(
         self,
         idle_interval_s: float = 5.0,
-        timeout_s: float = 600.0,
+        timeout_s: float | None = None,
         poll_interval_s: float = 0.2,
     ):
         """
@@ -443,12 +400,12 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
         :raises RuntimeError: If the metrics are missing or the timeout was
             reached.
         """
-        if idle_interval_s > timeout_s:
+        if timeout_s is not None and idle_interval_s > timeout_s:
             raise ValueError(
                 f"idle interval ({idle_interval_s}s) cannot be larger than"
                 f" timeout ({timeout_s}s)"
             )
-        if poll_interval_s > timeout_s:
+        if timeout_s is not None and poll_interval_s > timeout_s:
             raise ValueError(
                 f"poll interval ({poll_interval_s}s) cannot be larger than"
                 f" timeout ({timeout_s}s)"
@@ -494,11 +451,13 @@ metrics"""
                 return
 
             # Timeout
-            if now_s - start_time_s >= timeout_s:
+            if timeout_s is not None and now_s - start_time_s >= timeout_s:
                 raise RuntimeError(f"waiting for idle reached timeout ({timeout_s}s)")
             time.sleep(poll_interval_s)
 
-    def activate(self, wait: bool = True, timeout_s: Optional[float] = None):
+    def activate(
+        self, wait: bool = True, timeout_s: Optional[float] = None
+    ) -> Optional[PipelineStatus]:
         """
         Activates the pipeline when starting from STANDBY mode. Only applicable
         when the pipeline is starting from a checkpoint in object store.
@@ -509,21 +468,82 @@ metrics"""
             pipeline to pause.
         """
 
-        self.client.activate_pipeline(self.name, wait=wait, timeout_s=timeout_s)
+        return self.client.activate_pipeline(self.name, wait=wait, timeout_s=timeout_s)
 
-    def start_paused(self, wait: bool = True, timeout_s: Optional[float] = None):
+    def start(
+        self,
+        bootstrap_policy: Optional[BootstrapPolicy] = None,
+        wait: bool = True,
+        timeout_s: Optional[float] = None,
+    ):
+        """
+        .. _start:
+
+        Starts this pipeline.
+
+        - The pipeline must be in STOPPED state to start.
+        - If the pipeline is in any other state, an error will be raised.
+        - If the pipeline is in PAUSED state, use `.meth:resume` instead.
+
+        :param bootstrap_policy: The bootstrap policy to use.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to start.
+        :param wait: Set True to wait for the pipeline to start. True by default
+
+        :raises RuntimeError: If the pipeline is not in STOPPED state.
+        """
+
+        self.client.start_pipeline(
+            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+        )
+
+    def start_paused(
+        self,
+        bootstrap_policy: Optional[BootstrapPolicy] = None,
+        wait: bool = True,
+        timeout_s: Optional[float] = None,
+    ):
         """
         Starts the pipeline in the paused state.
         """
 
-        self.client.start_pipeline_as_paused(self.name, wait=wait, timeout_s=timeout_s)
+        return self.client.start_pipeline_as_paused(
+            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+        )
 
-    def start_standby(self, wait: bool = True, timeout_s: Optional[float] = None):
+    def start_standby(
+        self,
+        bootstrap_policy: Optional[BootstrapPolicy] = None,
+        wait: bool = True,
+        timeout_s: Optional[float] = None,
+    ):
         """
         Starts the pipeline in the standby state.
         """
 
-        self.client.start_pipeline_as_standby(self.name, wait=wait, timeout_s=timeout_s)
+        self.client.start_pipeline_as_standby(
+            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+        )
+
+    def restart(
+        self,
+        bootstrap_policy: Optional[BootstrapPolicy] = None,
+        timeout_s: Optional[float] = None,
+    ):
+        """
+        Restarts the pipeline.
+
+        This method forcibly **STOPS** the pipeline regardless of its current
+        state and then starts it again. No checkpoints are made when stopping
+        the pipeline.
+
+        :param bootstrap_policy: The bootstrap policy to use.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to restart.
+        """
+
+        self.stop(force=True, timeout_s=timeout_s)
+        self.start(bootstrap_policy=bootstrap_policy, timeout_s=timeout_s)
 
     def pause(self, wait: bool = True, timeout_s: Optional[float] = None):
         """
@@ -554,23 +574,21 @@ metrics"""
             pipeline to stop.
         """
 
-        if wait:
-            for view_queue in self.views_tx:
-                for _, queue in view_queue.items():
-                    # sends a message to the callback runner to stop listening
-                    queue.put(_CallbackRunnerInstruction.RanToCompletion)
-
-            if len(self.views_tx) > 0:
-                while self.views_tx:
-                    view = self.views_tx.pop()
-                    for view_name, queue in view.items():
-                        # block until the callback runner has been stopped
-                        queue.join()
-
-        time.sleep(3)
         self.client.stop_pipeline(
             self.name, force=force, wait=wait, timeout_s=timeout_s
         )
+
+    def approve(self):
+        """
+        Approves the pipeline to proceed with bootstrapping.
+
+        This method is used when a pipeline has been started with
+        `bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL` and is currently in the
+        AWAITINGAPPROVAL state. The pipeline will wait for explicit user approval
+        before proceeding with the bootstrapping process.
+        """
+
+        self.client.approve_pipeline(self.name)
 
     def resume(self, wait: bool = True, timeout_s: Optional[float] = None):
         """
@@ -682,7 +700,18 @@ metrics"""
                 err.message = f"Pipeline with name {name} not found"
                 raise err
 
-    def checkpoint(self, wait: bool = False, timeout_s=300) -> int:
+    @staticmethod
+    def all(client: FelderaClient) -> List["Pipeline"]:
+        """
+        Get all pipelines.
+
+        :param client: The FelderaClient instance.
+        :return: A list of Pipeline objects.
+        """
+
+        return [Pipeline._from_inner(p, client) for p in client.pipelines()]
+
+    def checkpoint(self, wait: bool = False, timeout_s: Optional[float] = None) -> int:
         """
         Checkpoints this pipeline.
 
@@ -704,7 +733,7 @@ metrics"""
 
         while True:
             elapsed = time.monotonic() - start
-            if elapsed > timeout_s:
+            if timeout_s is not None and elapsed > timeout_s:
                 raise TimeoutError(
                     f"""timeout ({timeout_s}s) reached while waiting for \
 pipeline '{self.name}' to make checkpoint '{seq}'"""
@@ -740,7 +769,9 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
         if seq < success:
             return CheckpointStatus.Unknown
 
-    def sync_checkpoint(self, wait: bool = False, timeout_s=300) -> str:
+    def sync_checkpoint(
+        self, wait: bool = False, timeout_s: Optional[float] = None
+    ) -> str:
         """
         Syncs this checkpoint to object store.
 
@@ -762,7 +793,7 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
 
         while True:
             elapsed = time.monotonic() - start
-            if elapsed > timeout_s:
+            if timeout_s is not None and elapsed > timeout_s:
                 raise TimeoutError(
                     f"""timeout ({timeout_s}s) reached while waiting for \
 pipeline '{self.name}' to sync checkpoint '{uuid}'"""
@@ -986,6 +1017,35 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             description=description,
         )
 
+    def update_runtime(self):
+        """
+        Recompile a pipeline with the Feldera runtime version included in the
+        currently installed Feldera platform.
+
+        Use this endpoint after upgrading Feldera to rebuild pipelines that were
+        compiled with older platform versions. In most cases, recompilation is not
+        required—pipelines compiled with older versions will continue to run on the
+        upgraded platform.
+
+        Situations where recompilation may be necessary:
+        - To benefit from the latest bug fixes and performance optimizations.
+        - When backward-incompatible changes are introduced in Feldera. In this case,
+        attempting to start a pipeline compiled with an unsupported version will
+        result in an error.
+
+        If the pipeline is already compiled with the current platform version,
+        this operation is a no-op.
+
+        Note that recompiling the pipeline with a new platform version may change its
+        query plan. If the modified pipeline is started from an existing checkpoint,
+        it may require bootstrapping parts of its state from scratch.  See Feldera
+        documentation for details on the bootstrapping process.
+
+        :raises FelderaAPIError: If the pipeline is not in a STOPPED state.
+        """
+
+        self.client.update_pipeline_runtime(self._inner.name)
+
     def storage_status(self) -> StorageStatus:
         """
         Return the storage status of the pipeline.
@@ -1006,6 +1066,18 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         self.refresh(PipelineFieldSelector.STATUS)
         return ProgramStatus.from_value(self._inner.program_status)
 
+    def testing_force_update_platform_version(self, platform_version: str):
+        """
+        Used to simulate a pipeline compiled with a different platform version than the one currently in use.
+        This is useful for testing platform upgrade behavior without actually upgrading Feldera.
+
+        This method is only available when Feldera runs with the "testing" unstable feature enabled.
+        """
+
+        self.client.testing_force_update_platform_version(
+            name=self._inner.name, platform_version=platform_version
+        )
+
     def program_status_since(self) -> datetime:
         """
         Return the timestamp when the current program status was set.
@@ -1013,6 +1085,14 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         self.refresh(PipelineFieldSelector.STATUS)
         return datetime.fromisoformat(self._inner.program_status_since)
+
+    def platform_version(self) -> str:
+        """
+        Return the Feldera platform witch which the program was compiled.
+        """
+
+        self.refresh(PipelineFieldSelector.STATUS)
+        return self._inner.platform_version
 
     def udf_rust(self) -> str:
         """
@@ -1183,6 +1263,14 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         self.refresh(PipelineFieldSelector.STATUS)
         return DeploymentRuntimeStatus.from_str(self._inner.deployment_runtime_status)
 
+    def deployment_runtime_status_details(self) -> Optional[dict]:
+        """
+        Return the deployment runtime status details.
+        """
+
+        self.refresh(PipelineFieldSelector.STATUS)
+        return self._inner.deployment_runtime_status_details
+
     def deployment_error(self) -> Mapping[str, Any]:
         """
         Return the deployment error of the pipeline.
@@ -1304,3 +1392,31 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             print(f"Support bundle written to {path}")
 
         return support_bundle_bytes
+
+    def generate_completion_token(self, table_name: str, connector_name: str) -> str:
+        """
+        Returns a completion token that can be passed to :meth:`.Pipeline.completion_token_status` to
+        check whether the pipeline has finished processing all inputs received from the connector before
+        the token was generated.
+        """
+
+        return self.client.generate_completion_token(
+            self.name, table_name, connector_name
+        )
+
+    def completion_token_status(self, token: str) -> CompletionTokenStatus:
+        """
+        Returns the status of the completion token.
+        """
+
+        if self.client.completion_token_processed(self.name, token):
+            return CompletionTokenStatus.COMPLETE
+        else:
+            return CompletionTokenStatus.IN_PROGRESS
+
+    def wait_for_token(self, token: str):
+        """
+        Blocks until the pipeline processes all inputs represented by the completion token.
+        """
+
+        self.client.wait_for_token(self.name, token)

@@ -40,7 +40,9 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.jetbrains.annotations.Contract;
 
 import javax.annotation.Nullable;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -58,6 +60,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 public class Utilities {
     private Utilities() {}
@@ -69,6 +74,24 @@ public class Utilities {
             stackTraceBuilder.append(stackTrace[i].toString()).append("\n");
         }
         return stackTraceBuilder.toString();
+    }
+
+    public static byte[] extractFileFromZip(String zipPath, String targetFileName) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipPath))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.getName().equals(targetFileName)) {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[4096];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        baos.write(buffer, 0, len);
+                    }
+                    return baos.toByteArray();
+                }
+            }
+        }
+        throw new RuntimeException("Could not find file " + targetFileName + " in zip archive");
     }
 
     /** A custom version of assert.  We would like to use assert,
@@ -87,9 +110,9 @@ public class Utilities {
      * @param expression  When this expression is false, this function throws.
      * @param message     Message for exception when expression is false */
     @Contract("false, _ -> fail")
-    public static void enforce(boolean expression, String message) {
+    public static void enforce(boolean expression, Supplier<String> message) {
         if (!expression)
-            throw new InternalCompilerError(message + System.lineSeparator() + getCurrentStackTrace());
+            throw new InternalCompilerError(message.get() + System.lineSeparator() + getCurrentStackTrace());
     }
 
     public static TimestampString roundMillis(TimestampString ts) {
@@ -139,7 +162,7 @@ public class Utilities {
             return;
         boolean success = file.delete();
         if (enforce)
-            Utilities.enforce(success, "Could not delete file " + file.getName());
+            Utilities.enforce(success, () -> "Could not delete file " + file.getName());
     }
 
     public static String getBaseName(String filePath) {
@@ -149,28 +172,27 @@ public class Utilities {
         return (dotIndex == -1) ? fileName : fileName.substring(0, dotIndex);
     }
 
-    /** Escape special characters in a string. */
-    public static String escape(String value) {
+    /** Escape special characters in a string.
+     * @param unicodeBraces If true write Unicode characters as \\u{}, otherwise just \\u */
+    public static String escape(String value, boolean unicodeBraces) {
         StringBuilder builder = new StringBuilder();
         final int length = value.length();
         for (int offset = 0; offset < length; ) {
             final int c = value.codePointAt(offset);
-            if (c == '\'')
-                builder.append("\\'");
-            else if (c == '\\')
-                builder.append("\\\\");
-            else if (c == '\"' )
-                builder.append("\\\"");
-            else if (c == '\r' )
-                builder.append("\\r");
-            else if (c == '\n' )
-                builder.append("\\n");
-            else if (c == '\t' )
-                builder.append("\\t");
+            //if (c == '\'') builder.append("\\'");
+            // else
+            if (c == '\\') builder.append("\\\\");
+            else if (c == '\"' ) builder.append("\\\"");
+            else if (c == '\r' ) builder.append("\\r");
+            else if (c == '\n' ) builder.append("\\n");
+            else if (c == '\t' ) builder.append("\\t");
             else if (c < 32 || c >= 127) {
-                builder.append("\\u{");
+                builder.append("\\u");
+                if (unicodeBraces)
+                    builder.append("{");
                 builder.append(String.format("%04x", c));
-                builder.append("}");
+                if (unicodeBraces)
+                    builder.append("}");
             } else
                 builder.append((char)c);
             offset += Character.charCount(c);
@@ -212,9 +234,10 @@ public class Utilities {
                 .build();
     }
 
-    /** Add double quotes around string and escape symbols that need it. */
-    public static String doubleQuote(String value) {
-         return "\"" + escape(value) + "\"";
+    /** Add double quotes around string and escape symbols that need it.
+     * @param unicodeBraces If true use \\u{} for Unicode, otherwise use \\u. */
+    public static String doubleQuote(String value, boolean unicodeBraces) {
+         return "\"" + escape(value, unicodeBraces) + "\"";
      }
 
     /** Just adds single quotes around a string.  No escaping is performed. */
@@ -317,7 +340,7 @@ public class Utilities {
     public static <T> void removeLast(List<T> data, T expected) {
         T removed = removeLast(data);
         Utilities.enforce(removed.equals(expected),
-                "Unexpected node popped " + removed + " expected " + expected);
+                () -> "Unexpected node popped " + removed + " expected " + expected);
     }
 
     public static <T> T[] arraySlice(T[] data, int start, int endExclusive) {
@@ -516,7 +539,7 @@ public class Utilities {
     public static JsonNode getProperty(JsonNode node, String property) {
         JsonNode prop = node.get(property);
         Utilities.enforce(prop != null,
-                "Node does not have property " + Utilities.singleQuote(property) +
+                () -> "Node does not have property " + Utilities.singleQuote(property) +
                 Utilities.toDepth(node, 1));
         return prop;
     }
@@ -545,5 +568,39 @@ public class Utilities {
         Set<T> result = new HashSet<>(left);
         result.addAll(right);
         return result;
+    }
+
+    static List<String> appendToEach(List<String> list, String suffix) {
+        if (suffix.isEmpty())
+            return list;
+        List<String> result = new ArrayList<>();
+        for (String l: list) {
+            result.add(l + suffix);
+        }
+        return result;
+    }
+
+    /** Given a filename pattern which contains braces (but not ? or *), expand it into multiple filenames */
+    public static List<String> expandBraces(String pattern) {
+        List<String> expansion = new ArrayList<>();
+        expansion.add("");
+        while (true) {
+            int open = pattern.indexOf("{");
+            if (open < 0)
+                return appendToEach(expansion, pattern);
+            String prefix = pattern.substring(0, open);
+            String tail = pattern.substring(open + 1);
+            int close = tail.indexOf("}");
+            if (close < 0)
+                throw new RuntimeException("{} missing close brace");
+            String choices = tail.substring(0, close);
+            String[] split = choices.split(",");
+            List<String> next = new ArrayList<>();
+            for (String s: split) {
+                next.addAll(appendToEach(expansion, prefix + s));
+            }
+            expansion = next;
+            pattern = tail.substring(close + 1);
+        }
     }
 }

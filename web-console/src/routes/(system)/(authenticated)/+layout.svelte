@@ -1,15 +1,15 @@
 <script lang="ts">
   import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
   import type { Snippet } from 'svelte'
-  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import type { LayoutData } from './$types'
   import {
     usePipelineList,
     useRefreshPipelineList
   } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import SvelteKitTopLoader from '$lib/components/common/SvelteKitTopLoader.svelte'
-  import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
-  import ModalDrawer from '$lib/components/layout/ModalDrawer.svelte'
+  import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
+  import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import PipelineList from '$lib/components/pipelines/List.svelte'
@@ -23,16 +23,18 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { ServiceWorkerMarkers } from '$lib/types/serviceWorker'
+  import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
 
   const dialog = useGlobalDialog()
 
   let { children, data }: { children: Snippet; data: LayoutData } = $props()
 
   useRefreshPipelineList()
-  const rightDrawer = useDrawer('right')
+  const rightDrawer = useAdaptiveDrawer('right')
   const isTablet = useIsTablet()
   const { showPipelinesPanel: leftDrawer } = useLayoutSettings()
   const pipelineList = usePipelineList(data.preloaded)
+  const contextDrawer = useContextDrawer()
 
   const systemMessages = useSystemMessages()
   const now = useInterval(() => new Date(), 3600000, 3600000 - (Date.now() % 3600000))
@@ -144,10 +146,11 @@
     {@render children()}
   </div>
   {#if isTablet.current}
-    <ModalDrawer
+    <OverlayDrawer
       width="w-72"
       bind:open={leftDrawer.value}
       side="left"
+      modal={true}
       class="bg-white-dark flex flex-col gap-2 pl-4 pr-1 pt-8"
     >
       <PipelineList
@@ -159,12 +162,13 @@
           leftDrawer.value = false
         }}
       ></PipelineList>
-    </ModalDrawer>
+    </OverlayDrawer>
   {/if}
-  <ModalDrawer
+  <OverlayDrawer
     width="w-72"
     bind:open={rightDrawer.value}
     side="right"
+    modal={true}
     class="bg-white-dark flex flex-col gap-2 p-4"
   >
     <div class="relative my-2 mt-4">
@@ -177,6 +181,21 @@
     </div>
     <BookADemo class="self-center preset-filled-primary-500">Book a demo</BookADemo>
     <NavigationExtras inline></NavigationExtras>
-  </ModalDrawer>
+  </OverlayDrawer>
+  <OverlayDrawer
+    width="w-[100vw] md:w-[50vw] max-w-3xl"
+    side="right"
+    bind:open={() => !!contextDrawer.content, () => (contextDrawer.content = null)}
+    modal={false}
+    class="bg-white-dark overflow-auto p-4 pb-0 scrollbar md:p-6 md:pb-0"
+  >
+    {@render contextDrawer.content?.()}
+  </OverlayDrawer>
 </div>
-<GlobalModal dialog={dialog.dialog} onClose={() => (dialog.dialog = null)}></GlobalModal>
+<GlobalModal
+  dialog={dialog.dialog}
+  onClose={() => {
+    dialog.onclose?.()
+    dialog.dialog = null
+  }}
+></GlobalModal>

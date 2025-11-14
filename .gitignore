@@ -82,3 +82,6 @@ playwright/.cache/
 *.pem
 *.crt
 *.key
+
+# pnpm
+.pnpm-store

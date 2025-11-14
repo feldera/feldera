@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
@@ -30,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.util.Logger;
 
@@ -165,6 +167,11 @@ public class ConstantExpressions extends InnerVisitor {
         resolve.apply(expression);
         if (!resolve.freeVariablesFound)
             this.setConstant(expression);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPType type) {
+        return VisitDecision.STOP;
     }
 
     @Override

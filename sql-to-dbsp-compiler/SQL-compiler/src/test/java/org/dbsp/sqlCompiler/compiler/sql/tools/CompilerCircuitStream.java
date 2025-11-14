@@ -74,7 +74,6 @@ public class CompilerCircuitStream extends CompilerCircuit {
 
     /** Execute some insert/delete statements using HSQLDB and compare the result
      * with the one produced by the circuit.
-     * @param program program that creates the circuit.
      * @param script program that inserts data in tables */
     public void compareDB(String program, String script) throws ClassNotFoundException, SQLException {
         Class.forName("org.hsqldb.jdbcDriver");
@@ -85,6 +84,9 @@ public class CompilerCircuitStream extends CompilerCircuit {
         // not very robust
         String[] stats = program.split(";");
         for (String stat: stats) {
+            if (stat.isBlank())
+                continue;
+            stat = stat.replace("MATERIALIZED", "");
             try (Statement s = connection.createStatement()) {
                 s.execute(stat);
             }
@@ -106,6 +108,10 @@ public class CompilerCircuitStream extends CompilerCircuit {
             s.execute("SHUTDOWN;");
         }
         connection.close();
+    }
+
+    public void compareDB(String script) throws SQLException, ClassNotFoundException {
+        this.compareDB(this.compiler.sources.getWholeProgram(), script);
     }
 
     public void addChange(InputOutputChange ioChange) {

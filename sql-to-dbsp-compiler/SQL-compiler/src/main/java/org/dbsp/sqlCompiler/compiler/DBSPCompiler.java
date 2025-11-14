@@ -191,6 +191,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         ToJsonVisitor toJson = new ToJsonVisitor(
                 this, result, this.options.ioOptions.verbosity, remap);
         toJson.apply(circuit);
+        result.append(",").newline();
+        result.appendJsonLabelAndColon("sources");
+        this.writeSourcesAsJson(result);
         result.newline().decrease().append("}");
     }
 
@@ -217,6 +220,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
         stream.newline().decrease().append("}");
         return result;
+    }
+
+    public void writeSourcesAsJson(IIndentStream stream) {
+        this.sources.writeAsJson(stream);
     }
 
     // Will be overwritten in the start() function.
@@ -437,8 +444,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         for (SqlStatements stat : this.toCompile) {
             try {
                 if (stat.many) {
-                    if (stat.statement.isEmpty())
+                    if (stat.statement.isEmpty()) {
+                        this.sqlToRelCompiler.emptyStatement();
                         continue;
+                    }
                     parsed.addAll(this.sqlToRelCompiler.parseStatements(stat.statement, stat.visible));
                 } else {
                     SqlNode node = this.sqlToRelCompiler.parse(stat.statement, stat.visible);
@@ -672,6 +681,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 if (t instanceof CalciteException ex) {
                     this.messages.reportError(ex);
                     this.rethrow(ex);
+                    handled = true;
+                } else if (t instanceof SqlParseException ex) {
+                    this.messages.reportError(ex);
+                    this.rethrow(e);
                     handled = true;
                 }
                 current = t;

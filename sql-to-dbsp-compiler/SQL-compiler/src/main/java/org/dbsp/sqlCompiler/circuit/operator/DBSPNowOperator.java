@@ -13,14 +13,18 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
 
-/** Operator that generates the NOW() timestamp */
+/** Operator that generates the NOW() timestamp.
+ * There is no equivalent DBSP operator, this is only used during compilation to
+ * represent an input which is connected to a stream containing clock values.
+ * (The compiler option options.ioOptions.nowStream controls how this is implemented). */
 public final class DBSPNowOperator extends DBSPSimpleOperator {
-    // zset!(Tup1::new(now()))
     static DBSPExpression createFunction(CalciteObject node) {
         return new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPApplyExpression(
@@ -29,7 +33,7 @@ public final class DBSPNowOperator extends DBSPSimpleOperator {
 
     public DBSPNowOperator(CalciteRelNode node) {
         super(node, "now", createFunction(node),
-                createFunction(node).getType(),
+                new DBSPTypeZSet(new DBSPTypeTuple(DBSPTypeTimestamp.create(node, false))),
                 false, false);
     }
 

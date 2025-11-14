@@ -367,7 +367,9 @@ impl CommonConfig {
                 )
                 .finish()
         } else {
-            awc::Client::new()
+            awc::Client::builder()
+                .connector(awc::Connector::new().limit(25000))
+                .finish()
         }
     }
 
@@ -585,8 +587,8 @@ pub struct ApiServerConfig {
     ///
     /// Usage depends on two environment variables to be set
     ///
-    /// AUTH_CLIENT_ID, the client-id or application
-    /// AUTH_ISSUER, the issuing service
+    /// FELDERA_AUTH_CLIENT_ID, the client-id or application
+    /// FELDERA_AUTH_ISSUER, the issuing service
     ///
     /// ** AWS Cognito provider **
     /// If the auth_provider is aws-cognito, there are two more
@@ -607,9 +609,9 @@ pub struct ApiServerConfig {
     /// support PKCE soon.
     ///
     /// ** Okta provider **
-    /// If the auth_provider is okta, the AUTH_ISSUER should be your Okta domain
+    /// If the auth_provider is okta, the FELDERA_AUTH_ISSUER should be your Okta domain
     /// including the authorization server ID (e.g., "<https://your-domain.okta.com/oauth2/default>").
-    /// The AUTH_CLIENT_ID should be the client ID from your Okta application configuration.
+    /// The FELDERA_AUTH_CLIENT_ID should be the client ID from your Okta application configuration.
     ///
     /// ** Tenant Assignment **
     /// Tenant assignment follows this priority order:
@@ -813,6 +815,38 @@ pub struct CompilerConfig {
     /// a source tree in the local file system.
     #[arg(long, default_value_t = default_dbsp_override_path())]
     pub dbsp_override_path: String,
+
+    /// HTTP endpoint URL for uploading compiled binaries.
+    /// If set, compiled binaries will be uploaded to this endpoint instead of being copied locally.
+    /// The binary will be uploaded as raw binary data using POST with Content-Type: application/octet-stream.
+    /// Metadata is included in the URL path as follows:
+    /// {endpoint}/binary/{pipeline_id}/{program_version}/{source_checksum}/{integrity_checksum}
+    /// Where:
+    /// - pipeline_id: The UUID of the pipeline
+    /// - program_version: The version number of the program
+    /// - source_checksum: SHA256 checksum of the source code
+    /// - integrity_checksum: SHA256 checksum of the compiled binary
+    ///
+    /// Example: --binary-upload-endpoint http://127.0.0.1:8085
+    ///          --binary-upload-endpoint https://compiler-server-0:8085
+    #[arg(long)]
+    pub binary_upload_endpoint: Option<String>,
+
+    /// Timeout in seconds for binary upload requests.
+    /// Default is 600 seconds (10 minutes).
+    #[arg(long, default_value_t = 600)]
+    pub binary_upload_timeout_secs: u64,
+
+    /// Maximum number of retry attempts for binary upload requests.
+    /// Default is 3 retries.
+    #[arg(long, default_value_t = 3)]
+    pub binary_upload_max_retries: u32,
+
+    /// Initial delay in milliseconds between retry attempts for binary upload requests.
+    /// The delay doubles after each retry (exponential backoff).
+    /// Default is 1000 milliseconds (1 second).
+    #[arg(long, default_value_t = 1000)]
+    pub binary_upload_retry_delay_ms: u64,
 
     /// Precompile Rust dependencies in the working directory.
     ///

@@ -6,20 +6,13 @@ from http import HTTPStatus
 from urllib.parse import quote
 
 from .helper import (
-    post_json,
     http_request,
-    wait_for_program_success,
     api_url,
     start_pipeline,
     gen_pipeline_name,
     adhoc_query_json,
+    create_pipeline,
 )
-
-
-def create_pipeline(name: str, sql: str):
-    r = post_json(api_url("/pipelines"), {"name": name, "program_code": sql})
-    assert r.status_code == HTTPStatus.CREATED, r.text
-    wait_for_program_success(name, 1)
 
 
 def _ingress(
@@ -322,10 +315,9 @@ def test_primary_keys(pipeline_name):
     """
     Port of primary_keys: test insert/update/delete semantics with primary key.
     """
-    sql = (
-        "CREATE TABLE t1(id bigint not null, s varchar not null, primary key(id)) "
-        "WITH ('materialized'='true');"
-    )
+
+    # Tables with primary keys are automatically materialized, no need to specify 'materialized'='true'.
+    sql = "CREATE TABLE t1(id bigint not null, s varchar not null, primary key(id)) "
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
 

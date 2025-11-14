@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
-use feldera_types::program_schema::SourcePosition;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use utoipa::ToSchema;
 
-use crate::CalciteId;
+use crate::{CalciteId, SourcePosition};
 
 pub type MirNodeId = String;
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct MirInput {
     pub node: String,
     pub output: usize,
@@ -17,7 +17,7 @@ pub struct MirInput {
     pub extra: HashMap<String, Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct MirNode {
     #[serde(default)]
     pub calcite: Option<CalciteId>,
@@ -26,12 +26,15 @@ pub struct MirNode {
     pub table: Option<String>,
 
     #[serde(default)]
+    pub view: Option<String>,
+
+    #[serde(default)]
     pub inputs: Vec<MirInput>,
 
     pub operation: String,
 
     #[serde(default)]
-    pub outputs: Option<Vec<MirInput>>,
+    pub outputs: Option<Vec<Option<MirInput>>>,
 
     #[serde(default)]
     pub persistent_id: Option<String>,
@@ -41,4 +44,18 @@ pub struct MirNode {
 
     #[serde(flatten)]
     pub extra: HashMap<String, Value>,
+}
+
+impl MirNode {
+    pub fn is_view(&self) -> bool {
+        self.view.is_some()
+    }
+
+    pub fn is_table(&self) -> bool {
+        self.table.is_some()
+    }
+
+    pub fn is_relation(&self) -> bool {
+        self.is_view() || self.is_table()
+    }
 }

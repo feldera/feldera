@@ -3,7 +3,7 @@
 set -e
 
 : "${CALCITE_BUILD_DIR:=/tmp/calcite}"
-: "${CALCITE_CURRENT:=1.40.0}"
+: "${CALCITE_CURRENT:=1.41.0}"
 
 # Load environment overrides from calcite_version.env file, if present
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

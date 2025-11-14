@@ -87,9 +87,6 @@ Usage: sql-to-dbsp [options] Input file to compile
     --noRust
       Do not generate Rust output files
       Default: false
-    --nowstream
-      Implement NOW as a stream (true) or as an internal operator (false)
-      Default: false
     --outputsAreSets
       Ensure that outputs never contain duplicates
       Default: false
@@ -180,24 +177,6 @@ Here is a description of the non-obvious command-line options:
 
 --streaming: Equivalent to adding the following property to all program tables:
      `'appendOnly' = 'true'`.
-
---nowstream: If this property is set to 'true' it implements the NOW() function
-     in a special way, as an input table, which allows deterministic testing.
-
-     When a program uses the `NOW` function, the following input table is
-     automatically injected by the compiler:
-
-     ```sql
-     CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
-     ```
-
-     All invocations of the `NOW()` function within the program
-     will produce the last value inserted in this table.
-
-     This table does is not populated automatically.  Instead, the
-     user is responsible for supplying the data to this table.  In
-     every step of the circuit the user has to insert a new value in
-     this table, which should be larger than the previous value.
 
 ### Example: Compiling a SQL program to Rust
 
@@ -388,6 +367,7 @@ We exercise this circuit by inserting data using a CSV format:
 #[test]
 pub fn test() {
     use dbsp_adapters::{CircuitCatalog, RecordFormat};
+    use use feldera_types::format::csv::CsvParserConfig;
 
     let (mut circuit, catalog) = circuit(2)
         .expect("Failed to build circuit");
@@ -395,6 +375,7 @@ pub fn test() {
         .input_collection_handle(&SqlIdentifier::from("PERSON"))
         .expect("Failed to get input collection handle");
     let mut persons_stream = persons
+        .handle
         .configure_deserializer(RecordFormat::Csv(Default::default())
         .expect("Failed to configure deserializer");
     persons_stream
@@ -418,9 +399,15 @@ pub fn test() {
         .delta_handle;
 
     // Read the produced output
-    let out = adult.concat().consolidate();
-    // Print the produced output
-    println!("{:?}", out);
+    let reader = adult.concat().consolidate();
+    let mut cursor = reader
+        .cursor(RecordFormat::Csv(CsvParserConfig::default()))
+        .unwrap();
+    while cursor.key_valid() {
+        let mut w = cursor.weight();
+        println!("{}: {}", cursor.key_to_json().unwrap(), w);
+        cursor.step_key();
+    }
 }
 ```
 

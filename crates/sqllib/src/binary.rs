@@ -109,7 +109,7 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
     {
         fn parse_hex_string(s: &str, prefix: &str) -> Option<CompactVec> {
             let s = s.strip_prefix(prefix).unwrap_or(s).as_bytes();
-            if s.len() % 2 != 0 || !s.iter().all(u8::is_ascii_hexdigit) {
+            if !s.len().is_multiple_of(2) || !s.iter().all(u8::is_ascii_hexdigit) {
                 None
             } else {
                 let mut result = CompactVec::with_capacity(s.len() / 2);
@@ -227,7 +227,7 @@ impl ByteArray {
         Self { data: d.into() }
     }
 
-    pub fn with_size(d: &[u8], size: i32) -> Self {
+    pub fn with_size(d: &[u8], size: i32, fixed: bool) -> Self {
         if size < 0 {
             ByteArray::new(d)
         } else {
@@ -236,9 +236,13 @@ impl ByteArray {
                 Ordering::Equal => ByteArray::new(d),
                 Ordering::Greater => ByteArray::new(&d[..size]),
                 Ordering::Less => {
-                    let mut data: CompactVec = smallvec![0; size];
-                    data[..d.len()].copy_from_slice(d);
-                    ByteArray { data }
+                    if fixed {
+                        let mut data: CompactVec = smallvec![0; size];
+                        data[..d.len()].copy_from_slice(d);
+                        ByteArray { data }
+                    } else {
+                        ByteArray::new(d)
+                    }
                 }
             }
         }

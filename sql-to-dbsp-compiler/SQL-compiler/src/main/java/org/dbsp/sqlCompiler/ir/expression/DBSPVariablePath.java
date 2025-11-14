@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -42,10 +43,14 @@ public final class DBSPVariablePath extends DBSPExpression {
     static long crtId = 0;
     static final String uniquePrefix = "t_";
 
-    public DBSPVariablePath(String variable, DBSPType type) {
-        super(type.getNode(), type);
+    public DBSPVariablePath(CalciteObject node, String variable, DBSPType type) {
+        super(node, type);
         this.variable = variable;
         Utilities.enforce(Utilities.isLegalRustIdentifier(variable));
+    }
+
+    public DBSPVariablePath(String variable, DBSPType type) {
+        this(CalciteObject.EMPTY, variable, type);
     }
 
     /** Allocate a likely new variable name */
@@ -53,8 +58,13 @@ public final class DBSPVariablePath extends DBSPExpression {
         this(uniquePrefix + crtId++, type);
     }
 
+    /** Allocate a likely new variable name */
+    public DBSPVariablePath(CalciteObject node, DBSPType type) {
+        this(node, uniquePrefix + crtId++, type);
+    }
+
     public DBSPParameter asParameter() {
-        return new DBSPParameter(this.variable, this.getType());
+        return new DBSPParameter(this.getNode(), this.variable, this.getType());
     }
 
     // Do not call this method, it is only used for testing
@@ -88,9 +98,11 @@ public final class DBSPVariablePath extends DBSPExpression {
         if (otherExpression == null)
             return false;
         IDBSPDeclaration leftDeclaration = context.leftDeclaration.get(this.variable);
-        Utilities.enforce(leftDeclaration != null, "Declaration for variable " + Utilities.singleQuote(this.variable) + " not found");
+        Utilities.enforce(leftDeclaration != null,
+                () -> "Declaration for variable " + Utilities.singleQuote(this.variable) + " not found");
         IDBSPDeclaration rightDeclaration = context.rightDeclaration.get(otherExpression.variable);
-        Utilities.enforce(rightDeclaration != null, "Declaration for variable " + Utilities.singleQuote(otherExpression.variable) + " not found");
+        Utilities.enforce(rightDeclaration != null,
+                () -> "Declaration for variable " + Utilities.singleQuote(otherExpression.variable) + " not found");
         IDBSPDeclaration subst = context.leftToRight.get(leftDeclaration);
         return subst.equals(rightDeclaration);
     }

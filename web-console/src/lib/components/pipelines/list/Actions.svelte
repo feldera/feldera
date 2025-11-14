@@ -46,7 +46,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   } from '$lib/services/pipelineManager'
   import { match, P } from 'ts-pattern'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
-  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
   import JSONbig from 'true-json-bigint'
   import { goto } from '$app/navigation'
@@ -63,6 +63,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
 
   let {
     pipeline,
@@ -73,11 +74,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     saveFile,
     class: _class = ''
   }: {
-    pipeline: {
-      current: ExtendedPipeline
-      patch: (pipeline: Partial<Pipeline>) => Promise<ExtendedPipeline>
-      optimisticUpdate: (newPipeline: Partial<ExtendedPipeline>) => Promise<void>
-    }
+    pipeline: WritablePipeline
     onDeletePipeline?: (pipelineName: string) => void
     editConfigDisabled: boolean
     unsavedChanges: boolean
@@ -221,6 +218,13 @@ groups related actions into multi-action dropdowns when multiple options are ava
         '_storage_indicator',
         '_delete'
       ])
+      .with('AwaitingApproval', () => [
+        '_kill',
+        '_saveFile',
+        '_configurations',
+        '_storage_indicator',
+        '_delete'
+      ])
       .with('Stopping', () => [
         '_spinner',
         '_saveFile',
@@ -234,9 +238,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         { SqlCompiled: P.any },
         { CompilingRust: P.any },
         (cause) => [
-          Object.values(cause)[0].cause === 'upgrade'
-            ? ('_unschedule' as const)
-            : ('_spacer_long' as const),
+          ...(Object.values(cause)[0].cause === 'upgrade' ? ['_unschedule' as const] : []),
           '_start_pending',
           '_saveFile',
           '_configurations',
@@ -322,7 +324,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   const buttonClass = 'btn'
   const iconClass = 'text-[20px]'
   const shortClass = 'w-9'
-  const longClass = 'w-[104px] sm:w-[124px] justify-between pl-2 gap-2 text-sm sm:text-base'
+  const longClass = 'w-[104px] sm:w-[136px] justify-between pl-2 gap-2 text-sm sm:text-base'
   const shortColor = 'preset-tonal-surface'
   const basicBtnColor = 'preset-filled-surface-100-900'
   const importantBtnColor = 'preset-filled-primary-500'
@@ -346,7 +348,10 @@ groups related actions into multi-action dropdowns when multiple options are ava
         : undefined
 
     const { waitFor } = await postPipelineAction(pipeline.current.name, action, callbacks)
-    waitFor().then(() => onActionSuccess?.(pipelineName, action), toastError)
+    waitFor().then(
+      (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, action),
+      toastError
+    )
   }
 
   // Static multi-action dropdown configurations
@@ -591,6 +596,31 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {#snippet _multiStop()}
   {@render _multiAction('stop')}
 {/snippet}
+
+<!-- {#snippet pipelineChangesDialog()}
+  <GenericDialog
+    confirmLabel="Apply"
+    onApply={() => {
+      pipelineChangesReview.onApply()
+      globalDialog.dialog = null
+    }}
+    onClose={() => {
+      globalDialog.onclose?.()
+      globalDialog.dialog = null
+    }}
+  >
+    {#snippet title()}
+      Review pipeline changes
+    {/snippet}
+    <ReviewPipelineChanges
+      changes={pipelineChangesReview.diff}
+      onskip={() => {
+        pipelineChangesReview.onApply()
+        globalDialog.dialog = null
+      }}
+    ></ReviewPipelineChanges>
+  </GenericDialog>
+{/snippet} -->
 
 {#snippet _delete()}
   <div>
@@ -849,9 +879,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     onClose={() => (globalDialog.dialog = null)}
   >
     {#snippet title()}
-      <div class="h5 text-center font-normal">
-        {dialogTitle}
-      </div>
+      {dialogTitle}
     {/snippet}
   </JSONDialog>
 {/snippet}

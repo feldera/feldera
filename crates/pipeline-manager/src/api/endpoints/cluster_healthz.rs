@@ -7,13 +7,17 @@ use crate::{
     error::ManagerError,
 };
 
+/// Check Cluster Health
+///
+/// Retrieve the health status of the Feldera control-plane.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     responses(
         (status = 200, description = "All services healthy", body = HealthStatus),
         (status = 503, description = "One or more services unhealthy", body = HealthStatus)
-    )
+    ),
+    tag = "Platform"
 )]
 #[get("/cluster_healthz")]
 pub(crate) async fn get_health(state: WebData<ServerState>) -> Result<HttpResponse, ManagerError> {

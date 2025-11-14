@@ -1,8 +1,8 @@
 # JSON Format
 
 Feldera can ingest and output data in the JSON format
-- via [`/ingress`](/api/push-data-to-a-sql-table) and
-  [`/egress`](/api/subscribe-to-a-stream-of-updates-from-a-sql-view-or-table)
+- via [`/ingress`](/api/insert-data) and
+  [`/egress`](/api/subscribe-to-view)
   REST endpoints, or
 - as a payload received from or sent to a connector
 
@@ -317,7 +317,7 @@ See also the [input/output connector tutorial](/tutorials/basics/part3.md).
 
 ### Streaming JSON over HTTP
 
-When sending data to a pipeline over HTTP via the [`/ingress`](/api/push-data-to-a-sql-table)
+When sending data to a pipeline over HTTP via the [`/ingress`](/api/insert-data)
 API endpoint, the data format is specified as part of the URL, e.g.:
 
 ```bash
@@ -332,7 +332,7 @@ curl -X 'POST' 'http://127.0.0.1:8080/v0/pipelines/PIPELINE_NAME/ingress/TABLE_N
 ```
 
 When receiving data from a pipeline over HTTP via the
-[`/egress`](/api/subscribe-to-a-stream-of-updates-from-a-sql-view-or-table)
+[`/egress`](/api/subscribe-to-view)
 API endpoint, we currently only support the insert/delete data change event
 format with array encapsulation.  Specify `?format=json` in the URL
 to choose this encoding for output data.

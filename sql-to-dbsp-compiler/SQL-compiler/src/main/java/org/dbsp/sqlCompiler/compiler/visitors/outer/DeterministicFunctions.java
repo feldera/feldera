@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
@@ -28,6 +29,11 @@ public class DeterministicFunctions extends CircuitVisitor {
             super(compiler);
             this.found = false;
             this.nonDeterministic = nonDeterministic;
+        }
+
+        @Override
+        public VisitDecision preorder(DBSPType type) {
+            return VisitDecision.STOP;
         }
 
         @Override

@@ -425,6 +425,9 @@ public class TypeCompiler implements ICompilerComponent {
                 case MAP: {
                     RelDataType kt = Objects.requireNonNull(dt.getKeyType());
                     DBSPType keyType = this.convertType(context, kt, asStruct);
+                    if (keyType.code == DBSPTypeCode.NULL) {
+                        throw new CompilationError("MAP key type cannot be NULL");
+                    }
                     RelDataType vt = Objects.requireNonNull(dt.getValueType());
                     DBSPType valueType = this.convertType(context, vt, asStruct);
                     return new DBSPTypeMap(keyType, valueType, dt.isNullable());

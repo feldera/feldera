@@ -5,7 +5,7 @@
 
 #![allow(async_fn_in_trait)]
 
-use feldera_storage::StoragePath;
+use feldera_storage::{FileCommitter, StoragePath};
 
 use crate::Error;
 use crate::{
@@ -16,6 +16,7 @@ use crate::{
     trace::cursor::Position,
 };
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use super::GlobalNodeId;
 
@@ -220,12 +221,20 @@ pub trait Operator: 'static {
     /// directory `base`. Any files that the operator creates should have
     /// `persistent_id` in their names to keep them unique.
     ///
+    /// The operator shouldn't commit the state to stable storage; rather, it
+    /// should append the files to be committed to `files` for later commit.
+    ///
     /// For most operators this method is a no-op.
     ///
     /// Fails if the operator is stateful, i.e., expects a checkpoint, by
     /// `persistent_id` is `None`
     #[allow(unused_variables)]
-    fn checkpoint(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        persistent_id: Option<&str>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error> {
         Ok(())
     }
 

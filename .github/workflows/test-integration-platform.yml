@@ -80,7 +80,7 @@ jobs:
       - name: Start pipeline-manager in background
         run: |
           mkdir test-tls
-          echo -e "[x509_v3]\nsubjectAltName = @alt_names\n\n[alt_names]\nDNS.1 = localhost\nIP.1 = 127.0.0.1\n" > test-tls/x509_v3_test.ext
+          echo -e "[x509_v3]\nsubjectAltName = @alt_names\nbasicConstraints = critical,CA:TRUE\n\n[alt_names]\nDNS.1 = localhost\nIP.1 = 127.0.0.1\n" > test-tls/x509_v3_test.ext
           openssl req -x509 -newkey rsa:4096 -nodes -keyout test-tls/tls_test.key -out test-tls/tls_test.crt -days 365 \
             -subj '/CN=localhost' -config test-tls/x509_v3_test.ext -extensions x509_v3
           chmod 644 test-tls/tls_test.key
@@ -94,8 +94,8 @@ jobs:
             --mount type=bind,src=./test-tls,dst=/home/ubuntu/test-tls,readonly \
             -p 8080:8080 \
             -e AUTH_PROVIDER="${{ vars.OIDC_TEST_ISSUER && 'generic-oidc' || 'none' }}" \
-            -e AUTH_CLIENT_ID="${{ vars.OIDC_TEST_CLIENT_ID }}" \
-            -e AUTH_ISSUER="${{ vars.OIDC_TEST_ISSUER }}" \
+            -e FELDERA_AUTH_CLIENT_ID="${{ vars.OIDC_TEST_CLIENT_ID }}" \
+            -e FELDERA_AUTH_ISSUER="${{ vars.OIDC_TEST_ISSUER }}" \
             -e RUST_LOG=info \
             -e RUST_BACKTRACE=1 \
             ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }} \
@@ -123,11 +123,9 @@ jobs:
         run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform/test_pipeline_crud.py --timeout=600 -vv
         working-directory: python
         env:
-          FELDERA_HTTPS_TLS_CERT: /home/ubuntu/test-tls/tls_test.crt
-          FELDERA_TLS_INSECURE: 1
+          FELDERA_HTTPS_TLS_CERT: ../test-tls/tls_test.crt
           FELDERA_HOST: https://localhost:8080
           PYTHONPATH: ${{ github.workspace }}/python
-          IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
           # OIDC environment variables for authentication
           OIDC_TEST_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
           OIDC_TEST_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
@@ -165,17 +163,19 @@ jobs:
       OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-9a54a381bb958ba78da125976a2f7731db3d7a4f
+      image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
     services:
       pipeline-manager:
         image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
         env:
           # Configure OIDC authentication if available, otherwise use no auth
           AUTH_PROVIDER: ${{ vars.OIDC_TEST_ISSUER && 'generic-oidc' || 'none' }}
-          AUTH_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
-          AUTH_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
+          FELDERA_AUTH_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
+          FELDERA_AUTH_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
           RUST_LOG: info
           RUST_BACKTRACE: 1
+          # Needed by test_update_runtime.py
+          FELDERA_UNSTABLE_FEATURES: "testing"
         options: >-
           --health-cmd "curl --fail --request GET --url http://localhost:8080/healthz || exit 1"
           --health-interval 10s
@@ -183,6 +183,11 @@ jobs:
           --health-retries 5
 
     steps:
+      - name: Show Kubernetes node
+        if: always()
+        run: |
+          echo "K8S node: ${K8S_NODE_NAME}"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -203,7 +208,7 @@ jobs:
           uv run demo/all-packaged/run.py --api-url http://localhost:8080
         env:
           PYTHONPATH: ${{ github.workspace }}/python
-          FELDERA_HTTPS_TLS_CERT: /home/ubuntu/test-tls/tls_test.crt
+          FELDERA_HTTPS_TLS_CERT: ../test-tls/tls_test.crt
 
       - name: Run platform tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
@@ -213,7 +218,7 @@ jobs:
           FELDERA_HOST: http://localhost:8080
           PYTHONPATH: ${{ github.workspace }}/python
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
-          FELDERA_HTTPS_TLS_CERT: /home/ubuntu/test-tls/tls_test.crt
+          FELDERA_HTTPS_TLS_CERT: ../test-tls/tls_test.crt
           # OIDC environment variables for authentication
           OIDC_TEST_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
           OIDC_TEST_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}

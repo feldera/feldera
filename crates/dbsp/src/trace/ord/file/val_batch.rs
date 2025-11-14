@@ -21,7 +21,7 @@ use crate::{
 };
 use derive_more::Debug;
 use dyn_clone::clone_box;
-use feldera_storage::StoragePath;
+use feldera_storage::{FileReader, StoragePath};
 use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
@@ -209,7 +209,6 @@ where
     #[size_of(skip)]
     #[debug(skip)]
     factories: FileValBatchFactories<K, V, T, R>,
-    #[size_of(skip)]
     pub file: RawValBatch<K, V, T, R>,
 }
 
@@ -295,6 +294,10 @@ where
         self.file.byte_size().unwrap_storage() as usize
     }
 
+    fn filter_size(&self) -> usize {
+        self.file.filter_size()
+    }
+
     #[inline]
     fn location(&self) -> BatchLocation {
         BatchLocation::Storage
@@ -308,26 +311,24 @@ where
     where
         RG: Rng,
     {
-        self.factories.factories0.key_factory.with(&mut |key| {
-            let size = self.key_count();
-            let mut cursor = self.file.rows().first().unwrap_storage();
-            if sample_size >= size {
-                output.reserve(size);
-                while let Some(key) = unsafe { cursor.key(key) } {
-                    output.push_ref(key);
-                    cursor.move_next().unwrap_storage();
-                }
-            } else {
-                output.reserve(sample_size);
-
-                let mut indexes = sample(rng, size, sample_size).into_vec();
-                indexes.sort_unstable();
-                for index in indexes {
-                    cursor.move_to_row(index as u64).unwrap_storage();
-                    output.push_ref(unsafe { cursor.key(key) }.unwrap());
-                }
+        let size = self.key_count();
+        let mut cursor = unsafe { self.file.rows().first().unwrap_storage() };
+        if sample_size >= size {
+            output.reserve(size);
+            while let Some(key) = cursor.key() {
+                output.push_ref(key);
+                unsafe { cursor.move_next() }.unwrap_storage();
             }
-        })
+        } else {
+            output.reserve(sample_size);
+
+            let mut indexes = sample(rng, size, sample_size).into_vec();
+            indexes.sort_unstable();
+            for index in indexes {
+                unsafe { cursor.move_to_row(index as u64) }.unwrap_storage();
+                output.push_ref(cursor.key().unwrap());
+            }
+        }
     }
 
     fn maybe_contains_key(&self, hash: u64) -> bool {
@@ -346,9 +347,9 @@ where
     type Batcher = MergeBatcher<Self>;
     type Builder = FileValBuilder<K, V, T, R>;
 
-    fn checkpoint_path(&self) -> Option<StoragePath> {
+    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         self.file.mark_for_checkpoint();
-        Some(self.file.path())
+        Some(self.file.file_handle().clone())
     }
 
     fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
@@ -380,10 +381,6 @@ where
     weight_factory: &'static dyn Factory<R>,
     key_cursor: RawKeyCursor<'s, K, V, T, R>,
     val_cursor: RawValCursor<'s, K, V, T, R>,
-    key: Box<K>,
-    key_valid: bool,
-    val: Box<V>,
-    val_valid: bool,
     weight: Box<R>,
 }
 
@@ -397,11 +394,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FileValCursor")
             .field("key_cursor", &self.key_cursor)
-            .field("val_cursor", &self.val)
-            .field("key", &self.key)
-            .field("key_valid", &self.key_valid)
-            .field("val", &self.val)
-            .field("val_valid", &self.val_valid)
+            .field("val_cursor", &self.val_cursor)
             .field("weight", &self.weight)
             .finish()
     }
@@ -421,10 +414,6 @@ where
             weight_factory: self.weight_factory,
             key_cursor: self.key_cursor.clone(),
             val_cursor: self.val_cursor.clone(),
-            key: clone_box(&self.key),
-            key_valid: self.key_valid,
-            val: clone_box(&self.val),
-            val_valid: self.val_valid,
             weight: clone_box(&self.weight),
         }
     }
@@ -438,27 +427,21 @@ where
     R: WeightTrait + ?Sized,
 {
     fn new(batch: &'s FileValBatch<K, V, T, R>) -> Self {
-        let key_cursor = batch.file.rows().first().unwrap_storage();
-        let val_cursor = key_cursor
-            .next_column()
-            .unwrap_storage()
-            .first()
-            .unwrap_storage();
-        let mut key = batch.factories.factories0.key_factory.default_box();
-        let mut val = batch.factories.factories1.key_factory.default_box();
+        let key_cursor = unsafe { batch.file.rows().first().unwrap_storage() };
+        let val_cursor = unsafe {
+            key_cursor
+                .next_column()
+                .unwrap_storage()
+                .first()
+                .unwrap_storage()
+        };
 
-        let key_valid = unsafe { key_cursor.key(&mut key) }.is_some();
-        let val_valid = unsafe { val_cursor.key(&mut val) }.is_some();
         Self {
             batch,
             timediff_factory: batch.factories.timediff_factory,
             weight_factory: batch.factories.weight_factory,
             key_cursor,
             val_cursor,
-            key,
-            key_valid,
-            val,
-            val_valid,
             weight: batch.factories.weight_factory.default_box(),
         }
     }
@@ -467,21 +450,19 @@ where
         F: Fn(&mut RawKeyCursor<'s, K, V, T, R>),
     {
         op(&mut self.key_cursor);
-        self.val_cursor = self
-            .key_cursor
-            .next_column()
-            .unwrap_storage()
-            .first()
-            .unwrap_storage();
-        self.key_valid = unsafe { self.key_cursor.key(&mut self.key) }.is_some();
-        self.val_valid = unsafe { self.val_cursor.key(&mut self.val) }.is_some();
+        self.val_cursor = unsafe {
+            self.key_cursor
+                .next_column()
+                .unwrap_storage()
+                .first()
+                .unwrap_storage()
+        };
     }
     fn move_val<F>(&mut self, op: F)
     where
         F: Fn(&mut RawValCursor<'s, K, V, T, R>),
     {
         op(&mut self.val_cursor);
-        self.val_valid = unsafe { self.val_cursor.key(&mut self.val) }.is_some();
     }
     fn times<'a>(
         &self,
@@ -503,13 +484,11 @@ where
     }
 
     fn key(&self) -> &K {
-        debug_assert!(self.key_valid);
-        &self.key
+        self.key_cursor.key().unwrap()
     }
 
     fn val(&self) -> &V {
-        debug_assert!(self.val_valid);
-        &self.val
+        self.val_cursor.key().unwrap()
     }
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
@@ -569,11 +548,11 @@ where
         self.val_cursor.has_value()
     }
     fn step_key(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_next().unwrap_storage());
+        self.move_key(|key_cursor| unsafe { key_cursor.move_next() }.unwrap_storage());
     }
 
     fn step_key_reverse(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_prev().unwrap_storage());
+        self.move_key(|key_cursor| unsafe { key_cursor.move_prev() }.unwrap_storage());
     }
 
     fn seek_key(&mut self, key: &K) {
@@ -609,7 +588,7 @@ where
         });
     }
     fn step_val(&mut self) {
-        self.move_val(|val_cursor| val_cursor.move_next().unwrap_storage());
+        self.move_val(|val_cursor| unsafe { val_cursor.move_next() }.unwrap_storage());
     }
     fn seek_val(&mut self, val: &V) {
         self.move_val(|val_cursor| {
@@ -622,17 +601,17 @@ where
         });
     }
     fn rewind_keys(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_first().unwrap_storage());
+        self.move_key(|key_cursor| unsafe { key_cursor.move_first() }.unwrap_storage());
     }
     fn fast_forward_keys(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_last().unwrap_storage());
+        self.move_key(|key_cursor| unsafe { key_cursor.move_last() }.unwrap_storage());
     }
     fn rewind_vals(&mut self) {
-        self.move_val(|val_cursor| val_cursor.move_first().unwrap_storage());
+        self.move_val(|val_cursor| unsafe { val_cursor.move_first() }.unwrap_storage());
     }
 
     fn step_val_reverse(&mut self) {
-        self.move_val(|val_cursor| val_cursor.move_prev().unwrap_storage());
+        self.move_val(|val_cursor| unsafe { val_cursor.move_prev() }.unwrap_storage());
     }
 
     fn seek_val_reverse(&mut self, val: &V) {
@@ -648,7 +627,7 @@ where
     }
 
     fn fast_forward_vals(&mut self) {
-        self.move_val(|val_cursor| val_cursor.move_last().unwrap_storage());
+        self.move_val(|val_cursor| unsafe { val_cursor.move_last() }.unwrap_storage());
     }
 
     fn position(&self) -> Option<Position> {
@@ -684,7 +663,11 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    fn with_capacity(factories: &FileValBatchFactories<K, V, T, R>, capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &FileValBatchFactories<K, V, T, R>,
+        key_capacity: usize,
+        _value_capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
             writer: Writer2::new(
@@ -693,7 +676,7 @@ where
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
                 Runtime::file_writer_parameters(),
-                capacity,
+                key_capacity,
             )
             .unwrap_storage(),
             time_diffs: factories.timediff_factory.default_box(),
@@ -723,6 +706,10 @@ where
             .write1((val, &*self.time_diffs))
             .unwrap_storage();
         self.time_diffs.clear();
+    }
+
+    fn num_keys(&self) -> usize {
+        self.writer.n_rows() as usize
     }
 
     fn num_tuples(&self) -> usize {

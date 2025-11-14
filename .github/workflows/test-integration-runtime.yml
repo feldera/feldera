@@ -28,13 +28,18 @@ jobs:
       FELDERA_API_KEY: ${{ secrets[matrix.feldera_api_key] }}
       FELDERA_RUNTIME_VERSION: ${{ github.sha }}
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-9a54a381bb958ba78da125976a2f7731db3d7a4f
+      image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
     steps:
+      - name: Show Kubernetes node
+        if: always()
+        run: |
+          echo "K8S node: ${K8S_NODE_NAME}"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Python runtime tests
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        if: ${{ vars.CI_DRY_RUN != 'true' && !contains(vars.CI_SKIP_JOBS, 'runtime-pytest') }}
         run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/runtime --timeout=600 -vv
         working-directory: python
         env:
@@ -42,7 +47,7 @@ jobs:
           FELDERA_TLS_INSECURE: true
 
       - name: Python runtime_aggtest test
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        if: ${{ vars.CI_DRY_RUN != 'true' && !contains(vars.CI_SKIP_JOBS, 'runtime-aggtest') }}
         run: uv run --locked ./tests/runtime_aggtest/run.sh
         working-directory: python
         env:
@@ -50,7 +55,7 @@ jobs:
           FELDERA_TLS_INSECURE: true
 
       - name: Python workload tests
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        if: ${{ vars.CI_DRY_RUN != 'true' && !contains(vars.CI_SKIP_JOBS, 'runtime-workload') }}
         run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/workloads --timeout=600 -vv
         working-directory: python
         env:

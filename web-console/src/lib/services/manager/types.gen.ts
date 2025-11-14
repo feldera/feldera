@@ -58,6 +58,14 @@ export type ApiKeyId = string
  */
 export type ApiPermission = 'Read' | 'Write'
 
+export type Auth = {
+  credentials?: Credentials | null
+  jwt?: string | null
+  nkey?: string | null
+  token?: string | null
+  user_and_password?: UserAndPassword | null
+}
+
 export type AuthProvider =
   | {
       AwsCognito: ProviderAwsCognito
@@ -65,6 +73,8 @@ export type AuthProvider =
   | {
       GenericOidc: ProviderGenericOidc
     }
+
+export type BootstrapPolicy = 'allow' | 'reject' | 'await_approval'
 
 /**
  * Information about the build of the platform.
@@ -106,6 +116,31 @@ export type BuildInformation = {
    * Rust version of the build used.
    */
   rustc_version: string
+}
+
+export type CalciteId =
+  | {
+      partial: number
+    }
+  | {
+      final: number
+    }
+  | {
+      and: Array<CalciteId>
+    }
+  | {
+      seq: Array<CalciteId>
+    }
+  | {
+      [key: string]: unknown
+    }
+  | null
+
+/**
+ * The Calcite plan representation of a dataflow graph.
+ */
+export type CalcitePlan = {
+  rels: Array<Rel>
 }
 
 /**
@@ -241,6 +276,7 @@ export type CombinedStatus =
   | 'Provisioning'
   | 'Unavailable'
   | 'Standby'
+  | 'AwaitingApproval'
   | 'Initializing'
   | 'Bootstrapping'
   | 'Replaying'
@@ -255,7 +291,7 @@ export type CombinedStatus =
  * other things the compilation speed (how long till the program is ready to be run)
  * and runtime speed (the performance while running).
  */
-export type CompilationProfile = 'dev' | 'unoptimized' | 'optimized'
+export type CompilationProfile = 'dev' | 'unoptimized' | 'optimized' | 'optimized_symbols'
 
 /**
  * Completion token status returned by the `/completion_status` endpoint.
@@ -295,6 +331,13 @@ export type CompletionTokenResponse = {
   token: string
 }
 
+export type Condition = {
+  literal?: boolean
+  op?: Op | null
+  operands?: Array<Operand> | null
+  '[key: string]': (unknown | boolean | Operand) | undefined
+}
+
 export type Configuration = {
   build_info: BuildInformation
   /**
@@ -328,6 +371,11 @@ export type Configuration = {
    * Format is `x.y.z`.
    */
   version: string
+}
+
+export type ConnectOptions = {
+  auth?: Auth
+  server_url: string
 }
 
 /**
@@ -413,6 +461,61 @@ export type ConnectorConfig = OutputBufferConfig & {
    */
   start_after?: Array<string> | null
   transport: TransportConfig
+}
+
+/**
+ * Aggregated connector error statistics.
+ *
+ * This structure contains the sum of all error counts across all input and output connectors
+ * for a pipeline.
+ */
+export type ConnectorStats = {
+  /**
+   * Total number of errors across all connectors.
+   *
+   * This is the sum of:
+   * - `num_transport_errors` from all input connectors
+   * - `num_parse_errors` from all input connectors
+   * - `num_encode_errors` from all output connectors
+   * - `num_transport_errors` from all output connectors
+   */
+  num_errors: number
+}
+
+export type ConsumerConfig = {
+  deliver_policy: DeliverPolicy
+  description?: string | null
+  filter_subjects?: Array<string>
+  max_batch?: number | null
+  max_bytes?: number | null
+  max_expires?: string | null
+  max_waiting?: number
+  metadata?: {
+    [key: string]: string
+  }
+  name?: string | null
+  rate_limit?: number
+  replay_policy?: ReplayPolicy
+}
+
+export type Credentials =
+  | {
+      FromString: string
+    }
+  | {
+      FromFile: string
+    }
+
+/**
+ * The JSON representation of a dataflow graph.
+ */
+export type Dataflow = {
+  calcite_plan: {
+    [key: string]: CalcitePlan
+  }
+  mir: {
+    [key: string]: MirNode
+  }
 }
 
 /**
@@ -523,6 +626,22 @@ export type DatagenStrategy =
   | 'file_name'
   | 'file_extension'
   | 'dir_path'
+
+export type DeliverPolicy =
+  | 'All'
+  | 'Last'
+  | 'New'
+  | {
+      ByStartSequence: {
+        start_sequence: number
+      }
+    }
+  | {
+      ByStartTime: {
+        start_time: string
+      }
+    }
+  | 'LastPerSubject'
 
 /**
  * Delta table read mode.
@@ -1432,6 +1551,14 @@ export type KafkaStartFromConfig =
        */
       offsets: Array<number>
     }
+  | {
+      /**
+       * Start from a particular timestamp in the topic.
+       *
+       * Kafka timestamps are in milliseconds since the epoch.
+       */
+      timestamp: number
+    }
 
 export type LicenseInformation = {
   /**
@@ -1485,6 +1612,30 @@ export type MetricsFormat = 'prometheus' | 'json'
  */
 export type MetricsParameters = {
   format?: MetricsFormat
+}
+
+export type MirInput = {
+  node: string
+  output: number
+  '[key: string]': (unknown | string | number) | undefined
+}
+
+export type MirNode = {
+  calcite?: CalciteId | null
+  inputs?: Array<MirInput>
+  operation: string
+  outputs?: Array<MirInput | null> | null
+  persistent_id?: string | null
+  positions?: Array<SourcePosition>
+  table?: string | null
+  view?: string | null
+  '[key: string]': (unknown | MirInput | string | SourcePosition) | undefined
+}
+
+export type NatsInputConfig = {
+  connection_config: ConnectOptions
+  consumer_config: ConsumerConfig
+  stream_name: string
 }
 
 /**
@@ -1631,6 +1782,19 @@ export type ObjectStorageConfig = {
    * options.
    */
   '[key: string]': string | undefined
+}
+
+export type Op = {
+  kind: string
+  name: string
+  syntax: string
+  '[key: string]': (unknown | string) | undefined
+}
+
+export type Operand = {
+  input?: number | null
+  name?: string | null
+  '[key: string]': (unknown | number | string) | undefined
 }
 
 export type OutputBufferConfig = {
@@ -1901,6 +2065,7 @@ export type PipelineConfig = {
   outputs?: {
     [key: string]: OutputEndpointConfig
   }
+  program_ir?: ProgramIr | null
   /**
    * Directory containing values of secrets.
    *
@@ -1910,7 +2075,21 @@ export type PipelineConfig = {
   storage_config?: StorageConfig | null
 }
 
-export type PipelineFieldSelector = 'all' | 'status'
+/**
+ * Summary of changes in the pipeline between checkpointed and new versions.
+ */
+export type PipelineDiff = {
+  added_input_connectors: Array<string>
+  added_output_connectors: Array<string>
+  modified_input_connectors: Array<string>
+  modified_output_connectors: Array<string>
+  program_diff?: ProgramDiff | null
+  program_diff_error?: string | null
+  removed_input_connectors: Array<string>
+  removed_output_connectors: Array<string>
+}
+
+export type PipelineFieldSelector = 'all' | 'status' | 'status_with_connectors'
 
 /**
  * Pipeline identifier.
@@ -1963,6 +2142,7 @@ export type PipelineInfo = {
  * If an optional field is not selected (i.e., is `None`), it will not be serialized.
  */
 export type PipelineSelectedInfo = {
+  connectors?: ConnectorStats | null
   created_at: string
   deployment_desired_status: CombinedDesiredStatus
   deployment_desired_status_since: string
@@ -1976,6 +2156,7 @@ export type PipelineSelectedInfo = {
   deployment_runtime_desired_status?: RuntimeDesiredStatus | null
   deployment_runtime_desired_status_since?: string | null
   deployment_runtime_status?: RuntimeStatus | null
+  deployment_runtime_status_details?: unknown
   deployment_runtime_status_since?: string | null
   deployment_status: CombinedStatus
   deployment_status_since: string
@@ -2056,13 +2237,44 @@ export type PostgresWriterConfig = {
    */
   max_records_in_buffer?: number | null
   /**
-   * The CA certificate in PEM format.
+   * Specifies how the connector handles conflicts when executing an `INSERT`
+   * into a table with a primary key. By default, an existing row with the same
+   * key is overwritten. Setting this flag to `true` preserves the existing row
+   * and ignores the new insert.
+   *
+   * This setting does not affect `UPDATE` statements, which always replace the
+   * value associated with the key.
+   *
+   * Default: `false`
+   */
+  on_conflict_do_nothing?: boolean
+  /**
+   * Path to a file containing a sequence of CA certificates in PEM format.
+   */
+  ssl_ca_location?: string | null
+  /**
+   * A sequence of CA certificates in PEM format.
    */
   ssl_ca_pem?: string | null
+  /**
+   * The path to the certificate chain file.
+   * The file must contain a sequence of PEM-formatted certificates,
+   * the first being the leaf certificate, and the remainder forming
+   * the chain of certificates up to and including the trusted root certificate.
+   */
+  ssl_certificate_chain_location?: string | null
   /**
    * The client certificate key in PEM format.
    */
   ssl_client_key?: string | null
+  /**
+   * Path to the client certificate key.
+   */
+  ssl_client_key_location?: string | null
+  /**
+   * Path to the client certificate.
+   */
+  ssl_client_location?: string | null
   /**
    * The client certificate in PEM format.
    */
@@ -2122,6 +2334,18 @@ export type ProgramConfig = {
 }
 
 /**
+ * Summary of changes in the program between checkpointed and new versions.
+ */
+export type ProgramDiff = {
+  added_tables: Array<string>
+  added_views: Array<string>
+  modified_tables: Array<string>
+  modified_views: Array<string>
+  removed_tables: Array<string>
+  removed_views: Array<string>
+}
+
+/**
  * Log, warning and error information about the program compilation.
  */
 export type ProgramError = {
@@ -2142,10 +2366,7 @@ export type ProgramError = {
  * as well as only for runtime (e.g., schema, input/output connectors).
  */
 export type ProgramInfo = {
-  /**
-   * Dataflow graph of the program.
-   */
-  dataflow?: unknown
+  dataflow?: Dataflow | null
   /**
    * Input connectors derived from the schema.
    */
@@ -2167,6 +2388,19 @@ export type ProgramInfo = {
    * Generated user defined function (UDF) stubs Rust code: stubs.rs
    */
   udf_stubs?: string
+}
+
+/**
+ * Program information included in the pipeline configuration.
+ */
+export type ProgramIr = {
+  /**
+   * The MIR of the program.
+   */
+  mir: {
+    [key: string]: MirNode
+  }
+  program_schema: ProgramSchema
 }
 
 /**
@@ -2297,6 +2531,26 @@ export type RedisOutputConfig = {
   key_separator?: string
 }
 
+export type Rel = {
+  aggs?: Array<unknown> | null
+  all?: boolean | null
+  condition?: Condition | null
+  exprs?: Array<Operand> | null
+  fields?: Array<string> | null
+  group?: Array<number> | null
+  id: number
+  inputs?: Array<number>
+  joinType?: string | null
+  relOp: string
+  /**
+   * This is a vector where the elements concatenated form a fully qualified table name.
+   *
+   * e.g., usually is of the form `[$namespace, $table] / [schema, table]`
+   */
+  table?: Array<string> | null
+  '[key: string]': (unknown | boolean | Operand | string | number) | undefined
+}
+
 /**
  * A SQL table or view. It has a name and a list of fields.
  *
@@ -2309,6 +2563,8 @@ export type Relation = SqlIdentifier & {
     [key: string]: PropertyValue
   }
 }
+
+export type ReplayPolicy = 'Instant' | 'Original'
 
 export type ResourceConfig = {
   /**
@@ -2331,6 +2587,19 @@ export type ResourceConfig = {
    * for an instance of this pipeline
    */
   memory_mb_min?: number | null
+  /**
+   * Kubernetes namespace to use for an instance of this pipeline.
+   * The namespace determines the scope of names for resources created
+   * for the pipeline.
+   * If not set, the pipeline will be deployed in the same namespace
+   * as the control-plane.
+   */
+  namespace?: string | null
+  /**
+   * Kubernetes service account name to use for an instance of this pipeline.
+   * The account determines permissions and access controls.
+   */
+  service_account_name?: string | null
   /**
    * Storage class to use for an instance of this pipeline.
    * The class determines storage performance such as IOPS and throughput.
@@ -2675,6 +2944,7 @@ export type RuntimeStatus =
   | 'Unavailable'
   | 'Standby'
   | 'Initializing'
+  | 'AwaitingApproval'
   | 'Bootstrapping'
   | 'Replaying'
   | 'Paused'
@@ -3167,6 +3437,10 @@ export type TransportConfig =
       name: 'file_output'
     }
   | {
+      config: NatsInputConfig
+      name: 'nats_input'
+    }
+  | {
       config: KafkaInputConfig
       name: 'kafka_input'
     }
@@ -3271,6 +3545,11 @@ export type UrlInputConfig = {
    * automatically reconnect when the input adapter starts running again.
    */
   pause_timeout?: number
+}
+
+export type UserAndPassword = {
+  password: string
+  user: string
 }
 
 /**
@@ -3434,11 +3713,27 @@ export type PostPipelineActivateData = {
      */
     pipeline_name: string
   }
+  query?: {
+    initial?: string
+  }
 }
 
 export type PostPipelineActivateResponse = CheckpointResponse
 
 export type PostPipelineActivateError = ErrorResponse
+
+export type PostPipelineApproveData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type PostPipelineApproveResponse = CheckpointResponse
+
+export type PostPipelineApproveError = ErrorResponse
 
 export type CheckpointPipelineData = {
   path: {
@@ -3723,6 +4018,7 @@ export type PostPipelineStartData = {
     pipeline_name: string
   }
   query?: {
+    bootstrap_policy?: BootstrapPolicy
     /**
      * The `initial` parameter determines whether to after provisioning the pipeline make it
      * become `standby`, `paused` or `running` (only valid values).
@@ -3896,6 +4192,22 @@ export type PostPipelineInputConnectorActionResponse = unknown
 
 export type PostPipelineInputConnectorActionError = ErrorResponse
 
+export type PostPipelineTestingData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: {
+    set_platform_version?: string | null
+  }
+}
+
+export type PostPipelineTestingResponse = unknown
+
+export type PostPipelineTestingError = ErrorResponse
+
 export type GetPipelineTimeSeriesData = {
   path: {
     /**
@@ -3921,6 +4233,19 @@ export type GetPipelineTimeSeriesStreamData = {
 export type GetPipelineTimeSeriesStreamResponse = string
 
 export type GetPipelineTimeSeriesStreamError = ErrorResponse
+
+export type PostUpdateRuntimeData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type PostUpdateRuntimeResponse = PipelineInfo
+
+export type PostUpdateRuntimeError = ErrorResponse
 
 export type GetPipelineOutputConnectorStatusData = {
   path: {
@@ -4176,6 +4501,23 @@ export type $OpenApiTs = {
   '/v0/pipelines/{pipeline_name}/activate': {
     post: {
       req: PostPipelineActivateData
+      res: {
+        /**
+         * Pipeline activation initiated
+         */
+        '202': CheckpointResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/approve': {
+    post: {
+      req: PostPipelineApproveData
       res: {
         /**
          * Pipeline activation initiated
@@ -4649,6 +4991,25 @@ export type $OpenApiTs = {
       }
     }
   }
+  '/v0/pipelines/{pipeline_name}/testing': {
+    post: {
+      req: PostPipelineTestingData
+      res: {
+        /**
+         * Request successfully processed
+         */
+        '200': unknown
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        /**
+         * Endpoint is disabled. Set FELDERA_UNSTABLE_FEATURES="testing" to enable.
+         */
+        '405': ErrorResponse
+      }
+    }
+  }
   '/v0/pipelines/{pipeline_name}/time_series': {
     get: {
       req: GetPipelineTimeSeriesData
@@ -4680,6 +5041,23 @@ export type $OpenApiTs = {
         '404': ErrorResponse
         '500': ErrorResponse
         '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/update_runtime': {
+    post: {
+      req: PostUpdateRuntimeData
+      res: {
+        /**
+         * Pipeline successfully updated
+         */
+        '200': PipelineInfo
+        '400': ErrorResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
       }
     }
   }

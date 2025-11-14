@@ -8,9 +8,19 @@ mod hir;
 mod lir;
 mod mir;
 
-pub use hir::{CalciteId, CalcitePlan};
+pub use hir::{CalciteId, CalcitePlan, Condition, Op, Operand, Rel};
 pub use lir::{LirCircuit, LirEdge, LirNode, LirNodeId, LirStreamId};
 pub use mir::{MirInput, MirNode, MirNodeId};
+use utoipa::ToSchema;
+
+#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone, Copy)]
+#[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
+pub struct SourcePosition {
+    pub start_line_number: usize,
+    pub start_column: usize,
+    pub end_line_number: usize,
+    pub end_column: usize,
+}
 
 /// Indicates what relations (views and tables) of a dataflow graph
 /// are different when compared with another dataflow graph.
@@ -22,13 +32,20 @@ pub enum Changes {
 }
 
 /// The JSON representation of a dataflow graph.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, ToSchema, PartialEq, Eq, Clone)]
 pub struct Dataflow {
     pub calcite_plan: HashMap<String, CalcitePlan>,
     pub mir: HashMap<MirNodeId, MirNode>,
 }
 
 impl Dataflow {
+    pub fn new(
+        calcite_plan: HashMap<String, CalcitePlan>,
+        mir: HashMap<MirNodeId, MirNode>,
+    ) -> Self {
+        Self { calcite_plan, mir }
+    }
+
     /// Reports the changes to relations (views and tables) of a dataflow graph when
     /// compared with another (newer/updated) dataflow graph.
     ///

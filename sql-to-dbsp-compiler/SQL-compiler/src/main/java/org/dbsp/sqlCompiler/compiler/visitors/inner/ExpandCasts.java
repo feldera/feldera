@@ -17,9 +17,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
@@ -50,6 +52,11 @@ public class ExpandCasts extends InnerRewriteVisitor {
         throw new UnsupportedException("Casting of value with type '" +
                 source.getType().asSqlString() +
                 "' to the target type '" + type.asSqlString() + "' not supported", source.getNode());
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPType type) {
+        return VisitDecision.STOP;
     }
 
     @Nullable DBSPExpression convertToVariant(DBSPExpression source, boolean mayBeNull) {
@@ -102,32 +109,44 @@ public class ExpandCasts extends InnerRewriteVisitor {
         return new DBSPCastExpression(source.getNode(), expression, DBSPTypeVariant.create(mayBeNull), false);
     }
 
-    DBSPExpression convertToStruct(DBSPExpression source, DBSPTypeTuple type) {
+    DBSPExpression convertToStructOrTuple(DBSPExpression source, DBSPTypeTuple type) {
         List<DBSPExpression> fields = new ArrayList<>();
-        Utilities.enforce(type.originalStruct != null);
+        DBSPTypeStruct struct = type.originalStruct;
+        List<ProgramIdentifier> names = null;
+        if (struct != null)
+            names = Linq.list(type.originalStruct.getFieldNames());
+
         DBSPType sourceType = source.getType();
-        List<ProgramIdentifier> names = Linq.list(type.originalStruct.getFieldNames());
         for (int i = 0; i < type.size(); i++) {
-            ProgramIdentifier fieldName = names.get(i);
             DBSPType fieldType = type.getFieldType(i);
             DBSPExpression index;
             if (sourceType.is(DBSPTypeTupleBase.class)) {
                 index = source.field(i);
             } else {
-                index = new DBSPBinaryExpression(
-                        // Result of index is always nullable
-                        source.getNode(), DBSPTypeVariant.create(true),
-                        DBSPOpcode.VARIANT_INDEX, source.applyCloneIfNeeded(),
-                        new DBSPStringLiteral(fieldName.toString()));
+                if (struct == null) {
+                    index = new DBSPBinaryExpression(
+                            // Result of index is always nullable
+                            source.getNode(), DBSPTypeVariant.create(true),
+                            DBSPOpcode.RUST_INDEX, source.applyCloneIfNeeded(),
+                            new DBSPUSizeLiteral(i));
+                } else {
+                    ProgramIdentifier fieldName = names.get(i);
+                    index = new DBSPBinaryExpression(
+                            // Result of index is always nullable
+                            source.getNode(), DBSPTypeVariant.create(true),
+                            DBSPOpcode.VARIANT_INDEX, source.applyCloneIfNeeded(),
+                            new DBSPStringLiteral(fieldName.toString()));
+                }
             }
             DBSPExpression expression;
             if (fieldType.is(DBSPTypeTuple.class)) {
-                expression = this.convertToStruct(index.applyClone(), fieldType.to(DBSPTypeTuple.class));
+                expression = this.convertToStructOrTuple(index.applyClone(), fieldType.to(DBSPTypeTuple.class));
             } else {
                 expression = index.applyCloneIfNeeded().cast(source.getNode(), fieldType, false);
             }
             fields.add(expression);
         }
+
         return new DBSPTupleExpression(source.getNode(), type, fields);
     }
 
@@ -141,7 +160,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             DBSPExpression index = source.field(i);
             DBSPExpression expression;
             if (fieldType.is(DBSPTypeTuple.class)) {
-                expression = this.convertToStruct(index.applyClone(), fieldType.to(DBSPTypeTuple.class));
+                expression = this.convertToStructOrTuple(index.applyClone(), fieldType.to(DBSPTypeTuple.class));
             } else {
                 expression = index.applyCloneIfNeeded().cast(source.getNode(), fieldType, false);
             }
@@ -247,7 +266,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
         } else if (type.is(DBSPTypeArray.class)) {
             result = this.convertToVector(source, type.to(DBSPTypeArray.class), expression.safe);
         } else if (type.is(DBSPTypeTuple.class)) {
-            result = this.convertToStruct(source, type.to(DBSPTypeTuple.class));
+            result = this.convertToStructOrTuple(source, type.to(DBSPTypeTuple.class));
         } else if (type.is(DBSPTypeRawTuple.class)) {
             result = this.convertToTuple(source, type.to(DBSPTypeRawTuple.class));
         } else if (type.is(DBSPTypeMap.class)) {

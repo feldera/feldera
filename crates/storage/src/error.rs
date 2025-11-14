@@ -11,9 +11,13 @@ use uuid::Uuid;
 #[derive(Clone, Error, Debug, Serialize)]
 pub enum StorageError {
     /// I/O error.
-    #[error("{0}")]
+    #[error("{}: {operation} failed: {kind}", path.as_ref().map_or("(unknown file)", |path| path.as_str()))]
     #[serde(serialize_with = "serialize_io_error")]
-    StdIo(ErrorKind),
+    StdIo {
+        kind: ErrorKind,
+        operation: &'static str,
+        path: Option<String>,
+    },
 
     /// A process already locked the provided storage directory.
     ///
@@ -69,12 +73,6 @@ pub enum StorageError {
     JsonError(String),
 }
 
-impl From<std::io::Error> for StorageError {
-    fn from(value: std::io::Error) -> Self {
-        Self::StdIo(value.kind())
-    }
-}
-
 impl From<ObjectStoreError> for StorageError {
     fn from(value: ObjectStoreError) -> Self {
         let kind = match value {
@@ -102,12 +100,19 @@ impl From<ObjectStoreError> for StorageError {
     }
 }
 
-fn serialize_io_error<S>(kind: &ErrorKind, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_io_error<S>(
+    kind: &ErrorKind,
+    operation: &str,
+    path: &Option<String>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let mut ser = serializer.serialize_struct("IOError", 1)?;
+    let mut ser = serializer.serialize_struct("IOError", 3)?;
     ser.serialize_field("kind", &kind.to_string())?;
+    ser.serialize_field("operation", operation)?;
+    ser.serialize_field("path", &path)?;
     ser.end()
 }
 
@@ -126,9 +131,17 @@ where
 }
 
 impl StorageError {
+    pub fn stdio(kind: ErrorKind, operation: &'static str, path: impl ToString) -> Self {
+        Self::StdIo {
+            kind,
+            operation,
+            path: Some(path.to_string()),
+        }
+    }
+
     pub fn kind(&self) -> ErrorKind {
         match self {
-            StorageError::StdIo(kind) => *kind,
+            StorageError::StdIo { kind, .. } => *kind,
             StorageError::StorageLocked(..) => ErrorKind::ResourceBusy,
             StorageError::NoPersistentId(_) => ErrorKind::Other,
             StorageError::CheckpointNotFound(_) => ErrorKind::NotFound,

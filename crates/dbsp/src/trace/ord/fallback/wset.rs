@@ -17,12 +17,15 @@ use crate::{
     },
     DBWeight, NumEntries,
 };
-use feldera_storage::StoragePath;
+use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
-use std::fmt::{self, Debug};
 use std::ops::Neg;
+use std::{
+    fmt::{self, Debug},
+    sync::Arc,
+};
 
 use super::utils::{copy_to_builder, pick_merge_destination};
 
@@ -270,6 +273,14 @@ where
     }
 
     #[inline]
+    fn filter_size(&self) -> usize {
+        match &self.inner {
+            Inner::File(file) => file.filter_size(),
+            Inner::Vec(vec) => vec.filter_size(),
+        }
+    }
+
+    #[inline]
     fn location(&self) -> BatchLocation {
         match &self.inner {
             Inner::Vec(vec) => vec.location(),
@@ -334,7 +345,8 @@ where
     fn persisted(&self) -> Option<Self> {
         match &self.inner {
             Inner::Vec(vec) => {
-                let mut file = FileWSetBuilder::with_capacity(&self.factories, 0);
+                let mut file =
+                    FileWSetBuilder::with_capacity(&self.factories, self.key_count(), self.len());
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
                     inner: Inner::File(file.done()),
@@ -345,10 +357,10 @@ where
         }
     }
 
-    fn checkpoint_path(&self) -> Option<StoragePath> {
+    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         match &self.inner {
-            Inner::Vec(vec) => vec.checkpoint_path(),
-            Inner::File(file) => file.checkpoint_path(),
+            Inner::Vec(vec) => vec.file_reader(),
+            Inner::File(file) => file.file_reader(),
         }
     }
 
@@ -384,7 +396,7 @@ where
         factories: &FallbackWSetFactories<K, R>,
         vec: &VecWSetBuilder<K, R>,
     ) -> BuilderInner<K, R> {
-        let mut file = FileWSetBuilder::with_capacity(factories, 0);
+        let mut file = FileWSetBuilder::with_capacity(factories, vec.num_keys(), vec.num_tuples());
         vec.copy_to_builder(&mut file);
         BuilderInner::File(file)
     }
@@ -420,20 +432,31 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn new(factories: &FallbackWSetFactories<K, R>, capacity: usize, build_to: BuildTo) -> Self {
+    fn new(
+        factories: &FallbackWSetFactories<K, R>,
+        key_capacity: usize,
+        build_to: BuildTo,
+    ) -> Self {
         match build_to {
-            BuildTo::Memory => Self::Vec(Self::new_vec(factories, capacity)),
-            BuildTo::Storage => Self::File(FileWSetBuilder::with_capacity(factories, capacity)),
+            BuildTo::Memory => Self::Vec(Self::new_vec(factories, key_capacity)),
+            BuildTo::Storage => Self::File(FileWSetBuilder::with_capacity(
+                factories,
+                key_capacity,
+                key_capacity,
+            )),
             BuildTo::Threshold(bytes) => Self::Threshold {
-                vec: Self::new_vec(factories, capacity),
+                vec: Self::new_vec(factories, key_capacity),
                 size: 0,
                 threshold: bytes,
             },
         }
     }
 
-    fn new_vec(factories: &FallbackWSetFactories<K, R>, capacity: usize) -> VecWSetBuilder<K, R> {
-        VecWSetBuilder::with_capacity(&factories.vec_wset_factory, capacity)
+    fn new_vec(
+        factories: &FallbackWSetFactories<K, R>,
+        key_capacity: usize,
+    ) -> VecWSetBuilder<K, R> {
+        VecWSetBuilder::with_capacity(&factories.vec_wset_factory, key_capacity, key_capacity)
     }
 }
 
@@ -443,10 +466,18 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn with_capacity(factories: &FallbackWSetFactories<K, R>, capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &FallbackWSetFactories<K, R>,
+        key_capacity: usize,
+        _value_capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
-            inner: BuilderInner::new(factories, capacity, BuildTo::for_capacity(capacity)),
+            inner: BuilderInner::new(
+                factories,
+                key_capacity,
+                BuildTo::for_capacity(key_capacity, 0),
+            ),
         }
     }
 
@@ -463,7 +494,7 @@ where
             factories: factories.clone(),
             inner: BuilderInner::new(
                 factories,
-                batches.clone().into_iter().map(|b| b.len()).sum(),
+                batches.clone().into_iter().map(|b| b.key_count()).sum(),
                 pick_merge_destination(batches, location).into(),
             ),
         }
@@ -599,6 +630,14 @@ where
                     Inner::Vec(vec.done())
                 }
             },
+        }
+    }
+
+    fn num_keys(&self) -> usize {
+        match &self.inner {
+            BuilderInner::Vec(vec) => vec.num_keys(),
+            BuilderInner::File(file) => file.num_keys(),
+            BuilderInner::Threshold { vec, .. } => vec.num_keys(),
         }
     }
 

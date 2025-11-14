@@ -35,7 +35,9 @@ import { match } from 'ts-pattern'
  * Special handling:
  * - The `start` action can include hidden paused intermediate state logic when callbacks are provided
  * - All actions apply optimistic updates immediately for responsive UI
- * - Returns a waiter that resolves when the action reaches its target state
+ * - Returns a waiter that resolves to `true` when the action reaches its target state
+ * - The waiter resolves to `false` if the pipeline won't reach the target state (e.g. stopped after the `start` action with a `paused` intermediate)
+ * - The waiter rejects with an error if the pipeline enters an unexpected state
  *
  * @param pipeline - Pipeline object with current state and optimistic update function
  * @returns Object with postPipelineAction function for executing actions
@@ -56,7 +58,10 @@ export const usePipelineAction = () => {
     'Stopping',
     'Pausing',
     'Resuming',
-    'Queued'
+    'Queued',
+    'AwaitingApproval',
+    'Bootstrapping',
+    'Replaying'
   ]
   const reactiveWaiter = useReactiveWaiter(() => pipelineList.pipelines)
   return {
@@ -69,23 +74,22 @@ export const usePipelineAction = () => {
     ) => {
       // Optimistic status update based on action
       const optimisticStatus = match(action)
-        // .with('start', () => (pipeline.current.status === 'Paused' ? 'Resuming' : 'Preparing'))
-        .with('start', () => 'Preparing' as const)
-        .with('resume', () => 'Resuming' as const)
-        .with('start_paused', () => 'Preparing' as const)
-        .with('pause', () => 'Pausing' as const)
-        .with('stop', 'kill', () => 'Stopping' as const)
+        .returnType<PipelineThumb['status'] | undefined>()
+        .with('start', () => 'Preparing')
+        .with('resume', () => 'Resuming')
+        .with('start_paused', () => 'Preparing')
+        .with('pause', () => 'Pausing')
+        .with('stop', 'kill', () => 'Stopping')
         .with('clear', () => undefined) // clear updates storageStatus, not status
-        .with('standby', () => 'Initializing' as const)
-        .with('activate', () => 'Running' as const)
+        .with('standby', () => 'Initializing')
+        .with('activate', () => 'Running')
+        .with('approve_changes', () => undefined)
         .exhaustive()
 
       // Apply optimistic updates
       if (optimisticStatus) {
-        // pipeline.optimisticUpdate({ status: optimisticStatus })
         updatePipeline(pipeline_name, (p) => ({ ...p, status: optimisticStatus }))
       } else if (action === 'clear') {
-        // pipeline.optimisticUpdate({ storageStatus: 'Clearing' })
         updatePipeline(pipeline_name, (p) => ({ ...p, storageStatus: 'Clearing' }))
       }
 
@@ -102,10 +106,17 @@ export const usePipelineAction = () => {
               throw new Error('Pipeline not found in pipelines list')
             }
             if (ignoreStatuses.includes(unionName(p.status))) {
-              return false
+              return null
             }
-            if (p.status === 'Paused') {
-              return true
+            if (
+              (['Paused', 'AwaitingApproval'] satisfies PipelineStatus[]).findIndex(
+                (status) => status === p.status
+              ) !== -1
+            ) {
+              return { value: true }
+            }
+            if (p.status === 'Stopped') {
+              return { value: false }
             }
             throw new Error(
               `Unexpected status ${JSON.stringify(p.status)} while waiting for pipeline ${pipeline_name} to reach paused state`
@@ -113,7 +124,24 @@ export const usePipelineAction = () => {
           }
         })
 
-        await pausedWaiter.waitFor()
+        try {
+          const shouldContinue = await pausedWaiter.waitFor()
+          if (!shouldContinue) {
+            return {
+              waitFor: async () => {
+                // Pipeline was stopped before it could be resumed, listeners should not wait for running state
+                return false
+              }
+            }
+          }
+        } catch (e) {
+          return {
+            waitFor: async () => {
+              throw e
+            }
+          }
+        }
+
         updatePipeline(pipeline_name, (p) => ({ ...p, status: 'Initializing' }))
         await callbacks?.onPausedReady?.(pipeline_name)
 
@@ -133,7 +161,8 @@ export const usePipelineAction = () => {
           kill: (p) => p.status === 'Stopped',
           clear: (p) => p.storageStatus === 'Cleared',
           standby: (p) => p.status === 'Standby',
-          activate: (p) => p.status === 'Running'
+          activate: (p) => p.status === 'Running',
+          approve_changes: (p) => p.status !== 'AwaitingApproval'
         } satisfies Record<PipelineAction | 'resume', (pipeline: PipelineThumb) => boolean>
       )[action]
 
@@ -148,23 +177,24 @@ export const usePipelineAction = () => {
           'kill',
           'standby',
           'activate',
+          'approve_changes',
           () => (pipeline: PipelineThumb) => ignoreStatuses.includes(unionName(pipeline.status))
         )
         .exhaustive()
 
       return {
-        waitFor: () => {
+        waitFor: async () => {
           const waiter = reactiveWaiter.createWaiter({
             predicate: (ps) => {
               const p = ps.find((p) => p.name === pipeline_name)
               if (!p) {
                 throw new Error('Pipeline not found in pipelines list')
               }
-              if (isIntermediateState(p)) {
-                return false
-              }
               if (isDesiredState(p)) {
-                return true
+                return { value: true }
+              }
+              if (isIntermediateState(p)) {
+                return null
               }
               throw new Error(
                 `Unexpected status ${JSON.stringify(p.status)}/${JSON.stringify(p.storageStatus)} while waiting for pipeline ${pipeline_name} to complete action ${action}`

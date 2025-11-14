@@ -41,7 +41,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
             @Nullable DBSPExpression function, DBSPType outputType,
             List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, function, newInputs, outputType)) {
-            Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
+            Utilities.enforce(newInputs.size() == 2, () -> "Expected 2 inputs, got " + newInputs.size());
             if (force || this.inputsDiffer(newInputs))
                 return new DBSPWindowOperator(
                         this.getRelNode(), this.lowerInclusive, this.upperInclusive,

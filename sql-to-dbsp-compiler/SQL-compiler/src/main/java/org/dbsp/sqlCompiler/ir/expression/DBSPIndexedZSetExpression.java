@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.ir.expression;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -40,7 +39,8 @@ public final class DBSPIndexedZSetExpression extends DBSPExpression
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        throw new UnimplementedException();
+        // This is accurate only for empty IndexedZSets, which is the only supported case so far
+        return this.getType().sameType(other.getType());
     }
 
     @Override

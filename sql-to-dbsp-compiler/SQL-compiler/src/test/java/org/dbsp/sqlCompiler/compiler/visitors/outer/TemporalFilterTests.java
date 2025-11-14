@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.RewriteNow;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -30,9 +31,9 @@ public class TemporalFilterTests extends SqlIoTest {
                 CREATE TABLE T(a INT, b DOUBLE, c BIGINT, ts TIMESTAMP);""");
     }
 
-    List<ImplementNow.RewriteNow.BooleanExpression> findFilters(DBSPFilterOperator operator) {
+    List<RewriteNow.BooleanExpression> findFilters(DBSPFilterOperator operator) {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
-        ImplementNow.RewriteNow in = new ImplementNow.RewriteNow(compiler);
+        RewriteNow in = new RewriteNow(compiler);
         return in.findTemporalFilters(operator, operator.getClosureFunction());
     }
 

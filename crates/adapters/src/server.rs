@@ -17,6 +17,7 @@ use crate::{
 use crate::{dyn_event, Catalog};
 use actix_web::body::MessageBody;
 use actix_web::dev::Service;
+use actix_web::http::KeepAlive;
 use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
     get,
@@ -35,6 +36,10 @@ use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
 use feldera_adapterlib::PipelineState;
 use feldera_storage::{StorageBackend, StoragePath};
+use feldera_types::adapter_stats::{
+    EndpointErrorStats, InputEndpointErrorMetrics, OutputEndpointErrorMetrics,
+    PipelineStatsErrorsResponse,
+};
 use feldera_types::checkpoint::{
     CheckpointFailure, CheckpointResponse, CheckpointStatus, CheckpointSyncFailure,
     CheckpointSyncResponse, CheckpointSyncStatus,
@@ -43,9 +48,11 @@ use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
 use feldera_types::constants::STATUS_FILE;
-use feldera_types::query_params::{MetricsFormat, MetricsParameters};
+use feldera_types::pipeline_diff::PipelineDiff;
+use feldera_types::query_params::{ActivateParams, MetricsFormat, MetricsParameters};
 use feldera_types::runtime_status::{
-    ExtendedRuntimeStatus, ExtendedRuntimeStatusError, RuntimeDesiredStatus, RuntimeStatus,
+    BootstrapPolicy, ExtendedRuntimeStatus, ExtendedRuntimeStatusError, RuntimeDesiredStatus,
+    RuntimeStatus,
 };
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
@@ -72,14 +79,15 @@ use std::time::Duration;
 use std::{
     borrow::Cow,
     net::TcpListener,
-    sync::{Arc, Mutex, Weak},
+    sync::{atomic::Ordering, Arc, Mutex, Weak},
     thread,
 };
 use tokio::spawn;
 use tokio::sync::Notify;
 use tokio::task::spawn_blocking;
+use tokio::time::sleep;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
-use tracing::{debug, error, info, info_span, trace, warn, Instrument, Level, Subscriber};
+use tracing::{debug, error, info, info_span, warn, Instrument, Level, Subscriber};
 use tracing_subscriber::fmt::format::Format;
 use tracing_subscriber::fmt::{FormatEvent, FormatFields};
 use tracing_subscriber::layer::SubscriberExt;
@@ -102,6 +110,7 @@ pub enum InitializationState {
     Starting,
     DownloadingCheckpoint,
     Standby,
+    AwaitingApproval(Box<PipelineDiff>),
 }
 
 /// Tracks the health of the pipeline.
@@ -109,10 +118,9 @@ pub enum InitializationState {
 /// Enables the server to report the state of the pipeline while it is
 /// initializing, when it has failed to initialize, failed, or been suspended.
 #[derive(Clone)]
-enum PipelinePhase {
+pub enum PipelinePhase {
     /// Initialization in progress.
     Initializing(InitializationState),
-
     /// Initialization has failed.
     InitializationError(Arc<ControllerError>),
 
@@ -125,6 +133,15 @@ enum PipelinePhase {
 
     /// Pipeline was successfully suspended to storage.
     Suspended,
+}
+
+impl PipelinePhase {
+    fn is_awaiting_approval(&self) -> bool {
+        matches!(
+            self,
+            PipelinePhase::Initializing(InitializationState::AwaitingApproval(_))
+        )
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -201,6 +218,8 @@ pub(crate) struct ServerState {
     /// The other locks in this structure nest inside `desired_status`.
     desired_status: Mutex<RuntimeDesiredStatus>,
 
+    bootstrap_policy: Mutex<BootstrapPolicy>,
+
     /// Notified when `desired_status` changes.
     desired_status_change: Arc<Notify>,
 
@@ -240,6 +259,7 @@ impl ServerState {
         phase: PipelinePhase,
         md: String,
         desired_status: RuntimeDesiredStatus,
+        bootstrap_policy: BootstrapPolicy,
         deployment_id: Uuid,
     ) -> Self {
         // Max 10 errors per minute
@@ -252,6 +272,7 @@ impl ServerState {
             checkpoint_state: Default::default(),
             sync_checkpoint_state: Default::default(),
             desired_status: Mutex::new(desired_status),
+            bootstrap_policy: Mutex::new(bootstrap_policy),
             deployment_id,
             rate_limiter,
         }
@@ -262,6 +283,7 @@ impl ServerState {
             PipelinePhase::InitializationError(Arc::new(error)),
             String::default(),
             RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::Allow,
             deployment_id,
         )
     }
@@ -278,6 +300,19 @@ impl ServerState {
             PipelinePhase::InitializationComplete => PipelineError::Terminating,
             PipelinePhase::Failed(e) => PipelineError::ControllerError { error: e.clone() },
             PipelinePhase::Suspended => PipelineError::Suspended,
+        }
+    }
+
+    /// Replaces `e` with a missing controller error if the controller is not set.
+    ///
+    /// Some endpoints can fail due to a panic that happens while the endpoint was running.
+    /// This function checks for this situation  and returns a missing controller error
+    /// instead of `e`.
+    fn maybe_missing_controller_error(&self, e: ControllerError) -> PipelineError {
+        if let Err(missing_controller_error) = self.controller() {
+            missing_controller_error
+        } else {
+            e.into()
         }
     }
 
@@ -313,11 +348,19 @@ impl ServerState {
         *self.desired_status.lock().unwrap()
     }
 
+    pub fn bootstrap_policy(&self) -> BootstrapPolicy {
+        *self.bootstrap_policy.lock().unwrap()
+    }
+
+    fn set_bootstrap_policy(&self, policy: BootstrapPolicy) {
+        *self.bootstrap_policy.lock().unwrap() = policy;
+    }
+
     fn phase(&self) -> PipelinePhase {
         self.phase.lock().unwrap().clone()
     }
 
-    fn set_phase(&self, phase: PipelinePhase) {
+    pub fn set_phase(&self, phase: PipelinePhase) {
         *self.phase.lock().unwrap() = phase;
     }
 }
@@ -369,6 +412,10 @@ pub struct ServerArgs {
     /// Initial runtime desired status.
     #[arg(long)]
     pub initial: RuntimeDesiredStatus,
+
+    /// How to handle bootstrapping when there are changes to the pipeline.
+    #[arg(long, default_value_t = BootstrapPolicy::Allow)]
+    pub bootstrap_policy: BootstrapPolicy,
 
     /// UUID generated by the runner for the compute resources that were provisioned to keep this
     /// pipeline process running. It will thus only change if the pipeline is stopped and started
@@ -536,7 +583,7 @@ pub fn run_server(
             args.deployment_id
         );
         info!("Desired status from arguments: {:?}", args.initial);
-        let initial_status = match builder
+        let (initial_status, bootstrap_policy) = match builder
             .storage()
             .and_then(|storage| StoredStatus::read(&*storage))
             .inspect(|stored| {
@@ -549,7 +596,7 @@ pub fn run_server(
             Some(stored) if stored.deployment_id == args.deployment_id => {
                 // This is an automatic restart (otherwise the deployment ID would
                 // have changed).  Use the stored desired status.
-                stored.desired_status
+                (stored.desired_status, stored.bootstrap_policy)
             }
             Some(stored) => {
                 // The pipeline manager restarted us.  Use the desired status it
@@ -563,13 +610,13 @@ pub fn run_server(
                         to: args.initial,
                     });
                 }
-                args.initial
+                (args.initial, args.bootstrap_policy)
             }
             None => {
                 // Initial deployment of this pipeline.  Use the desired status
                 // passed in by the pipeline manager (it's the only one we have,
                 // anyway).
-                args.initial
+                (args.initial, args.bootstrap_policy)
             }
         };
 
@@ -605,6 +652,7 @@ pub fn run_server(
             PipelinePhase::Initializing(InitializationState::Starting),
             md,
             initial_status,
+            bootstrap_policy,
             args.deployment_id,
         ));
 
@@ -625,8 +673,11 @@ pub fn run_server(
             runtime.spawn(async move {
                 let mut prev_stored_status = None;
                 loop {
+                    let desired_status = state.desired_status();
+                    let bootstrap_policy = state.bootstrap_policy();
                     let stored_status = StoredStatus {
-                        desired_status: state.desired_status(),
+                        desired_status,
+                        bootstrap_policy,
                         deployment_id: state.deployment_id,
                     };
                     if Some(stored_status) != prev_stored_status {
@@ -661,7 +712,7 @@ pub fn run_server(
             let state = state.clone();
             build_app(
                 App::new().wrap_fn(|req, srv| {
-                    trace!("Request: {} {}", req.method(), req.path());
+                    debug!("Request: {} {}", req.method(), req.path());
                     srv.call(req).map(|res| {
                         match &res {
                             Ok(response) => {
@@ -701,6 +752,16 @@ pub fn run_server(
     // https://github.com/rust-lang/rust/issues/74479#issuecomment-717097590
     .workers(workers)
     .worker_max_blocking_threads(std::cmp::max(512 / workers, 1))
+    .keep_alive(KeepAlive::Timeout(Duration::from_secs(30)))
+    .max_connection_rate(1000)
+    // The client request timeout sets the time limit for the server to receive
+    // the first request from a new client.  When it times out, the server sends
+    // a 408 Request Timeout error (and this is the only case where it sends
+    // that error).  With the default of 5 seconds, some requests time out in
+    // CI.  By extending the timeout, we hope to suppress those problems.  (The
+    // timeouts might be a symptom of another problem, though, such as the
+    // client in some cases getting stuck and not sending its request.)
+    .client_request_timeout(Duration::from_secs(180))
     // Set timeout for graceful shutdown of workers.
     // The default in actix is 30s. We may consider making this configurable.
     .shutdown_timeout(10);
@@ -794,10 +855,7 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
         })?;
 
         // Still running without logger here.
-        eprintln!(
-            "Pipeline configuration read from {}:\n{string}",
-            path.display()
-        );
+        eprintln!("Pipeline configuration read from {}.", path.display());
 
         Ok(string)
     }
@@ -813,7 +871,7 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
     }
 
     let path = config_file.as_ref();
-    if path.extension() == Some(OsStr::new("json")) {
+    let config = if path.extension() == Some(OsStr::new("json")) {
         parse_json_config(path)
     } else {
         let json_path = path.with_extension("json");
@@ -822,7 +880,14 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
         } else {
             parse_yaml_config(path)
         }
-    }
+    }?;
+
+    eprintln!(
+        "Pipeline configuration loaded successfully: {}",
+        config.display_summary()
+    );
+
+    Ok(config)
 }
 
 // Initialization thread function.
@@ -971,11 +1036,16 @@ fn do_bootstrap(
             }
         }
     }
-    let controller = builder.build(
+
+    let controller_init = builder.open_checkpoint()?;
+
+    let controller = controller_init.init(
+        Some((**state).clone()),
         circuit_factory,
         Box::new(move |e, t| error_handler(&weak_state_ref, e, t))
             as Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     )?;
+
     let desired_status = state.desired_status.lock().unwrap();
     match *desired_status {
         RuntimeDesiredStatus::Unavailable | RuntimeDesiredStatus::Standby => unreachable!(),
@@ -1012,6 +1082,7 @@ where
         .service(start)
         .service(pause)
         .service(activate)
+        .service(approve)
         .service(status)
         .service(suspendable)
         .service(start_transaction)
@@ -1020,12 +1091,14 @@ where
         .service(completion_status)
         .service(query)
         .service(stats)
+        .service(error_stats)
         .service(metrics_handler)
         .service(time_series)
         .service(time_series_stream)
         .service(metadata)
         .service(heap_profile)
         .service(dump_profile)
+        .service(dump_json_profile)
         .service(lir)
         .service(checkpoint)
         .service(checkpoint_status)
@@ -1096,23 +1169,12 @@ async fn pause(state: WebData<ServerState>) -> Result<HttpResponse, PipelineErro
     state_transition(state, "pause", RuntimeDesiredStatus::Paused, false).await
 }
 
-/// Default for the `initial` query parameter when POST a pipeline activate.
-fn default_pipeline_activate_initial() -> String {
-    "running".to_string()
-}
-
-#[derive(Debug, Deserialize)]
-struct ActivateArgs {
-    #[serde(default = "default_pipeline_activate_initial")]
-    initial: String,
-}
-
 #[post("/activate")]
 async fn activate(
     state: WebData<ServerState>,
-    args: Query<ActivateArgs>,
+    args: Query<ActivateParams>,
 ) -> Result<HttpResponse, PipelineError> {
-    let args_initial_parsed = match args.initial.as_str() {
+    let desired_status = match args.initial.as_str() {
         "paused" => RuntimeDesiredStatus::Paused,
         "running" => RuntimeDesiredStatus::Running,
         _ => {
@@ -1121,12 +1183,27 @@ async fn activate(
             ))
         }
     };
-    match args_initial_parsed {
+
+    match desired_status {
         RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
-            state_transition(state, "activate", args_initial_parsed, true).await
+            state_transition(state, "activate", desired_status, true).await
         }
-        _ => Err(PipelineError::InvalidActivateStatus(args_initial_parsed)),
+        _ => Err(PipelineError::InvalidActivateStatus(desired_status)),
     }
+}
+
+#[post("/approve")]
+async fn approve(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    state.set_bootstrap_policy(BootstrapPolicy::Allow);
+
+    // Make sure we don't return until the pipeline has moved on to the next phase
+    // (InitializationStatus::Starting). This makes the API synchronous, so the user can
+    // expect the pipeline to be out of the AwaitingApproval phase when this method returns.
+    while state.phase().is_awaiting_approval() {
+        sleep(Duration::from_millis(10)).await;
+    }
+
+    Ok(HttpResponse::Ok().json("Bootstrap approved".to_string()))
 }
 
 /// Retrieve pipeline runtime status.
@@ -1149,15 +1226,24 @@ async fn status(
     let runtime_desired_status = state.desired_status();
     match state.controller() {
         Ok(controller) => {
+            let bootstrapping = controller.status().bootstrap_in_progress();
             return match controller.status().global_metrics.get_state() {
                 PipelineState::Paused => Ok(ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Paused,
-                    runtime_status_details: "".to_string(),
+                    runtime_status: if bootstrapping {
+                        RuntimeStatus::Bootstrapping
+                    } else {
+                        RuntimeStatus::Paused
+                    },
+                    runtime_status_details: json!(""),
                     runtime_desired_status,
                 }),
                 PipelineState::Running => Ok(ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Running,
-                    runtime_status_details: "".to_string(),
+                    runtime_status: if bootstrapping {
+                        RuntimeStatus::Bootstrapping
+                    } else {
+                        RuntimeStatus::Running
+                    },
+                    runtime_status_details: json!(""),
                     runtime_desired_status,
                 }),
                 PipelineState::Terminated => Err(ExtendedRuntimeStatusError {
@@ -1168,7 +1254,7 @@ async fn status(
                         details: json!({}),
                     },
                 }),
-            }
+            };
         }
         Err(_) => {
             // Controller isn't set.
@@ -1180,17 +1266,22 @@ async fn status(
         PipelinePhase::Initializing(inner) => match inner {
             InitializationState::Starting => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Initializing,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(""),
                 runtime_desired_status,
             }),
             InitializationState::DownloadingCheckpoint => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Initializing,
-                runtime_status_details: "downloading checkpoint from object storage".to_string(),
+                runtime_status_details: json!("downloading checkpoint from object storage"),
                 runtime_desired_status,
             }),
             InitializationState::Standby => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Standby,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(""),
+                runtime_desired_status,
+            }),
+            InitializationState::AwaitingApproval(diff) => Ok(ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::AwaitingApproval,
+                runtime_status_details: serde_json::to_value(&diff).unwrap_or_default(),
                 runtime_desired_status,
             }),
         },
@@ -1221,13 +1312,7 @@ async fn status(
             if matches!(*e, ControllerError::RestoreInProgress) {
                 Ok(ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Replaying,
-                    runtime_status_details: "".to_string(),
-                    runtime_desired_status,
-                })
-            } else if matches!(*e, ControllerError::BootstrapInProgress) {
-                Ok(ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Bootstrapping,
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(""),
                     runtime_desired_status,
                 })
             } else {
@@ -1250,7 +1335,7 @@ async fn status(
         }
         PipelinePhase::Suspended => Ok(ExtendedRuntimeStatus {
             runtime_status: RuntimeStatus::Suspended,
-            runtime_status_details: "".to_string(),
+            runtime_status_details: json!(""),
             runtime_desired_status,
         }),
     }
@@ -1296,9 +1381,11 @@ async fn query(
     request: HttpRequest,
     stream: web::Payload,
 ) -> impl Responder {
+    let args = args.into_inner();
+    tracing::debug!("processing adhoc query: {:?}", args.sql);
     let session_ctxt = state.controller()?.session_context()?;
     if !request_is_websocket(&request) {
-        stream_adhoc_result(args.into_inner(), session_ctxt).await
+        stream_adhoc_result(args, session_ctxt).await
     } else {
         adhoc_websocket(session_ctxt, request, stream).await
     }
@@ -1307,6 +1394,39 @@ async fn query(
 #[get("/stats")]
 async fn stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponse::Ok().json(state.controller()?.status()))
+}
+
+/// This endpoint returns a subset of stats that don't need updating and so is more performant than /stats
+#[get("/stats/errors")]
+async fn error_stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let controller = state.controller()?;
+    let controller_status = controller.stale_status();
+
+    let inputs: Vec<EndpointErrorStats<InputEndpointErrorMetrics>> = controller_status
+        .input_status()
+        .values()
+        .map(|input| EndpointErrorStats {
+            metrics: InputEndpointErrorMetrics {
+                endpoint_name: input.endpoint_name.clone(),
+                num_transport_errors: input.metrics.num_transport_errors.load(Ordering::Acquire),
+                num_parse_errors: input.metrics.num_parse_errors.load(Ordering::Acquire),
+            },
+        })
+        .collect();
+
+    let outputs: Vec<EndpointErrorStats<OutputEndpointErrorMetrics>> = controller_status
+        .output_status()
+        .values()
+        .map(|output| EndpointErrorStats {
+            metrics: OutputEndpointErrorMetrics {
+                endpoint_name: output.endpoint_name.clone(),
+                num_transport_errors: output.metrics.num_transport_errors.load(Ordering::Acquire),
+                num_encode_errors: output.metrics.num_encode_errors.load(Ordering::Acquire),
+            },
+        })
+        .collect();
+
+    Ok(HttpResponse::Ok().json(PipelineStatsErrorsResponse { inputs, outputs }))
 }
 
 /// Retrieve circuit metrics.
@@ -1451,6 +1571,20 @@ async fn dump_profile(state: WebData<ServerState>) -> Result<HttpResponse, Pipel
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("profile.zip"))
         .body(state.controller()?.async_graph_profile().await?.as_zip()))
+}
+
+#[get("/dump_json_profile")]
+async fn dump_json_profile(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponse::Ok()
+        .insert_header(header::ContentType("application/zip".parse().unwrap()))
+        .insert_header(header::ContentDisposition::attachment("profile.zip"))
+        .body(
+            state
+                .controller()?
+                .async_json_profile()
+                .await?
+                .as_json_zip(),
+        ))
 }
 
 /// Dump the low-level IR of the circuit.
@@ -1892,7 +2026,11 @@ async fn completion_status(
     let token = CompletionToken::decode(&args.token).map_err(|e| PipelineError::InvalidParam {
         error: format!("invalid completion token: {e}"),
     })?;
-    if state.controller()?.completion_status(&token)? {
+    if state
+        .controller()?
+        .completion_status(&token)
+        .map_err(|e| state.maybe_missing_controller_error(e))?
+    {
         Ok(HttpResponse::Ok().json(CompletionStatusResponse::complete()))
     } else {
         Ok(HttpResponse::Accepted().json(CompletionStatusResponse::inprogress()))
@@ -1903,6 +2041,8 @@ async fn completion_status(
 struct StoredStatus {
     /// Desired status.
     desired_status: RuntimeDesiredStatus,
+
+    bootstrap_policy: BootstrapPolicy,
 
     // Deployment ID.
     deployment_id: Uuid,
@@ -1921,7 +2061,10 @@ impl StoredStatus {
     }
 
     fn write(&self, storage: &dyn StorageBackend) {
-        if let Err(e) = storage.write_json(&StoragePath::from(STATUS_FILE), self) {
+        if let Err(e) = storage
+            .write_json(&StoragePath::from(STATUS_FILE), self)
+            .and_then(|reader| reader.commit())
+        {
             warn!("{STATUS_FILE}: failed to write to storage ({e})");
         }
     }
@@ -1944,10 +2087,11 @@ mod test_with_kafka {
     };
     use actix_test::TestServer;
     use actix_web::{http::StatusCode, middleware::Logger, web::Data as WebData, App};
-    use feldera_types::completion_token::{
-        CompletionStatus, CompletionStatusResponse, CompletionTokenResponse,
-    };
     use feldera_types::runtime_status::RuntimeDesiredStatus;
+    use feldera_types::{
+        completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
+        runtime_status::BootstrapPolicy,
+    };
     use proptest::{
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
@@ -2038,6 +2182,7 @@ outputs:
             PipelinePhase::Initializing(InitializationState::Starting),
             String::new(),
             RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::Allow,
             Uuid::new_v4(),
         ));
         let state_clone = state.clone();
@@ -2052,6 +2197,7 @@ outputs:
             https_tls_cert_path: None,
             https_tls_key_path: None,
             initial: RuntimeDesiredStatus::Paused,
+            bootstrap_policy: BootstrapPolicy::Allow,
             deployment_id: uuid::Uuid::nil(),
         };
 
@@ -2325,6 +2471,7 @@ outputs:
             PipelinePhase::Initializing(InitializationState::Starting),
             String::default(),
             RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::Allow,
             Uuid::default(),
         ));
         let state_clone = state.clone();
@@ -2339,6 +2486,7 @@ outputs:
             https_tls_cert_path: None,
             https_tls_key_path: None,
             initial: RuntimeDesiredStatus::Paused,
+            bootstrap_policy: BootstrapPolicy::Allow,
             deployment_id: Uuid::default(),
         };
 

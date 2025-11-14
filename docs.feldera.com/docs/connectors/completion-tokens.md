@@ -51,18 +51,18 @@ waiting for earlier inputs to be processed.
 There are two ways to generate a completion token, depending on the type of the input connector:
 
 1. The [HTTP input connector](/connectors/sources/http) returns a token
- in response to every [`/ingress`](https://docs.feldera.com/api/push-data-to-a-sql-table) request.
+ in response to every [`/ingress`](/api/insert-data) request.
  This token tracks completion for the data ingested as part of this request.
 
 2. For all other input connectors, use the
- [`/completion_token`](https://docs.feldera.com/api/generate-a-completion-token-for-an-input-connector)
+ [`/completion_token`](/api/get-completion-token)
  endpoint to generate a token. This token tracks all inputs ingested by the connector
  before the endpoint was invoked.
 
 ## Checking completion status
 
 To check the processing status of a token, call the
-[`/completion_status`](https://docs.feldera.com/api/check-the-status-of-a-completion-token-returned-by-the-ingress-or-completion-token)
+[`/completion_status`](/api/check-completion-status)
 endpoint with the token.  The endpoint returns
 `"complete"` if the data associated with the token has been fully processed and all outputs derived from
 it have been written to all connected data sinks.  It returns `"inprogress"` otherwise.

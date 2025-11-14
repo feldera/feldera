@@ -9,10 +9,10 @@ use crate::runner::error::RunnerError;
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
 use actix_ws::{CloseCode, CloseReason};
 use awc::error::{ConnectError, SendRequestError};
-use awc::ClientResponse;
+use awc::{ClientRequest, ClientResponse};
 use crossbeam::sync::ShardedLock;
 use feldera_types::query::MAX_WS_FRAME_SIZE;
-use log::error;
+use log::{error, info};
 use std::fmt::Display;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
@@ -44,15 +44,14 @@ impl CachedPipelineDescr {
         // the runner can't interact with it.
         if self.pipeline.deployment_resources_status == ResourcesStatus::Provisioned {
             if self.pipeline.deployment_runtime_status == Some(RuntimeStatus::Unavailable) {
-                return Err(ManagerError::from(
-                    RunnerError::PipelineInteractionUnreachable {
-                        error: "status is currently 'unavailable'".to_string(),
-                    },
-                ));
+                return Err(ManagerError::from(RunnerError::PipelineUnavailable {
+                    pipeline_name: self.pipeline.name.clone(),
+                }));
             }
         } else {
             return Err(ManagerError::from(
                 RunnerError::PipelineInteractionNotDeployed {
+                    pipeline_name: self.pipeline.name.clone(),
                     status: self.pipeline.deployment_resources_status,
                     desired_status: self.pipeline.deployment_resources_desired_status,
                 },
@@ -60,9 +59,8 @@ impl CachedPipelineDescr {
         }
 
         Ok(match &self.pipeline.deployment_location {
-            None => Err(RunnerError::PipelineInteractionUnreachable {
-                error: "deployment location is missing despite it being fully provisioned"
-                    .to_string(),
+            None => Err(RunnerError::PipelineMissingDeploymentLocation {
+                pipeline_name: self.pipeline.name.clone(),
             })?,
             Some(location) => location.clone(),
         })
@@ -202,9 +200,11 @@ impl RunnerInteraction {
     /// This method is static as it is directly provided the pipeline
     /// identifier and location. It thus does not need to retrieve it
     /// from the database.
+    #[allow(clippy::too_many_arguments)]
     pub async fn forward_http_request_to_pipeline(
         common_config: &CommonConfig,
         client: &awc::Client,
+        pipeline_name: &str,
         location: &str,
         method: Method,
         endpoint: &str,
@@ -223,25 +223,33 @@ impl RunnerInteraction {
             query_string,
         );
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
-        let mut original_response = client
-            .request(method, &url)
-            .timeout(timeout)
-            .send()
-            .await
-            .map_err(|e| match e {
-                SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
-                    error: format_timeout_error_message(timeout, e),
-                },
-                SendRequestError::Connect(ConnectError::Disconnected) => {
-                    RunnerError::PipelineInteractionUnreachable {
-                        error: format_disconnected_error_message(e),
-                    }
+        let request = client.request(method, &url).timeout(timeout).force_close();
+        let request_str = Self::format_request(&request);
+
+        let mut original_response = request.send().await.map_err(|e| match e {
+            SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
+                pipeline_name: pipeline_name.to_string(),
+                request: request_str.clone(),
+                error: format_timeout_error_message(timeout, e),
+            },
+            SendRequestError::Connect(ConnectError::Disconnected) => {
+                RunnerError::PipelineInteractionUnreachable {
+                    pipeline_name: pipeline_name.to_string(),
+                    request: request_str.clone(),
+                    error: format_disconnected_error_message(e),
                 }
-                _ => RunnerError::PipelineInteractionUnreachable {
-                    error: format!("unable to send request due to: {e}"),
-                },
-            })?;
+            }
+            _ => RunnerError::PipelineInteractionUnreachable {
+                pipeline_name: pipeline_name.to_string(),
+                request: request_str.clone(),
+                error: format!("unable to send request due to: {e}"),
+            },
+        })?;
         let status = original_response.status();
+
+        if !status.is_success() {
+            info!("HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}");
+        }
 
         // Build the HTTP response with the original status
         let mut response_builder = HttpResponse::build(status);
@@ -263,6 +271,7 @@ impl RunnerInteraction {
             .limit(RESPONSE_SIZE_LIMIT)
             .await
             .map_err(|e| RunnerError::PipelineInteractionInvalidResponse {
+                pipeline_name: pipeline_name.to_string(),
                 error: format!("unable to reconstruct response body due to: {e}"),
             })?;
         Ok(response_builder.body(response_body))
@@ -288,6 +297,7 @@ impl RunnerInteraction {
         let r = RunnerInteraction::forward_http_request_to_pipeline(
             &self.common_config,
             client,
+            pipeline_name,
             &location,
             method.clone(),
             endpoint,
@@ -478,7 +488,8 @@ impl RunnerInteraction {
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
         let mut new_request = client
             .request(request.method().clone(), &url)
-            .timeout(timeout);
+            .timeout(timeout)
+            .force_close();
 
         // Add headers of the original request
         for header in request
@@ -489,23 +500,37 @@ impl RunnerInteraction {
             new_request = new_request.append_header(header);
         }
 
+        let request_str = Self::format_request(&new_request);
+
         // Perform request to the pipeline
         let response = new_request.send_stream(body).await.map_err(|e| match e {
             SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
+                pipeline_name: pipeline_name.to_string(),
+                request: request_str.to_string(),
                 error: format_timeout_error_message(timeout, e),
             },
             SendRequestError::Connect(ConnectError::Disconnected) => {
                 RunnerError::PipelineInteractionUnreachable {
+                    pipeline_name: pipeline_name.to_string(),
+                    request: request_str.to_string(),
                     error: format_disconnected_error_message(e),
                 }
             }
             _ => RunnerError::PipelineInteractionUnreachable {
+                pipeline_name: pipeline_name.to_string(),
+                request: request_str.to_string(),
                 error: format!("unable to send request due to: {e}"),
             },
         })?;
 
+        let status = response.status();
+
+        if !status.is_success() {
+            info!("HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}");
+        }
+
         // Build the new HTTP response with the same status, headers and streaming body
-        let mut builder = HttpResponseBuilder::new(response.status());
+        let mut builder = HttpResponseBuilder::new(status);
         for header in response.headers().into_iter() {
             builder.append_header(header);
         }
@@ -581,5 +606,15 @@ impl RunnerInteraction {
             builder.append_header(header);
         }
         Ok(builder.streaming(response))
+    }
+
+    /// Format HTTP request for logging.
+    fn format_request(request: &ClientRequest) -> String {
+        format!(
+            "{:?} {} {}",
+            request.get_version(),
+            request.get_method(),
+            request.get_uri()
+        )
     }
 }

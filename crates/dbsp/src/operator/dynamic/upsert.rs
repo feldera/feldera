@@ -384,7 +384,8 @@ where
 
         let mut trace_cursor = trace.cursor();
 
-        let builder = B::Builder::with_capacity(&self.batch_factories, updates.len() * 2);
+        let builder =
+            B::Builder::with_capacity(&self.batch_factories, updates.len(), updates.len() * 2);
         let mut builder = TupleBuilder::new(&self.batch_factories, builder);
 
         let val_filter = self.bounds.effective_val_filter();

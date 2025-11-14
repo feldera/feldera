@@ -15,9 +15,9 @@ export const pipelineStatusColor = (status: PipelineStatus): StatusColors => {
       deploymentChip: ''
     }))
     .with('Preparing', 'Provisioning', 'Initializing', () => ({
-      chip: 'preset-filled-tertiary-200-800',
-      dot: 'preset-filled-tertiary-200-800',
-      deploymentChip: 'preset-filled-tertiary-200-800'
+      chip: 'preset-filled-tertiary-50-950',
+      dot: 'preset-filled-tertiary-100-900',
+      deploymentChip: 'preset-filled-tertiary-50-950'
     }))
     .with('Paused', () => ({
       chip: 'bg-blue-200 dark:bg-blue-800',
@@ -39,6 +39,11 @@ export const pipelineStatusColor = (status: PipelineStatus): StatusColors => {
       dot: 'preset-filled-secondary-200-800',
       deploymentChip: 'preset-filled-secondary-200-800'
     }))
+    .with('AwaitingApproval', () => ({
+      chip: 'bg-warning-200-800',
+      dot: 'preset-filled-warning-200-800',
+      deploymentChip: 'preset-filled-warning-200-800'
+    }))
     .with('Running', () => ({
       chip: 'preset-filled-success-200-800',
       dot: 'preset-filled-success-400-600',
@@ -50,9 +55,9 @@ export const pipelineStatusColor = (status: PipelineStatus): StatusColors => {
       deploymentChip: 'preset-filled-secondary-200-800'
     }))
     .with('Resuming', () => ({
-      chip: 'preset-filled-tertiary-200-800',
-      dot: 'preset-filled-tertiary-200-800',
-      deploymentChip: 'preset-filled-tertiary-200-800'
+      chip: 'preset-filled-tertiary-50-950',
+      dot: 'preset-filled-tertiary-100-9000',
+      deploymentChip: 'preset-filled-tertiary-50-950'
     }))
     .with('Suspending', 'Suspended', 'Stopping', () => ({
       chip: 'preset-filled-secondary-200-800',

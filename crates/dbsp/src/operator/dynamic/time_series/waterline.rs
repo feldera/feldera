@@ -4,6 +4,8 @@ use size_of::SizeOf;
 use crate::circuit::checkpointer::Checkpoint;
 use crate::dynamic::{DynData, DynUnit};
 use crate::operator::dynamic::{MonoIndexedZSet, MonoZSet};
+use crate::storage::file::to_bytes;
+use crate::trace::unaligned_deserialize;
 use crate::{
     dynamic::DataTrait,
     operator::communication::new_exchange_operators,
@@ -82,33 +84,29 @@ where
                 }
             });
 
-            if let Some(runtime) = Runtime::runtime() {
-                let num_workers = runtime.num_workers();
-                if num_workers == 1 {
-                    return local_waterline;
+            let exchange = new_exchange_operators(
+                Some(Location::caller()),
+                init,
+                move |waterline: Box<TS>, waterlines: &mut Vec<Box<TS>>| {
+                    for _ in 0..Runtime::num_workers() {
+                        waterlines.push(clone_box(waterline.as_ref()));
+                    }
+                },
+                |waterline| to_bytes(&waterline).unwrap().into_vec(),
+                |data| unaligned_deserialize(&data[..]),
+                |result, waterline| {
+                    if &waterline > result {
+                        *result = waterline;
+                    }
+                },
+            );
+
+            match exchange {
+                Some((sender, receiver)) => {
+                    self.circuit()
+                        .add_exchange(sender, receiver, &local_waterline)
                 }
-
-                let (sender, receiver) = new_exchange_operators(
-                    &runtime,
-                    Runtime::worker_index(),
-                    Some(Location::caller()),
-                    init,
-                    move |waterline: Box<TS>, waterlines: &mut Vec<Box<TS>>| {
-                        for _ in 0..num_workers {
-                            waterlines.push(clone_box(waterline.as_ref()));
-                        }
-                    },
-                    |result, waterline| {
-                        if &waterline > result {
-                            *result = waterline;
-                        }
-                    },
-                );
-
-                self.circuit()
-                    .add_exchange(sender, receiver, &local_waterline)
-            } else {
-                local_waterline
+                None => local_waterline,
             }
         })
     }
@@ -156,32 +154,28 @@ where
                 },
             );
 
-            if let Some(runtime) = Runtime::runtime() {
-                let num_workers = runtime.num_workers();
-                if num_workers == 1 {
-                    return local_waterline;
+            let exchange = new_exchange_operators(
+                Some(Location::caller()),
+                init,
+                move |waterline: Box<TS>, waterlines: &mut Vec<Box<TS>>| {
+                    for _ in 0..Runtime::num_workers() {
+                        waterlines.push(waterline.clone());
+                    }
+                },
+                |waterline| to_bytes(&waterline).unwrap().into_vec(),
+                |data| unaligned_deserialize(&data[..]),
+                move |result, waterline| {
+                    let old_result = clone_box(result);
+                    least_upper_bound(&old_result, &waterline, result.as_mut());
+                },
+            );
+
+            match exchange {
+                Some((sender, receiver)) => {
+                    self.circuit()
+                        .add_exchange(sender, receiver, &local_waterline)
                 }
-
-                let (sender, receiver) = new_exchange_operators(
-                    &runtime,
-                    Runtime::worker_index(),
-                    Some(Location::caller()),
-                    init,
-                    move |waterline: Box<TS>, waterlines: &mut Vec<Box<TS>>| {
-                        for _ in 0..num_workers {
-                            waterlines.push(waterline.clone());
-                        }
-                    },
-                    move |result, waterline| {
-                        let old_result = clone_box(result);
-                        least_upper_bound(&old_result, &waterline, result.as_mut());
-                    },
-                );
-
-                self.circuit()
-                    .add_exchange(sender, receiver, &local_waterline)
-            } else {
-                local_waterline
+                None => local_waterline,
             }
         })
     }

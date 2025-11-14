@@ -25,6 +25,8 @@ pub struct MockInputConsumerState {
     ///
     /// Panics on error if `None`.
     error_cb: Option<ErrorCallback>,
+
+    transaction_in_progress: bool,
 }
 
 impl MockInputConsumerState {
@@ -34,6 +36,7 @@ impl MockInputConsumerState {
             n_extended: 0,
             endpoint_error: None,
             error_cb: None,
+            transaction_in_progress: false,
         }
     }
 
@@ -42,6 +45,7 @@ impl MockInputConsumerState {
         self.eoi = false;
         self.n_extended = 0;
         self.endpoint_error = None;
+        self.transaction_in_progress = false;
     }
 }
 
@@ -115,6 +119,14 @@ impl InputConsumer for MockInputConsumer {
 
     fn extended(&self, _amt: BufferSize, _resume: Option<Resume>, _watermark: Vec<Watermark>) {
         self.state().n_extended += 1;
+    }
+
+    fn start_transaction(&self, _label: Option<&str>) {
+        self.state().transaction_in_progress = true;
+    }
+
+    fn commit_transaction(&self) {
+        self.state().transaction_in_progress = false;
     }
 }
 

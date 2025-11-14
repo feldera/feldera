@@ -1,4 +1,4 @@
-use feldera_types::license::LicenseInformation;
+use feldera_cloud1_client::license::LicenseInformation;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use utoipa::ToSchema;

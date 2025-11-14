@@ -1,30 +1,48 @@
 name: Upload crates.io packages
 
+permissions:
+  contents: read
+  id-token: write
+
 on:
   workflow_call:
-    secrets:
-      CARGO_REGISTRY_TOKEN:
-        required: true
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (WARNING: Only use for emergency fixes, not for regular releases)"
+        required: false
+        type: string
 
 jobs:
   deploy:
     runs-on: [k8s-runners-amd64]
+    environment:
+      name: release
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-9a54a381bb958ba78da125976a2f7731db3d7a4f
+      image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
     steps:
+      - name: Show Kubernetes node
+        if: always()
+        run: |
+          echo "K8S node: ${K8S_NODE_NAME}"
+
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
 
       - name: Run cargo publish
         if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
         run: |
+          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-ir
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-types
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-storage
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-rest-api
-          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-ir
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package dbsp
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package fda
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-fxp
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-sqllib
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

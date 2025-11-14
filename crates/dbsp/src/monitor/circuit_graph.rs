@@ -119,6 +119,27 @@ impl Region {
         )
     }
 
+    /// Output region as a cluster in a visual graph.
+    /// Similar to 'visualize', but does not merge halves of strict operators.
+    fn get_graph(&self, scope: &Node) -> ClusterNode {
+        let mut nodes = Vec::new();
+        for nodeid in self.nodes.iter() {
+            if let Some(vnode) = scope.children().unwrap().get(nodeid).unwrap().get_graph() {
+                nodes.push(vnode)
+            }
+        }
+
+        for child in self.children.iter() {
+            nodes.push(VisNode::Cluster(child.get_graph(scope)));
+        }
+
+        ClusterNode::new(
+            Self::region_identifier(&scope.id, &self.id),
+            label(&self.name, self.location),
+            nodes,
+        )
+    }
+
     fn do_add_region(
         &mut self,
         path: &[usize],
@@ -287,16 +308,8 @@ impl Node {
 
     /// Generate unique name for the node to use as a node label in a visual
     /// graph.
-    fn node_identifier(node_id: &GlobalNodeId) -> String {
-        let mut node_ident = "n".to_string();
-
-        for i in 0..node_id.path().len() {
-            node_ident.push_str(&node_id.path()[i].to_string());
-            if i < node_id.path().len() - 1 {
-                node_ident.push('_');
-            }
-        }
-        node_ident
+    pub(super) fn node_identifier(node_id: &GlobalNodeId) -> String {
+        node_id.node_identifier()
     }
 
     /// Output circuit node as a node in a visual graph.
@@ -332,6 +345,30 @@ impl Node {
                 importance,
             ))),
             NodeKind::StrictOutput => None,
+        }
+    }
+
+    /// Output circuit node as a node in a visual graph, without merging the two halves of strict operators.
+    fn get_graph(&self) -> Option<VisNode> {
+        match &self.kind {
+            NodeKind::Operator => Some(VisNode::Simple(SimpleNode::new(
+                Self::node_identifier(&self.id),
+                label(&self.name, self.location),
+                0f64,
+            ))),
+
+            NodeKind::Circuit { region, .. } => Some(VisNode::Cluster(region.get_graph(self))),
+
+            NodeKind::StrictInput { .. } => Some(VisNode::Simple(SimpleNode::new(
+                Self::node_identifier(&self.id),
+                label(&self.name, self.location),
+                0f64,
+            ))),
+            NodeKind::StrictOutput => Some(VisNode::Simple(SimpleNode::new(
+                Self::node_identifier(&self.id),
+                format!("{}{}", label(&self.name, self.location), " (output)"),
+                0f64,
+            ))),
         }
     }
 }
@@ -409,6 +446,29 @@ impl CircuitGraph {
                         to_node.is_circuit(),
                     ));
                 }
+            }
+        }
+
+        VisGraph::new(cluster, edges)
+    }
+
+    /// Similar to 'visualize' without any annotations, but it does not merge the two halves of strict operators.
+    pub(super) fn get_graph(&self) -> VisGraph {
+        let cluster = self.nodes.get_graph().unwrap().cluster().unwrap();
+
+        let mut edges = Vec::new();
+
+        for (from_id, to) in self.edges.iter() {
+            let from_node = self.node_ref(from_id).unwrap();
+
+            for (to_id, _kind) in to.iter() {
+                let to_node = self.node_ref(to_id).unwrap();
+                edges.push(VisEdge::new(
+                    Node::node_identifier(from_id),
+                    from_node.is_circuit(),
+                    Node::node_identifier(to_id),
+                    to_node.is_circuit(),
+                ));
             }
         }
 

@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
@@ -190,8 +191,9 @@ public class TestCase {
                 // else: TODO: handle Vec<> values with FP values inside.
                 // Currently we don't have any tests with this case.
 
-                DBSPExpression expected = outputs.getSet(i).data();
-                DBSPExpression actual = new DBSPApplyExpression("read_output_handle", DBSPTypeAny.getDefault(),
+                TableData expected = outputs.getSet(i);
+                DBSPExpression viewContents = expected.createOutput(this.ccs.compiler, "out" + testNumber, codeDirectory);
+                DBSPExpression actual = new DBSPApplyExpression("read_output_spine", DBSPTypeAny.getDefault(),
                         streams.getVarReference().field(changes.inputs.getSetCount() + i + skippedOutputs).borrow());
                 var produced = new DBSPLetStatement("produced_result", actual);
                 list.add(produced);
@@ -203,14 +205,14 @@ public class TestCase {
                     DBSPExpression converter = convertedValue.closure(var);
                     DBSPVariablePath converterVar = new DBSPVariablePath("converter", DBSPTypeAny.getDefault());
                     list.add(new DBSPLetStatement(converterVar.variable, converter));
-                    expected = new DBSPApplyExpression("zset_map", convertedValue.getType(), expected.borrow(), converterVar);
+                    viewContents = new DBSPApplyExpression("zset_map", convertedValue.getType(), viewContents.borrow(), converterVar);
                     actual = new DBSPApplyExpression("zset_map", convertedValue.getType(), actual.borrow(), converterVar);
                 }
                 DBSPStatement compare =
                         new DBSPApplyExpression("assert!", DBSPTypeVoid.INSTANCE,
                                 new DBSPApplyExpression("must_equal",
                                         new DBSPTypeBool(CalciteObject.EMPTY, false),
-                                        actual.borrow(), expected.borrow()),
+                                        actual.borrow(), viewContents.borrow()),
                                 new DBSPStrLiteral(message, true)).toStatement();
                 list.add(compare);
             }
@@ -220,7 +222,7 @@ public class TestCase {
         List<String> annotations = new ArrayList<>();
         annotations.add("#[test]");
         if (this.message != null)
-            annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message) + ")]");
+            annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message, true) + ")]");
         result.add(new DBSPFunction(CalciteObject.EMPTY, "test" + testNumber, new ArrayList<>(),
                 DBSPTypeVoid.INSTANCE, body, annotations));
         return result;

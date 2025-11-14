@@ -81,7 +81,7 @@ fn test_start_after_cyclic() {
         }
     }))
     .unwrap();
-    let Err(err) = Controller::with_config(
+    let Err(err) = Controller::with_test_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
                 circuit_config,
@@ -161,7 +161,7 @@ fn test_start_after() {
     }))
     .unwrap();
 
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
                 circuit_config,
@@ -265,7 +265,7 @@ proptest! {
 
         info!("input file: {}", temp_input_file.path().display());
         info!("output file: {output_path}");
-        let controller = Controller::with_config(
+        let controller = Controller::with_test_config(
                 |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], &[None])),
                 &config,
                 Box::new(|e, _| panic!("error: {e}")),
@@ -636,7 +636,7 @@ fn test_ft(rounds: &[FtTestRound]) {
             config = modify_config(config);
         }
 
-        let controller = Controller::with_config(
+        let controller = Controller::with_test_config(
             |circuit_config| {
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
@@ -818,7 +818,7 @@ fn _test_concurrent_init(max_parallel_connector_init: u64) {
     }))
     .unwrap();
 
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
                 circuit_config,
@@ -891,7 +891,7 @@ fn test_connector_init_error() {
     }))
     .unwrap();
 
-    let result = Controller::with_config(
+    let result = Controller::with_test_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
                 circuit_config,
@@ -1175,7 +1175,7 @@ fn test_suspend(rounds: &[usize]) {
 
         // Start pipeline.
         println!("start pipeline");
-        let controller = Controller::with_config(
+        let controller = Controller::with_test_config(
             |circuit_config| {
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
@@ -1297,7 +1297,7 @@ fn test_bootstrap(rounds: &[usize]) {
 
     // Start pipeline.
     println!("start pipeline");
-    let mut controller = Controller::with_config(
+    let mut controller = Controller::with_test_config_keep_program_diff(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
                 circuit_config,
@@ -1348,7 +1348,7 @@ fn test_bootstrap(rounds: &[usize]) {
         controller.stop().unwrap();
 
         // Resume modified pipeline.
-        controller = Controller::with_config(
+        controller = Controller::with_test_config_keep_program_diff(
             move |circuit_config| {
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
@@ -1520,7 +1520,7 @@ fn start_controller(storage_dir: &Path, barriers: &[usize]) -> Controller {
         );
     }
 
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         move |circuit_config| {
             let persistent_output_ids = (1..=n).map(|i| format!("output{i}")).collect::<Vec<_>>();
             let persistent_strs = persistent_output_ids
@@ -1716,22 +1716,31 @@ fn suspend_multiple_barriers(n_inputs: usize) {
     // Start pipeline.
     println!("start pipeline");
 
+    // The barrier for input 0 is record 0,
+    // for input 1 is record 1000,
+    // for input 2 is record 2000,
+    // and so on.
     let barriers = (0..n_inputs).map(|i| i * 1000).collect::<Vec<_>>();
     let controller = start_controller(&storage_dir, &barriers);
 
-    // Wait for the records that are not in the checkpoint to be
-    // processed or replayed.
+    // Wait for the first 1000 records in each file to be read and copied to the
+    // output.
     println!("wait for 1000 records in each file");
     let mut written = repeat_n(1000, n_inputs).collect::<Vec<_>>();
     wait_for_records(&controller, &written);
 
-    // Suspend.
+    // Start a suspend operation.
+    //
+    // If we have 1 or 2 inputs, the suspend will complete quickly, because
+    // we're past all the barriers; otherwise, it will not complete due to
+    // barriers, since each input only has 1000 records so far.
     let (sender, receiver) = mpsc::channel();
     println!("start suspend");
     controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
 
-    // Iterate as long as we shouldn't have reached the barrier, adding
-    // records round-robin to one input at a time.
+    // Iterate as long as we shouldn't have reached the barrier, adding records
+    // round-robin to input 0, then to input 1, and so on, 1000 records at a
+    // time.
     fn expectations(written: &[usize], barriers: &[usize]) -> Vec<usize> {
         written
             .iter()
@@ -1750,6 +1759,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
         receiver.try_recv().unwrap_err();
 
         // Write 1000 more records to the `next` input.
+        println!("writing 1000 more records to test_input{}", next + 1);
         for id in written[next]..written[next] + 1000 {
             writers[next]
                 .serialize(TestStruct::for_id(id as u32))
@@ -1761,6 +1771,11 @@ fn suspend_multiple_barriers(n_inputs: usize) {
 
         // Wait for the records to be written to the output, then check that
         // we got exactly what we expect on output.
+        //
+        // We won't get any more records on output from inputs that have reached
+        // their barrier, so the writes to inputs 0 and 1 won't have any effect
+        // here.
+        println!("total written: {written:?}");
         let expect = expectations(&written, &barriers);
         wait_for_records(&controller, &expect);
         for (i, expectation) in expect.iter().enumerate().take(n_inputs) {
@@ -1779,6 +1794,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
     controller.stop().unwrap();
 
     // Check output one more time.
+    println!("check output one more time now that controller is stopped");
     let expect = expectations(&written, &barriers);
     for i in 0..n_inputs {
         check_file_contents(&output_path(&storage_dir, i), 0..expect[i]);
@@ -1786,6 +1802,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
 
     // Now restart the controller and wait for all the records that we wrote
     // beyond the barriers get copied to output (and nothing else).
+    println!("restart controller and wait for records beyond the barriers");
     let controller = start_controller(&storage_dir, &barriers);
     wait_for_records(&controller, &written);
     for i in 0..n_inputs {
@@ -1832,7 +1849,7 @@ fn lir() {
     }))
     .unwrap();
 
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
                 circuit_config,

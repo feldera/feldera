@@ -48,14 +48,20 @@ where
 #[doc(hidden)]
 pub(crate) fn type_name(name: &'static str) -> &'static str {
     match name {
+        "b" => "BOOLEAN",
+        "bytes" => "(VAR)BINARY",
         "i8" => "TINYINT",
         "i16" => "SMALLINT",
         "i32" => "INTEGER",
         "i64" => "BIGINT",
+        // i128 is used in generated code, but does not have a SQL equivalent
+        "i128" => "BIGINT",
         "u8" => "TINYINT UNSIGNED",
         "u16" => "SMALLINT UNSIGNED",
         "u32" => "INTEGER UNSIGNED",
         "u64" => "BIGINT UNSIGNED",
+        // u128 is used in generated code, but does not have a SQL equivalent
+        "u128" => "BIGINT UNSIGNED",
         "f" => "REAL",
         "d" => "FLOAT",
         "Timestamp" => "TIMESTAMP",
@@ -65,6 +71,8 @@ pub(crate) fn type_name(name: &'static str) -> &'static str {
         "ShortInterval" => "INTERVAL",
         "LongInterval" => "INTERVAL",
         "s" => "(VAR)CHAR",
+        "V" => "VARIANT",
+        "Uuid" => "UUID",
         _ => "Unexpected type",
     }
 }
@@ -73,14 +81,20 @@ pub(crate) fn type_name(name: &'static str) -> &'static str {
 #[doc(hidden)]
 pub(crate) fn rust_type_name(name: &'static str) -> &'static str {
     match name {
+        "b" => "BOOLEAN",
+        "bytes" => "(VAR)BINARY",
         "i8" => "TINYINT",
         "i16" => "SMALLINT",
         "i32" => "INTEGER",
         "i64" => "BIGINT",
+        // i128 is used in generated code, but does not have a SQL equivalent
+        "i128" => "BIGINT",
         "u8" => "TINYINT UNSIGNED",
         "u16" => "SMALLINT UNSIGNED",
         "u32" => "INTEGER UNSIGNED",
         "u64" => "BIGINT UNSIGNED",
+        // u128 is used in generated code, but does not have a SQL equivalent
+        "u128" => "BIGINT UNSIGNED",
         "F32" => "REAL",
         "F64" => "FLOAT",
         "Timestamp" => "Timestamp",
@@ -90,6 +104,8 @@ pub(crate) fn rust_type_name(name: &'static str) -> &'static str {
         "ShortInterval" => "INTERVAL",
         "LongInterval" => "INTERVAL",
         "String" => "(VAR)CHAR",
+        "Variant" => "VARIANT",
+        "Uuid" => "UUID",
         _ => "Unexpected type",
     }
 }
@@ -1333,7 +1349,7 @@ pub fn cast_to_sN_VN(
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_bytes_V(value: Variant, size: i32) -> SqlResult<ByteArray> {
+pub fn cast_to_bytes_V(value: Variant, size: i32, fixed: bool) -> SqlResult<ByteArray> {
     // Should never be called
     let result: Result<ByteArray, _> = value.try_into();
     match result {
@@ -1341,35 +1357,39 @@ pub fn cast_to_bytes_V(value: Variant, size: i32) -> SqlResult<ByteArray> {
             "Error converting VARIANT to BINARY: {}",
             e
         ))),
-        Ok(result) => Ok(ByteArray::with_size(result.as_slice(), size)),
+        Ok(result) => Ok(ByteArray::with_size(result.as_slice(), size, fixed)),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_bytes_VN(value: Option<Variant>, size: i32) -> SqlResult<ByteArray> {
+pub fn cast_to_bytes_VN(value: Option<Variant>, size: i32, fixed: bool) -> SqlResult<ByteArray> {
     match value {
         None => Err(cast_null("BINARY")),
-        Some(value) => cast_to_bytes_V(value, size),
+        Some(value) => cast_to_bytes_V(value, size, fixed),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_bytesN_V(value: Variant, size: i32) -> SqlResult<Option<ByteArray>> {
+pub fn cast_to_bytesN_V(value: Variant, size: i32, fixed: bool) -> SqlResult<Option<ByteArray>> {
     let result: Result<ByteArray, _> = value.try_into();
     match result {
         Err(_) => Ok(None),
-        Ok(value) => Ok(Some(ByteArray::with_size(value.as_slice(), size))),
+        Ok(value) => Ok(Some(ByteArray::with_size(value.as_slice(), size, fixed))),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_bytesN_VN(value: Option<Variant>, size: i32) -> SqlResult<Option<ByteArray>> {
+pub fn cast_to_bytesN_VN(
+    value: Option<Variant>,
+    size: i32,
+    fixed: bool,
+) -> SqlResult<Option<ByteArray>> {
     match value {
         None => Ok(None),
-        Some(value) => cast_to_bytesN_V(value, size),
+        Some(value) => cast_to_bytesN_V(value, size, fixed),
     }
 }
 
@@ -1772,7 +1792,7 @@ macro_rules! cast_to_i {
                 match value.str().trim().parse::<$result_type>() {
                     Ok(value) => Ok(value),
                     Err(e) => Err(SqlRuntimeError::from_string(
-                        format!("Error converting {value} to {}: {}", tn!($result_type), e)
+                        format!("Error converting '{value}' to {}: {}", tn!($result_type), e)
                     )),
                 }
             }
@@ -3413,88 +3433,133 @@ pub fn cast_to_i_u64(value: u64) -> SqlResult<isize> {
 
 cast_function!(i, isize, u64, u64);
 
-pub fn cast_to_bytesN_nullN(_value: Option<()>, _precision: i32) -> SqlResult<Option<ByteArray>> {
+pub fn cast_to_bytesN_nullN(
+    _value: Option<()>,
+    _precision: i32,
+    _fixed: bool,
+) -> SqlResult<Option<ByteArray>> {
     Ok(None)
 }
 
 #[doc(hidden)]
-pub fn cast_to_bytes_s(value: SqlString, precision: i32) -> SqlResult<ByteArray> {
+pub fn cast_to_bytes_s(value: SqlString, precision: i32, fixed: bool) -> SqlResult<ByteArray> {
     let s = value.str();
     let array = s.as_bytes();
-    Ok(ByteArray::with_size(array, precision))
+    Ok(ByteArray::with_size(array, precision, fixed))
 }
 
 #[doc(hidden)]
-pub fn cast_to_bytesN_s(value: SqlString, precision: i32) -> SqlResult<Option<ByteArray>> {
-    r2o(cast_to_bytes_s(value, precision))
+pub fn cast_to_bytesN_s(
+    value: SqlString,
+    precision: i32,
+    fixed: bool,
+) -> SqlResult<Option<ByteArray>> {
+    r2o(cast_to_bytes_s(value, precision, fixed))
 }
 
 #[doc(hidden)]
-pub fn cast_to_bytes_sN(value: Option<SqlString>, precision: i32) -> SqlResult<ByteArray> {
-    cast_to_bytes_s(value.unwrap(), precision)
+pub fn cast_to_bytes_sN(
+    value: Option<SqlString>,
+    precision: i32,
+    fixed: bool,
+) -> SqlResult<ByteArray> {
+    cast_to_bytes_s(value.unwrap(), precision, fixed)
 }
 
 #[doc(hidden)]
-pub fn cast_to_bytesN_sN(value: Option<SqlString>, precision: i32) -> SqlResult<Option<ByteArray>> {
+pub fn cast_to_bytesN_sN(
+    value: Option<SqlString>,
+    precision: i32,
+    fixed: bool,
+) -> SqlResult<Option<ByteArray>> {
     match value {
         None => Ok(None),
-        Some(value) => cast_to_bytesN_s(value, precision),
+        Some(value) => cast_to_bytesN_s(value, precision, fixed),
     }
 }
 
 #[doc(hidden)]
-pub fn cast_to_bytes_bytes(value: ByteArray, precision: i32) -> SqlResult<ByteArray> {
-    Ok(ByteArray::with_size(value.as_slice(), precision))
+pub fn cast_to_bytes_bytes(value: ByteArray, precision: i32, fixed: bool) -> SqlResult<ByteArray> {
+    Ok(ByteArray::with_size(value.as_slice(), precision, fixed))
 }
 
 #[doc(hidden)]
-pub fn cast_to_bytes_bytesN(value: Option<ByteArray>, precision: i32) -> SqlResult<ByteArray> {
+pub fn cast_to_bytes_bytesN(
+    value: Option<ByteArray>,
+    precision: i32,
+    fixed: bool,
+) -> SqlResult<ByteArray> {
     match value {
         None => Err(cast_null("BINARY")),
-        Some(value) => cast_to_bytes_bytes(value, precision),
+        Some(value) => cast_to_bytes_bytes(value, precision, fixed),
     }
 }
 
 #[doc(hidden)]
-pub fn cast_to_bytesN_bytes(value: ByteArray, precision: i32) -> SqlResult<Option<ByteArray>> {
-    r2o(cast_to_bytes_bytes(value, precision))
+pub fn cast_to_bytesN_bytes(
+    value: ByteArray,
+    precision: i32,
+    fixed: bool,
+) -> SqlResult<Option<ByteArray>> {
+    r2o(cast_to_bytes_bytes(value, precision, fixed))
 }
 
 #[doc(hidden)]
 pub fn cast_to_bytesN_bytesN(
     value: Option<ByteArray>,
     precision: i32,
+    fixed: bool,
 ) -> SqlResult<Option<ByteArray>> {
     match value {
         None => Ok(None),
-        Some(value) => cast_to_bytesN_bytes(value, precision),
+        Some(value) => cast_to_bytesN_bytes(value, precision, fixed),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_bytes_Uuid(value: Uuid, precision: i32) -> SqlResult<ByteArray> {
-    Ok(ByteArray::with_size(value.to_bytes(), precision))
+pub fn cast_to_bytes_Uuid(value: Uuid, precision: i32, fixed: bool) -> SqlResult<ByteArray> {
+    Ok(ByteArray::with_size(value.to_bytes(), precision, fixed))
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_bytesN_Uuid(value: Uuid, precision: i32) -> SqlResult<Option<ByteArray>> {
-    Ok(Some(ByteArray::with_size(value.to_bytes(), precision)))
+pub fn cast_to_bytesN_Uuid(
+    value: Uuid,
+    precision: i32,
+    fixed: bool,
+) -> SqlResult<Option<ByteArray>> {
+    Ok(Some(ByteArray::with_size(
+        value.to_bytes(),
+        precision,
+        fixed,
+    )))
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_bytes_UuidN(value: Option<Uuid>, precision: i32) -> SqlResult<ByteArray> {
-    Ok(ByteArray::with_size(value.unwrap().to_bytes(), precision))
+pub fn cast_to_bytes_UuidN(
+    value: Option<Uuid>,
+    precision: i32,
+    fixed: bool,
+) -> SqlResult<ByteArray> {
+    Ok(ByteArray::with_size(
+        value.unwrap().to_bytes(),
+        precision,
+        fixed,
+    ))
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_bytesN_UuidN(value: Option<Uuid>, precision: i32) -> SqlResult<Option<ByteArray>> {
+pub fn cast_to_bytesN_UuidN(
+    value: Option<Uuid>,
+    precision: i32,
+    fixed: bool,
+) -> SqlResult<Option<ByteArray>> {
     match value {
         None => Ok(None),
-        Some(value) => cast_to_bytesN_Uuid(value, precision),
+        Some(value) => cast_to_bytesN_Uuid(value, precision, fixed),
     }
 }
 
@@ -3599,7 +3664,7 @@ macro_rules! cast_from_variant_numeric {
                         match result {
                             Ok(value) => Ok(Some(value)),
                             Err(e) => Err(SqlRuntimeError::from_string(format!(
-                                "Error converting {value} to {}: {}",
+                                "Error converting '{value}' to {}: {}",
                                 tn!($result_name), e
                             ))),
                         }

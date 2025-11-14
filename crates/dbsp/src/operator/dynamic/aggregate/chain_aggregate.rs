@@ -141,7 +141,11 @@ where
         let mut delta_cursor = delta.cursor();
         let mut output_trace_cursor = output_trace.cursor();
 
-        let mut builder = OZ::Builder::with_capacity(&self.output_factories, delta.len());
+        let mut builder = OZ::Builder::with_capacity(
+            &self.output_factories,
+            delta.key_count(),
+            2 * delta.key_count(),
+        );
 
         let mut old = self.output_factories.val_factory().default_box();
         let mut new = self.output_factories.val_factory().default_box();

@@ -22,7 +22,8 @@ static UNSTABLE_FEATURES: OnceLock<HashSet<&'static str>> = OnceLock::new();
 
 /// Initialization function to set the platform's unstable feature gate.
 pub fn platform_enable_unstable(requested_features: &str) {
-    let all_features: HashSet<&'static str> = HashSet::from_iter(vec!["runtime_version"]);
+    let all_features: HashSet<&'static str> =
+        HashSet::from_iter(vec!["runtime_version", "testing"]);
     let mut enabled = HashSet::new();
     for requested_feature in requested_features.split(',') {
         if let Some(supported_feature) = all_features.get(requested_feature) {
@@ -69,4 +70,11 @@ pub fn init_fd_limit() {
             debug!("Failed to raise fd limit: {}", e);
         }
     }
+}
+
+/// Check if a pipeline compiled for the specificed `runtime_version` is compatible with the current `platform_version`.
+// TODO: this is a placeholder implementation for now.
+// TODO: do we need `platform_version` here at all? This can be implicitly the current running platform version.
+pub fn is_supported_runtime(_platform_version: &str, _runtime_version: &str) -> bool {
+    true
 }

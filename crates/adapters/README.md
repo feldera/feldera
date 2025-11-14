@@ -30,6 +30,16 @@ The test code has the following dependencies:
   docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v24.2.4 redpanda start --smp 2
   ```
 
+- `NATS`:
+
+  The tests for the NATS input connector expect the binary `nats-server` to be available.
+
+  To install on Debian or Ubuntu:
+
+  ```sh
+  sudo apt install nats-server -y
+  ```
+
 ## DBSP application server demo
 
 This directory also contains a demo application runnign a very simple

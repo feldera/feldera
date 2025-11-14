@@ -10,6 +10,7 @@ use crate::{
     monitor::{visual_graph::Graph, TraceMonitor},
     RootCircuit, Runtime,
 };
+use serde::Serialize;
 use size_of::HumanBytes;
 use std::{
     borrow::Cow,
@@ -39,7 +40,7 @@ pub struct Profiler {
 }
 
 /// Runtime profile of an individual DBSP worker thread.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct WorkerProfile {
     metadata: HashMap<GlobalNodeId, OperatorMeta>,
 }
@@ -247,14 +248,36 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
 }
 
 /// Runtime profiles collected from all DBSP worker threads.
-#[derive(Debug)]
+/// This also includes the circuit graph.
+#[derive(Debug, Serialize)]
 pub struct DbspProfile {
     pub worker_profiles: Vec<WorkerProfile>,
+    pub graph: Option<Graph>,
 }
 
 impl DbspProfile {
-    pub fn new(worker_profiles: Vec<WorkerProfile>) -> Self {
-        Self { worker_profiles }
+    pub fn new(worker_profiles: Vec<WorkerProfile>, graph: Option<Graph>) -> Self {
+        Self {
+            worker_profiles,
+            graph,
+        }
+    }
+
+    /// Serialize the profile as a JSON string
+    pub fn as_json(&self) -> String {
+        serde_json::to_string(self).unwrap()
+    }
+
+    /// Encode the profile as JSON and then zip
+    pub fn as_json_zip(&self) -> Vec<u8> {
+        let json = self.as_json();
+        let json = json.as_bytes();
+
+        let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::with_capacity(65536)));
+        zip.start_file("profile.json", FileOptions::default())
+            .unwrap();
+        zip.write_all(json).unwrap();
+        zip.finish().unwrap().into_inner()
     }
 
     /// Compute aggregate profile for a specific attribute across all workers.
@@ -511,7 +534,8 @@ impl Profiler {
 
                 let runtime = Runtime::runtime().unwrap();
                 for thread_type in [ThreadType::Foreground, ThreadType::Background] {
-                    let cache = runtime.get_buffer_cache(Runtime::worker_index(), thread_type);
+                    let cache =
+                        runtime.get_buffer_cache(Runtime::local_worker_offset(), thread_type);
                     let (cur, max) = cache.occupancy();
                     meta.insert(
                         0,
@@ -529,6 +553,11 @@ impl Profiler {
         }
 
         WorkerProfile::new(metadata)
+    }
+
+    /// Dump the circuit graph without any processing.
+    pub fn dump_graph(&self) -> Graph {
+        self.monitor.get_circuit()
     }
 
     /// Dump profile in graphviz format.

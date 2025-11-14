@@ -41,6 +41,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -348,13 +349,6 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             throws SQLException {
         this.startTest();
         int batchSize = 500;
-        String name = file.toString();
-        if (name.contains("/"))
-            name = name.substring(name.lastIndexOf('/') + 1);
-        if (name.startsWith("select"))
-            batchSize = 20;
-        if (name.startsWith("select5"))
-            batchSize = 5;
         if (this.toSkip > 0)
             batchSize = 1;
 
@@ -477,7 +471,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         list.add(step);
         DBSPLetStatement outputStatement =
                 new DBSPLetStatement("out",
-                        new DBSPApplyExpression("read_output_handle", DBSPTypeAny.getDefault(),
+                        new DBSPApplyExpression("read_output_spine", DBSPTypeAny.getDefault(),
                                 streams.getVarReference().field(circuit.getInputTables().size() + outputNumber).borrow()));
         list.add(outputStatement);
         DBSPExpression sort = new DBSPEnumValue("SortOrder", description.getOrder().toString());
@@ -584,7 +578,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         String genFileName = Main.testFileName + ".rs";
         String testFilePath = Main.getAbsoluteRustDirectory() + "/" + genFileName;
         PrintStream stream = new PrintStream(testFilePath, StandardCharsets.UTF_8);
-        RustFileWriter rust = new RustFileWriter().forSlt();
+        LateMaterializations materializations = new LateMaterializations(compiler);
+        // No need to run the materializations
+        RustFileWriter rust = new RustFileWriter(materializations).forSlt();
         rust.setOutputBuilder(new IndentStream(stream));
 
         for (DBSPFunction function : inputFunctions)

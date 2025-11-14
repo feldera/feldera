@@ -8,6 +8,7 @@ public class CalciteSqlNode extends CalciteObject {
     final SqlNode sqlNode;
 
     CalciteSqlNode(SqlNode sqlNode) {
+        super(new SourcePositionRange(sqlNode.getParserPosition()));
         this.sqlNode = sqlNode;
     }
 
@@ -21,10 +22,5 @@ public class CalciteSqlNode extends CalciteObject {
         return this.sqlNode.toSqlString(
                 SqlDialect.DatabaseProduct.POSTGRESQL.getDialect(), true)
                 .toString();
-    }
-
-    @Override
-    public SourcePositionRange getPositionRange() {
-        return new SourcePositionRange(this.sqlNode.getParserPosition());
     }
 }

@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.errors;
 
 import org.apache.calcite.sql.SqlNode;
+import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.io.BufferedReader;
@@ -90,8 +92,7 @@ public class SourceFileContents {
                     }
                     result.append(this.lineNo(i, decorated))
                             .append(line);
-                    if (decorated)
-                        result.append(SourceFileContents.newline());
+                    result.append(SourceFileContents.newline());
                 }
             } else {
                 result.append(this.lineNo(startLine, decorated))
@@ -128,5 +129,11 @@ public class SourceFileContents {
             this.builder.append(line)
                     .append(SourceFileContents.newline());
         }
+    }
+
+    public void writeAsJson(IIndentStream stream) {
+        stream.append("[").increase();
+        stream.joinI(",\n", this.lines, l -> Utilities.doubleQuote(l, false));
+        stream.newline().decrease().append("]");
     }
 }

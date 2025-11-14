@@ -129,8 +129,11 @@ where
         let mut item = self.output_factories.key_factory().default_box();
 
         // Choose capacity heuristically.
-        let mut builder =
-            Out::Builder::with_capacity(&self.output_factories, min(pairs.len(), keys.len()));
+        let mut builder = Out::Builder::with_capacity(
+            &self.output_factories,
+            min(pairs.key_count(), keys.key_count()),
+            min(pairs.len(), keys.len()),
+        );
 
         // While both keys are valid
         while key_cursor.key_valid() && pair_cursor.key_valid() {

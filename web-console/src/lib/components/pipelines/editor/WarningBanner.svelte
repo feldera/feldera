@@ -8,7 +8,7 @@
     },
     info: {
       iconClass: 'fd fd-info',
-      colorClass: 'preset-filled-tertiary-100-900'
+      colorClass: 'preset-tonal-tertiary'
     }
   }
   let {

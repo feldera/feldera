@@ -12,8 +12,13 @@ authors = { workspace = true }
 rust-version = { workspace = true }
 readme = { workspace = true }
 
+[features]
+testing = ["proptest", "proptest-derive"]
+
 [dependencies]
 serde_json = { workspace = true, features = ["raw_value"] }
 serde = { workspace = true, features = ["derive"] }
-feldera-types = { workspace = true }
 zip = { workspace = true }
+utoipa = { workspace = true }
+proptest = { workspace = true, optional = true }
+proptest-derive = { workspace = true, optional = true }

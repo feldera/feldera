@@ -262,7 +262,7 @@ impl Timestamp {
     pub fn check_legal(&self) {
         let date = self.to_naiveDateTime();
         if date.year() < 1 || date.year() > 9999 {
-            panic!("Timestamp out of range");
+            panic!("Timestamp out of range {}", self);
         }
     }
 }
@@ -855,7 +855,7 @@ some_polymorphic_function1!(ceil_year, Timestamp, Timestamp, Timestamp);
 #[doc(hidden)]
 pub fn ceil_quarter_Timestamp(value: Timestamp) -> Timestamp {
     let ts = value.to_dateTime();
-    if (ts.month() - 1) % 3 == 0 && ts.day() == 1 && is_midnight(ts) {
+    if (ts.month() - 1).is_multiple_of(3) && ts.day() == 1 && is_midnight(ts) {
         return value;
     }
     let next_quarter_month = match ts.month() {
@@ -1106,7 +1106,11 @@ pub fn parse_timestamp__(format: SqlString, st: SqlString) -> Option<Timestamp> 
         Ok(nt) => Some(Timestamp::from_naiveDateTime(nt)),
         Err(e) => match e.kind() {
             ParseErrorKind::BadFormat | ParseErrorKind::NotEnough | ParseErrorKind::Impossible => {
-                panic!("Invalid format in PARSE_TIMESTAMP")
+                panic!(
+                    "Invalid format in PARSE_TIMESTAMP: '{}'\n{}",
+                    format.str(),
+                    e
+                )
             }
             _ => None,
         },
@@ -1489,7 +1493,7 @@ some_polymorphic_function1!(ceil_year, Date, Date, Date);
 #[doc(hidden)]
 pub fn ceil_quarter_Date(value: Date) -> Date {
     let d = value.to_date();
-    if ((d.month() - 1) % 3) == 0 && d.day() == 1 {
+    if (d.month() - 1).is_multiple_of(3) && d.day() == 1 {
         return value;
     }
     let next_quarter_month = match d.month() {
@@ -1784,7 +1788,7 @@ pub fn parse_date__(format: SqlString, st: SqlString) -> Option<Date> {
         Ok(nd) => Some(Date::from_date(nd)),
         Err(e) => match e.kind() {
             ParseErrorKind::BadFormat | ParseErrorKind::NotEnough | ParseErrorKind::Impossible => {
-                panic!("Invalid format in PARSE_DATE")
+                panic!("Invalid format in PARSE_DATE: {}\n{}", format.str(), e)
             }
             _ => None,
         },
@@ -2544,7 +2548,7 @@ pub fn parse_time__(format: SqlString, st: SqlString) -> Option<Time> {
         Ok(nt) => Some(Time::from_time(nt)),
         Err(e) => match e.kind() {
             ParseErrorKind::BadFormat | ParseErrorKind::NotEnough | ParseErrorKind::Impossible => {
-                panic!("Invalid format in PARSE_TIME")
+                panic!("Invalid format in PARSE_TIME: {}\n{}", format.str(), e)
             }
             _ => None,
         },

@@ -34,7 +34,8 @@ use std::cmp::min;
 use std::sync::{Arc, Weak};
 use std::thread;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tracing::{info, trace};
+use tokio::time::{sleep, Duration};
+use tracing::{info, trace, warn};
 
 /// Arrow serde config for reading/writing Delta tables.
 pub const fn delta_arrow_serde_config() -> &'static SqlSerdeConfig {
@@ -275,18 +276,70 @@ impl WriterTask {
             &inner.endpoint_name, &inner.config.uri
         );
 
-        let delta_table = CreateBuilder::new()
-            .with_location(inner.config.uri.clone())
-            .with_save_mode(save_mode)
-            .with_storage_options(storage_options)
-            .with_columns(inner.struct_fields.clone())
-            .await
-            .map_err(|e| {
-                anyhow!(
-                    "error creating or opening delta table '{}': {e}",
-                    &inner.config.uri
-                )
-            })?;
+        let delta_table = {
+            let mut retry_count = 0;
+            const MAX_RETRIES: u32 = 10;
+
+            // We've seen the table builder get stuck forever in S3 authentication for some configurations
+            // (see https://github.com/delta-io/delta-rs/issues/3768). So we add a timeout and retry logic
+            // in that case.
+            //
+            // In other situations, the operation fails returning a timeout error. There is no easy way to
+            // distinguish such errors from permanent failures such as incorrect credentials, we therefore
+            // resort to checking the returned error message for the word "timeout".
+            let mut operation_timeout: Duration = Duration::from_secs(60);
+
+            loop {
+                let create_future = CreateBuilder::new()
+                    .with_location(inner.config.uri.clone())
+                    .with_save_mode(save_mode)
+                    .with_storage_options(storage_options.clone())
+                    .with_columns(inner.struct_fields.clone());
+
+                match tokio::time::timeout(operation_timeout, create_future).await {
+                    Ok(Ok(table)) => break table,
+                    Ok(Err(e)) => {
+                        // Debug-format `e` as the timeout error is often found toward the end of the error chain.
+                        let is_timeout = format!("{:?}", e).to_lowercase().contains("timeout");
+
+                        if is_timeout && retry_count < MAX_RETRIES {
+                            retry_count += 1;
+                            let backoff_ms = min(1000 * (1 << (retry_count - 1)), 10_000);
+                            warn!(
+                                "delta_table {}: error creating or opening delta table '{}' after {retry_count} attempts (retrying in {backoff_ms} ms): {e:?}",
+                                &inner.endpoint_name,
+                                &inner.config.uri,
+                            );
+
+                            sleep(Duration::from_millis(backoff_ms)).await;
+                        } else {
+                            return Err(anyhow!(
+                                "error creating or opening delta table '{}': {e:?}",
+                                &inner.config.uri
+                            ));
+                        }
+                    }
+                    Err(_timeout) => {
+                        if retry_count >= MAX_RETRIES {
+                            return Err(anyhow!(
+                                "timeout creating or opening delta table '{}' after {retry_count} attempts",
+                                &inner.config.uri,
+                            ));
+                        } else {
+                            warn!(
+                                "delta_table {}: timeout creating or opening delta table '{}' after {retry_count} attempts, retrying",
+                                &inner.endpoint_name,
+                                &inner.config.uri,
+                            );
+                            retry_count += 1;
+                            if operation_timeout < Duration::from_secs(240) {
+                                operation_timeout *= 2;
+                            }
+                        }
+                    }
+                }
+            }
+        };
 
         info!(
             "delta_table {}: opened delta table '{}' (current table version {})",

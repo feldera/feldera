@@ -7,11 +7,9 @@
   import { format } from 'd3-format'
   import Dayjs from 'dayjs'
   import { getDeploymentStatusLabel, isMetricsAvailable } from '$lib/functions/pipelines/status'
-  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { Segment } from '@skeletonlabs/skeleton-svelte'
   import { useIsScreenXl } from '$lib/compositions/layout/useIsMobile.svelte'
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
-  import Tooltip from '$lib/components/common/Tooltip.svelte'
   import { formatDateTime, useElapsedTime } from '$lib/functions/format'
   import {
     usePipelineManager,
@@ -23,7 +21,6 @@
     pushAsCircularBuffer
   } from '$lib/functions/pipelines/changeStream'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
-  import DownloadSupportBundle from '$lib/components/pipelines/editor/DownloadSupportBundle.svelte'
 
   const formatQty = (v: number) => format(',.0f')(v)
 
@@ -106,36 +103,20 @@
     }
     $effect.root(() => {
       if (cancelStream) {
+        // Avoid redundant cleanup on first start
         endMetricsStream()
       }
       setTimeout(() => startMetricsStream(api, pipelineName), 100)
     })
+    return () => {
+      endMetricsStream()
+    }
   })
 </script>
-
-{#snippet pipelineId()}
-  <ClipboardCopyButton
-    value={pipeline.current.id}
-    class="ml-auto h-8 w-auto border-[1px] border-surface-200-800"
-  >
-    <span class="text-base font-normal text-surface-950-50"
-      ><span class="hidden sm:inline">Copy pipeline ID</span><span class="inline sm:hidden">
-        Pipeline ID</span
-      ></span
-    >
-  </ClipboardCopyButton>
-  <Tooltip
-    placement="top"
-    class="z-10 text-nowrap rounded bg-white text-base text-surface-950-50 dark:bg-black"
-  >
-    {pipeline.current.id}
-  </Tooltip>
-{/snippet}
 
 {#if isMetricsAvailable(pipeline.current.status) === 'no'}
   <div class="flex justify-between pt-2 sm:pt-0">
     <div>Pipeline is not running</div>
-    {@render pipelineId()}
   </div>
 {:else if pipeline.current.status === 'Unavailable'}
   <div class="flex justify-between">
@@ -145,7 +126,6 @@
       )} since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}. You can
       attempt to suspend or shut it down.
     </div>
-    {@render pipelineId()}
   </div>
   <!-- {:else if !global && pipeline.current.status === 'Suspended'}
   <div class="flex justify-between">
@@ -160,7 +140,6 @@
 {:else if !global}
   <div class="flex justify-between">
     <div>Pipeline is running, but has not reported usage telemetry yet</div>
-    {@render pipelineId()}
   </div>
 {:else}<div class="flex h-full flex-col gap-4 overflow-y-auto overflow-x-clip scrollbar">
     <div class="flex w-full flex-col gap-4">
@@ -224,7 +203,6 @@
             </div>
             {@render updated()}
           </div>
-          {@render pipelineId()}
         {:else}
           <div>
             <Segment
@@ -240,9 +218,6 @@
               </Segment.Item>
               <Segment.Item value="updated" base="btn cursor-pointer z-[1] px-5 py-4 h-6">
                 <div class="text-start text-sm">Last status update</div>
-              </Segment.Item>
-              <Segment.Item value="id" base="">
-                <span class="pointer-events-auto">{@render pipelineId()}</span>
               </Segment.Item>
             </Segment>
             {#if statusTab === 'age'}
@@ -339,8 +314,5 @@
         {/if}
       </div>
     {/if}
-    <div>
-      <DownloadSupportBundle {pipelineName} />
-    </div>
   </div>
 {/if}

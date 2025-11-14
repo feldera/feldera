@@ -112,7 +112,7 @@ pub(crate) async fn ws_handler(
 
 Let's look at the main logic which is in `handle_socket`. This function internally spawns **two asynchronous tasks**:
 
-- **Client messages** – The first task listens for messages from the client in the form `{ from: x, to: y }`, indicating which cells the client wants. When such a request arrives, we send an [ad-hoc query](https://docs.feldera.com/api/execute-an-ad-hoc-sql-query-in-a-running-or-paused-pipeline) to Feldera to fetch that range and forward the result to the client:
+- **Client messages** – The first task listens for messages from the client in the form `{ from: x, to: y }`, indicating which cells the client wants. When such a request arrives, we send an [ad-hoc query](/api/execute-ad-hoc-sql) to Feldera to fetch that range and forward the result to the client:
 
 ```rust
 match process_message(msg, who) {
@@ -177,7 +177,7 @@ loop {
 
 #### Sending ad-hoc queries to Feldera
 
-In the first task, the complexity of sending an [ad-hoc query](https://docs.feldera.com/api/execute-an-ad-hoc-sql-query-in-a-running-or-paused-pipeline) to Feldera is hidden behind the `adhoc_query` function. Below is the implementation.
+In the first task, the complexity of sending an [ad-hoc query](/api/execute-ad-hoc-sql) to Feldera is hidden behind the `adhoc_query` function. Below is the implementation.
 
 ```rust
 pub(crate) async fn adhoc_query(sql: &str) -> Result<String, XlsError> {
@@ -290,7 +290,7 @@ pub(crate) fn subscribe_change_stream(
 we see that:
 
 - **A new broadcast channel** is created, allowing multiple readers and a single writer to distribute changes internally in our server application.
-- We connect to the change stream using the [Feldera egress endpoint](https://docs.feldera.com/api/subscribe-to-a-stream-of-updates-from-a-sql-view-or-table)
+- We connect to the change stream using the [Feldera egress endpoint](/api/subscribe-to-view)
 - We read and parse changes from the resulting HTTP stream sent by Feldera. Changes appear as ndjson and have the following format
 
     ```json
@@ -352,7 +352,7 @@ Here’s what happens:
 * We check if the IP is under rate limit. We haven't discussed rate limiting but it's actually quite simple to implement it thanks to writing it [as a Feldera view](https://github.com/feldera/techdemo-spreadsheet/blob/5abfb3aedc1ffa38b23341df2ed951726aef86f0/feldera/program.sql#L118) based on the `spreadsheet_data` table.
 * We sanitize the input and add a timestamp.
 
-Finally, we [insert](https://github.com/feldera/techdemo-spreadsheet/blob/5abfb3aedc1ffa38b23341df2ed951726aef86f0/server/src/feldera.rs#L159) the data using a REST call to the [Feldera ingress endpoint](https://docs.feldera.com/api/push-data-to-a-sql-table).
+Finally, we [insert](https://github.com/feldera/techdemo-spreadsheet/blob/5abfb3aedc1ffa38b23341df2ed951726aef86f0/server/src/feldera.rs#L159) the data using a REST call to the [Feldera ingress endpoint](/api/insert-data).
 
 ## Comments on Hosting
 

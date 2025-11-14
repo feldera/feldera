@@ -76,7 +76,9 @@
       "calcite": {
         "partial": 0
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59}
+      ],
       "persistent_id": "8b384059bdb44ad811ab341cc5e2a59697f39aac7b463cab027b185db8105e73"
     }, "s1": {
       "operation": "constant",
@@ -93,7 +95,10 @@
       "calcite": {
         "final": 1
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":1,"start_column":14,"end_line_number":1,"end_column":14},
+        {"start_line_number":1,"start_column":14,"end_line_number":1,"end_column":14}
+      ],
       "persistent_id": "5e6c4775639ef50da58436d192195ae13fa8cd9681af464d09f0927ebbd24bbf"
     }, "s3": {
       "operation": "map_index",
@@ -108,10 +113,8 @@
             "partial": 3
           }]
       },
-      "positions": [
-        {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":56}
-      ],
-      "persistent_id": "7684c3b73a6314cdb2e4342c658d4749799627e5ccdb1174d848823bbd68bba3"
+      "positions": [],
+      "persistent_id": "20e32f4b3b66b72a630fe9dfde075dbf6f5685dc5a61574bd7a2ee844174b882"
     }, "s4": {
       "operation": "differentiate",
       "inputs": [
@@ -121,7 +124,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "01faa7580b0056d187ace3cd6d84378af92e4b695805e5446059ba5495eb41af"
+      "persistent_id": "cc69beadd24044b7aaabbdc61c90ee37b09b25f8d0112c6dd86b082103ea83e0"
     }, "s5": {
       "operation": "aggregate_linear_postprocess",
       "inputs": [
@@ -133,7 +136,7 @@
       "positions": [
         {"start_line_number":2,"start_column":25,"end_line_number":2,"end_column":33}
       ],
-      "persistent_id": "972329ef8724635f60da98480c55fb2d0e6f5e86fe2762e01b6d193c3ab4a0e6"
+      "persistent_id": "35319f7c3f4dffb37a6c49346c349c0cd8510e4e9343765ed162f8c5f1d40bea"
     }, "s6": {
       "operation": "map",
       "inputs": [
@@ -143,7 +146,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "fa2c5d61862919e46280473305fc6c572d2f253b16291ddcf1d1c0b02811cdbb"
+      "persistent_id": "6b01b4f7f21b8af9652b43da077078b2d89e1a8d79dd76f0d7f14663316111e3"
     }, "s7": {
       "operation": "map",
       "inputs": [
@@ -153,7 +156,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "29b5cad4cdd9c7ebd8bdfae248cc0ca934bef75a9c74c3fad4346a1c7eade068"
+      "persistent_id": "66fdc36a4554840a3ff711d791d73fee71d17bf3307d91030564b1d34c5af588"
     }, "s8": {
       "operation": "neg",
       "inputs": [
@@ -163,7 +166,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "7fa2c27e4e0ca396a5798029520d203ff87bf9f3d13ed39090570838d9ad1cc3"
+      "persistent_id": "c5adfb0f3d7ac83332b891bcc24a3ed90c9e0fb3ebc394d3bd4291309c76b1a8"
     }, "s9": {
       "operation": "integrate",
       "inputs": [
@@ -173,7 +176,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "52165e29b7cdee78296cc216b13ebc1a3640837302d057059fa1abb86d06e83e"
+      "persistent_id": "533ebf4dd966cae5f06893a51898c6beaf3590c26dd26ccdaf2bc4ca47a37448"
     }, "s10": {
       "operation": "integrate",
       "inputs": [
@@ -183,7 +186,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "5c034254b63c337f3a465639aaed1950999ec8e82d1625454fcbd4f02a6ee3a9"
+      "persistent_id": "aaaa9100b40b87df41c85d98c0804ad64319d6b9c3406727c82284427ff35e63"
     }, "s11": {
       "operation": "sum",
       "inputs": [
@@ -195,27 +198,39 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "7868dec0d654c687104911b9aa76e751983577c13a237431d65c32452bcc61c2"
+      "persistent_id": "d58317eb8508ff179dd1db93886c4327c1493b3af7e3f2ad9ad77b3e1dde0826"
     }, "s12": {
       "operation": "inspect",
       "inputs": [
         { "node": "s11", "output": 0 }
       ],
+      "view": "v",
       "calcite": {
         "final": 3
       },
-      "positions": [],
-      "persistent_id": "ef960de2d6c71c5f017a139ae64cf5d64e0d83de5e75957f0f442e7208c32750"
+      "positions": [
+        {"start_line_number":2,"start_column":1,"end_line_number":2,"end_column":40},
+        {"start_line_number":2,"start_column":1,"end_line_number":2,"end_column":40}
+      ],
+      "persistent_id": "3e3ea2362e04f0d96bdc9edc9d0d47878605aab08524ac7e47779fd4825f0643"
     }, "s13": {
       "operation": "inspect",
       "inputs": [
         { "node": "s0", "output": 0 }
       ],
+      "view": "error_view",
       "calcite": {
         "final": 0
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59},
+        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59}
+      ],
       "persistent_id": "933ebf782e1fe804fe85c4d0f3688bdb5234b386c2834892776e692acd9781d9"
     }
-  }
+  },
+  "sources": [
+    "CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);",
+    "CREATE VIEW V AS SELECT SUM(COL1) FROM T;"
+  ]
 }

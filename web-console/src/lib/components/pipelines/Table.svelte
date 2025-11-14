@@ -12,6 +12,9 @@
   import { match } from 'ts-pattern'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import { unionName, type NamesInUnion } from '$lib/functions/common/union'
+  import PipelineVersion from './table/PipelineVersion.svelte'
+  import { page } from '$app/state'
+  import { pipe } from 'valibot'
   let {
     pipelines,
     preHeaderEnd,
@@ -105,6 +108,21 @@
         <th class="px-1 py-1 text-left"
           ><span class="text-base font-normal text-surface-950-50">Message</span></th
         >
+        <ThSort
+          {table}
+          class="w-20 py-1 pr-4 text-right xl:w-32"
+          field={(p) => p.connectors?.numErrors}
+        >
+          <span class="text-base font-normal text-surface-950-50">
+            <span class="inline xl:hidden">Errors</span>
+            <span class="hidden xl:!inline">Runtime errors</span>
+          </span>
+        </ThSort>
+        <ThSort {table} class="w-20 px-1 py-1 xl:w-32" field="platformVersion">
+          <span class="text-base font-normal text-surface-950-50">
+            Runtime <span class="hidden xl:!inline">version</span>
+          </span>
+        </ThSort>
         <ThSort {table} class="px-1 py-1" field="lastStatusSince"
           ><span class="text-base font-normal text-surface-950-50">Status changed</span></ThSort
         >
@@ -157,7 +175,7 @@
                 {@const message = pipeline.deploymentError.message}
                 <span class="fd fd-circle-alert pr-2 text-[20px] text-error-500"></span>
                 <Tooltip
-                  class="bg-white-dark z-10 whitespace-pre-wrap rounded text-surface-950-50"
+                  class="bg-white-dark z-10 whitespace-pre-wrap rounded text-base text-surface-950-50"
                   strategy="fixed"
                   activeContent
                 >
@@ -168,6 +186,21 @@
                 {message.slice(0, ((idx) => (idx > 0 ? idx : undefined))(message.indexOf('\n')))}
               {/if}
             </span>
+          </td>
+          <td class="pr-4 border-surface-100-900 group-hover:bg-surface-50-950">
+            <div class="text-nowrap text-right">
+              {pipeline.connectors?.numErrors ?? '-'}
+            </div>
+          </td>
+          <td class="relative border-surface-100-900 group-hover:bg-surface-50-950">
+            <div class="flex w-full flex-nowrap items-center gap-2 text-nowrap">
+              <PipelineVersion
+                pipelineName={pipeline.name}
+                runtimeVersion={pipeline.platformVersion}
+                baseRuntimeVersion={page.data.feldera!.version}
+                configuredRuntimeVersion={pipeline.programConfig.runtime_version}
+              ></PipelineVersion>
+            </div>
           </td>
           <td class="relative w-28 border-surface-100-900 group-hover:bg-surface-50-950">
             <div class="w-32 text-nowrap text-right">

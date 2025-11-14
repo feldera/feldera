@@ -69,11 +69,13 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         storage_status: StorageStatus::Cleared,
         deployment_id: None,
         deployment_initial: None,
+        bootstrap_policy: None,
         deployment_resources_status: ResourcesStatus::Stopped,
         deployment_resources_status_since: Default::default(),
         deployment_resources_desired_status: ResourcesDesiredStatus::Stopped,
         deployment_resources_desired_status_since: Default::default(),
         deployment_runtime_status: None,
+        deployment_runtime_status_details: None,
         deployment_runtime_status_since: None,
         deployment_runtime_desired_status: None,
         deployment_runtime_desired_status_since: None,
@@ -105,6 +107,8 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
                 memory_mb_max: None,
                 storage_mb_max: Some(10000),
                 storage_class: None,
+                service_account_name: None,
+                namespace: None,
             },
             clock_resolution_usecs: Some(100_000),
             pin_cpus: Vec::new(),
@@ -146,11 +150,13 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         storage_status: StorageStatus::Cleared,
         deployment_id: None,
         deployment_initial: None,
+        bootstrap_policy: None,
         deployment_resources_status: ResourcesStatus::Stopped,
         deployment_resources_status_since: Default::default(),
         deployment_resources_desired_status: ResourcesDesiredStatus::Stopped,
         deployment_resources_desired_status_since: Default::default(),
         deployment_runtime_status: None,
+        deployment_runtime_status_details: None,
         deployment_runtime_status_since: None,
         deployment_runtime_desired_status: None,
         deployment_runtime_desired_status_since: None,
@@ -263,9 +269,11 @@ fn pipeline_selected_info_internal_to_external(
         deployment_resources_desired_status_since: pipeline
             .deployment_resources_desired_status_since,
         deployment_runtime_status: pipeline.deployment_runtime_status,
+        deployment_runtime_status_details: pipeline.deployment_runtime_status_details,
         deployment_runtime_status_since: pipeline.deployment_runtime_status_since,
         deployment_runtime_desired_status: pipeline.deployment_runtime_desired_status,
         deployment_runtime_desired_status_since: pipeline.deployment_runtime_desired_status_since,
+        connectors: pipeline.connectors,
     }
 }
 
@@ -394,6 +402,7 @@ pub(crate) fn error_illegal_pipeline_storage_action() -> ErrorResponse {
 
 pub(crate) fn error_pipeline_interaction_not_deployed() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionNotDeployed {
+        pipeline_name: "my_pipeline".to_string(),
         status: ResourcesStatus::Stopped,
         desired_status: ResourcesDesiredStatus::Provisioned,
     })
@@ -401,18 +410,24 @@ pub(crate) fn error_pipeline_interaction_not_deployed() -> ErrorResponse {
 
 pub(crate) fn error_pipeline_interaction_currently_unavailable() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
+        pipeline_name: "my_pipeline".to_string(),
+        request: "/pause".to_string(),
         error: "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again".to_string()
     })
 }
 
 pub(crate) fn error_pipeline_interaction_disconnected() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
+        pipeline_name: "my_pipeline".to_string(),
+        request: "/pause".to_string(),
         error: format_disconnected_error_message("".to_string()),
     })
 }
 
 pub(crate) fn error_pipeline_interaction_timeout() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
+        pipeline_name: "my_pipeline".to_string(),
+        request: "/pause".to_string(),
         error: format_timeout_error_message(
             RunnerInteraction::PIPELINE_HTTP_REQUEST_TIMEOUT,
             "Timeout while waiting for response".to_string(),

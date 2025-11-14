@@ -195,10 +195,10 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--jdbcSource",
                 description = "Connection string to a database that contains table metadata")
         public String metadataSource = "";
-        // The pipeline manager uses --nowstream
-        @Parameter(names = "--nowstream",
+        // This option is ignored; it is here just for backward compatibility, and it will be removed.
+        @Parameter(names = "--nowstream", hidden = true,
                 description = "Implement NOW as a stream (true) or as an internal operator (false)")
-        public boolean nowStream = false;
+        public boolean ignored = true;
         @Parameter(names = "--sqlnames", hidden = true,
                 description = "Use the table names as identifiers in the generated code")
         public boolean sqlNames = false;
@@ -216,6 +216,9 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(hidden = true, names = "--skip_calcite_optimization",
                 description = "Calcite optimizer steps whose names match this regex are not applied.  Used for testing")
         public String skipCalciteOptimizations = "";
+
+        // Used only for internal testing
+        public boolean nowStream = true;
 
         /** Only compare fields that matter. */
         public boolean same(IO other) {

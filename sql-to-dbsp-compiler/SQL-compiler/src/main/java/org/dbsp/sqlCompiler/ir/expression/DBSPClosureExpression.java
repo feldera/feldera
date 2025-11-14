@@ -156,6 +156,20 @@ public final class DBSPClosureExpression extends DBSPExpression {
                 .append(")");
     }
 
+    public boolean shouldInlineComposition(DBSPCompiler compiler, DBSPClosureExpression before) {
+        Projection projection = new Projection(compiler);
+        projection.apply(this);
+        if (projection.isProjection && before.body.is(DBSPBaseTupleExpression.class)) {
+            return true;
+        } else {
+            // TODO: this could be refined by checking how many times the source expression
+            // is substituted in the result.
+            Expensive expensive = new Expensive(compiler);
+            expensive.apply(before);
+            return !expensive.isExpensive();
+        }
+    }
+
     /** Compose this closure by applying it after the 'before'
      * closure expression.  This closure must have exactly 1
      * parameter, while the before one can have multiple ones.
@@ -169,22 +183,13 @@ public final class DBSPClosureExpression extends DBSPExpression {
         if (this.parameters.length != 1)
             throw new InternalCompilerError("Expected closure with 1 parameter", this);
 
-        if (inline == MAYBE) {
-            Projection projection = new Projection(compiler);
-            projection.apply(this);
-            if (projection.isProjection) {
-                inline = YES;
-            } else {
-                Expensive expensive = new Expensive(compiler);
-                expensive.apply(before);
-                if (expensive.isExpensive())
-                    inline = NO;
-                else
-                    inline = YES;
-            }
-        }
+        boolean shouldInline;
+        if (inline == MAYBE)
+            shouldInline = this.shouldInlineComposition(compiler, before);
+        else
+            shouldInline = inline.toBool();
 
-        if (inline == YES) {
+        if (shouldInline) {
             DBSPExpression apply = this.call(before.body.borrow());
             DBSPClosureExpression closure = apply.closure(before.parameters);
             DBSPExpression reduced = closure.reduce(compiler);

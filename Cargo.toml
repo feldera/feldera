@@ -1,6 +1,6 @@
 [workspace.package]
 authors = ["Feldera Team <dev@feldera.com>"]
-version = "0.155.0"
+version = "0.185.0"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/feldera/feldera"
 repository = "https://github.com/feldera/feldera"
@@ -41,7 +41,7 @@ actix = "0.13.1"
 actix-codec = "0.5.0"
 actix-cors = "0.6.4"
 actix-files = "0.6.2"
-actix-http = "3.11.1"
+actix-http = "3.11.2"
 actix-test = "0.1.1"
 actix-web = "4.11.0"
 actix-web-httpauth = "0.8.0"
@@ -56,6 +56,7 @@ arrow-json = "55"
 arrow-digest = "55"
 ascii_table = "=4.0.2"
 async-channel = "2.3.1"
+async-nats = "0.44.2"
 async-std = "1.12.0"
 async-stream = "0.3.5"
 async-trait = "0.1"
@@ -64,6 +65,7 @@ awc = "3.5.1"
 aws-config = "1.1.7"
 aws-sdk-s3 = "1.86.0"
 aws-types = "1.1.7"
+backoff = "0.4.0"
 base64 = "0.22.1"
 base58 = "0.2.0"
 binrw = "0.13.3"
@@ -90,7 +92,7 @@ csv = "1.2.2"
 csv-core = "0.1.10"
 dashmap = "6.1.0"
 datafusion = "47"
-dbsp = { path = "crates/dbsp", version = "0.155.0" }
+dbsp = { path = "crates/dbsp", version = "0.185.0" }
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.10.5"
 #deltalake = "0.26.2"
@@ -106,14 +108,15 @@ fake = "2.10"
 fastbloom = "0.14.0"
 fdlimit = "0.3.0"
 feldera-adapterlib = { path = "crates/adapterlib" }
+feldera-cloud1-client = "0.1.2"
 feldera-datagen = { path = "crates/datagen" }
-feldera-fxp = { version = "0.155.0", path = "crates/fxp", features = ["dbsp"] }
+feldera-fxp = { version = "0.185.0", path = "crates/fxp", features = ["dbsp"] }
 feldera-iceberg = { path = "crates/iceberg" }
 feldera-sqllib = { path = "crates/sqllib" }
-feldera-storage = { version = "0.155.0", path = "crates/storage" }
-feldera-types = { version = "0.155.0", path = "crates/feldera-types" }
-feldera-rest-api = { version = "0.155.0", path = "crates/rest-api" }
-feldera-ir = { version = "0.155.0", path = "crates/ir" }
+feldera-storage = { version = "0.185.0", path = "crates/storage" }
+feldera-types = { version = "0.185.0", path = "crates/feldera-types" }
+feldera-rest-api = { version = "0.185.0", path = "crates/rest-api" }
+feldera-ir = { version = "0.185.0", path = "crates/ir" }
 flate2 = "1.1.0"
 form_urlencoded = "1.2.0"
 futures = "0.3.30"
@@ -206,6 +209,7 @@ rustversion = "1.0"
 rustyline = "15.0"
 ryu = "1.0.20"
 schema_registry_converter = "4.2.0"
+semver = "1.0.27"
 serde = "1.0.213"
 serde_arrow = { version = "0.13.4", features = ["arrow-55"] }
 serde_bytes = "0.11.15"
@@ -238,7 +242,7 @@ thiserror = "2"
 threadpool = "1.8.1"
 thread-id = "5.0.0"
 tikv-jemallocator = "0.6.0"
-time = "0.3.20"
+time = { version = "0.3.20", features = ["serde", "serde-well-known"] }
 tokio = "1.44.2"
 tokio-postgres = "0.7"
 tokio-stream = "0.1.15"

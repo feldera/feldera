@@ -15,6 +15,16 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        BACKWARD-INCOMPATIBLE PYTHON SDK CHANGES
+
+        - The `Pipeline.listen` method can now only be called when the pipeline is running or paused. Previously
+          it was possible to call `Pipeline.listen` before starting the pipeline in order to guarantee that all
+          outputs produced by the pipeline are captured by the listener. With the new API, you can achieve the
+          same by starting the pipeline in a paused state using `Pipeline.start_paused` and calling `Pipeline.listen`
+          before unpausing the pipeline using `Pipeline.resume`.
+
+        ## 0.148.0
+
         API CHANGES: BACKWARD INCOMPATIBLE
 
         **API pipeline endpoints**

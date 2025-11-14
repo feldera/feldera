@@ -40,7 +40,7 @@
 />
 
 <Toaster position={'bottom-right'} toastOptions={{}}></Toaster>
-{@render children()}
+{@render children?.()}
 
 <style lang="scss" global>
   .toast-error {

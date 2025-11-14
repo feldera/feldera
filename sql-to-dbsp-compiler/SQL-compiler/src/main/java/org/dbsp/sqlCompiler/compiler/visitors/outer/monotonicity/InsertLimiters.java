@@ -413,12 +413,16 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         ReplacementExpansion ae = expanded.to(ReplacementExpansion.class);
-
         if (aggregator.annotations.first(AlwaysMonotone.class) != null) {
             // This operator computes its own waterline.
             // This treatment is similar to the ImplementNow.scalarNow function.
 
-            DBSPDeindexOperator deindex = new DBSPDeindexOperator(aggregator.getRelNode(), aggregator.outputPort());
+            DBSPSimpleOperator filteredAggregator = aggregator
+                    .withInputs(Linq.list(source), false)
+                    .to(DBSPSimpleOperator.class);
+            this.map(aggregator.outputPort(), filteredAggregator.outputPort());
+            DBSPDeindexOperator deindex = new DBSPDeindexOperator(aggregator.getRelNode(), filteredAggregator.outputPort());
+            this.addOperator(deindex);
             DBSPTypeTuple tuple = deindex.getOutputZSetElementType().to(DBSPTypeTuple.class);
             DBSPVariablePath t = tuple.ref().var();
 
@@ -429,8 +433,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
                     aggregator.getRelNode(), min.closure(),
                     timestampTuple.closure(t, DBSPTypeRawTuple.EMPTY.ref().var()),
-                    max, aggregator.outputPort());
-            this.map(aggregator.outputPort(), aggregator.outputPort());
+                    max, deindex.outputPort());
             this.addOperator(waterline);
 
             // An apply operator to add a Boolean bit to the waterline.
@@ -658,7 +661,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         // Compute the waterline for the new rolling aggregate operator
         DBSPTypeTupleBase varType = projection.getType().to(DBSPTypeTupleBase.class);
-        Utilities.enforce(varType.size() == 2, "Expected a pair, got " + varType);
+        DBSPTypeTupleBase finalVarType = varType;
+        Utilities.enforce(varType.size() == 2, () -> "Expected a pair, got " + finalVarType);
         varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         final DBSPVariablePath var = varType.var();
         DBSPExpression body = var.field(0).deref();
@@ -1363,9 +1367,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return operator;
         }
         DBSPSourceMultisetOperator multisetInput = operator.as(DBSPSourceMultisetOperator.class);
-        DBSPTypeIndexedZSet indexedOutputType = null;
-        if (multisetInput != null)
-            indexedOutputType = IndexedInputs.getIndexedType(multisetInput);
+        final DBSPTypeIndexedZSet indexedOutputType = (multisetInput != null) ?
+                IndexedInputs.getIndexedType(multisetInput) : null;
 
         List<DBSPExpression> timestamps = new ArrayList<>();
         int index = 0;
@@ -1391,7 +1394,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
         DBSPSimpleOperator replacement = operator.withInputs(sources, this.force)
                 .to(DBSPSimpleOperator.class);
-        replacement.setDerivedFrom(operator.derivedFrom);
+        replacement.setDerivedFrom(operator);
         if (!replaceIndexedInput)
             this.addOperator(replacement);
 
@@ -1469,7 +1472,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
         if (operator != expansion)
             this.markBound(expansion.outputPort(), extend.outputPort());
 
-        if (INSERT_RETAIN_VALUES && replaceIndexedInput) {
+        if (INSERT_RETAIN_VALUES && replaceIndexedInput &&
+                multisetInput != null &&
+                !multisetInput.getMetadata().materialized) {
+            // Do not GC materialized tables
             IMaybeMonotoneType projection = me.getMonotoneType().to(MonotoneClosureType.class).getBodyType();
             // The new input operator produces an indexed Zset, need to adjust the projection
             projection = new PartiallyMonotoneTuple(
@@ -1491,7 +1497,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         DBSPType leftSliceType = Objects.requireNonNull(monotoneType.getProjectedType());
         Utilities.enforce(leftSliceType.sameType(controlType),
-                "Projection type does not match control type " + leftSliceType + "/" + controlType);
+                () -> "Projection type does not match control type " + leftSliceType + "/" + controlType);
 
         DBSPType rowType = data.getOutputRowType();
         DBSPVariablePath dataVar = rowType.ref().var();

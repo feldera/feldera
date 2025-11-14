@@ -31,8 +31,12 @@ pub enum RuntimeStatus {
     /// respectively.
     Initializing,
 
-    /// The pipeline was modified since the last time it was started, and as such it is currently
-    /// computing modified views.
+    /// The pipeline was modified since the last checkpoint. User approval is required before
+    /// bootstrapping can proceed.
+    AwaitingApproval,
+
+    /// The pipeline was modified since the last checkpoint, and is currently bootstrapping modified
+    /// views.
     Bootstrapping,
 
     /// Input records that were stored in the journal but were not yet processed, are being
@@ -95,7 +99,51 @@ impl From<String> for RuntimeDesiredStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BootstrapPolicy {
+    Allow,
+    Reject,
+    #[default]
+    AwaitApproval,
+}
+
+impl TryFrom<Option<String>> for BootstrapPolicy {
+    type Error = ();
+
+    fn try_from(value: Option<String>) -> Result<Self, Self::Error> {
+        match value.as_deref() {
+            Some("allow") => Ok(Self::Allow),
+            Some("reject") => Ok(Self::Reject),
+            Some("await_approval") | None => Ok(Self::AwaitApproval),
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<String> for BootstrapPolicy {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "allow" => Self::Allow,
+            "reject" => Self::Reject,
+            "await_approval" => Self::AwaitApproval,
+            _ => panic!("Invalid 'bootstrap_policy' value: {value}"),
+        }
+    }
+}
+
+impl Display for BootstrapPolicy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            BootstrapPolicy::Allow => "allow",
+            BootstrapPolicy::Reject => "reject",
+            BootstrapPolicy::AwaitApproval => "await_approval",
+        };
+        write!(f, "{s}")
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExtendedRuntimeStatus {
     /// Runtime status of the pipeline.
     pub runtime_status: RuntimeStatus,
@@ -103,7 +151,7 @@ pub struct ExtendedRuntimeStatus {
     /// Human-readable details about the runtime status. Its content can contain for instance an
     /// explanation why it is in this status and any other additional information about it (e.g.,
     /// progress).
-    pub runtime_status_details: String,
+    pub runtime_status_details: serde_json::Value,
 
     /// Runtime desired status of the pipeline.
     pub runtime_desired_status: RuntimeDesiredStatus,

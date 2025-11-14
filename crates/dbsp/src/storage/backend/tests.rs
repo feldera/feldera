@@ -113,7 +113,9 @@ pub(super) fn test_backend(
         writer.write_block(block).unwrap();
     }
 
-    let (reader, name) = writer.complete().unwrap();
+    let reader = writer.complete().unwrap();
+    reader.commit().unwrap();
+    let name = reader.path().clone();
     assert_eq!(backend.usage().load(Ordering::Relaxed), expected_size);
     test_read(reader.as_ref(), &data);
     if mark_for_checkpoint {

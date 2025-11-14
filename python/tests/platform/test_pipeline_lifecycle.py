@@ -2,6 +2,7 @@ import time
 from http import HTTPStatus
 
 from .helper import (
+    create_pipeline,
     post_json,
     http_request,
     wait_for_program_success,
@@ -57,12 +58,7 @@ def test_deploy_pipeline(pipeline_name):
         "CREATE TABLE t1(c1 INTEGER) WITH ('materialized' = 'true'); "
         "CREATE VIEW v1 AS SELECT * FROM t1;"
     )
-    r = post_json(
-        api_url("/pipelines"),
-        {"name": pipeline_name, "program_code": sql},
-    )
-    assert r.status_code == HTTPStatus.CREATED, r.text
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, sql)
 
     start_pipeline(pipeline_name)
     assert _ingress(pipeline_name, "t1", "1\n2\n3\n").status_code == HTTPStatus.OK
@@ -89,9 +85,7 @@ def test_pipeline_panic(pipeline_name):
         "CREATE TABLE t1(c1 INTEGER); "
         "CREATE VIEW v1 AS SELECT ELEMENT(ARRAY [2, 3]) FROM t1;"
     )
-    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": sql})
-    assert r.status_code == HTTPStatus.CREATED, r.text
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, sql)
 
     start_pipeline(pipeline_name)
     _ingress(pipeline_name, "t1", "1\n2\n3\n")
@@ -109,9 +103,7 @@ def test_pipeline_restart(pipeline_name):
     Start -> stop (force) -> start -> stop (force & clear).
     """
     sql = "CREATE TABLE t1(c1 INTEGER); CREATE VIEW v1 AS SELECT * FROM t1;"
-    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": sql})
-    assert r.status_code == HTTPStatus.CREATED, r.text
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, sql)
 
     start_pipeline(pipeline_name)
     stop_pipeline(pipeline_name, force=True)
@@ -192,12 +184,7 @@ def test_pipeline_stop_force_after_start(pipeline_name):
     """
     Start and then force stop after varying short delays.
     """
-    r = post_json(
-        api_url("/pipelines"),
-        {"name": pipeline_name, "program_code": "CREATE TABLE t1(c1 INTEGER);"},
-    )
-    assert r.status_code == HTTPStatus.CREATED
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, "CREATE TABLE t1(c1 INTEGER);")
 
     for delay_sec in [0, 0.1, 0.5, 1, 3, 10]:
         start_pipeline(pipeline_name)
@@ -213,9 +200,7 @@ def test_pipeline_stop_with_force(pipeline_name):
     """
     Sequences of starting/stopping with force.
     """
-    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": ""})
-    assert r.status_code == HTTPStatus.CREATED
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, "")
 
     # Already stopped force
     stop_pipeline(pipeline_name, force=True)
@@ -241,9 +226,7 @@ def test_pipeline_stop_without_force(pipeline_name):
     """
     Same sequences but without force (Enterprise only).
     """
-    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": ""})
-    assert r.status_code == HTTPStatus.CREATED
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, "")
 
     # Already stopped
     stop_pipeline(pipeline_name, force=False)
@@ -271,12 +254,7 @@ def test_pipeline_clear(pipeline_name):
     """
     Validate storage_status transitions and clear behavior.
     """
-    r = post_json(
-        api_url("/pipelines"),
-        {"name": pipeline_name, "program_code": ""},
-    )
-    assert r.status_code == HTTPStatus.CREATED
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, "")
 
     obj = get_pipeline(pipeline_name, "status").json()
     assert obj.get("storage_status") == "Cleared"

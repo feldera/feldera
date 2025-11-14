@@ -107,13 +107,16 @@ if you'd like to experiment with Kafka and other auxiliary services.
 
 ## ⚙️ Running Feldera from sources
 
-To run Feldera from sources, first install required dependencies:
+To run Feldera from sources, ensure at least 6 GB of free space in the sources directory and an additional 7 GB in your home directory, then install the required dependencies:
 
 - [Rust tool chain](https://www.rust-lang.org/tools/install)
 - cmake
 - libssl-dev
 - libsasl2-dev
-- Java Development Kit (JDK), version 19 or newer
+- pkg-config
+- libzstd-dev
+- clang
+- Java Development Kit (JDK), version 19 or newer (21 is recommended)
 - maven
 - [Bun](https://bun.sh/docs/installation)
 

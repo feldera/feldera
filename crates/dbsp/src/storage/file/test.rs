@@ -157,61 +157,69 @@ fn test_find<K, A, N, T>(
     //let (key, aux): (&mut DynData, &mut DynData) = (key.erase_mut(),
     // aux.erase_mut());
 
-    let mut cursor = row_group.first().unwrap();
+    let mut cursor = unsafe { row_group.first().unwrap() };
     unsafe { cursor.advance_to_value_or_larger(key.erase()) }.unwrap();
     assert_eq!(
         unsafe { cursor.item((tmp_key, tmp_aux)) },
         Some((key.erase_mut(), aux.erase_mut()))
     );
+    assert_eq!(cursor.key(), Some(key.erase()));
 
-    let mut cursor = row_group.first().unwrap();
+    let mut cursor = unsafe { row_group.first().unwrap() };
     unsafe { cursor.advance_to_value_or_larger(before.erase()) }.unwrap();
     assert_eq!(
         unsafe { cursor.item((tmp_key, tmp_aux)) },
         Some((key.erase_mut(), aux.erase_mut()))
     );
+    assert_eq!(cursor.key(), Some(key.erase()));
 
-    let mut cursor = row_group.first().unwrap();
+    let mut cursor = unsafe { row_group.first().unwrap() };
     unsafe { cursor.seek_forward_until(|k| k >= key.erase()) }.unwrap();
     assert_eq!(
         unsafe { cursor.item((tmp_key, tmp_aux)) },
         Some((key.erase_mut(), aux.erase_mut()))
     );
+    assert_eq!(cursor.key(), Some(key.erase()));
 
-    let mut cursor = row_group.first().unwrap();
+    let mut cursor = unsafe { row_group.first().unwrap() };
     unsafe { cursor.seek_forward_until(|k| k >= before.erase()) }.unwrap();
     assert_eq!(
         unsafe { cursor.item((tmp_key, tmp_aux)) },
         Some((key.erase_mut(), aux.erase_mut()))
     );
+    assert_eq!(cursor.key(), Some(key.erase()));
 
-    let mut cursor = row_group.last().unwrap();
+    let mut cursor = unsafe { row_group.last().unwrap() };
     unsafe { cursor.rewind_to_value_or_smaller(key.erase()) }.unwrap();
     assert_eq!(
         unsafe { cursor.item((tmp_key, tmp_aux)) },
         Some((key.erase_mut(), aux.erase_mut()))
     );
+    assert_eq!(cursor.key(), Some(key.erase()));
 
-    let mut cursor = row_group.last().unwrap();
+    let mut cursor = unsafe { row_group.last().unwrap() };
     unsafe { cursor.rewind_to_value_or_smaller(after.erase()) }.unwrap();
     assert_eq!(
         unsafe { cursor.item((tmp_key, tmp_aux)) },
         Some((key.erase_mut(), aux.erase_mut()))
     );
+    assert_eq!(cursor.key(), Some(key.erase()));
 
-    let mut cursor = row_group.last().unwrap();
+    let mut cursor = unsafe { row_group.last().unwrap() };
     unsafe { cursor.seek_backward_until(|k| k <= key.erase()) }.unwrap();
     assert_eq!(
         unsafe { cursor.item((tmp_key, tmp_aux)) },
         Some((key.erase_mut(), aux.erase_mut()))
     );
+    assert_eq!(cursor.key(), Some(key.erase()));
 
-    let mut cursor = row_group.last().unwrap();
+    let mut cursor = unsafe { row_group.last().unwrap() };
     unsafe { cursor.seek_backward_until(|k| k <= after.erase()) }.unwrap();
     assert_eq!(
         unsafe { cursor.item((tmp_key, tmp_aux)) },
         Some((key.erase_mut(), aux.erase_mut()))
     );
+    assert_eq!(cursor.key(), Some(key.erase()));
 }
 
 fn test_out_of_range<K, A, N, T>(
@@ -228,21 +236,25 @@ fn test_out_of_range<K, A, N, T>(
     let (tmp_key, tmp_aux): (&mut DynData, &mut DynData) =
         (tmp_key.erase_mut(), tmp_aux.erase_mut());
 
-    let mut cursor = row_group.first().unwrap();
+    let mut cursor = unsafe { row_group.first().unwrap() };
     unsafe { cursor.advance_to_value_or_larger(after.erase()) }.unwrap();
     assert_eq!(unsafe { cursor.item((tmp_key, tmp_aux)) }, None);
+    assert_eq!(cursor.key(), None);
 
-    cursor.move_first().unwrap();
+    unsafe { cursor.move_first() }.unwrap();
     unsafe { cursor.seek_forward_until(|k| k >= after.erase()) }.unwrap();
     assert_eq!(unsafe { cursor.item((tmp_key, tmp_aux)) }, None);
+    assert_eq!(cursor.key(), None);
 
-    let mut cursor = row_group.last().unwrap();
+    let mut cursor = unsafe { row_group.last().unwrap() };
     unsafe { cursor.rewind_to_value_or_smaller(before.erase()) }.unwrap();
     assert_eq!(unsafe { cursor.item((tmp_key, tmp_aux)) }, None);
+    assert_eq!(cursor.key(), None);
 
-    cursor.move_last().unwrap();
+    unsafe { cursor.move_last() }.unwrap();
     unsafe { cursor.seek_backward_until(|k| k <= before.erase()) }.unwrap();
     assert_eq!(unsafe { cursor.item((tmp_key, tmp_aux)) }, None);
+    assert_eq!(cursor.key(), None);
 }
 
 #[allow(clippy::len_zero)]
@@ -264,69 +276,84 @@ fn test_cursor_helper<K, A, N, T>(
     assert_eq!(rows.len(), n as u64);
 
     assert_eq!(rows.len() == 0, rows.is_empty());
-    assert_eq!(rows.before().len(), n as u64);
-    assert_eq!(rows.after().len() == 0, rows.after().is_empty());
+    assert_eq!(unsafe { rows.before() }.len(), n as u64);
+    assert_eq!(
+        unsafe { rows.after() }.len() == 0,
+        unsafe { rows.after() }.is_empty()
+    );
 
     if n > 0 {
-        let first = rows.first().unwrap();
+        let first = unsafe { rows.first().unwrap() };
         let (_before, mut key, _after, mut aux) = expected(0);
         assert_eq!(
             unsafe { first.item((tmp_key, tmp_aux)) },
             Some((key.erase_mut(), aux.erase_mut()))
         );
+        assert_eq!(first.key(), Some(key.erase()));
 
-        let last = rows.last().unwrap();
+        let last = unsafe { rows.last().unwrap() };
         let (_before, mut key, _after, mut aux) = expected(n - 1);
         assert_eq!(
             unsafe { last.item((tmp_key, tmp_aux)) },
             Some((key.erase_mut(), aux.erase_mut()))
         );
+        assert_eq!(last.key(), Some(key.erase()));
     }
 
-    let mut forward = rows.before();
+    let mut forward = unsafe { rows.before() };
     assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
-    forward.move_prev().unwrap();
+    assert_eq!(forward.key(), None);
+    unsafe { forward.move_prev() }.unwrap();
     assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
-    forward.move_next().unwrap();
+    assert_eq!(forward.key(), None);
+    unsafe { forward.move_next() }.unwrap();
     for row in 0..n {
         let (_before, mut key, _after, mut aux) = expected(row);
         assert_eq!(
             unsafe { forward.item((tmp_key, tmp_aux)) },
             Some((key.erase_mut(), aux.erase_mut()))
         );
-        forward.move_next().unwrap();
+        assert_eq!(forward.key(), Some(key.erase()));
+        unsafe { forward.move_next() }.unwrap();
     }
     assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
-    forward.move_next().unwrap();
+    assert_eq!(forward.key(), None);
+    unsafe { forward.move_next() }.unwrap();
     assert_eq!(unsafe { forward.item((tmp_key, tmp_aux)) }, None);
+    assert_eq!(forward.key(), None);
 
-    let mut backward = rows.after();
+    let mut backward = unsafe { rows.after() };
     assert_eq!(unsafe { backward.item((tmp_key, tmp_aux)) }, None);
-    backward.move_next().unwrap();
+    assert_eq!(backward.key(), None);
+    unsafe { backward.move_next() }.unwrap();
     assert_eq!(unsafe { backward.item((tmp_key, tmp_aux)) }, None);
-    backward.move_prev().unwrap();
+    assert_eq!(backward.key(), None);
+    unsafe { backward.move_prev() }.unwrap();
     for row in (0..n).rev() {
         let (_before, mut key, _after, mut aux) = expected(row);
         assert_eq!(
             unsafe { backward.item((tmp_key, tmp_aux)) },
             Some((key.erase_mut(), aux.erase_mut()))
         );
-        backward.move_prev().unwrap();
+        assert_eq!(backward.key(), Some(key.erase()));
+        unsafe { backward.move_prev() }.unwrap();
     }
     assert_eq!(unsafe { backward.item((tmp_key, tmp_aux)) }, None);
-    backward.move_prev().unwrap();
+    assert_eq!(backward.key(), None);
+    unsafe { backward.move_prev() }.unwrap();
     assert_eq!(unsafe { backward.item((tmp_key, tmp_aux)) }, None);
+    assert_eq!(backward.key(), None);
 
     for row in 0..n {
         let (before, key, after, aux) = expected(row);
         test_find(rows, &before, &key, &after, aux.clone());
     }
 
-    let mut random = rows.before();
+    let mut random = unsafe { rows.before() };
     let mut order: Vec<_> = (0..n + 10).collect();
     order.shuffle(&mut thread_rng());
     for row in order {
-        random.move_to_row(row as u64).unwrap();
+        unsafe { random.move_to_row(row as u64) }.unwrap();
         assert_eq!(random.absolute_position(), offset + row.min(n) as u64);
         assert_eq!(random.remaining_rows(), (n - row.min(n)) as u64);
         if row < n {
@@ -335,8 +362,10 @@ fn test_cursor_helper<K, A, N, T>(
                 unsafe { random.item((tmp_key, tmp_aux)) },
                 Some((key.erase_mut(), aux.erase_mut()))
             );
+            assert_eq!(random.key(), Some(key.erase()));
         } else {
             assert_eq!(unsafe { random.item((tmp_key, tmp_aux)) }, None);
+            assert_eq!(random.key(), None);
         }
     }
 
@@ -356,7 +385,7 @@ fn test_cursor<K, A, N, T>(
     A: DBData,
     T: ColumnSpec,
 {
-    let offset = rows.before().absolute_position();
+    let offset = unsafe { rows.before().absolute_position() };
     test_cursor_helper(rows, offset, n, &expected);
 
     let start = thread_rng().gen_range(0..n);
@@ -734,7 +763,8 @@ where
 
         let reader = if reopen {
             println!("closing writer and reopening as reader");
-            let (_file_handle, path, _bloom_filter) = writer.close().unwrap();
+            let path = writer.path().clone();
+            let (_file_handle, _bloom_filter) = writer.close().unwrap();
             Reader::open(
                 &[&factories.any_factories()],
                 test_buffer_cache,
@@ -788,7 +818,8 @@ fn test_one_column_zset<K, A>(
 
         let reader = if reopen {
             println!("closing writer and reopening as reader");
-            let (_file_handle, path, _bloom_filter) = writer.close().unwrap();
+            let path = writer.path().clone();
+            let (_file_handle, _bloom_filter) = writer.close().unwrap();
             Reader::open(
                 &[&factories.any_factories()],
                 test_buffer_cache,

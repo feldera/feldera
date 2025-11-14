@@ -70,7 +70,7 @@ RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86
   && mv mold-2.40.1-$arch-linux $HOME/mold \
   && rm mold-2.40.1-$arch-linux.tar.gz
 ENV PATH="$PATH:/home/ubuntu/.cargo/bin:/home/ubuntu/mold/bin"
-ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
+ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib"
 
 #
 # Build phase to specifically customize for the feldera OSS container

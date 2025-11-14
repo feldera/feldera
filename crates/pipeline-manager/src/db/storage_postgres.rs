@@ -17,15 +17,37 @@ use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
+use crate::is_supported_runtime;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
 use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{ExtendedRuntimeStatus, RuntimeDesiredStatus};
+use feldera_types::runtime_status::{BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus};
 use log::{debug, info, log, Level};
 use tokio_postgres::Row;
 use uuid::Uuid;
+
+// Convert PipelineId UUID to u64 to match PostgreSQL's behavior.
+// This uses the first 8 bytes of the UUID converted to a big-endian u64.
+// This ensures consistent worker assignment between Rust and SQL implementations.
+fn pipline_uuid_to_u64(pipeline_id: PipelineId) -> u64 {
+    let bytes = pipeline_id.0.as_bytes();
+    u64::from_be_bytes([
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+    ])
+}
+
+/// Determine if a pipeline is assigned to a specific worker based on its ID.
+/// Uses modulo operation to distribute pipelines across workers.
+pub(crate) fn is_pipeline_assigned_to_worker(
+    pipeline_id: PipelineId,
+    worker_index: u64,
+    total_workers: u64,
+) -> bool {
+    let hash = pipline_uuid_to_u64(pipeline_id);
+    (hash % total_workers) == worker_index
+}
 
 mod embedded {
     use refinery::embed_migrations;
@@ -219,7 +241,7 @@ impl Storage for StoragePostgres {
             operations::pipeline::get_pipeline_by_id_for_monitoring(&txn, tenant_id, pipeline_id)
                 .await?;
         let is_ready_compiled = pipeline_monitoring.program_status == ProgramStatus::Success
-            && pipeline_monitoring.platform_version == platform_version;
+            && is_supported_runtime(platform_version, &pipeline_monitoring.platform_version);
         let pipeline_result = if matches!(
             (
                 pipeline_monitoring.deployment_resources_status,
@@ -283,6 +305,7 @@ impl Storage for StoragePostgres {
         new_id: Uuid,
         original_name: &str,
         platform_version: &str,
+        bump_platform_version: bool,
         pipeline: PipelineDescr,
     ) -> Result<(bool, ExtendedPipelineDescr), DBError> {
         let mut client = self.pool.get().await?;
@@ -301,6 +324,7 @@ impl Storage for StoragePostgres {
                     &Some(pipeline.name.clone()),
                     &Some(pipeline.description.clone()),
                     platform_version,
+                    bump_platform_version,
                     &Some(pipeline.runtime_config.clone()),
                     &Some(pipeline.program_code.clone()),
                     &Some(pipeline.udf_rust.clone()),
@@ -340,6 +364,48 @@ impl Storage for StoragePostgres {
         Ok((is_new, extended_pipeline))
     }
 
+    async fn testing_force_update_platform_version(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        platform_version: &str,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+
+        // Check if pipeline exists
+        let current =
+            operations::pipeline::get_pipeline_for_monitoring(&txn, tenant_id, pipeline_name)
+                .await?;
+
+        if current.deployment_resources_status != ResourcesStatus::Stopped {
+            return Err(DBError::UpdateRestrictedToStopped);
+        }
+
+        let stmt_update = txn
+            .prepare_cached(
+                "UPDATE pipeline
+                     SET platform_version = $1
+                     WHERE id = $2",
+            )
+            .await?;
+
+        let rows_affected = txn
+            .execute(&stmt_update, &[&platform_version, &current.id.0])
+            .await?;
+
+        assert_eq!(rows_affected, 1);
+
+        info!(
+            "Updated pipeline {} from platform version {} to {}",
+            current.id, current.platform_version, platform_version
+        );
+
+        txn.commit().await?;
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn update_pipeline(
         &self,
@@ -348,6 +414,7 @@ impl Storage for StoragePostgres {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
+        bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
@@ -366,6 +433,7 @@ impl Storage for StoragePostgres {
             name,
             description,
             platform_version,
+            bump_platform_version,
             runtime_config,
             program_code,
             udf_rust,
@@ -396,6 +464,7 @@ impl Storage for StoragePostgres {
         Ok(pipeline_id)
     }
 
+    #[cfg(test)]
     async fn transit_program_status_to_pending(
         &self,
         tenant_id: TenantId,
@@ -617,6 +686,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_name: &str,
         initial: RuntimeDesiredStatus,
+        bootstrap_policy: BootstrapPolicy,
     ) -> Result<PipelineId, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -626,6 +696,7 @@ impl Storage for StoragePostgres {
             pipeline_name,
             ResourcesDesiredStatus::Provisioned,
             Some(initial),
+            Some(bootstrap_policy),
         )
         .await?;
         txn.commit().await?;
@@ -644,6 +715,7 @@ impl Storage for StoragePostgres {
             tenant_id,
             pipeline_name,
             ResourcesDesiredStatus::Stopped,
+            None,
             None,
         )
         .await?;
@@ -667,6 +739,7 @@ impl Storage for StoragePostgres {
                 tenant_id,
                 pipeline_name,
                 ResourcesDesiredStatus::Stopped,
+                None,
                 None,
             )
             .await?;
@@ -704,6 +777,7 @@ impl Storage for StoragePostgres {
             None,
             None,
             None,
+            None,
             Some(deployment_id),
             Some(deployment_config),
             None,
@@ -731,6 +805,7 @@ impl Storage for StoragePostgres {
             version_guard,
             ResourcesStatus::Provisioned,
             Some(extended_runtime_status.runtime_status),
+            Some(extended_runtime_status.runtime_status_details),
             Some(extended_runtime_status.runtime_desired_status),
             None,
             None,
@@ -762,6 +837,7 @@ impl Storage for StoragePostgres {
             &pipeline.name,
             ResourcesDesiredStatus::Stopped,
             None,
+            None,
         )
         .await?;
         operations::pipeline::set_deployment_resources_status(
@@ -770,6 +846,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             version_guard,
             ResourcesStatus::Stopping,
+            None,
             None,
             None,
             deployment_error,
@@ -798,6 +875,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             version_guard,
             ResourcesStatus::Stopped,
+            None,
             None,
             None,
             None,
@@ -887,12 +965,23 @@ impl Storage for StoragePostgres {
         Ok(pipelines)
     }
 
-    async fn clear_ongoing_sql_compilation(&self, platform_version: &str) -> Result<(), DBError> {
+    async fn clear_ongoing_sql_compilation_for_worker(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let pipelines =
             operations::pipeline::list_pipelines_across_all_tenants_for_monitoring(&txn).await?;
         for (tenant_id, pipeline) in pipelines {
+            // skip the pipelines that are not assigned to this worker
+            if !is_pipeline_assigned_to_worker(pipeline.id, worker_id as u64, total_workers as u64)
+            {
+                continue;
+            }
+
             if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
                 if pipeline.platform_version == platform_version {
                     if pipeline.program_status == ProgramStatus::CompilingSql {
@@ -922,6 +1011,7 @@ impl Storage for StoragePostgres {
                         &None,
                         &None,
                         platform_version,
+                        true,
                         &None,
                         &None,
                         &None,
@@ -939,21 +1029,40 @@ impl Storage for StoragePostgres {
     async fn get_next_sql_compilation(
         &self,
         platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let next_pipeline_program =
-            operations::pipeline::get_next_sql_compilation(&txn, platform_version).await?;
+        let next_pipeline_program = operations::pipeline::get_next_sql_compilation(
+            &txn,
+            platform_version,
+            worker_id,
+            total_workers,
+        )
+        .await?;
         txn.commit().await?;
         Ok(next_pipeline_program)
     }
 
-    async fn clear_ongoing_rust_compilation(&self, platform_version: &str) -> Result<(), DBError> {
+    async fn clear_ongoing_rust_compilation_for_worker(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let pipelines =
             operations::pipeline::list_pipelines_across_all_tenants_for_monitoring(&txn).await?;
+
         for (tenant_id, pipeline) in pipelines {
+            // skip the pipelines that are not assigned to this worker
+            if !is_pipeline_assigned_to_worker(pipeline.id, worker_id as u64, total_workers as u64)
+            {
+                continue;
+            }
+
             if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
                 if pipeline.platform_version == platform_version {
                     if pipeline.program_status == ProgramStatus::CompilingRust {
@@ -990,6 +1099,7 @@ impl Storage for StoragePostgres {
                         &None,
                         &None,
                         platform_version,
+                        true,
                         &None,
                         &None,
                         &None,
@@ -1007,18 +1117,25 @@ impl Storage for StoragePostgres {
     async fn get_next_rust_compilation(
         &self,
         platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let next_pipeline_program =
-            operations::pipeline::get_next_rust_compilation(&txn, platform_version).await?;
+        let next_pipeline_program = operations::pipeline::get_next_rust_compilation(
+            &txn,
+            platform_version,
+            worker_id,
+            total_workers,
+        )
+        .await?;
         txn.commit().await?;
         Ok(next_pipeline_program)
     }
 
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<Vec<(PipelineId, Version, String, String)>, DBError> {
+    ) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let pipeline_programs =

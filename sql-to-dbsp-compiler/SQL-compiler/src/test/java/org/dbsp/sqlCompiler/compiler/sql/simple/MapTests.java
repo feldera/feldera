@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChangeStream;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
@@ -162,5 +163,48 @@ public class MapTests extends BaseSQLTests {
                         new DBSPI32Literal()));
         this.testQuery("", sql, new InputOutputChangeStream()
                 .addPair(new Change(), new Change("V", result)));
+    }
+
+    @Test
+    public void nullMapKey() {
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT MAP[NULL, NULL]",
+                "MAP key type cannot be NULL");
+    }
+
+    @Test
+    public void testMapKeys() {
+        String sql = "SELECT map_keys(map['foo', 1, 'bar', 2])";
+        DBSPZSetExpression result = new DBSPZSetExpression(
+                new DBSPTupleExpression(new DBSPArrayExpression(
+                        false,
+                        new DBSPStringLiteral("bar"),
+                        new DBSPStringLiteral("foo"))));
+        this.testQuery("", sql, new InputOutputChangeStream()
+                .addPair(new Change(), new Change("V", result)));
+    }
+
+    @Test
+    public void mapVariant() {
+        var ccs = this.getCCS("""
+                create table j(j VARCHAR);
+                
+                create LOCAL view user_props AS
+                SELECT PARSE_JSON(j) AS contacts FROM j;
+                
+                create view abc as
+                WITH ref_profile AS (
+                SELECT cast(contacts as MAP<varchar, variant>) contacts
+                    FROM user_props
+                ) SELECT key
+                FROM ref_profile profile_0, UNNEST(MAP_KEYS(profile_0.contacts)) AS t(key)""");
+        ccs.step("""
+                INSERT INTO j VALUES('{ "a": "1", "b": 2, "c": [1, 2, 3], "d": null, "e": { "f": 1 } }');""", """
+                 key | weight
+                ------------------------
+                 a| 1
+                 b| 1
+                 c| 1
+                 d| 1
+                 e| 1""");
     }
 }

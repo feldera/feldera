@@ -57,7 +57,7 @@ The following table summarizes the two modes:
 
 ### Start a transaction
 
-Use the [`start_transaction`](https://docs.feldera.com/api/start-a-transaction) API to start a transaction. The API returns a transaction ID:
+Use the [`start_transaction`](/api/begin-transaction) API to start a transaction. The API returns a transaction ID:
 
 <Tabs>
     <TabItem value="rest" label="REST API">
@@ -94,7 +94,7 @@ Use the [`start_transaction`](https://docs.feldera.com/api/start-a-transaction) 
 ### Commit a transaction
 
 Once the pipeline has ingested all inputs that must be processed as part of the transaction,
-commit the transaction using the [`commit_transaction`](https://docs.feldera.com/api/commit-the-current-transaction) API.
+commit the transaction using the [`commit_transaction`](/api/commit-transaction) API.
 
 <Tabs>
     <TabItem value="rest" label="REST API">
@@ -139,7 +139,7 @@ When the transaction is complete, the pipeline goes back into continuous process
 
 ### Monitoring transaction status
 
-The user can monitor the transaction handling status of the pipeline using the [`/stats`](https://docs.feldera.com/api/retrieve-statistics-e-g-performance-counters-of-a-running-or-paused-pipeline) endpoint. The status can be one of:
+The user can monitor the transaction handling status of the pipeline using the [`/stats`](/api/get-pipeline-stats) endpoint. The status can be one of:
 
 | Status                  | Description                                     |
 |-------------------------|-------------------------------------------------|
@@ -178,6 +178,33 @@ When the status is `TransactionInProgress` or `CommitInProgress`, the `transacti
     ```
     </TabItem>
 </Tabs>
+
+## Automatic Transaction Orchestration
+
+In addition to initiating transactions programmatically via the API, certain input connectors can also be configured to initiate transactions automatically.
+This feature enables users to leverage transactions **declaratively** within the pipeline’s SQL definition.
+
+Use cases:
+
+- **Backfill** — When a pipeline starts, input connectors often start with ingesting historical data from their associated data sources.
+  It is beneficial to ingest and process this data as part of a single transaction as explained in the previous sections.
+
+- **Atomic processing of related updates** — Some data sources, such as Delta Lake, partition the input stream into groups of updates that must be applied together as a single atomic unit.
+  By processing each of these groups as one Feldera transaction, the system preserves atomicity end-to-end, ensuring that all related updates are applied together.
+
+Multiple connectors attached to the same or different SQL tables may initiate transactions concurrently.
+In this case, Feldera automatically combines these individual transaction requests into a single coordinated transaction:
+
+- The transaction **begins** when the first connector initiates it.
+- The transaction **commits** when the last participating connector commits the transaction.
+
+For example, if several connectors performing backfill are configured to use transactions, their operations will be merged into one composite transaction, effectively
+equivalent to initiating a single transaction through the REST API that ingests all historical inputs together.
+
+### Supported Connectors
+
+Automatic transaction orchestration is currently supported only for the **Delta Lake connector**.
+Refer to the [Delta Lake connector documentation](/connectors/sources/delta#transactions) for details.
 
 ## Limitations
 

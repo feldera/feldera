@@ -251,16 +251,18 @@ public class ComplexQueriesTest extends BaseSQLTests {
         this.compileRustTestCase(sql);
     }
 
-   @Test @Ignore("Cross apply not yet implemented")
+   @Test
     public void testCrossApply() {
         String query = """
-                 select d.DocumentID, ds.Status, ds.DateCreated
-                 from Documents as d
-                 cross apply
-                     (select top 1 Status, DateCreated
-                      from DocumentStatusLogs
-                      where DocumentID = d.DocumentId
-                      order by DateCreated desc) as ds
+                create table Documents(DocumentId INT, status VARCHAR, DateCreated DATE);
+                create table DocumentStatusLogs(DocumentId INT);
+                create view V AS select d.DocumentID, ds.Status, ds.DateCreated
+                from Documents as d
+                cross apply
+                    (select Status, DateCreated
+                     from DocumentStatusLogs
+                     where DocumentID = d.DocumentId
+                     order by DateCreated desc) as ds limit 1
                 """;
         this.compileRustTestCase(query);
     }

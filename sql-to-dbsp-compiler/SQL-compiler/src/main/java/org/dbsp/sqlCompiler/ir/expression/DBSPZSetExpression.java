@@ -32,6 +32,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 
+/** An expression that evaluates to a ZSet.
+ * Most such expressions are constants, but not always. */
 public final class DBSPZSetExpression extends DBSPExpression
         implements IDBSPContainer, ToIndentableString, ISameValue, IConstructor {
     public final Map<DBSPExpression, Long> data;
@@ -114,20 +116,31 @@ public final class DBSPZSetExpression extends DBSPExpression
     }
 
     public void append(DBSPExpression expression, long weight) {
-        // We expect the expression to be a constant value (a literal)
+        // We expect the expression to be a constant value (implements ISameValue)
+        // This produces a canonical representation if all keys are also constant.
         if (!expression.getType().sameType(this.getElementType()))
             throw new InternalCompilerError("Added element type " +
                     expression.getType() + " does not match zset type " + this.getElementType(), expression);
-        if (this.data.containsKey(expression)) {
-            long oldWeight = this.data.get(expression);
-            long newWeight = weight + oldWeight;
-            if (newWeight == 0)
-                this.data.remove(expression);
-            else
-                this.data.put(expression, weight + oldWeight);
-        } else {
-            this.data.put(expression, weight);
+        var it = this.data.entrySet().iterator();
+        ISameValue sv = expression.as(ISameValue.class);
+        while (it.hasNext()) {
+            var entry = it.next();
+            var key = entry.getKey();
+            // This test is more precise than Java equals; that's also
+            // why we need to scan all the keys
+            if (sv != null &&
+                    key.is(ISameValue.class) &&
+                    key.to(ISameValue.class).sameValue(sv)) {
+                long oldWeight = entry.getValue();
+                long newWeight = weight + oldWeight;
+                if (newWeight == 0)
+                    it.remove();
+                else
+                    entry.setValue(weight + oldWeight);
+                return;
+            }
         }
+        this.data.put(expression, weight);
     }
 
     public void append(DBSPZSetExpression other) {
@@ -147,12 +160,12 @@ public final class DBSPZSetExpression extends DBSPExpression
         if (type.is(DBSPTypeBaseType.class)) {
             return expression.cast(expression.getNode(), type, false);
         } else if (type.is(DBSPTypeArray.class)) {
-            DBSPTypeArray vec = type.to(DBSPTypeArray.class);
+            DBSPTypeArray array = type.to(DBSPTypeArray.class);
             DBSPArrayExpression vecLit = expression.to(DBSPArrayExpression.class);
             if (vecLit.data == null) {
-                return new DBSPArrayExpression(type, type.mayBeNull);
+                return new DBSPArrayExpression(array, type.mayBeNull);
             }
-            List<DBSPExpression> fields = Linq.map(vecLit.data, e -> castRecursive(e, vec.getElementType()));
+            List<DBSPExpression> fields = Linq.map(vecLit.data, e -> castRecursive(e, array.getElementType()));
             return new DBSPArrayExpression(expression.getNode(), type, fields);
         } else if (type.is(DBSPTypeTupleBase.class)) {
             DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
@@ -199,6 +212,13 @@ public final class DBSPZSetExpression extends DBSPExpression
 
     public int size() {
         return this.data.size();
+    }
+
+    public long totalWeight() {
+        long result = 0;
+        for (var w: this.data.values())
+            result += w;
+        return result;
     }
 
     public DBSPZSetExpression minus(DBSPZSetExpression sub) {
@@ -262,7 +282,10 @@ public final class DBSPZSetExpression extends DBSPExpression
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        throw new UnimplementedException();
+        DBSPZSetExpression z = other.as(DBSPZSetExpression.class);
+        if (z == null)
+            return false;
+        return this.sameValue(z);
     }
 
     @Override

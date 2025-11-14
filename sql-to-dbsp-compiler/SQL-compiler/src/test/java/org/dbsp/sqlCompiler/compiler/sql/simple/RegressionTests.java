@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.util.IndentStreamBuilder;
@@ -559,6 +560,29 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3210() {
+        // validated on Postgres
+        var ccs = this.getCCS("""
+                create table t1(arr STRING ARRAY);
+                create table t2 (id string);
+                
+                CREATE VIEW v AS
+                WITH ids AS (
+                  SELECT array_element.id
+                  FROM t1, UNNEST(t1.arr) AS array_element(id)
+                )
+                SELECT * FROM ids
+                WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.id = ids.id);""");
+        ccs.step("""
+                INSERT INTO t1 VALUES(array['a']), (array['b', 'd']);
+                INSERT INTO t2 VALUES('a'), ('b'), ('c'), ('e');""", """
+                 id | weight
+                -------------
+                 a| 1
+                 b| 1""");
+    }
+
+    @Test
     public void issue457() {
         String sql = """
                 create table t (id int, x int);
@@ -604,10 +628,8 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE T(x INT32, y AI);""");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6681")
+    @Test
     public void issueLateral() {
-        // This triggers https://issues.apache.org/jira/browse/CALCITE-6681
-        // If we disable PROJECT_CORRELATE_TRANSPOSE, it fails due to the decorrelator
         this.compileRustTestCase("""
                 CREATE TABLE t2 (
                   a VARCHAR,
@@ -740,7 +762,7 @@ public class RegressionTests extends SqlIoTest {
                     r int,
                     scopeSpans int ARRAY
                 );
-                CREATE TABLE t (resourceSpans ResourceSpans ARRAY);
+                CREATE TABLE t (z INT, resourceSpans ResourceSpans ARRAY);
                 
                 CREATE MATERIALIZED VIEW resource_spans AS
                 SELECT resourceSpans.scopeSpans
@@ -798,9 +820,11 @@ public class RegressionTests extends SqlIoTest {
                 FROM t;""";
         // This is not executed, since the udfs have no definitions
         var cc = this.getCC(sql);
-        // Test that code generation does not crash
-        ToRustVisitor.toRustString(cc.compiler, new IndentStreamBuilder(),
-                cc.getCircuit(), new ProjectDeclarations());
+        // Test that code generation does not crash without compiling the result
+        ToRustVisitor visitor = new ToRustVisitor(
+                cc.compiler, new IndentStreamBuilder(), cc.getCircuit().getMetadata(),
+                new ProjectDeclarations(), new LateMaterializations(cc.compiler));
+        visitor.apply(cc.getCircuit());
     }
 
     @Test
@@ -2235,5 +2259,11 @@ public class RegressionTests extends SqlIoTest {
                  pos
                 -----
                  3""");
+    }
+
+    @Test
+    public void issue4937() {
+        this.qf("SELECT PARSE_TIMESTAMP('%Y-%m-%d', '2020-01-01')",
+                "Invalid format in PARSE_TIMESTAMP: '%Y-%m-%d'");
     }
 }

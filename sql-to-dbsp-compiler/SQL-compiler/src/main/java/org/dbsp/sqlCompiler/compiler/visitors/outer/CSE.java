@@ -14,11 +14,10 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.util.Logger;
 import org.dbsp.util.graph.Port;
 
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /** Common-subexpression elimination at the level of circuit operators */
 public class CSE extends Repeat {
@@ -47,13 +46,13 @@ public class CSE extends Repeat {
     public static class FindCSE extends CircuitWithGraphsVisitor {
         /** Maps each operator to its canonical representative */
         final Map<DBSPOperator, DBSPOperator> canonical;
-        final Set<DBSPConstantOperator> constants;
+        final List<DBSPConstantOperator> constants;
 
         public FindCSE(DBSPCompiler compiler, CircuitGraphs graphs,
                        Map<DBSPOperator, DBSPOperator> canonical) {
             super(compiler, graphs);
             this.canonical = canonical;
-            this.constants = new HashSet<>();
+            this.constants = new ArrayList<>();
         }
 
         @Override
@@ -61,10 +60,11 @@ public class CSE extends Repeat {
             for (DBSPConstantOperator op: this.constants) {
                 if (op.equivalent(operator)) {
                     this.setCanonical(operator, op);
-                } else {
-                    this.constants.add(op);
+                    return;
                 }
             }
+            this.constants.add(operator);
+            postorder(operator.to(DBSPOperator.class));
         }
 
         boolean hasGcSuccessor(DBSPOperator operator) {
@@ -142,7 +142,7 @@ public class CSE extends Repeat {
         @Override
         public void replace(DBSPSimpleOperator operator) {
             DBSPOperator replacement = this.canonical.get(operator);
-            if (replacement == null) {
+            if (replacement == null || replacement == operator) {
                 super.replace(operator);
                 return;
             }

@@ -201,10 +201,10 @@ Using Pandas DataFrames
     df_students = pd.read_csv('students.csv')
     df_grades = pd.read_csv('grades.csv')
 
+    pipeline.start()
+
     # subscribe to listen to outputs from a view
     out = pipeline.listen("average_scores")
-
-    pipeline.start()
 
     # feed pandas dataframes as input
     pipeline.input_pandas("students", df_students)
@@ -218,6 +218,32 @@ Using Pandas DataFrames
 
     # clear the storage and delete the pipeline
     pipeline.delete(True)
+
+Using Completion Tokens
+=======================
+
+`Completion tokens <https://docs.feldera.com/connectors/completion-tokens/#completion-tokens>`_ can be used to check whether
+all inputs ingested before the token was issued have been fully processed, and the resulting outputs have been written to all data sinks.
+
+The following methods automatically use completion tokens:
+
+- :meth:`.Pipeline.input_json`
+- :meth:`.Pipeline.input_pandas`
+
+To generate a completion token for a connector attached to the pipeline use :meth:`.Pipeline.generate_completion_token`.
+To check the status of this completion token use :meth:`.Pipeline.completion_token_status`.
+
+.. code-block:: python
+
+    # generate completion token for table "t0" and connector "myconnector"
+    token = pipeline.generate_completion_token("t0", "myconnector")
+
+    # check the status of this completion token
+    status = pipeline.completion_token_status(token)
+    print(status)
+
+    # wait until the pipeline processes this completion token
+    pipeline.wait_for_token(token)
 
 Executing ad-hoc SQL Queries
 ============================
@@ -260,11 +286,12 @@ It takes a callback, and calls the callback on each chunk of received data.
 
     pipeline = PipelineBuilder(client, name="notebook", sql=sql).create_or_replace()
 
+    # run the pipeline
+    pipeline.start()
+
     # register the callback for data received from the selected view
     pipeline.foreach_chunk("view_name", callback)
 
-    # run the pipeline
-    pipeline.start()
     pipeline.input_pandas("table_name", df)
 
     # wait for the pipeline to finish and stop
@@ -353,8 +380,11 @@ This example shows creating and running a pipeline with Feldera's internal data 
 
     pipeline = PipelineBuilder(client, name="kafka_example", sql=sql).create_or_replace()
 
+    # Start the pipeline in paused state, attach listener, then unpause the pipeline.
+    # This ensures that the listener gets all the output from the view.
+    pipeline.start_paused()
     out = pipeline.listen("googl_stocks")
-    pipeline.start()
+    pipeline.resume()
 
     # important: `wait_for_completion` will block forever here
     pipeline.wait_for_idle()

@@ -38,7 +38,7 @@ pub enum RunnerError {
     AutomatonFailedToSerializeDeploymentConfig {
         error: String,
     },
-    AutomatonCannotProvisionDifferentPlatformVersion {
+    AutomatonCannotProvisionUnsupportedPlatformVersion {
         pipeline_platform_version: String,
         runner_platform_version: String,
     },
@@ -77,13 +77,28 @@ pub enum RunnerError {
 
     // Interaction with the pipeline
     PipelineInteractionNotDeployed {
+        /// Pipeline name or UUID if name is not available.
+        pipeline_name: String,
         status: ResourcesStatus,
         desired_status: ResourcesDesiredStatus,
     },
+    PipelineUnavailable {
+        /// Pipeline name or UUID if name is not available.
+        pipeline_name: String,
+    },
+    PipelineMissingDeploymentLocation {
+        /// Pipeline name or UUID if name is not available.
+        pipeline_name: String,
+    },
     PipelineInteractionUnreachable {
+        /// Pipeline name or UUID if name is not available.
+        pipeline_name: String,
+        request: String,
         error: String,
     },
     PipelineInteractionInvalidResponse {
+        /// Pipeline name or UUID if name is not available.
+        pipeline_name: String,
         error: String,
     },
 }
@@ -117,8 +132,8 @@ impl DetailedError for RunnerError {
             RunnerError::AutomatonFailedToSerializeDeploymentConfig { .. } => {
                 Cow::from("AutomatonFailedToSerializeDeploymentConfig")
             }
-            RunnerError::AutomatonCannotProvisionDifferentPlatformVersion { .. } => {
-                Cow::from("AutomatonCannotProvisionDifferentPlatformVersion")
+            RunnerError::AutomatonCannotProvisionUnsupportedPlatformVersion { .. } => {
+                Cow::from("AutomatonCannotProvisionUnsupportedPlatformVersion")
             }
             RunnerError::AutomatonProvisioningTimeout { .. } => {
                 Cow::from("AutomatonProvisioningTimeout")
@@ -147,6 +162,10 @@ impl DetailedError for RunnerError {
             }
             RunnerError::PipelineInteractionNotDeployed { .. } => {
                 Cow::from("PipelineInteractionNotDeployed")
+            }
+            RunnerError::PipelineUnavailable { .. } => Cow::from("PipelineUnavailable"),
+            RunnerError::PipelineMissingDeploymentLocation { .. } => {
+                Cow::from("PipelineMissingDeploymentLocation")
             }
             RunnerError::PipelineInteractionUnreachable { .. } => {
                 Cow::from("PipelineInteractionUnreachable")
@@ -224,14 +243,14 @@ impl Display for RunnerError {
                     "Failed to serialize deployment configuration due to: {error}"
                 )
             }
-            Self::AutomatonCannotProvisionDifferentPlatformVersion {
+            Self::AutomatonCannotProvisionUnsupportedPlatformVersion {
                 pipeline_platform_version,
                 runner_platform_version,
             } => {
                 write!(
                     f,
                     "Unable to provision pipeline because the pipeline platform version ({pipeline_platform_version}) \
-                    differs from the runner platform version ({runner_platform_version}) -- stop and restart the pipeline to resolve this"
+                    is not supported by the installed Feldera platform version ({runner_platform_version}) -- recompile the pipeline with the current platform version to resolve this"
                 )
             }
             Self::AutomatonProvisioningTimeout { timeout } => {
@@ -301,22 +320,45 @@ impl Display for RunnerError {
                 write!(f, "Log follow request channel is closed -- this indicates that the runner crashed unexpectedly")
             }
             Self::PipelineInteractionNotDeployed {
+                pipeline_name,
                 status,
                 desired_status: _,
             } => {
                 write!(
                     f,
-                    "Unable to interact with pipeline because the deployment status ({status}) \
+                    "Unable to interact with pipeline '{pipeline_name}' because the deployment status ({status}) \
                     indicates it is not (yet) fully provisioned"
                 )
             }
-            Self::PipelineInteractionUnreachable { error } => {
-                write!(f, "Unable to reach pipeline to interact due to: {error}")
-            }
-            Self::PipelineInteractionInvalidResponse { error } => {
+            Self::PipelineUnavailable { pipeline_name } => {
                 write!(
                     f,
-                    "During pipeline interaction an unexpected invalid response was encountered: {error}"
+                    "Unable to interact with pipeline '{pipeline_name}' because its status is currently 'unavailable'"
+                )
+            }
+            Self::PipelineMissingDeploymentLocation { pipeline_name } => {
+                write!(
+                    f,
+                    "Unable to interact with pipeline '{pipeline_name}' because its deployment location is missing despite it being fully provisioned"
+                )
+            }
+            Self::PipelineInteractionUnreachable {
+                pipeline_name,
+                request,
+                error,
+            } => {
+                write!(
+                    f,
+                    "Error sending HTTP request to pipeline '{pipeline_name}': {error}\nFailed request: {request}"
+                )
+            }
+            Self::PipelineInteractionInvalidResponse {
+                pipeline_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "Encountered an unexpected invalid response when interacting with pipeline '{pipeline_name}': {error}"
                 )
             }
         }
@@ -348,7 +390,7 @@ impl ResponseError for RunnerError {
             Self::AutomatonFailedToSerializeDeploymentConfig { .. } => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-            Self::AutomatonCannotProvisionDifferentPlatformVersion { .. } => {
+            Self::AutomatonCannotProvisionUnsupportedPlatformVersion { .. } => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Self::AutomatonProvisioningTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
@@ -367,6 +409,8 @@ impl ResponseError for RunnerError {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Self::PipelineInteractionNotDeployed { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            Self::PipelineUnavailable { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            Self::PipelineMissingDeploymentLocation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineInteractionUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::PipelineInteractionInvalidResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }

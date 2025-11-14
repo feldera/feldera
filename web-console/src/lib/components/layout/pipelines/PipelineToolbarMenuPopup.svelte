@@ -2,7 +2,7 @@
   import { base } from '$app/paths'
   import { type ExtendedPipeline, type Pipeline } from '$lib/services/pipelineManager'
   import { goto } from '$app/navigation'
-  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import Popup from '$lib/components/common/Popup.svelte'
   import { fade } from 'svelte/transition'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
@@ -10,6 +10,7 @@
   import JSONbig from 'true-json-bigint'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
 
   let {
     pipelineName,
@@ -20,10 +21,7 @@
     onDeletePipeline
   }: {
     pipelineName: string
-    pipeline: {
-      current: ExtendedPipeline
-      patch: (pipeline: Partial<Pipeline>) => Promise<ExtendedPipeline>
-    }
+    pipeline: WritablePipeline
     saveFile: () => void
     pipelineBusy: boolean
     downstreamChanged: boolean
@@ -142,9 +140,7 @@
     onClose={() => (globalDialog.dialog = null)}
   >
     {#snippet title()}
-      <div class="h5 text-center font-normal">
-        {dialogTitle}
-      </div>
+      {dialogTitle}
     {/snippet}
   </JSONDialog>
 {/snippet}

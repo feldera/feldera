@@ -22,14 +22,29 @@ pub struct PostgresWriterConfig {
     /// The table to write the output to.
     pub table: String,
 
-    /// The CA certificate in PEM format.
+    /// A sequence of CA certificates in PEM format.
     pub ssl_ca_pem: Option<String>,
+
+    /// Path to a file containing a sequence of CA certificates in PEM format.
+    pub ssl_ca_location: Option<String>,
 
     /// The client certificate in PEM format.
     pub ssl_client_pem: Option<String>,
 
+    /// Path to the client certificate.
+    pub ssl_client_location: Option<String>,
+
     /// The client certificate key in PEM format.
     pub ssl_client_key: Option<String>,
+
+    /// Path to the client certificate key.
+    pub ssl_client_key_location: Option<String>,
+
+    /// The path to the certificate chain file.
+    /// The file must contain a sequence of PEM-formatted certificates,
+    /// the first being the leaf certificate, and the remainder forming
+    /// the chain of certificates up to and including the trusted root certificate.
+    pub ssl_certificate_chain_location: Option<String>,
 
     /// True to enable hostname verification when using TLS. True by default.
     pub verify_hostname: Option<bool>,

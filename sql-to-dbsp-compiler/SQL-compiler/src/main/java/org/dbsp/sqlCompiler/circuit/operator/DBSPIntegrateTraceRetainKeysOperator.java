@@ -39,12 +39,12 @@ public final class DBSPIntegrateTraceRetainKeysOperator
     public static DBSPIntegrateTraceRetainKeysOperator create(
             CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
         DBSPType controlType = control.outputType();
-        Utilities.enforce(controlType.is(DBSPTypeTupleBase.class), "Control type is not a tuple: " + controlType);
+        Utilities.enforce(controlType.is(DBSPTypeTupleBase.class), () -> "Control type is not a tuple: " + controlType);
         DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
         Utilities.enforce(controlTuple.size() == 2);
         DBSPType leftSliceType = Objects.requireNonNull(dataProjection.getProjectedType());
         Utilities.enforce(leftSliceType.sameType(controlTuple.getFieldType(1)),
-                "Projection type does not match control type " + leftSliceType + "/" + controlType);
+                () -> "Projection type does not match control type " + leftSliceType + "/" + controlType);
 
         DBSPParameter param;
         DBSPExpression compare;
@@ -86,7 +86,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
             @Nullable DBSPExpression function, DBSPType outputType,
             List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, function, newInputs, outputType)) {
-            Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
+            Utilities.enforce(newInputs.size() == 2, () -> "Expected 2 inputs, got " + newInputs.size());
             return new DBSPIntegrateTraceRetainKeysOperator(
                     this.getRelNode(), toClosure(function),
                     newInputs.get(0), newInputs.get(1)).copyAnnotations(this);

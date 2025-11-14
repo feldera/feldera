@@ -1,4 +1,4 @@
-import type { PipelineStatus } from '$lib/services/pipelineManager'
+import type { ExtendedPipeline, PipelineStatus } from '$lib/services/pipelineManager'
 import { P, match } from 'ts-pattern'
 
 export const getPipelineStatusLabel = (status: PipelineStatus) => {
@@ -11,6 +11,7 @@ export const getPipelineStatusLabel = (status: PipelineStatus) => {
     .with('Standby', () => 'Standby')
     .with('Bootstrapping', () => 'Bootstrapping')
     .with('Replaying', () => 'Replaying')
+    .with('AwaitingApproval', () => 'Awaiting Approval')
     .with('Running', () => 'Running')
     .with('Pausing', () => 'Pausing')
     .with('Resuming', () => 'Resuming')
@@ -19,7 +20,7 @@ export const getPipelineStatusLabel = (status: PipelineStatus) => {
     .with('Stopping', () => 'Stopping')
     .with({ Queued: P.any }, () => 'Queued')
     .with({ CompilingSql: P.any }, () => 'Compiling SQL')
-    .with({ SqlCompiled: P.any }, () => 'SQL compiled')
+    .with({ SqlCompiled: P.any }, () => 'SQL Compiled')
     .with({ CompilingRust: P.any }, () => 'Compiling Rust')
     .with('Unavailable', () => 'Unavailable')
     .with('SqlError', () => 'Program Error')
@@ -40,6 +41,7 @@ export const getDeploymentStatusLabel = (status: PipelineStatus) => {
     .with('Standby', () => 'Standby')
     .with('Bootstrapping', () => 'Bootstrapping')
     .with('Replaying', () => 'Replaying')
+    .with('AwaitingApproval', () => 'Awaiting Approval')
     .with('Running', () => 'Running')
     .with('Pausing', () => 'Pausing')
     .with('Resuming', () => 'Resuming')
@@ -73,6 +75,7 @@ export const isPipelineInteractive = (status: PipelineStatus) => {
     .with('Standby', () => false)
     .with('Bootstrapping', () => false)
     .with('Replaying', () => false)
+    .with('AwaitingApproval', () => false)
     .with('Running', () => true)
     .with('Pausing', () => true)
     .with('Resuming', () => true)
@@ -103,6 +106,44 @@ export const isPipelineCodeEditable = (status: PipelineStatus) => {
     .with('Standby', () => false)
     .with('Bootstrapping', () => false)
     .with('Replaying', () => false)
+    .with('AwaitingApproval', () => false)
+    .with('Running', () => false)
+    .with('Pausing', () => false)
+    .with('Resuming', () => false)
+    .with('Stopping', () => false)
+    .with(
+      { Queued: P.any },
+      { CompilingSql: P.any },
+      { SqlCompiled: P.any },
+      { CompilingRust: P.any },
+      (cause) => Object.values(cause)[0].cause === 'compile'
+    )
+    .with('Unavailable', () => false)
+    .with('SqlError', () => true)
+    .with('RustError', () => true)
+    .with('SystemError', () => true)
+    .exhaustive()
+}
+
+export const isUpgradeRequired = (
+  pipeline: Pick<ExtendedPipeline, 'status' | 'storageStatus'>,
+  runtime: { status: string | 'update_available' }
+) => {
+  if (runtime.status !== 'update_available' || pipeline.storageStatus === 'Cleared') {
+    return false
+  }
+  return match(pipeline.status)
+    .with('Stopped', () => true)
+    .with('Preparing', () => false)
+    .with('Provisioning', () => false)
+    .with('Initializing', () => false)
+    .with('Paused', () => false)
+    .with('Suspending', () => false)
+    .with('Suspended', () => false)
+    .with('Standby', () => false)
+    .with('Bootstrapping', () => false)
+    .with('Replaying', () => false)
+    .with('AwaitingApproval', () => false)
     .with('Running', () => false)
     .with('Pausing', () => false)
     .with('Resuming', () => false)
@@ -133,6 +174,7 @@ export const isPipelineShutdown = (status: PipelineStatus) => {
     .with('Standby', () => false)
     .with('Bootstrapping', () => false)
     .with('Replaying', () => false)
+    .with('AwaitingApproval', () => false)
     .with('Running', () => false)
     .with('Pausing', () => false)
     .with('Resuming', () => false)
@@ -166,6 +208,7 @@ export const isMetricsAvailable = (status: PipelineStatus) => {
     .with('Standby', () => 'yes')
     .with('Bootstrapping', () => 'yes')
     .with('Replaying', () => 'yes')
+    .with('AwaitingApproval', () => 'soon')
     .with('Running', () => 'yes')
     .with('Pausing', () => 'yes')
     .with('Resuming', () => 'yes')

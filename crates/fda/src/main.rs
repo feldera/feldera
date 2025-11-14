@@ -519,9 +519,18 @@ async fn wait_for_status(
     wait_for: CombinedStatus,
     waiting_text: &str,
 ) {
+    wait_for_status_one_of(client, name, &[wait_for], waiting_text).await;
+}
+
+/// Wait for the pipeline to reach one of the specified statuses.
+async fn wait_for_status_one_of(
+    client: &Client,
+    name: String,
+    wait_for: &[CombinedStatus],
+    waiting_text: &str,
+) -> CombinedStatus {
     let mut print_every_30_seconds = Instant::now();
-    let mut is_transitioning = true;
-    while is_transitioning {
+    loop {
         let pc = client
             .get_pipeline()
             .pipeline_name(name.clone())
@@ -533,7 +542,9 @@ async fn wait_for_status(
                 1,
             ))
             .unwrap();
-        is_transitioning = pc.deployment_status != wait_for;
+        if wait_for.contains(&pc.deployment_status) {
+            return pc.deployment_status;
+        }
         if print_every_30_seconds.elapsed().as_secs() > 30 {
             info!("{}", waiting_text);
             print_every_30_seconds = Instant::now();
@@ -702,9 +713,20 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             recompile,
             no_wait,
             initial,
+            bootstrap_policy,
         } => {
             if initial != "standby" && initial != "paused" && initial != "running" {
                 eprintln!("Unsupported `--initial`: {}", initial);
+                std::process::exit(1);
+            }
+
+            if bootstrap_policy != "allow"
+                && bootstrap_policy != "reject"
+                && bootstrap_policy != "await_approval"
+            {
+                // TODO: strong typing
+
+                eprintln!("Unsupported `--bootstrap-policy`: {}", bootstrap_policy);
                 std::process::exit(1);
             }
 
@@ -770,6 +792,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 let pc = client
                     .get_pipeline()
                     .pipeline_name(name.clone())
+                    .selector(PipelineFieldSelector::Status)
                     .send()
                     .await
                     .map_err(handle_errors_fatal(
@@ -794,6 +817,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .post_pipeline_start()
                 .pipeline_name(name.clone())
                 .initial(&initial)
+                .bootstrap_policy(&bootstrap_policy)
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
@@ -804,20 +828,56 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .unwrap();
 
             if !no_wait {
-                wait_for_status(
+                let status = wait_for_status_one_of(
                     &client,
                     name.clone(),
                     if initial == "running" {
-                        CombinedStatus::Running
+                        &[CombinedStatus::Running, CombinedStatus::AwaitingApproval]
                     } else if initial == "paused" {
-                        CombinedStatus::Paused
+                        &[CombinedStatus::Paused, CombinedStatus::AwaitingApproval]
                     } else {
-                        CombinedStatus::Standby
+                        &[CombinedStatus::Standby, CombinedStatus::AwaitingApproval]
                     },
                     "Starting the pipeline...",
                 )
                 .await;
-                println!("Pipeline started successfully.");
+                if status == CombinedStatus::AwaitingApproval {
+                    let diff = client
+                        .get_pipeline()
+                        .pipeline_name(name.clone())
+                        .selector(PipelineFieldSelector::Status)
+                        .send()
+                        .await
+                        .map_err(handle_errors_fatal(
+                            client.baseurl().clone(),
+                            "Failed to get pipeline status",
+                            1,
+                        ))
+                        .unwrap()
+                        .deployment_runtime_status_details
+                        .clone();
+
+                    println!("Pipeline definition has changed since the last checkpoint. The pipeline is awaiting approval to proceed with bootstrapping the modified components. Run 'fda approve' to approve the changes or 'fda stop' to terminate the pipeline. Summary of changes:");
+
+                    let diff_str = match diff {
+                        // Normally shouldn't happen.
+                        None => "<not available>".to_string(),
+                        Some(diff) => match format {
+                            OutputFormat::Text => json_to_table(&diff)
+                                .collapse()
+                                .into_pool_table()
+                                .to_string(),
+                            OutputFormat::Json => serde_json::to_string_pretty(&diff)
+                                .expect("Failed to serialize pipeline diff"),
+                            _ => {
+                                format!("<unsupported output format: {}>", format)
+                            }
+                        },
+                    };
+                    println!("{}", diff_str);
+                } else {
+                    println!("Pipeline started successfully.");
+                }
             }
 
             trace!("{:#?}", response);
@@ -849,6 +909,21 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     checkpoint_sequence_number
                 );
             }
+        }
+        PipelineAction::Approve { name } => {
+            let response = client
+                .post_pipeline_approve()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to approve pipeline changes",
+                    1,
+                ))
+                .unwrap();
+            println!("Pipeline changes approved successfully.");
+            trace!("{:#?}", response);
         }
         PipelineAction::Pause { name, no_wait } => {
             let response = client
@@ -906,10 +981,12 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             checkpoint,
             no_wait,
             initial,
+            bootstrap_policy,
         } => {
             let current_status = client
                 .get_pipeline()
                 .pipeline_name(name.clone())
+                .selector(PipelineFieldSelector::Status)
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
@@ -950,6 +1027,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     recompile,
                     no_wait,
                     initial,
+                    bootstrap_policy,
                 },
                 client,
             ))
@@ -1292,6 +1370,21 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 }
             }
         }
+        PipelineAction::UpdateRuntime { name } => {
+            let response = client
+                .post_update_runtime()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to update pipeline runtime",
+                    1,
+                ))
+                .unwrap();
+            println!("Pipeline runtime updated successfully.");
+            trace!("{:#?}", response);
+        }
         PipelineAction::Program { action } => program(format, action, client).await,
         PipelineAction::Connector {
             name,
@@ -1510,6 +1603,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             name,
             start,
             initial,
+            bootstrap_policy,
         } => {
             let client2 = client.clone();
             if start {
@@ -1520,6 +1614,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         recompile: false,
                         no_wait: false,
                         initial,
+                        bootstrap_policy,
                     },
                     client,
                 ))

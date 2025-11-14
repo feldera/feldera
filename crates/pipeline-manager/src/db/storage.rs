@@ -9,7 +9,7 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use async_trait::async_trait;
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{ExtendedRuntimeStatus, RuntimeDesiredStatus};
+use feldera_types::runtime_status::{BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus};
 use uuid::Uuid;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -32,6 +32,7 @@ impl ExtendedPipelineDescrRunner {
                 created_at: pipeline.created_at,
                 version: pipeline.version,
                 platform_version: pipeline.platform_version.clone(),
+                program_config: pipeline.program_config.clone(),
                 program_version: pipeline.program_version,
                 program_status: pipeline.program_status,
                 program_status_since: pipeline.program_status_since,
@@ -47,8 +48,12 @@ impl ExtendedPipelineDescrRunner {
                 deployment_resources_desired_status_since: pipeline
                     .deployment_resources_desired_status_since,
                 deployment_runtime_status: pipeline.deployment_runtime_status,
+                deployment_runtime_status_details: pipeline
+                    .deployment_runtime_status_details
+                    .clone(),
                 deployment_runtime_status_since: pipeline.deployment_runtime_status_since,
                 deployment_runtime_desired_status: pipeline.deployment_runtime_desired_status,
+                bootstrap_policy: pipeline.bootstrap_policy,
                 deployment_runtime_desired_status_since: pipeline
                     .deployment_runtime_desired_status_since,
             },
@@ -171,10 +176,31 @@ pub(crate) trait Storage {
         new_id: Uuid, // Only used if the pipeline happens to not exist
         original_name: &str,
         platform_version: &str,
+        bump_platform_version: bool,
         pipeline: PipelineDescr,
     ) -> Result<(bool, ExtendedPipelineDescr), DBError>;
 
+    /// Testing only: update the platform_version field of a pipeline.
+    ///
+    /// Used to simulate pipelines compiled by a previous version of the platform.
+    async fn testing_force_update_platform_version(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        platform_version: &str,
+    ) -> Result<(), DBError>;
+
     /// Updates an existing pipeline.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform_version` - the currently running Feldera platform version. If `bump_platform_version` is true,
+    ///    pipeline's platform_version will be set to this value.
+    /// * `bump_platform_version` - if true, the platform_version of the pipeline will be updated to the
+    ///    provided `platform_version`. In addition, the platform_version will be updated unconditionally
+    ///    if the program code or program settings are getting updated by this request.
+    /// * Other arguments correspond to fields that can be updated. If an argument is `None`, the corresponding
+    ///   field is not updated.
     #[allow(clippy::too_many_arguments)]
     async fn update_pipeline(
         &self,
@@ -183,6 +209,7 @@ pub(crate) trait Storage {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
+        bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
@@ -198,6 +225,7 @@ pub(crate) trait Storage {
     ) -> Result<PipelineId, DBError>;
 
     /// Transitions program status to `Pending`.
+    #[cfg(test)]
     async fn transit_program_status_to_pending(
         &self,
         tenant_id: TenantId,
@@ -276,6 +304,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_name: &str,
         initial: RuntimeDesiredStatus,
+        bootstrap_policy: BootstrapPolicy,
     ) -> Result<PipelineId, DBError>;
 
     /// Sets deployment desired status to `Stopped` if it is not in currently `Provisioned`.
@@ -373,13 +402,22 @@ pub(crate) trait Storage {
     /// If the platform version is not the current one, its `platform_version` will be updated and
     /// the `program_status` will be set back to `Pending` (if not already) such that the SQL
     /// compiler can pick it up again.
-    async fn clear_ongoing_sql_compilation(&self, platform_version: &str) -> Result<(), DBError>;
+    /// Only the owner worker (by modulo) resets `CompilingSql` pipelines to `Pending`
+    /// This ensures that only the assigned worker for a pipeline can reset its status.
+    async fn clear_ongoing_sql_compilation_for_worker(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<(), DBError>;
 
     /// Retrieves the pipeline which is stopped, whose program status has been Pending
     /// for the longest, and is of the current platform version. Returns `None` if none is found.
     async fn get_next_sql_compilation(
         &self,
         platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError>;
 
     /// Determines what to do with pipelines that are `SqlCompiled` and `CompilingRust`.
@@ -390,20 +428,30 @@ pub(crate) trait Storage {
     /// If the platform version is not the current one, its `platform_version` will be updated and
     /// the `program_status` will be set back to `Pending` such that the Rust compiler can pick it
     /// up again.
-    async fn clear_ongoing_rust_compilation(&self, platform_version: &str) -> Result<(), DBError>;
+    /// Only the owner worker (by modulo) resets stuck `CompilingRust` pipelines to `SqlCompiled`.
+    /// This ensures that only the assigned worker for a pipeline can reset its status.
+    async fn clear_ongoing_rust_compilation_for_worker(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<(), DBError>;
 
     /// Retrieves the pipeline which is stopped, whose program status has been SqlCompiled
     /// for the longest, and is of the current platform version. Returns `None` if none is found.
     async fn get_next_rust_compilation(
         &self,
         platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError>;
 
     /// Retrieves the list of fully compiled pipeline programs (pipeline identifier, program version,
-    /// program binary source checksum, program binary integrity checksum) across all tenants.
+    /// program binary source checksum, program binary integrity checksum) AND pipeline programs that
+    /// are currently being compiled (pipeline identifier, program version) across all tenants.
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<Vec<(PipelineId, Version, String, String)>, DBError>;
+    ) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError>;
 
     async fn get_support_bundle_data(
         &self,

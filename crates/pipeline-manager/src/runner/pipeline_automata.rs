@@ -14,6 +14,7 @@ use crate::db::types::utils::{
     validate_deployment_config, validate_program_info, validate_runtime_config,
 };
 use crate::error::source_error;
+use crate::is_supported_runtime;
 use crate::runner::error::RunnerError;
 use crate::runner::interaction::{format_pipeline_url, format_timeout_error_message};
 use crate::runner::pipeline_executor::PipelineExecutor;
@@ -23,6 +24,7 @@ use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus};
 use log::{debug, error, info, warn, Level};
 use reqwest::{Method, StatusCode};
+use semver::Version;
 use serde_json::json;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -271,13 +273,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     async fn do_run(&mut self) -> Result<Duration, DBError> {
         // Depending on the upcoming transition, it either retrieves the smaller monitoring
         // descriptor, or the larger complete descriptor. It needs the complete descriptor when it
-        // is needs to construct the `deployment_config` (when transitioning to Provisioning) or
+        // needs to construct the `deployment_config` (when transitioning to Provisioning) or
         // to access it (when calling `provision()` during the Provisioning phase).
         //
         // - Stopped but wanting to be provisioned and is compiled at correct platform version:
         //   * status = Stopped
         //   * AND desired_status = Provisioned
-        //   * AND program_status = Success AND platform_version=self.platform_version
+        //   * AND program_status = Success AND is_supported_runtime(self.platform_version, platform_version)
         //
         // - Provisioning but wanting to be provisioned:
         //   * status = Provisioning
@@ -644,7 +646,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     ) -> Result<State, DBError> {
         let pipeline = pipeline_monitoring_or_complete.only_monitoring();
         if pipeline.program_status == ProgramStatus::Success
-            && pipeline.platform_version == self.platform_version
+            && is_supported_runtime(&self.platform_version, &pipeline.platform_version)
         {
             if let ExtendedPipelineDescrRunner::Complete(pipeline) = pipeline_monitoring_or_complete
             {
@@ -653,7 +655,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             } else {
                 panic!(
                     "For the transit of Stopped towards Running/Paused \
-                    (program successfully compiled at current platform version), \
+                    (program successfully compiled at a compatible platform version), \
                     the complete pipeline descriptor should have been retrieved"
                 );
             }
@@ -671,8 +673,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     ) -> Result<State, DBError> {
         assert!(
             pipeline.program_status != ProgramStatus::Success
-                || self.platform_version != pipeline.platform_version,
-            "Expected to be true: {:?} != {:?} || {} != {}",
+                || !is_supported_runtime(&self.platform_version, &pipeline.platform_version),
+            "Expected to be true: {:?} != {:?} || is_compatible_runtime({:?}, {:?})",
             pipeline.program_status,
             ProgramStatus::Success,
             self.platform_version,
@@ -720,37 +722,37 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             _ => {}
         }
 
-        // The runner is unable to run a pipeline program compiled under an outdated platform.
-        // As such, it requests the compiler to recompile it again by setting the program_status back to `Pending`.
-        // The runner is able to do this as it got ownership of the pipeline when the user set the desired deployment status to `Running`/`Paused`.
-        // It does not do the platform version bump by itself, because it is the compiler's responsibility
-        // to generate only binaries that are of the current platform version.
-        if self.platform_version != pipeline.platform_version
+        // The runner is unable to run a pipeline program compiled under an incompatible platform.
+        if !is_supported_runtime(&self.platform_version, &pipeline.platform_version)
             && pipeline.program_status == ProgramStatus::Success
         {
-            info!("Runner re-initiates program compilation of pipeline {} because its platform version ({}) is outdated by current ({})", pipeline.id, pipeline.platform_version, self.platform_version);
-            self.db
-                .lock()
-                .await
-                .transit_program_status_to_pending(
-                    self.tenant_id,
-                    pipeline.id,
-                    pipeline.program_version,
-                )
-                .await?;
+            info!("Runner cannot start pipeline {} because its runtime version ({}) is incompatible with current ({})", pipeline.id, pipeline.platform_version, self.platform_version);
+
+            return Ok(State::TransitionToStopping {
+                error: Some(ErrorResponse::from_error_nolog(
+                    &RunnerError::AutomatonCannotProvisionUnsupportedPlatformVersion {
+                        runner_platform_version: self.platform_version.clone(),
+                        pipeline_platform_version: pipeline.platform_version.clone(),
+                    },
+                )),
+                suspend_info: None,
+            });
         }
 
         Ok(State::Unchanged)
     }
 
-    /// Transits from `Stopped` towards `Provisioned` when it has successfully compiled at the
-    /// current platform version.
+    /// Transits from `Stopped` towards `Provisioned` when it has successfully compiled at a
+    /// compatible platform version.
     async fn transit_stopped_towards_provisioned_phase_ready(
         &mut self,
         pipeline: &ExtendedPipelineDescr,
     ) -> Result<State, DBError> {
         assert_eq!(pipeline.program_status, ProgramStatus::Success);
-        assert_eq!(self.platform_version, pipeline.platform_version);
+        assert!(is_supported_runtime(
+            &self.platform_version,
+            &pipeline.platform_version
+        ));
 
         // Required runtime_config
         let runtime_config = match validate_runtime_config(&pipeline.runtime_config, true) {
@@ -769,7 +771,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         };
 
         // Input and output connectors from required program_info
-        let (inputs, outputs) = match &pipeline.program_info {
+        let program_info = match &pipeline.program_info {
             None => {
                 return Ok(State::TransitionToStopping {
                     error: Some(ErrorResponse::from_error_nolog(
@@ -778,26 +780,20 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     suspend_info: None,
                 });
             }
-            Some(program_info) => {
-                let program_info = match validate_program_info(program_info) {
-                    Ok(program_info) => program_info,
-                    Err(e) => {
-                        return Ok(State::TransitionToStopping {
-                            error: Some(ErrorResponse::from_error_nolog(
-                                &RunnerError::AutomatonInvalidProgramInfo {
-                                    value: program_info.clone(),
-                                    error: e,
-                                },
-                            )),
-                            suspend_info: None,
-                        });
-                    }
-                };
-                (
-                    program_info.input_connectors,
-                    program_info.output_connectors,
-                )
-            }
+            Some(program_info) => match validate_program_info(program_info) {
+                Ok(program_info) => program_info,
+                Err(e) => {
+                    return Ok(State::TransitionToStopping {
+                        error: Some(ErrorResponse::from_error_nolog(
+                            &RunnerError::AutomatonInvalidProgramInfo {
+                                value: program_info.clone(),
+                                error: e,
+                            },
+                        )),
+                        suspend_info: None,
+                    });
+                }
+            },
         };
 
         // Deployment identifier
@@ -805,7 +801,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
         // Deployment configuration
         let mut deployment_config =
-            generate_pipeline_config(pipeline.id, &runtime_config, &inputs, &outputs);
+            generate_pipeline_config(pipeline.id, &runtime_config, &program_info);
         deployment_config.storage_config =
             Some(self.pipeline_handle.generate_storage_config().await);
         let deployment_config = match serde_json::to_value(&deployment_config) {
@@ -863,10 +859,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // The runner is only able to provision a pipeline of the current platform version.
         // If in the meanwhile (e.g., due to runner restart during upgrade) the platform
         // version has changed, provisioning will fail.
-        if pipeline.platform_version != self.platform_version {
+        if !is_supported_runtime(&self.platform_version, &pipeline.platform_version) {
             return State::TransitionToStopping {
                 error: Some(ErrorResponse::from_error_nolog(
-                    &RunnerError::AutomatonCannotProvisionDifferentPlatformVersion {
+                    &RunnerError::AutomatonCannotProvisionUnsupportedPlatformVersion {
                         pipeline_platform_version: pipeline.platform_version.clone(),
                         runner_platform_version: self.platform_version.clone(),
                     },
@@ -965,10 +961,18 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             },
         );
 
+        let bootstrap_policy =
+            if Self::platform_version_requires_bootstrap_policy(&pipeline.platform_version) {
+                Some(pipeline.bootstrap_policy.unwrap_or_default())
+            } else {
+                None
+            };
+
         match self
             .pipeline_handle
             .provision(
                 deployment_initial,
+                bootstrap_policy,
                 &deployment_id,
                 &deployment_config,
                 &program_binary_url,
@@ -995,6 +999,23 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 suspend_info: None,
             },
         }
+    }
+
+    /// Older versions of Feldera do not support the `bootstrap_policy` parameter.
+    /// Pipelines compiled with these versions will fail when starting with the `--bootstrap-policy` parameter.
+    ///
+    /// TODO: remove this check when v0.161.0 is no longer supported.
+    fn platform_version_requires_bootstrap_policy(platform_version: &str) -> bool {
+        let Ok(version) = Version::parse(platform_version) else {
+            // If we cannot parse it, err on the side of caution and assume it requires the `bootstrap_policy` parameter.
+            return true;
+        };
+
+        if version >= Version::parse("0.164.0").unwrap() {
+            return true;
+        }
+
+        false
     }
 
     /// Transits from `Provisioning` towards `Provisioned` when it has called `provision()` and is
@@ -1027,7 +1048,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 deployment_location,
                 extended_runtime_status: ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Initializing,
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(""),
                     runtime_desired_status: deployment_initial,
                 },
                 is_initial_transition: true,
@@ -1089,25 +1110,26 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         match response_str {
                             "Paused" => Ok(ExtendedRuntimeStatus {
                                 runtime_status: RuntimeStatus::Paused,
-                                runtime_status_details: "".to_string(),
+                                runtime_status_details: json!(""),
                                 runtime_desired_status: RuntimeDesiredStatus::Paused,
                             }),
                             "Running" => Ok(ExtendedRuntimeStatus {
                                 runtime_status: RuntimeStatus::Running,
-                                runtime_status_details: "".to_string(),
+                                runtime_status_details: json!(""),
                                 runtime_desired_status: RuntimeDesiredStatus::Running,
                             }),
                             "Initializing" => Ok(ExtendedRuntimeStatus { // Backward compatibility: in anticipation of recent change of 503 to 200
                                 runtime_status: RuntimeStatus::Initializing,
-                                runtime_status_details: "".to_string(),
+                                runtime_status_details: json!(""),
                                 runtime_desired_status: RuntimeDesiredStatus::Paused,
                             }),
                             "Terminated" => Err(ErrorResponse::from(&RunnerError::PipelineInteractionInvalidResponse {
+                                pipeline_name: self.pipeline_id.to_string(),
                                 error: "Pipeline responded that it is Terminated".to_string(),
                             })),
                             _ => Ok(ExtendedRuntimeStatus {
                                 runtime_status: RuntimeStatus::Unavailable,
-                                runtime_status_details: format!("Pipeline status response (200 OK) is an unexpected JSON string: '{response_str}'"),
+                                runtime_status_details: json!(format!("Pipeline status response (200 OK) is an unexpected JSON string: '{response_str}'")),
                                 runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                             }),
                         }
@@ -1117,7 +1139,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             Ok(response) => Ok(response),
                             Err(e) => Ok(ExtendedRuntimeStatus {
                                 runtime_status: RuntimeStatus::Unavailable,
-                                runtime_status_details: format!("Pipeline status response (200 OK) cannot be deserialized due to: {e}"),
+                                runtime_status_details: json!(format!("Pipeline status response (200 OK) cannot be deserialized due to: {e}")),
                                 runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                             }),
                         }
@@ -1125,7 +1147,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         // JSON response must be either a string or an object.
                         Ok(ExtendedRuntimeStatus {
                             runtime_status: RuntimeStatus::Unavailable,
-                            runtime_status_details: format!("Pipeline status response (200 OK) is not a string or an object:\n{body:#}"),
+                            runtime_status_details: json!(format!("Pipeline status response (200 OK) is not a string or an object:\n{body:#}")),
                             runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                         })
                     }
@@ -1135,12 +1157,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             match error_response.error_code.as_ref() {
                                 "Initializing" => Ok(ExtendedRuntimeStatus { // For backward compatibility
                                     runtime_status: RuntimeStatus::Initializing,
-                                    runtime_status_details: "".to_string(),
+                                    runtime_status_details: json!(""),
                                     runtime_desired_status: RuntimeDesiredStatus::Paused
                                 }),
                                 "Suspended" => Ok(ExtendedRuntimeStatus { // For backward compatibility
                                     runtime_status: RuntimeStatus::Suspended,
-                                    runtime_status_details: "".to_string(),
+                                    runtime_status_details: json!(""),
                                     runtime_desired_status: RuntimeDesiredStatus::Suspended
                                 }),
                                 _ => {
@@ -1149,7 +1171,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                     );
                                     Ok(ExtendedRuntimeStatus {
                                         runtime_status: RuntimeStatus::Unavailable,
-                                        runtime_status_details: format!("Pipeline status response (503 Service Unavailable) is an error:\n{error_response:?}"),
+                                        runtime_status_details: json!(format!("Pipeline status response (503 Service Unavailable) is an error:\n{error_response:?}")),
                                         runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                                     })
                                 },
@@ -1157,7 +1179,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         }
                         Err(e) => Ok(ExtendedRuntimeStatus {
                             runtime_status: RuntimeStatus::Unavailable,
-                            runtime_status_details: format!("Pipeline status response (503 Service Unavailable) cannot be deserialized due to: {e}. Response was:\n{body:#}"),
+                            runtime_status_details: json!(format!("Pipeline status response (503 Service Unavailable) cannot be deserialized due to: {e}. Response was:\n{body:#}")),
                             runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                         })
                     }
@@ -1166,6 +1188,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     // running, but the circuit has failed
                     let error_response = serde_json::from_value(body.clone()).unwrap_or_else(|e| {
                         ErrorResponse::from(&RunnerError::PipelineInteractionInvalidResponse {
+                            pipeline_name: self.pipeline_id.to_string(),
                             error: format!("Error response cannot be deserialized due to: {e}. Response was:\n{body:#}"),
                         })
                     });
@@ -1180,7 +1203,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 {
                     Ok(ExtendedRuntimeStatus {
                         runtime_status: RuntimeStatus::Initializing,
-                        runtime_status_details: format!("Still in the grace period for initializing. Pipeline status endpoint cannot yet be reached due to: {e}"),
+                        runtime_status_details: json!(format!("Still in the grace period for initializing. Pipeline status endpoint cannot yet be reached due to: {e}")),
                         runtime_desired_status: deployment_initial,
                     })
                 } else {
@@ -1189,9 +1212,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     );
                     Ok(ExtendedRuntimeStatus {
                         runtime_status: RuntimeStatus::Unavailable,
-                        runtime_status_details: format!(
+                        runtime_status_details: json!(format!(
                             "Pipeline status endpoint could not be reached due to: {e}"
-                        ),
+                        )),
                         runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                     })
                 }
@@ -1347,7 +1370,7 @@ mod test {
     use async_trait::async_trait;
     use feldera_types::config::{PipelineConfig, StorageConfig};
     use feldera_types::program_schema::ProgramSchema;
-    use feldera_types::runtime_status::{RuntimeDesiredStatus, RuntimeStatus};
+    use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
     use serde_json::json;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -1387,6 +1410,7 @@ mod test {
         async fn provision(
             &mut self,
             _: RuntimeDesiredStatus,
+            _: Option<BootstrapPolicy>,
             _: &Uuid,
             _: &PipelineConfig,
             _: &str,
@@ -1436,6 +1460,7 @@ mod test {
                     automaton.tenant_id,
                     &pipeline.name,
                     initial,
+                    BootstrapPolicy::default(),
                 )
                 .await
                 .unwrap();
@@ -1540,7 +1565,7 @@ mod test {
                     udf_stubs: "".to_string(),
                     input_connectors: Default::default(),
                     output_connectors: Default::default(),
-                    dataflow: serde_json::Value::Null,
+                    dataflow: None,
                 })
                 .unwrap(),
             )

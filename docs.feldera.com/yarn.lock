@@ -1561,6 +1561,21 @@
     react-helmet-async "npm:@slorber/react-helmet-async@1.3.0"
     react-loadable "npm:@docusaurus/react-loadable@6.0.0"
 
+"@docusaurus/plugin-client-redirects@3.8.0":
+  version "3.8.0"
+  resolved "https://registry.yarnpkg.com/@docusaurus/plugin-client-redirects/-/plugin-client-redirects-3.8.0.tgz#b4309a998e674632a57f5c76bf7cd9751b8e8c06"
+  integrity sha512-J8f5qzAlO61BnG1I91+N5WH1b/lPWqn6ifTxf/Bluz9JVe1bhFNSl0yW03p+Ff3AFOINDy2ofX70al9nOnOLyw==
+  dependencies:
+    "@docusaurus/core" "3.8.0"
+    "@docusaurus/logger" "3.8.0"
+    "@docusaurus/utils" "3.8.0"
+    "@docusaurus/utils-common" "3.8.0"
+    "@docusaurus/utils-validation" "3.8.0"
+    eta "^2.2.0"
+    fs-extra "^11.1.1"
+    lodash "^4.17.21"
+    tslib "^2.6.0"
+
 "@docusaurus/plugin-content-blog@3.8.0":
   version "3.8.0"
   resolved "https://registry.yarnpkg.com/@docusaurus/plugin-content-blog/-/plugin-content-blog-3.8.0.tgz#0c200b1fb821e09e9e975c45255e5ddfab06c392"
@@ -3315,9 +3330,9 @@ caniuse-api@^3.0.0:
     lodash.uniq "^4.5.0"
 
 caniuse-lite@^1.0.0, caniuse-lite@^1.0.30001702, caniuse-lite@^1.0.30001718:
-  version "1.0.30001720"
-  resolved "https://registry.yarnpkg.com/caniuse-lite/-/caniuse-lite-1.0.30001720.tgz#c138cb6026d362be9d8d7b0e4bcd0183a850edfd"
-  integrity sha512-Ec/2yV2nNPwb4DnTANEV99ZWwm3ZWfdlfkQbWSDDt+PsXEVYwlhPH8tdMaPunYTKKmz7AnHi2oNEi1GcmKCD8g==
+  version "1.0.30001753"
+  resolved "https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001753.tgz"
+  integrity sha512-Bj5H35MD/ebaOV4iDLqPEtiliTN29qkGtEHCwawWn4cYm+bPJM2NsaP30vtZcnERClMzp52J4+aw2UNbK4o+zw==
 
 ccount@^2.0.0:
   version "2.0.1"

@@ -22,8 +22,8 @@ from typing import Any, Dict, Iterable, Optional
 from http import HTTPStatus
 from urllib.parse import quote, quote_plus
 
-from tests import FELDERA_TLS_INSECURE, API_KEY, BASE_URL, unique_pipeline_name
 from feldera.testutils_oidc import get_oidc_test_helper
+from tests import FELDERA_REQUESTS_VERIFY, API_KEY, BASE_URL, unique_pipeline_name
 
 API_PREFIX = "/v0"
 
@@ -80,7 +80,7 @@ def http_request(method: str, path: str, **kwargs) -> requests.Response:
 
     # Provide a default timeout to avoid hanging tests.
     timeout = kwargs.pop("timeout", 30)
-    kwargs["verify"] = not FELDERA_TLS_INSECURE
+    kwargs["verify"] = FELDERA_REQUESTS_VERIFY
     resp = requests.request(
         method.upper(), url, headers=headers, timeout=timeout, **kwargs
     )
@@ -129,8 +129,17 @@ def wait_for_deployment_status(name: str, desired: str, timeout_s: float = 60.0)
             return obj
         time.sleep(0.25)
     raise TimeoutError(
-        f"Timed out waiting for pipeline '{name}' deployment_status={desired} (last={last})"
+        f"Timed out waiting for pipeline '{name}' deployment_status={desired} (last={last})\nCurrent pipeline descriptor:\n{obj}"
     )
+
+
+def create_pipeline(name: str, sql: str):
+    r = post_json(
+        api_url("/pipelines"),
+        {"name": name, "program_code": sql, "runtime_config": {"logging": "debug"}},
+    )
+    assert r.status_code == HTTPStatus.CREATED, r.text
+    wait_for_program_success(name, 1)
 
 
 def start_pipeline(name: str, wait: bool = True):
@@ -139,7 +148,7 @@ def start_pipeline(name: str, wait: bool = True):
         f"Unexpected start response: {r.status_code} {r.text}"
     )
     if wait:
-        wait_for_deployment_status(name, "Running", 30)
+        wait_for_deployment_status(name, "Running", 120)
     return r
 
 
@@ -159,7 +168,7 @@ def start_pipeline_as_paused(name: str, wait: bool = True):
         f"Unexpected pause response: {r.status_code} {r.text}"
     )
     if wait:
-        wait_for_deployment_status(name, "Paused", 30)
+        wait_for_deployment_status(name, "Paused", 120)
     return r
 
 

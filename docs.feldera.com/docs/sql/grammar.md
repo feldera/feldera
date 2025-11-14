@@ -131,7 +131,8 @@ CREATE TABLE empsalary (
 
 Unlike a database, Feldera does not normally maintain the contents of
 tables; it will only store as much data as necessary to compute future
-outputs.  By specifying the property `'materialized' = 'true'` a user
+outputs.  By specifying the property `'materialized' = 'true'` or by
+adding a primary key constraint to the table, a user
 instructs Feldera to also maintain the complete contents of the table.
 Such materialized tables can be browsed and queried at runtime.
 See [Materialized Tables and Views](materialized.md) for more details.

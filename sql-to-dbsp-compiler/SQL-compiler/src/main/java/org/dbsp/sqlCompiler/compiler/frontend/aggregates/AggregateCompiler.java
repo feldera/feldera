@@ -157,7 +157,7 @@ public class AggregateCompiler implements ICompilerComponent {
         Utilities.enforce(!call.isDistinct());
         this.aggFunction = call.getAggregation();
         this.filterArgument = call.filterArg;
-        this.partialResultType = computePartialResultType(this.nullableResultType);
+        this.partialResultType = this.computePartialResultType(this.nullableResultType);
         List<Integer> argList = call.getArgList();
         this.eComp = new ExpressionCompiler(this.aggregateNode, this.v, constants, this.compiler);
         if (argList.isEmpty()) {
@@ -498,7 +498,8 @@ public class AggregateCompiler implements ICompilerComponent {
         }
 
         DBSPTupleExpression tuple = this.getAggregatedValue().to(DBSPTupleExpression.class);
-        Utilities.enforce(tuple.fields != null && tuple.fields.length == 2, "Expected 2 arguments for " + kind);
+        Utilities.enforce(tuple.fields != null && tuple.fields.length == 2,
+                () -> "Expected 2 arguments for " + kind);
         NonLinearAggregate aggregate;
         // Must compare first on second field
         DBSPTypeTuple dataType = tuple.getTypeAsTuple();

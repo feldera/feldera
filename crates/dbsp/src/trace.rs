@@ -37,7 +37,7 @@ use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use dyn_clone::DynClone;
 use enum_map::Enum;
-use feldera_storage::StoragePath;
+use feldera_storage::{FileCommitter, FileReader, StoragePath};
 use rand::Rng;
 use rkyv::ser::Serializer as _;
 use size_of::SizeOf;
@@ -309,12 +309,20 @@ pub trait Trace: BatchReader {
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
     fn value_filter(&self) -> &Option<Filter<Self::Val>>;
-    fn commit(&mut self, _base: &StoragePath, _pid: &str) -> Result<(), Error> {
-        Ok(())
-    }
-    fn restore(&mut self, _base: &StoragePath, _pid: &str) -> Result<(), Error> {
-        Ok(())
-    }
+
+    /// Writes this trace to storage beneath `base`, using `pid` as a file name
+    /// prefix.  Adds the files that were written to `files` so that they can be
+    /// committed later.
+    fn save(
+        &mut self,
+        base: &StoragePath,
+        pid: &str,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error>;
+
+    /// Reads this trace back from storage under `base` with `pid` as the
+    /// prefix.
+    fn restore(&mut self, base: &StoragePath, pid: &str) -> Result<(), Error>;
 
     /// Allows the trace to report additional metadata.
     fn metadata(&self, _meta: &mut OperatorMeta) {}
@@ -440,6 +448,11 @@ where
     /// in the batch. The batch will be discarded afterward, which means that
     /// the implementation need not attempt to cache the return value.
     fn approximate_byte_size(&self) -> usize;
+
+    /// Number of bytes used as a Bloom filter for [Cursor::seek_key_exact].
+    ///
+    /// Only some kinds of batches use a filter; others should return 0.
+    fn filter_size(&self) -> usize;
 
     /// Where the batch's data is stored.
     fn location(&self) -> BatchLocation {
@@ -574,6 +587,9 @@ where
     fn approximate_byte_size(&self) -> usize {
         (**self).approximate_byte_size()
     }
+    fn filter_size(&self) -> usize {
+        (**self).filter_size()
+    }
     fn location(&self) -> BatchLocation {
         (**self).location()
     }
@@ -675,7 +691,13 @@ where
         if TypeId::of::<BI>() == TypeId::of::<Self>() {
             unsafe { std::mem::transmute::<&BI, &Self>(batch).clone() }
         } else {
-            Self::from_cursor(batch.cursor(), timestamp, factories, batch.len())
+            Self::from_cursor(
+                batch.cursor(),
+                timestamp,
+                factories,
+                batch.key_count(),
+                batch.len(),
+            )
         }
     }
 
@@ -698,6 +720,7 @@ where
                 batch.cursor(),
                 timestamp,
                 factories,
+                batch.key_count(),
                 batch.len(),
             ))
         }
@@ -709,12 +732,13 @@ where
         mut cursor: C,
         timestamp: &Self::Time,
         factories: &Self::Factories,
-        capacity: usize,
+        key_capacity: usize,
+        value_capacity: usize,
     ) -> Self
     where
         C: Cursor<Self::Key, Self::Val, (), Self::R>,
     {
-        let mut builder = Self::Builder::with_capacity(factories, capacity);
+        let mut builder = Self::Builder::with_capacity(factories, key_capacity, value_capacity);
         while cursor.key_valid() {
             let mut any_values = false;
             while cursor.val_valid() {
@@ -772,11 +796,11 @@ where
         None
     }
 
-    /// This functions returns a path to a file that can be used by the checkpoint
-    /// mechanism to find the batch again on re-start.
+    /// This functions returns the file that can be used to restore the batch's
+    /// contents.
     ///
     /// If the batch can not be persisted, this function returns None.
-    fn checkpoint_path(&self) -> Option<StoragePath> {
+    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         None
     }
 
@@ -871,11 +895,17 @@ where
 {
     /// Creates a new builder with an initial capacity of 0.
     fn new_builder(factories: &Output::Factories) -> Self {
-        Self::with_capacity(factories, 0)
+        Self::with_capacity(factories, 0, 0)
     }
 
-    /// Creates an empty builder with some initial `capacity` for keys.
-    fn with_capacity(factories: &Output::Factories, capacity: usize) -> Self;
+    /// Creates an empty builder with estimated capacities for keys and
+    /// key-value pairs.  Only `tuple_capacity >= key_capacity` makes sense but
+    /// implementations must tolerate contradictory capacity requests.
+    fn with_capacity(
+        factories: &Output::Factories,
+        key_capacity: usize,
+        value_capacity: usize,
+    ) -> Self;
 
     /// Creates an empty builder to hold the result of merging
     /// `batches`. Optionally, `location` can specify the preferred location for
@@ -890,8 +920,9 @@ where
         I: IntoIterator<Item = &'a B> + Clone,
     {
         let _ = location;
-        let cap = batches.into_iter().map(|b| b.len()).sum();
-        Self::with_capacity(factories, cap)
+        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
+        let value_capacity = batches.into_iter().map(|b| b.len()).sum();
+        Self::with_capacity(factories, key_capacity, value_capacity)
     }
 
     /// Adds time-diff pair `(time, weight)`.
@@ -956,6 +987,7 @@ where
         let _ = additional;
     }
 
+    fn num_keys(&self) -> usize;
     fn num_tuples(&self) -> usize;
 
     /// Completes building and returns the batch.
@@ -973,7 +1005,6 @@ where
     builder: B,
     kv: Box<DynPair<Output::Key, Output::Val>>,
     has_kv: bool,
-    num_tuples: usize,
 }
 
 impl<B, Output> TupleBuilder<B, Output>
@@ -986,12 +1017,15 @@ where
             builder,
             kv: factories.item_factory().default_box(),
             has_kv: false,
-            num_tuples: 0,
         }
     }
 
+    pub fn num_keys(&self) -> usize {
+        self.builder.num_keys()
+    }
+
     pub fn num_tuples(&self) -> usize {
-        self.num_tuples
+        self.builder.num_tuples()
     }
 
     /// Adds `element` to the batch.
@@ -1027,7 +1061,6 @@ where
             self.kv.from_refs(key, val);
         }
         self.builder.push_time_diff(time, weight);
-        self.num_tuples += 1;
     }
 
     /// Adds tuple `(key, val, time, weight)` to the batch.
@@ -1053,7 +1086,6 @@ where
             self.kv.from_vals(key, val);
         }
         self.builder.push_time_diff_mut(time, weight);
-        self.num_tuples += 1;
     }
 
     pub fn reserve(&mut self, additional: usize) {
@@ -1251,7 +1283,7 @@ where
     let offsets = unsafe { archived_root::<Vec<usize>>(data) };
     assert!(offsets.len() % 2 == 0);
     let n = offsets.len() / 2;
-    let mut builder = B::Builder::with_capacity(factories, n);
+    let mut builder = B::Builder::with_capacity(factories, n, n);
     let mut key = factories.key_factory().default_box();
     let mut diff = factories.weight_factory().default_box();
     for i in 0..n {
@@ -1266,7 +1298,7 @@ where
 /// Separator that identifies the end of values for a key.
 const SEPARATOR: u64 = u64::MAX;
 
-fn serialize_indexed_wset<B, K, V, R>(batch: &B) -> Vec<u8>
+pub fn serialize_indexed_wset<B, K, V, R>(batch: &B) -> Vec<u8>
 where
     B: BatchReader<Key = K, Val = V, Time = (), R = R>,
     K: DataTrait + ?Sized,
@@ -1293,7 +1325,7 @@ where
     s.into_serializer().into_inner().into_vec()
 }
 
-fn deserialize_indexed_wset<B, K, V, R>(factories: &B::Factories, data: &[u8]) -> B
+pub fn deserialize_indexed_wset<B, K, V, R>(factories: &B::Factories, data: &[u8]) -> B
 where
     B: Batch<Key = K, Val = V, Time = (), R = R>,
     K: DataTrait + ?Sized,
@@ -1303,7 +1335,7 @@ where
     let offsets = unsafe { archived_root::<Vec<usize>>(data) };
     let len = offsets[0];
 
-    let mut builder = B::Builder::with_capacity(factories, len as usize);
+    let mut builder = B::Builder::with_capacity(factories, len as usize, len as usize);
     let mut key = factories.key_factory().default_box();
     let mut val = factories.val_factory().default_box();
     let mut diff = factories.weight_factory().default_box();

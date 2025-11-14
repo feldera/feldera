@@ -34,7 +34,7 @@ You can edit all pipeline settings when the pipeline is `Stopped` with storage c
     ```
   </TabItem>
   <TabItem value="api">
-    Include only `runtime_config` or `program_config` fields in the body of a [PATCH `/v0/pipelines/{pipeline_name}`](/api/partially-update-a-pipeline), e.g. :
+    Include only `runtime_config` or `program_config` fields in the body of a [PATCH `/v0/pipelines/{pipeline_name}`](/api/patch-pipeline), e.g. :
     ```bash
       curl -X PATCH "http://localhost:8080/v0/pipelines/feature-engineering" -H "Content-Type: application/json" -d '{"runtime_config":{"workers":8,"fault_tolerance":{"model":"none","checkpoint_interval_secs":60},"resources":{"memory_mb_max":16000}},"program_config":{"profile":"dev"}}' -s -o /dev/null
     ```
@@ -54,6 +54,10 @@ Make sure to appropriately size resource limits (memory and storage), the number
 ### Program configuration
 
 The "optimized" compilation profile (default) should be used when running production pipelines where performance is important.
+
+The "optimized_symbols" profile adds minimal debug information (to display line number and file information in backtraces).
+It can lead to significantly larger pipeline binary sizes (can be up to 2x in practice). However, it is useful to run with this
+profile if you want to debug unexpected panics during pipeline execution.
 
 <div className='theme-api-markdown' >
 <ApiSchema pointer="#/components/schemas/ProgramConfig"/>

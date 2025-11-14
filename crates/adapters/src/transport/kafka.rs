@@ -370,19 +370,27 @@ struct MemoryUseReporter {
     /// will take some time to reach what we hope is a steady state.
     start: Instant,
 
-    /// The memory use we last reported and when we reported it.
+    /// The most recently measured memory use, in bytes.
+    current: u64,
+
+    /// The peak memory use we last reported, in bytes, and when we reported it.
     ///
     /// This is a peak value: we only ever report a new value when the usage
     /// increases substantially from the previously reported value.
-    last_report: Option<(Instant, u64)>,
+    peak: Option<(Instant, u64)>,
 }
 
 impl MemoryUseReporter {
     fn new() -> Self {
         Self {
             start: Instant::now(),
-            last_report: None,
+            current: 0,
+            peak: None,
         }
+    }
+    /// The most recent measured memory use in bytes.
+    fn current(&self) -> usize {
+        self.current as usize
     }
     fn update(&mut self, statistics: &Statistics) {
         /// Minimum time before first report.
@@ -391,17 +399,18 @@ impl MemoryUseReporter {
         /// Minimum amount of memory to report on.
         const MIN_MEMORY: u64 = 1024 * 1024;
 
-        if self.start.elapsed() < REPORT_DELAY {
-            return;
-        }
-
         let mut memory = 0;
         for topic in statistics.topics.values() {
             for partition in topic.partitions.values() {
                 memory += partition.msgq_bytes + partition.xmit_msgq_bytes + partition.fetchq_size;
             }
         }
-        match &self.last_report {
+        self.current = memory;
+        if self.start.elapsed() < REPORT_DELAY {
+            return;
+        }
+
+        match &self.peak {
             None if memory > MIN_MEMORY => {
                 info!(
                     "Buffered {} after {} seconds",
@@ -420,6 +429,6 @@ impl MemoryUseReporter {
             }
             _ => return,
         }
-        self.last_report = Some((Instant::now(), memory));
+        self.peak = Some((Instant::now(), memory));
     }
 }

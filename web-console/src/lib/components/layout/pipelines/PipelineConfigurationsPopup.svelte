@@ -1,20 +1,17 @@
 <script lang="ts">
   import { type ExtendedPipeline, type Pipeline } from '$lib/services/pipelineManager'
   import { deletePipeline as _deletePipeline } from '$lib/services/pipelineManager'
-  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import JSONbig from 'true-json-bigint'
   import MultiJSONDialog from '$lib/components/dialogs/MultiJSONDialog.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
-  import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
 
   let {
     pipeline,
     pipelineBusy
   }: {
-    pipeline: {
-      current: ExtendedPipeline
-      patch: (pipeline: Partial<Pipeline>) => Promise<ExtendedPipeline>
-    }
+    pipeline: WritablePipeline
     pipelineBusy: boolean
   } = $props()
 
@@ -89,9 +86,7 @@
     onClose={() => (globalDialog.dialog = null)}
   >
     {#snippet title()}
-      <div class="h5 font-normal">
-        Configure {pipeline.current.name} pipeline
-      </div>
+      Configure {pipeline.current.name} pipeline
     {/snippet}
   </MultiJSONDialog>
 {/snippet}

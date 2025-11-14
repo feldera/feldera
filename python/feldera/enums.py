@@ -122,12 +122,13 @@ class DeploymentRuntimeStatus(Enum):
 
     UNAVAILABLE = 0
     STANDBY = 1
-    INITIALIZING = 2
-    BOOTSTRAPPING = 3
-    REPLAYING = 4
-    PAUSED = 5
-    RUNNING = 6
-    SUSPENDED = 7
+    AWAITINGAPPROVAL = 2
+    INITIALIZING = 3
+    BOOTSTRAPPING = 4
+    REPLAYING = 5
+    PAUSED = 6
+    RUNNING = 7
+    SUSPENDED = 8
 
     @staticmethod
     def from_str(value):
@@ -149,13 +150,14 @@ class PipelineStatus(Enum):
     PROVISIONING = 2
     UNAVAILABLE = 3
     STANDBY = 4
-    INITIALIZING = 5
-    BOOTSTRAPPING = 6
-    REPLAYING = 7
-    PAUSED = 8
-    RUNNING = 9
-    SUSPENDED = 10
-    STOPPING = 11
+    AWAITINGAPPROVAL = 5
+    INITIALIZING = 6
+    BOOTSTRAPPING = 7
+    REPLAYING = 8
+    PAUSED = 9
+    RUNNING = 10
+    SUSPENDED = 11
+    STOPPING = 12
 
     @staticmethod
     def from_str(value):
@@ -344,3 +346,21 @@ class PipelineFieldSelector(Enum):
 
     STATUS = "status"
     """Select only the fields required to know the status of a pipeline."""
+
+
+class BootstrapPolicy(Enum):
+    AWAIT_APPROVAL = "await_approval"
+    ALLOW = "allow"
+    REJECT = "reject"
+
+
+class CompletionTokenStatus(Enum):
+    COMPLETE = "complete"
+    """
+    Feldera has completed processing all inputs represented by this token.
+    """
+
+    IN_PROGRESS = "inprogress"
+    """
+    Feldera is still processing the inputs represented by this token.
+    """

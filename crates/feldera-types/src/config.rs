@@ -5,6 +5,7 @@
 //! endpoint configs.  We represent these configs as opaque JSON values, so
 //! that the entire configuration tree can be deserialized from a JSON file.
 
+use crate::program_schema::ProgramSchema;
 use crate::secret_resolver::default_secrets_directory;
 use crate::transport::adhoc::AdHocInputConfig;
 use crate::transport::clock::ClockConfig;
@@ -14,6 +15,7 @@ use crate::transport::file::{FileInputConfig, FileOutputConfig};
 use crate::transport::http::HttpInputConfig;
 use crate::transport::iceberg::IcebergReaderConfig;
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
+use crate::transport::nats::NatsInputConfig;
 use crate::transport::nexmark::NexmarkInputConfig;
 use crate::transport::postgres::{PostgresReaderConfig, PostgresWriterConfig};
 use crate::transport::pubsub::PubSubInputConfig;
@@ -21,9 +23,11 @@ use crate::transport::redis::RedisOutputConfig;
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
 use core::fmt;
+use feldera_ir::{MirNode, MirNodeId};
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::Path;
 use std::str::FromStr;
@@ -49,12 +53,21 @@ pub const fn default_max_batch_size() -> u64 {
 
 pub const DEFAULT_CLOCK_RESOLUTION_USECS: u64 = 1_000_000;
 
+/// Program information included in the pipeline configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+pub struct ProgramIr {
+    /// The MIR of the program.
+    pub mir: HashMap<MirNodeId, MirNode>,
+    /// Program schema.
+    pub program_schema: ProgramSchema,
+}
+
 /// Pipeline deployment configuration.
 /// It represents configuration entries directly provided by the user
 /// (e.g., runtime configuration) and entries derived from the schema
 /// of the compiled program (e.g., connectors). Storage configuration,
 /// if applicable, is set by the runner.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
 pub struct PipelineConfig {
     /// Global controller configuration.
     #[serde(flatten)]
@@ -83,6 +96,10 @@ pub struct PipelineConfig {
     /// Output endpoint configuration.
     #[serde(default)]
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+
+    /// Program information.
+    #[serde(default)]
+    pub program_ir: Option<ProgramIr>,
 }
 
 impl PipelineConfig {
@@ -120,6 +137,21 @@ impl PipelineConfig {
             Some(dir) => Path::new(dir.as_str()),
             None => default_secrets_directory(),
         }
+    }
+
+    /// Abbreviated config that can be printed in the log on pipeline startup.
+    pub fn display_summary(&self) -> String {
+        // TODO: we may want to further abbreviate connector config.
+        let summary = serde_json::json!({
+            "name": self.name,
+            "global": self.global,
+            "storage_config": self.storage_config,
+            "secrets_dir": self.secrets_dir,
+            "inputs": self.inputs,
+            "outputs": self.outputs
+        });
+
+        serde_json::to_string_pretty(&summary).unwrap_or_else(|_| "{}".to_string())
     }
 }
 
@@ -195,7 +227,7 @@ pub struct StorageOptions {
     ///
     /// A value of 0 will write even empty batches to storage, and nonzero
     /// values provide a threshold.  `usize::MAX` would effectively disable
-    /// storage for such batches.  The default is 1,048,576 (1 MiB).
+    /// storage for such batches.  The default is 10,048,576 (10 MiB).
     pub min_storage_bytes: Option<usize>,
 
     /// For a batch of data passed through the pipeline during a single step,
@@ -1382,6 +1414,7 @@ pub struct OutputEndpointConfig {
 pub enum TransportConfig {
     FileInput(FileInputConfig),
     FileOutput(FileOutputConfig),
+    NatsInput(NatsInputConfig),
     KafkaInput(KafkaInputConfig),
     KafkaOutput(KafkaOutputConfig),
     PubSubInput(PubSubInputConfig),
@@ -1410,6 +1443,7 @@ impl TransportConfig {
         match self {
             TransportConfig::FileInput(_) => "file_input".to_string(),
             TransportConfig::FileOutput(_) => "file_output".to_string(),
+            TransportConfig::NatsInput(_) => "nats_input".to_string(),
             TransportConfig::KafkaInput(_) => "kafka_input".to_string(),
             TransportConfig::KafkaOutput(_) => "kafka_output".to_string(),
             TransportConfig::PubSubInput(_) => "pub_sub_input".to_string(),
@@ -1484,4 +1518,15 @@ pub struct ResourceConfig {
     /// Storage class to use for an instance of this pipeline.
     /// The class determines storage performance such as IOPS and throughput.
     pub storage_class: Option<String>,
+
+    /// Kubernetes service account name to use for an instance of this pipeline.
+    /// The account determines permissions and access controls.
+    pub service_account_name: Option<String>,
+
+    /// Kubernetes namespace to use for an instance of this pipeline.
+    /// The namespace determines the scope of names for resources created
+    /// for the pipeline.
+    /// If not set, the pipeline will be deployed in the same namespace
+    /// as the control-plane.
+    pub namespace: Option<String>,
 }

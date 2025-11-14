@@ -1,6 +1,6 @@
 <script lang="ts">
   import { asyncReadable } from '@square/svelte-store'
-  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
   import NewApiKeyForm from '$lib/components/apiKey/NewApiKeyForm.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'

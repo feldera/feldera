@@ -23,7 +23,7 @@ jobs:
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-9a54a381bb958ba78da125976a2f7731db3d7a4f
+      image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
     services:
       postgres:
         image: postgres:15
@@ -88,6 +88,7 @@ jobs:
         shell: bash
         env:
           RUST_BACKTRACE: 1
+          RUST_TEST_THREADS: 16
           REDIS_URL: redis://localhost:6379/0
           POSTGRES_URL: postgres://postgres:password@localhost:5432
           REDPANDA_BROKERS: 127.0.0.1
@@ -97,6 +98,11 @@ jobs:
           ICEBERG_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
           DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
           DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
+
+      - name: Show Kubernetes node
+        if: always()
+        run: |
+          echo "K8S node: ${K8S_NODE_NAME}"
 
   # We can't run the pubsub tests on aarch64 because we don't have a
   # arm image for the pubsub emulator:
@@ -117,6 +123,11 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Show Kubernetes node
+        if: always()
+        run: |
+          echo "K8S node: ${K8S_NODE_NAME}"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 

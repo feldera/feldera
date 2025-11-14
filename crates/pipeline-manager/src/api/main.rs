@@ -104,7 +104,7 @@ This guarantees that the client operation is eventually responsive, which enable
 it is a part of to not hang indefinitely on Feldera operations and instead be able to decide
 by itself whether and how to proceed. If no response is returned, the mechanism should generally
 retry. When a response is returned, the decision whether to retry can generally depend on the status
-code: especially the status codes 502, 503 and 504 should be considered as transient errors.
+code: especially the status codes 408, 502, 503 and 504 should be considered as transient errors.
 Finer grained retry decisions should be made by taking into account the application-level
 `error_code` if the response body was indeed a Feldera error response body.
 
@@ -177,6 +177,8 @@ It contains the following fields:
         endpoints::pipeline_management::post_pipeline,
         endpoints::pipeline_management::put_pipeline,
         endpoints::pipeline_management::patch_pipeline,
+        endpoints::pipeline_management::post_pipeline_testing,
+        endpoints::pipeline_management::post_update_runtime,
         endpoints::pipeline_management::delete_pipeline,
         endpoints::pipeline_management::post_pipeline_start,
         endpoints::pipeline_management::post_pipeline_stop,
@@ -202,6 +204,7 @@ It contains the following fields:
         endpoints::pipeline_interaction::post_pipeline_pause,
         endpoints::pipeline_interaction::post_pipeline_resume,
         endpoints::pipeline_interaction::post_pipeline_activate,
+        endpoints::pipeline_interaction::post_pipeline_approve,
         endpoints::pipeline_interaction::completion_token,
         endpoints::pipeline_interaction::completion_status,
         endpoints::pipeline_interaction::start_transaction,
@@ -248,8 +251,12 @@ It contains the following fields:
         crate::db::types::combined_status::CombinedDesiredStatus,
         crate::db::types::resources_status::ResourcesStatus,
         crate::db::types::resources_status::ResourcesDesiredStatus,
+        feldera_types::pipeline_diff::ProgramDiff,
+        feldera_types::pipeline_diff::PipelineDiff,
         feldera_types::runtime_status::RuntimeStatus,
         feldera_types::runtime_status::RuntimeDesiredStatus,
+        feldera_types::runtime_status::BootstrapPolicy,
+        crate::api::endpoints::pipeline_management::ConnectorStats,
         crate::api::endpoints::pipeline_management::PipelineInfo,
         crate::api::endpoints::pipeline_management::PipelineSelectedInfo,
         crate::api::endpoints::pipeline_management::PipelineFieldSelector,
@@ -257,6 +264,18 @@ It contains the following fields:
         crate::api::endpoints::pipeline_management::PostPutPipeline,
         crate::api::endpoints::pipeline_management::PatchPipeline,
         crate::api::endpoints::pipeline_management::PostStopPipelineParameters,
+
+        // Dataflow IR
+        feldera_ir::Dataflow,
+        feldera_ir::MirNode,
+        feldera_ir::CalcitePlan,
+        feldera_ir::CalciteId,
+        feldera_ir::MirInput,
+        feldera_ir::Rel,
+        feldera_ir::Operand,
+        feldera_ir::Op,
+        feldera_ir::Condition,
+        feldera_types::config::ProgramIr,
 
         // Storage
         crate::db::types::storage::StorageStatus,
@@ -303,8 +322,6 @@ It contains the following fields:
         feldera_types::config::ResourceConfig,
         feldera_types::config::ObjectStorageConfig,
         feldera_types::config::FtModel,
-        feldera_types::license::DisplaySchedule,
-        feldera_types::license::LicenseInformation,
         feldera_types::transport::adhoc::AdHocInputConfig,
         feldera_types::transport::clock::ClockConfig,
         feldera_types::transport::file::FileInputConfig,
@@ -318,6 +335,14 @@ It contains the following fields:
         feldera_types::transport::kafka::KafkaOutputConfig,
         feldera_types::transport::kafka::KafkaOutputFtConfig,
         feldera_types::transport::kafka::KafkaStartFromConfig,
+        feldera_types::transport::nats::Auth,
+        feldera_types::transport::nats::ConnectOptions,
+        feldera_types::transport::nats::ConsumerConfig,
+        feldera_types::transport::nats::Credentials,
+        feldera_types::transport::nats::DeliverPolicy,
+        feldera_types::transport::nats::NatsInputConfig,
+        feldera_types::transport::nats::ReplayPolicy,
+        feldera_types::transport::nats::UserAndPassword,
         feldera_types::transport::pubsub::PubSubInputConfig,
         feldera_types::transport::s3::S3InputConfig,
         feldera_types::transport::datagen::DatagenStrategy,
@@ -328,6 +353,7 @@ It contains the following fields:
         feldera_types::transport::nexmark::NexmarkTable,
         feldera_types::transport::nexmark::NexmarkInputOptions,
         feldera_types::transport::delta_table::DeltaTableIngestMode,
+        feldera_types::transport::delta_table::DeltaTableTransactionMode,
         feldera_types::transport::delta_table::DeltaTableWriteMode,
         feldera_types::transport::delta_table::DeltaTableReaderConfig,
         feldera_types::transport::delta_table::DeltaTableWriterConfig,
@@ -367,8 +393,10 @@ It contains the following fields:
         feldera_types::transaction::StartTransactionResponse,
         feldera_types::time_series::TimeSeries,
         feldera_types::time_series::SampleStatistics,
-        feldera_types::license::DisplaySchedule,
-        feldera_types::license::LicenseInformation,
+
+        // Telemetry & License
+        feldera_cloud1_client::license::DisplaySchedule,
+        feldera_cloud1_client::license::LicenseInformation,
 
         // Cluster health check
         crate::cluster_health::HealthStatus,
@@ -457,6 +485,8 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_management::post_pipeline)
         .service(endpoints::pipeline_management::put_pipeline)
         .service(endpoints::pipeline_management::patch_pipeline)
+        .service(endpoints::pipeline_management::post_pipeline_testing)
+        .service(endpoints::pipeline_management::post_update_runtime)
         .service(endpoints::pipeline_management::delete_pipeline)
         .service(endpoints::pipeline_management::post_pipeline_start)
         .service(endpoints::pipeline_management::post_pipeline_stop)
@@ -472,6 +502,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::post_pipeline_pause)
         .service(endpoints::pipeline_interaction::post_pipeline_resume)
         .service(endpoints::pipeline_interaction::post_pipeline_activate)
+        .service(endpoints::pipeline_interaction::post_pipeline_approve)
         .service(endpoints::pipeline_interaction::post_pipeline_input_connector_action)
         .service(endpoints::pipeline_interaction::get_pipeline_input_connector_status)
         .service(endpoints::pipeline_interaction::get_pipeline_output_connector_status)
@@ -480,6 +511,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::get_pipeline_time_series)
         .service(endpoints::pipeline_interaction::get_pipeline_time_series_stream)
         .service(endpoints::pipeline_interaction::get_pipeline_circuit_profile)
+        .service(endpoints::pipeline_interaction::get_pipeline_circuit_json_profile)
         .service(endpoints::pipeline_interaction::get_pipeline_heap_profile)
         .service(endpoints::pipeline_interaction::support_bundle::get_pipeline_support_bundle)
         .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)
@@ -678,7 +710,13 @@ pub async fn run(
                     .app_data(auth_configuration.clone())
                     .app_data(client)
                     .wrap_fn(|req, srv| {
-                        trace!("Request: {} {}", req.method(), req.path());
+                        let log_level = if req.method() == Method::GET && req.path() == "/healthz" {
+                            Level::Trace
+                        } else {
+                            Level::Debug
+                        };
+
+                        log!(log_level, "Request: {} {}", req.method(), req.path());
                         srv.call(req).map(log_response)
                     })
                     .wrap(api_config.cors())

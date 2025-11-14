@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.util.HashString;
@@ -23,10 +24,13 @@ import org.dbsp.util.Utilities;
 public final class NestedOperatorWriter extends BaseRustCodeGenerator {
     final DBSPNestedOperator operator;
     final DBSPCircuit circuit;
+    final LateMaterializations materializations;
 
-    public NestedOperatorWriter(DBSPNestedOperator operator, DBSPCircuit circuit) {
+    public NestedOperatorWriter(DBSPNestedOperator operator, DBSPCircuit circuit,
+                                LateMaterializations materializations) {
         this.circuit = circuit;
         this.operator = operator;
+        this.materializations = materializations;
     }
 
     private void processChild(DBSPOperator node) {
@@ -91,7 +95,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
                 .append(RustWriter.COMMON_PREAMBLE)
                 .append(RustWriter.STANDARD_PREAMBLE);
         ToRustVisitor visitor = new ToRustVisitor(
-                compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations())
+                compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations(), this.materializations)
                 .withPreferHash(true);
         final String hash = this.operator.getNodeName(true);
         this.builder().newline();
@@ -188,7 +192,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
                     this.builder().append("None;").newline();
                 } else {
                     this.builder().append("Some(")
-                            .append(Utilities.doubleQuote(hash1.toString()))
+                            .append(Utilities.doubleQuote(hash1.toString(), false))
                             .append(");")
                             .newline();
                 }

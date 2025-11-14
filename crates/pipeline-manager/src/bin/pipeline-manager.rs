@@ -89,13 +89,28 @@ async fn main() -> anyhow::Result<()> {
     // Run migrations before starting any service
     db.run_migrations().await?;
     let db = Arc::new(Mutex::new(db));
+
     let db_clone = db.clone();
     let common_config_clone = common_config.clone();
+    let compiler_config_clone = compiler_config.clone();
+
+    // Running multiple compiler workers on the same machine is not yet supported
+    // due to the HTTP server ran by compiler_main & cleanup status files.
+    // For now, we run a single compiler worker in the pipeline manager.
+    let worker_id = 0;
+    let total_workers = 1;
     let _compiler = tokio::spawn(async move {
-        compiler_main(common_config_clone, compiler_config, db_clone)
-            .await
-            .expect("Compiler server main failed");
+        compiler_main(
+            common_config_clone,
+            compiler_config_clone,
+            db_clone,
+            worker_id,
+            total_workers,
+        )
+        .await
+        .expect("Compiler server main failed");
     });
+
     let db_clone = db.clone();
     let common_config_clone = common_config.clone();
     let _local_runner = tokio::spawn(async move {

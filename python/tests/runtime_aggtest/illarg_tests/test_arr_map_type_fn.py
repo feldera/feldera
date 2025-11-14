@@ -5,10 +5,11 @@ from tests.runtime_aggtest.aggtst_base import TstView
 class illarg_index_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"arr": "14", "arr2": "See you!"}]
+        self.data = [{"arr": "14", "arr2": "See you!", "roww": "cat"}]
         self.sql = """CREATE MATERIALIZED VIEW index_legal AS SELECT
                       arr[2] AS arr,
-                      arr[SAFE_OFFSET(2)] AS arr2
+                      arr[SAFE_OFFSET(2)] AS arr2,
+                      roww[2] AS roww
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -518,10 +519,30 @@ class illarg_arr_repeat_legal(TstView):
 class illarg_arr_repeat_dtype_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"str": ["0.12", "0.12"]}, {"str": ["hello ", "hello "]}]
+        self.data = [
+            {"str": ["0.12", "0.12"]},
+            {"str": ["hello ", "hello "]},
+            {"str": [None, None]},
+        ]
         self.sql = """CREATE MATERIALIZED VIEW arr_repeat_dtype_legal AS SELECT
                       ARRAY_REPEAT(str, 2)  AS str
                       FROM illegal_tbl"""
+
+
+class illarg_arr_repeat__legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "roww": [{"i1": 5, "v1": None}, {"i1": 5, "v1": None}],
+                "mapp": [{"a": 15, "b": None}, {"a": 15, "b": None}],
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW arr_repeat_cmpxtype_legal AS SELECT
+                      ARRAY_REPEAT(roww, 2)  AS roww,
+                      ARRAY_REPEAT(mapp, 2)  AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 1"""
 
 
 class illarg_arr_repeat_dtype_illegal(TstView):
@@ -593,7 +614,7 @@ class illarg_sort_arr_illegal(TstView):
     def __init__(self):
         # checked manually
         self.sql = """CREATE MATERIALIZED VIEW sort_arr_illegal AS SELECT
-                      SORT_ARRAY(str)  AS str
+                      SORT_ARRAY(roww)  AS str
                       FROM illegal_tbl"""
         self.expected_error = "Cannot apply 'SORT_ARRAY' to arguments of type"
 
@@ -681,3 +702,24 @@ class illarg_map_contains_key_illegal(TstView):
                       MAP_CONTAINS_KEY(bin, 'a')  AS str
                       FROM illegal_tbl"""
         self.expected_error = "Cannot apply 'MAP_CONTAINS_KEY' to arguments of type"
+
+
+# MAP_KEYS function
+class illarg_map_keys_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"mapp": ["a", "b"]}]
+        self.sql = """CREATE MATERIALIZED VIEW map_keys_legal AS SELECT
+                      MAP_KEYS(mapp) AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_map_keys_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW map_keys_illegal AS SELECT
+                      MAP_KEYS(uuidd) AS uuidd
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'MAP_KEYS' to arguments of type"

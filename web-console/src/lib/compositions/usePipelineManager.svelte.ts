@@ -25,12 +25,11 @@ import {
   type PipelineAction,
   type PipelineStatus,
   type PipelineThumb,
-  type SupportBundleOptions
+  type SupportBundleOptions,
+  postUpdateRuntime
 } from '$lib/services/pipelineManager'
 import { useToast } from '$lib/compositions/useToastNotification'
 import type { FunctionType } from '$lib/types/common/function'
-import type { NamesInUnion } from '$lib/functions/common/union'
-import { useReactiveWaiter } from './useReactiveWaiter.svelte'
 import { triggerStreamDownload } from '$lib/services/browser'
 
 const networkErrors = ['Failed to fetch', 'Network request failed', 'Timeout']
@@ -136,6 +135,10 @@ export const usePipelineManager = () => {
     postPipelineAction: reportError(
       postPipelineAction,
       (pipelineName, action) => `Failed to ${action} ${pipelineName} pipeline`
+    ),
+    postUpdateRuntime: reportError(
+      postUpdateRuntime,
+      (pipelineName) => `Failed to update runtime for ${pipelineName} pipeline`
     ),
     getAuthConfig: getAuthConfig,
     getConfig: getConfig,

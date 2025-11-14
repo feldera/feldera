@@ -1,7 +1,7 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 
 
-# ASCII function(successful for all arguments)
+# ASCII function(successful for all arguments except Complex Types)
 class illarg_ascii_legal(TstView):
     def __init__(self):
         # checked manually
@@ -21,6 +21,16 @@ class illarg_ascii_cast_legal(TstView):
                       ASCII(arr[1]) AS arr
                       FROM illegal_tbl
                       WHERE id = 0"""
+
+
+# Negative Test
+class illarg_ascii_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW ascii_illegal AS SELECT
+                      ASCII(mapp) AS roww
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'ASCII' to arguments of type"
 
 
 # CONCAT function
@@ -70,7 +80,7 @@ class illarg_concat_illegal(TstView):
         self.expected_error = "Not yet implemented"
 
 
-# CONCAT_WS function(successful for all arguments)
+# CONCAT_WS function(successful for all arguments except Complex Types)
 class illarg_concatws_legal(TstView):
     def __init__(self):
         # checked manually
@@ -92,7 +102,17 @@ class illarg_concatws_cast_legal(TstView):
                       WHERE id = 0"""
 
 
-# LEFT function(successful for all arguments)
+# Negative Test
+class illarg_concatws_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW concatws_illegal AS SELECT
+                      CONCAT_WS('@', roww, 55) AS roww
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'CONCAT_WS' to arguments of type"
+
+
+# LEFT function(successful for all arguments except Complex Types)
 class illarg_left_legal(TstView):
     def __init__(self):
         # checked manually
@@ -115,7 +135,17 @@ class illarg_left_cast_legal(TstView):
                       WHERE id = 0"""
 
 
-# RIGHT function(successful for all arguments)
+# Negative Test
+class illarg_left_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW left_illegal AS SELECT
+                      LEFT(roww, 2) AS roww
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'LEFT' to arguments of type"
+
+
+# RIGHT function(successful for all arguments except Complex Types)
 class illarg_right_legal(TstView):
     def __init__(self):
         # checked manually
@@ -138,7 +168,17 @@ class illarg_right_cast_legal(TstView):
                       WHERE id = 0"""
 
 
-# INITCAP function(successful for all arguments)
+# Negative Test
+class illarg_right_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW right_illegal AS SELECT
+                      RIGHT(roww, 2) AS roww
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'RIGHT' to arguments of type"
+
+
+# INITCAP function(successful for all arguments except Complex Types)
 class illarg_initcap_legal(TstView):
     def __init__(self):
         # checked manually
@@ -160,7 +200,17 @@ class illarg_initcap_cast_legal(TstView):
                       WHERE id = 0"""
 
 
-# CHAR_LENGTH(string) or CHARACTER_LENGTH(string) or LENGTH(string) or LEN(string) function(successful for all arguments)
+# Negative Test
+class illarg_initcap_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW initcap_illegal AS SELECT
+                      INITCAP(roww) AS roww
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'INITCAP' to arguments of type"
+
+
+# CHAR_LENGTH(string) or CHARACTER_LENGTH(string) or LENGTH(string) or LEN(string) function(successful for all arguments except Complex Types)
 class illarg_len_legal(TstView):
     def __init__(self):
         # checked manually
@@ -180,6 +230,16 @@ class illarg_len_cast_legal(TstView):
                       LEN(uuidd) AS uuidd
                       FROM illegal_tbl
                       WHERE id = 0"""
+
+
+# Negative Test
+class illarg_len_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW len_illegal AS SELECT
+                      LEN(roww) AS roww
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'LEN' to arguments of type"
 
 
 # LOWER function(successful for all arguments)
@@ -204,6 +264,17 @@ class illarg_lower_cast_legal(TstView):
                       WHERE id = 0"""
 
 
+# Negative Test
+class illarg_lower_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW lower_illegal AS SELECT
+                      LOWER(roww) AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'LOWER' to arguments of type"
+
+
 # UPPER function(successful for all arguments)
 class illarg_upper_legal(TstView):
     def __init__(self):
@@ -224,6 +295,17 @@ class illarg_upper_cast_legal(TstView):
                       UPPER(arr[1]) AS arr
                       FROM illegal_tbl
                       WHERE id = 0"""
+
+
+# Negative Test
+class illarg_upper_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW upper_illegal AS SELECT
+                      UPPER(roww) AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'UPPER' to arguments of type"
 
 
 #  SUBSTR function(successful for all arguments)
@@ -248,6 +330,16 @@ class illarg_substr_cast_legal(TstView):
                       WHERE id = 0"""
 
 
+# Negative Test
+class illarg_substr_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW substr_illegal AS SELECT
+                      SUBSTR(roww, 2, 3) AS roww
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'SUBSTR' to arguments of type"
+
+
 # SUBSTRING function(successful for all arguments)
 class illarg_substring_legal(TstView):
     def __init__(self):
@@ -268,6 +360,16 @@ class illarg_substring_cast_legal(TstView):
                       SUBSTRING(bin from 2 for 3) AS bin
                       FROM illegal_tbl
                       WHERE id = 0"""
+
+
+# Negative Test
+class illarg_substring_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW substring_illegal AS SELECT
+                      SUBSTRING(roww, 2, 3) AS roww
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'SUBSTRING' to arguments of type"
 
 
 # TRIM function
@@ -303,7 +405,7 @@ class illarg_trim_illegal(TstView):
         self.expected_error = "Cannot apply 'TRIM' to arguments of type"
 
 
-# POSITION function(successful for all arguments)
+# POSITION function(successful for all arguments except Complex Types)
 class illarg_position_legal(TstView):
     def __init__(self):
         # checked manually
@@ -325,7 +427,17 @@ class illarg_position_cast_legal(TstView):
                       WHERE id = 0"""
 
 
-# REGEXP_REPLACE function(successful for all arguments)
+# Negative Test
+class illarg_position_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW position_illegal AS SELECT
+                      POSITION('cat' in roww) AS roww
+                      FROM illegal_tbl"""
+        self.expected_error = "Parameters must be of the same type"
+
+
+# REGEXP_REPLACE function(successful for all arguments except Complex Types)
 class illarg_regexp_replace_legal(TstView):
     def __init__(self):
         # checked manually
@@ -347,7 +459,17 @@ class illarg_regexp_replace_cast_legal(TstView):
                       WHERE id = 0"""
 
 
-# RLIKE function(successful for all arguments)
+# Negative Test
+class illarg_regexp_replace_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW regexp_replace_illegal AS SELECT
+                      REGEXP_REPLACE(roww, '[a-gi-z]', 'i') AS roww
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'REGEXP_REPLACE' to arguments of type"
+
+
+# RLIKE function(successful for all arguments except Complex Types)
 class illarg_rlike_legal(TstView):
     def __init__(self):
         # checked manually
@@ -369,7 +491,17 @@ class illarg_rlike_cast_legal(TstView):
                       WHERE id = 0"""
 
 
-# SPLIT function(successful for all arguments)
+# Negative Test
+class illarg_rlike_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW rlike_illegal AS SELECT
+                      RLIKE(roww, 'c.t') AS roww
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'RLIKE' to arguments of type"
+
+
+# SPLIT function(successful for all arguments except Complex Types)
 class illarg_split_legal(TstView):
     def __init__(self):
         # checked manually
@@ -396,7 +528,18 @@ class illarg_split_cast_legal(TstView):
                       WHERE id = 0"""
 
 
-# SPLIT_PART function(successful for all arguments)
+# Negative Test
+class illarg_split_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"roww": ["h", "llo "]}]
+        self.sql = """CREATE MATERIALIZED VIEW split_illegal AS SELECT
+                      SPLIT(roww, 'a') AS roww
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'SPLIT' to arguments of type"
+
+
+# SPLIT_PART function(successful for all arguments except Complex Types)
 class illarg_split_part_legal(TstView):
     def __init__(self):
         # checked manually
@@ -418,7 +561,18 @@ class illarg_split_part_cast_legal(TstView):
                       WHERE id = 0"""
 
 
-# MD5 function(successful for all arguments)
+# Negative Test
+class illarg_split_part_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW split_part_illegal AS SELECT
+                      SPLIT_PART(roww, 'a', 2) AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'SPLIT_PART' to arguments of type"
+
+
+# MD5 function(successful for all arguments except Complex Types)
 class illarg_md5_legal(TstView):
     def __init__(self):
         # Validated on Postgres
@@ -451,8 +605,19 @@ class illarg_md5_cast_legal(TstView):
                       WHERE id = 0"""
 
 
+# Negative Test
+class illarg_md5_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW md5_illegal AS SELECT
+                      MD5(roww) AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'MD5' to arguments of type"
+
+
 # BINARY specific functions
-# ||(concatenation operator) => (successful for all arguments)
+# ||(concatenation operator) => (successful for all arguments except Complex Types)
 class illarg_bin_concat_legal(TstView):
     def __init__(self):
         # checked manually
@@ -474,7 +639,18 @@ class illarg_bin_concat_cast_legal(TstView):
                       WHERE id = 0"""
 
 
-# GUNZIP(succcesful only for BINARY type in GZIP format)
+# Negative Test
+class illarg_bin_concat_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW bin_concat_illegal AS SELECT
+                      roww || roww AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply '||' to arguments of type"
+
+
+# GUNZIP(successful only for BINARY type in GZIP format)
 class illarg_bin_gunzip_legal(TstView):
     def __init__(self):
         # checked manually
@@ -518,7 +694,7 @@ class illarg_octet_length_illegal(TstView):
         self.expected_error = "Cannot apply 'OCTET_LENGTH' to arguments of type"
 
 
-# OVERLAY(successful for all arguments)
+# OVERLAY(successful for all arguments except Complex Types)
 class illarg_bin_overlay_legal(TstView):
     def __init__(self):
         # checked manually
@@ -540,7 +716,18 @@ class illarg_bin_overlay_cast_legal(TstView):
                       WHERE id = 0"""
 
 
-# POSITION(succesful for all arguments)
+# Negative Test
+class illarg_bin_overlay_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW bin_overlay_illegal AS SELECT
+                      OVERLAY(roww placing 'a' from 2 for 3) AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'OVERLAY' to arguments of type"
+
+
+# POSITION(succesful for all arguments except Complex Types)
 class illarg_bin_position_legal(TstView):
     def __init__(self):
         # checked manually
@@ -562,7 +749,7 @@ class illarg_bin_position_cast_legal(TstView):
                       WHERE id = 0"""
 
 
-# SUBSTRING(binary FROM integer)(successful for all arguments)
+# SUBSTRING(binary FROM integer)(successful for all arguments except Complex Types)
 class illarg_bin_substring_legal(TstView):
     def __init__(self):
         # checked manually
@@ -584,7 +771,7 @@ class illarg_bin_substring_cast_legal(TstView):
                       WHERE id = 0"""
 
 
-# SUBSTRING(binary FROM integer1 FOR integer2)(successful for all arguments)
+# SUBSTRING(binary FROM integer1 FOR integer2)(successful for all arguments except Complex Types)
 class illarg_bin_substring1_legal(TstView):
     def __init__(self):
         # checked manually
@@ -671,3 +858,14 @@ class illarg_bin_to_int_cast_legal(TstView):
 # ('x' || '0b1620')::bit(24)::int,
 # ('x' || '627965')::bit(24)::int,
 # ('x' || '68656c6c6f20')::bit(32)::int;
+
+
+# Negative Test
+class illarg_bin_to_int_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW bin_to_int_illegal AS SELECT
+                      TO_INT(roww) AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'TO_INT' to arguments of type"

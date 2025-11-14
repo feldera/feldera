@@ -18,6 +18,7 @@ use crate::db::types::utils::validate_program_config;
 use crate::db::types::version::Version;
 use crate::error::source_error;
 use crate::has_unstable_feature;
+use feldera_ir::Dataflow;
 use feldera_types::program_schema::ProgramSchema;
 use futures_util::StreamExt;
 use indoc::formatdoc;
@@ -61,9 +62,10 @@ const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
 
 /// SQL compilation task that wakes up periodically.
 /// Sleeps inbetween ticks which affects the response time of SQL compilation.
-/// Note that the logic in this task assumes only one is run at a time.
 /// This task cannot fail, and any internal errors are caught and written to log if need-be.
 pub async fn sql_compiler_task(
+    worker_id: usize,
+    total_workers: usize,
     common_config: CommonConfig,
     config: CompilerConfig,
     db: Arc<Mutex<StoragePostgres>>,
@@ -78,10 +80,10 @@ pub async fn sql_compiler_task(
             if let Err(e) = cleanup_sql_compilation(&config, db.clone()).await {
                 match e {
                     SqlCompilationCleanupError::Database(e) => {
-                        error!("SQL compilation cleanup failed: database error occurred: {e}");
+                        error!("SQL worker {worker_id}: compilation cleanup failed: database error occurred: {e}");
                     }
                     SqlCompilationCleanupError::Utility(e) => {
-                        error!("SQL compilation cleanup failed: filesystem operation error occurred: {e}");
+                        error!("SQL worker {worker_id}: compilation cleanup failed: filesystem operation error occurred: {e}");
                     }
                 }
                 unexpected_error = true;
@@ -90,21 +92,28 @@ pub async fn sql_compiler_task(
         }
 
         // Compile
-        let result = attempt_end_to_end_sql_compilation(&common_config, &config, db.clone()).await;
+        let result = attempt_end_to_end_sql_compilation(
+            worker_id,
+            total_workers,
+            &common_config,
+            &config,
+            db.clone(),
+        )
+        .await;
         if let Err(e) = &result {
             match e {
                 DBError::UnknownPipeline { pipeline_id } => {
-                    debug!("SQL compilation canceled: pipeline {pipeline_id} no longer exists");
+                    debug!("SQL worker {worker_id}: compilation canceled: pipeline {pipeline_id} no longer exists");
                 }
                 DBError::OutdatedProgramVersion {
                     outdated_version,
                     latest_version,
                 } => {
-                    debug!("SQL compilation canceled: pipeline program version ({outdated_version}) is outdated by latest ({latest_version})");
+                    debug!("SQL worker {worker_id}: compilation canceled: pipeline program version ({outdated_version}) is outdated by latest ({latest_version})");
                 }
                 e => {
                     unexpected_error = true;
-                    error!("SQL compilation canceled: unexpected database error occurred: {e}");
+                    error!("SQL worker {worker_id}: compilation canceled: unexpected database error occurred: {e}");
                 }
             }
         }
@@ -149,23 +158,29 @@ pub async fn sql_compiler_task(
 /// - The pipeline program is detected to be updated (it became outdated)
 /// - The database cannot be reached
 pub(crate) async fn attempt_end_to_end_sql_compilation(
+    worker_id: usize,
+    total_workers: usize,
     common_config: &CommonConfig,
     config: &CompilerConfig,
     db: Arc<Mutex<StoragePostgres>>,
 ) -> Result<bool, DBError> {
-    trace!("Performing SQL compilation...");
+    trace!("SQL worker {worker_id}: Performing SQL compilation...");
 
     // (1) Reset any pipeline which is `CompilingSql` back to `Pending`
     db.lock()
         .await
-        .clear_ongoing_sql_compilation(&common_config.platform_version)
+        .clear_ongoing_sql_compilation_for_worker(
+            &common_config.platform_version,
+            worker_id,
+            total_workers,
+        )
         .await?;
 
     // (2) Find pipeline which needs SQL compilation
     let Some((tenant_id, pipeline)) = db
         .lock()
         .await
-        .get_next_sql_compilation(&common_config.platform_version)
+        .get_next_sql_compilation(&common_config.platform_version, worker_id, total_workers)
         .await?
     else {
         trace!("No pipeline found which needs SQL compilation");
@@ -533,7 +548,6 @@ pub(crate) async fn perform_sql_compilation(
         .arg("-je")
         .arg("--alltables")
         .arg("--ignoreOrder")
-        .arg("--nowstream")
         .arg("--crates") // Generate multiple crates instead of a single main.rs
         .arg(crate_name_pipeline_base(pipeline_id));
     #[cfg(feature = "feldera-enterprise")]
@@ -677,10 +691,10 @@ pub(crate) async fn perform_sql_compilation(
 
         // Read dataflow.json
         let dataflow_str = read_file_content(&output_dataflow_file_path).await?;
-        let dataflow: serde_json::Value = serde_json::from_str(&dataflow_str).map_err(|e| {
+        let dataflow: Dataflow = serde_json::from_str(&dataflow_str).map_err(|e| {
             SqlCompilationError::SystemError(
                 CommonError::json_deserialization_error(
-                    "dataflow.json from SQL compiler into JSON".to_string(),
+                    "dataflow.json from SQL compiler into struct Dataflow".to_string(),
                     e,
                 )
                 .to_string(),
@@ -694,7 +708,7 @@ pub(crate) async fn perform_sql_compilation(
         let stubs = read_file_content(&output_rust_udf_stubs_file_path).await?;
 
         // Generate the program information
-        match generate_program_info(schema, main_rust, stubs, dataflow) {
+        match generate_program_info(schema, main_rust, stubs, Some(dataflow)) {
             Ok(program_info) => {
                 let program_info = match serde_json::to_value(program_info) {
                     Ok(value) => value,
@@ -1273,7 +1287,7 @@ mod test {
             CREATE TABLE t1 (
                 val INT
             ) WITH (
-                'connectors' = 'These are not valid connectors.'
+                'connectors' = '["These are not valid connectors."]'
             )
         "#};
         let pipeline_id = test
@@ -1282,11 +1296,13 @@ mod test {
         test.sql_compiler_tick().await;
         let pipeline_descr = test.get_pipeline(tenant_id, pipeline_id).await;
         assert_eq!(pipeline_descr.program_status, ProgramStatus::SqlError);
+        // First message is a warning about the connector missing a name
+        // Second message is an error
         assert!(pipeline_descr
             .program_error
             .sql_compilation
-            .is_some_and(|info| info.messages.len() == 1
-                && info.messages[0].to_owned().error_type == "ConnectorGenerationError"));
+            .is_some_and(|info| info.messages.len() == 2
+                && info.messages[1].to_owned().error_type == "ConnectorGenerationError"));
     }
 
     /// Tests that the cleanup ignores files and directories that do not follow the pattern.

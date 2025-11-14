@@ -135,7 +135,11 @@ impl Checkpointer {
         in_use_paths.insert(CHECKPOINT_FILE_NAME.into());
         in_use_paths.insert(STEPS_FILE.into());
         in_use_paths.insert(STATE_FILE.into());
+        // Don't delete either `status.json` or `status.json.mut` either because
+        // these files get updated asynchronously and we must not interfere with
+        // it.
         in_use_paths.insert(STATUS_FILE.into());
+        in_use_paths.insert(format!("{}.mut", STATUS_FILE).into());
         in_use_paths.insert(ADHOC_TEMP_DIR.into());
         in_use_paths.insert(ACTIVATION_MARKER_FILE.into());
         for cpm in self.checkpoint_list.iter() {
@@ -201,10 +205,12 @@ impl Checkpointer {
 
         let batches = self.gather_batches_for_checkpoint(&md)?;
 
-        self.backend.write_json(
-            &Self::checkpoint_dir(uuid).child(CHECKPOINT_DEPENDENCIES),
-            &batches.into_iter().map(|p| p.to_string()).collect_vec(),
-        )?;
+        self.backend
+            .write_json(
+                &Self::checkpoint_dir(uuid).child(CHECKPOINT_DEPENDENCIES),
+                &batches.into_iter().map(|p| p.to_string()).collect_vec(),
+            )
+            .and_then(|reader| reader.commit())?;
 
         md.size = Some(self.measure_checkpoint_storage_use(uuid)?);
 
@@ -231,7 +237,8 @@ impl Checkpointer {
     fn update_checkpoint_file(&self) -> Result<(), Error> {
         Ok(self
             .backend
-            .write_json(&CHECKPOINT_FILE_NAME.into(), &self.checkpoint_list)?)
+            .write_json(&CHECKPOINT_FILE_NAME.into(), &self.checkpoint_list)
+            .and_then(|reader| reader.commit())?)
     }
 
     /// Removes `file` and logs any error.

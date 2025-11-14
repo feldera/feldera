@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.util.HashString;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
@@ -224,7 +225,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         PrintStream stream = new PrintStream(BaseSQLTests.TEST_FILE_PATH);
-        RustFileWriter writer = new RustFileWriter().withTest(true);
+        RustFileWriter writer = new RustFileWriter(new LateMaterializations(compiler)).withTest(true);
         writer.setOutputBuilder(new IndentStream(stream));
         writer.add(tester);
         writer.write(compiler);
@@ -257,7 +258,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         PrintStream outputStream = new PrintStream(BaseSQLTests.TEST_FILE_PATH, StandardCharsets.UTF_8);
-        RustFileWriter writer = new RustFileWriter().withTest(true);
+        RustFileWriter writer = new RustFileWriter(new LateMaterializations(compiler)).withTest(true);
         writer.setOutputBuilder(new IndentStream(outputStream));
         writer.add(tester);
         writer.write(compiler);
@@ -449,7 +450,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     // Execute the circuit on these inputs
                     circuit.transaction().unwrap();
                     // Read the produced output
-                    let out = adult.consolidate();
+                    let out = adult.concat().consolidate();
                     // Print the produced output
                     println!("{:?}", out);
                 }
@@ -458,6 +459,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 #[test]
                 pub fn test() {
                     use dbsp_adapters::{CircuitCatalog, RecordFormat};
+                    use feldera_types::format::csv::CsvParserConfig;
 
                     let (mut circuit, catalog) = circuit(CircuitConfig::with_workers(2))
                         .expect("Failed to build circuit");
@@ -489,11 +491,16 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                         .delta_handle;
 
                     // Read the produced output
-                    let out = adult.consolidate();
-                    // Print the produced output
-                    println!("{:?}", out);
-                }
-                """;
+                    let reader = adult.concat();
+                    let mut cursor = reader
+                        .cursor(RecordFormat::Csv(CsvParserConfig::default()))
+                        .unwrap();
+                    while cursor.key_valid() {
+                        let mut w = cursor.weight();
+                        println!("{}: {}", cursor.key_to_json().unwrap(), w);
+                        cursor.step_key();
+                    }
+                }""";
         File file = createInputScript(sql);
         CompilerMessages message = CompilerMain.execute(
                 "--handles", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
@@ -505,7 +512,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
             fr.write(rustHandlesTest);
         }
         if (!BaseSQLTests.skipRust)
-            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
+            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, true);
 
         // Second test
         message = CompilerMain.execute(
@@ -518,7 +525,74 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
             fr.write(rustCatalogTest);
         }
         if (!BaseSQLTests.skipRust)
-            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
+            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, true);
+    }
+
+    @Test
+    public void issue4895() throws IOException, InterruptedException, SQLException {
+        String sql = """
+                create table t (x int lateness 0) with
+                 ('materialized' = 'true');
+                create materialized view V as SELECT * FROM t;""";
+        String rustCatalogTest = """
+                #[test]
+                pub fn test0() {
+                    use dbsp_adapters::{CircuitCatalog, RecordFormat};
+                    use feldera_types::format::json::JsonFlavor;
+                
+                    let mut circuitAndStreams = circuit(CircuitConfig::with_workers(2usize)).unwrap();
+                    let streams: Catalog = circuitAndStreams.1;
+                    let t = &SqlIdentifier::new("t", false);
+                    let input = streams.input_collection_handle(t).unwrap();
+                    let mut writer = input
+                        .handle
+                        .configure_deserializer(RecordFormat::Csv(Default::default()))
+                        .unwrap();
+                    writer.insert(b"1").unwrap();
+                    writer.flush();
+                    writer.insert(b"2").unwrap();
+                    writer.flush();
+                    writer.insert(b"3").unwrap();
+                    writer.flush();
+                    circuitAndStreams.0.transaction().unwrap();
+                    // late value
+                    writer.insert(b"0").unwrap();
+                    writer.flush();
+                    circuitAndStreams.0.transaction().unwrap();
+                
+                    let output = streams
+                        .output_handles(t)
+                        .unwrap()
+                        .integrate_handle
+                        .clone()
+                        .unwrap()
+                        .clone();
+                    let reader = output.concat();
+                    let mut cursor = reader
+                        .cursor(RecordFormat::Json(JsonFlavor::default()))
+                        .unwrap();
+                    let mut rows: u32 = 0;
+                    while (cursor.key_valid()) {
+                        let mut w = cursor.weight();
+                        // println!("{}: {}", cursor.key_to_json().unwrap(), w);
+                        rows = rows + 1;
+                        cursor.step_key();
+                    }
+                    // There should be only 3 rows; the last inserted one should be missing
+                    assert!(3 == rows, "Expected 3 rows, got {}", rows);
+                }""";
+        File file = createInputScript(sql);
+        CompilerMessages message = CompilerMain.execute(
+                "-i", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        Assert.assertEquals(0, message.exitCode);
+        Assert.assertTrue(file.exists());
+
+        File rust = new File(BaseSQLTests.TEST_FILE_PATH);
+        try (FileWriter fr = new FileWriter(rust, true)) { // append
+            fr.write(rustCatalogTest);
+        }
+        if (!BaseSQLTests.skipRust)
+            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, true);
     }
 
     @Test
@@ -535,6 +609,18 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Assert.assertEquals(0, message.exitCode);
         Assert.assertTrue(file.exists());
         ImageIO.read(new File(png.getPath()));
+    }
+
+    @Test
+    public void testUDT() {
+        this.getCCS("""
+                CREATE TYPE address_typ AS (
+                   street          VARCHAR(30),
+                   city            VARCHAR(20),
+                   state           CHAR(2),
+                   postal_code     VARCHAR(6));
+                CREATE TABLE T(street VARCHAR, city VARCHAR, year INT);
+                CREATE VIEW V AS SELECT address_typ(T.street, city, 'CA', 94087) as address, T.year as year FROM T;""");
     }
 
     @Test

@@ -55,8 +55,8 @@ use crate::{
 use anyhow::Error as AnyError;
 use dyn_clone::{clone_box, DynClone};
 use feldera_ir::{LirCircuit, LirNodeId};
-use feldera_storage::StoragePath;
-use serde::{Deserialize, Serialize};
+use feldera_storage::{FileCommitter, StoragePath};
+use serde::{Deserialize, Serialize, Serializer};
 use std::{
     any::{type_name_of_val, Any, TypeId},
     borrow::Cow,
@@ -71,6 +71,7 @@ use std::{
     panic::Location,
     pin::Pin,
     rc::Rc,
+    sync::Arc,
     thread::panicking,
 };
 use tokio::{runtime::Runtime as TokioRuntime, task::LocalSet};
@@ -1046,9 +1047,16 @@ pub trait Node: Any {
         Ok(())
     }
 
-    /// Instructs the node to commit the state of its inner operator to
+    /// Instructs the node to write the state of its inner operator to
     /// persistent storage within directory `base`.
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError>;
+    ///
+    /// The node shouldn't commit the state to stable storage; rather, it should
+    /// append the files to be committed to `files` for later commit.
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError>;
 
     /// Instructs the node to restore the state of its inner operator to
     /// the given checkpoint in directory `base`.
@@ -1174,9 +1182,20 @@ impl Display for NodeId {
 /// circuit or a sub-circuit nested inside the top-level circuit will have a
 /// path of length 1, e.g., `[5]`, an operator inside the nested circuit
 /// will have a path of length 2, e.g., `[5, 1]`, etc.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct GlobalNodeId(Vec<NodeId>);
+
+impl Serialize for GlobalNodeId {
+    /// Serialize as a string containing all node ids
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s = self.node_identifier();
+        serializer.serialize_str(&s)
+    }
+}
 
 impl Display for GlobalNodeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1225,6 +1244,19 @@ impl GlobalNodeId {
         let mut ids = circuit.global_node_id().path().to_owned();
         ids.push(node_id);
         Self(ids)
+    }
+
+    /// Generate unique name to use as a node label in a visual graph.
+    pub fn node_identifier(&self) -> String {
+        let mut node_ident = "n".to_string();
+
+        for i in 0..self.path().len() {
+            node_ident.push_str(&self.path()[i].to_string());
+            if i < self.path().len() - 1 {
+                node_ident.push('_');
+            }
+        }
+        node_ident
     }
 
     /// Returns local node id of `self` or `None` if `self` is the root node.
@@ -3989,14 +4021,22 @@ where
         assert!(self.is_child_of(parent_stream.circuit()));
 
         let output_stream = self.add_node(|id| {
+            let node_id = self.global_node_id().child(id);
             self.log_circuit_event(&CircuitEvent::operator(
-                self.global_node_id().child(id),
+                node_id.clone(),
                 operator.name(),
                 operator.location(),
             ));
             let node = ImportNode::new(operator, self.clone(), parent_stream.clone(), id);
+            // Note: here the edge points to the sub-circuit, and not to the ImportNode itself.
             self.parent()
                 .connect_stream(parent_stream, self.node_id(), input_preference);
+            // Log the actual edge going to the inner node as well
+            self.parent().log_circuit_event(&CircuitEvent::stream(
+                parent_stream.origin_node_id().clone(),
+                node_id.clone(),
+                input_preference,
+            ));
             let output_stream = node.output_stream();
             (node, output_stream)
         });
@@ -4153,9 +4193,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4292,9 +4336,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4445,9 +4493,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4591,9 +4643,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4794,9 +4850,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4997,9 +5057,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5174,9 +5238,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5372,9 +5440,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5555,9 +5627,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5725,10 +5801,14 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
             .borrow_mut()
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5879,7 +5959,11 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        _base: &StoragePath,
+        _files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         // The Z-1 operator consists of two logical parts.
         // The first part gets invoked at the start of a clock cycle to retrieve the
         // state stored at the previous clock tick. The second one gets invoked
@@ -6106,7 +6190,11 @@ where
         self.circuit.map_nodes_recursive(f)
     }
 
-    fn checkpoint(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        _base: &StoragePath,
+        _files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         Ok(())
     }
 
@@ -6193,14 +6281,14 @@ impl Drop for CircuitHandle {
 }
 
 /// Operators involved in the replay phase of a circuit.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BootstrapInfo {
     /// Operators that will replay their contents during the replay phase.
     pub replay_sources: BTreeMap<NodeId, StreamId>,
 
-    /// Operators that require backfill from upstream nodes.
+    /// Operators that require backfill from upstream nodes, including their persistent IDs.
     #[allow(dead_code)]
-    pub need_backfill: BTreeSet<NodeId>,
+    pub need_backfill: BTreeMap<NodeId, Option<String>>,
 }
 
 impl CircuitHandle {
@@ -6261,7 +6349,11 @@ impl CircuitHandle {
             .map_err(DbspError::Scheduler)
     }
 
-    pub fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    pub fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         // if Runtime::worker_index() == 0 {
         //     self.circuit.to_dot_file(
         //         |node| {
@@ -6296,7 +6388,8 @@ impl CircuitHandle {
 
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
-                DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS.record_callback(|| node.checkpoint(base))
+                DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS
+                    .record_callback(|| node.checkpoint(base, files))
             })
     }
 
@@ -6465,9 +6558,22 @@ impl CircuitHandle {
             // );
             // info!("CircuitHandle::restore: replay circuit is written to replay.dot");
 
+            // Add persistent IDs to the need_backfill set.
+            let need_backfill = nodes_to_backfill
+                .iter()
+                .map(|node_id| {
+                    let pid = self.circuit.map_local_node_mut(*node_id, &mut |node| {
+                        node.get_label(LABEL_PERSISTENT_OPERATOR_ID)
+                            .map(|s| s.to_string())
+                    });
+
+                    (*node_id, pid)
+                })
+                .collect::<BTreeMap<_, _>>();
+
             let replay_info = BootstrapInfo {
                 replay_sources: replay_sources.clone(),
-                need_backfill: nodes_to_backfill.clone(),
+                need_backfill,
             };
 
             self.replay_info = Some(replay_info.clone());

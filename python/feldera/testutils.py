@@ -13,6 +13,7 @@ from feldera.pipeline import Pipeline
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import Resources, RuntimeConfig
 from feldera.rest import FelderaClient
+from feldera.rest._helpers import requests_verify_from_env
 
 API_KEY = os.environ.get("FELDERA_API_KEY")
 
@@ -37,21 +38,8 @@ def _get_effective_api_key():
     return oidc_token if oidc_token else API_KEY
 
 
-BASE_URL = (
-    os.environ.get("FELDERA_HOST")
-    or os.environ.get("FELDERA_BASE_URL")
-    or "http://localhost:8080"
-)
-KAFKA_SERVER = os.environ.get("FELDERA_KAFKA_SERVER", "localhost:19092")
-PIPELINE_TO_KAFKA_SERVER = os.environ.get(
-    "FELDERA_PIPELINE_TO_KAFKA_SERVER", "redpanda:9092"
-)
-FELDERA_TLS_INSECURE = True if os.environ.get("FELDERA_TLS_INSECURE") else False
-FELDERA_HTTPS_TLS_CERT = os.environ.get("FELDERA_HTTPS_TLS_CERT")
-if not FELDERA_TLS_INSECURE and FELDERA_HTTPS_TLS_CERT is not None:
-    FELDERA_REQUESTS_VERIFY = FELDERA_HTTPS_TLS_CERT
-else:
-    FELDERA_REQUESTS_VERIFY = not FELDERA_TLS_INSECURE
+BASE_URL = os.environ.get("FELDERA_HOST") or "http://localhost:8080"
+FELDERA_REQUESTS_VERIFY = requests_verify_from_env()
 
 
 class _LazyClient:
@@ -260,7 +248,6 @@ def build_pipeline(
         compilation_profile=CompilationProfile.OPTIMIZED,
         runtime_config=RuntimeConfig(
             provisioning_timeout_secs=60,
-            dev_tweaks={"backfill_avoidance": True},
             resources=resources,
         ),
     ).create_or_replace()

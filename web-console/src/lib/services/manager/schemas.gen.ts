@@ -77,6 +77,40 @@ export const $ApiPermission = {
   enum: ['Read', 'Write']
 } as const
 
+export const $Auth = {
+  type: 'object',
+  properties: {
+    credentials: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/Credentials'
+        }
+      ],
+      nullable: true
+    },
+    jwt: {
+      type: 'string',
+      nullable: true
+    },
+    nkey: {
+      type: 'string',
+      nullable: true
+    },
+    token: {
+      type: 'string',
+      nullable: true
+    },
+    user_and_password: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/UserAndPassword'
+        }
+      ],
+      nullable: true
+    }
+  }
+} as const
+
 export const $AuthProvider = {
   oneOf: [
     {
@@ -98,6 +132,11 @@ export const $AuthProvider = {
       }
     }
   ]
+} as const
+
+export const $BootstrapPolicy = {
+  type: 'string',
+  enum: ['allow', 'reject', 'await_approval']
 } as const
 
 export const $BuildInformation = {
@@ -150,6 +189,74 @@ export const $BuildInformation = {
     rustc_version: {
       type: 'string',
       description: 'Rust version of the build used.'
+    }
+  }
+} as const
+
+export const $CalciteId = {
+  oneOf: [
+    {
+      type: 'object',
+      required: ['partial'],
+      properties: {
+        partial: {
+          type: 'integer',
+          minimum: 0
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['final'],
+      properties: {
+        final: {
+          type: 'integer',
+          minimum: 0
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['and'],
+      properties: {
+        and: {
+          type: 'array',
+          items: {
+            $ref: '#/components/schemas/CalciteId'
+          }
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['seq'],
+      properties: {
+        seq: {
+          type: 'array',
+          items: {
+            $ref: '#/components/schemas/CalciteId'
+          }
+        }
+      }
+    },
+    {
+      type: 'object',
+      default: null,
+      nullable: true
+    }
+  ]
+} as const
+
+export const $CalcitePlan = {
+  type: 'object',
+  description: 'The Calcite plan representation of a dataflow graph.',
+  required: ['rels'],
+  properties: {
+    rels: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/Rel'
+      }
     }
   }
 } as const
@@ -356,6 +463,7 @@ export const $CombinedStatus = {
     'Provisioning',
     'Unavailable',
     'Standby',
+    'AwaitingApproval',
     'Initializing',
     'Bootstrapping',
     'Replaying',
@@ -372,7 +480,7 @@ export const $CompilationProfile = {
 as an argument via \`cargo build --profile <>\`. A compilation profile affects among
 other things the compilation speed (how long till the program is ready to be run)
 and runtime speed (the performance while running).`,
-  enum: ['dev', 'unoptimized', 'optimized']
+  enum: ['dev', 'unoptimized', 'optimized', 'optimized_symbols']
 } as const
 
 export const $CompletionStatus = {
@@ -420,6 +528,31 @@ Pass this string to the \`/completion_status\` endpoint to check whether all
 inputs associated with the token have been fully processed by the pipeline.`
     }
   }
+} as const
+
+export const $Condition = {
+  type: 'object',
+  properties: {
+    literal: {
+      type: 'boolean'
+    },
+    op: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/Op'
+        }
+      ],
+      nullable: true
+    },
+    operands: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/Operand'
+      },
+      nullable: true
+    }
+  },
+  additionalProperties: {}
 } as const
 
 export const $Configuration = {
@@ -484,6 +617,19 @@ export const $Configuration = {
       type: 'string',
       description: `The version corresponding to the type of \`edition\`.
 Format is \`x.y.z\`.`
+    }
+  }
+} as const
+
+export const $ConnectOptions = {
+  type: 'object',
+  required: ['server_url'],
+  properties: {
+    auth: {
+      $ref: '#/components/schemas/Auth'
+    },
+    server_url: {
+      type: 'string'
     }
   }
 } as const
@@ -601,6 +747,129 @@ labels have finished processing all inputs.`,
     }
   ],
   description: "A data connector's configuration"
+} as const
+
+export const $ConnectorStats = {
+  type: 'object',
+  description: `Aggregated connector error statistics.
+
+This structure contains the sum of all error counts across all input and output connectors
+for a pipeline.`,
+  required: ['num_errors'],
+  properties: {
+    num_errors: {
+      type: 'integer',
+      format: 'int64',
+      description: `Total number of errors across all connectors.
+
+This is the sum of:
+- \`num_transport_errors\` from all input connectors
+- \`num_parse_errors\` from all input connectors
+- \`num_encode_errors\` from all output connectors
+- \`num_transport_errors\` from all output connectors`,
+      minimum: 0
+    }
+  }
+} as const
+
+export const $ConsumerConfig = {
+  type: 'object',
+  required: ['deliver_policy'],
+  properties: {
+    deliver_policy: {
+      $ref: '#/components/schemas/DeliverPolicy'
+    },
+    description: {
+      type: 'string',
+      nullable: true
+    },
+    filter_subjects: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    max_batch: {
+      type: 'integer',
+      format: 'int64',
+      nullable: true
+    },
+    max_bytes: {
+      type: 'integer',
+      format: 'int64',
+      nullable: true
+    },
+    max_expires: {
+      type: 'string',
+      nullable: true
+    },
+    max_waiting: {
+      type: 'integer',
+      format: 'int64'
+    },
+    metadata: {
+      type: 'object',
+      additionalProperties: {
+        type: 'string'
+      }
+    },
+    name: {
+      type: 'string',
+      nullable: true
+    },
+    rate_limit: {
+      type: 'integer',
+      format: 'int64',
+      minimum: 0
+    },
+    replay_policy: {
+      $ref: '#/components/schemas/ReplayPolicy'
+    }
+  }
+} as const
+
+export const $Credentials = {
+  oneOf: [
+    {
+      type: 'object',
+      required: ['FromString'],
+      properties: {
+        FromString: {
+          type: 'string'
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['FromFile'],
+      properties: {
+        FromFile: {
+          type: 'string'
+        }
+      },
+      example: '/path/to/credentials.json'
+    }
+  ]
+} as const
+
+export const $Dataflow = {
+  type: 'object',
+  description: 'The JSON representation of a dataflow graph.',
+  required: ['calcite_plan', 'mir'],
+  properties: {
+    calcite_plan: {
+      type: 'object',
+      additionalProperties: {
+        $ref: '#/components/schemas/CalcitePlan'
+      }
+    },
+    mir: {
+      type: 'object',
+      additionalProperties: {
+        $ref: '#/components/schemas/MirNode'
+      }
+    }
+  }
 } as const
 
 export const $DatagenInputConfig = {
@@ -730,6 +999,61 @@ export const $DatagenStrategy = {
     'file_name',
     'file_extension',
     'dir_path'
+  ]
+} as const
+
+export const $DeliverPolicy = {
+  oneOf: [
+    {
+      type: 'string',
+      enum: ['All']
+    },
+    {
+      type: 'string',
+      enum: ['Last']
+    },
+    {
+      type: 'string',
+      enum: ['New']
+    },
+    {
+      type: 'object',
+      required: ['ByStartSequence'],
+      properties: {
+        ByStartSequence: {
+          type: 'object',
+          required: ['start_sequence'],
+          properties: {
+            start_sequence: {
+              type: 'integer',
+              format: 'int64',
+              minimum: 0
+            }
+          }
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['ByStartTime'],
+      properties: {
+        ByStartTime: {
+          type: 'object',
+          required: ['start_time'],
+          properties: {
+            start_time: {
+              type: 'string',
+              format: 'date-time',
+              example: '2023-01-15T09:30:00Z'
+            }
+          }
+        }
+      }
+    },
+    {
+      type: 'string',
+      enum: ['LastPerSubject']
+    }
   ]
 } as const
 
@@ -1905,6 +2229,19 @@ connector initializes.`,
 The number of offsets must match the number of partitions in the topic.`
         }
       }
+    },
+    {
+      type: 'object',
+      required: ['timestamp'],
+      properties: {
+        timestamp: {
+          type: 'integer',
+          format: 'int64',
+          description: `Start from a particular timestamp in the topic.
+
+Kafka timestamps are in milliseconds since the epoch.`
+        }
+      }
     }
   ],
   description: 'Where to begin reading a Kafka topic.'
@@ -1990,6 +2327,92 @@ export const $MetricsParameters = {
   properties: {
     format: {
       $ref: '#/components/schemas/MetricsFormat'
+    }
+  }
+} as const
+
+export const $MirInput = {
+  type: 'object',
+  required: ['node', 'output'],
+  properties: {
+    node: {
+      type: 'string'
+    },
+    output: {
+      type: 'integer',
+      minimum: 0
+    }
+  },
+  additionalProperties: {}
+} as const
+
+export const $MirNode = {
+  type: 'object',
+  required: ['operation'],
+  properties: {
+    calcite: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/CalciteId'
+        }
+      ],
+      nullable: true
+    },
+    inputs: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/MirInput'
+      }
+    },
+    operation: {
+      type: 'string'
+    },
+    outputs: {
+      type: 'array',
+      items: {
+        allOf: [
+          {
+            $ref: '#/components/schemas/MirInput'
+          }
+        ],
+        nullable: true
+      },
+      nullable: true
+    },
+    persistent_id: {
+      type: 'string',
+      nullable: true
+    },
+    positions: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/SourcePosition'
+      }
+    },
+    table: {
+      type: 'string',
+      nullable: true
+    },
+    view: {
+      type: 'string',
+      nullable: true
+    }
+  },
+  additionalProperties: {}
+} as const
+
+export const $NatsInputConfig = {
+  type: 'object',
+  required: ['connection_config', 'stream_name', 'consumer_config'],
+  properties: {
+    connection_config: {
+      $ref: '#/components/schemas/ConnectOptions'
+    },
+    consumer_config: {
+      $ref: '#/components/schemas/ConsumerConfig'
+    },
+    stream_name: {
+      type: 'string'
     }
   }
 } as const
@@ -2176,6 +2599,39 @@ instance.
 Options set through the URL take precedence over those set with these
 options.`
   }
+} as const
+
+export const $Op = {
+  type: 'object',
+  required: ['kind', 'name', 'syntax'],
+  properties: {
+    kind: {
+      type: 'string'
+    },
+    name: {
+      type: 'string'
+    },
+    syntax: {
+      type: 'string'
+    }
+  },
+  additionalProperties: {}
+} as const
+
+export const $Operand = {
+  type: 'object',
+  properties: {
+    input: {
+      type: 'integer',
+      nullable: true,
+      minimum: 0
+    },
+    name: {
+      type: 'string',
+      nullable: true
+    }
+  },
+  additionalProperties: {}
 } as const
 
 export const $OutputBufferConfig = {
@@ -2516,7 +2972,9 @@ Setting this value will override the default of the runner.`,
             memory_mb_min: null,
             memory_mb_max: null,
             storage_mb_max: null,
-            storage_class: null
+            storage_class: null,
+            service_account_name: null,
+            namespace: null
           }
         },
         storage: {
@@ -2586,6 +3044,14 @@ used during a step.`,
             $ref: '#/components/schemas/OutputEndpointConfig'
           }
         },
+        program_ir: {
+          allOf: [
+            {
+              $ref: '#/components/schemas/ProgramIr'
+            }
+          ],
+          nullable: true
+        },
         secrets_dir: {
           type: 'string',
           description: `Directory containing values of secrets.
@@ -2611,9 +3077,72 @@ of the compiled program (e.g., connectors). Storage configuration,
 if applicable, is set by the runner.`
 } as const
 
+export const $PipelineDiff = {
+  type: 'object',
+  description: 'Summary of changes in the pipeline between checkpointed and new versions.',
+  required: [
+    'added_input_connectors',
+    'modified_input_connectors',
+    'removed_input_connectors',
+    'added_output_connectors',
+    'modified_output_connectors',
+    'removed_output_connectors'
+  ],
+  properties: {
+    added_input_connectors: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    added_output_connectors: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    modified_input_connectors: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    modified_output_connectors: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    program_diff: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ProgramDiff'
+        }
+      ],
+      nullable: true
+    },
+    program_diff_error: {
+      type: 'string',
+      nullable: true
+    },
+    removed_input_connectors: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    removed_output_connectors: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    }
+  }
+} as const
+
 export const $PipelineFieldSelector = {
   type: 'string',
-  enum: ['all', 'status']
+  enum: ['all', 'status', 'status_with_connectors']
 } as const
 
 export const $PipelineId = {
@@ -2820,6 +3349,14 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
     'deployment_resources_desired_status_since'
   ],
   properties: {
+    connectors: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ConnectorStats'
+        }
+      ],
+      nullable: true
+    },
     created_at: {
       type: 'string',
       format: 'date-time'
@@ -2885,6 +3422,9 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
           $ref: '#/components/schemas/RuntimeStatus'
         }
       ],
+      nullable: true
+    },
+    deployment_runtime_status_details: {
       nullable: true
     },
     deployment_runtime_status_since: {
@@ -3071,14 +3611,49 @@ Default: 1 MiB`,
       nullable: true,
       minimum: 0
     },
+    on_conflict_do_nothing: {
+      type: 'boolean',
+      description: `Specifies how the connector handles conflicts when executing an \`INSERT\`
+into a table with a primary key. By default, an existing row with the same
+key is overwritten. Setting this flag to \`true\` preserves the existing row
+and ignores the new insert.
+
+This setting does not affect \`UPDATE\` statements, which always replace the
+value associated with the key.
+
+Default: \`false\``
+    },
+    ssl_ca_location: {
+      type: 'string',
+      description: 'Path to a file containing a sequence of CA certificates in PEM format.',
+      nullable: true
+    },
     ssl_ca_pem: {
       type: 'string',
-      description: 'The CA certificate in PEM format.',
+      description: 'A sequence of CA certificates in PEM format.',
+      nullable: true
+    },
+    ssl_certificate_chain_location: {
+      type: 'string',
+      description: `The path to the certificate chain file.
+The file must contain a sequence of PEM-formatted certificates,
+the first being the leaf certificate, and the remainder forming
+the chain of certificates up to and including the trusted root certificate.`,
       nullable: true
     },
     ssl_client_key: {
       type: 'string',
       description: 'The client certificate key in PEM format.',
+      nullable: true
+    },
+    ssl_client_key_location: {
+      type: 'string',
+      description: 'Path to the client certificate key.',
+      nullable: true
+    },
+    ssl_client_location: {
+      type: 'string',
+      description: 'Path to the client certificate.',
       nullable: true
     },
     ssl_client_pem: {
@@ -3154,6 +3729,57 @@ If not set (null), the runtime version will be the same as the platform version.
   }
 } as const
 
+export const $ProgramDiff = {
+  type: 'object',
+  description: 'Summary of changes in the program between checkpointed and new versions.',
+  required: [
+    'added_tables',
+    'removed_tables',
+    'modified_tables',
+    'added_views',
+    'removed_views',
+    'modified_views'
+  ],
+  properties: {
+    added_tables: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    added_views: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    modified_tables: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    modified_views: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    removed_tables: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    removed_views: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    }
+  }
+} as const
+
 export const $ProgramError = {
   type: 'object',
   description: 'Log, warning and error information about the program compilation.',
@@ -3193,7 +3819,12 @@ as well as only for runtime (e.g., schema, input/output connectors).`,
   required: ['schema', 'input_connectors', 'output_connectors'],
   properties: {
     dataflow: {
-      description: 'Dataflow graph of the program.'
+      allOf: [
+        {
+          $ref: '#/components/schemas/Dataflow'
+        }
+      ],
+      nullable: true
     },
     input_connectors: {
       type: 'object',
@@ -3219,6 +3850,24 @@ as well as only for runtime (e.g., schema, input/output connectors).`,
     udf_stubs: {
       type: 'string',
       description: 'Generated user defined function (UDF) stubs Rust code: stubs.rs'
+    }
+  }
+} as const
+
+export const $ProgramIr = {
+  type: 'object',
+  description: 'Program information included in the pipeline configuration.',
+  required: ['mir', 'program_schema'],
+  properties: {
+    mir: {
+      type: 'object',
+      description: 'The MIR of the program.',
+      additionalProperties: {
+        $ref: '#/components/schemas/MirNode'
+      }
+    },
+    program_schema: {
+      $ref: '#/components/schemas/ProgramSchema'
     }
   }
 } as const
@@ -3417,6 +4066,81 @@ This is parsed by the [redis](https://docs.rs/redis/latest/redis/#connection-par
   }
 } as const
 
+export const $Rel = {
+  type: 'object',
+  required: ['id', 'relOp'],
+  properties: {
+    aggs: {
+      type: 'array',
+      items: {},
+      nullable: true
+    },
+    all: {
+      type: 'boolean',
+      nullable: true
+    },
+    condition: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/Condition'
+        }
+      ],
+      nullable: true
+    },
+    exprs: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/Operand'
+      },
+      nullable: true
+    },
+    fields: {
+      type: 'array',
+      items: {
+        type: 'string'
+      },
+      nullable: true
+    },
+    group: {
+      type: 'array',
+      items: {
+        type: 'integer',
+        minimum: 0
+      },
+      nullable: true
+    },
+    id: {
+      type: 'integer',
+      minimum: 0
+    },
+    inputs: {
+      type: 'array',
+      items: {
+        type: 'integer',
+        minimum: 0
+      }
+    },
+    joinType: {
+      type: 'string',
+      nullable: true
+    },
+    relOp: {
+      type: 'string'
+    },
+    table: {
+      type: 'array',
+      items: {
+        type: 'string'
+      },
+      description: `This is a vector where the elements concatenated form a fully qualified table name.
+
+e.g., usually is of the form \`[$namespace, $table] / [schema, table]\``,
+      nullable: true
+    }
+  },
+  additionalProperties: {}
+} as const
+
 export const $Relation = {
   allOf: [
     {
@@ -3447,6 +4171,11 @@ export const $Relation = {
   description: `A SQL table or view. It has a name and a list of fields.
 
 Matches the Calcite JSON format.`
+} as const
+
+export const $ReplayPolicy = {
+  type: 'string',
+  enum: ['Instant', 'Original']
 } as const
 
 export const $ResourceConfig = {
@@ -3485,6 +4214,23 @@ for an instance of this pipeline`,
       default: null,
       nullable: true,
       minimum: 0
+    },
+    namespace: {
+      type: 'string',
+      description: `Kubernetes namespace to use for an instance of this pipeline.
+The namespace determines the scope of names for resources created
+for the pipeline.
+If not set, the pipeline will be deployed in the same namespace
+as the control-plane.`,
+      default: null,
+      nullable: true
+    },
+    service_account_name: {
+      type: 'string',
+      description: `Kubernetes service account name to use for an instance of this pipeline.
+The account determines permissions and access controls.`,
+      default: null,
+      nullable: true
     },
     storage_class: {
       type: 'string',
@@ -3926,7 +4672,9 @@ Setting this value will override the default of the runner.`,
         memory_mb_min: null,
         memory_mb_max: null,
         storage_mb_max: null,
-        storage_class: null
+        storage_class: null,
+        service_account_name: null,
+        namespace: null
       }
     },
     storage: {
@@ -3989,6 +4737,7 @@ determined by the pipeline and taken over by the runner.`,
     'Unavailable',
     'Standby',
     'Initializing',
+    'AwaitingApproval',
     'Bootstrapping',
     'Replaying',
     'Paused',
@@ -4843,6 +5592,19 @@ export const $TransportConfig = {
       required: ['name', 'config'],
       properties: {
         config: {
+          $ref: '#/components/schemas/NatsInputConfig'
+        },
+        name: {
+          type: 'string',
+          enum: ['nats_input']
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['name', 'config'],
+      properties: {
+        config: {
           $ref: '#/components/schemas/KafkaInputConfig'
         },
         name: {
@@ -5109,6 +5871,19 @@ input adapter. If the input adapter stays paused longer than this
 timeout, it will drop the network connection to the server. It will
 automatically reconnect when the input adapter starts running again.`,
       minimum: 0
+    }
+  }
+} as const
+
+export const $UserAndPassword = {
+  type: 'object',
+  required: ['user', 'password'],
+  properties: {
+    password: {
+      type: 'string'
+    },
+    user: {
+      type: 'string'
     }
   }
 } as const

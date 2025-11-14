@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Utilities;
 
 import java.io.File;
@@ -54,6 +55,11 @@ public class ToCsvVisitor extends InnerVisitor {
         super(compiler);
         this.appendable = destination;
         this.nullRepresentation = nullRepresentation;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPType type) {
+        return VisitDecision.STOP;
     }
 
     @Override
@@ -123,7 +129,7 @@ public class ToCsvVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPStringLiteral literal) {
         if (literal.value != null)
-            this.appendable.append(Utilities.doubleQuote(literal.value));
+            this.appendable.append(Utilities.doubleQuote(literal.value, false));
         else
             this.appendable.append(this.nullRepresentation.get());
         return VisitDecision.STOP;

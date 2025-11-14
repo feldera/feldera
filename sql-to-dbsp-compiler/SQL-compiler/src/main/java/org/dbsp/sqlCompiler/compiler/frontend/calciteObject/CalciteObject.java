@@ -18,6 +18,15 @@ import javax.annotation.Nullable;
  * that can be used to report errors. */
 public class CalciteObject implements ICastable, IHasSourcePositionRange {
     public static final CalciteObject EMPTY = new CalciteObject();
+    public final SourcePositionRange position;
+
+    public CalciteObject() {
+        this(SourcePositionRange.INVALID);
+    }
+
+    public CalciteObject(SourcePositionRange position) {
+        this.position = position;
+    }
 
     public boolean isEmpty() {
         return true;
@@ -36,11 +45,15 @@ public class CalciteObject implements ICastable, IHasSourcePositionRange {
     }
 
     public SourcePositionRange getPositionRange() {
-        return SourcePositionRange.INVALID;
+        return this.position;
+    }
+
+    public static IntermediateRel create(RelNode node, SourcePositionRange range) {
+        return new IntermediateRel(node, range);
     }
 
     public static IntermediateRel create(RelNode node) {
-        return new IntermediateRel(node);
+        return create(node, SourcePositionRange.INVALID);
     }
 
     public static CalciteSqlNode create(SqlNode node) {

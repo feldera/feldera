@@ -21,7 +21,7 @@ use crate::{
     Error, Timestamp,
 };
 use dyn_clone::clone_box;
-use feldera_storage::StoragePath;
+use feldera_storage::{FileCommitter, StoragePath};
 use minitrace::trace;
 use ouroboros::self_referencing;
 use size_of::SizeOf;
@@ -1035,11 +1035,16 @@ where
         !self.dirty[scope as usize] && self.replay_state.is_none()
     }
 
-    fn checkpoint(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        pid: Option<&str>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         self.trace
             .as_mut()
-            .map(|trace| trace.commit(base, pid))
+            .map(|trace| trace.save(base, pid, files))
             .unwrap_or(Ok(()))
     }
 
@@ -1114,6 +1119,7 @@ where
                 //println!("Z1-{}::get_output: replaying", &self.global_id);
                 let mut builder = <B::Builder as Builder<B>>::with_capacity(
                     &self.batch_factories,
+                    replay_step_size,
                     replay_step_size,
                 );
 

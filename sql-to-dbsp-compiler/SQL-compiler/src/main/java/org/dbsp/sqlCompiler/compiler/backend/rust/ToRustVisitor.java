@@ -48,6 +48,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
@@ -62,7 +63,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
@@ -87,6 +87,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CollectSourcePositions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.DeclareComparators;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -139,6 +140,7 @@ public class ToRustVisitor extends CircuitVisitor {
     /** Declarations inside a circuit */
     final Set<String> perCircuitDeclarations;
     final SourcePositionResource sourcePositionResource;
+    final LateMaterializations materializations;
 
     /* Example output generated when 'useHandles' is false:
      * pub fn circuit0(workers: usize) -> (DBSPHandle, Catalog) {
@@ -164,7 +166,7 @@ public class ToRustVisitor extends CircuitVisitor {
      * @param projectDeclarations Information about global per-circuit structures.
      */
     public ToRustVisitor(DBSPCompiler compiler, IIndentStream builder, ProgramMetadata metadata,
-                         ProjectDeclarations projectDeclarations) {
+                         ProjectDeclarations projectDeclarations, LateMaterializations materializations) {
         super(compiler);
         this.options = compiler.options;
         this.builder = builder;
@@ -174,6 +176,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.perCircuitDeclarations = new HashSet<>();
         this.innerVisitor = this.createInnerVisitor(builder);
         this.sourcePositionResource = new SourcePositionResource();
+        this.materializations = materializations;
     }
 
     ToRustInnerVisitor createInnerVisitor(IIndentStream builder) {
@@ -235,6 +238,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     String handleName(DBSPOperator operator) {
         if (this.compiler.options.ioOptions.multiCrates())
+            // Handles are (almost) local objects when using multi-crate.
             return "handle";
         String compactName = operator.getCompactName();
         return "handle_" + compactName;
@@ -277,9 +281,9 @@ public class ToRustVisitor extends CircuitVisitor {
             }
             for (DBSPViewBaseOperator output: circuit.sinkOperators.values()) {
                 DBSPType outputType = output.input().outputType();
-                signature.append("OutputHandle<");
+                signature.append("OutputHandle<SpineSnapshot<");
                 outputType.accept(inner);
-                signature.append(">,").newline();
+                signature.append(">>,").newline();
             }
             signature.decrease().append(")");
         }
@@ -324,9 +328,9 @@ public class ToRustVisitor extends CircuitVisitor {
         else {
             this.builder.append("Ok((");
             for (IInputOperator operator: circuit.sourceOperators.values())
-                this.builder.append(this.handleName(operator.asOperator())).append(", ");
+                this.builder.append(this.handleName(operator.asOperator())).append(".clone(), ");
             for (DBSPSinkOperator operator: circuit.sinkOperators.values())
-                this.builder.append(this.handleName(operator)).append(", ");
+                this.builder.append(this.handleName(operator)).append(".clone(), ");
             this.builder.append("))");
         }
         this.builder.newline()
@@ -488,7 +492,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append("None;").newline();
         } else {
             this.builder.append("Some(")
-                    .append(Utilities.doubleQuote(hash.toString()))
+                    .append(Utilities.doubleQuote(hash.toString(), true))
                     .append(");")
                     .newline();
         }
@@ -506,6 +510,36 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(";");
         this.tagStream(delta);
         return VisitDecision.STOP;
+    }
+
+    void registerTable(DBSPSourceMultisetOperator operator, DBSPOperator materialized) {
+        // Register a table.  If the table is materialized and has lateness,
+        // the "materialized" operator may actually be the controlled filter following the table.
+        // In other cases, materialized == operator.
+        // The "materialized" operator's output stream is used to build the integral that serves the table contents,
+        // and that integral should not contain the late values.
+        // Note that this is never a problem for SourceMapOperators with lateness, due to the
+        // nature of the circuits synthesized for them.
+        this.builder.newline();
+        this.generateStructHelpers(operator.originalRowType, operator.metadata);
+        String registerFunction = operator.metadata.materialized ?
+                "register_materialized_input_zset" : "register_input_zset";
+        this.builder.append("catalog.")
+                .append(registerFunction)
+                .append("::<_, ");
+        IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
+        JsonNode j = tableDescription.asJson(true);
+        j = this.stripProperties(j);
+        DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
+        operator.originalRowType.accept(this.innerVisitor);
+        this.builder.append(">(")
+                .append(materialized.getOutput(0).getName(this.preferHash))
+                .append(".clone(), ")
+                .append(this.handleName(operator))
+                .append(".clone(), ");
+        json.accept(this.innerVisitor);
+        this.innerVisitor.setOperatorContext(null);
+        this.builder.append(");");
     }
 
     @Override
@@ -532,26 +566,9 @@ public class ToRustVisitor extends CircuitVisitor {
         }
         this.tagStream(operator);
         if (!this.useHandles) {
-            this.generateStructHelpers(operator.originalRowType, operator.metadata);
-            String registerFunction = operator.metadata.materialized ?
-                    "register_materialized_input_zset" : "register_input_zset";
-            this.builder.append("catalog.")
-                    .append(registerFunction)
-                    .append("::<_, ");
-            IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
-            JsonNode j = tableDescription.asJson(true);
-            j = this.stripProperties(j);
-            DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
-            operator.originalRowType.accept(this.innerVisitor);
-            this.builder.append(">(")
-                    .append(operator.getNodeName(this.preferHash))
-                    .append(".clone(), ")
-                    .append(this.handleName(operator))
-                    .append(", ");
-            json.accept(this.innerVisitor);
-            this.innerVisitor.setOperatorContext(null);
-            this.builder.append(");")
-                    .newline();
+            if (!this.materializations.has(operator)) {
+                this.registerTable(operator, operator);
+            }
         }
         return VisitDecision.STOP;
     }
@@ -709,7 +726,22 @@ public class ToRustVisitor extends CircuitVisitor {
             JsonNode j = tableDescription.asJson(true);
             j = this.stripProperties(j);
             DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
-            String registerFunction = operator.getMetadata().materialized ?
+
+            // Check if any of the primary keys columns has a LATENESS annotation
+            boolean keyWithLateness = false;
+            boolean hasPrimaryKeys = !operator.getMetadata().getPrimaryKeys().isEmpty();
+            for (var key: operator.getMetadata().getPrimaryKeys()) {
+                if (key.lateness != null) {
+                    keyWithLateness = true;
+                    break;
+                }
+            }
+
+            // If a table has a PK, always register it using register_materialized_input_map
+            // (instead of register_input_map) even if it doesn't have a materialized  attribute,
+            // EXCEPT if it has a PK column with LATENESS, in which case still use register_input_map.
+            String registerFunction =
+                    (operator.getMetadata().materialized || (hasPrimaryKeys && !keyWithLateness)) ?
                     "register_materialized_input_map" : "register_input_map";
             this.builder.append("catalog.")
                     .append(registerFunction)
@@ -729,7 +761,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(operator.asOperator().getOutput(operator.getDataOutputIndex()).getName(this.preferHash))
                     .append(".clone(), ")
                     .append(this.handleName(operator.asOperator()))
-                    .append(", ");
+                    .append(".clone() , ");
             operator.getKeyFunc().accept(this.innerVisitor);
             this.builder.append(", ");
             operator.getUpdateKeyFunc(upsertStruct).accept(this.innerVisitor);
@@ -798,6 +830,13 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.newline()
                 .append(operator.getOutput(0).getName(this.preferHash))
                 .append(".set_persistent_id(hash);");
+        if (!this.useHandles) {
+            if (this.materializations.hasRight(operator)) {
+                // Materialize now; otherwise, materialize at the ControlledFilter operator
+                DBSPSourceMultisetOperator table = this.materializations.getLeft(operator);
+                this.registerTable(table, operator);
+            }
+        }
         return VisitDecision.STOP;
     }
 
@@ -978,7 +1017,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(this.handleName(operator))
                     .append(" = ")
                     .append(this.getInputName(operator, 0))
-                    .append(".output");
+                    .append(".accumulate_output");
             if (this.preferHash) {
                 this.builder.append("();").newline();
             } else {
@@ -1545,11 +1584,5 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPNowOperator operator) {
         return this.constantLike(operator);
-    }
-
-    public static void toRustString(DBSPCompiler compiler, IIndentStream stream,
-                                    DBSPCircuit circuit, ProjectDeclarations projectDeclarations) {
-        ToRustVisitor visitor = new ToRustVisitor(compiler, stream, circuit.getMetadata(), projectDeclarations);
-        visitor.apply(circuit);
     }
 }

@@ -2,15 +2,26 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -22,7 +33,9 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /** Regression tests that failed in incremental mode using the Catalog API */
 public class IncrementalRegressionTests extends SqlIoTest {
@@ -203,7 +216,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 GROUP BY TIMESTAMP_TRUNC(ts, DAY);""";
         var ccs = this.getCCS(sql);
         ccs.step("""
-                -- Waterline is now 2020-01-01\s
+                -- Waterline is now 2020-01-01
                 INSERT INTO purchase VALUES('2020-01-01 00:00:01', 10);
                 INSERT INTO purchase VALUES('2020-01-01 01:00:00', 20);""", """
                   d | sum | weight
@@ -319,7 +332,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 CREATE TABLE transaction (
                     ts TIMESTAMP LATENESS INTERVAL 10 MINUTES,
                     amt DOUBLE,
-                    customer_id BIGINT NOT NULL,\s
+                    customer_id BIGINT NOT NULL,
                     cc_num BIGINT NOT NULL,
                     state VARCHAR
                 );
@@ -798,7 +811,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 return;
             Arrays.sort(toCompile);
             for (File c: toCompile) {
-                if (!c.getName().contains("no-min.sql")) continue;
+                if (!c.getName().contains("temp-program.sql")) continue;
                 if (c.getName().contains("sql")) {
                     System.out.println("Compiling " + c);
                     String sql = Utilities.readFile(c.getPath());
@@ -877,5 +890,756 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
               CREATE MATERIALIZED VIEW test_mat AS
               SELECT id FROM test_agg;""");
+    }
+
+    Set<String> collectHashes(CompilerCircuit cc) {
+        HashSet<String> result = new HashSet<>();
+        CircuitVisitor vis = new CircuitVisitor(cc.compiler) {
+            @Override
+            public void postorder(DBSPOperator ignored) {
+                result.add(ignored.getNodeName(true));
+            }
+        };
+        cc.getCircuit().accept(vis);
+        return result;
+    }
+
+    @Test
+    public void testHashes() {
+        var cc0 = this.getCC("""
+                CREATE TABLE t1(x int) WITH ('materialized'='true');
+                CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;""");
+        var cc1 = this.getCC("""
+                CREATE TABLE t1(x int) WITH ('materialized'='true');
+                CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
+                CREATE MATERIALIZED VIEW v2 AS SELECT COUNT(*) AS c FROM t1;""");
+        // Check that all hashes from cc1 appear unchanged in cc1
+        Set<String> hash0 = this.collectHashes(cc0);
+        Set<String> hash1 = this.collectHashes(cc1);
+        Assert.assertTrue(hash1.containsAll(hash0));
+        Assert.assertEquals(hash0.size() + 1, hash1.size());
+    }
+
+    @Test
+    public void testHashes2() {
+        String common = """
+                CREATE TABLE LINEITEM (
+                        L_ORDERKEY    INTEGER NOT NULL,
+                        L_PARTKEY     INTEGER NOT NULL,
+                        L_SUPPKEY     INTEGER NOT NULL,
+                        L_LINENUMBER  INTEGER NOT NULL,
+                        L_QUANTITY    DECIMAL(15,2) NOT NULL,
+                        L_EXTENDEDPRICE  DECIMAL(15,2) NOT NULL,
+                        L_DISCOUNT    DECIMAL(15,2) NOT NULL,
+                        L_TAX         DECIMAL(15,2) NOT NULL,
+                        L_RETURNFLAG  CHAR(1) NOT NULL,
+                        L_LINESTATUS  CHAR(1) NOT NULL,
+                        L_SHIPDATE    DATE NOT NULL,
+                        L_COMMITDATE  DATE NOT NULL,
+                        L_RECEIPTDATE DATE NOT NULL,
+                        L_SHIPINSTRUCT CHAR(25) NOT NULL,
+                        L_SHIPMODE     CHAR(10) NOT NULL,
+                        L_COMMENT      VARCHAR(44) NOT NULL
+                );
+                
+                -- Orders
+                CREATE TABLE ORDERS  (
+                        O_ORDERKEY       INTEGER NOT NULL,
+                        O_CUSTKEY        INTEGER NOT NULL,
+                        O_ORDERSTATUS    CHAR(1) NOT NULL,
+                        O_TOTALPRICE     DECIMAL(15,2) NOT NULL,
+                        O_ORDERDATE      DATE NOT NULL,
+                        O_ORDERPRIORITY  CHAR(15) NOT NULL,
+                        O_CLERK          CHAR(15) NOT NULL,
+                        O_SHIPPRIORITY   INTEGER NOT NULL,
+                        O_COMMENT        VARCHAR(79) NOT NULL
+                );
+                
+                -- Part
+                CREATE TABLE PART (
+                        P_PARTKEY     INTEGER NOT NULL,
+                        P_NAME        VARCHAR(55) NOT NULL,
+                        P_MFGR        CHAR(25) NOT NULL,
+                        P_BRAND       CHAR(10) NOT NULL,
+                        P_TYPE        VARCHAR(25) NOT NULL,
+                        P_SIZE        INTEGER NOT NULL,
+                        P_CONTAINER   CHAR(10) NOT NULL,
+                        P_RETAILPRICE DECIMAL(15,2) NOT NULL,
+                        P_COMMENT     VARCHAR(23) NOT NULL
+                );
+                
+                -- Customer
+                CREATE TABLE CUSTOMER (
+                        C_CUSTKEY     INTEGER NOT NULL,
+                        C_NAME        VARCHAR(25) NOT NULL,
+                        C_ADDRESS     VARCHAR(40) NOT NULL,
+                        C_NATIONKEY   INTEGER NOT NULL,
+                        C_PHONE       CHAR(15) NOT NULL,
+                        C_ACCTBAL     DECIMAL(15,2)   NOT NULL,
+                        C_MKTSEGMENT  CHAR(10) NOT NULL,
+                        C_COMMENT     VARCHAR(117) NOT NULL
+                );
+                
+                -- Supplier
+                CREATE TABLE SUPPLIER (
+                        S_SUPPKEY     INTEGER NOT NULL,
+                        S_NAME        CHAR(25) NOT NULL,
+                        S_ADDRESS     VARCHAR(40) NOT NULL,
+                        S_NATIONKEY   INTEGER NOT NULL,
+                        S_PHONE       CHAR(15) NOT NULL,
+                        S_ACCTBAL     DECIMAL(15,2) NOT NULL,
+                        S_COMMENT     VARCHAR(101) NOT NULL
+                );
+                
+                -- Part supplies
+                CREATE TABLE PARTSUPP (
+                        PS_PARTKEY     INTEGER NOT NULL,
+                        PS_SUPPKEY     INTEGER NOT NULL,
+                        PS_AVAILQTY    INTEGER NOT NULL,
+                        PS_SUPPLYCOST  DECIMAL(15,2)  NOT NULL,
+                        PS_COMMENT     VARCHAR(199) NOT NULL
+                );
+                
+                -- Nation
+                CREATE TABLE NATION  (
+                        N_NATIONKEY  INTEGER NOT NULL,
+                        N_NAME       CHAR(25) NOT NULL,
+                        N_REGIONKEY  INTEGER NOT NULL,
+                        N_COMMENT    VARCHAR(152)
+                );
+                
+                -- Region
+                CREATE TABLE REGION  (
+                        R_REGIONKEY  INTEGER NOT NULL,
+                        R_NAME       CHAR(25) NOT NULL,
+                        R_COMMENT    VARCHAR(152)
+                );
+                
+                -- Pricing Summary Report
+                create materialized view q1
+                as select
+                        l_returnflag,
+                        l_linestatus,
+                        sum(l_quantity) as sum_qty,
+                        sum(l_extendedprice) as sum_base_price,
+                        sum(l_extendedprice * (1 - l_discount)) as sum_disc_price,
+                        sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge,
+                        avg(l_quantity) as avg_qty,
+                        avg(l_extendedprice) as avg_price,
+                        avg(l_discount) as avg_disc,
+                        count(*) as count_order
+                from
+                        lineitem
+                where
+                        l_shipdate <= date '1998-12-01' - interval '90' day
+                group by
+                        l_returnflag,
+                        l_linestatus
+                order by
+                        l_returnflag,
+                        l_linestatus;
+                
+                -- Minimum Cost Supplier
+                create materialized view q2
+                as select
+                        s_acctbal,
+                        s_name,
+                        n_name,
+                        p_partkey,
+                        p_mfgr,
+                        s_address,
+                        s_phone,
+                        s_comment
+                from
+                        part,
+                        supplier,
+                        partsupp,
+                        nation,
+                        region
+                where
+                        p_partkey = ps_partkey
+                        and s_suppkey = ps_suppkey
+                        and p_size = 15
+                        and p_type like '%BRASS'
+                        and s_nationkey = n_nationkey
+                        and n_regionkey = r_regionkey
+                        and r_name = 'EUROPE'
+                        and ps_supplycost = (
+                                select
+                                        min(ps_supplycost)
+                                from
+                                        partsupp,
+                                        supplier,
+                                        nation,
+                                        region
+                                where
+                                        p_partkey = ps_partkey
+                                        and s_suppkey = ps_suppkey
+                                        and s_nationkey = n_nationkey
+                                        and n_regionkey = r_regionkey
+                                        and r_name = 'EUROPE'
+                        )
+                order by
+                        s_acctbal desc,
+                        n_name,
+                        s_name,
+                        p_partkey
+                limit 100;
+                
+                -- Shipping Priority
+                create materialized view q3
+                as select
+                        l_orderkey,
+                        sum(l_extendedprice * (1 - l_discount)) as revenue,
+                        o_orderdate,
+                        o_shippriority
+                from
+                        customer,
+                        orders,
+                        lineitem
+                where
+                        c_mktsegment = 'BUILDING'
+                        and c_custkey = o_custkey
+                        and l_orderkey = o_orderkey
+                        and o_orderdate < date '1995-03-15'
+                        and l_shipdate > date '1995-03-15'
+                group by
+                        l_orderkey,
+                        o_orderdate,
+                        o_shippriority
+                order by
+                        revenue desc,
+                        o_orderdate
+                limit 10;
+                
+                -- Order Priority Checking
+                create materialized view q4
+                as select
+                        o_orderpriority,
+                        count(*) as order_count
+                from
+                        orders
+                where
+                        o_orderdate >= date '1993-07-01'
+                        and o_orderdate < date '1993-07-01' + interval '3' month
+                        and exists (
+                                select
+                                        *
+                                from
+                                        lineitem
+                                where
+                                        l_orderkey = o_orderkey
+                                        and l_commitdate < l_receiptdate
+                        )
+                group by
+                        o_orderpriority
+                order by
+                        o_orderpriority;
+                
+                create materialized view q5
+                as select
+                        n_name,
+                        sum(l_extendedprice * (1 - l_discount)) as revenue
+                from
+                        customer,
+                        orders,
+                        lineitem,
+                        supplier,
+                        nation,
+                        region
+                where
+                        c_custkey = o_custkey
+                        and l_orderkey = o_orderkey
+                        and l_suppkey = s_suppkey
+                        and c_nationkey = s_nationkey
+                        and s_nationkey = n_nationkey
+                        and n_regionkey = r_regionkey
+                        and r_name = 'ASIA'
+                        and o_orderdate >= date '1994-01-01'
+                        and o_orderdate < date '1994-01-01' + interval '1' year
+                group by
+                        n_name
+                order by
+                        revenue desc;
+                
+                -- Forecasting Revenue Change
+                create materialized view q6
+                as select
+                        sum(l_extendedprice * l_discount) as revenue
+                from
+                        lineitem
+                where
+                        l_shipdate >= date '1994-01-01'
+                        and l_shipdate < date '1994-01-01' + interval '1' year
+                        and l_discount between .06 - 0.01 and .06 + 0.01
+                        and l_quantity < 24;
+                
+                -- Volume Shipping
+                create materialized view q7
+                as select
+                        supp_nation,
+                        cust_nation,
+                        l_year,
+                        sum(volume) as revenue
+                from
+                        (
+                                select
+                                        n1.n_name as supp_nation,
+                                        n2.n_name as cust_nation,
+                                        year(l_shipdate) as l_year,
+                                        l_extendedprice * (1 - l_discount) as volume
+                                from
+                                        supplier,
+                                        lineitem,
+                                        orders,
+                                        customer,
+                                        nation n1,
+                                        nation n2
+                                where
+                                        s_suppkey = l_suppkey
+                                        and o_orderkey = l_orderkey
+                                        and c_custkey = o_custkey
+                                        and s_nationkey = n1.n_nationkey
+                                        and c_nationkey = n2.n_nationkey
+                                        and (
+                                                (n1.n_name = 'FRANCE' and n2.n_name = 'GERMANY')
+                                                or (n1.n_name = 'GERMANY' and n2.n_name = 'FRANCE')
+                                        )
+                                        and l_shipdate between date '1995-01-01' and date '1996-12-31'
+                        ) as shipping
+                group by
+                        supp_nation,
+                        cust_nation,
+                        l_year
+                order by
+                        supp_nation,
+                        cust_nation,
+                        l_year;
+                
+                -- Unfortunately this does not work for q8: there is a
+                -- shared join (followed by 2 projections) between q8 and q10 which causes
+                -- the plans for q8 to differ when compiled with and without q10
+                --
+                ---- National Market Share
+                --create materialized view q8
+                --as select
+                --        o_year,
+                --        sum(case
+                --                when nation = 'BRAZIL' then volume
+                --                else 0
+                --        end) / sum(volume) as mkt_share
+                --from
+                --        (
+                --                select
+                --                        year(o_orderdate) as o_year,
+                --                        l_extendedprice * (1 - l_discount) as volume,
+                --                        n2.n_name as nation
+                --                from
+                --                        part,
+                --                        supplier,
+                --                        lineitem,
+                --                        orders,
+                --                        customer,
+                --                        nation n1,
+                --                        nation n2,
+                --                        region
+                --                where
+                --                        p_partkey = l_partkey
+                --                        and s_suppkey = l_suppkey
+                --                        and l_orderkey = o_orderkey
+                --                        and o_custkey = c_custkey
+                --                        and c_nationkey = n1.n_nationkey
+                --                        and n1.n_regionkey = r_regionkey
+                --                        and r_name = 'AMERICA'
+                --                        and s_nationkey = n2.n_nationkey
+                --                        and o_orderdate between date '1995-01-01' and date '1996-12-31'
+                --                        and p_type = 'ECONOMY ANODIZED STEEL'
+                --        ) as all_nations
+                --group by
+                --        o_year
+                --order by
+                --        o_year;
+                
+                -- Product Type Profit Measure
+                create materialized view q9
+                as select
+                        nation,
+                        o_year,
+                        sum(amount) as sum_profit
+                from
+                        (
+                                select
+                                        n_name as nation,
+                                        year(o_orderdate) as o_year,
+                                        l_extendedprice * (1 - l_discount) - ps_supplycost * l_quantity as amount
+                                from
+                                        part,
+                                        supplier,
+                                        lineitem,
+                                        partsupp,
+                                        orders,
+                                        nation
+                                where
+                                        s_suppkey = l_suppkey
+                                        and ps_suppkey = l_suppkey
+                                        and ps_partkey = l_partkey
+                                        and p_partkey = l_partkey
+                                        and o_orderkey = l_orderkey
+                                        and s_nationkey = n_nationkey
+                                        and p_name like '%green%'
+                        ) as profit
+                group by
+                        nation,
+                        o_year
+                order by
+                        nation,
+                        o_year desc;
+                """;
+        String extra = """
+                create materialized view q10
+                as select
+                      c_custkey,
+                      c_name,
+                      sum(l_extendedprice * (1 - l_discount)) as revenue,
+                      c_acctbal,
+                      n_name,
+                      c_address,
+                      c_phone,
+                      c_comment
+                from
+                      customer,
+                      orders,
+                      lineitem,
+                      nation
+                where
+                      c_custkey = o_custkey
+                      and l_orderkey = o_orderkey
+                      and o_orderdate >= date '1993-10-01'
+                      and o_orderdate < date '1993-10-01' + interval '3' month
+                      and l_returnflag = 'R'
+                      and c_nationkey = n_nationkey
+                group by
+                      c_custkey,
+                      c_name,
+                      c_acctbal,
+                      c_phone,
+                      n_name,
+                      c_address,
+                      c_comment
+                order by
+                      revenue desc
+                limit 20;
+                """;
+
+        var cc0 = this.getCC(common);
+        var cc1 = this.getCC(common + extra);
+        Set<String> hash0 = this.collectHashes(cc0);
+        Set<String> hash1 = this.collectHashes(cc1);
+        Assert.assertTrue(hash1.containsAll(hash0));
+    }
+
+    @Test
+    public void issue4799() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(id INT, s VARCHAR);
+                CREATE VIEW v AS (
+                    SELECT
+                        T.id,
+                        R.sid,
+                        R.o
+                    FROM T
+                    CROSS JOIN UNNEST(split(T.s, '/')) WITH ORDINALITY AS R(sid, o)
+                    WHERE sid <> ''
+                );
+                """);
+        // Validated on postgres by replacing 'split' with 'string_to_array'
+        ccs.step("INSERT INTO T VALUES(0, 'a/b/c'), (1, '/a//b'), (2, 'd');", """
+                 id | sid | o | weight
+                -----------------------
+                 0  | a|    1 | 1
+                 0  | b|    2 | 1
+                 0  | c|    3 | 1
+                 1  | a|    2 | 1
+                 1  | b|    4 | 1
+                 2  | d|    1 | 1""");
+    }
+
+    @Test
+    public void outerJoin() {
+        var cc = this.getCC("""
+                CREATE TABLE tab0(x int);
+                CREATE TABLE tab2(x int);
+                CREATE VIEW V AS SELECT ALL * FROM tab2 AS cor0 LEFT OUTER JOIN tab0 AS cor1 ON NULL IS NOT NULL;""");
+        // The optimizer should reduce this to just a Map operator
+        cc.visit(new CircuitVisitor(cc.compiler) {
+            @Override
+            public void postorder(DBSPJoinBaseOperator node) {
+                Assert.fail("Should have been removed");
+            }
+        });
+    }
+
+    @Test
+    public void issue4876() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(roww ROW(i1 INT, v1 VARCHAR NULL));
+                CREATE VIEW v AS SELECT
+                roww = ROW(4, 'cat', 'dog') AS roww
+                FROM tbl;""", "Unequal number of entries in ROW expressions");
+    }
+
+    @Test
+    public void issue4877() {
+        this.getCC("""
+                CREATE TABLE tbl(roww ROW(i1 INT, v1 VARCHAR NULL));
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                roww < ROW(3, 'cat') AS roww
+                FROM tbl;""");
+    }
+
+    @Test
+    public void issue4880() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(roww ROW(i1 INT, v1 VARCHAR NULL));
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                roww <=> NULL AS roww FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(ROW(ROW(4, 'var')));", """
+                 roww | weight
+                ---------------
+                 false | 1""");
+    }
+
+    @Test
+    public void asofTest() {
+        this.getCCS("""
+                CREATE TABLE data_entity_1 (
+                    unique_id_a VARCHAR NOT NULL PRIMARY KEY,
+                    join_key_a VARCHAR NOT NULL,
+                    event_timestamp TIMESTAMP
+                );
+                
+                CREATE TABLE data_entity_2 (
+                    key_part_1 VARCHAR NOT NULL,
+                    join_key_b VARCHAR NOT NULL,
+                    record_timestamp TIMESTAMP,
+                    PRIMARY KEY (key_part_1, join_key_b)
+                );
+                
+                CREATE VIEW combined_view AS
+                SELECT "t1".*, "t2".* FROM data_entity_1 as t1
+                LEFT ASOF JOIN "data_entity_2" AS "t2"
+                MATCH_CONDITION ( t1.event_timestamp >= t2.record_timestamp )
+                ON "t1"."join_key_a" = "t2"."join_key_b";""");
+    }
+
+    @Test
+    public void issue4899() {
+        this.getCCS("""
+                CREATE TABLE source_stream_a (
+                    common_join_attribute SMALLINT,
+                    join_key_a2 VARCHAR,
+                    join_key_a1 VARCHAR,
+                    event_timestamp TIMESTAMP
+                );
+                
+                CREATE TABLE reference_table_b (
+                    join_key_b1 VARCHAR NOT NULL PRIMARY KEY,
+                    common_join_attribute SMALLINT,
+                    event_timestamp TIMESTAMP
+                );
+                
+                CREATE TABLE source_stream_c (
+                    join_key_b1 VARCHAR NOT NULL,
+                    join_key_c2 VARCHAR NOT NULL,
+                    common_join_attribute SMALLINT,
+                    epoch_ts_c BIGINT LATENESS 10::BIGINT,
+                    timestamp_c TIMESTAMP,
+                    event_timestamp TIMESTAMP,
+                    PRIMARY KEY (join_key_b1, join_key_c2)
+                );
+                
+                CREATE VIEW combined_view
+                AS
+                SELECT t1.* FROM source_stream_a AS t1
+                LEFT JOIN reference_table_b AS t2
+                ON t1.common_join_attribute = t2.common_join_attribute AND t1.join_key_a1 = t2.join_key_b1
+                LEFT ASOF JOIN source_stream_c AS t3
+                MATCH_CONDITION ( t1.event_timestamp >= t3.event_timestamp )
+                ON t1.common_join_attribute = t3.common_join_attribute AND t1.join_key_a2 = t3.join_key_c2
+                 AND t1.join_key_a1 = t3.join_key_b1;""");
+    }
+
+    @Test
+    public void asof3Test() {
+        this.getCCS("""
+                CREATE TABLE source_table_a (
+                    join_key_1 SMALLINT,
+                    timestamp_key_a BIGINT LATENESS 10::BIGINT,
+                    join_key_2 VARCHAR,
+                    join_key_3 VARCHAR
+                );
+                
+                CREATE TABLE source_table_b (
+                    join_key_2 VARCHAR NOT NULL,
+                    join_key_3 VARCHAR NOT NULL,
+                    join_key_1 SMALLINT,
+                    timestamp_key_b BIGINT LATENESS 10::BIGINT,
+                    PRIMARY KEY (join_key_2, join_key_3)
+                );
+                
+                CREATE VIEW combined_view
+                AS SELECT "t1".*
+                 FROM "source_table_a" AS "t1"
+                 LEFT ASOF JOIN "source_table_b" AS "t2"
+                 MATCH_CONDITION ( t1.timestamp_key_a >= t2.timestamp_key_b )
+                  ON "t1"."join_key_1" = "t2"."join_key_1" AND "t1"."join_key_3" = "t2"."join_key_3" AND "t1"."join_key_2" = "t2"."join_key_2";
+                
+                LATENESS combined_view.timestamp_key_a 10::BIGINT;
+                LATENESS combined_view.timestamp_key_b 10::BIGINT;""");
+    }
+
+    @Test
+    public void asof4Test() {
+        this.getCCS("""
+                CREATE TABLE source_stream_a (
+                    join_key_1 SMALLINT,
+                    join_key_2 VARCHAR,
+                    join_key_3 VARCHAR,
+                    event_timestamp TIMESTAMP
+                );
+                
+                CREATE TABLE reference_table_b (
+                    join_key_1 SMALLINT,
+                    event_timestamp TIMESTAMP
+                );
+                
+                CREATE TABLE source_stream_c (
+                    join_key_3 VARCHAR NOT NULL,
+                    join_key_2 VARCHAR NOT NULL,
+                    join_key_1 SMALLINT,
+                    event_timestamp TIMESTAMP,
+                    PRIMARY KEY (join_key_3, join_key_2)
+                );
+                
+                CREATE VIEW intermediate_view_1 AS
+                SELECT * from source_stream_c;
+                
+                CREATE VIEW intermediate_view_2
+                AS SELECT "t1".* FROM "source_stream_a" AS "t1"
+                LEFT ASOF JOIN "intermediate_view_1" AS "t2"
+                MATCH_CONDITION ( t1.event_timestamp >= t2.event_timestamp )
+                ON "t1"."join_key_1" = "t2"."join_key_1" AND "t1"."join_key_2" = "t2"."join_key_2" AND "t1"."join_key_3" = "t2"."join_key_3";
+                
+                CREATE VIEW final_view
+                AS SELECT * from intermediate_view_2 as v1
+                LEFT ASOF JOIN "reference_table_b" AS "t3"
+                MATCH_CONDITION ( v1.event_timestamp >= t3.event_timestamp )
+                ON "v1"."join_key_1" = "t3"."join_key_1" ;""");
+    }
+
+    @Test
+    public void issue4924() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(x INT, y INT);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                ARRAY(SELECT x, y FROM tbl) AS arr;""");
+        ccs.addPair(new Change("tbl",
+                new DBSPZSetExpression(
+                        new DBSPTupleExpression(
+                                new DBSPI32Literal(2, true),
+                                new DBSPI32Literal(3, true)))),
+                new Change("v", new DBSPZSetExpression(
+                        new DBSPTupleExpression(
+                                new DBSPArrayExpression(
+                                        new DBSPTupleExpression(
+                                                new DBSPI32Literal(2, true),
+                                                new DBSPI32Literal(3, true)))))));
+    }
+
+    @Test
+    public void asofTest1() {
+        this.getCC("""
+                CREATE TABLE S (
+                   id uuid,
+                   ts TIMESTAMP LATENESS INTERVAL 1 MONTH
+                );
+                
+                CREATE TABLE C (
+                    id uuid,
+                    ts timestamp NOT NULL LATENESS INTERVAL 1 HOUR
+                );
+                
+                create view V0 AS
+                SELECT c.*
+                FROM C LEFT ASOF JOIN S
+                    MATCH_CONDITION ( c.ts >= s.ts )
+                    ON c.id = s.id;
+                
+                CREATE VIEW V1 AS
+                SELECT ts FROM V0;""");
+    }
+
+    @Test
+    public void issue5032a() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl1(id INT,
+                roww ROW(i1 INT, v1 VARCHAR NULL) NOT NULL);
+                
+                CREATE TABLE tbl2(id INT,
+                roww ROW(i1 INT, v1 VARCHAR NULL) NOT NULL);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                t1.id, t1.roww AS t1_roww, t2.roww AS t2_roww
+                FROM tbl1 t1
+                LEFT ASOF JOIN tbl2 t2
+                MATCH_CONDITION ( t1.roww >= t2.roww)
+                ON t1.id = t2.id""", "Not yet implemented: Join on struct types");
+    }
+
+    @Test
+    public void issue5032() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl1(id INT,
+                roww ROW(i1 INT, v1 VARCHAR NULL));
+                
+                CREATE TABLE tbl2(id INT,
+                roww ROW(i1 INT, v1 VARCHAR NULL));
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                t1.id, t1.roww AS t1_roww, t2.roww AS t2_roww
+                FROM tbl1 t1
+                LEFT ASOF JOIN tbl2 t2
+                MATCH_CONDITION ( t1.roww >= t2.roww)
+                ON t1.id = t2.id;""", "Not yet implemented: Join on struct types");
+    }
+
+    @Test
+    public void testUnnestVariant() {
+        var ccs = this.getCCS("""
+                CREATE TABLE X(v VARCHAR);
+                CREATE LOCAL VIEW S AS SELECT CAST(PARSE_JSON(v) AS variant array) as v FROM x;
+                CREATE VIEW V AS (
+                    SELECT a['x'], b
+                    FROM S, UNNEST(S.v) WITH ORDINALITY AS t(a, b)
+                );""");
+        ccs.addPair(
+                new Change("X", new DBSPZSetExpression(
+                        new DBSPTupleExpression(
+                                new DBSPStringLiteral("[ {\"x\": 1}, {\"x\": 2}, null ]", true)
+                        )
+                )),
+                new Change("V", new DBSPZSetExpression(
+                        new DBSPTupleExpression(
+                                new DBSPVariantExpression(new DBSPU64Literal(CalciteObject.EMPTY, 1L, false), true),
+                                new DBSPI32Literal(1)),
+                        new DBSPTupleExpression(
+                                new DBSPVariantExpression(new DBSPU64Literal(CalciteObject.EMPTY, 2L, false), true),
+                                new DBSPI32Literal(2)),
+                        new DBSPTupleExpression(
+                                new DBSPVariantExpression(null, true),
+                                new DBSPI32Literal(3)))
+                ));
     }
 }
