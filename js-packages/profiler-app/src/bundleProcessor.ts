@@ -1,5 +1,4 @@
 // Support bundle processing utilities for the standalone profiler app
-// This module provides functionality similar to viz-bundle.py but for Node.js/Bun
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -53,7 +52,7 @@ export class BundleProcessor {
         // Choose the last one in sorted order
         const profileFile = profileFiles.sort((a, b) =>
             a.entryName.localeCompare(b.entryName)
-        )[profileFiles.length - 1];
+        )[profileFiles.length - 1]!;
 
         this.log(`Found profile file: ${profileFile.entryName}`);
 
@@ -84,7 +83,7 @@ export class BundleProcessor {
         // Choose the last one in sorted order
         const configFile = configFiles.sort((a, b) =>
             a.entryName.localeCompare(b.entryName)
-        )[configFiles.length - 1];
+        )[configFiles.length - 1]!;
 
         this.log(`Found config file: ${configFile.entryName}`);
 
@@ -164,14 +163,14 @@ export class BundleProcessor {
  *   BUNDLE_NAME=<name>  - Output name (default: temp)
  */
 export function getBundleFromEnv(): BundleProcessOptions | null {
-    const bundlePath = process.env.BUNDLE;
+    const bundlePath = process.env['BUNDLE'];
 
     if (!bundlePath) {
         return null;
     }
 
-    const verbose = process.env.VERBOSE === '1' || process.env.VERBOSE === 'true';
-    const outputName = process.env.BUNDLE_NAME;
+    const verbose = process.env['VERBOSE']! === '1' || process.env['VERBOSE']! === 'true';
+    const outputName = process.env['BUNDLE_NAME']!;
 
     return { bundlePath, verbose, outputName };
 }

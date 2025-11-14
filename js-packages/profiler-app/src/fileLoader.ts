@@ -45,15 +45,6 @@ export class ProfileLoader {
         }
     }
 
-    /** Add a stack trace to an error message if possible */
-    private addTrace(message: string, e: unknown): string {
-        message += e;
-        if (e instanceof Error && e.stack) {
-            message += "\n" + e.stack;
-        }
-        return message;
-    }
-
     /**
      * Load profile and dataflow files, then render the visualization.
      *
@@ -91,7 +82,7 @@ export class ProfileLoader {
             circuit = CircuitProfile.fromJson(profileData);
             circuit.setDataflow(dataflowData);
         } catch (e) {
-            this.reportError(this.addTrace("Error decoding JSON profile data: ", e));
+            this.reportError(`Error decoding JSON profile data: ${e}`);
             return;
         }
 
@@ -101,7 +92,7 @@ export class ProfileLoader {
             this.profiler.render(circuit);
             this.profiler.clearMessage();
         } catch (e) {
-            this.reportError(this.addTrace("Error displaying circuit profile: ", e));
+            this.reportError(`Error displaying circuit profile: ${e}`);
         }
     }
 

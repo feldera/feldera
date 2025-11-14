@@ -61,7 +61,7 @@
     },
     dataflow_graph: {
       label: 'Dataflow graph',
-      description: 'Include DBSP MIR operator graph'
+      description: 'Include SQL program dataflow graph'
     }
   }
 </script>

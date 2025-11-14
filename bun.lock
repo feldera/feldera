@@ -9,7 +9,7 @@
         "svelte": "^5.43.6",
       },
     },
-    "packages/profiler-app": {
+    "js-packages/profiler-app": {
       "name": "profiler-app",
       "version": "1.0.0",
       "dependencies": {
@@ -31,7 +31,7 @@
         "vite": "^5.4.20",
       },
     },
-    "packages/profiler-lib": {
+    "js-packages/profiler-lib": {
       "name": "profiler-lib",
       "version": "0.0.1",
       "devDependencies": {
@@ -45,7 +45,7 @@
         "elkjs": "^0.11.0",
       },
     },
-    "packages/web-console": {
+    "js-packages/web-console": {
       "name": "web-console",
       "version": "0.0.1",
       "devDependencies": {
@@ -1519,9 +1519,9 @@
 
     "process": ["process@0.11.10", "", {}, "sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A=="],
 
-    "profiler-app": ["profiler-app@workspace:packages/profiler-app"],
+    "profiler-app": ["profiler-app@workspace:js-packages/profiler-app"],
 
-    "profiler-lib": ["profiler-lib@workspace:packages/profiler-lib"],
+    "profiler-lib": ["profiler-lib@workspace:js-packages/profiler-lib"],
 
     "promise-inflight": ["promise-inflight@1.0.1", "", {}, "sha512-6zWPyEOFaQBJYcGMHBKTKJ3u6TBsnMFOIZSa6ce1e/ZrrsOlnHRHbabMjLiBYKp+n44X9eUI6VUPaukCXHuG4g=="],
 
@@ -1893,7 +1893,7 @@
 
     "warning": ["warning@4.0.3", "", { "dependencies": { "loose-envify": "^1.0.0" } }, "sha512-rpJyN222KWIvHJ/F53XSZv0Zl/accqHR8et1kpaMTD/fLCRxtV8iX8czMzY7sVZupTI3zcUTg8eycS2kNF9l6w=="],
 
-    "web-console": ["web-console@workspace:packages/web-console"],
+    "web-console": ["web-console@workspace:js-packages/web-console"],
 
     "web-vitals": ["web-vitals@4.2.4", "", {}, "sha512-r4DIlprAGwJ7YM11VZp4R884m0Vmgr6EAKe3P+kO0PPj3Unqyvv59rczf6UiGcb9Z8QxZVcqKNwv/g0WNdWwsw=="],
 

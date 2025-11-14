@@ -188,7 +188,5 @@ Once rendered, users can:
 
 ## Performance Notes
 
-- **Large circuits (1000+ nodes)**: Consider pagination or filtering
-- **Many workers (50+)**: UI becomes cluttered, may need responsive design
 - **Initial layout**: ELK algorithm is high-quality but slower than force-directed
 - **Incremental updates**: Uses ZSet diffing for efficient re-rendering

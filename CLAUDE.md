@@ -9230,44 +9230,6 @@ profiler.render(profile)               // Pure rendering
 profiler.dispose()                     // Explicit cleanup
 ```
 
-### CytographRendering Constructor Changes
-
-**Before:**
-```typescript
-constructor(
-  readonly graph: Graph<NodeId>,
-  readonly selection: CircuitSelection,
-  private metadataSelection: MetadataSelection
-) {
-  // Hard-coded DOM lookups
-  let parent = document.getElementById('app')!
-  this.navigator = new ViewNavigator(document.getElementById("navigator-parent")!)
-
-  // Global state access
-  const globals = Globals.getInstance()
-  globals.tooltip.innerHTML = ""
-}
-```
-
-**After:**
-```typescript
-constructor(
-  graphContainer: HTMLElement,        // Injected
-  navigatorContainer: HTMLElement,    // Injected
-  private readonly tooltip: HTMLElement,  // Injected
-  readonly graph: Graph<NodeId>,
-  readonly selection: CircuitSelection,
-  private metadataSelection: MetadataSelection
-) {
-  // No DOM lookups, uses injected containers
-  this.navigator = new ViewNavigator(navigatorContainer)
-  this.cy = cytoscape({ container: graphContainer, elements: [] })
-
-  // Uses injected tooltip
-  this.tooltip.innerHTML = ""
-}
-```
-
 ## Development Workflow
 
 ### Building the Library

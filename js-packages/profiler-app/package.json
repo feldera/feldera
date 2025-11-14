@@ -7,8 +7,8 @@
   "license": "MIT",
   "description": "Standalone application for profiling Feldera pipelines",
   "scripts": {
-    "start": "tsx cli.ts",
-    "dev": "tsx cli.ts",
+    "start": "tsx launcher.ts",
+    "dev": "tsx launcher.ts",
     "build": "vite build"
   },
   "dependencies": {

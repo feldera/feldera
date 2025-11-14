@@ -16,9 +16,10 @@
   import type { JsonProfiles, Dataflow } from 'profiler-lib'
   import sortOn from 'sort-on'
   import { untrack } from 'svelte'
-  import { slide } from 'svelte/transition'
+  import { fade, slide } from 'svelte/transition'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { tuple } from '$lib/functions/common/tuple'
+  import { Progress } from '@skeletonlabs/skeleton-svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   const api = usePipelineManager()
@@ -43,7 +44,10 @@
       profiles,
       (file) => file.filename.match(/^(.*?)_/)?.[1] ?? ''
     ).filter(
-      (group) => group[0] && group[1].some((file) => circuitProfileRegex.test(file.filename)) && group[1].some((file) => dataflowRegex.test(file.filename))
+      (group) =>
+        group[0] &&
+        group[1].some((file) => circuitProfileRegex.test(file.filename)) &&
+        group[1].some((file) => dataflowRegex.test(file.filename))
     )
     return sortOn(
       profileTimestamps.map(([timestamp, files]) => tuple(new Date(timestamp), files)),
@@ -104,23 +108,42 @@
           )
         ) as unknown as JsonProfiles
       )
+      loadingProgress = 9
 
       getDataflowData = enclosure(
         JSON.parse(
-          decoder.decode(
-            await profile[1].find((file) => dataflowRegex.test(file.filename))!.read()
-          )
+          decoder.decode(await profile[1].find((file) => dataflowRegex.test(file.filename))!.read())
         ) as unknown as Dataflow
       )
+      loadingProgress = 10
     })()
   })
 
   let collectNewData = $state(true)
+  let loadingProgress = $state(0)
+  const MAX_PROGRESS = 10
 
   const loadProfileData = async () => {
     errorMessage = ''
-    const supportBundle = await api.getPipelineSupportBundle(pipelineName, collectNewData)
-    await processZipBundle(supportBundle, pipelineName)
+    loadingProgress = 7
+
+    const supportBundle = await api
+      .getPipelineSupportBundle(pipelineName, collectNewData)
+      .catch((error) => {
+        errorMessage = error instanceof Error ? error.message : String(error)
+        loadingProgress = 0
+        return null
+      })
+    if (!supportBundle) {
+      return
+    }
+    loadingProgress = 8
+
+    const success = await processZipBundle(supportBundle, pipelineName)
+    if (!success) {
+      loadingProgress = 0
+    }
+    // If successful, loading will complete when $effect sets the data
   }
 
   let fileInput: HTMLInputElement | null = $state(null)
@@ -136,19 +159,30 @@
     }
 
     errorMessage = ''
-
+    loadingProgress = 7
     const arrayBuffer = await file.arrayBuffer().catch((error) => {
       errorMessage = `Error processing uploaded support bundle: ${error}`
+      loadingProgress = 0
       return null
     })
+    // Reset file input
+    fileInput.value = ''
     if (!arrayBuffer) {
       return
     }
-    await processZipBundle(new Uint8Array(arrayBuffer), `uploaded-${file.name}`)
-
-    // Reset file input
-    fileInput.value = ''
+    loadingProgress = 8
+    const success = await processZipBundle(new Uint8Array(arrayBuffer), `uploaded-${file.name}`)
+    if (!success) {
+      loadingProgress = 0
+    }
+    // If successful, loading will complete when $effect sets the data
   }
+
+  $effect(() => {
+    if (loadingProgress >= MAX_PROGRESS) {
+      loadingProgress = 0
+    }
+  })
 
   const triggerFileUpload = () => {
     fileInput?.click()
@@ -171,28 +205,43 @@
     onchange={uploadSupportBundle}
     class="hidden"
   />
+  <div class="{loadingProgress ? '' : 'opacity-0'} transition-opacity">
+    <Progress
+      value={null}
+      max={MAX_PROGRESS}
+      classes="-mt-5 h-0"
+      meterTransition="duration-1000"
+      trackClasses="!h-1"
+    />
+  </div>
   {#if getCircuitProfileData}
     <div class="flex flex-nowrap gap-4 pb-2 sm:-mt-2">
       <button class="btn !bg-surface-100-900" onclick={loadProfileData}>Download profile</button>
-      <label class="flex items-center gap-2 cursor-pointer">
+      <label class="flex cursor-pointer items-center gap-2">
         <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
         <span class="text-sm">Collect new data</span>
       </label>
       <button class="btn !bg-surface-100-900" onclick={triggerFileUpload}
         >Upload support bundle</button
       >
-      <select
-        class="select ml-auto w-40 md:ml-0"
-        value={selectedProfile?.getTime()}
-        onchange={(e) => {
-          console.log('e.currentTarget.value', typeof e.currentTarget.value, e.currentTarget.value)
-          selectedProfile = new Date(parseInt(e.currentTarget.value))
-        }}
-      >
-        {#each getProfileData().map((p) => p[0]) as timestamp (timestamp)}
-          <option value={timestamp.getTime()}>{timestamp.toLocaleTimeString()}</option>
-        {/each}
-      </select>
+      <div class="ml-auto">
+        <select
+          class="select w-40 md:ml-0"
+          value={selectedProfile?.getTime()}
+          onchange={(e) => {
+            console.log(
+              'e.currentTarget.value',
+              typeof e.currentTarget.value,
+              e.currentTarget.value
+            )
+            selectedProfile = new Date(parseInt(e.currentTarget.value))
+          }}
+        >
+          {#each getProfileData().map((p) => p[0]) as timestamp (timestamp)}
+            <option value={timestamp.getTime()}>{timestamp.toLocaleTimeString()}</option>
+          {/each}
+        </select>
+      </div>
     </div>
   {/if}
   <div class="relative h-full w-full">

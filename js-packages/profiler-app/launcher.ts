@@ -2,7 +2,7 @@
 // Server entry point for the profiler app
 // This script processes support bundles at runtime, then starts the appropriate server
 //
-// Similar to viz-bundle.py, this script:
+// This script:
 // - Extracts profile and config files from a support bundle
 // - Generates dataflow graph from SQL using the compiler
 // - Saves files to data/ directory
@@ -20,8 +20,8 @@
 //     BUNDLE=/path/to/bundle.zip BUNDLE_NAME=my-profile bun run start  # Custom name
 //
 //   Direct execution:
-//     node cli.ts                                    # Auto-detects dev/production
-//     BUNDLE=/path/to/bundle.zip node cli.ts         # With bundle processing
+//     node launcher.ts                                    # Auto-detects dev/production
+//     BUNDLE=/path/to/bundle.zip node launcher.ts         # With bundle processing
 
 import { BundleProcessor, getBundleFromEnv } from './src/bundleProcessor.js';
 import { spawn } from 'child_process';
@@ -41,14 +41,14 @@ async function main() {
             console.log('[Profiler] Processing support bundle...');
             const processor = new BundleProcessor(bundleOptions);
             const outputName = await processor.process();
-            console.log(`[Profiler] Bundle processed successfully: ${outputName}`);
+            console.log(`[Profiler] Bundle extracted successfully: ${outputName}`);
 
             // Write config file so browser knows which profile to load
             const { writeFileSync } = await import('fs');
             const configPath = join(__dirname, 'data', 'profile-config.json');
             writeFileSync(configPath, JSON.stringify({ profileName: outputName }));
         } catch (error) {
-            console.error('[Profiler] Failed to process bundle:', error);
+            console.error('[Profiler] Failed to extract bundle:', error);
             process.exit(1);
         }
     }

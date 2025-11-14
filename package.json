@@ -1,7 +1,7 @@
 {
   "name": "feldera-js",
   "private": true,
-  "workspaces": ["packages/*"],
+  "workspaces": ["js-packages/*"],
   "scripts": {
     "split-claude": "bun scripts/claude.js split",
     "merge-claude": "bun scripts/claude.js merge"
