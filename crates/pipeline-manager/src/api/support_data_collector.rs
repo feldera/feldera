@@ -13,10 +13,8 @@ use crate::error::ManagerError;
 use actix_web::http::Method;
 use actix_web::rt::time::timeout;
 use actix_web::HttpResponse;
-use awc::Client;
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
-use futures_util::StreamExt;
 use log::{debug, error, info};
 use serde::Deserialize;
 use std::cmp::min;
@@ -84,7 +82,7 @@ impl Default for SupportBundleParameters {
 /// Fetch data from a pipeline endpoint
 async fn fetch_pipeline_data(
     state: &ServerState,
-    client: &awc::Client,
+    client: &reqwest::Client,
     tenant_id: TenantId,
     pipeline_name: &str,
     endpoint: &str,
@@ -107,10 +105,12 @@ async fn fetch_pipeline_data(
 /// Stream logs from the pipeline with timeout-based termination
 async fn collect_pipeline_logs(
     state: &ServerState,
-    client: &awc::Client,
+    client: &reqwest::Client,
     tenant_id: TenantId,
     pipeline_name: &str,
 ) -> Result<String, ManagerError> {
+    use futures_util::StreamExt;
+
     let mut first_line = true;
     let next_line_timeout = Duration::from_millis(500);
     let mut logs = String::with_capacity(4096);
@@ -120,18 +120,18 @@ async fn collect_pipeline_logs(
         .get_logs_from_pipeline(client, tenant_id, pipeline_name)
         .await?;
 
-    let mut response = response;
-    while let Ok(Some(chunk)) = timeout(
+    let mut stream = response.bytes_stream();
+    while let Ok(Some(chunk_result)) = timeout(
         if first_line {
             COLLECTION_TIMEOUT
         } else {
             next_line_timeout
         },
-        response.next(),
+        stream.next(),
     )
     .await
     {
-        match chunk {
+        match chunk_result {
             Ok(chunk) => {
                 let text = String::from_utf8_lossy(&chunk);
                 logs.push_str(&text);
@@ -290,7 +290,7 @@ impl<'de> serde::Deserialize<'de> for SupportBundleData {
 impl SupportBundleData {
     pub(crate) async fn collect(
         state: &ServerState,
-        client: &awc::Client,
+        client: &reqwest::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<Self, ManagerError> {
@@ -330,7 +330,7 @@ impl SupportBundleData {
 
     async fn collect_circuit_profile(
         state: &ServerState,
-        client: &awc::Client,
+        client: &reqwest::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> BundleResult<Vec<u8>> {
@@ -349,7 +349,7 @@ impl SupportBundleData {
 
     async fn collect_json_circuit_profile(
         state: &ServerState,
-        client: &awc::Client,
+        client: &reqwest::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> BundleResult<Vec<u8>> {
@@ -368,7 +368,7 @@ impl SupportBundleData {
 
     async fn collect_heap_profile(
         state: &ServerState,
-        client: &awc::Client,
+        client: &reqwest::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> BundleResult<Vec<u8>> {
@@ -387,7 +387,7 @@ impl SupportBundleData {
 
     async fn collect_metrics(
         state: &ServerState,
-        client: &awc::Client,
+        client: &reqwest::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> BundleResult<Vec<u8>> {
@@ -406,7 +406,7 @@ impl SupportBundleData {
 
     async fn collect_logs(
         state: &ServerState,
-        client: &awc::Client,
+        client: &reqwest::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> BundleResult<String> {
@@ -417,7 +417,7 @@ impl SupportBundleData {
 
     async fn collect_stats(
         state: &ServerState,
-        client: &awc::Client,
+        client: &reqwest::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> BundleResult<Vec<u8>> {
@@ -640,7 +640,7 @@ pub struct SupportDataCollector {
     /// Collection schedule ordered by next collection time
     schedule: BTreeMap<Instant, CollectionScheduleEntry>,
     /// HTTP client for making requests to pipelines
-    http_client: Client,
+    http_client: reqwest::Client,
     /// Shutdown signal receiver
     shutdown_rx: watch::Receiver<bool>,
 }
@@ -654,7 +654,7 @@ impl SupportDataCollector {
     /// Create a new support data collector
     pub(crate) fn new(
         state: Arc<ServerState>,
-        client: Client,
+        client: reqwest::Client,
         collection_frequency: u64,
         retention_count: u64,
         shutdown_rx: watch::Receiver<bool>,
@@ -1234,7 +1234,7 @@ mod tests {
 
         // Create support data collector
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        let http_client = awc::Client::default();
+        let http_client = reqwest::Client::new();
         let mut collector =
             SupportDataCollector::new(state.clone(), http_client, 1, 2, shutdown_rx);
 
@@ -1431,7 +1431,7 @@ mod tests {
 
         // Create support data collector
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        let http_client = awc::Client::default();
+        let http_client = reqwest::Client::new();
         let retention_count = 3;
         let collector =
             SupportDataCollector::new(state.clone(), http_client, 1, retention_count, shutdown_rx);
@@ -1544,7 +1544,7 @@ mod tests {
 
         // Create support data collector
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        let http_client = awc::Client::default();
+        let http_client = reqwest::Client::new();
         let mut collector =
             SupportDataCollector::new(state.clone(), http_client, 1, 2, shutdown_rx);
 

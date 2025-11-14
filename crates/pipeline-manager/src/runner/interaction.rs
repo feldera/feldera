@@ -8,8 +8,6 @@ use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
 use actix_ws::{CloseCode, CloseReason};
-use awc::error::{ConnectError, SendRequestError};
-use awc::{ClientRequest, ClientResponse};
 use crossbeam::sync::ShardedLock;
 use feldera_types::query::MAX_WS_FRAME_SIZE;
 use log::{error, info};
@@ -20,12 +18,10 @@ use tokio::time::Instant;
 
 use crate::db::listen_table::PIPELINE_NOTIFY_CHANNEL_CAPACITY;
 use crate::db::types::resources_status::ResourcesStatus;
-use actix_http::encoding::Decoder;
 use feldera_types::runtime_status::RuntimeStatus;
 
 /// Max non-streaming HTTP response body returned by the pipeline.
-/// The awc default is 2MiB, which is not enough to, for example, retrieve
-/// a large circuit profile.
+/// 20 MiB limit is used, which is enough to retrieve large circuit profiles.
 const RESPONSE_SIZE_LIMIT: usize = 20 * 1024 * 1024;
 
 pub(crate) struct CachedPipelineDescr {
@@ -203,7 +199,7 @@ impl RunnerInteraction {
     #[allow(clippy::too_many_arguments)]
     pub async fn forward_http_request_to_pipeline(
         common_config: &CommonConfig,
-        client: &awc::Client,
+        client: &reqwest::Client,
         pipeline_name: &str,
         location: &str,
         method: Method,
@@ -223,36 +219,56 @@ impl RunnerInteraction {
             query_string,
         );
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
-        let request = client.request(method, &url).timeout(timeout).force_close();
-        let request_str = Self::format_request(&request);
 
-        let mut original_response = request.send().await.map_err(|e| match e {
-            SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
-                pipeline_name: pipeline_name.to_string(),
-                request: request_str.clone(),
-                error: format_timeout_error_message(timeout, e),
-            },
-            SendRequestError::Connect(ConnectError::Disconnected) => {
+        // Convert actix Method to reqwest Method
+        let reqwest_method = match method {
+            Method::GET => reqwest::Method::GET,
+            Method::POST => reqwest::Method::POST,
+            Method::PUT => reqwest::Method::PUT,
+            Method::DELETE => reqwest::Method::DELETE,
+            Method::PATCH => reqwest::Method::PATCH,
+            Method::OPTIONS => reqwest::Method::OPTIONS,
+            Method::HEAD => reqwest::Method::HEAD,
+            _ => reqwest::Method::GET,
+        };
+
+        let request = client.request(reqwest_method, &url).timeout(timeout);
+        let request_str = format!("{} {}", method, url);
+
+        let original_response = request.send().await.map_err(|e| {
+            if e.is_timeout() {
+                RunnerError::PipelineInteractionUnreachable {
+                    pipeline_name: pipeline_name.to_string(),
+                    request: request_str.clone(),
+                    error: format_timeout_error_message(timeout, e),
+                }
+            } else if e.is_connect() {
                 RunnerError::PipelineInteractionUnreachable {
                     pipeline_name: pipeline_name.to_string(),
                     request: request_str.clone(),
                     error: format_disconnected_error_message(e),
                 }
+            } else {
+                RunnerError::PipelineInteractionUnreachable {
+                    pipeline_name: pipeline_name.to_string(),
+                    request: request_str.clone(),
+                    error: format!("unable to send request due to: {e}"),
+                }
             }
-            _ => RunnerError::PipelineInteractionUnreachable {
-                pipeline_name: pipeline_name.to_string(),
-                request: request_str.clone(),
-                error: format!("unable to send request due to: {e}"),
-            },
         })?;
+
         let status = original_response.status();
 
         if !status.is_success() {
             info!("HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}");
         }
 
+        // Convert reqwest::StatusCode to actix_http::StatusCode
+        let actix_status = actix_web::http::StatusCode::from_u16(status.as_u16())
+            .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+
         // Build the HTTP response with the original status
-        let mut response_builder = HttpResponse::build(status);
+        let mut response_builder = HttpResponse::build(actix_status);
 
         // Add all the same headers as the original response,
         // excluding `Connection` as this is proxy, as per:
@@ -260,21 +276,29 @@ impl RunnerInteraction {
         for (header_name, header_value) in original_response
             .headers()
             .iter()
-            .filter(|(h, _)| *h != "connection")
+            .filter(|(h, _)| h.as_str() != "connection")
         {
-            response_builder.insert_header((header_name.clone(), header_value.clone()));
+            response_builder.insert_header((header_name.as_str(), header_value.as_bytes()));
         }
 
         // Copy over the original response body
-        let response_body = original_response
-            .body()
-            .limit(RESPONSE_SIZE_LIMIT)
-            .await
-            .map_err(|e| RunnerError::PipelineInteractionInvalidResponse {
+        let response_bytes = original_response.bytes().await.map_err(|e| {
+            RunnerError::PipelineInteractionInvalidResponse {
                 pipeline_name: pipeline_name.to_string(),
-                error: format!("unable to reconstruct response body due to: {e}"),
-            })?;
-        Ok(response_builder.body(response_body))
+                error: format!("unable to read response body due to: {e}"),
+            }
+        })?;
+
+        // Check size limit
+        if response_bytes.len() > RESPONSE_SIZE_LIMIT {
+            return Err(RunnerError::PipelineInteractionInvalidResponse {
+                pipeline_name: pipeline_name.to_string(),
+                error: format!("response body too large: {} bytes", response_bytes.len()),
+            }
+            .into());
+        }
+
+        Ok(response_builder.body(response_bytes.to_vec()))
     }
 
     /// Makes a new HTTP request without body to the pipeline.
@@ -285,7 +309,7 @@ impl RunnerInteraction {
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn forward_http_request_to_pipeline_by_name(
         &self,
-        client: &awc::Client,
+        client: &reqwest::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
         method: Method,
@@ -464,7 +488,7 @@ impl RunnerInteraction {
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn forward_streaming_http_request_to_pipeline_by_name(
         &self,
-        client: &awc::Client,
+        client: &reqwest::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
         endpoint: &str,
@@ -472,6 +496,8 @@ impl RunnerInteraction {
         body: Payload,
         timeout: Option<Duration>, // If no timeout is specified, a default timeout is used
     ) -> Result<HttpResponse, ManagerError> {
+        use futures_util::StreamExt;
+
         let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
 
         // Build new request to pipeline
@@ -486,42 +512,85 @@ impl RunnerInteraction {
             request.query_string(),
         );
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
-        let mut new_request = client
-            .request(request.method().clone(), &url)
-            .timeout(timeout)
-            .force_close();
+
+        // Convert actix Method to reqwest Method
+        let reqwest_method = match *request.method() {
+            Method::GET => reqwest::Method::GET,
+            Method::POST => reqwest::Method::POST,
+            Method::PUT => reqwest::Method::PUT,
+            Method::DELETE => reqwest::Method::DELETE,
+            Method::PATCH => reqwest::Method::PATCH,
+            Method::OPTIONS => reqwest::Method::OPTIONS,
+            Method::HEAD => reqwest::Method::HEAD,
+            _ => reqwest::Method::GET,
+        };
+
+        let mut new_request = client.request(reqwest_method, &url);
 
         // Add headers of the original request
-        for header in request
+        for (header_name, header_value) in request
             .headers()
             .into_iter()
             .filter(|(h, _)| *h != "connection")
         {
-            new_request = new_request.append_header(header);
+            new_request = new_request.header(header_name.as_str(), header_value.as_bytes());
         }
 
-        let request_str = Self::format_request(&new_request);
+        // Convert the actix Payload stream to a Send stream for reqwest
+        // We need to use a channel because Payload contains non-Send types (Rc)
+        let (tx, rx) =
+            tokio::sync::mpsc::channel::<Result<actix_web::web::Bytes, std::io::Error>>(16);
 
-        // Perform request to the pipeline
-        let response = new_request.send_stream(body).await.map_err(|e| match e {
-            SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
-                pipeline_name: pipeline_name.to_string(),
-                request: request_str.to_string(),
-                error: format_timeout_error_message(timeout, e),
-            },
-            SendRequestError::Connect(ConnectError::Disconnected) => {
-                RunnerError::PipelineInteractionUnreachable {
-                    pipeline_name: pipeline_name.to_string(),
-                    request: request_str.to_string(),
-                    error: format_disconnected_error_message(e),
+        // Spawn a task to read from the Payload and send to the channel
+        actix_web::rt::spawn(async move {
+            let mut payload = body;
+            while let Some(chunk) = payload.next().await {
+                match chunk {
+                    Ok(bytes) => {
+                        if tx.send(Ok(bytes)).await.is_err() {
+                            break; // Receiver dropped
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(std::io::Error::other(e))).await;
+                        break;
+                    }
                 }
             }
-            _ => RunnerError::PipelineInteractionUnreachable {
+        });
+
+        // Create a stream from the receiver
+        let body_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+        let new_request = new_request.body(reqwest::Body::wrap_stream(body_stream));
+
+        let request_str = format!("{} {}", request.method(), url);
+
+        // Perform request to the pipeline with timeout only for receiving response status/headers
+        let response = tokio::time::timeout(timeout, new_request.send())
+            .await
+            .map_err(|_| RunnerError::PipelineInteractionUnreachable {
                 pipeline_name: pipeline_name.to_string(),
-                request: request_str.to_string(),
-                error: format!("unable to send request due to: {e}"),
-            },
-        })?;
+                request: request_str.clone(),
+                error: format_timeout_error_message(
+                    timeout,
+                    "timed out waiting for response status",
+                ),
+            })?
+            .map_err(|e| {
+                if e.is_connect() {
+                    RunnerError::PipelineInteractionUnreachable {
+                        pipeline_name: pipeline_name.to_string(),
+                        request: request_str.clone(),
+                        error: format_disconnected_error_message(e),
+                    }
+                } else {
+                    RunnerError::PipelineInteractionUnreachable {
+                        pipeline_name: pipeline_name.to_string(),
+                        request: request_str.clone(),
+                        error: format!("unable to send request due to: {e}"),
+                    }
+                }
+            })?;
 
         let status = response.status();
 
@@ -529,20 +598,58 @@ impl RunnerInteraction {
             info!("HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}");
         }
 
+        // Convert reqwest::StatusCode to actix_http::StatusCode
+        let actix_status = actix_web::http::StatusCode::from_u16(status.as_u16())
+            .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+
         // Build the new HTTP response with the same status, headers and streaming body
-        let mut builder = HttpResponseBuilder::new(status);
-        for header in response.headers().into_iter() {
-            builder.append_header(header);
+        let mut builder = HttpResponseBuilder::new(actix_status);
+        for (header_name, header_value) in response.headers().into_iter() {
+            builder.insert_header((header_name.as_str(), header_value.as_bytes()));
         }
-        Ok(builder.streaming(response))
+
+        // let request_str_clone = request_str.clone();
+
+        // Convert reqwest streaming response to actix streaming response
+        // Both reqwest and actix use the same Bytes type from the bytes crate, so no conversion needed
+        // Handle errors gracefully to avoid "response ended prematurely" on client disconnects
+        let stream = response
+            .bytes_stream()
+            // .inspect(move |result| {
+            //     match result {
+            //         Ok(bytes) => println!("Stream {request_str_clone} chunk: {} bytes - {:?}", bytes.len(), bytes),
+            //         Err(e) => println!("Stream {request_str_clone} error: {:?}", e),
+            //     }
+            // })
+
+            // When connection to the pipeline is lost, e.g., because the pipeline was killed,
+            // this will cleanly terminate the HTTP response.
+            // I am not sure this is the correct behavior, but it appears that this is how this worked
+            // when we used awc, and this is what Python SDK expects; otherwise it throws
+            // "response ended prematurely" and similar exceptions.
+            .take_while(move |result| {
+                let should_continue = result.is_ok();
+                if let Err(e) = result {
+                    // Log the error but don't propagate it to avoid client-side errors
+                    info!(
+                        "Stream ({}) ended due to error (likely client disconnect or network issue): {:?}",
+                        request_str,
+                        e
+                    );
+                }
+                futures_util::future::ready(should_continue)
+            })
+            .map(|result| result.map_err(std::io::Error::other));
+
+        Ok(builder.streaming(stream))
     }
 
     pub(crate) async fn get_logs_from_pipeline(
         &self,
-        client: &awc::Client,
+        client: &reqwest::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<ClientResponse<Decoder<actix_http::Payload>>, ManagerError> {
+    ) -> Result<reqwest::Response, ManagerError> {
         // Retrieve pipeline
         let pipeline = self
             .db
@@ -564,23 +671,29 @@ impl RunnerInteraction {
             pipeline.id
         );
 
-        // Perform request to the runner
-        let response = client
-            .request(Method::GET, &url)
-            .timeout(Self::RUNNER_HTTP_REQUEST_TIMEOUT)
-            .send()
-            .await
-            .map_err(|e| match e {
-                SendRequestError::Timeout => RunnerError::RunnerInteractionUnreachable {
-                    error: format_runner_timeout_error_message(
-                        Self::RUNNER_HTTP_REQUEST_TIMEOUT,
-                        e,
-                    ),
-                },
-                _ => RunnerError::RunnerInteractionUnreachable {
+        // Perform request to the runner with timeout only for receiving response status/headers
+        let response = tokio::time::timeout(
+            Self::RUNNER_HTTP_REQUEST_TIMEOUT,
+            client.request(reqwest::Method::GET, &url).send(),
+        )
+        .await
+        .map_err(|_| RunnerError::RunnerInteractionUnreachable {
+            error: format_runner_timeout_error_message(
+                Self::RUNNER_HTTP_REQUEST_TIMEOUT,
+                "timed out waiting for response status",
+            ),
+        })?
+        .map_err(|e| {
+            if e.is_connect() {
+                RunnerError::RunnerInteractionUnreachable {
+                    error: format_disconnected_error_message(e),
+                }
+            } else {
+                RunnerError::RunnerInteractionUnreachable {
                     error: format!("unable to send request due to: {e}"),
-                },
-            })?;
+                }
+            }
+        })?;
 
         Ok(response)
     }
@@ -591,30 +704,47 @@ impl RunnerInteraction {
     /// provided tenant identifier and pipeline name.
     pub(crate) async fn http_streaming_logs_from_pipeline_by_name(
         &self,
-        client: &awc::Client,
+        client: &reqwest::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<HttpResponse, ManagerError> {
+        use futures_util::StreamExt;
+
         // Perform request to the runner
         let response = self
             .get_logs_from_pipeline(client, tenant_id, pipeline_name)
             .await?;
 
-        // Build the HTTP response with the same status, headers and streaming body
-        let mut builder = HttpResponseBuilder::new(response.status());
-        for header in response.headers().into_iter() {
-            builder.append_header(header);
-        }
-        Ok(builder.streaming(response))
-    }
+        let status = response.status();
 
-    /// Format HTTP request for logging.
-    fn format_request(request: &ClientRequest) -> String {
-        format!(
-            "{:?} {} {}",
-            request.get_version(),
-            request.get_method(),
-            request.get_uri()
-        )
+        // Convert reqwest::StatusCode to actix_http::StatusCode
+        let actix_status = actix_web::http::StatusCode::from_u16(status.as_u16())
+            .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+
+        // Build the HTTP response with the same status, headers and streaming body
+        let mut builder = HttpResponseBuilder::new(actix_status);
+        for (header_name, header_value) in response.headers().into_iter() {
+            builder.insert_header((header_name.as_str(), header_value.as_bytes()));
+        }
+
+        // Convert reqwest streaming response to actix streaming response
+        // Both reqwest and actix use the same Bytes type from the bytes crate, so no conversion needed
+        // Handle errors gracefully to avoid "response ended prematurely" on client disconnects
+        let stream = response
+            .bytes_stream()
+            .take_while(|result| {
+                let should_continue = result.is_ok();
+                if let Err(e) = result {
+                    // Log the error but don't propagate it to avoid client-side errors
+                    info!(
+                        "Log stream ended due to error (likely client disconnect or network issue): {}",
+                        e
+                    );
+                }
+                futures_util::future::ready(should_continue)
+            })
+            .map(|result| result.map_err(std::io::Error::other));
+
+        Ok(builder.streaming(stream))
     }
 }
