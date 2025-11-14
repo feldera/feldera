@@ -46,31 +46,28 @@ but:
 SELECT 'foo'      'bar'
 ```
 
-is not valid syntax.
+is not valid syntax.  Newlines are supported within string literals:
 
-## Escaped characters
+```
+SELECT 'a
+b'
+```
 
-We also accept escaped characters within string constants, which are
-an extension to the SQL standard.  Within a quoted string, a
-backslash character (`\`) begins a C-like backslash escape sequence, in
-which the combination of backslash and the following character(s)
-represent a special byte value:
+produces a multi-line string literal.
 
-|Backslash Escape Sequence|Interpretation|
-|-------------------------|--------------|
-|<code>\b</code>          | backspace    |
-|<code>\f</code>          | form feed    |
-|<code>\n</code>          | newline      |
-|<code>\r</code>          | carriage return |
-|<code>\t</code>          | tab          |
-|<code>\o, \oo, \ooo</code> | (o = 0–7) octal byte value |
-|<code>\xh, \xhh (h = 0–9, A–F)</code> | hexadecimal byte value |
-|<code>\uxxxx, \Uxxxxxxxx (x = 0–9, A–F)</code> | 16 or 32-bit hexadecimal Unicode character value |
+## Unicode characters
 
-Any other character following a backslash is taken literally. Thus, to
-include a backslash character, write two backslashes `\\`. Also, a
-single quote can be included in an escape string by writing `\'`, in
-addition to the normal way of `''`.
+A string literal prefixed with the `U&` can contain unicode characters
+described using their numeric code: `U&'hello\0041'` includes the
+unicode character with code U+0041, which is the uppercase letter 'A'.
+A unicode character is described by an escape character followed by
+four hexadecimal digits.
+
+The default escape character is backslash, but it can be changed using
+the following syntax: `U&'hello!0041' UESCAPE '!'`.  The `UESCAPE`
+notation designates the escape character to use in interpreting the
+current literal, which is the exclamation sign in the previous
+example.
 
 ## Operations on string values
 
