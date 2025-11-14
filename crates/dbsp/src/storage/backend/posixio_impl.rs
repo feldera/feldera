@@ -271,6 +271,12 @@ impl FileWriter for PosixWriter {
 
             // Remove the .mut extension from the file.
             let finalized_path = self.drop.path.with_extension("");
+            self.drop.usage.fetch_sub(
+                finalized_path
+                    .metadata()
+                    .map_or(0, |metadata| metadata.size() as i64),
+                Ordering::Relaxed,
+            );
             fs::rename(&self.drop.path, &finalized_path)
                 .map_err(|e| StorageError::stdio(e.kind(), "rename", self.drop.path.display()))?;
 
