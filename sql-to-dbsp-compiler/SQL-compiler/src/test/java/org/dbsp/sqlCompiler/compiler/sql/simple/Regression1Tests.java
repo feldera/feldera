@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -12,6 +13,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -747,6 +750,40 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW row_max AS SELECT
                 MAX(ROW(c1, c2, c3)) AS c1
                 FROM row_tbl;""");
+    }
+
+    @Test
+    public void issue5087() {
+        this.qs("""
+                SELECT '1
+                2' AS r;
+                 r
+                ---
+                 1\\n2
+                (1 row)
+                
+                SELECT U&'hello\\0041';
+                 r
+                ---
+                 helloA
+                (1 row)
+                
+                SELECT U&'hello!0041' UESCAPE '!';
+                 r
+                ---
+                 helloA
+                (1 row)""");
+    }
+
+    @Test
+    public void issue5087a() {
+        var ccs = this.getCCS("""
+                -- C escape sequences do not have any special meaning
+                CREATE VIEW V AS SELECT 'a\\t\\b\\n\\r'""");
+        ccs.addPair(new Change(),
+                new Change("V",
+                new DBSPZSetExpression(new DBSPTupleExpression(
+                        new DBSPStringLiteral("a\\t\\b\\n\\r")))));
     }
 
     @Test
