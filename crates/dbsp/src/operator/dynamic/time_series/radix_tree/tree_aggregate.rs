@@ -14,7 +14,6 @@ use crate::{
     Circuit, DBData, DynZWeight, Stream, ZWeight,
 };
 use dyn_clone::clone_box;
-use minitrace::trace;
 use num::PrimInt;
 use size_of::SizeOf;
 use std::{borrow::Cow, cmp::Ordering, marker::PhantomData, ops::Neg};
@@ -249,7 +248,6 @@ where
     IT: IndexedZSetReader<Key = Z::Key, Val = Z::Val> + Clone,
     OT: RadixTreeReader<TS, Acc> + Clone,
 {
-    #[trace]
     async fn eval(
         &mut self,
         delta: Cow<'_, Option<Spine<Z>>>,

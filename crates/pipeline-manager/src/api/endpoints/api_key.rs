@@ -12,8 +12,8 @@ use actix_web::{
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
-use log::info;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use utoipa::ToSchema;
 use uuid::Uuid;
 

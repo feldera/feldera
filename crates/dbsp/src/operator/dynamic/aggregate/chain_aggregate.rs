@@ -1,7 +1,6 @@
 use std::{borrow::Cow, cmp::Ordering, marker::PhantomData};
 
 use dyn_clone::clone_box;
-use minitrace::trace;
 
 use crate::{
     algebra::{IndexedZSet, ZBatchReader},
@@ -132,7 +131,6 @@ where
     Z: ZBatchReader<Time = ()>,
     OZ: IndexedZSet<Key = Z::Key>,
 {
-    #[trace]
     async fn eval(&mut self, delta: &Option<Z>, output_trace: &Spine<OZ>) -> OZ {
         let Some(delta) = delta else {
             return OZ::dyn_empty(&self.output_factories);

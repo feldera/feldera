@@ -241,7 +241,7 @@ Here are some guidelines when contributing code that affects this database's sch
 
 ## Logging
 
-By default, the pipeline-manager and pipelines create an `env_logger` which logs
+By default, the pipeline-manager and pipelines install a `tracing` subscriber which logs
 the Feldera crates at INFO level and all other crates at WARN level.
 This can be overridden by setting the `RUST_LOG` environment variable.
 For example, the following would be the same as the default with additionally

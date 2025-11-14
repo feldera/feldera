@@ -3,7 +3,6 @@ use std::{thread::sleep, time::Duration};
 use clap::Parser;
 use csv::WriterBuilder;
 use dbsp_nexmark::{config::GeneratorOptions, NexmarkSource};
-use env_logger::Env;
 use indicatif::ProgressBar;
 use rdkafka::{
     config::FromClientConfig,
@@ -154,7 +153,7 @@ impl Options {
 }
 
 fn main() {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    init_logging();
     let options = Options::parse();
 
     let progress_bar = if options.progress && options.generator_options.max_events > 0 {
@@ -197,3 +196,11 @@ fn main() {
         progress_bar.inc(1);
     }
 }
+
+fn init_logging() {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let _ = LogTracer::init();
+    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+}
+use tracing_log::LogTracer;
+use tracing_subscriber::EnvFilter;

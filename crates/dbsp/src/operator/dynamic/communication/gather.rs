@@ -12,7 +12,6 @@ use crate::{
 use arc_swap::ArcSwap;
 use crossbeam::atomic::AtomicConsume;
 use crossbeam_utils::CachePadded;
-use minitrace::trace;
 use std::{
     borrow::Cow,
     marker::PhantomData,
@@ -277,14 +276,12 @@ impl<T> SinkOperator<T> for GatherProducer<T>
 where
     T: Clone + Send + 'static,
 {
-    #[trace]
     async fn eval(&mut self, input: &T) {
         // Safety: `worker` is guaranteed to be a valid & unique worker index
         unsafe { self.gather.push(self.worker, (input.clone(), self.flushed)) };
         self.flushed = false;
     }
 
-    #[trace]
     async fn eval_owned(&mut self, input: T) {
         // Safety: `worker` is guaranteed to be a valid & unique worker index
         unsafe { self.gather.push(self.worker, (input, self.flushed)) };
@@ -360,7 +357,6 @@ impl<T> SourceOperator<T> for GatherConsumer<T>
 where
     T: Batch<Time = ()> + 'static,
 {
-    #[trace]
     async fn eval(&mut self) -> T {
         // Safety: This is the gather thread
         debug_assert!(unsafe { self.gather.all_channels_ready() });
@@ -424,7 +420,6 @@ impl<T> SourceOperator<T> for EmptyGatherConsumer<T>
 where
     T: Batch<Time = ()> + 'static,
 {
-    #[trace]
     async fn eval(&mut self) -> T {
         T::dyn_empty(&self.factories)
     }

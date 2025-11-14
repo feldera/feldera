@@ -17,7 +17,6 @@ use crate::{
     },
 };
 use crate::{NestedCircuit, RootCircuit};
-use minitrace::trace;
 use std::panic::Location;
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -639,7 +638,6 @@ impl<B> UnaryOperator<B, B> for FilterZSet<B>
 where
     B: Batch<Time = ()>,
 {
-    #[trace]
     async fn eval(&mut self, input: &B) -> B {
         self.metrics.input_batch_stats.add_batch(input.len());
 
@@ -673,7 +671,7 @@ where
     }
 
     // Enable this optimization when we have `retain`.
-    /*#[trace] fn eval_owned(&mut self, input: CI) -> CO {
+    /*fn eval_owned(&mut self, input: CI) -> CO {
         // Bootleg specialization, we can do filtering in-place when the input and
         // output types are `OrdZSet`. I'd prefer to do this with "real" specialization
         // of some kind, but this'll work for now
@@ -759,7 +757,6 @@ impl<B> UnaryOperator<B, B> for FilterIndexedZSet<B>
 where
     B: Batch<Time = ()>,
 {
-    #[trace]
     async fn eval(&mut self, input: &B) -> B {
         self.metrics.input_batch_stats.add_batch(input.len());
 
@@ -796,7 +793,7 @@ where
         result
     }
 
-    /*#[trace] fn eval_owned(&mut self, input: CI) -> CO {
+    /*fn eval_owned(&mut self, input: CI) -> CO {
         let mut builder = CO::Builder::with_capacity((), input.len());
 
         let mut consumer = input.consumer();
@@ -879,7 +876,6 @@ where
     CI: BatchReader<Time = ()>,
     CO: Batch<Time = (), R = CI::R>,
 {
-    #[trace]
     async fn eval(&mut self, i: &CI) -> CO {
         self.metrics.input_batch_stats.add_batch(i.len());
 
@@ -967,7 +963,6 @@ where
     CI: BatchReader<Time = ()>,
     CO: Batch<Time = (), R = CI::R>,
 {
-    #[trace]
     async fn eval(&mut self, i: &CI) -> CO {
         self.metrics.input_batch_stats.add_batch(i.len());
 
@@ -1046,7 +1041,6 @@ where
     CI: BatchReader<Time = ()>,
     CO: Batch<Time = (), R = CI::R>,
 {
-    #[trace]
     async fn eval(&mut self, i: &CI) -> CO {
         self.metrics.input_batch_stats.add_batch(i.len());
 
@@ -1146,7 +1140,6 @@ where
     CI: BatchReader<Time = ()>,
     CO: Batch<Time = (), R = CI::R>,
 {
-    #[trace]
     async fn eval(&mut self, i: &CI) -> CO {
         self.metrics.input_batch_stats.add_batch(i.len());
 

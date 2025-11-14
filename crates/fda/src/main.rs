@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
-use env_logger::Env;
+use feldera_observability as observability;
 use feldera_rest_api::types::*;
 use feldera_rest_api::*;
 use feldera_types::config::{FtModel, RuntimeConfig, StorageOptions};
@@ -25,6 +25,8 @@ use tempfile::tempfile;
 use tokio::process::Command;
 use tokio::runtime::Handle;
 use tokio::time::{sleep, timeout, Duration, Instant};
+use tracing_log::LogTracer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 mod adhoc;
 mod bench;
@@ -2201,38 +2203,55 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
     }
 }
 
-#[tokio::main]
-async fn main() {
-    CompleteEnv::with_factory(Cli::command).complete();
+fn main() {
+    let _guard = observability::init("https://18aa37ae23e7130b57b91aaad432bc18@o4510219052253184.ingest.us.sentry.io/4510298809827328", "fda", env!("CARGO_PKG_VERSION"));
+    init_logging("warn");
 
-    let mut cli = Cli::parse();
-    let env = Env::default().default_filter_or("warn");
-    let _r = env_logger::Builder::from_env(env)
-        .format_target(false)
-        .format_timestamp(None)
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            CompleteEnv::with_factory(Cli::command).complete();
+            let mut cli = Cli::parse();
+            // If a `/` is at the end of the host, the manager returns HTML,
+            // instead of an API response.
+            //
+            // Needs to be fixed in the manager routing but for compat reasons
+            // we remove it here.
+            if cli.host.ends_with("/") {
+                cli.host = cli.host.trim_end_matches('/').to_string();
+            }
+
+            let client = || {
+                make_client(cli.host, cli.insecure, cli.auth, cli.timeout)
+                    .map_err(|e| {
+                        eprintln!("Failed to create HTTP client: {}", e);
+                        std::process::exit(1);
+                    })
+                    .unwrap()
+            };
+
+            match cli.command {
+                Commands::Apikey { action } => api_key_commands(cli.format, action, client()).await,
+                Commands::Pipelines => pipelines(cli.format, client()).await,
+                Commands::Pipeline(action) => pipeline(cli.format, action, client()).await,
+                Commands::Debug { action } => debug::debug(action),
+            }
+        })
+}
+
+fn init_logging(default_level: &str) {
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
+    let _ = LogTracer::init();
+    let _ = tracing_subscriber::registry()
+        .with(sentry::integrations::tracing::layer())
+        .with(filter)
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .without_time(),
+        )
         .try_init();
-    // If a `/` is at the end of the host, the manager returns HTML,
-    // instead of an API response.
-    //
-    // Needs to be fixed in the manager routing but for compat reasons
-    // we remove it here.
-    if cli.host.ends_with("/") {
-        cli.host = cli.host.trim_end_matches('/').to_string();
-    }
-
-    let client = || {
-        make_client(cli.host, cli.insecure, cli.auth, cli.timeout)
-            .map_err(|e| {
-                eprintln!("Failed to create HTTP client: {}", e);
-                std::process::exit(1);
-            })
-            .unwrap()
-    };
-
-    match cli.command {
-        Commands::Apikey { action } => api_key_commands(cli.format, action, client()).await,
-        Commands::Pipelines => pipelines(cli.format, client()).await,
-        Commands::Pipeline(action) => pipeline(cli.format, action, client()).await,
-        Commands::Debug { action } => debug::debug(action),
-    }
 }

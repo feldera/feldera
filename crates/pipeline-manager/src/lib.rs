@@ -1,7 +1,7 @@
-use log::{debug, warn};
 use rustls::crypto::CryptoProvider;
 use std::collections::HashSet;
 use std::sync::OnceLock;
+use tracing::{debug, warn};
 
 mod auth;
 

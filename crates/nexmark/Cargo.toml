@@ -27,7 +27,9 @@ release = false
 dbsp = { workspace = true }
 anyhow = { workspace = true }
 csv = { workspace = true }
-env_logger = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing-log = { workspace = true }
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["rkyv", "rkyv-64"] }
 regex = { workspace = true }
 time = { workspace = true, features = ["formatting"] }

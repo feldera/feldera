@@ -38,7 +38,6 @@ use crate::{
 use async_stream::stream;
 use dyn_clone::{clone_box, DynClone};
 use futures::Stream as AsyncStream;
-use minitrace::trace;
 use num::Bounded;
 use std::{
     borrow::Cow,
@@ -843,7 +842,6 @@ where
     OT: PartitionedBatch<DynDataTyped<TS>, DynOpt<Out>, Key = B::Key, R = B::R> + Clone,
     O: IndexedZSet<Key = B::Key, Val = DynPair<DynDataTyped<TS>, DynOpt<Out>>>,
 {
-    #[trace]
     fn eval(
         self: Rc<Self>,
         input_delta: Cow<'_, Option<Spine<B>>>,

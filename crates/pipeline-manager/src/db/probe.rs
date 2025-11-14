@@ -3,10 +3,10 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::error::ManagerError;
 use actix_web::HttpResponse;
 use chrono::{DateTime, Utc};
-use log::{error, info};
 use serde_json::json;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
+use tracing::{error, info};
 
 /// Interval at which the database is probed in the background.
 const DATABASE_PROBE_INTERVAL: Duration = Duration::from_secs(5);

@@ -31,7 +31,6 @@ use crate::{
 use async_stream::stream;
 use dyn_clone::clone_box;
 use futures::Stream as AsyncStream;
-use minitrace::trace;
 use num::PrimInt;
 use size_of::SizeOf;
 use std::{
@@ -392,7 +391,6 @@ where
     V: DataTrait + ?Sized,
     O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
 {
-    #[trace]
     fn eval(
         self: Rc<Self>,
         delta: Cow<'_, Option<Spine<Z>>>,

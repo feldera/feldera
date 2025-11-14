@@ -24,8 +24,8 @@ use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus};
-use log::{debug, info, log, Level};
 use tokio_postgres::Row;
+use tracing::{debug, info};
 use uuid::Uuid;
 
 // Convert PipelineId UUID to u64 to match PostgreSQL's behavior.
@@ -1226,15 +1226,17 @@ impl StoragePostgres {
         let report = embedded::migrations::runner()
             .run_async(&mut **client)
             .await?;
-        log!(
-            if report.applied_migrations().is_empty() {
-                Level::Debug
-            } else {
-                Level::Info
-            },
-            "Database migrations finished: {} migrations were applied",
-            report.applied_migrations().len()
-        );
+        if report.applied_migrations().is_empty() {
+            debug!(
+                "Database migrations finished: {} migrations were applied",
+                report.applied_migrations().len()
+            );
+        } else {
+            info!(
+                "Database migrations finished: {} migrations were applied",
+                report.applied_migrations().len()
+            );
+        }
 
         // YAML -> JSON migration
         self.perform_yaml_to_json_migration().await?;

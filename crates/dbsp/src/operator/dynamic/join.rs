@@ -35,7 +35,6 @@ use crate::{
 };
 use crate::{NestedCircuit, Position, Runtime};
 use async_stream::stream;
-use minitrace::trace;
 use size_of::{Context, SizeOf};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -961,7 +960,6 @@ where
     I2: IndexedZSetReader<Key = I1::Key>,
     Z: IndexedZSet,
 {
-    #[trace]
     async fn eval(&mut self, i1: &I1, i2: &I2) -> Z {
         let mut cursor1 = i1.cursor();
         let mut cursor2 = i2.cursor();
@@ -1067,7 +1065,6 @@ where
     I2: IndexedZSetReader<Key = I1::Key>,
     Z: ZSet,
 {
-    #[trace]
     async fn eval(&mut self, i1: &I1, i2: &I2) -> Z {
         let mut cursor1 = i1.cursor();
         let mut cursor2 = i2.cursor();
@@ -1411,7 +1408,6 @@ where
     Z: IndexedZSet,
     Clk: WithClock<Time = T::Time> + 'static,
 {
-    #[trace]
     fn eval(
         self: Rc<Self>,
         delta: &Option<Spine<I>>,

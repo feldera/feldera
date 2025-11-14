@@ -1,5 +1,4 @@
 use chrono::{SecondsFormat, Utc};
-use log::{debug, error, warn, Level};
 use std::collections::VecDeque;
 use std::time::Duration;
 use tokio::sync::mpsc::error::{SendTimeoutError, TrySendError};
@@ -7,6 +6,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 use tokio::{select, spawn};
+use tracing::{debug, error, warn, Level};
 
 // Logs buffer size limit constants.
 const LOGS_BUFFER_LIMIT_BYTE: usize = 1_000_000; // 1 MB
@@ -59,7 +59,7 @@ pub fn start_thread_pipeline_logs(
 
         // First line
         logs.append(
-            LogMessage::new_from_control_plane(Level::Info, "Fresh start of pipeline logs").line,
+            LogMessage::new_from_control_plane(Level::INFO, "Fresh start of pipeline logs").line,
         );
 
         // Followers interested in receiving the logs

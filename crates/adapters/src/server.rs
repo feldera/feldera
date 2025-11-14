@@ -35,6 +35,7 @@ use dbsp::{circuit::CircuitConfig, DBSPHandle};
 use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
 use feldera_adapterlib::PipelineState;
+use feldera_observability as observability;
 use feldera_storage::{StorageBackend, StoragePath};
 use feldera_types::adapter_stats::{
     EndpointErrorStats, InputEndpointErrorMetrics, OutputEndpointErrorMetrics,
@@ -63,7 +64,6 @@ use feldera_types::{
 };
 use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
 use futures_util::FutureExt;
-use minitrace::collector::Config;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde::{Deserialize, Serialize};
@@ -514,9 +514,18 @@ pub fn run_server(
         eprintln!("{e}");
     })?;
 
+    let _guard = observability::init("https://f0ec61ff0f8483e9ec8117645ad0c0e1@o4510219052253184.ingest.us.sentry.io/4510299519844352", "pipeline", env!("CARGO_PKG_VERSION"));
+    let config_cln = config.clone();
+    sentry::configure_scope(|scope| {
+        if let Some(id) = config_cln.name.as_ref() {
+            scope.set_tag("pipeline.name", id);
+        }
+    });
+
     // Initialize the logger by setting its filter and template.
     let pipeline_name = format!("[{}]", config.name.clone().unwrap_or_default()).cyan();
     tracing_subscriber::registry()
+        .with(sentry::integrations::tracing::layer())
         .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
         .with(get_env_filter(&config))
         .try_init()
@@ -524,26 +533,8 @@ pub fn run_server(
             // This happens in unit tests when another test has initialized logging.
             eprintln!("Failed to initialize logging: {e}.")
         });
-
     if config.global.tracing {
-        use std::net::{SocketAddr, ToSocketAddrs};
-        let socket_addrs: Vec<SocketAddr> = config
-            .global
-            .tracing_endpoint_jaeger
-            .to_socket_addrs()
-            .expect("Valid `tracing_endpoint_jaeger` value (e.g., localhost:6831)")
-            .collect();
-        let reporter = minitrace_jaeger::JaegerReporter::new(
-            *socket_addrs
-                .first()
-                .expect("Valid `tracing_endpoint_jaeger` value (e.g., localhost:6831)"),
-            config
-                .name
-                .clone()
-                .unwrap_or("unknown pipeline".to_string()),
-        )
-        .unwrap();
-        minitrace::set_reporter(reporter, Config::default());
+        warn!("Pipeline tracing was enabled but the 'tracing' option was deprecated, use `FELDERA_SENTRY_ENABLED` for tracing.");
     }
 
     // Install stack overflow handler early, before creating the controller and parsing DevTweaks.
@@ -710,8 +701,8 @@ pub fn run_server(
     let server = HttpServer::new({
         move || {
             let state = state.clone();
-            build_app(
-                App::new().wrap_fn(|req, srv| {
+            let app = App::new()
+                .wrap_fn(|req, srv| {
                     debug!("Request: {} {}", req.method(), req.path());
                     srv.call(req).map(|res| {
                         match &res {
@@ -740,9 +731,9 @@ pub fn run_server(
                         }
                         res
                     })
-                }),
-                state,
-            )
+                })
+                .wrap(observability::actix_middleware());
+            build_app(app, state)
         }
     })
     // The next two settings work around the issue that std::thread::available_parallelism()

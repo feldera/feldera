@@ -30,7 +30,6 @@ use crate::{
 use crate::{NestedCircuit, Position, RootCircuit};
 use async_stream::stream;
 use futures::Stream as AsyncStream;
-use minitrace::trace;
 use size_of::SizeOf;
 use std::cell::RefCell;
 use std::panic::Location;
@@ -386,12 +385,10 @@ impl<Z> UnaryOperator<Z, Z> for Distinct<Z>
 where
     Z: IndexedZSet,
 {
-    #[trace]
     async fn eval(&mut self, input: &Z) -> Z {
         input.distinct()
     }
 
-    #[trace]
     async fn eval_owned(&mut self, input: Z) -> Z {
         input.distinct_owned()
     }
@@ -492,7 +489,6 @@ where
     Z: IndexedZSet,
     I: WithSnapshot<Batch = Z> + 'static,
 {
-    #[trace]
     fn eval(
         self: Rc<Self>,
         delta: &Option<Spine<Z>>,
@@ -969,7 +965,6 @@ where
 {
     // TODO: add eval_owned, so we can use keys and values from `delta` without
     // cloning.
-    #[trace]
     fn eval(
         self: Rc<Self>,
         delta: &Option<Spine<Z>>,

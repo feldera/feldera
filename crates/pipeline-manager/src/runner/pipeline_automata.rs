@@ -20,9 +20,9 @@ use crate::runner::interaction::{format_pipeline_url, format_timeout_error_messa
 use crate::runner::pipeline_executor::PipelineExecutor;
 use crate::runner::pipeline_logs::{start_thread_pipeline_logs, LogMessage, LogsSender};
 use chrono::Utc;
+use feldera_observability::ReqwestTracingExt;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus};
-use log::{debug, error, info, warn, Level};
 use reqwest::{Method, StatusCode};
 use semver::Version;
 use serde_json::json;
@@ -33,6 +33,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio::{sync::Mutex, time::Duration};
 use tokio::{sync::Notify, time::timeout};
+use tracing::{debug, error, info, warn, Level};
 use uuid::Uuid;
 
 /// State change action that needs to be undertaken.
@@ -537,7 +538,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 );
                 self.logs_sender
                     .send(LogMessage::new_from_control_plane(
-                        Level::Info,
+                        Level::INFO,
                         "Storage has been cleared",
                     ))
                     .await;
@@ -551,7 +552,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     );
                     info!("{message} for pipeline {}", pipeline.id);
                     self.logs_sender
-                        .send(LogMessage::new_from_control_plane(Level::Info, &message))
+                        .send(LogMessage::new_from_control_plane(Level::INFO, &message))
                         .await;
                 };
                 if pipeline.deployment_runtime_status != new_runtime_status
@@ -572,7 +573,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     );
                     info!("{message} for pipeline {}", pipeline.id);
                     self.logs_sender
-                        .send(LogMessage::new_from_control_plane(Level::Info, &message))
+                        .send(LogMessage::new_from_control_plane(Level::INFO, &message))
                         .await;
                 }
             }
@@ -613,6 +614,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             .client
             .request(method, &url)
             .timeout(timeout)
+            .with_sentry_tracing()
             .send()
             .await
             .map_err(|e| {

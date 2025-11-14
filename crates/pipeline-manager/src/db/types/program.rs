@@ -9,8 +9,6 @@ use feldera_types::config::{
     RuntimeConfig, TransportConfig,
 };
 use feldera_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition, SqlIdentifier};
-use log::error;
-use log::warn;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -20,6 +18,8 @@ use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::string::ParseError;
 use thiserror::Error as ThisError;
+use tracing::error;
+use tracing::warn;
 use utoipa::ToSchema;
 
 /// Enumeration of possible compilation profiles that can be passed to the Rust compiler

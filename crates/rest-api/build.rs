@@ -223,7 +223,16 @@ fn main() {
 
     let tokens = generator.generate_tokens(&spec).unwrap();
     let ast = syn::parse2(tokens).unwrap();
-    let content = prettyplease::unparse(&ast);
+    let mut content = prettyplease::unparse(&ast);
+    for verb in ["get", "post", "put", "patch", "delete"] {
+        let pattern = format!(".{verb}(url)");
+        let replacement = format!(".{verb}(url)\n                .with_sentry_tracing()");
+        content = content.replace(&pattern, &replacement);
+    }
+    content = content.replace(
+        "pub mod builder {",
+        "pub mod builder {\n    use feldera_observability::ReqwestTracingExt;",
+    );
     let content = content.replace(
         "impl Client",
         "#[rustversion::attr(since(1.89), allow(mismatched_lifetime_syntaxes))]\nimpl Client",

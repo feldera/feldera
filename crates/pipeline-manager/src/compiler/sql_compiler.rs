@@ -19,11 +19,10 @@ use crate::db::types::version::Version;
 use crate::error::source_error;
 use crate::has_unstable_feature;
 use feldera_ir::Dataflow;
+use feldera_observability::ReqwestTracingExt;
 use feldera_types::program_schema::ProgramSchema;
 use futures_util::StreamExt;
 use indoc::formatdoc;
-use log::warn;
-use log::{debug, error, info, trace};
 use std::fs::Metadata;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -36,6 +35,7 @@ use tokio::{
     sync::Mutex,
     time::{sleep, Duration},
 };
+use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 
 /// The frequency at which the compiler polls the database for new SQL compilation requests.
@@ -378,7 +378,12 @@ async fn fetch_sql_compiler(
             ))
         })?;
 
-    let response = client.get(&jar_cache_url).send().await.map_err(|e| {
+    let response = client
+        .get(&jar_cache_url)
+        .with_sentry_tracing()
+        .send()
+        .await
+        .map_err(|e| {
         SqlCompilationError::SystemError(format!(
             "Unable to fetch SQL-to-DBSP compiler at '{}': {}, source error: {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
             &jar_cache_url,

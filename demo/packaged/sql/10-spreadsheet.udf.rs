@@ -99,6 +99,9 @@ pub fn mentions(raw_content: Option<SqlString>) -> Result<Option<Arc<Vec<Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn init_tracing() {
+        let _ = tracing_subscriber::fmt::try_init();
+    }
 
     #[test]
     fn cell_ref_id() {
@@ -126,7 +129,7 @@ mod tests {
 
     #[test]
     fn mentions_empty() {
-        let _r = env_logger::try_init();
+        init_tracing();
 
         let result = mentions(Some("".to_string())).unwrap().unwrap();
         assert_eq!(result, vec![]);
@@ -134,21 +137,21 @@ mod tests {
 
     #[test]
     fn mentions_one() {
-        let _r = env_logger::try_init();
+        init_tracing();
         let result = mentions(Some("=A1".to_string())).unwrap().unwrap();
         assert_eq!(result, vec![Some(26)]);
     }
 
     #[test]
     fn mentions_two() {
-        let _r = env_logger::try_init();
+        init_tracing();
         let result = mentions(Some("=A1+A2".to_string())).unwrap().unwrap();
         assert_eq!(result, vec![Some(26), Some(52)]);
     }
 
     #[test]
     fn mentions_set() {
-        let _r = env_logger::try_init();
+        init_tracing();
         let result = mentions(Some("=SUM(A0, A10)".to_string())).unwrap().unwrap();
         assert_eq!(result, vec![Some(0), Some(26*10)]);
     }
