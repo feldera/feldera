@@ -2,8 +2,8 @@ use crate::compiler::util::{
     checksum_file, cleanup_specific_directories, cleanup_specific_files, copy_file,
     copy_file_if_checksum_differs, crate_name_pipeline_globals, crate_name_pipeline_main,
     create_dir_if_not_exists, create_new_file, create_new_file_with_content, decode_string_as_dir,
-    read_file_content, recreate_dir, recreate_file_with_content, truncate_sha256_checksum,
-    CleanupDecision, DirectoryContent, ProcessGroupTerminator, UtilError,
+    pipeline_binary_filename, read_file_content, recreate_dir, recreate_file_with_content,
+    truncate_sha256_checksum, CleanupDecision, DirectoryContent, ProcessGroupTerminator, UtilError,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -360,9 +360,11 @@ struct BinaryMetadata {
 impl BinaryMetadata {
     /// Generate filename for the binary
     fn filename(&self) -> String {
-        format!(
-            "pipeline_{}_v{}_sc_{}_ic_{}",
-            self.pipeline_id, self.program_version, self.source_checksum, self.integrity_checksum
+        pipeline_binary_filename(
+            &self.pipeline_id,
+            self.program_version,
+            &self.source_checksum,
+            &self.integrity_checksum,
         )
     }
 }
@@ -1622,20 +1624,29 @@ async fn cleanup_rust_compilation(
     // Clean up pipeline binaries
     // These are not subject to the retention period.
     let pipeline_binaries_dir = rust_compilation_dir.join("pipeline-binaries");
-    let valid_pipeline_binary_filenames: Vec<String> = existing_pipeline_programs.iter().map(
-        |(pipeline_id, program_version, source_checksum, integrity_checksum)| {
-            if let (Some(source_checksum), Some(integrity_checksum)) =
-                (source_checksum, integrity_checksum)
-            {
-                format!("pipeline_{pipeline_id}_v{program_version}_sc_{source_checksum}_ic_{integrity_checksum}")
-            } else {
-                // this is when program status is 'CompilingRust'
-                // when compiler server is uploading the binary over http, the status is still 'CompilingRust'
-                // we don't want to delete such binaries, hence we keep a more relaxed matching pattern
-                // if either of the checksums is missing
-                format!("pipeline_{pipeline_id}_v{program_version}_sc_")
-            }
-        }).collect();
+    let valid_pipeline_binary_filenames: Vec<String> = existing_pipeline_programs
+        .iter()
+        .map(
+            |(pipeline_id, program_version, source_checksum, integrity_checksum)| {
+                if let (Some(source_checksum), Some(integrity_checksum)) =
+                    (source_checksum, integrity_checksum)
+                {
+                    pipeline_binary_filename(
+                        pipeline_id,
+                        *program_version,
+                        source_checksum,
+                        integrity_checksum,
+                    )
+                } else {
+                    // this is when program status is 'CompilingRust'
+                    // when compiler server is uploading the binary over http, the status is still 'CompilingRust'
+                    // we don't want to delete such binaries, hence we keep a more relaxed matching pattern
+                    // if either of the checksums is missing
+                    format!("pipeline_{pipeline_id}_v{program_version}_")
+                }
+            },
+        )
+        .collect();
 
     if pipeline_binaries_dir.is_dir() {
         cleanup_specific_files(
