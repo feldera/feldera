@@ -7,7 +7,7 @@ use crate::compiler::rust_compiler::{
 use crate::compiler::sql_compiler::{
     perform_sql_compilation, sql_compiler_task, SqlCompilationError,
 };
-use crate::compiler::util::validate_is_sha256_checksum;
+use crate::compiler::util::{pipeline_binary_filename, validate_is_sha256_checksum};
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
@@ -91,8 +91,11 @@ async fn get_binary(
         .working_dir()
         .join("rust-compilation")
         .join("pipeline-binaries")
-        .join(format!(
-            "pipeline_{pipeline_id}_v{program_version}_sc_{source_checksum}_ic_{integrity_checksum}"
+        .join(pipeline_binary_filename(
+            &pipeline_id,
+            program_version,
+            &source_checksum,
+            &integrity_checksum,
         ));
 
     // Read and return file as response
@@ -166,9 +169,11 @@ async fn upload_binary(
         })?;
 
     // Form the target file path
-    let target_file_path = pipeline_binaries_dir.join(format!(
-        "pipeline_{}_v{}_sc_{}_ic_{}",
-        pipeline_id, program_version, source_checksum, expected_integrity_checksum
+    let target_file_path = pipeline_binaries_dir.join(pipeline_binary_filename(
+        &pipeline_id,
+        program_version,
+        &source_checksum,
+        &expected_integrity_checksum,
     ));
 
     // Stream the binary directly to disk with integrity checksum validation
@@ -469,8 +474,11 @@ mod test {
     use crate::compiler::main::{
         create_working_directory_if_not_exists, decode_url_encoded_parameter, upload_binary,
     };
+    use crate::compiler::util::pipeline_binary_filename;
     use crate::config::CompilerConfig;
+    use crate::db::types::pipeline::PipelineId;
     use crate::db::types::program::CompilationProfile;
+    use crate::db::types::version::Version;
     use crate::error::ManagerError;
     use actix_web::{test as actix_test, web, App};
     use openssl::sha::sha256;
@@ -623,7 +631,7 @@ mod test {
         let app = create_test_app(config.clone()).await;
 
         let test_data = SMALL_TEST_DATA;
-        let pipeline_id = Uuid::now_v7();
+        let pipeline_id = PipelineId(Uuid::now_v7());
         let source_checksum = hex::encode(sha256(b"test_source"));
         let wrong_integrity_checksum = hex::encode(sha256(b"wrong_data")); // Intentionally wrong
 
@@ -756,7 +764,7 @@ mod test {
 
     /// Builds upload URL from parameters
     fn build_upload_url(
-        pipeline_id: &Uuid,
+        pipeline_id: &PipelineId,
         program_version: i64,
         source_checksum: &str,
         integrity_checksum: &str,
@@ -770,7 +778,7 @@ mod test {
     /// Creates expected file path for a binary
     fn get_expected_binary_path(
         working_dir: &std::path::Path,
-        pipeline_id: &Uuid,
+        pipeline_id: &PipelineId,
         program_version: i64,
         source_checksum: &str,
         integrity_checksum: &str,
@@ -778,9 +786,11 @@ mod test {
         working_dir
             .join("rust-compilation")
             .join("pipeline-binaries")
-            .join(format!(
-                "pipeline_{}_v{}_sc_{}_ic_{}",
-                pipeline_id, program_version, source_checksum, integrity_checksum
+            .join(pipeline_binary_filename(
+                pipeline_id,
+                Version(program_version),
+                source_checksum,
+                integrity_checksum,
             ))
     }
 
@@ -788,7 +798,7 @@ mod test {
     struct UploadTestCase {
         name: &'static str,
         data: Vec<u8>,
-        pipeline_id: Uuid,
+        pipeline_id: PipelineId,
         program_version: i64,
         source_checksum: String,
         integrity_checksum: String,
@@ -802,7 +812,7 @@ mod test {
             Self {
                 name,
                 data,
-                pipeline_id: Uuid::now_v7(),
+                pipeline_id: PipelineId(Uuid::now_v7()),
                 program_version: 1,
                 source_checksum,
                 integrity_checksum,
