@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
 use anyhow::Result as AnyResult;
@@ -632,9 +633,17 @@ pub struct OutputCollectionHandles {
 
     pub index_of: Option<SqlIdentifier>,
 
+    /// Whether the integrate handle is an indexed Z-set.
+    pub integrate_handle_is_indexed: bool,
+
     /// A handle to a snapshot of a materialized table/view.
     pub integrate_handle: Option<Arc<dyn SerBatchReaderHandle>>,
 
     /// A stream of changes to the collection.
     pub delta_handle: Box<dyn SerBatchReaderHandle>,
+
+    /// Reference to the enable count of the accumulator used to collect updates to this stream.
+    /// Incremented every time an output connector is attached to this stream; decremented when
+    /// the output connector is detached.
+    pub enable_count: Arc<AtomicUsize>,
 }

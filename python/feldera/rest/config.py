@@ -1,12 +1,14 @@
-from typing import Optional
-import os
-from feldera.rest._helpers import requests_verify_from_env
 import logging
+import os
+from typing import Optional
+
+from feldera.rest._helpers import requests_verify_from_env
 
 
 class Config:
     """
-    :class:`.FelderaClient`'s credentials and configuration parameters
+    :class:`.FelderaClient` configuration, which includes authentication information
+    and the address of the Feldera API the client will interact with.
     """
 
     def __init__(
@@ -17,35 +19,26 @@ class Config:
         timeout: Optional[float] = None,
         connection_timeout: Optional[float] = None,
         requests_verify: Optional[bool | str] = None,
+        health_recovery_timeout: Optional[int] = None,
     ) -> None:
         """
-        :param url: The url to the Feldera API (ex: https://try.feldera.com)
-        :param api_key: The optional API key to access Feldera
-        :param version: The version of the API to use
-        :param timeout: The timeout for the HTTP requests
-        :param connection_timeout: The connection timeout for the HTTP requests
-        :param requests_verify: The `verify` parameter passed to the requests
-            library. `True` by default. Can also be set using environment
-            variables `FELDERA_TLS_INSECURE` to disable TLS and
-            `FELDERA_HTTPS_TLS_CERT` to set the certificate path. The latter
-            takes priority.
-        """
+        See documentation of the `FelderaClient` constructor for the other arguments.
 
-        BASE_URL = (
-            url
-            or os.environ.get("FELDERA_HOST")
-            or os.environ.get("FELDERA_BASE_URL")
-            or "http://localhost:8080"
-        )
-        self.url: str = BASE_URL
-        self.api_key: Optional[str] = os.environ.get("FELDERA_API_KEY", api_key)
+        :param version: (Optional) Version of the API to use.
+            Default: `v0`.
+        :param health_recovery_timeout: (Optional) Maximum time in seconds to wait for cluster health recovery after a 502 error.
+            Default: `300` (5 minutes).
+        """
+        self.url: str = url or os.environ.get("FELDERA_HOST") or "http://localhost:8080"
+        self.api_key: Optional[str] = api_key or os.environ.get("FELDERA_API_KEY")
         self.version: str = version or "v0"
         self.timeout: Optional[float] = timeout
         self.connection_timeout: Optional[float] = connection_timeout
+        self.health_recovery_timeout: int = health_recovery_timeout or 300
         env_verify = requests_verify_from_env()
         self.requests_verify: bool | str = (
             requests_verify if requests_verify is not None else env_verify
         )
 
         if self.requests_verify is False:
-            logging.warning("TLS verification is disabled.")
+            logging.warning("Feldera client: TLS verification is disabled!")

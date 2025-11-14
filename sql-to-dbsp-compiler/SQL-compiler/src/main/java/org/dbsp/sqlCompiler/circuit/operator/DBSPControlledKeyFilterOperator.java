@@ -72,7 +72,7 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
             DBSPType rightType = right.getType();
             Utilities.enforce(leftType.withMayBeNull(true)
                     .sameType(rightType.withMayBeNull(true)),
-                    "Types differ: " + leftType + " vs " + rightType);
+                    () -> "Types differ: " + leftType + " vs " + rightType);
             // Notice the comparison using AGG_GTE, which never returns NULL
             DBSPExpression comparison = new DBSPBinaryExpression(CalciteEmptyRel.INSTANCE,
                     DBSPTypeBool.create(false), opcode, left, right);
@@ -108,7 +108,7 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
 
     @Override
     public DBSPOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
+        Utilities.enforce(newInputs.size() == 2, () -> "Expected 2 inputs, got " + newInputs.size());
         if (force || this.inputsDiffer(newInputs))
             return new DBSPControlledKeyFilterOperator(
                     this.getRelNode(), this.function, this.error,

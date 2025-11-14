@@ -54,6 +54,11 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 "' to the target type '" + type.asSqlString() + "' not supported", source.getNode());
     }
 
+    @Override
+    public VisitDecision preorder(DBSPType type) {
+        return VisitDecision.STOP;
+    }
+
     @Nullable DBSPExpression convertToVariant(DBSPExpression source, boolean mayBeNull) {
         DBSPExpression expression;
         if (source.type.is(DBSPTypeTuple.class)) {

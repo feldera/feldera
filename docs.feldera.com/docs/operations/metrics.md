@@ -36,14 +36,14 @@ definitions].
 
 | Name | Type | Description |
 | :--- | :--- | :---------- |
-| `process_cpu_seconds_total` |counter | Total user and system CPU time spent in seconds. |
-| `process_max_fds` |gauge | Maximum number of open file descriptors. |
-| `process_open_fds` |gauge | Number of open file descriptors. |
-| `process_resident_memory_bytes` |gauge | Resident set size in bytes. |
-| `process_start_time_seconds` |counter | Start time of the process in seconds since the Unix epoch. |
-| `process_threads` |gauge | Number of OS threads in the process. |
-| `process_virtual_memory_bytes` |gauge | Virtual memory size in bytes. |
-| `process_virtual_memory_max_bytes` |gauge | Maximum amount of virtual memory available in bytes. |
+| <a name='process_cpu_seconds_total'>`process_cpu_seconds_total`</a> |counter | Total user and system CPU time spent in seconds. |
+| <a name='process_max_fds'>`process_max_fds`</a> |gauge | Maximum number of open file descriptors. |
+| <a name='process_open_fds'>`process_open_fds`</a> |gauge | Number of open file descriptors. |
+| <a name='process_resident_memory_bytes'>`process_resident_memory_bytes`</a> |gauge | Resident set size in bytes. |
+| <a name='process_start_time_seconds'>`process_start_time_seconds`</a> |counter | Start time of the process in seconds since the Unix epoch. |
+| <a name='process_threads'>`process_threads`</a> |gauge | Number of OS threads in the process. |
+| <a name='process_virtual_memory_bytes'>`process_virtual_memory_bytes`</a> |gauge | Virtual memory size in bytes. |
+| <a name='process_virtual_memory_max_bytes'>`process_virtual_memory_max_bytes`</a> |gauge | Maximum amount of virtual memory available in bytes. |
 
 ## Feldera metrics
 
@@ -51,9 +51,10 @@ These metrics report statistics for Feldera operations.
 
 | Name | Type | Description |
 | :--- | :--- | :---------- |
-| `feldera_checkpoint_latency_seconds` |histogram | Latency of overall checkpoint operations in seconds |
-| `feldera_checkpoint_records_processed_total` |counter | Total number of records that had processed when the most recent checkpoint successfully committed. |
-| `feldera_checkpoint_written_bytes` |histogram | Amount of data written to storage during checkpoints, in bytes. |
+| <a name='feldera_checkpoint_delay_seconds'>`feldera_checkpoint_delay_seconds`</a> |histogram | Sub-duration of `feldera_checkpoint_runtime_seconds` during which pipeline execution was blocked. |
+| <a name='feldera_checkpoint_records_processed_total'>`feldera_checkpoint_records_processed_total`</a> |counter | Total number of records that had processed when the most recent checkpoint successfully committed. |
+| <a name='feldera_checkpoint_runtime_seconds'>`feldera_checkpoint_runtime_seconds`</a> |histogram | Time to run checkpoint operations, in seconds, including time that the pipeline could continue executing along with the checkpoint. |
+| <a name='feldera_checkpoint_written_bytes'>`feldera_checkpoint_written_bytes`</a> |histogram | Amount of data written to storage during checkpoints, in bytes. |
 
 ## DBSP metrics
 
@@ -64,11 +65,11 @@ which Feldera is built.
 
 | Name | Type | Description |
 | :--- | :--- | :---------- |
-| `compaction_stall_duration_seconds` |counter | Time in seconds a worker was stalled waiting for more merges to complete. |
-| `dbsp_operator_checkpoint_latency_seconds` |histogram | Latency of individual operator checkpoint operations in seconds. (Because checkpoints run in parallel across workers, these will not add to `feldera_checkpoint_latency_seconds`.) |
-| `dbsp_runtime_elapsed_seconds` |counter | Time elapsed while the pipeline is executing a step, multiplied by the number of foreground and background threads, in seconds. |
-| `dbsp_step_latency_seconds` |histogram | Latency of DBSP steps over the last 60 seconds or 1000 steps, whichever is less, in seconds |
-| `dbsp_steps_total` |counter | Total number of DBSP steps executed. |
+| <a name='compaction_stall_duration_seconds'>`compaction_stall_duration_seconds`</a> |counter | Time in seconds a worker was stalled waiting for more merges to complete. |
+| <a name='dbsp_operator_checkpoint_latency_seconds'>`dbsp_operator_checkpoint_latency_seconds`</a> |histogram | Latency of individual operator checkpoint operations in seconds. (Because checkpoints run in parallel across workers, these will not add to `feldera_checkpoint_latency_seconds`.) |
+| <a name='dbsp_runtime_elapsed_seconds_total'>`dbsp_runtime_elapsed_seconds_total`</a> |counter | Time elapsed while the pipeline is executing a step, multiplied by the number of foreground and background threads, in seconds. |
+| <a name='dbsp_step_latency_seconds'>`dbsp_step_latency_seconds`</a> |histogram | Latency of DBSP steps over the last 60 seconds or 1000 steps, whichever is less, in seconds |
+| <a name='dbsp_steps_total'>`dbsp_steps_total`</a> |counter | Total number of DBSP steps executed. |
 
 ## Record Processing
 
@@ -77,14 +78,14 @@ the pipeline.  They accumulate across checkpoint and resume.
 
 | Name | Type | Description |
 | :--- | :--- | :---------- |
-| `output_buffered_batches` |gauge | Number of batches of records currently buffered by the output connector. |
-| `records_input_buffered` |gauge | Total amount of data currently buffered by all endpoints, in records. |
-| `records_input_buffered_bytes` |gauge | Total amount of data currently buffered by all endpoints, in bytes. |
-| `records_input_bytes_total` |counter | Total amount of data received from all connectors, in bytes. |
-| `records_input_total` |counter | Total amount of data received from all connectors, in records. |
-| `records_late_total` |counter | Number of records dropped due to LATENESS annotations. |
-| `records_processed_bytes_total` |counter | Total amount of input processed by the pipeline, in bytes. |
-| `records_processed_total` |counter | Total amount of input processed by the pipeline, in records. |
+| <a name='output_buffered_batches'>`output_buffered_batches`</a> |gauge | Number of batches of records currently buffered by the output connector. |
+| <a name='records_input_buffered'>`records_input_buffered`</a> |gauge | Total amount of data currently buffered by all endpoints, in records. |
+| <a name='records_input_buffered_bytes'>`records_input_buffered_bytes`</a> |gauge | Total amount of data currently buffered by all endpoints, in bytes. |
+| <a name='records_input_bytes_total'>`records_input_bytes_total`</a> |counter | Total amount of data received from all connectors, in bytes. |
+| <a name='records_input_total'>`records_input_total`</a> |counter | Total amount of data received from all connectors, in records. |
+| <a name='records_late_total'>`records_late_total`</a> |counter | Number of records dropped due to LATENESS annotations. |
+| <a name='records_processed_bytes_total'>`records_processed_bytes_total`</a> |counter | Total amount of input processed by the pipeline, in bytes. |
+| <a name='records_processed_total'>`records_processed_total`</a> |counter | Total amount of input processed by the pipeline, in records. |
 
 ## Storage Performance
 
@@ -93,15 +94,17 @@ to work with data larger than memory.
 
 | Name | Type | Description |
 | :--- | :--- | :---------- |
-| `files_created_total` |counter | Total number of files created. |
-| `files_deleted_total` |counter | Total number of files deleted. |
-| `storage_byte_seconds_total` |counter | Storage usage integrated over time during this run of the pipeline, in bytes × seconds. |
-| `storage_read_block_bytes` |histogram | Sizes in bytes of blocks read from storage. |
-| `storage_read_latency_seconds` |histogram | Read latency for storage blocks in seconds |
-| `storage_sync_latency_seconds` |histogram | Sync latency in seconds |
-| `storage_usage_bytes` |gauge | The number of bytes of storage currently in use |
-| `storage_write_block_bytes` |histogram | Sizes in bytes of blocks written to storage. |
-| `storage_write_latency_seconds` |histogram | Write latency for storage blocks in seconds |
+| <a name='files_created_total'>`files_created_total`</a> |counter | Total number of files created. |
+| <a name='files_deleted_total'>`files_deleted_total`</a> |counter | Total number of files deleted. |
+| <a name='storage_byte_seconds_total'>`storage_byte_seconds_total`</a> |counter | Storage usage integrated over time during this run of the pipeline, in bytes × seconds. |
+| <a name='storage_cache_usage_bytes'>`storage_cache_usage_bytes`</a> |gauge | The number of bytes of memory currently in use for caching data on storage. |
+| <a name='storage_cache_usage_limit_bytes_total'>`storage_cache_usage_limit_bytes_total`</a> |counter | The limit for the number of bytes of memory for caching data on storage. |
+| <a name='storage_read_block_bytes'>`storage_read_block_bytes`</a> |histogram | Sizes in bytes of blocks read from storage. |
+| <a name='storage_read_latency_seconds'>`storage_read_latency_seconds`</a> |histogram | Read latency for storage blocks in seconds |
+| <a name='storage_sync_latency_seconds'>`storage_sync_latency_seconds`</a> |histogram | Sync latency in seconds |
+| <a name='storage_usage_bytes'>`storage_usage_bytes`</a> |gauge | The number of bytes of storage currently in use |
+| <a name='storage_write_block_bytes'>`storage_write_block_bytes`</a> |histogram | Sizes in bytes of blocks written to storage. |
+| <a name='storage_write_latency_seconds'>`storage_write_latency_seconds`</a> |histogram | Write latency for storage blocks in seconds |
 
 ## Pipeline Status
 
@@ -109,8 +112,8 @@ These metrics report the status of the pipeline.
 
 | Name | Type | Description |
 | :--- | :--- | :---------- |
-| `pipeline_complete` |counter | Transitions from 0 to 1 when pipeline completes. |
-| `pipeline_start_time_seconds` |counter | Start time of the pipeline in seconds since the Unix epoch.<br/><br/>This will be earlier than `process_start_time_seconds` if the pipeline resumed from a checkpoint.  This will be zero if the pipeline resumed from a checkpoint produced by a pipeline too old to record its start time. |
+| <a name='pipeline_complete'>`pipeline_complete`</a> |counter | Transitions from 0 to 1 when pipeline completes. |
+| <a name='pipeline_start_time_seconds'>`pipeline_start_time_seconds`</a> |counter | Start time of the pipeline in seconds since the Unix epoch.<br/><br/>This will be earlier than `process_start_time_seconds` if the pipeline resumed from a checkpoint.  This will be zero if the pipeline resumed from a checkpoint produced by a pipeline too old to record its start time. |
 
 ## Input Connectors
 
@@ -132,14 +135,15 @@ invisible to users unless a pause or checkpoint happens mid-batch.
 
 | Name | Type | Description |
 | :--- | :--- | :---------- |
-| `input_connector_buffered_records` |gauge | Amount of data currently buffered by an input connector, in records. |
-| `input_connector_buffered_records_bytes` |gauge | Amount of data currently buffered by an input connector, in bytes. |
-| `input_connector_bytes_total` |counter | Total number of bytes received by an input connector. |
-| `input_connector_errors_parse_total` |counter | Total number of errors encountered parsing records received by the input connector. |
-| `input_connector_errors_transport_total` |counter | Total number of errors encountered by the input connector at the transport layer. |
-| `input_connector_records_total` |counter | Total number of records received by an input connector. |
-| `input_connector_processing_latency_seconds` | histogram | Time elapsed (seconds) between when the connector receives new data and when the pipeline processes this data and computes output updates. The histogram is maintained over at most the last 600 seconds or at most 10,000 samples. This latency includes: (1) parsing the input data, (2) buffering delay while data waits in the connector queue, and (3) processing time in the query engine to evaluate changes and compute outputs. |
-| `input_connector_completion_latency_seconds` | histogram | Time elapsed (seconds) between the connector receives new data and when the pipeline processes this data, computes output updates, and sends these updates to all output connectors. The histogram is maintained over at most the last 600 seconds or at most 10,000 samples. This latency includes `input_connector_processing_latency_seconds` plus the time required for all output connectors to write output updates to their data sinks. |
+| <a name='input_connector_buffered_records'>`input_connector_buffered_records`</a> |gauge | Amount of data currently buffered by an input connector, in records. |
+| <a name='input_connector_buffered_records_bytes'>`input_connector_buffered_records_bytes`</a> |gauge | Amount of data currently buffered by an input connector, in bytes. |
+| <a name='input_connector_bytes_total'>`input_connector_bytes_total`</a> |counter | Total number of bytes received by an input connector. |
+| <a name='input_connector_completion_latency_seconds'>`input_connector_completion_latency_seconds`</a> |histogram | Time between when the connector receives new data and when the pipeline processes this data, computes output updates, and sends these updates to all output connectors, over the last 600 seconds or 10,000 samples. |
+| <a name='input_connector_errors_parse_total'>`input_connector_errors_parse_total`</a> |counter | Total number of errors encountered parsing records received by the input connector. |
+| <a name='input_connector_errors_transport_total'>`input_connector_errors_transport_total`</a> |counter | Total number of errors encountered by the input connector at the transport layer. |
+| <a name='input_connector_extra_memory_bytes'>`input_connector_extra_memory_bytes`</a> |gauge | Additional memory used by an input connector beyond that used for buffered records. |
+| <a name='input_connector_processing_latency_seconds'>`input_connector_processing_latency_seconds`</a> |histogram | Time between when the connector receives new data and when the pipeline processes this data and computes output updates, over the last 600 seconds or 10,000 samples. |
+| <a name='input_connector_records_total'>`input_connector_records_total`</a> |counter | Total number of records received by an input connector. |
 
 ## Output Connectors
 
@@ -153,9 +157,28 @@ These metrics accumulate across checkpoint and resume.
 
 | Name | Type | Description |
 | :--- | :--- | :---------- |
-| `output_connector_buffered_records` |gauge | Number of records currently buffered by the output connector. |
-| `output_connector_bytes_total` |counter | Total number of bytes of records sent by the output connector. |
-| `output_connector_errors_encode_total` |counter | Total number of errors encountered encoding records to send. |
-| `output_connector_errors_transport_total` |counter | Total number of errors encountered at the transport layer sending records. |
-| `output_connector_records_total` |counter | Total number of records sent by the output connector. |
+| <a name='output_connector_buffered_records'>`output_connector_buffered_records`</a> |gauge | Number of records currently buffered by the output connector. |
+| <a name='output_connector_bytes_total'>`output_connector_bytes_total`</a> |counter | Total number of bytes of records sent by the output connector. |
+| <a name='output_connector_errors_encode_total'>`output_connector_errors_encode_total`</a> |counter | Total number of errors encountered encoding records to send. |
+| <a name='output_connector_errors_transport_total'>`output_connector_errors_transport_total`</a> |counter | Total number of errors encountered at the transport layer sending records. |
+| <a name='output_connector_extra_memory_bytes'>`output_connector_extra_memory_bytes`</a> |gauge | Additional memory used by an output connector beyond that used for buffered records. |
+| <a name='output_connector_records_total'>`output_connector_records_total`</a> |counter | Total number of records sent by the output connector. |
 
+## Checkpoint Synchronization
+
+These metrics report the status of [checkpoint synchronization].
+
+[checkpoint synchronization]: /pipelines/checkpoint-sync.md
+
+| Name | Type | Description |
+| :--- | :--- | :---------- |
+| <a name='checkpoint_sync_pull_duration_seconds'>`checkpoint_sync_pull_duration_seconds`</a> |histogram | Time taken to pull a checkpoint from object store in seconds. |
+| <a name='checkpoint_sync_pull_failures'>`checkpoint_sync_pull_failures`</a> |counter | Number of failures when pulling a checkpoint. |
+| <a name='checkpoint_sync_pull_success'>`checkpoint_sync_pull_success`</a> |counter | Number of checkpoints pulled successfully. |
+| <a name='checkpoint_sync_pull_transfer_speed_bytes_per_second'>`checkpoint_sync_pull_transfer_speed_bytes_per_second`</a> |histogram | Transfer speed when pulling a checkpoint, in bytes per second. |
+| <a name='checkpoint_sync_pull_transferred_bytes'>`checkpoint_sync_pull_transferred_bytes`</a> |histogram | Bytes transferred when pulling a checkpoint. |
+| <a name='checkpoint_sync_push_duration_seconds'>`checkpoint_sync_push_duration_seconds`</a> |histogram | Time taken to push a checkpoint to object store in seconds. |
+| <a name='checkpoint_sync_push_failures'>`checkpoint_sync_push_failures`</a> |counter | Number of failures when pushing a checkpoint. |
+| <a name='checkpoint_sync_push_success'>`checkpoint_sync_push_success`</a> |counter | Number of checkpoints pushed successfully. |
+| <a name='checkpoint_sync_push_transfer_speed_bytes_per_second'>`checkpoint_sync_push_transfer_speed_bytes_per_second`</a> |histogram | Transfer speed when pushing a checkpoint, in bytes per second. |
+| <a name='checkpoint_sync_push_transferred_bytes'>`checkpoint_sync_push_transferred_bytes`</a> |histogram | Bytes transferred when pushing a checkpoint. |

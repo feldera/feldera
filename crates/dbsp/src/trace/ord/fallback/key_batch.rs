@@ -16,11 +16,14 @@ use crate::{
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
-use feldera_storage::StoragePath;
+use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
-use std::fmt::{self, Debug};
+use std::{
+    fmt::{self, Debug},
+    sync::Arc,
+};
 
 use super::utils::{copy_to_builder, pick_merge_destination};
 
@@ -264,6 +267,14 @@ where
     }
 
     #[inline]
+    fn filter_size(&self) -> usize {
+        match &self.inner {
+            Inner::File(file) => file.filter_size(),
+            Inner::Vec(vec) => vec.filter_size(),
+        }
+    }
+
+    #[inline]
     fn location(&self) -> BatchLocation {
         match &self.inner {
             Inner::Vec(vec) => vec.location(),
@@ -310,7 +321,8 @@ where
     fn persisted(&self) -> Option<Self> {
         match &self.inner {
             Inner::Vec(vec) => {
-                let mut file = FileKeyBuilder::with_capacity(&self.factories.file, 0);
+                let mut file =
+                    FileKeyBuilder::with_capacity(&self.factories.file, vec.key_count(), vec.len());
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
                     inner: Inner::File(file.done()),
@@ -321,10 +333,10 @@ where
         }
     }
 
-    fn checkpoint_path(&self) -> Option<StoragePath> {
+    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         match &self.inner {
-            Inner::Vec(vec) => vec.checkpoint_path(),
-            Inner::File(file) => file.checkpoint_path(),
+            Inner::Vec(vec) => vec.file_reader(),
+            Inner::File(file) => file.file_reader(),
         }
     }
 
@@ -367,10 +379,18 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    fn with_capacity(factories: &FallbackKeyBatchFactories<K, T, R>, capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &FallbackKeyBatchFactories<K, T, R>,
+        key_capacity: usize,
+        value_capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
-            inner: BuilderInner::Vec(VecKeyBuilder::with_capacity(&factories.vec, capacity)),
+            inner: BuilderInner::Vec(VecKeyBuilder::with_capacity(
+                &factories.vec,
+                key_capacity,
+                value_capacity,
+            )),
         }
     }
 
@@ -383,16 +403,21 @@ where
         B: BatchReader,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let cap = batches.clone().into_iter().map(|b| b.len()).sum();
+        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
+        let value_capacity = batches.clone().into_iter().map(|b| b.len()).sum();
         Self {
             factories: factories.clone(),
             inner: match pick_merge_destination(batches, location) {
-                BatchLocation::Memory => {
-                    BuilderInner::Vec(VecKeyBuilder::with_capacity(&factories.vec, cap))
-                }
-                BatchLocation::Storage => {
-                    BuilderInner::File(FileKeyBuilder::with_capacity(&factories.file, cap))
-                }
+                BatchLocation::Memory => BuilderInner::Vec(VecKeyBuilder::with_capacity(
+                    &factories.vec,
+                    key_capacity,
+                    value_capacity,
+                )),
+                BatchLocation::Storage => BuilderInner::File(FileKeyBuilder::with_capacity(
+                    &factories.file,
+                    key_capacity,
+                    value_capacity,
+                )),
             },
         }
     }
@@ -473,6 +498,13 @@ where
                 BuilderInner::File(file) => Inner::File(file.done()),
                 BuilderInner::Vec(vec) => Inner::Vec(vec.done()),
             },
+        }
+    }
+
+    fn num_keys(&self) -> usize {
+        match &self.inner {
+            BuilderInner::Vec(vec) => vec.num_keys(),
+            BuilderInner::File(file) => file.num_keys(),
         }
     }
 

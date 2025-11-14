@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@auth/sveltekit": "^1.7.4",
-    "@axa-fr/oidc-client": "^7.25.3",
+    "@axa-fr/oidc-client": "^7.26.0",
     "@bithero/monaco-editor-vite-plugin": "^1.0.2",
     "@fontsource-variable/dm-sans": "^5.1.1",
     "@fontsource/dm-mono": "^5.1.1",

@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -46,12 +47,14 @@ import java.util.Objects;
 public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
     public DBSPTupleExpression(CalciteObject object, DBSPTypeTuple type, DBSPExpression... expressions) {
         super(object, type, expressions);
-        Utilities.enforce(type.size() == expressions.length, "Tuple expression has size " + expressions.length +
+        Utilities.enforce(type.size() == expressions.length,
+                () -> "Tuple expression has size " + expressions.length +
                 " but the declared type is " + type);
         for (int i = 0; i < type.size(); i++) {
+            int finalI = i;
             Utilities.enforce(type.tupFields[i].sameType(expressions[i].getType()),
-                    "Tuple field " + expressions[i] + " has type " + expressions[i].getType() +
-                    " that does not match the declared field type " + type.tupFields[i]);
+                    () -> "Tuple field " + expressions[finalI] + " has type " + expressions[finalI].getType() +
+                    " that does not match the declared field type " + type.tupFields[finalI]);
         }
     }
 
@@ -105,7 +108,7 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
     public static DBSPTupleExpression flatten(List<DBSPExpression> expressions) {
         List<DBSPExpression> fields = new ArrayList<>(expressions.size());
         for (DBSPExpression expression: expressions) {
-            DBSPTypeTuple type = expression.getType().to(DBSPTypeTuple.class);
+            DBSPTypeTupleBase type = expression.getType().to(DBSPTypeTupleBase.class);
             for (int i = 0; i < type.size(); i++) {
                 DBSPType fieldType = type.tupFields[i];
                 DBSPExpression field = new DBSPFieldExpression(expression.deepCopy(), i, fieldType)

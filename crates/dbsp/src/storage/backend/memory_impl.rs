@@ -2,12 +2,11 @@
 //!
 //! This is useful for performance testing, not as part of a production system.
 
-use super::{
-    BlockLocation, FileId, FileReader, FileWriter, HasFileId, StorageBackend, StorageError,
-};
+use super::{BlockLocation, FileId, FileReader, FileRw, FileWriter, StorageBackend, StorageError};
 use crate::circuit::metrics::FILES_CREATED;
 use crate::storage::buffer_cache::FBuf;
-use feldera_storage::{StorageFileType, StoragePath};
+use feldera_storage::{FileCommitter, StorageFileType, StoragePath};
+use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::{
     collections::HashMap,
@@ -22,9 +21,12 @@ struct MemoryFile {
     size: u64,
 }
 
-impl HasFileId for MemoryFile {
+impl FileRw for MemoryFile {
     fn file_id(&self) -> FileId {
         self.file_id
+    }
+    fn path(&self) -> &StoragePath {
+        &self.path
     }
 }
 
@@ -80,9 +82,13 @@ impl MemoryWriter {
     }
 }
 
-impl HasFileId for MemoryWriter {
+impl FileRw for MemoryWriter {
     fn file_id(&self) -> FileId {
         self.file.file_id
+    }
+
+    fn path(&self) -> &StoragePath {
+        &self.file.path
     }
 }
 
@@ -101,8 +107,7 @@ impl FileWriter for MemoryWriter {
         Ok(data)
     }
 
-    fn complete(mut self: Box<Self>) -> Result<(Arc<dyn FileReader>, StoragePath), StorageError> {
-        let path = self.file.path.clone();
+    fn complete(mut self: Box<Self>) -> Result<Arc<dyn FileReader>, StorageError> {
         self.drop.size = 0;
         let file = Arc::new(self.file);
         self.backend
@@ -116,7 +121,7 @@ impl FileWriter for MemoryWriter {
             file,
             keep: AtomicBool::new(false),
         });
-        Ok((reader, path))
+        Ok(reader)
     }
 }
 
@@ -137,9 +142,24 @@ struct MemoryReader {
     keep: AtomicBool,
 }
 
-impl HasFileId for MemoryReader {
+impl Debug for MemoryReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MemoryReader({})", self.file.path)
+    }
+}
+
+impl FileRw for MemoryReader {
     fn file_id(&self) -> FileId {
         self.file.file_id
+    }
+    fn path(&self) -> &StoragePath {
+        &self.file.path
+    }
+}
+
+impl FileCommitter for MemoryReader {
+    fn commit(&self) -> Result<(), StorageError> {
+        Ok(())
     }
 }
 

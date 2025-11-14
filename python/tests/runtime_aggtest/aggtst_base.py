@@ -1,14 +1,15 @@
 """Run multiple Python tests in a single pipeline"""
 
-import unittest
 import hashlib
 import re
+import unittest
+from typing import Dict, TypeAlias
 
-from feldera import PipelineBuilder, Pipeline
-from tests import TEST_CLIENT, unique_pipeline_name
+from feldera import Pipeline, PipelineBuilder
 from feldera.enums import CompilationProfile
+from feldera.rest.errors import FelderaAPIError
 from feldera.runtime_config import RuntimeConfig
-from typing import TypeAlias, Dict
+from tests import TEST_CLIENT, unique_pipeline_name
 
 JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None
 
@@ -145,6 +146,39 @@ class View(SqlObject):
             )
 
 
+class DeploymentErrorException(Exception):
+    """Adds deployment error information to an exception.
+
+    This wrapper is used to address the following race that occurs in negative tests:
+
+    - Pipeline panics during a negative test (as expected)
+    - The client keeps polling the pipeline, e.g., with /completion_status.
+    - Before the client request hits the pipeline, the runner detects the
+      panic and starts stopping the pipeline.
+    - At this point, instead of an error indicating that the pipeline failed
+      with a panic, the client will get back a different error - that the
+      manager cannot interact with the pipeline in the stopping state.
+      The problem with this is that the test expects the exception to
+      contain a specific substring, and will fail if the string is not
+      found.
+
+    To address this, this wrapper enriches the exception thrown
+    by the pipeline with the text in the deployment_error field of the
+    pipeline.
+    """
+
+    def __init__(self, deployment_error: str, original_exception: Exception):
+        self.deployment_error = deployment_error
+        self.original_exception = original_exception
+        super().__init__(deployment_error)
+
+    def __str__(self) -> str:
+        return (
+            f"{str(self.original_exception)}\n"
+            f"Pipeline deployment error: {self.deployment_error}"
+        )
+
+
 class TstAccumulator:
     """Base class which accumulates multiple DBSP tests to run and executes them"""
 
@@ -182,14 +216,20 @@ class TstAccumulator:
     def run_pipeline(self, pipeline_name_prefix: str, sql: str, views: list[View]):
         """Run pipeline with the given SQL, load tables, validate views, and shutdown"""
         pipeline = None
+        sql_id = sql_hash(sql)
+        pipeline_name = unique_pipeline_name(f"{pipeline_name_prefix}_{sql_id}")
         try:
-            sql_id = sql_hash(sql)
+            # Pipelines that fail to compile will remain None
+            # as `PipelineBuilder` will raise an exception and not
+            # return a `Pipeline` object.
             pipeline = PipelineBuilder(
                 TEST_CLIENT,
-                unique_pipeline_name(f"{pipeline_name_prefix}_{sql_id}"),
+                pipeline_name,
                 sql=sql,
                 compilation_profile=CompilationProfile.UNOPTIMIZED,
-                runtime_config=RuntimeConfig(provisioning_timeout_secs=180),
+                runtime_config=RuntimeConfig(
+                    provisioning_timeout_secs=180, logging="debug"
+                ),
             ).create_or_replace()
 
             pipeline.start()
@@ -203,7 +243,27 @@ class TstAccumulator:
 
             for view in views:
                 view.validate(pipeline)
+        except Exception as e:
+            # Augment exception with deployment error if available so that
+            # assert_expected_error can pattern-match both against the expected error substring.
+            if pipeline is not None:
+                deployment_error = pipeline.deployment_error()
+                if deployment_error is not None and deployment_error:
+                    # Convert deployment_error dict to string for exception
+                    raise DeploymentErrorException(str(deployment_error), e)
+            raise
         finally:
+            # Try to get the pipelines that were created by
+            # `PipelineBuilder` but failed to compile.
+            if pipeline is None:
+                try:
+                    pipeline = Pipeline.get(pipeline_name, TEST_CLIENT)
+                except FelderaAPIError as e:
+                    if "UnknownPipelineName" in str(e):
+                        pass
+                    else:
+                        raise
+
             if pipeline is not None:
                 pipeline.stop(force=True)
                 pipeline.delete(True)

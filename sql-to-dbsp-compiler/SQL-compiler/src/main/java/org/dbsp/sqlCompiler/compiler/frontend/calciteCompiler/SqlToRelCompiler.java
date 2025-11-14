@@ -376,6 +376,10 @@ public class SqlToRelCompiler implements IWritesLogs {
         public boolean shouldConvertRaggedUnionTypesToVarying() { return true; }
     };
 
+    public void emptyStatement() {
+        this.newlines.append("\n");
+    }
+
     /** A TypeFactory that knows about RelStruct, our representation of user-defined types */
     public static class CustomTypeFactory extends SqlTypeFactoryImpl {
         static int currentId = 0;
@@ -711,7 +715,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             SqlCall newCall = Objects.requireNonNull((SqlCall) super.visit(call));
             if (newCall.getOperator().kind == SqlKind.PLUS_PREFIX) {
                 Utilities.enforce(newCall.getOperandList().size() == 1,
-                        "Expected unary plus to have exactly 1 operand");
+                        () -> "Expected unary plus to have exactly 1 operand");
                 return newCall.getOperandList().get(0);
             } else if (newCall.getOperator().kind == SqlKind.CREATE_VIEW) {
                 // The shuttle does not correctly create a view by replacing operands.
@@ -1597,6 +1601,10 @@ public class SqlToRelCompiler implements IWritesLogs {
             case SMALLINT: builder.append("SMALLINT"); break;
             case INTEGER: builder.append("INTEGER"); break;
             case BIGINT: builder.append("BIGINT"); break;
+            case UTINYINT: builder.append("TINYINT UNSIGNED"); break;
+            case USMALLINT: builder.append("SMALLINT UNSIGNED"); break;
+            case UINTEGER: builder.append("INTEGER UNSIGNED"); break;
+            case UBIGINT: builder.append("BIGINT UNSIGNED"); break;
             case DECIMAL:
                 builder.append("DECIMAL(")
                         .append(type.getPrecision())

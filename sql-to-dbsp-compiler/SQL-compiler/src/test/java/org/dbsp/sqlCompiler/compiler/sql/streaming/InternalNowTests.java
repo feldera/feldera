@@ -15,6 +15,7 @@ public class InternalNowTests extends StreamingTestBase {
     @Override
     public CompilerOptions testOptions() {
         CompilerOptions options = super.testOptions();
+        // Change implementation of now to be explicitly controlled.
         options.ioOptions.nowStream = false;
         return options;
     }

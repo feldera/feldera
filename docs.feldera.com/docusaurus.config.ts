@@ -68,13 +68,205 @@ const config: Config = {
 
   plugins: [
     [
+      "@docusaurus/plugin-client-redirects",
+      {
+        redirects: [
+          {
+            from: "/api/retrieve-authentication-provider-configuration",
+            to: "/api/get-auth-config",
+          },
+          {
+            from: "/api/retrieve-general-configuration",
+            to: "/api/get-platform-config",
+          },
+          {
+            from: "/api/retrieve-the-list-of-demos",
+            to: "/api/list-demos",
+          },
+          {
+            from: "/api/retrieve-current-session-information",
+            to: "/api/get-session",
+          },
+          {
+            from: "/api/retrieve-the-list-of-api-keys",
+            to: "/api/list-api-keys",
+          },
+          {
+            from: "/api/create-a-new-api-key",
+            to: "/api/create-api-key",
+          },
+          {
+            from: "/api/retrieve-an-api-key",
+            to: "/api/get-api-key",
+          },
+          {
+            from: "/api/delete-an-api-key",
+            to: "/api/delete-api-key",
+          },
+          {
+            from: "/api/get-health",
+            to: "/api/check-cluster-health",
+          },
+          {
+            from: "/api/retrieve-the-metrics-of-all-running-pipelines-belonging-to-this-tenant",
+            to: "/api/list-all-metrics",
+          },
+          {
+            from: "/api/retrieve-the-list-of-pipelines",
+            to: "/api/list-pipelines",
+          },
+          {
+            from: "/api/create-a-new-pipeline",
+            to: "/api/create-pipeline",
+          },
+          {
+            from: "/api/retrieve-a-pipeline",
+            to: "/api/get-pipeline",
+          },
+          {
+            from: "/api/fully-update-a-pipeline-if-it-already-exists-otherwise-create-a-new-pipeline",
+            to: "/api/upsert-pipeline",
+          },
+          {
+            from: "/api/delete-a-pipeline",
+            to: "/api/delete-pipeline",
+          },
+          {
+            from: "/api/partially-update-a-pipeline",
+            to: "/api/patch-pipeline",
+          },
+          {
+            from: "/api/clears-the-pipeline-storage-asynchronously",
+            to: "/api/clear-storage",
+          },
+          {
+            from: "/api/requests-the-pipeline-to-pause-which-it-will-do-asynchronously",
+            to: "/api/pause-pipeline",
+          },
+          {
+            from: "/api/requests-the-pipeline-to-resume-which-it-will-do-asynchronously",
+            to: "/api/resume-pipeline",
+          },
+          {
+            from: "/api/start-the-pipeline-asynchronously-by-updating-the-desired-status",
+            to: "/api/start-pipeline",
+          },
+          {
+            from: "/api/stop-the-pipeline-asynchronously-by-updating-the-desired-state",
+            to: "/api/stop-pipeline",
+          },
+          {
+            from: "/api/recompile-a-pipeline-with-the-feldera-runtime-version-included-in-the",
+            to: "/api/recompile-pipeline",
+          },
+          {
+            from: "/api/requests-the-pipeline-to-activate-if-it-is-currently-in-standby-mode-which-it-will-do",
+            to: "/api/activate-standby-pipeline",
+          },
+          {
+            from: "/api/approves-the-pipeline-to-proceed-with-bootstrapping",
+            to: "/api/approve-bootstrap",
+          },
+          {
+            from: "/api/initiates-checkpoint-for-a-running-or-paused-pipeline",
+            to: "/api/checkpoint-now",
+          },
+          {
+            from: "/api/syncs-latest-checkpoints-to-the-object-store-configured-in-pipeline-config",
+            to: "/api/sync-checkpoints-to-s-3",
+          },
+          {
+            from: "/api/retrieve-status-of-checkpoint-sync-activity-in-a-pipeline",
+            to: "/api/get-checkpoint-sync-status",
+          },
+          {
+            from: "/api/retrieve-status-of-checkpoint-activity-in-a-pipeline",
+            to: "/api/get-checkpoint-status",
+          },
+          {
+            from: "/api/retrieve-the-circuit-performance-profile-of-a-running-or-paused-pipeline",
+            to: "/api/get-performance-profile",
+          },
+          {
+            from: "/api/commit-the-current-transaction",
+            to: "/api/commit-transaction",
+          },
+          {
+            from: "/api/check-the-status-of-a-completion-token-returned-by-the-ingress-or-completion-token",
+            to: "/api/check-completion-status",
+          },
+          {
+            from: "/api/subscribe-to-a-stream-of-updates-from-a-sql-view-or-table",
+            to: "/api/subscribe-to-view",
+          },
+          {
+            from: "/api/retrieve-the-heap-profile-of-a-running-or-paused-pipeline",
+            to: "/api/get-heap-profile",
+          },
+          {
+            from: "/api/push-data-to-a-sql-table",
+            to: "/api/insert-data",
+          },
+          {
+            from: "/api/retrieve-logs-of-a-pipeline-as-a-stream",
+            to: "/api/stream-pipeline-logs",
+          },
+          {
+            from: "/api/retrieve-circuit-metrics-of-a-running-or-paused-pipeline",
+            to: "/api/get-pipeline-metrics",
+          },
+          {
+            from: "/api/execute-an-ad-hoc-sql-query-in-a-running-or-paused-pipeline",
+            to: "/api/execute-ad-hoc-sql",
+          },
+          {
+            from: "/api/start-a-transaction",
+            to: "/api/begin-transaction",
+          },
+          {
+            from: "/api/retrieve-statistics-e-g-performance-counters-of-a-running-or-paused-pipeline",
+            to: "/api/get-pipeline-stats",
+          },
+          {
+            from: "/api/generate-a-support-bundle-for-a-pipeline",
+            to: "/api/download-support-bundle",
+          },
+          {
+            from: "/api/generate-a-completion-token-for-an-input-connector",
+            to: "/api/get-completion-token",
+          },
+          {
+            from: "/api/retrieve-the-status-of-an-input-connector",
+            to: "/api/get-input-status",
+          },
+          {
+            from: "/api/start-resume-or-pause-the-input-connector",
+            to: "/api/control-input-connector",
+          },
+          {
+            from: "/api/retrieve-time-series-for-statistics-of-a-running-or-paused-pipeline",
+            to: "/api/get-time-series-stats",
+          },
+          {
+            from: "/api/stream-time-series-for-statistics-of-a-running-or-paused-pipeline",
+            to: "/api/stream-time-series",
+          },
+          {
+            from: "/api/retrieve-the-status-of-an-output-connector",
+            to: "/api/get-output-status",
+          },
+        ],
+      },
+    ],
+
+    [
       "posthog-docusaurus",
       {
         apiKey: "phc_GKR68l5zo531AD1R3cnE3MCPEBPXTqgYax4q053LVBD",
         enableInDevelopment: true,
       },
     ],
-    'docusaurus-plugin-hubspot'
+    "docusaurus-plugin-hubspot",
   ],
 
   themeConfig: {

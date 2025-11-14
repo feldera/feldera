@@ -1,13 +1,17 @@
+import logging
+import os
+
 from feldera.testutils import (
-    TEST_CLIENT,
-    unique_pipeline_name,
-    enterprise_only,
     API_KEY,
     BASE_URL,
-    PIPELINE_TO_KAFKA_SERVER,
-    KAFKA_SERVER,
     FELDERA_REQUESTS_VERIFY,
+    TEST_CLIENT,
+    enterprise_only,
+    unique_pipeline_name,
 )
+
+LOGLEVEL = os.environ.get("LOGLEVEL", "INFO").upper()
+logging.basicConfig(level=LOGLEVEL)
 
 __all__ = [
     "TEST_CLIENT",
@@ -15,7 +19,5 @@ __all__ = [
     "enterprise_only",
     "API_KEY",
     "BASE_URL",
-    "PIPELINE_TO_KAFKA_SERVER",
-    "KAFKA_SERVER",
     "FELDERA_REQUESTS_VERIFY",
 ]

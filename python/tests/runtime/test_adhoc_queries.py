@@ -26,6 +26,43 @@ class TestAdhocQueries(SharedTestPipeline):
     @sql("""
     CREATE TABLE not_materialized(id bigint not null);
 
+    -- Materialized because of PK constraint.
+    CREATE TABLE pk_table_materialized(id bigint not null primary key)
+    WITH (
+      'connectors' = '[{
+        "transport": {
+          "name": "datagen",
+          "config": {
+            "plan": [{
+              "limit": 5
+            }]
+          }
+        }
+      }]'
+    );
+
+    -- Not materialized because of lateness attribute on the primary key column.
+    CREATE TABLE lateness_table1_not_materialized(id bigint not null primary key lateness 0)
+    WITH (
+      'connectors' = '[{
+        "transport": {
+          "name": "datagen",
+          "config": {
+            "plan": [{
+              "limit": 5
+            }]
+          }
+        }
+      }]'
+    );
+
+    -- Materialized because of explicit materialized attribute, despite lateness.
+    CREATE TABLE lateness_table2_materialized(id bigint not null primary key lateness 0)
+    WITH('materialized' = 'true');
+
+    -- Materialized because lateness does not apply to primary key column.
+    CREATE TABLE lateness_table3_materialized(id bigint not null primary key, other int not null lateness 0);
+
     CREATE TABLE t1 (
       id INT NOT NULL,
       dt DATE NOT NULL,
@@ -73,6 +110,27 @@ class TestAdhocQueries(SharedTestPipeline):
     """)
     def test_pipeline_adhoc_query(self):
         self.pipeline.start()
+
+        self.pipeline.execute(
+            "INSERT INTO lateness_table2_materialized VALUES (10),(20),(30)"
+        )
+
+        # Dropped due to lateness.
+        self.pipeline.execute(
+            "INSERT INTO lateness_table2_materialized VALUES (1),(2),(3)"
+        )
+
+        self.pipeline.execute(
+            "INSERT INTO lateness_table3_materialized VALUES (10, 10), (20, 20), (30, 30)"
+        )
+
+        # Dropped due to lateness.
+        self.pipeline.execute(
+            "INSERT INTO lateness_table3_materialized VALUES (1,1),(2,2),(3,3)"
+        )
+
+        # Wait for all datagen and ad hoc connectors to finish.
+        self.pipeline.wait_for_completion()
 
         ADHOC_SQL_A = "SELECT * FROM joined"
         ADHOC_SQL_B = "SELECT t1.dt AS c1, t2.st AS c2, t1.uid as c3 FROM t1, t2 WHERE t1.id = t2.id"
@@ -178,6 +236,23 @@ class TestAdhocQueries(SharedTestPipeline):
         )
         assert ins_nm and ins_nm[0].get("count") == 2
         assert self._count("SELECT COUNT(*) AS c FROM view_of_not_materialized") == 2
+
+        assert self._count("SELECT COUNT(*) AS c FROM pk_table_materialized") == 5
+        assert (
+            self._count("SELECT COUNT(*) AS c FROM lateness_table2_materialized") == 3
+        )
+        assert (
+            self._count("SELECT COUNT(*) AS c FROM lateness_table3_materialized") == 3
+        )
+
+        # FIXME: this should raise an exception, but it currently doesn't.
+        # https://github.com/feldera/feldera/issues/4973
+        result = list(
+            self.pipeline.query(
+                "SELECT COUNT(*) AS c FROM lateness_table1_not_materialized"
+            )
+        )
+        assert len(result) == 1 and "Execution error" in str(result[0])
 
     @sql(
         """CREATE TABLE "TaBle1"(id bigint not null) WITH ('materialized' = 'true');"""

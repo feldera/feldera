@@ -176,8 +176,11 @@ where
     where
         RG: Rng,
     {
+        output.reserve(sample_size);
         self.keys
-            .sample_slice(0, self.keys.len(), rng, sample_size, output);
+            .sample_slice(0, self.keys.len(), rng, sample_size, &mut |x: &K| {
+                output.push_ref(x)
+            });
     }
 }
 
@@ -312,6 +315,12 @@ where
                 pos: 0,
             }
         }
+    }
+
+    fn approximate_byte_size(&self) -> usize {
+        self.keys.approximate_byte_size()
+            + self.offs.len() * std::mem::size_of::<O>()
+            + self.vals.approximate_byte_size()
     }
 }
 

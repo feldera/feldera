@@ -1,6 +1,7 @@
 import pandas as pd
 
 from typing import Optional
+from threading import Event
 
 from feldera import FelderaClient
 from feldera._callback_runner import CallbackRunner
@@ -23,6 +24,7 @@ class OutputHandler:
         self.view_name: str = view_name
         self.buffer: list[pd.DataFrame] = []
         self.exception: Optional[BaseException] = None
+        self.event = Event()
 
         # the callback that is passed to the `CallbackRunner`
         def callback(df: pd.DataFrame, _: int):
@@ -39,6 +41,7 @@ class OutputHandler:
             self.view_name,
             callback,
             exception_callback,
+            self.event,
         )
 
     def start(self):
@@ -47,6 +50,7 @@ class OutputHandler:
         """
 
         self.handler.start()
+        _ = self.event.wait()
 
     def to_pandas(self, clear_buffer: bool = True):
         """

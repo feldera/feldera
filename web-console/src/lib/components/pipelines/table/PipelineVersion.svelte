@@ -29,7 +29,7 @@
 </script>
 
 {#if status === 'update_available'}
-  <div class="fd fd-info pb-0.5 text-[16px] text-blue-500 !ring-blue-500"></div>
+  <div class="fd fd-info pb-0.5 text-[16px] text-tertiary-500 !ring-tertiary-500"></div>
 {:else if status === 'custom'}
   <div class="fd fd-info pb-0.5 text-[16px] text-warning-500 !ring-warning-500"></div>
 {:else}

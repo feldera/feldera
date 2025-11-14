@@ -134,6 +134,10 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         return new DBSPVariablePath(this);
     }
 
+    public DBSPVariablePath var(CalciteObject node) {
+        return new DBSPVariablePath(node, this);
+    }
+
     public DBSPPathExpression path(DBSPPath path) {
         return new DBSPPathExpression(this, path);
     }

@@ -21,10 +21,11 @@ use crate::{
     trace::{Batch, BatchReader, Filter, Spine, SpineSnapshot, Trace},
     Error, Timestamp,
 };
-use feldera_storage::StoragePath;
+use feldera_storage::{FileCommitter, StoragePath};
 use minitrace::trace;
 use ouroboros::self_referencing;
 use size_of::SizeOf;
+use std::sync::Arc;
 use std::{borrow::Cow, marker::PhantomData, ops::Deref};
 
 // Trace of a collection updated once per clock cycle.
@@ -798,11 +799,16 @@ where
         !self.dirty[scope as usize] && self.replay_state.is_none()
     }
 
-    fn checkpoint(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        pid: Option<&str>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         self.trace
             .as_mut()
-            .map(|trace| trace.commit(base, pid))
+            .map(|trace| trace.save(base, pid, files))
             .unwrap_or(Ok(()))
     }
 
@@ -881,6 +887,7 @@ where
                 //println!("Z1-{}::get_output: replaying", &self.global_id);
                 let mut builder = <B::Builder as Builder<B>>::with_capacity(
                     &self.batch_factories,
+                    replay_step_size,
                     replay_step_size,
                 );
 

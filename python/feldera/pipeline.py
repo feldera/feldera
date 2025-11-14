@@ -7,11 +7,13 @@ import pandas
 from uuid import UUID
 
 from typing import List, Dict, Callable, Optional, Generator, Mapping, Any
+from threading import Event
 from collections import deque
 
 from feldera.rest.errors import FelderaAPIError
 from feldera.enums import (
     BootstrapPolicy,
+    CompletionTokenStatus,
     PipelineFieldSelector,
     PipelineStatus,
     ProgramStatus,
@@ -294,10 +296,12 @@ class Pipeline:
         if self.status() not in [PipelineStatus.RUNNING, PipelineStatus.PAUSED]:
             raise RuntimeError("Pipeline must be running or paused to listen to output")
 
+        event = Event()
         handler = CallbackRunner(
-            self.client, self.name, view_name, callback, lambda exception: None
+            self.client, self.name, view_name, callback, lambda exception: None, event
         )
         handler.start()
+        event.wait()
 
     def wait_for_completion(
         self, force_stop: bool = False, timeout_s: float | None = None
@@ -695,6 +699,17 @@ metrics"""
             if err.status_code == 404:
                 err.message = f"Pipeline with name {name} not found"
                 raise err
+
+    @staticmethod
+    def all(client: FelderaClient) -> List["Pipeline"]:
+        """
+        Get all pipelines.
+
+        :param client: The FelderaClient instance.
+        :return: A list of Pipeline objects.
+        """
+
+        return [Pipeline._from_inner(p, client) for p in client.pipelines()]
 
     def checkpoint(self, wait: bool = False, timeout_s: Optional[float] = None) -> int:
         """
@@ -1377,3 +1392,31 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             print(f"Support bundle written to {path}")
 
         return support_bundle_bytes
+
+    def generate_completion_token(self, table_name: str, connector_name: str) -> str:
+        """
+        Returns a completion token that can be passed to :meth:`.Pipeline.completion_token_status` to
+        check whether the pipeline has finished processing all inputs received from the connector before
+        the token was generated.
+        """
+
+        return self.client.generate_completion_token(
+            self.name, table_name, connector_name
+        )
+
+    def completion_token_status(self, token: str) -> CompletionTokenStatus:
+        """
+        Returns the status of the completion token.
+        """
+
+        if self.client.completion_token_processed(self.name, token):
+            return CompletionTokenStatus.COMPLETE
+        else:
+            return CompletionTokenStatus.IN_PROGRESS
+
+    def wait_for_token(self, token: str):
+        """
+        Blocks until the pipeline processes all inputs represented by the completion token.
+        """
+
+        self.client.wait_for_token(self.name, token)

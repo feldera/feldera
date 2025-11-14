@@ -43,7 +43,7 @@ public class EliminateDump extends InnerRewriteVisitor {
                 //                          writelog("%%,", tuple[n]);
                 //                          print(")\n");
                 //                          tuple.clone()) }
-                Utilities.enforce(arguments.length == 2, "Expected 2 arguments for dump function");
+                Utilities.enforce(arguments.length == 2, () -> "Expected 2 arguments for dump function");
                 Function<DBSPExpression, DBSPExpressionStatement> makePrint = stringArgument ->
                         new DBSPApplyExpression(
                                 expression.getNode(), "print", DBSPTypeVoid.INSTANCE, stringArgument)

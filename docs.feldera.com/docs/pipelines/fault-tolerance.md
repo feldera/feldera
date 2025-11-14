@@ -1,5 +1,10 @@
 # Fault tolerance and checkpoint/resume
 
+:::note Enterprise-only feature
+Checkpoint/resume and fault tolerance are only available in Feldera Enterprise Edition.
+:::
+
+
 Feldera supports the following ways to gracefully stop a pipeline and
 later restart it from the same point:
 
@@ -122,6 +127,7 @@ tolerance.
 |[HTTP]|☑|☑|☑|
 |[Iceberg]|☐|☐|☐|
 |[Kafka]|☑|☑|☑|
+|[NATS]|☑|☑|☑|
 |[PostgreSQL]|☐|☐|☐|
 |[Pub/Sub]|☐|☐|☐|
 |[S3]|☑|☑|☑|
@@ -134,6 +140,7 @@ tolerance.
 [HTTP]: /connectors/sources/http.md
 [Iceberg]: /connectors/sources/iceberg.md
 [Kafka]: /connectors/sources/kafka.md
+[NATS]: /connectors/sources/nats.md
 [PostgreSQL]: /connectors/sources/postgresql.md
 [Pub/Sub]: /connectors/sources/pubsub.md
 [S3]: /connectors/sources/s3.md

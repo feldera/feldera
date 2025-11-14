@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -61,7 +62,7 @@ public class RankAggregate extends WindowAggregates {
     public DBSPSimpleOperator implement(
             int limit, DBSPSimpleOperator unused, DBSPSimpleOperator lastOperator, boolean isLast) {
         SqlKind kind = this.call.getAggregation().kind;
-        IntermediateRel node = CalciteObject.create(window);
+        IntermediateRel node = CalciteObject.create(window, new SourcePositionRange(this.call.getParserPosition()));
         DBSPIndexedTopKOperator.TopKNumbering numbering = switch (kind) {
             case RANK -> RANK;
             case DENSE_RANK -> DENSE_RANK;

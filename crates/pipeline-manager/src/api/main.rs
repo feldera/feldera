@@ -104,7 +104,7 @@ This guarantees that the client operation is eventually responsive, which enable
 it is a part of to not hang indefinitely on Feldera operations and instead be able to decide
 by itself whether and how to proceed. If no response is returned, the mechanism should generally
 retry. When a response is returned, the decision whether to retry can generally depend on the status
-code: especially the status codes 502, 503 and 504 should be considered as transient errors.
+code: especially the status codes 408, 502, 503 and 504 should be considered as transient errors.
 Finer grained retry decisions should be made by taking into account the application-level
 `error_code` if the response body was indeed a Feldera error response body.
 
@@ -256,6 +256,7 @@ It contains the following fields:
         feldera_types::runtime_status::RuntimeStatus,
         feldera_types::runtime_status::RuntimeDesiredStatus,
         feldera_types::runtime_status::BootstrapPolicy,
+        crate::api::endpoints::pipeline_management::ConnectorStats,
         crate::api::endpoints::pipeline_management::PipelineInfo,
         crate::api::endpoints::pipeline_management::PipelineSelectedInfo,
         crate::api::endpoints::pipeline_management::PipelineFieldSelector,
@@ -334,6 +335,14 @@ It contains the following fields:
         feldera_types::transport::kafka::KafkaOutputConfig,
         feldera_types::transport::kafka::KafkaOutputFtConfig,
         feldera_types::transport::kafka::KafkaStartFromConfig,
+        feldera_types::transport::nats::Auth,
+        feldera_types::transport::nats::ConnectOptions,
+        feldera_types::transport::nats::ConsumerConfig,
+        feldera_types::transport::nats::Credentials,
+        feldera_types::transport::nats::DeliverPolicy,
+        feldera_types::transport::nats::NatsInputConfig,
+        feldera_types::transport::nats::ReplayPolicy,
+        feldera_types::transport::nats::UserAndPassword,
         feldera_types::transport::pubsub::PubSubInputConfig,
         feldera_types::transport::s3::S3InputConfig,
         feldera_types::transport::datagen::DatagenStrategy,
@@ -344,6 +353,7 @@ It contains the following fields:
         feldera_types::transport::nexmark::NexmarkTable,
         feldera_types::transport::nexmark::NexmarkInputOptions,
         feldera_types::transport::delta_table::DeltaTableIngestMode,
+        feldera_types::transport::delta_table::DeltaTableTransactionMode,
         feldera_types::transport::delta_table::DeltaTableWriteMode,
         feldera_types::transport::delta_table::DeltaTableReaderConfig,
         feldera_types::transport::delta_table::DeltaTableWriterConfig,
@@ -700,7 +710,13 @@ pub async fn run(
                     .app_data(auth_configuration.clone())
                     .app_data(client)
                     .wrap_fn(|req, srv| {
-                        trace!("Request: {} {}", req.method(), req.path());
+                        let log_level = if req.method() == Method::GET && req.path() == "/healthz" {
+                            Level::Trace
+                        } else {
+                            Level::Debug
+                        };
+
+                        log!(log_level, "Request: {} {}", req.method(), req.path());
                         srv.call(req).map(log_response)
                     })
                     .wrap(api_config.cors())

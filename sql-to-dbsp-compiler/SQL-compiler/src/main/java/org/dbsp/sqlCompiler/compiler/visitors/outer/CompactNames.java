@@ -16,13 +16,13 @@ public class CompactNames extends CircuitCloneVisitor {
 
     @Override
     public VisitDecision preorder(DBSPOperator operator) {
-        operator.addAnnotation(new CompactName("s" + id++), DBSPOperator.class);
+        operator.addAnnotation(new CompactName("s" + this.id++), DBSPOperator.class);
         return super.preorder(operator);
     }
 
     @Override
     public VisitDecision preorder(DBSPNestedOperator operator) {
-        operator.addAnnotation(new CompactName("s" + id++), DBSPOperator.class);
+        operator.addAnnotation(new CompactName("s" + this.id++), DBSPOperator.class);
         return super.preorder(operator);
     }
 }

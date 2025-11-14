@@ -15,10 +15,7 @@ use crate::{
         tokio::TOKIO,
         Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
     },
-    circuit_cache_key,
-    storage::file::to_bytes,
-    trace::{unaligned_deserialize, Rkyv},
-    NumEntries,
+    circuit_cache_key, NumEntries,
 };
 use crossbeam_utils::CachePadded;
 use futures::{future, prelude::*};
@@ -223,7 +220,7 @@ impl InnerExchange {
         clients: Arc<Clients>,
     ) -> InnerExchange {
         let runtime = Runtime::runtime().unwrap();
-        let npeers = runtime.num_workers();
+        let npeers = Runtime::num_workers();
         let local_workers = runtime.layout().local_workers();
         let n_local_workers = local_workers.len();
         let n_remote_workers = npeers - n_local_workers;
@@ -381,6 +378,7 @@ pub(crate) struct Exchange<T> {
     /// v         |-----|-----|-----|-----|
     /// ```
     mailboxes: Arc<Vec<Mutex<Option<T>>>>,
+    serialize: Box<dyn Fn(T) -> Vec<u8> + Send + Sync>,
 }
 
 // Stop Rust from complaining about unused field.
@@ -415,17 +413,23 @@ impl ExchangeListener {
 
 impl<T> Exchange<T>
 where
-    T: Clone + Send + Rkyv + 'static,
+    T: Clone + Send + 'static,
 {
     /// Create a new exchange operator for `npeers` communicating threads.
-    fn new(exchange_id: ExchangeId, clients: Arc<Clients>, directory: ExchangeDirectory) -> Self {
-        let npeers = Runtime::runtime().unwrap().num_workers();
+    fn new(
+        exchange_id: ExchangeId,
+        clients: Arc<Clients>,
+        directory: ExchangeDirectory,
+        serialize: Box<dyn Fn(T) -> Vec<u8> + Send + Sync>,
+        deserialize: Box<dyn Fn(Vec<u8>) -> T + Send + Sync>,
+    ) -> Self {
+        let npeers = Runtime::num_workers();
         let mailboxes: Arc<Vec<Mutex<Option<T>>>> =
             Arc::new((0..npeers * npeers).map(|_| Mutex::new(None)).collect());
         let mailboxes2: Arc<Vec<Mutex<Option<T>>>> = mailboxes.clone();
         let deliver = move |data: Vec<u8>, sender, receiver| {
             let index: usize = sender * npeers + receiver;
-            let data = unaligned_deserialize(&data[..]);
+            let data = deserialize(data);
             let mut mailbox = mailboxes2[index].lock().unwrap();
             assert!((*mailbox).is_none());
             *mailbox = Some(data);
@@ -438,7 +442,11 @@ where
             .entry(exchange_id)
             .and_modify(|_| panic!())
             .or_insert(inner.clone());
-        Self { inner, mailboxes }
+        Self {
+            inner,
+            mailboxes,
+            serialize,
+        }
     }
 
     #[allow(dead_code)]
@@ -454,7 +462,12 @@ where
     /// Create a new `Exchange` instance if an instance with the same id
     /// (created by another thread) does not yet exist within `runtime`.
     /// The number of peers will be set to `runtime.num_workers()`.
-    pub(crate) fn with_runtime(runtime: &Runtime, exchange_id: ExchangeId) -> Arc<Self> {
+    pub(crate) fn with_runtime(
+        runtime: &Runtime,
+        exchange_id: ExchangeId,
+        serialize: Box<dyn Fn(T) -> Vec<u8> + Send + Sync>,
+        deserialize: Box<dyn Fn(Vec<u8>) -> T + Send + Sync>,
+    ) -> Arc<Self> {
         let directory = runtime
             .local_store()
             .entry(DirectoryId)
@@ -481,7 +494,15 @@ where
         runtime
             .local_store()
             .entry(ExchangeCacheId::new(exchange_id))
-            .or_insert_with(|| Arc::new(Exchange::new(exchange_id, clients.clone(), directory)))
+            .or_insert_with(|| {
+                Arc::new(Exchange::new(
+                    exchange_id,
+                    clients.clone(),
+                    directory,
+                    serialize,
+                    deserialize,
+                ))
+            })
             .value()
             .clone()
     }
@@ -568,7 +589,7 @@ where
                                     .unwrap()
                                     .take()
                                     .unwrap();
-                                to_bytes(&item).unwrap().into_vec()
+                                (this.serialize)(item)
                             })
                             .collect()
                     })
@@ -762,6 +783,8 @@ where
 /// use dbsp::{
 ///     operator::{communication::new_exchange_operators, Generator},
 ///     Circuit, RootCircuit, Runtime,
+///     storage::file::to_bytes,
+///     trace::unaligned_deserialize,
 /// };
 ///
 /// const WORKERS: usize = 16;
@@ -779,8 +802,6 @@ where
 ///
 ///         // Create an `ExchangeSender`/`ExchangeReceiver pair`.
 ///         let (sender, receiver) = new_exchange_operators(
-///             &Runtime::runtime().unwrap(),
-///             Runtime::worker_index(),
 ///             None,
 ///             || Vec::new(),
 ///             // Partitioning function sends a copy of the input `n` to each peer.
@@ -789,9 +810,10 @@ where
 ///                     output.push(n)
 ///                 }
 ///             },
-///             // Reassemble received values into a vector.
+///             |value| to_bytes(&value).unwrap().into_vec(),
+///             |data| unaligned_deserialize(&data[..]),///             // Reassemble received values into a vector.
 ///             |v: &mut Vec<usize>, n| v.push(n),
-///         );
+///         ).unwrap();
 ///
 ///         // Add exchange operators to the circuit.
 ///         let combined = circuit.add_exchange(sender, receiver, &source);
@@ -844,23 +866,22 @@ where
 
 impl<D, T, L> ExchangeSender<D, T, L>
 where
-    T: Send + Rkyv + 'static + Clone,
+    T: Send + 'static + Clone,
 {
     fn new(
-        runtime: &Runtime,
         worker_index: usize,
         location: OperatorLocation,
-        exchange_id: ExchangeId,
+        exchange: Arc<Exchange<(T, bool)>>,
         start_wait_usecs: Arc<AtomicU64>,
         partition: L,
     ) -> Self {
-        debug_assert!(worker_index < runtime.num_workers());
+        debug_assert!(worker_index < Runtime::num_workers());
         Self {
             worker_index,
             location,
             partition,
-            outputs: Vec::with_capacity(runtime.num_workers()),
-            exchange: Exchange::with_runtime(runtime, exchange_id),
+            outputs: Vec::with_capacity(Runtime::num_workers()),
+            exchange,
             input_batch_stats: BatchSizeStats::new(),
             flushed: false,
             start_wait_usecs,
@@ -872,7 +893,7 @@ where
 impl<D, T, L> Operator for ExchangeSender<D, T, L>
 where
     D: 'static,
-    T: Send + Rkyv + 'static + Clone,
+    T: Send + 'static + Clone,
     L: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -920,7 +941,7 @@ where
 impl<D, T, L> SinkOperator<D> for ExchangeSender<D, T, L>
 where
     D: Clone + NumEntries + 'static,
-    T: Clone + Send + Rkyv + 'static,
+    T: Clone + Send + 'static,
     L: FnMut(D, &mut Vec<T>) + 'static,
 {
     async fn eval(&mut self, input: &D) {
@@ -984,25 +1005,24 @@ where
 
 impl<IF, T, L> ExchangeReceiver<IF, T, L>
 where
-    T: Send + Rkyv + 'static + Clone,
+    T: Send + 'static + Clone,
 {
     fn new(
-        runtime: &Runtime,
         worker_index: usize,
         location: OperatorLocation,
-        exchange_id: ExchangeId,
+        exchange: Arc<Exchange<(T, bool)>>,
         init: IF,
         start_wait_usecs: Arc<AtomicU64>,
         combine: L,
     ) -> Self {
-        debug_assert!(worker_index < runtime.num_workers());
+        debug_assert!(worker_index < Runtime::num_workers());
 
         Self {
             worker_index,
             location,
             init,
             combine,
-            exchange: Exchange::with_runtime(runtime, exchange_id),
+            exchange,
             flush_count: 0,
             flush_complete: false,
             output_batch_stats: BatchSizeStats::new(),
@@ -1015,7 +1035,7 @@ where
 impl<D, T, L> Operator for ExchangeReceiver<D, T, L>
 where
     D: 'static,
-    T: Send + Rkyv + 'static + Clone,
+    T: Send + 'static + Clone,
     L: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -1097,7 +1117,7 @@ where
 impl<D, IF, T, L> SourceOperator<D> for ExchangeReceiver<IF, T, L>
 where
     D: NumEntries + 'static,
-    T: Clone + Send + Rkyv + 'static,
+    T: Clone + Send + 'static,
     IF: Fn() -> D + 'static,
     L: Fn(&mut D, T) + 'static,
 {
@@ -1117,7 +1137,7 @@ where
                 }
                 (self.combine)(&mut combined, x)
             });
-        if self.flush_count == Runtime::runtime().unwrap().num_workers() {
+        if self.flush_count == Runtime::num_workers() {
             self.flush_complete = true;
             self.flush_count = 0;
         }
@@ -1160,8 +1180,10 @@ impl TypedMapKey<LocalStoreMarker> for DirectoryId {
 /// * `runtime` - [`Runtime`](`crate::circuit::Runtime`) within which operators
 ///   are created.
 /// * `worker_index` - index of the current worker.
-/// * `partition` - partitioning logic that, for each element of the input
-///   stream, returns an iterator with exactly `runtime.num_workers()` values.
+/// * `partition` - partitioning logic that must push exactly
+///   `runtime.num_workers()` values into its vector argument
+/// * `serialize` - serializes exchanged data for transmission across a network
+/// * `deserialize` - deserializes exchanged data that was transmitted across a network
 /// * `combine` - re-assemble logic that combines values received from all peers
 ///   into a single output value.
 ///
@@ -1175,41 +1197,64 @@ impl TypedMapKey<LocalStoreMarker> for DirectoryId {
 /// * `IF` - Type of closure used to initialize the output value of type `TO`.
 /// * `CL` - Type of closure that folds `num_workers` values of type `TE` into a
 ///   value of type `TO`.
-pub fn new_exchange_operators<TI, TO, TE, IF, PL, CL>(
-    runtime: &Runtime,
-    worker_index: usize,
+pub fn new_exchange_operators<TI, TO, TE, IF, PL, CL, S, D>(
     location: OperatorLocation,
     init: IF,
     partition: PL,
+    serialize: S,
+    deserialize: D,
     combine: CL,
-) -> (ExchangeSender<TI, TE, PL>, ExchangeReceiver<IF, TE, CL>)
+) -> Option<(ExchangeSender<TI, TE, PL>, ExchangeReceiver<IF, TE, CL>)>
 where
     TO: Clone,
-    TE: Send + Rkyv + 'static + Clone,
+    TE: Send + 'static + Clone,
     IF: Fn() -> TO + 'static,
     PL: FnMut(TI, &mut Vec<TE>) + 'static,
+    S: Fn(TE) -> Vec<u8> + Send + Sync + 'static,
+    D: Fn(Vec<u8>) -> TE + Send + Sync + 'static,
     CL: Fn(&mut TO, TE) + 'static,
 {
+    if Runtime::num_workers() == 1 {
+        return None;
+    }
+    let runtime = Runtime::runtime().unwrap();
+    let worker_index = Runtime::worker_index();
+
     let exchange_id = runtime.sequence_next();
     let start_wait_usecs = Arc::new(AtomicU64::new(0));
+    let exchange = Exchange::with_runtime(
+        &runtime,
+        exchange_id,
+        Box::new(move |(value, flush)| {
+            let mut vec = serialize(value);
+            vec.push(flush as u8);
+            vec
+        }),
+        Box::new(move |mut vec| {
+            let flush = match vec.pop().unwrap() {
+                0 => false,
+                1 => true,
+                _ => unreachable!(),
+            };
+            (deserialize(vec), flush)
+        }),
+    );
     let sender = ExchangeSender::new(
-        runtime,
         worker_index,
         location,
-        exchange_id,
+        exchange.clone(),
         start_wait_usecs.clone(),
         partition,
     );
     let receiver = ExchangeReceiver::new(
-        runtime,
         worker_index,
         location,
-        exchange_id,
+        exchange,
         init,
         start_wait_usecs,
         combine,
     );
-    (sender, receiver)
+    Some((sender, receiver))
 }
 
 #[cfg(test)]
@@ -1221,6 +1266,8 @@ mod tests {
             Runtime,
         },
         operator::{communication::new_exchange_operators, Generator},
+        storage::file::{to_bytes, to_bytes_dyn},
+        trace::unaligned_deserialize,
         Circuit, RootCircuit,
     };
     use std::thread::yield_now;
@@ -1240,7 +1287,12 @@ mod tests {
         const WORKERS: usize = 16;
 
         let hruntime = Runtime::run(WORKERS, |_parker| {
-            let exchange = Exchange::with_runtime(&Runtime::runtime().unwrap(), 0);
+            let exchange = Exchange::with_runtime(
+                &Runtime::runtime().unwrap(),
+                0,
+                Box::new(|value| to_bytes(&value).unwrap().into_vec()),
+                Box::new(|data| unaligned_deserialize(&data[..])),
+            );
 
             for round in 0..ROUNDS {
                 let output_data = vec![round; WORKERS];
@@ -1300,8 +1352,6 @@ mod tests {
                     }));
 
                     let (sender, receiver) = new_exchange_operators(
-                        &Runtime::runtime().unwrap(),
-                        Runtime::worker_index(),
                         None,
                         Vec::new,
                         move |n, vals| {
@@ -1309,8 +1359,11 @@ mod tests {
                                 vals.push(n)
                             }
                         },
+                        |value| to_bytes_dyn(&value).unwrap().into_vec(),
+                        |data| unaligned_deserialize(&data[..]),
                         |v: &mut Vec<usize>, n| v.push(n),
-                    );
+                    )
+                    .unwrap();
 
                     let mut round = 0;
                     circuit
@@ -1333,7 +1386,7 @@ mod tests {
             hruntime.join().unwrap();
         }
 
-        do_test::<S>(1);
+        do_test::<S>(2);
         do_test::<S>(16);
         do_test::<S>(32);
     }

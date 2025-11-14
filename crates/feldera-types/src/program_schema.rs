@@ -174,7 +174,7 @@ impl ProgramSchema {
         self.inputs
             .iter()
             .chain(self.outputs.iter())
-            .filter(|rel| rel.fields.iter().any(|f| f.lateness.is_some()))
+            .filter(|rel| rel.has_lateness())
             .map(|rel| rel.name.clone())
             .collect()
     }
@@ -233,6 +233,10 @@ impl Relation {
     pub fn field(&self, name: &str) -> Option<&Field> {
         let name = canonical_identifier(name);
         self.fields.iter().find(|f| f.name == name)
+    }
+
+    pub fn has_lateness(&self) -> bool {
+        self.fields.iter().any(|f| f.lateness.is_some())
     }
 }
 

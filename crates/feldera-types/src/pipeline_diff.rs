@@ -6,13 +6,13 @@ use utoipa::ToSchema;
 /// Summary of changes in the program between checkpointed and new versions.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct ProgramDiff {
-    pub added_tables: Vec<String>,
-    pub removed_tables: Vec<String>,
-    pub modified_tables: Vec<String>,
+    added_tables: Vec<String>,
+    removed_tables: Vec<String>,
+    modified_tables: Vec<String>,
 
-    pub added_views: Vec<String>,
-    pub removed_views: Vec<String>,
-    pub modified_views: Vec<String>,
+    added_views: Vec<String>,
+    removed_views: Vec<String>,
+    modified_views: Vec<String>,
 }
 
 impl Display for ProgramDiff {
@@ -47,6 +47,77 @@ impl Display for ProgramDiff {
 }
 
 impl ProgramDiff {
+    pub fn new() -> Self {
+        Self {
+            added_tables: Vec::new(),
+            removed_tables: Vec::new(),
+            modified_tables: Vec::new(),
+            added_views: Vec::new(),
+            removed_views: Vec::new(),
+            modified_views: Vec::new(),
+        }
+    }
+
+    pub fn with_added_tables(mut self, mut tables: Vec<String>) -> Self {
+        tables.sort();
+        self.added_tables = tables;
+        self
+    }
+
+    pub fn with_removed_tables(mut self, mut tables: Vec<String>) -> Self {
+        tables.sort();
+        self.removed_tables = tables;
+        self
+    }
+
+    pub fn with_modified_tables(mut self, mut tables: Vec<String>) -> Self {
+        tables.sort();
+        self.modified_tables = tables;
+        self
+    }
+
+    pub fn with_added_views(mut self, mut views: Vec<String>) -> Self {
+        views.sort();
+        self.added_views = views;
+        self
+    }
+
+    pub fn with_removed_views(mut self, mut views: Vec<String>) -> Self {
+        views.sort();
+        self.removed_views = views;
+        self
+    }
+
+    pub fn with_modified_views(mut self, mut views: Vec<String>) -> Self {
+        views.sort();
+        self.modified_views = views;
+        self
+    }
+
+    pub fn added_tables(&self) -> &Vec<String> {
+        &self.added_tables
+    }
+
+    pub fn removed_tables(&self) -> &Vec<String> {
+        &self.removed_tables
+    }
+
+    pub fn modified_tables(&self) -> &Vec<String> {
+        &self.modified_tables
+    }
+
+    pub fn added_views(&self) -> &Vec<String> {
+        &self.added_views
+    }
+
+    pub fn removed_views(&self) -> &Vec<String> {
+        &self.removed_views
+    }
+
+    pub fn modified_views(&self) -> &Vec<String> {
+        &self.modified_views
+    }
+
     pub fn is_empty(&self) -> bool {
         self.added_tables.is_empty()
             && self.removed_tables.is_empty()
@@ -71,16 +142,16 @@ impl ProgramDiff {
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
 pub struct PipelineDiff {
     /// IR changes or the reason why we couldn't compute them.
-    pub program_diff: Option<ProgramDiff>,
-    pub program_diff_error: Option<String>,
+    program_diff: Option<ProgramDiff>,
+    program_diff_error: Option<String>,
 
-    pub added_input_connectors: Vec<String>,
-    pub modified_input_connectors: Vec<String>,
-    pub removed_input_connectors: Vec<String>,
+    added_input_connectors: Vec<String>,
+    modified_input_connectors: Vec<String>,
+    removed_input_connectors: Vec<String>,
 
-    pub added_output_connectors: Vec<String>,
-    pub modified_output_connectors: Vec<String>,
-    pub removed_output_connectors: Vec<String>,
+    added_output_connectors: Vec<String>,
+    modified_output_connectors: Vec<String>,
+    removed_output_connectors: Vec<String>,
 }
 
 impl Display for PipelineDiff {
@@ -151,6 +222,75 @@ impl Display for PipelineDiff {
 }
 
 impl PipelineDiff {
+    pub fn new(program_diff_or_err: Result<ProgramDiff, String>) -> Self {
+        match program_diff_or_err {
+            Ok(program_diff) => Self::new_with_program_diff(program_diff),
+            Err(program_diff_error) => Self::new_with_program_diff_error(program_diff_error),
+        }
+    }
+
+    pub fn new_with_program_diff(program_diff: ProgramDiff) -> Self {
+        Self {
+            program_diff: Some(program_diff),
+            program_diff_error: None,
+            added_input_connectors: Vec::new(),
+            modified_input_connectors: Vec::new(),
+            removed_input_connectors: Vec::new(),
+            added_output_connectors: Vec::new(),
+            modified_output_connectors: Vec::new(),
+            removed_output_connectors: Vec::new(),
+        }
+    }
+
+    pub fn new_with_program_diff_error(program_diff_error: String) -> Self {
+        Self {
+            program_diff: None,
+            program_diff_error: Some(program_diff_error),
+            added_input_connectors: Vec::new(),
+            modified_input_connectors: Vec::new(),
+            removed_input_connectors: Vec::new(),
+            added_output_connectors: Vec::new(),
+            modified_output_connectors: Vec::new(),
+            removed_output_connectors: Vec::new(),
+        }
+    }
+
+    pub fn with_added_input_connectors(mut self, mut connectors: Vec<String>) -> Self {
+        connectors.sort();
+        self.added_input_connectors = connectors;
+        self
+    }
+
+    pub fn with_modified_input_connectors(mut self, mut connectors: Vec<String>) -> Self {
+        connectors.sort();
+        self.modified_input_connectors = connectors;
+        self
+    }
+
+    pub fn with_removed_input_connectors(mut self, mut connectors: Vec<String>) -> Self {
+        connectors.sort();
+        self.removed_input_connectors = connectors;
+        self
+    }
+
+    pub fn with_added_output_connectors(mut self, mut connectors: Vec<String>) -> Self {
+        connectors.sort();
+        self.added_output_connectors = connectors;
+        self
+    }
+
+    pub fn with_modified_output_connectors(mut self, mut connectors: Vec<String>) -> Self {
+        connectors.sort();
+        self.modified_output_connectors = connectors;
+        self
+    }
+
+    pub fn with_removed_output_connectors(mut self, mut connectors: Vec<String>) -> Self {
+        connectors.sort();
+        self.removed_output_connectors = connectors;
+        self
+    }
+
     pub fn is_empty(&self) -> bool {
         self.program_diff
             .as_ref()
@@ -176,6 +316,38 @@ impl PipelineDiff {
             || self.added_output_connectors.contains(&connector_name)
             || self.removed_output_connectors.contains(&connector_name)
             || self.modified_output_connectors.contains(&connector_name)
+    }
+
+    pub fn program_diff(&self) -> Option<&ProgramDiff> {
+        self.program_diff.as_ref()
+    }
+
+    pub fn program_diff_error(&self) -> Option<&String> {
+        self.program_diff_error.as_ref()
+    }
+
+    pub fn added_input_connectors(&self) -> &Vec<String> {
+        &self.added_input_connectors
+    }
+
+    pub fn modified_input_connectors(&self) -> &Vec<String> {
+        &self.modified_input_connectors
+    }
+
+    pub fn removed_input_connectors(&self) -> &Vec<String> {
+        &self.removed_input_connectors
+    }
+
+    pub fn added_output_connectors(&self) -> &Vec<String> {
+        &self.added_output_connectors
+    }
+
+    pub fn modified_output_connectors(&self) -> &Vec<String> {
+        &self.modified_output_connectors
+    }
+
+    pub fn removed_output_connectors(&self) -> &Vec<String> {
+        &self.removed_output_connectors
     }
 }
 
@@ -273,12 +445,11 @@ pub fn program_diff(
         })
         .collect();
 
-    ProgramDiff {
-        added_tables,
-        removed_tables,
-        modified_tables,
-        added_views,
-        removed_views,
-        modified_views,
-    }
+    ProgramDiff::new()
+        .with_added_tables(added_tables)
+        .with_removed_tables(removed_tables)
+        .with_modified_tables(modified_tables)
+        .with_added_views(added_views)
+        .with_removed_views(removed_views)
+        .with_modified_views(modified_views)
 }

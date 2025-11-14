@@ -402,13 +402,22 @@ pub(crate) trait Storage {
     /// If the platform version is not the current one, its `platform_version` will be updated and
     /// the `program_status` will be set back to `Pending` (if not already) such that the SQL
     /// compiler can pick it up again.
-    async fn clear_ongoing_sql_compilation(&self, platform_version: &str) -> Result<(), DBError>;
+    /// Only the owner worker (by modulo) resets `CompilingSql` pipelines to `Pending`
+    /// This ensures that only the assigned worker for a pipeline can reset its status.
+    async fn clear_ongoing_sql_compilation_for_worker(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<(), DBError>;
 
     /// Retrieves the pipeline which is stopped, whose program status has been Pending
     /// for the longest, and is of the current platform version. Returns `None` if none is found.
     async fn get_next_sql_compilation(
         &self,
         platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError>;
 
     /// Determines what to do with pipelines that are `SqlCompiled` and `CompilingRust`.
@@ -419,20 +428,30 @@ pub(crate) trait Storage {
     /// If the platform version is not the current one, its `platform_version` will be updated and
     /// the `program_status` will be set back to `Pending` such that the Rust compiler can pick it
     /// up again.
-    async fn clear_ongoing_rust_compilation(&self, platform_version: &str) -> Result<(), DBError>;
+    /// Only the owner worker (by modulo) resets stuck `CompilingRust` pipelines to `SqlCompiled`.
+    /// This ensures that only the assigned worker for a pipeline can reset its status.
+    async fn clear_ongoing_rust_compilation_for_worker(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<(), DBError>;
 
     /// Retrieves the pipeline which is stopped, whose program status has been SqlCompiled
     /// for the longest, and is of the current platform version. Returns `None` if none is found.
     async fn get_next_rust_compilation(
         &self,
         platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError>;
 
     /// Retrieves the list of fully compiled pipeline programs (pipeline identifier, program version,
-    /// program binary source checksum, program binary integrity checksum) across all tenants.
+    /// program binary source checksum, program binary integrity checksum) AND pipeline programs that
+    /// are currently being compiled (pipeline identifier, program version) across all tenants.
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<Vec<(PipelineId, Version, String, String)>, DBError>;
+    ) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError>;
 
     async fn get_support_bundle_data(
         &self,

@@ -19,6 +19,11 @@ To declare a materialized table, use the materialized attribute:
 CREATE TABLE my_table (...) WITH ('materialized' = 'true');
 ```
 
+Tables with a `PRIMARY KEY` constraint are automatically materialized, since the pipeline
+must maintain an index to enforce the constraint. Therefore, such tables do not need an explicit
+`materialized` attribute. The only exception is when a table has a `LATENESS` attribute defined
+on one of its primary key columns—in that case, you must specify the `materialized` attribute explicitly.
+
 To declare a materialized view, use the `CREATE MATERIALIZED VIEW` syntax:
 
 ```sql

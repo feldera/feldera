@@ -35,6 +35,7 @@ use crate::{
     controller::{
         checkpoint::{CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics},
         journal::{InputChecksums, InputLog},
+        TransactionInitiators,
     },
     PipelineState,
 };
@@ -144,11 +145,16 @@ pub struct GlobalControllerMetrics {
     /// new and modified views.
     bootstrap_in_progress: AtomicBool,
 
+    /// Status of the current transaction.
     #[serde(serialize_with = "serialize_atomic")]
     pub transaction_status: Atomic<TransactionStatus>,
 
+    /// ID of the current transaction or 0 if no transaction is in progress.
     #[serde(serialize_with = "serialize_atomic")]
     pub transaction_id: Atomic<TransactionId>,
+
+    /// Entities that initiated the current transaction.
+    pub transaction_initiators: Mutex<TransactionInitiators>,
 
     /// Resident set size of the pipeline process, in bytes.
     // This field is computed on-demand by calling `ControllerStatus::update`.
@@ -275,6 +281,7 @@ impl GlobalControllerMetrics {
             bootstrap_in_progress: AtomicBool::new(false),
             transaction_id: Atomic::new(0),
             transaction_status: Atomic::new(TransactionStatus::NoTransaction),
+            transaction_initiators: Mutex::new(TransactionInitiators::default()),
             rss_bytes: AtomicU64::new(0),
             cpu_msecs: AtomicU64::new(0),
             uptime_msecs: AtomicU64::new(0),
@@ -997,6 +1004,15 @@ impl ControllerStatus {
         self.update_total_completed_records();
     }
 
+    pub fn update_output_memory(&self, endpoint_id: EndpointId, memory: usize) {
+        if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
+            endpoint_stats
+                .metrics
+                .memory
+                .store(memory as u64, Ordering::Release);
+        }
+    }
+
     pub fn output_buffered_batches(&self, endpoint_id: EndpointId, total_processed_records: u64) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             endpoint_stats.output_buffered_batches(total_processed_records);
@@ -1177,6 +1193,7 @@ impl InputEndpointMetrics {
     }
 }
 
+#[derive(Debug)]
 pub struct StepResults {
     pub amt: BufferSize,
     pub resume: Option<Resume>,
@@ -1944,6 +1961,10 @@ pub struct OutputEndpointMetrics {
     /// of this endpoint is equal to the output of the circuit after
     /// processing `total_processed_input_records` records.
     pub total_processed_input_records: AtomicU64,
+
+    /// Extra memory in use beyond that used for queuing records.  Not all
+    /// output connectors report this.
+    pub memory: AtomicU64,
 }
 
 impl OutputEndpointMetrics {
@@ -1962,8 +1983,59 @@ impl OutputEndpointMetrics {
             num_encode_errors: AtomicU64::new(initial_statistics.num_encode_errors),
             num_transport_errors: AtomicU64::new(initial_statistics.num_transport_errors),
             total_processed_input_records: AtomicU64::new(total_processed_input_records),
+            memory: AtomicU64::new(0),
         }
     }
+
+    /// Obtains a consistent snapshot of these statistics.
+    pub fn snapshot(&self) -> OutputEndpointMetricsSnapshot {
+        fn inner(this: &OutputEndpointMetrics) -> OutputEndpointMetricsSnapshot {
+            OutputEndpointMetricsSnapshot {
+                transmitted_records: this.transmitted_records.load(Ordering::Acquire),
+                transmitted_bytes: this.transmitted_bytes.load(Ordering::Relaxed),
+                queued_records: this.queued_records.load(Ordering::Relaxed),
+                queued_batches: this.queued_batches.load(Ordering::Relaxed),
+                buffered_records: this.buffered_records.load(Ordering::Relaxed),
+                buffered_batches: this.buffered_batches.load(Ordering::Relaxed),
+                num_encode_errors: this.num_encode_errors.load(Ordering::Relaxed),
+                num_transport_errors: this.num_transport_errors.load(Ordering::Relaxed),
+                total_processed_input_records: this
+                    .total_processed_input_records
+                    .load(Ordering::Relaxed),
+                memory: this.memory.load(Ordering::Relaxed),
+            }
+        }
+
+        // Fetch the statistics repeatedly until they don't change from one read
+        // to the next.  It's pretty unlikely that they'll change at all, since
+        // we're racing against I/O.
+        let mut snapshot1 = inner(self);
+        loop {
+            let snapshot2 = inner(self);
+            if snapshot1 == snapshot2 {
+                return snapshot1;
+            }
+            snapshot1 = inner(self);
+            if snapshot1 == snapshot2 {
+                return snapshot1;
+            }
+        }
+    }
+}
+
+/// A snapshot of the values in [OutputEndpointMetrics].
+#[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct OutputEndpointMetricsSnapshot {
+    pub transmitted_records: u64,
+    pub transmitted_bytes: u64,
+    pub queued_records: u64,
+    pub queued_batches: u64,
+    pub buffered_records: u64,
+    pub buffered_batches: u64,
+    pub num_encode_errors: u64,
+    pub num_transport_errors: u64,
+    pub total_processed_input_records: u64,
+    pub memory: u64,
 }
 
 /// Output endpoint status information.

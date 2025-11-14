@@ -132,6 +132,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                 NumEntries,
                 MapHandle, SetHandle, ZSetHandle, OutputHandle,
                 dynamic::{DynData,DynDataTyped},
+                typed_batch::SpineSnapshot,
             };
             use dbsp_adapters::Catalog;
             use feldera_types::{

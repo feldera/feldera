@@ -219,6 +219,32 @@ Using Pandas DataFrames
     # clear the storage and delete the pipeline
     pipeline.delete(True)
 
+Using Completion Tokens
+=======================
+
+`Completion tokens <https://docs.feldera.com/connectors/completion-tokens/#completion-tokens>`_ can be used to check whether
+all inputs ingested before the token was issued have been fully processed, and the resulting outputs have been written to all data sinks.
+
+The following methods automatically use completion tokens:
+
+- :meth:`.Pipeline.input_json`
+- :meth:`.Pipeline.input_pandas`
+
+To generate a completion token for a connector attached to the pipeline use :meth:`.Pipeline.generate_completion_token`.
+To check the status of this completion token use :meth:`.Pipeline.completion_token_status`.
+
+.. code-block:: python
+
+    # generate completion token for table "t0" and connector "myconnector"
+    token = pipeline.generate_completion_token("t0", "myconnector")
+
+    # check the status of this completion token
+    status = pipeline.completion_token_status(token)
+    print(status)
+
+    # wait until the pipeline processes this completion token
+    pipeline.wait_for_token(token)
+
 Executing ad-hoc SQL Queries
 ============================
 

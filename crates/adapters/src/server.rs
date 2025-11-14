@@ -17,6 +17,7 @@ use crate::{
 use crate::{dyn_event, Catalog};
 use actix_web::body::MessageBody;
 use actix_web::dev::Service;
+use actix_web::http::KeepAlive;
 use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
     get,
@@ -35,6 +36,10 @@ use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
 use feldera_adapterlib::PipelineState;
 use feldera_storage::{StorageBackend, StoragePath};
+use feldera_types::adapter_stats::{
+    EndpointErrorStats, InputEndpointErrorMetrics, OutputEndpointErrorMetrics,
+    PipelineStatsErrorsResponse,
+};
 use feldera_types::checkpoint::{
     CheckpointFailure, CheckpointResponse, CheckpointStatus, CheckpointSyncFailure,
     CheckpointSyncResponse, CheckpointSyncStatus,
@@ -74,7 +79,7 @@ use std::time::Duration;
 use std::{
     borrow::Cow,
     net::TcpListener,
-    sync::{Arc, Mutex, Weak},
+    sync::{atomic::Ordering, Arc, Mutex, Weak},
     thread,
 };
 use tokio::spawn;
@@ -295,6 +300,19 @@ impl ServerState {
             PipelinePhase::InitializationComplete => PipelineError::Terminating,
             PipelinePhase::Failed(e) => PipelineError::ControllerError { error: e.clone() },
             PipelinePhase::Suspended => PipelineError::Suspended,
+        }
+    }
+
+    /// Replaces `e` with a missing controller error if the controller is not set.
+    ///
+    /// Some endpoints can fail due to a panic that happens while the endpoint was running.
+    /// This function checks for this situation  and returns a missing controller error
+    /// instead of `e`.
+    fn maybe_missing_controller_error(&self, e: ControllerError) -> PipelineError {
+        if let Err(missing_controller_error) = self.controller() {
+            missing_controller_error
+        } else {
+            e.into()
         }
     }
 
@@ -734,6 +752,16 @@ pub fn run_server(
     // https://github.com/rust-lang/rust/issues/74479#issuecomment-717097590
     .workers(workers)
     .worker_max_blocking_threads(std::cmp::max(512 / workers, 1))
+    .keep_alive(KeepAlive::Timeout(Duration::from_secs(30)))
+    .max_connection_rate(1000)
+    // The client request timeout sets the time limit for the server to receive
+    // the first request from a new client.  When it times out, the server sends
+    // a 408 Request Timeout error (and this is the only case where it sends
+    // that error).  With the default of 5 seconds, some requests time out in
+    // CI.  By extending the timeout, we hope to suppress those problems.  (The
+    // timeouts might be a symptom of another problem, though, such as the
+    // client in some cases getting stuck and not sending its request.)
+    .client_request_timeout(Duration::from_secs(180))
     // Set timeout for graceful shutdown of workers.
     // The default in actix is 30s. We may consider making this configurable.
     .shutdown_timeout(10);
@@ -1063,6 +1091,7 @@ where
         .service(completion_status)
         .service(query)
         .service(stats)
+        .service(error_stats)
         .service(metrics_handler)
         .service(time_series)
         .service(time_series_stream)
@@ -1352,9 +1381,11 @@ async fn query(
     request: HttpRequest,
     stream: web::Payload,
 ) -> impl Responder {
+    let args = args.into_inner();
+    tracing::debug!("processing adhoc query: {:?}", args.sql);
     let session_ctxt = state.controller()?.session_context()?;
     if !request_is_websocket(&request) {
-        stream_adhoc_result(args.into_inner(), session_ctxt).await
+        stream_adhoc_result(args, session_ctxt).await
     } else {
         adhoc_websocket(session_ctxt, request, stream).await
     }
@@ -1363,6 +1394,39 @@ async fn query(
 #[get("/stats")]
 async fn stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponse::Ok().json(state.controller()?.status()))
+}
+
+/// This endpoint returns a subset of stats that don't need updating and so is more performant than /stats
+#[get("/stats/errors")]
+async fn error_stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let controller = state.controller()?;
+    let controller_status = controller.stale_status();
+
+    let inputs: Vec<EndpointErrorStats<InputEndpointErrorMetrics>> = controller_status
+        .input_status()
+        .values()
+        .map(|input| EndpointErrorStats {
+            metrics: InputEndpointErrorMetrics {
+                endpoint_name: input.endpoint_name.clone(),
+                num_transport_errors: input.metrics.num_transport_errors.load(Ordering::Acquire),
+                num_parse_errors: input.metrics.num_parse_errors.load(Ordering::Acquire),
+            },
+        })
+        .collect();
+
+    let outputs: Vec<EndpointErrorStats<OutputEndpointErrorMetrics>> = controller_status
+        .output_status()
+        .values()
+        .map(|output| EndpointErrorStats {
+            metrics: OutputEndpointErrorMetrics {
+                endpoint_name: output.endpoint_name.clone(),
+                num_transport_errors: output.metrics.num_transport_errors.load(Ordering::Acquire),
+                num_encode_errors: output.metrics.num_encode_errors.load(Ordering::Acquire),
+            },
+        })
+        .collect();
+
+    Ok(HttpResponse::Ok().json(PipelineStatsErrorsResponse { inputs, outputs }))
 }
 
 /// Retrieve circuit metrics.
@@ -1962,7 +2026,11 @@ async fn completion_status(
     let token = CompletionToken::decode(&args.token).map_err(|e| PipelineError::InvalidParam {
         error: format!("invalid completion token: {e}"),
     })?;
-    if state.controller()?.completion_status(&token)? {
+    if state
+        .controller()?
+        .completion_status(&token)
+        .map_err(|e| state.maybe_missing_controller_error(e))?
+    {
         Ok(HttpResponse::Ok().json(CompletionStatusResponse::complete()))
     } else {
         Ok(HttpResponse::Accepted().json(CompletionStatusResponse::inprogress()))
@@ -1993,7 +2061,10 @@ impl StoredStatus {
     }
 
     fn write(&self, storage: &dyn StorageBackend) {
-        if let Err(e) = storage.write_json(&StoragePath::from(STATUS_FILE), self) {
+        if let Err(e) = storage
+            .write_json(&StoragePath::from(STATUS_FILE), self)
+            .and_then(|reader| reader.commit())
+        {
             warn!("{STATUS_FILE}: failed to write to storage ({e})");
         }
     }

@@ -50,7 +50,7 @@ public abstract class DBSPSourceTableOperator
     /** Mark the fact that a RelNode refers to this table */
     public void refer(RelNode node) {
         // Only mutating operation, used during circuit construction.
-        this.getRelNode().to(RelAnd.class).add(new LastRel(node));
+        this.getRelNode().to(RelAnd.class).add(new LastRel(node, this.getSourcePosition()));
     }
 
     @Override

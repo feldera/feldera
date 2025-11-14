@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Utilities;
 
 /** Visitor which rewrites a {@link DBSPClosureExpression} in a canonical form,
@@ -67,7 +68,7 @@ public class CanonicalForm extends InnerRewriteVisitor {
     @Override
     public VisitDecision preorder(DBSPLetStatement stat) {
         DBSPExpression init = this.transformN(stat.initializer);
-        DBSPVariablePath var = new DBSPVariablePath(this.nextName(), stat.type);
+        DBSPVariablePath var = new DBSPVariablePath(stat.getNode(), this.nextName(), stat.type);
         this.newLetVar.substituteNew(stat, var);
         DBSPLetStatement result;
         if (init == null)
@@ -81,11 +82,16 @@ public class CanonicalForm extends InnerRewriteVisitor {
     @Override
     public VisitDecision preorder(DBSPLetExpression expr) {
         DBSPExpression init = this.transform(expr.initializer);
-        DBSPVariablePath var = new DBSPVariablePath(this.nextName(), expr.variable.type);
+        DBSPVariablePath var = new DBSPVariablePath(expr.getNode(), this.nextName(), expr.variable.type);
         this.newLetExprVar.substituteNew(expr, var);
         DBSPExpression consumer = this.transform(expr.consumer);
         DBSPLetExpression result = new DBSPLetExpression(var, init, consumer);
         this.map(expr, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPType type) {
         return VisitDecision.STOP;
     }
 
@@ -95,7 +101,7 @@ public class CanonicalForm extends InnerRewriteVisitor {
         DBSPClosureExpression closure = node.to(DBSPClosureExpression.class);
         for (int i = 0; i < closure.parameters.length; i++) {
             DBSPParameter param = closure.parameters[i];
-            DBSPParameter replacement = new DBSPParameter(this.nextName(), param.getType());
+            DBSPParameter replacement = new DBSPParameter(param.getNode(), this.nextName(), param.getType());
             this.newParam.substituteNew(param, replacement);
         }
         return super.preorder(node);

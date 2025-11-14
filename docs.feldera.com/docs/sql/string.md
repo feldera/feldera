@@ -50,10 +50,10 @@ is not valid syntax.
 
 ## Escaped characters
 
-We also accepts escaped characters withing string constants, which are
-an extension to the SQL standard.  Within an escape string, a
+We also accept escaped characters within string constants, which are
+an extension to the SQL standard.  Within a quoted string, a
 backslash character (`\`) begins a C-like backslash escape sequence, in
-which the combination of backslash and following character(s)
+which the combination of backslash and the following character(s)
 represent a special byte value:
 
 |Backslash Escape Sequence|Interpretation|
@@ -90,9 +90,9 @@ addition to the normal way of `''`.
   <tr>
     <td><a id="like"></a><code>string LIKE pattern [ESCAPE escape-character]</code> and
         <code>string NOT LIKE pattern [ESCAPE escape-character]</code></td>
-    <td>The LIKE expression returns true if the string matches the supplied pattern.
-     (As expected, the <code>NOT LIKE</code> expression returns false if LIKE returns true.</td>
-    <td>See below for details.</td>
+    <td>The LIKE expression returns true if <code>string</code> matches <code>pattern</code>.
+     (As expected, the <code>NOT LIKE</code> expression returns false if <code>LIKE</code> returns true.)</td>
+    <td>See [`LIKE`](#like) for details.</td>
   </tr>
   <tr>
     <td>
@@ -101,35 +101,35 @@ addition to the normal way of `''`.
         <code>string NOT ILIKE pattern</code>
     </td>
     <td>
-        The <code>ILIKE</code> expression returns true if the string matches the supplied pattern,
+        The <code>ILIKE</code> expression returns true if <code>string</code> matches <code>pattern</code>,
         performing a case-insensitive comparison. This means that differences in character case
         between the string and the pattern are ignored.
         (Similarly, the <code>NOT ILIKE</code> expression returns false if <code>ILIKE</code> returns true.)
     </td>
     <td>
-        See below for details.
+        See [`ILIKE`](#ilike) for details.
     </td>
   </tr>
   <tr>
     <td><a id="rlike"></a><code>string RLIKE pattern</code> and
         <code>string NOT RLIKE pattern</code></td>
-    <td>The RLIKE expression returns true if the string matches the supplied pattern.
+    <td>The RLIKE expression returns true if <code>string</code> matches <code>pattern</code>.
         The pattern is a standard Java regular expression.</td>
     <td><code>'string' RLIKE 's..i.*'</code> => <code>TRUE</code></td>
   </tr>
   <tr>
     <td><a id="ascii"></a><code>ASCII ( string )</code></td>
-    <td>Returns the numeric code of the first character of the argument. In UTF8 encoding, returns the Unicode code point of the character. In other multibyte encodings, the argument must be an ASCII character.  Returns 0 if the string is empty.</td>
+    <td>Returns the numeric code of the first character of <code>string</code>. In UTF8 encoding, returns the Unicode code point of the character. In other multibyte encodings, the argument must be an ASCII character.  Returns 0 if the string is empty.</td>
     <td><code>ascii('x')</code> => <code>120</code></td>
   </tr>
   <tr>
     <td><a id="char_length"></a><code>CHAR_LENGTH(string)</code> or <code>CHARACTER_LENGTH(string)</code> or <code>LENGTH(string)</code> or <code>LEN(string)</code></td>
-    <td>Returns number of characters in the string.</td>
+    <td>Returns number of characters in <code>string</code>.</td>
     <td><code>char_length('josé')</code> => <code>4</code></td>
   </tr>
   <tr>
     <td><a id="chr"></a><code>CHR ( integer )</code></td>
-    <td>Returns a string containing the character with the given code. If the code is incorrect (e.g., negative), the result is an empty string.</td>
+    <td>Returns a string containing the character numbered <code>integer</code>. If the code is incorrect (e.g., negative), the result is an empty string.</td>
     <td><code>chr(65)</code> => <code>A</code></td>
   </tr>
   <tr>
@@ -144,40 +144,40 @@ addition to the normal way of `''`.
   </tr>
   <tr>
     <td><a id="initcap"></a><code>INITCAP ( string )</code></td>
-    <td>Converts the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.</td>
+    <td>Converts the first letter of each word in <code>string</code> to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.</td>
     <td><code>initcap('hi THOMAS')</code> => <code>Hi Thomas</code></td>
   </tr>
   <tr>
     <td><a id="initcap_spaces"></a><code>INITCAP_SPACES ( string )</code></td>
-    <td>Converts the first letter of each word to upper case and the rest to lower case. Words are sequences of characters separated by spaces.</td>
+    <td>Converts the first letter of each word in <code>string</code> to upper case and the rest to lower case. Words are sequences of characters separated by spaces.</td>
     <td><code>initcap('hi THOMAS-SON')</code> => <code>Hi Thomas-son</code></td>
   </tr>
   <tr>
     <td><a id="left"></a><code>LEFT ( string, count )</code></td>
-    <td>Returns first <code>count</code> characters in the string.  If any argument is <code>NULL</code>, return <code>NULL</code>.</td>
+    <td>Returns first <code>count</code> characters in <code>string</code>.  If any argument is <code>NULL</code>, returns <code>NULL</code>.</td>
     <td><code>left('abcde', 2)</code> => <code>ab</code></td>
   </tr>
   <tr>
     <td><a id="lower"></a><code>LOWER ( string )</code></td>
-    <td>Converts the string to all lower case.</td>
+    <td>Converts <code>string</code> to all lower case.</td>
     <td><code>lower('TOM')</code> => <code>tom</code></td>
   </tr>
   <tr>
     <td><a id="md5"></a><code>MD5</code>(string)</td>
     <td>
-        Calculates an MD5 128-bit checksum of string and returns it as a hex <code>VARCHAR</code> value.
+        Calculates an MD5 128-bit checksum of <code>string</code> and returns it as a hex <code>VARCHAR</code> value.
         If the input is NULL, NULL is returned.
     </td>
     <td><code>SELECT md5('Feldera')</code> => <code>841afc2f65b5763600818ef42a56d7d1</code></td>
   </tr>
   <tr>
     <td><a id="overlay"></a><code>OVERLAY ( string PLACING newsubstring FROM start [ FOR remove ] )</code></td>
-    <td>Replaces the substring of string that starts at the start'th character and extends for remove characters with newsubstring. If count is omitted, it defaults to the length of newsubstring.  If 'start' is not positive, the original string is unchanged.  If 'start' is bigger than the length of 'string', the result is the concatenation of the two strings.  If 'remove' is negative it is considered 0.</td>
+    <td>Replaces the substring of <code>string</code> that starts at the <code>start</code>'th character and extends for <code>remove</code> characters with <code>newsubstring</code>. If <code>count</code> is omitted, it defaults to the length of <code>newsubstring</code>.  If <code>start</code> is not positive, the original string is unchanged.  If <code>start</code> is bigger than the length of <code>string</code>, the result is the concatenation of the two strings.  If <code>remove</code> is negative it is considered 0.</td>
     <td><code>overlay('Txxxxas' placing 'hom' from 2 for 4)</code> => <code>Thomas</code></td>
   </tr>
   <tr>
     <td><a id="position"></a><code>POSITION(substring IN string)</code></td>
-    <td>Returns the first Unicode character index of the specified substring within string, or zero if it's not present.  First character has index 1.</td>
+    <td>Returns the first Unicode character index of <code>substring</code> within <code>string</code>, or zero if it's not present.  First character has index 1.</td>
     <td><code>position('om' in 'Thomas')</code> => <code>3</code></td>
   </tr>
   <tr>
@@ -191,7 +191,7 @@ addition to the normal way of `''`.
   </tr>
   <tr>
     <td><a id="repeat"></a><code>REPEAT ( string, count )</code></td>
-    <td>Repeats string the specified number of times.  The result is an empty string for a negative or 0 count.</td>
+    <td>Repeats <code>string</code> the specified number of times.  The result is an empty string for a negative or 0 count.</td>
     <td><code>repeat('Pg', 4)</code> => <code>PgPgPgPg</code></td>
   </tr>
   <tr>
@@ -211,20 +211,20 @@ addition to the normal way of `''`.
   </tr>
   <tr>
     <td><a id="split"></a><code>SPLIT(string [, delimiter])</code></td>
-    <td>Produce an array of strings, by splitting the first argument at each delimiter occurrence.
-        If the delimiter is empty, return an array with the original string.  If the original
-        string is empty, return an empty array.  If either argument is `NULL`, return `NULL`.
-        If delimiter is absent assume it is the string <code>','</code>.</td>
+    <td>Produce an array of strings, by splitting <code>string</code> at each occurrence of <code>delimiter</code>.
+        If <code>delimiter</code> is empty, return an array containing just <code>string</code>.  If
+        <code>string</code> is empty, return an empty array.  If either argument is NULL, return NULL.
+        If <code>delimiter</code> is absent assume it is the string <code>','</code>.</td>
     <td><code>SPLIT('a|b|c|', '|')</code> => <code>['a', 'b', 'c', '']</code></td>
   </tr>
   <tr>
     <td><a id="split_part"></a><code>SPLIT_PART(string, delimiter, n)</code></td>
     <td>
-        This function uses 1-based indexing. It extracts the <code>n</code>'th part of the string by splitting it at each occurrence of the delimiter.
+        This function uses 1-based indexing. It extracts the <code>n</code>'th part of <code>string</code> by splitting it at each occurrence of <code>delimiter</code>.
         <ul>
-            <li><code>n = 1</code> refers to the first part of the string after splitting.</li>
+            <li><code>n = 1</code> refers to the first part of <code>string</code> after splitting.</li>
             <li><code>n = 2</code> refers to the second part, and so on.</li>
-            <li>If <code>n</code> is negative, it returns the <code>abs(n)</code>'th part from the end of the string.</li>
+            <li>If <code>n</code> is negative, it returns the <code>abs(n)</code>'th part from the end of <code>string</code>.</li>
             <li>If <code>n</code> is out of bounds, it returns an empty string.</li>
         </ul>
     </td>
@@ -236,24 +236,24 @@ addition to the normal way of `''`.
   </tr>
   <tr>
     <td><a id="substr"></a><code>SUBSTR (</code> string, start, <code> [ ,</code> length <code>]</code></td>
-    <td>Extracts the substring of string starting at the "start"'th character, and stopping after "length" characters if the value is specified. If "start" is negative, the first character is chosen counting backwards from the end of the string.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
+    <td>Extracts the substring of <code>string</code> starting at the <code>start</code>'th character, and stopping after <code>length</code> characters if the value is specified. If <code>start</code> is negative, the first character is chosen counting backwards from the end of <code>string</code>.  If <code>count</code> is negative the empty string is returned.  The index of the first character is 1.</td>
     <td><code>SUBSTR('Thomas', 2, 3)</code> => <code>hom</code><br></br>
         <code>SUBSTR('Thomas', 3)</code> => <code>omas</code><br></br></td>
   </tr>
   <tr>
     <td><a id="substring"></a><code>SUBSTRING (</code> string <code>FROM</code> start <code> [ FOR</code> count<code> ] )</code></td>
-    <td>Extracts the substring of string starting at the "start"'th character, and stopping after "count" characters if the value is specified. If "start" is negative, only max(count + start - 1, 0) characters are returned.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
+    <td>Extracts the substring of <code>string</code> starting at the <code>start</code>'th character, and stopping after <code>count</code> characters if the value is specified. If <code>start</code> is negative, only <code>max(count + start - 1, 0)</code> characters are returned.  If <code>count</code> is negative the empty string is returned.  The index of the first character is 1.</td>
     <td><code>SUBSTRING('Thomas' from 2 for 3)</code> => <code>hom</code><br></br>
         <code>SUBSTRING('Thomas' from 3)</code> => <code>omas</code><br></br></td>
   </tr>
   <tr>
     <td><a id="trim"></a><code>TRIM ( [ LEADING | TRAILING | BOTH ]</code> characters <code>FROM</code> string <code>)</code></td>
-    <td>Remove the specified characters from the specified ends of the string argument</td>
+    <td>Remove <code>characters</code> from the specified ends of <code>string</code></td>
     <td><code>TRIM(both 'xyz' from 'yxTomxx')</code> => <code>Tom</code><br></br><code>TRIM(leading 'xyz' from 'yxTomxx')</code> => <code>Tomxx</code></td>
   </tr>
   <tr>
     <td><a id="upper"></a><code>UPPER ( string )</code></td>
-    <td>Converts the string to all upper case.</td>
+    <td>Converts <code>string</code> to all upper case.</td>
     <td><code>upper('tom')</code> => <code>TOM</code></td>
   </tr>
 </table>
@@ -264,9 +264,9 @@ string `LIKE` pattern [`ESCAPE` escape-character]
 
 string `NOT LIKE` pattern [`ESCAPE` escape-character]
 
-If pattern does not contain percent signs or underscores, then the
+If <code>pattern</code> does not contain percent signs or underscores, then the
 pattern only represents the string itself; in that case `LIKE` acts
-like the equals operator. An underscore (`_`) in pattern stands for
+like the equals operator. An underscore (`_`) in <code>pattern</code> stands for
 (matches) any single character; a percent sign (`%`) matches any
 sequence of zero or more characters.
 
@@ -286,7 +286,7 @@ must start and end with a percent sign.
 To match a literal underscore or percent sign without matching other
 characters, the respective character in pattern must be preceded by
 the escape character. The default escape character is the backslash
-but a different one can be selected by using the ESCAPE clause. To
+but a different one can be selected by using the <code>ESCAPE</code> clause. To
 match the escape character itself, write two escape characters.  The
 escape character cannot be one of the special pattern characters `_`
 or `%`.
@@ -313,7 +313,7 @@ string `ILIKE` pattern
 
 string `NOT ILIKE` pattern
 
-The `ILIKE` expression performs a case-insensitive pattern match. If the pattern does not contain percent signs or underscores, then the pattern represents the string itself, and `ILIKE` acts like the equals operator, ignoring character case. An underscore (`_`) in the pattern matches any single character, while a percent sign (`%`) matches any sequence of zero or more characters.
+The `ILIKE` expression performs a case-insensitive pattern match. If <code>pattern</code> does not contain percent signs or underscores, then the pattern represents the string itself, and `ILIKE` acts like the equals operator, ignoring character case. An underscore (`_`) in <code>pattern</code> matches any single character, while a percent sign (`%`) matches any sequence of zero or more characters.
 
 Some examples:
 

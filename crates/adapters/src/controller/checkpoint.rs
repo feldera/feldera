@@ -1,8 +1,5 @@
 use chrono::{DateTime, Utc};
-use dbsp::storage::{
-    backend::{StorageBackend, StoragePath},
-    buffer_cache::FBuf,
-};
+use dbsp::storage::backend::{StorageBackend, StoragePath};
 use feldera_types::{checkpoint::CheckpointMetadata, config::PipelineConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -135,11 +132,24 @@ pub struct CheckpointOutputEndpointMetrics {
 
 impl From<&OutputEndpointMetrics> for CheckpointOutputEndpointMetrics {
     fn from(value: &OutputEndpointMetrics) -> Self {
+        let snapshot = value.snapshot();
         Self {
-            transmitted_records: value.transmitted_records.load(Ordering::Relaxed),
-            transmitted_bytes: value.transmitted_bytes.load(Ordering::Relaxed),
-            num_encode_errors: value.num_encode_errors.load(Ordering::Relaxed),
-            num_transport_errors: value.num_transport_errors.load(Ordering::Relaxed),
+            // This includes all the records that have been transmitted plus all
+            // of the records that will be transmitted by the time we commit the
+            // checkpoint.
+            transmitted_records: snapshot.transmitted_records
+                + snapshot.buffered_records
+                + snapshot.queued_records,
+
+            // Only the bytes and errors that have already been transmitted, not
+            // including those that will be transmitted by the time we commit
+            // the checkpoint (we don't have proper statistics for those).
+            transmitted_bytes: snapshot.transmitted_bytes,
+
+            // We can't predict how many errors there will be by the time we
+            // commit.
+            num_encode_errors: snapshot.num_encode_errors,
+            num_transport_errors: snapshot.num_transport_errors,
         }
     }
 }
@@ -174,10 +184,14 @@ impl Checkpoint {
         storage: &dyn StorageBackend,
         path: &StoragePath,
     ) -> Result<(), ControllerError> {
-        let mut content = FBuf::with_capacity(4096);
-        serde_json::to_writer(&mut content, self).unwrap();
-        storage.write(path, content).map_err(|error| {
-            ControllerError::storage_error(format!("{path}: failed to write pipeline state"), error)
-        })
+        storage
+            .write_json(path, self)
+            .and_then(|file| file.commit())
+            .map_err(|error| {
+                ControllerError::storage_error(
+                    format!("{path}: failed to write pipeline state"),
+                    error,
+                )
+            })
     }
 }

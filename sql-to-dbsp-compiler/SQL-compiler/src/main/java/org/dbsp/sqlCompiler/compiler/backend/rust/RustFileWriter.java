@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
@@ -21,8 +22,11 @@ public class RustFileWriter extends RustWriter {
     boolean findUsed = true;
     boolean slt = false;
     boolean test = false;
+    final LateMaterializations materializations;
 
-    public RustFileWriter() {}
+    public RustFileWriter(LateMaterializations materializations) {
+        this.materializations = materializations;
+    }
 
     /** Preamble used when generating Rust code. */
     String rustPreamble() {
@@ -141,7 +145,9 @@ public class RustFileWriter extends RustWriter {
                 }
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
-                ToRustVisitor.toRustString(compiler, this.builder(), outer, declarationsDone);
+                ToRustVisitor visitor = new ToRustVisitor(
+                        compiler, this.builder(), outer.metadata, declarationsDone, this.materializations);
+                visitor.apply(outer);
             }
             this.builder().newline();
         }

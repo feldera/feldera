@@ -280,6 +280,11 @@ const connectors = {
                 },
                 {
                     type: 'doc',
+                    id: 'connectors/sources/nats',
+                    label: 'NATS'
+                },
+                {
+                    type: 'doc',
                     id: 'connectors/sources/debezium',
                     label: 'Debezium'
                 },
@@ -352,6 +357,11 @@ const connectors = {
                     type: 'doc',
                     id: 'connectors/sinks/file',
                     label: 'File'
+                },
+                {
+                    type: 'doc',
+                    id: 'connectors/sinks/iceberg',
+                    label: 'Iceberg (experimental)'
                 }
             ]
         }
@@ -390,7 +400,7 @@ const pipelines = {
         formats,
         {
             type: 'doc',
-            label: "Lifecycle",
+            label: "Reference: Pipeline Lifecycle",
             id: "pipelines/lifecycle",
         },
         {
@@ -399,6 +409,11 @@ const pipelines = {
             id: "pipelines/configuration",
         },
         "pipelines/fault-tolerance",
+        {
+            type: 'doc',
+            label: "Modifying a Pipeline",
+            id: "pipelines/modifying",
+        },
         "pipelines/checkpoint-sync",
         "pipelines/transactions",
         "pipelines/latency",
@@ -431,6 +446,7 @@ const operations = {
     label: 'Feldera Operations',
     items: [
         'operations/guide',
+        'operations/memory',
         'operations/metrics',
     ]
 };

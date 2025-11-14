@@ -9,7 +9,10 @@ use crate::{
     circuit_cache_key,
     dynamic::Data,
     operator::communication::new_exchange_operators,
-    trace::{merge_batches, Batch, BatchReader, Builder},
+    trace::{
+        deserialize_indexed_wset, merge_batches, serialize_indexed_wset, Batch, BatchReader,
+        Builder,
+    },
     Circuit, Runtime, Stream,
 };
 
@@ -56,71 +59,67 @@ where
     where
         OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R> + Send,
     {
+        if Runtime::num_workers() == 1 {
+            return None;
+        }
         let location = Location::caller();
+        let factories_clone = factories.clone();
+        let output = self
+            .circuit()
+            .cache_get_or_insert_with(
+                ShardId::new((self.stream_id(), sharding_policy(self.circuit()))),
+                move || {
+                    // As a minor optimization, we reuse this array across all invocations
+                    // of the sharding operator.
+                    let mut builders = Vec::with_capacity(Runtime::num_workers());
+                    let factories_clone2 = factories_clone.clone();
+                    let factories_clone3 = factories_clone.clone();
+                    let factories_clone4 = factories_clone.clone();
 
-        Runtime::runtime().and_then(|runtime| {
-            let num_workers = runtime.num_workers();
-            let factories_clone = factories.clone();
-
-            if num_workers == 1 {
-                None
-            } else {
-                let output = self
-                    .circuit()
-                    .cache_get_or_insert_with(
-                        ShardId::new((self.stream_id(), sharding_policy(self.circuit()))),
-                        move || {
-                            // As a minor optimization, we reuse this array across all invocations
-                            // of the sharding operator.
-                            let mut builders = Vec::with_capacity(runtime.num_workers());
-                            let factories_clone2 = factories_clone.clone();
-                            let factories_clone3 = factories_clone.clone();
-
-                            let output = self.circuit().region("shard", || {
-                                let (sender, receiver) = new_exchange_operators(
-                                    &runtime,
-                                    Runtime::worker_index(),
-                                    Some(location),
-                                    move || Vec::new(),
-                                    move |batch: IB, batches: &mut Vec<OB>| {
-                                        Self::shard_batch(
-                                            batch,
-                                            num_workers,
-                                            &mut builders,
-                                            batches,
-                                            &factories_clone3,
-                                        );
-                                    },
-                                    |batches: &mut Vec<OB>, batch: OB| batches.push(batch),
+                    let output = self.circuit().region("shard", || {
+                        let (sender, receiver) = new_exchange_operators(
+                            Some(location),
+                            move || Vec::new(),
+                            move |batch: IB, batches: &mut Vec<OB>| {
+                                Self::shard_batch(
+                                    batch,
+                                    Runtime::num_workers(),
+                                    &mut builders,
+                                    batches,
+                                    &factories_clone3,
                                 );
+                            },
+                            |batch| serialize_indexed_wset(&batch),
+                            move |data| deserialize_indexed_wset(&factories_clone4, &data),
+                            |batches: &mut Vec<OB>, batch: OB| batches.push(batch),
+                        )
+                        .unwrap();
 
-                                self.circuit()
-                                    .add_exchange(sender, receiver, self)
-                                    .apply_owned_named("merge shards", move |batches| {
-                                        merge_batches(&factories_clone2, batches, &None, &None)
-                                    })
-                            });
+                        self.circuit()
+                            .add_exchange(sender, receiver, self)
+                            .apply_owned_named("merge shards", move |batches| {
+                                merge_batches(&factories_clone2, batches, &None, &None)
+                            })
+                    });
 
-                            self.circuit().cache_insert(
-                                ShardId::new((output.stream_id(), sharding_policy(self.circuit()))),
-                                output.clone(),
-                            );
+                    self.circuit().cache_insert(
+                        ShardId::new((output.stream_id(), sharding_policy(self.circuit()))),
+                        output.clone(),
+                    );
 
-                            self.circuit()
-                                .cache_insert(UnshardId::new(output.stream_id()), self.clone());
+                    self.circuit()
+                        .cache_insert(UnshardId::new(output.stream_id()), self.clone());
 
-                            output.set_persistent_id(
-                                self.get_persistent_id()
-                                    .map(|name| format!("{name}.shard"))
-                                    .as_deref(),
-                            )
-                        },
+                    output.set_persistent_id(
+                        self.get_persistent_id()
+                            .map(|name| format!("{name}.shard"))
+                            .as_deref(),
                     )
-                    .clone();
+                },
+            )
+            .clone();
 
-                Some(output)
-            }
-        })
+        Some(output)
     }
 
     // Partitions the batch into `nshards` partitions based on the hash of the key.
@@ -139,7 +138,11 @@ where
             // We iterate over tuples in the batch in order; hence tuples added
             // to each shard are also ordered, so we can use the more efficient
             // `Builder` API (instead of `Batcher`) to construct output batches.
-            builders.push(OB::Builder::with_capacity(factories, batch.len() / shards));
+            builders.push(OB::Builder::with_capacity(
+                factories,
+                batch.key_count() / shards,
+                batch.len() / shards,
+            ));
         }
 
         let mut cursor = batch.consuming_cursor(None, None);
@@ -221,8 +224,7 @@ where
 
     /// Returns `true` if this stream is sharded.
     pub fn is_sharded(&self) -> bool {
-        let num_workers = Runtime::runtime().map(|r| r.num_workers()).unwrap_or(1);
-        if num_workers == 1 {
+        if Runtime::num_workers() == 1 {
             return true;
         }
 
@@ -278,7 +280,7 @@ mod tests {
             let circuit = RootCircuit::build(move |circuit| {
                 let input = circuit.add_source(Generator::new(|| {
                     let worker_index = Runtime::worker_index();
-                    let num_workers = Runtime::runtime().unwrap().num_workers();
+                    let num_workers = Runtime::num_workers();
                     test_data(worker_index, num_workers)
                 }));
                 input

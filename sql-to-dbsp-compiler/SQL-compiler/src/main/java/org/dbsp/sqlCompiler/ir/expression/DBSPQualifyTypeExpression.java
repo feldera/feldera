@@ -37,8 +37,8 @@ import org.dbsp.util.Linq;
 
 import java.util.List;
 
-/** An expression qualified with a type.
- * expression::type */
+/** An expression qualified with a type. */
+// e.g., expression::<type, type>
 @NonCoreIR
 public final class DBSPQualifyTypeExpression extends DBSPExpression {
     public final DBSPExpression expression;

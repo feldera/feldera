@@ -7,9 +7,17 @@ jobs:
   build-jar:
     name: Build Compiler
     runs-on: [k8s-runners-amd64]
+    permissions:
+      id-token: write
+      contents: read
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-9a54a381bb958ba78da125976a2f7731db3d7a4f
+      image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
     steps:
+      - name: Show Kubernetes node
+        if: always()
+        run: |
+          echo "K8S node: ${K8S_NODE_NAME}"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -50,10 +58,10 @@ jobs:
           retention-days: 7
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5.1.0
         with:
-          aws-access-key-id: ${{ secrets.SQL2DBSP_S3_ACCESS_KEY }}
-          aws-secret-access-key: ${{ secrets.SQL2DBSP_S3_SECRET_KEY }}
+          role-to-assume: arn:aws:iam::737834633458:role/GhaSql2DbspJarUpload
+          role-session-name: gha-${{ github.run_id }}
           aws-region: ${{ vars.SQL2DBSP_S3_REGION }}
 
       - name: Upload JAR to S3 with SHA in filename

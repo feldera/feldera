@@ -22,7 +22,7 @@
 //! a restart of the pipeline manager will refresh the cache.
 //!
 //! To support bearer token workflows, we require environment variables specific
-//! to each provider. All providers require AUTH_CLIENT_ID and AUTH_ISSUER.
+//! to each provider. All providers require FELDERA_AUTH_CLIENT_ID and FELDERA_AUTH_ISSUER.
 //! Some providers may require additional configuration (see provider-specific
 //! functions below).
 //!
@@ -216,7 +216,23 @@ async fn api_key_auth(
             req.extensions_mut().insert(permissions);
             Ok(req)
         }
-        Err(_) => Err((create_authz_json_error("Unauthorized API key"), req)),
+        Err(error) => {
+            match error {
+                DBError::InvalidApiKey => {
+                    let ip = req
+                        .peer_addr()
+                        .map(|addr| addr.ip().to_string())
+                        .unwrap_or_else(|| "<unknown IP>".to_owned());
+                    log::error!(
+                        "authentication attempt using invalid API key from ip: '{}'",
+                        ip
+                    );
+                }
+                e => log::error!("failed to validate API key: {}", e),
+            };
+
+            Err((create_authz_json_error("Unauthorized API key"), req))
+        }
     }
 }
 
@@ -383,9 +399,10 @@ pub(crate) enum AuthProvider {
 
 pub(crate) fn aws_auth_config() -> AuthConfiguration {
     let mut validation = Validation::new(Algorithm::RS256);
-    let client_id =
-        env::var("AUTH_CLIENT_ID").expect("Missing environment variable AUTH_CLIENT_ID");
-    let iss = env::var("AUTH_ISSUER").expect("Missing environment variable AUTH_ISSUER");
+    let client_id = env::var("FELDERA_AUTH_CLIENT_ID")
+        .expect("Missing environment variable FELDERA_AUTH_CLIENT_ID");
+    let iss =
+        env::var("FELDERA_AUTH_ISSUER").expect("Missing environment variable FELDERA_AUTH_ISSUER");
     let jwk_uri = format!("{}/.well-known/jwks.json", iss);
     // We do not validate with set_audience because it is optional,
     // and AWS Cognito doesn't consistently claim it in JWT (e.g. via Hosted UI
@@ -409,9 +426,10 @@ pub(crate) async fn generic_oidc_auth_config(
     api_config: &crate::config::ApiServerConfig,
 ) -> Result<AuthConfiguration, Box<dyn std::error::Error>> {
     let mut validation = Validation::new(Algorithm::RS256);
-    let client_id =
-        env::var("AUTH_CLIENT_ID").expect("Missing environment variable AUTH_CLIENT_ID");
-    let iss = env::var("AUTH_ISSUER").expect("Missing environment variable AUTH_ISSUER");
+    let client_id = env::var("FELDERA_AUTH_CLIENT_ID")
+        .expect("Missing environment variable FELDERA_AUTH_CLIENT_ID");
+    let iss =
+        env::var("FELDERA_AUTH_ISSUER").expect("Missing environment variable FELDERA_AUTH_ISSUER");
 
     // Use OIDC discovery to fetch jwks_uri
     let jwk_uri = fetch_jwks_uri_from_discovery(&iss).await?;

@@ -7,7 +7,7 @@ use, check out [Feldera Enterprise](/get-started/enterprise).
 ## Docker Quickstart
 
 ```
-docker run -p 8080:8080 --tty --rm -it ghcr.io/feldera/pipeline-manager:latest
+docker run --pull always -p 8080:8080 --tty --rm -it ghcr.io/feldera/pipeline-manager:latest
 ```
 
 Once you see the Feldera logo on your terminal, go ahead and open the Web Console

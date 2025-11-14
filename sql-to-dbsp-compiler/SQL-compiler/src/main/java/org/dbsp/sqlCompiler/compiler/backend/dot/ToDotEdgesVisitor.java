@@ -21,6 +21,9 @@ import java.util.Set;
 
 /** This visitor dumps the edges circuit to a dot file. */
 public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
+    // Above this level of details show types
+    static final int TYPE_DETAILS = 2;
+
     protected final IndentStream stream;
     // A higher value -> more details
     protected final int details;
@@ -39,7 +42,7 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
         if (source.port() != 0)
             name += " " + source.port();
         return name + " " +
-                ToRustInnerVisitor.toRustString(this.compiler(), type, null, this.details < 3);
+                ToRustInnerVisitor.toRustString(this.compiler(), type, null, this.details < 4);
     }
 
     @Override
@@ -60,7 +63,7 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
             this.stream.append(this.getPortName(i))
                     .append(" -> ")
                     .append(node.getNodeName(false));
-            if (this.details >= 2 && !this.edgesLabeled.contains(i)) {
+            if (this.details >= TYPE_DETAILS && !this.edgesLabeled.contains(i)) {
                 String label = this.getEdgeLabel(i);
                 this.stream.append(" [xlabel=")
                         .append(Utilities.doubleQuote(label, false))
@@ -80,7 +83,7 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
             this.stream.append(this.getPortName(i))
                     .append(" -> ")
                     .append(node.getOutputName());
-            if (this.details >= 2 && !this.edgesLabeled.contains(i)) {
+            if (this.details >= TYPE_DETAILS && !this.edgesLabeled.contains(i)) {
                 String label = this.getEdgeLabel(i);
                 this.stream.append(" [xlabel=")
                         .append(Utilities.doubleQuote(label, false))

@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteObject;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.sql.SqlNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
@@ -16,7 +17,8 @@ import java.util.Map;
 public class LastRel extends CalciteRelNode {
     public final RelNode relNode;
 
-    public LastRel(RelNode relNode) {
+    public LastRel(RelNode relNode, SourcePositionRange pos) {
+        super(pos);
         this.relNode = relNode;
     }
 

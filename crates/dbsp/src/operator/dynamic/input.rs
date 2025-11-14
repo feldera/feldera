@@ -1433,6 +1433,7 @@ mod test {
                 let mut result = <DynOrdZSet<DynData> as DynBatch>::Builder::with_capacity(
                     &BatchReaderFactories::new::<u64, (), ZWeight>(),
                     batch.len(),
+                    batch.len(),
                 );
 
                 while cursor.key_valid() {

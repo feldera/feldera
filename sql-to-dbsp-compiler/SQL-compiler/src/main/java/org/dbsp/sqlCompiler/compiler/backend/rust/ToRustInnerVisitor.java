@@ -44,66 +44,21 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
-import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
-import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPLazyExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPQuestionExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
@@ -116,11 +71,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPathSegment;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
@@ -1343,7 +1295,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
             if (sourceType.is(DBSPTypeVariant.class)) {
                 // Cast variant to map
                 functionName = "cast_to_map" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
-                this.builder.append(functionName).append("(").increase();
+                this.builder.append(functionName).append("::<");
+                destMap.getKeyType().accept(this);
+                this.builder.append(", ");
+                destMap.getValueType().accept(this);
+                this.builder.append(">(").increase();
                 expression.source.accept(this);
                 this.builder.decrease().append(")");
                 this.pop(expression);
@@ -1656,14 +1612,16 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         expression.getType(),
                         expression.left.getType(),
                         expression.right.getType());
-                this.builder.append(function).append("(");
+                this.builder.append(function).append("(").increase();
                 this.visitingChild = 0;
                 expression.left.accept(this);
                 // lazy in the right argument, make it a closure
-                this.builder.append(", || (");
+                this.builder.append(",")
+                        .newline()
+                        .append(" || (");
                 this.visitingChild = 1;
                 expression.right.accept(this);
-                this.builder.append("))");
+                this.builder.decrease().append("))");
                 break;
             }
             default: {
@@ -1699,13 +1657,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         expression.getType().emitGenericArguments(builder, first);
                         this.builder.append(">");
                     }
-                    this.builder.append("(");
+                    this.builder.append("(").increase();
                     this.visitingChild = 0;
                     expression.left.accept(this);
-                    this.builder.append(", ");
+                    this.builder.append(",").newline();
                     this.visitingChild = 1;
                     expression.right.accept(this);
-                    this.builder.append(")");
+                    this.builder.decrease().append(")");
                 }
                 break;
             }
@@ -1871,6 +1829,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
         public NeedsSourceMap(DBSPCompiler compiler) {
             super(compiler);
+        }
+
+        @Override
+        public VisitDecision preorder(DBSPType type) {
+            return VisitDecision.STOP;
         }
 
         @Override

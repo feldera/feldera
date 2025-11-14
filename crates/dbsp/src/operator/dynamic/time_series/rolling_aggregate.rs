@@ -891,9 +891,9 @@ where
             let mut tree_cursor = radix_tree.unwrap().cursor();
 
             let mut retraction_builder =
-                O::Builder::with_capacity(&self.output_factories, chunk_size);
+                O::Builder::with_capacity(&self.output_factories, chunk_size, chunk_size);
             let mut insertion_builder =
-                O::Builder::with_capacity(&self.output_factories, chunk_size);
+                O::Builder::with_capacity(&self.output_factories, chunk_size, chunk_size);
 
             // println!("delta: {input_delta:#x?}");
             // println!("radix tree: {radix_tree:#x?}");
@@ -935,7 +935,7 @@ where
                                 self.output_batch_stats.borrow_mut().add_batch(result.len());
                                 yield (result, false, delta_cursor.position());
                                 any_values = false;
-                                retraction_builder = O::Builder::with_capacity(&self.output_factories, chunk_size);
+                                retraction_builder = O::Builder::with_capacity(&self.output_factories, chunk_size, chunk_size);
                             }
                             range_cursor.step_val();
                         }
@@ -1003,7 +1003,7 @@ where
 
                                     yield (result, false, delta_cursor.position());
                                     insertion_builder =
-                                        O::Builder::with_capacity(&self.output_factories, chunk_size);
+                                        O::Builder::with_capacity(&self.output_factories, chunk_size, chunk_size);
                                 }
 
                                 break;

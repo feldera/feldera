@@ -77,6 +77,40 @@ export const $ApiPermission = {
   enum: ['Read', 'Write']
 } as const
 
+export const $Auth = {
+  type: 'object',
+  properties: {
+    credentials: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/Credentials'
+        }
+      ],
+      nullable: true
+    },
+    jwt: {
+      type: 'string',
+      nullable: true
+    },
+    nkey: {
+      type: 'string',
+      nullable: true
+    },
+    token: {
+      type: 'string',
+      nullable: true
+    },
+    user_and_password: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/UserAndPassword'
+        }
+      ],
+      nullable: true
+    }
+  }
+} as const
+
 export const $AuthProvider = {
   oneOf: [
     {
@@ -446,7 +480,7 @@ export const $CompilationProfile = {
 as an argument via \`cargo build --profile <>\`. A compilation profile affects among
 other things the compilation speed (how long till the program is ready to be run)
 and runtime speed (the performance while running).`,
-  enum: ['dev', 'unoptimized', 'optimized']
+  enum: ['dev', 'unoptimized', 'optimized', 'optimized_symbols']
 } as const
 
 export const $CompletionStatus = {
@@ -587,6 +621,19 @@ Format is \`x.y.z\`.`
   }
 } as const
 
+export const $ConnectOptions = {
+  type: 'object',
+  required: ['server_url'],
+  properties: {
+    auth: {
+      $ref: '#/components/schemas/Auth'
+    },
+    server_url: {
+      type: 'string'
+    }
+  }
+} as const
+
 export const $ConnectorConfig = {
   allOf: [
     {
@@ -700,6 +747,109 @@ labels have finished processing all inputs.`,
     }
   ],
   description: "A data connector's configuration"
+} as const
+
+export const $ConnectorStats = {
+  type: 'object',
+  description: `Aggregated connector error statistics.
+
+This structure contains the sum of all error counts across all input and output connectors
+for a pipeline.`,
+  required: ['num_errors'],
+  properties: {
+    num_errors: {
+      type: 'integer',
+      format: 'int64',
+      description: `Total number of errors across all connectors.
+
+This is the sum of:
+- \`num_transport_errors\` from all input connectors
+- \`num_parse_errors\` from all input connectors
+- \`num_encode_errors\` from all output connectors
+- \`num_transport_errors\` from all output connectors`,
+      minimum: 0
+    }
+  }
+} as const
+
+export const $ConsumerConfig = {
+  type: 'object',
+  required: ['deliver_policy'],
+  properties: {
+    deliver_policy: {
+      $ref: '#/components/schemas/DeliverPolicy'
+    },
+    description: {
+      type: 'string',
+      nullable: true
+    },
+    filter_subjects: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    max_batch: {
+      type: 'integer',
+      format: 'int64',
+      nullable: true
+    },
+    max_bytes: {
+      type: 'integer',
+      format: 'int64',
+      nullable: true
+    },
+    max_expires: {
+      type: 'string',
+      nullable: true
+    },
+    max_waiting: {
+      type: 'integer',
+      format: 'int64'
+    },
+    metadata: {
+      type: 'object',
+      additionalProperties: {
+        type: 'string'
+      }
+    },
+    name: {
+      type: 'string',
+      nullable: true
+    },
+    rate_limit: {
+      type: 'integer',
+      format: 'int64',
+      minimum: 0
+    },
+    replay_policy: {
+      $ref: '#/components/schemas/ReplayPolicy'
+    }
+  }
+} as const
+
+export const $Credentials = {
+  oneOf: [
+    {
+      type: 'object',
+      required: ['FromString'],
+      properties: {
+        FromString: {
+          type: 'string'
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['FromFile'],
+      properties: {
+        FromFile: {
+          type: 'string'
+        }
+      },
+      example: '/path/to/credentials.json'
+    }
+  ]
 } as const
 
 export const $Dataflow = {
@@ -849,6 +999,61 @@ export const $DatagenStrategy = {
     'file_name',
     'file_extension',
     'dir_path'
+  ]
+} as const
+
+export const $DeliverPolicy = {
+  oneOf: [
+    {
+      type: 'string',
+      enum: ['All']
+    },
+    {
+      type: 'string',
+      enum: ['Last']
+    },
+    {
+      type: 'string',
+      enum: ['New']
+    },
+    {
+      type: 'object',
+      required: ['ByStartSequence'],
+      properties: {
+        ByStartSequence: {
+          type: 'object',
+          required: ['start_sequence'],
+          properties: {
+            start_sequence: {
+              type: 'integer',
+              format: 'int64',
+              minimum: 0
+            }
+          }
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['ByStartTime'],
+      properties: {
+        ByStartTime: {
+          type: 'object',
+          required: ['start_time'],
+          properties: {
+            start_time: {
+              type: 'string',
+              format: 'date-time',
+              example: '2023-01-15T09:30:00Z'
+            }
+          }
+        }
+      }
+    },
+    {
+      type: 'string',
+      enum: ['LastPerSubject']
+    }
   ]
 } as const
 
@@ -2165,7 +2370,12 @@ export const $MirNode = {
     outputs: {
       type: 'array',
       items: {
-        $ref: '#/components/schemas/MirInput'
+        allOf: [
+          {
+            $ref: '#/components/schemas/MirInput'
+          }
+        ],
+        nullable: true
       },
       nullable: true
     },
@@ -2189,6 +2399,22 @@ export const $MirNode = {
     }
   },
   additionalProperties: {}
+} as const
+
+export const $NatsInputConfig = {
+  type: 'object',
+  required: ['connection_config', 'stream_name', 'consumer_config'],
+  properties: {
+    connection_config: {
+      $ref: '#/components/schemas/ConnectOptions'
+    },
+    consumer_config: {
+      $ref: '#/components/schemas/ConsumerConfig'
+    },
+    stream_name: {
+      type: 'string'
+    }
+  }
 } as const
 
 export const $NewApiKeyRequest = {
@@ -2853,6 +3079,7 @@ if applicable, is set by the runner.`
 
 export const $PipelineDiff = {
   type: 'object',
+  description: 'Summary of changes in the pipeline between checkpointed and new versions.',
   required: [
     'added_input_connectors',
     'modified_input_connectors',
@@ -2915,7 +3142,7 @@ export const $PipelineDiff = {
 
 export const $PipelineFieldSelector = {
   type: 'string',
-  enum: ['all', 'status']
+  enum: ['all', 'status', 'status_with_connectors']
 } as const
 
 export const $PipelineId = {
@@ -3122,6 +3349,14 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
     'deployment_resources_desired_status_since'
   ],
   properties: {
+    connectors: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ConnectorStats'
+        }
+      ],
+      nullable: true
+    },
     created_at: {
       type: 'string',
       format: 'date-time'
@@ -3388,14 +3623,37 @@ value associated with the key.
 
 Default: \`false\``
     },
+    ssl_ca_location: {
+      type: 'string',
+      description: 'Path to a file containing a sequence of CA certificates in PEM format.',
+      nullable: true
+    },
     ssl_ca_pem: {
       type: 'string',
-      description: 'The CA certificate in PEM format.',
+      description: 'A sequence of CA certificates in PEM format.',
+      nullable: true
+    },
+    ssl_certificate_chain_location: {
+      type: 'string',
+      description: `The path to the certificate chain file.
+The file must contain a sequence of PEM-formatted certificates,
+the first being the leaf certificate, and the remainder forming
+the chain of certificates up to and including the trusted root certificate.`,
       nullable: true
     },
     ssl_client_key: {
       type: 'string',
       description: 'The client certificate key in PEM format.',
+      nullable: true
+    },
+    ssl_client_key_location: {
+      type: 'string',
+      description: 'Path to the client certificate key.',
+      nullable: true
+    },
+    ssl_client_location: {
+      type: 'string',
+      description: 'Path to the client certificate.',
       nullable: true
     },
     ssl_client_pem: {
@@ -3473,6 +3731,7 @@ If not set (null), the runtime version will be the same as the platform version.
 
 export const $ProgramDiff = {
   type: 'object',
+  description: 'Summary of changes in the program between checkpointed and new versions.',
   required: [
     'added_tables',
     'removed_tables',
@@ -3597,10 +3856,12 @@ as well as only for runtime (e.g., schema, input/output connectors).`,
 
 export const $ProgramIr = {
   type: 'object',
+  description: 'Program information included in the pipeline configuration.',
   required: ['mir', 'program_schema'],
   properties: {
     mir: {
       type: 'object',
+      description: 'The MIR of the program.',
       additionalProperties: {
         $ref: '#/components/schemas/MirNode'
       }
@@ -3910,6 +4171,11 @@ export const $Relation = {
   description: `A SQL table or view. It has a name and a list of fields.
 
 Matches the Calcite JSON format.`
+} as const
+
+export const $ReplayPolicy = {
+  type: 'string',
+  enum: ['Instant', 'Original']
 } as const
 
 export const $ResourceConfig = {
@@ -5326,6 +5592,19 @@ export const $TransportConfig = {
       required: ['name', 'config'],
       properties: {
         config: {
+          $ref: '#/components/schemas/NatsInputConfig'
+        },
+        name: {
+          type: 'string',
+          enum: ['nats_input']
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['name', 'config'],
+      properties: {
+        config: {
           $ref: '#/components/schemas/KafkaInputConfig'
         },
         name: {
@@ -5592,6 +5871,19 @@ input adapter. If the input adapter stays paused longer than this
 timeout, it will drop the network connection to the server. It will
 automatically reconnect when the input adapter starts running again.`,
       minimum: 0
+    }
+  }
+} as const
+
+export const $UserAndPassword = {
+  type: 'object',
+  required: ['user', 'password'],
+  properties: {
+    password: {
+      type: 'string'
+    },
+    user: {
+      type: 'string'
     }
   }
 } as const

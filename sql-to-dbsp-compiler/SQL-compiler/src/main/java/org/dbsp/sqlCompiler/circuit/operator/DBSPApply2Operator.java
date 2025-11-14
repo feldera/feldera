@@ -24,13 +24,13 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
                               OutputPort left, OutputPort right) {
         super(node, "apply2", function, function.getResultType(), false, left, right, false);
         Utilities.enforce(function.parameters.length == 2,
-                "Expected 2 parameters for function " + function);
+                () -> "Expected 2 parameters for function " + function);
         DBSPType param0Type = function.parameters[0].getType().deref();
         Utilities.enforce(left.outputType().sameType(param0Type),
-                "Parameter type " + param0Type + " does not match input type " + left.outputType());
+                () -> "Parameter type " + param0Type + " does not match input type " + left.outputType());
         DBSPType param1Type = function.parameters[1].getType().deref();
         Utilities.enforce(right.outputType().sameType(param1Type),
-                "Parameter type " + param1Type + " does not match input type " + right.outputType());
+                () -> "Parameter type " + param1Type + " does not match input type " + right.outputType());
         DBSPApplyOperator.noZsets(left.outputType());
         DBSPApplyOperator.noZsets(right.outputType());
         DBSPApplyOperator.noZsets(this.outputType());
@@ -41,7 +41,7 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
             @Nullable DBSPExpression function, DBSPType outputType,
            List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, function, newInputs, outputType)) {
-            Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs " + newInputs);
+            Utilities.enforce(newInputs.size() == 2, () -> "Expected 2 inputs " + newInputs);
             return new DBSPApply2Operator(
                     this.getRelNode(), toClosure(function),
                     newInputs.get(0), newInputs.get(1))

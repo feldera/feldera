@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
+import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.util.IIndentStream;
@@ -148,9 +149,10 @@ public class DBSPTypeUser extends DBSPType {
      * @return           An expression which invokes the constructor */
     public DBSPExpression constructor(String method, DBSPExpression... arguments) {
         return new DBSPConstructorExpression(
-                new DBSPPathExpression(this, new DBSPPath(this.name, method)),
-                this,
-                arguments);
+                new DBSPPathExpression(this, new DBSPPath(
+                        new DBSPSimplePathSegment(this.name, this.typeArgs),
+                        new DBSPSimplePathSegment(method))),
+                this, arguments);
     }
 
     @SuppressWarnings("unused")

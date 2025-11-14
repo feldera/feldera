@@ -322,9 +322,10 @@ export const postPipelineActivate = (options: Options<PostPipelineActivateData>)
 /**
  * Approves the pipeline to proceed with bootstrapping.
  * This endpoint is used when a pipeline has been started with
- * `bootstrap_policy=await_approval` and is currently in the
- * `AwaitingApproval` state. The pipeline will wait for explicit
- * user approval before proceeding with the bootstrapping process.
+ * `bootstrap_policy=await_approval`, it is resuming from an existing checkpoint,
+ * but the pipeline has been modified since the checkpoint was made and is
+ * currently in the `AwaitingApproval` state awaiting user approval to proceed
+ * with bootstrapping.
  */
 export const postPipelineApprove = (options: Options<PostPipelineApproveData>) => {
   return (options?.client ?? client).post<PostPipelineApproveResponse, PostPipelineApproveError>({

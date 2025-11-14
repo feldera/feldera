@@ -1,9 +1,9 @@
 use crate::compiler::util::{
-    cleanup_specific_directories, cleanup_specific_files, copy_file, copy_file_if_checksum_differs,
-    crate_name_pipeline_globals, crate_name_pipeline_main, create_dir_if_not_exists,
-    create_new_file, create_new_file_with_content, decode_string_as_dir, read_file_content,
-    read_file_content_bytes, recreate_dir, recreate_file_with_content, truncate_sha256_checksum,
-    CleanupDecision, DirectoryContent, ProcessGroupTerminator, UtilError,
+    checksum_file, cleanup_specific_directories, cleanup_specific_files, copy_file,
+    copy_file_if_checksum_differs, crate_name_pipeline_globals, crate_name_pipeline_main,
+    create_dir_if_not_exists, create_new_file, create_new_file_with_content, decode_string_as_dir,
+    pipeline_binary_filename, read_file_content, recreate_dir, recreate_file_with_content,
+    truncate_sha256_checksum, CleanupDecision, DirectoryContent, ProcessGroupTerminator, UtilError,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -14,8 +14,10 @@ use crate::db::types::program::{CompilationProfile, RuntimeSelector, RustCompila
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{validate_program_config, validate_program_info};
 use crate::db::types::version::Version;
+use crate::error::source_error;
 use crate::has_unstable_feature;
 use chrono::{DateTime, Utc};
+use futures_util::stream;
 use indoc::formatdoc;
 use log::{debug, error, info, trace, warn};
 use openssl::sha;
@@ -26,6 +28,7 @@ use std::time::{Instant, SystemTime};
 use std::{process::Stdio, sync::Arc};
 use tokio::{
     fs,
+    io::AsyncReadExt,
     process::Command,
     sync::Mutex,
     time::{sleep, Duration},
@@ -59,11 +62,16 @@ const CLEANUP_INTERVAL: Duration = Duration::from_secs(120);
 /// a significant amount of time.
 const CLEANUP_RETENTION: Duration = Duration::from_secs(3600);
 
+/// Maximum chunk size for uploading binary to HTTP endpoint.
+/// This balances memory usage and upload performance.
+const MAX_CHUNK_SIZE_FOR_UPLOAD_BINARY: usize = 10 * 1024 * 1024; // 10MB
+
 /// Rust compilation task that wakes up periodically.
 /// Sleeps inbetween ticks which affects the response time of Rust compilation.
-/// Note that the logic in this task assumes only one is run at a time.
 /// This task cannot fail, and any internal errors are caught and written to log if need-be.
 pub async fn rust_compiler_task(
+    worker_id: usize,
+    total_workers: usize,
     common_config: CommonConfig,
     config: CompilerConfig,
     db: Arc<Mutex<StoragePostgres>>,
@@ -77,10 +85,10 @@ pub async fn rust_compiler_task(
             if let Err(e) = cleanup_rust_compilation(&config, db.clone()).await {
                 match e {
                     RustCompilationCleanupError::Database(e) => {
-                        error!("Rust compilation cleanup failed: database error occurred: {e}");
+                        error!("Rust worker {worker_id}: compilation cleanup failed: database error occurred: {e}");
                     }
                     RustCompilationCleanupError::Utility(e) => {
-                        error!("Rust compilation cleanup failed: utility error occurred: {e}");
+                        error!("Rust worker {worker_id}: compilation cleanup failed: utility error occurred: {e}");
                     }
                 }
                 unexpected_error = true;
@@ -89,21 +97,28 @@ pub async fn rust_compiler_task(
         }
 
         // Compile
-        let result = attempt_end_to_end_rust_compilation(&common_config, &config, db.clone()).await;
+        let result = attempt_end_to_end_rust_compilation(
+            worker_id,
+            total_workers,
+            &common_config,
+            &config,
+            db.clone(),
+        )
+        .await;
         if let Err(e) = &result {
             match e {
                 DBError::UnknownPipeline { pipeline_id } => {
-                    debug!("Rust compilation canceled: pipeline {pipeline_id} no longer exists");
+                    debug!("Rust worker {worker_id}: compilation canceled: pipeline {pipeline_id} no longer exists");
                 }
                 DBError::OutdatedProgramVersion {
                     outdated_version,
                     latest_version,
                 } => {
-                    debug!("Rust compilation canceled: pipeline program version ({outdated_version}) is outdated by latest ({latest_version})");
+                    debug!("Rust worker {worker_id}: compilation canceled: pipeline program version ({outdated_version}) is outdated by latest ({latest_version})");
                 }
                 e => {
                     unexpected_error = true;
-                    error!("Rust compilation canceled: unexpected database error occurred: {e}");
+                    error!("Rust worker {worker_id}: compilation canceled: unexpected database error occurred: {e}");
                 }
             }
         }
@@ -147,23 +162,32 @@ pub async fn rust_compiler_task(
 /// - The pipeline program is detected to be updated (it became outdated)
 /// - The database cannot be reached
 async fn attempt_end_to_end_rust_compilation(
+    worker_id: usize,
+    total_workers: usize,
     common_config: &CommonConfig,
     config: &CompilerConfig,
     db: Arc<Mutex<StoragePostgres>>,
 ) -> Result<bool, DBError> {
-    trace!("Performing Rust compilation...");
+    trace!("Rust worker {worker_id}: Performing Rust compilation...");
 
     // (1) Reset any pipeline which is `CompilingRust` back to `SqlCompiled`
+    // Only the owner worker (by modulo) resets stuck CompilingRust pipelines to SqlCompiled
+    // This ensures that only the assigned worker for a pipeline can reset its status
     db.lock()
         .await
-        .clear_ongoing_rust_compilation(&common_config.platform_version)
+        .clear_ongoing_rust_compilation_for_worker(
+            &common_config.platform_version,
+            worker_id,
+            total_workers,
+        )
         .await?;
 
     // (2) Find pipeline which needs Rust compilation
+    // Atomically claim the next pipeline for Rust compilation using modulo sharding
     let Some((tenant_id, pipeline)) = db
         .lock()
         .await
-        .get_next_rust_compilation(&common_config.platform_version)
+        .get_next_rust_compilation(&common_config.platform_version, worker_id, total_workers)
         .await?
     else {
         trace!("No pipeline found which needs Rust compilation");
@@ -194,14 +218,23 @@ async fn attempt_end_to_end_rust_compilation(
 
     // (5) Update database that Rust compilation is finished
     match compilation_result {
-        Ok((source_checksum, integrity_checksum, duration, compilation_info)) => {
+        Ok(RustCompilationResult {
+            source_checksum,
+            integrity_checksum,
+            binary_size,
+            profile,
+            duration,
+            rustc_result,
+        }) => {
             info!(
-                "Rust compilation success: pipeline {} (program version: {}) (took {:.2}s; source checksum: {}; integrity checksum: {})",
+                "Rust compilation success: pipeline {} (program version: {}) (took {:.2}s; source checksum: {}; integrity checksum: {}, size: {} bytes, profile: {})",
                 pipeline.id,
                 pipeline.program_version,
                 duration.as_secs_f64(),
                 truncate_sha256_checksum(&source_checksum),
                 truncate_sha256_checksum(&integrity_checksum),
+                binary_size,
+                profile
             );
             db.lock()
                 .await
@@ -209,7 +242,7 @@ async fn attempt_end_to_end_rust_compilation(
                     tenant_id,
                     pipeline.id,
                     pipeline.program_version,
-                    &compilation_info,
+                    &rustc_result,
                     &source_checksum,
                     &integrity_checksum,
                 )
@@ -261,6 +294,18 @@ async fn attempt_end_to_end_rust_compilation(
                     .await?;
                 error!("Rust compilation failed: pipeline {} (program version: {}) due to system error:\n{}", pipeline.id, pipeline.program_version, internal_system_error);
             }
+            RustCompilationError::BinaryUploadError(upload_error) => {
+                db.lock()
+                    .await
+                    .transit_program_status_to_system_error(
+                        tenant_id,
+                        pipeline.id,
+                        pipeline.program_version,
+                        &upload_error,
+                    )
+                    .await?;
+                error!("Rust compilation failed: pipeline {} (program version: {}) due to binary upload error:\n{}", pipeline.id, pipeline.program_version, upload_error);
+            }
         },
     }
     Ok(true)
@@ -303,6 +348,56 @@ fn calculate_source_checksum(
     hex::encode(hasher.finish())
 }
 
+/// Metadata for a compiled binary
+#[derive(Debug, Clone)]
+struct BinaryMetadata {
+    pipeline_id: PipelineId,
+    program_version: Version,
+    source_checksum: String,
+    integrity_checksum: String,
+}
+
+impl BinaryMetadata {
+    /// Generate filename for the binary
+    fn filename(&self) -> String {
+        pipeline_binary_filename(
+            &self.pipeline_id,
+            self.program_version,
+            &self.source_checksum,
+            &self.integrity_checksum,
+        )
+    }
+}
+
+/// Binary delivery mode for compiled pipeline binaries.
+#[derive(Debug, Clone)]
+pub enum BinaryDeliveryMode {
+    /// Copy binary to local filesystem destination
+    LocalCopy,
+    /// Upload binary to HTTP endpoint
+    HttpUpload {
+        endpoint: String,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+    },
+}
+
+impl BinaryDeliveryMode {
+    /// Create binary delivery mode from configuration
+    pub fn from_config(config: &CompilerConfig) -> Self {
+        match &config.binary_upload_endpoint {
+            Some(endpoint) => Self::HttpUpload {
+                endpoint: endpoint.clone(),
+                timeout_secs: config.binary_upload_timeout_secs,
+                max_retries: config.binary_upload_max_retries,
+                retry_delay_ms: config.binary_upload_retry_delay_ms,
+            },
+            None => Self::LocalCopy,
+        }
+    }
+}
+
 /// Rust compilation possible error outcomes.
 #[derive(Debug)]
 pub enum RustCompilationError {
@@ -329,6 +424,8 @@ pub enum RustCompilationError {
     RustError(RustCompilationInfo),
     /// General system problem occurred (e.g., I/O error)
     SystemError(String),
+    /// Binary upload to HTTP endpoint failed
+    BinaryUploadError(String),
 }
 
 /// Utility errors are system errors during Rust compilation.
@@ -336,6 +433,216 @@ impl From<UtilError> for RustCompilationError {
     fn from(value: UtilError) -> Self {
         RustCompilationError::SystemError(value.to_string())
     }
+}
+
+/// Delivers the compiled binary according to the configured delivery mode.
+///
+/// For local copy mode, the binary is copied to the pipeline-binaries directory.
+/// For HTTP upload mode, the binary is uploaded to the configured endpoint as multipart/form-data.
+///
+/// Returns the final binary location/identifier.
+async fn deliver_binary(
+    common_config: &CommonConfig,
+    delivery_mode: &BinaryDeliveryMode,
+    source_file_path: &Path,
+    metadata: &BinaryMetadata,
+    pipeline_binaries_dir: &Path,
+) -> Result<String, RustCompilationError> {
+    match delivery_mode {
+        BinaryDeliveryMode::LocalCopy => {
+            // Original behavior: copy to local directory
+            let target_file_path = pipeline_binaries_dir.join(metadata.filename());
+
+            // Copy binary from Cargo target profile directory to the pipeline-binaries directory
+            copy_file(source_file_path, &target_file_path).await?;
+
+            Ok(target_file_path.to_string_lossy().to_string())
+        }
+        BinaryDeliveryMode::HttpUpload { .. } => {
+            // New behavior: upload to HTTP endpoint with retries
+            upload_binary_to_endpoint_with_retries(
+                common_config,
+                delivery_mode,
+                source_file_path,
+                metadata,
+            )
+            .await
+        }
+    }
+}
+
+/// Uploads the compiled binary to an HTTP endpoint with retry logic.
+async fn upload_binary_to_endpoint_with_retries(
+    common_config: &CommonConfig,
+    delivery_mode: &BinaryDeliveryMode,
+    binary_path: &Path,
+    metadata: &BinaryMetadata,
+) -> Result<String, RustCompilationError> {
+    let mut attempts = 0;
+
+    let (endpoint, timeout_secs, max_retries, mut retry_delay_ms) = match delivery_mode {
+        BinaryDeliveryMode::HttpUpload {
+            endpoint,
+            timeout_secs,
+            max_retries,
+            retry_delay_ms,
+        } => (endpoint, *timeout_secs, *max_retries, *retry_delay_ms),
+        _ => {
+            return Err(RustCompilationError::SystemError(
+                "Invalid delivery mode for HTTP upload".to_string(),
+            ))
+        }
+    };
+
+    loop {
+        attempts += 1;
+
+        match upload_binary_to_endpoint(
+            common_config,
+            endpoint,
+            timeout_secs,
+            binary_path,
+            metadata,
+        )
+        .await
+        {
+            Ok(result) => {
+                if attempts > 1 {
+                    info!(
+                        "Binary upload succeeded on attempt {} for pipeline {} (program version: {})",
+                        attempts, metadata.pipeline_id, metadata.program_version
+                    );
+                }
+                return Ok(result);
+            }
+            Err(e) => {
+                if attempts > max_retries {
+                    error!(
+                        "Binary upload failed after {} attempts for pipeline {} (program version: {}): {:?}",
+                        attempts, metadata.pipeline_id, metadata.program_version, e
+                    );
+                    return Err(e);
+                }
+
+                warn!(
+                    "Binary upload attempt {} failed for pipeline {} (program version: {}): {:?}. Retrying in {}ms...",
+                    attempts, metadata.pipeline_id, metadata.program_version, e, retry_delay_ms
+                );
+
+                // Wait before retrying with exponential backoff
+                sleep(Duration::from_millis(retry_delay_ms)).await;
+                retry_delay_ms *= 2; // Double the delay for next attempt
+            }
+        }
+    }
+}
+
+/// Uploads the compiled binary to an HTTP endpoint (single attempt) using streaming.
+async fn upload_binary_to_endpoint(
+    common_config: &CommonConfig,
+    endpoint: &str,
+    timeout_secs: u64,
+    binary_path: &Path,
+    metadata: &BinaryMetadata,
+) -> Result<String, RustCompilationError> {
+    // Open binary file for streaming
+    let file = fs::File::open(binary_path).await.map_err(|e| {
+        RustCompilationError::BinaryUploadError(format!(
+            "Failed to open binary file '{}': {}",
+            binary_path.display(),
+            e
+        ))
+    })?;
+
+    // Get file size for Content-Length header
+    let file_metadata = file.metadata().await.map_err(|e| {
+        RustCompilationError::BinaryUploadError(format!(
+            "Failed to get file metadata '{}': {}",
+            binary_path.display(),
+            e
+        ))
+    })?;
+    let file_size = file_metadata.len();
+
+    let stream = stream::try_unfold(file, |mut file| async move {
+        let mut buffer = vec![0u8; MAX_CHUNK_SIZE_FOR_UPLOAD_BINARY];
+        match file.read(&mut buffer).await {
+            Ok(0) => Ok(None), // EOF
+            Ok(n) => {
+                buffer.truncate(n);
+                Ok(Some((buffer, file)))
+            }
+            Err(e) => Err(e),
+        }
+    });
+
+    let body = reqwest::Body::wrap_stream(stream);
+
+    // Build URL with path parameters
+    let url = format!(
+        "{}/binary/{}/{}/{}/{}",
+        endpoint.trim_end_matches('/'),
+        metadata.pipeline_id,
+        metadata.program_version,
+        metadata.source_checksum,
+        metadata.integrity_checksum
+    );
+
+    // Use the properly configured HTTP client from common_config
+    let client = common_config.reqwest_client().await;
+
+    // Send request with timeout
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/octet-stream")
+        .header("Content-Length", file_size.to_string())
+        .body(body)
+        .timeout(Duration::from_secs(timeout_secs))
+        .send()
+        .await
+        .map_err(|e| {
+            RustCompilationError::BinaryUploadError(format!(
+                "Failed to upload binary to '{}': {} ({})",
+                url,
+                &e,
+                source_error(&e)
+            ))
+        })?;
+
+    // Check response status
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(RustCompilationError::BinaryUploadError(format!(
+            "Binary upload failed with status {}: {}",
+            status, error_text
+        )));
+    }
+
+    // Get response body for any location information
+    let response_text = response
+        .text()
+        .await
+        .unwrap_or_else(|_| endpoint.to_string());
+
+    debug!(
+        "Successfully uploaded binary for pipeline {} (program version: {}) to {}",
+        metadata.pipeline_id, metadata.program_version, endpoint
+    );
+
+    Ok(response_text)
+}
+
+pub(super) struct RustCompilationResult {
+    pub(super) source_checksum: String,
+    pub(super) integrity_checksum: String,
+    pub(super) binary_size: usize,
+    pub(super) profile: CompilationProfile,
+    pub(super) duration: Duration,
+    pub(super) rustc_result: RustCompilationInfo,
 }
 
 /// Performs the Rust compilation.
@@ -355,7 +662,7 @@ pub async fn perform_rust_compilation(
     program_info: &Option<serde_json::Value>,
     udf_rust: &str,
     udf_toml: &str,
-) -> Result<(String, String, Duration, RustCompilationInfo), RustCompilationError> {
+) -> Result<RustCompilationResult, RustCompilationError> {
     let start = Instant::now();
 
     // These must always be the same, the Rust compiler should never pick up
@@ -446,7 +753,8 @@ pub async fn perform_rust_compilation(
     .await?;
 
     // Perform the compilation in the workspace
-    let (compilation_info, integrity_checksum) = call_compiler(
+    let (compilation_info, integrity_checksum, binary_size) = call_compiler(
+        common_config,
         db,
         tenant_id,
         pipeline_id,
@@ -458,12 +766,14 @@ pub async fn perform_rust_compilation(
     )
     .await?;
 
-    Ok((
+    Ok(RustCompilationResult {
         source_checksum,
-        integrity_checksum.clone(),
-        start.elapsed(),
-        compilation_info,
-    ))
+        integrity_checksum: integrity_checksum.clone(),
+        binary_size,
+        profile,
+        duration: start.elapsed(),
+        rustc_result: compilation_info,
+    })
 }
 
 /// The `main` function which is injected in each generated pipeline crate
@@ -920,6 +1230,10 @@ extern crate sync_checkpoint;"#,
         [profile.optimized]
         inherits = "release"
 
+        [profile.optimized_symbols]
+        inherits = "release"
+        debug = "line-tables-only"
+
         [workspace.dependencies]
         arcstr = {{ version = "1.2.0" }}
         paste = {{ version = "1.0.12" }}
@@ -987,6 +1301,7 @@ extern crate sync_checkpoint;"#,
 /// Calls the compiler on the project with the provided source checksum and using the compilation profile.
 #[allow(clippy::too_many_arguments)]
 async fn call_compiler(
+    common_config: &CommonConfig,
     db: Option<Arc<Mutex<StoragePostgres>>>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
@@ -995,7 +1310,7 @@ async fn call_compiler(
     source_checksum: &str,
     profile: &CompilationProfile,
     runtime_selector: &RuntimeSelector,
-) -> Result<(RustCompilationInfo, String), RustCompilationError> {
+) -> Result<(RustCompilationInfo, String, usize), RustCompilationError> {
     // Workspace directory
     let workspace_dir = config.working_dir().join("rust-compilation");
     if !workspace_dir.is_dir() {
@@ -1048,6 +1363,12 @@ async fn call_compiler(
 
     // Formulate command
     let mut command = Command::new("cargo");
+
+    // get env vars that start with SCCACHE
+    let preserved_env_vars: Vec<(String, String)> = std::env::vars()
+        .filter(|(key, _)| key.starts_with("SCCACHE"))
+        .collect();
+
     command.env_clear();
     command.env("PATH", env_path);
     if !runtime_selector.is_platform() {
@@ -1056,6 +1377,28 @@ async fn call_compiler(
     if let Some(env_rustflags) = optional_env_rustflags {
         command.env("RUSTFLAGS", env_rustflags);
     }
+
+    if let Some(rustc_wrapper) = std::env::var_os("RUSTC_WRAPPER") {
+        command.env("RUSTC_WRAPPER", rustc_wrapper);
+    }
+
+    // Preserve CARGO_INCREMENTAL if set, to allow sccache to work properly.
+    if let Some(cargo_incremental) = std::env::var_os("CARGO_INCREMENTAL") {
+        command.env("CARGO_INCREMENTAL", cargo_incremental);
+    }
+
+    // Preserve AWS_PROFILE if set, to allow sccache to use
+    // credentials from there.
+    // we avoid passing all AWS_* env vars to prevent leaking
+    // credentials from the malicious build scripts.
+    if let Some(aws_profile) = std::env::var_os("AWS_PROFILE") {
+        command.env("AWS_PROFILE", aws_profile);
+    }
+
+    for (key, value) in preserved_env_vars {
+        command.env(key, value);
+    }
+
     command
         // Set compiler stack size to 20MB (10x the default) to prevent
         // SIGSEGV when the compiler runs out of stack on large programs.
@@ -1160,19 +1503,31 @@ async fn call_compiler(
         }
 
         // Integrity checksum of the source file
-        let integrity_checksum =
-            hex::encode(sha256(&read_file_content_bytes(&source_file_path).await?));
+        let (file_size, integrity_checksum) = checksum_file(&source_file_path).await?;
 
-        // Destination file
-        let target_file_path = pipeline_binaries_dir.join(format!(
-            "pipeline_{pipeline_id}_v{program_version}_sc_{source_checksum}_ic_{integrity_checksum}"
-        ));
+        // Create binary metadata
+        let metadata = BinaryMetadata {
+            pipeline_id,
+            program_version,
+            source_checksum: source_checksum.to_string(),
+            integrity_checksum: integrity_checksum.clone(),
+        };
 
-        // Copy binary from Cargo target profile directory to the pipeline-binaries directory
-        copy_file(&source_file_path, &target_file_path).await?;
+        // Determine binary delivery mode from configuration
+        let delivery_mode = BinaryDeliveryMode::from_config(config);
+
+        // Deliver binary according to the configured mode
+        let _binary_location = deliver_binary(
+            common_config,
+            &delivery_mode,
+            &source_file_path,
+            &metadata,
+            &pipeline_binaries_dir,
+        )
+        .await?;
 
         // Success
-        Ok((compilation_info, integrity_checksum))
+        Ok((compilation_info, integrity_checksum, file_size))
     } else {
         Err(RustCompilationError::RustError(compilation_info))
     }
@@ -1269,10 +1624,30 @@ async fn cleanup_rust_compilation(
     // Clean up pipeline binaries
     // These are not subject to the retention period.
     let pipeline_binaries_dir = rust_compilation_dir.join("pipeline-binaries");
-    let valid_pipeline_binary_filenames: Vec<String> = existing_pipeline_programs.iter().map(
-        |(pipeline_id, program_version, source_checksum, integrity_checksum)| {
-            format!("pipeline_{pipeline_id}_v{program_version}_sc_{source_checksum}_ic_{integrity_checksum}")
-        }).collect();
+    let valid_pipeline_binary_filenames: Vec<String> = existing_pipeline_programs
+        .iter()
+        .map(
+            |(pipeline_id, program_version, source_checksum, integrity_checksum)| {
+                if let (Some(source_checksum), Some(integrity_checksum)) =
+                    (source_checksum, integrity_checksum)
+                {
+                    pipeline_binary_filename(
+                        pipeline_id,
+                        *program_version,
+                        source_checksum,
+                        integrity_checksum,
+                    )
+                } else {
+                    // this is when program status is 'CompilingRust'
+                    // when compiler server is uploading the binary over http, the status is still 'CompilingRust'
+                    // we don't want to delete such binaries, hence we keep a more relaxed matching pattern
+                    // if either of the checksums is missing
+                    format!("pipeline_{pipeline_id}_v{program_version}_")
+                }
+            },
+        )
+        .collect();
+
     if pipeline_binaries_dir.is_dir() {
         cleanup_specific_files(
             "Rust compilation pipeline binaries",
@@ -1280,7 +1655,10 @@ async fn cleanup_rust_compilation(
             Arc::new(
                 move |filename: &str, _metadata: Option<std::fs::Metadata>| {
                     if filename.starts_with("pipeline_") {
-                        if valid_pipeline_binary_filenames.contains(&filename.to_string()) {
+                        if valid_pipeline_binary_filenames
+                            .iter()
+                            .any(|f| filename.starts_with(f))
+                        {
                             CleanupDecision::Keep {
                                 motivation: filename.to_string(),
                             }
@@ -1722,6 +2100,57 @@ mod test {
             .await
             .unwrap()
             .contains(&format!("members = [ \"crates/{main_crate_name}\" ]")));
+    }
+
+    /// Tests the binary delivery mode configuration.
+    #[tokio::test]
+    async fn binary_delivery_mode_from_config() {
+        use crate::compiler::rust_compiler::BinaryDeliveryMode;
+        use crate::config::CompilerConfig;
+        use crate::db::types::program::CompilationProfile;
+
+        // Test local copy mode (default)
+        let config = CompilerConfig {
+            compiler_working_directory: "/tmp".to_string(),
+            compilation_profile: CompilationProfile::Dev,
+            sql_compiler_path: "test.jar".to_string(),
+            sql_compiler_cache_url: "http://test.com".to_string(),
+            compilation_cargo_lock_path: "Cargo.lock".to_string(),
+            dbsp_override_path: ".".to_string(),
+            binary_upload_endpoint: None,
+            binary_upload_timeout_secs: 300,
+            binary_upload_max_retries: 3,
+            binary_upload_retry_delay_ms: 1000,
+            precompile: false,
+        };
+
+        let delivery_mode = BinaryDeliveryMode::from_config(&config);
+        assert!(matches!(delivery_mode, BinaryDeliveryMode::LocalCopy));
+
+        // Test HTTP upload mode
+        let config = CompilerConfig {
+            binary_upload_endpoint: Some("https://example.com".to_string()),
+            binary_upload_timeout_secs: 600,
+            binary_upload_max_retries: 5,
+            binary_upload_retry_delay_ms: 2000,
+            ..config
+        };
+
+        let delivery_mode = BinaryDeliveryMode::from_config(&config);
+        match delivery_mode {
+            BinaryDeliveryMode::HttpUpload {
+                endpoint,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+            } => {
+                assert_eq!(endpoint, "https://example.com");
+                assert_eq!(timeout_secs, 600);
+                assert_eq!(max_retries, 5);
+                assert_eq!(retry_delay_ms, 2000);
+            }
+            _ => panic!("Expected HttpUpload mode"),
+        }
     }
 
     /// Tests the cleanup decision helper function.

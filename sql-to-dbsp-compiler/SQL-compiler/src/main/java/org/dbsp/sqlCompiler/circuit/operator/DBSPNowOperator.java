@@ -22,9 +22,8 @@ import java.util.List;
 
 /** Operator that generates the NOW() timestamp.
  * There is no equivalent DBSP operator, this is only used during compilation to
- * represent an input which is connected to a special stream.
- * (The compiler flag --nowstream controls whether this happens, or
- * this operator is implemented as a Rust Generator). */
+ * represent an input which is connected to a stream containing clock values.
+ * (The compiler option options.ioOptions.nowStream controls how this is implemented). */
 public final class DBSPNowOperator extends DBSPSimpleOperator {
     static DBSPExpression createFunction(CalciteObject node) {
         return new DBSPZSetExpression(

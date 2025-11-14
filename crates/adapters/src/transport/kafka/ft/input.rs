@@ -74,7 +74,7 @@ impl KafkaFtInputEndpoint {
 }
 
 struct KafkaFtInputReader {
-    _inner: Arc<KafkaFtInputReaderInner>,
+    inner: Arc<KafkaFtInputReaderInner>,
     command_sender: UnboundedSender<InputReaderCommand>,
     poller_thread: Thread,
 }
@@ -757,7 +757,7 @@ impl KafkaFtInputReader {
             .expect("failed to spawn Kafka input poller thread");
         let poller_thread = poller_handle.thread().clone();
         Ok(KafkaFtInputReader {
-            _inner: inner,
+            inner,
             command_sender,
             poller_thread,
         })
@@ -794,6 +794,15 @@ impl InputReader for KafkaFtInputReader {
     }
     fn is_closed(&self) -> bool {
         self.command_sender.is_closed()
+    }
+    fn memory(&self) -> usize {
+        self.inner
+            .kafka_consumer
+            .context()
+            .memory_use_reporter
+            .lock()
+            .unwrap()
+            .current()
     }
 }
 

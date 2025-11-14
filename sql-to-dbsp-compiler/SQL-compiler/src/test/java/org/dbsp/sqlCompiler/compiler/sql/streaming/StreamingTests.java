@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
@@ -1106,7 +1107,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM transactions
                 WHERE ts BETWEEN now() - INTERVAL 1 DAY AND now() + INTERVAL 1 DAY""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new Inspector(ccs.compiler, 1, 1, 1);
+        CircuitVisitor visitor = new Inspector(ccs.compiler, 2, 1, 1);
         ccs.visit(visitor);
         ccs.step("""
                  INSERT INTO transactions VALUES (1, '2024-01-01 00:00:10');
@@ -1161,7 +1162,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE id + ts/2 - SIN(id) >= year(now()) + 10 AND
                       id + ts/2 - SIN(id) <= EXTRACT(CENTURY FROM now()) * 20;""";
         CompilerCircuit cc = this.getCC(sql);
-        CircuitVisitor visitor = new Inspector(cc.compiler, 1, 1, 1);
+        CircuitVisitor visitor = new Inspector(cc.compiler, 2, 1, 1);
         cc.visit(visitor);
     }
 
@@ -1182,7 +1183,7 @@ public class StreamingTests extends StreamingTestBase {
                       id >= EXTRACT(CENTURY FROM now()) * 20 AND
                       id = 4;""";
         CompilerCircuit cc = this.getCC(sql);
-        CircuitVisitor visitor = new Inspector(cc.compiler, 2, 1, 1);
+        CircuitVisitor visitor = new Inspector(cc.compiler, 3, 1, 1);
         cc.visit(visitor);
     }
 
@@ -2342,6 +2343,194 @@ public class StreamingTests extends StreamingTestBase {
                  site_id | weight
                 ------------------
                  z| -1""");
+    }
+
+    static final String issue4909data = """
+            INSERT INTO T VALUES ('alpha', TRUE, '2025-10-20 14:23:00', '2025-10-19 09:15:00', '2025-10-18 17:45:00', 'lp1', '2025-10-20 20:00:00');
+                INSERT INTO T VALUES ('bravo', FALSE, '2025-10-15 11:00:00', '2025-10-14 08:30:00', '2025-10-13 19:10:00', 'lp2', '2025-10-15 22:00:00');
+                INSERT INTO T VALUES ('charlie', TRUE, '2025-10-10 16:45:00', '2025-10-09 10:00:00', '2025-10-08 18:30:00', 'lp3', '2025-10-10 21:00:00');
+                INSERT INTO T VALUES ('delta', FALSE, '2025-10-05 13:20:00', '2025-10-04 07:45:00', '2025-10-03 20:15:00', 'lp4', '2025-10-05 23:00:00');
+                INSERT INTO T VALUES ('echo', TRUE, '2025-09-30 12:00:00', '2025-09-29 09:00:00', '2025-09-28 16:00:00', 'lp5', '2025-09-30 19:00:00');
+                INSERT INTO T VALUES ('foxtrot', FALSE, '2025-09-25 15:30:00', '2025-09-24 10:30:00', '2025-09-23 18:00:00', 'lp6', '2025-09-25 21:30:00');
+                INSERT INTO T VALUES ('golf', TRUE, '2025-09-20 14:00:00', '2025-09-19 08:00:00', '2025-09-18 17:00:00', 'lp7', '2025-09-20 22:00:00');
+                INSERT INTO T VALUES ('hotel', FALSE, '2025-09-15 11:45:00', '2025-09-14 07:30:00', '2025-09-13 19:30:00', 'lp8', '2025-09-15 20:45:00');
+                INSERT INTO T VALUES ('india', TRUE, '2025-09-10 13:15:00', '2025-09-09 09:45:00', '2025-09-08 18:15:00', 'lp9', '2025-09-10 23:15:00');
+                INSERT INTO T VALUES ('juliet', FALSE, '2025-09-05 12:30:00', '2025-09-04 08:15:00', '2025-09-03 20:00:00', 'lp10', '2025-09-05 22:30:00');
+                INSERT INTO T VALUES ('kilo', TRUE, '2025-08-31 14:45:00', '2025-08-30 10:00:00', '2025-08-29 17:30:00', 'lp11', '2025-08-31 21:45:00');
+                INSERT INTO T VALUES ('lima', FALSE, '2025-08-26 13:00:00', '2025-08-25 09:30:00', '2025-08-24 18:45:00', 'lp12', '2025-08-26 20:00:00');
+                INSERT INTO T VALUES ('mike', TRUE, '2025-08-21 15:15:00', '2025-08-20 07:45:00', '2025-08-19 19:00:00', 'lp13', '2025-08-21 22:15:00');
+                INSERT INTO T VALUES ('november', FALSE, '2025-08-16 12:20:00', '2025-08-15 08:00:00', '2025-08-14 16:30:00', 'lp14', '2025-08-16 23:00:00');
+                INSERT INTO T VALUES ('oscar', TRUE, '2025-08-11 14:10:00', '2025-08-10 09:15:00', '2025-08-09 18:00:00', 'lp15', '2025-08-11 20:10:00');
+                INSERT INTO T VALUES ('papa', FALSE, '2025-08-06 13:40:00', '2025-08-05 10:30:00', '2025-08-04 17:45:00', 'lp16', '2025-08-06 21:40:00');
+                INSERT INTO T VALUES ('quebec', TRUE, '2025-08-01 11:50:00', '2025-07-31 08:45:00', '2025-07-30 19:15:00', 'lp17', '2025-08-01 22:50:00');
+                INSERT INTO T VALUES ('romeo', FALSE, '2025-07-27 12:10:00', '2025-07-26 09:00:00', '2025-07-25 18:30:00', 'lp18', '2025-07-27 20:10:00');
+                INSERT INTO T VALUES ('sierra', TRUE, '2025-07-22 14:35:00', '2025-07-21 07:30:00', '2025-07-20 17:00:00', 'lp19', '2025-07-22 23:35:00');
+                INSERT INTO T VALUES ('tango', FALSE, '2025-07-17 13:25:00', '2025-07-16 10:15:00', '2025-07-15 16:45:00', 'lp20', '2025-07-17 21:25:00');
+                INSERT INTO NOW VALUES('2025-10-21 00:00:00');""";
+
+    @Test
+    public void issue4909() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(
+                   s VARCHAR,
+                   d BOOL,
+                   last TIMESTAMP,
+                   clk TIMESTAMP,
+                   op TIMESTAMP,
+                   lp VARCHAR,
+                   lsd TIMESTAMP
+                );
+                
+                create view V
+                as SELECT
+                    s
+                FROM
+                    T
+                WHERE
+                    s LIKE '%i%'
+                    AND d = true
+                    AND (
+                        last >= NOW() - INTERVAL 30 DAYS
+                        OR clk >= NOW() - INTERVAL 60 DAYS
+                        OR op >= NOW() - INTERVAL 90 DAYS
+                    )
+                    AND lp IS NOT NULL
+                    AND (
+                        lsd >= NOW() - INTERVAL 30 DAYS
+                        OR op IS NOT NULL
+                    );
+                """);
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPJoinBaseOperator join) {
+                Assert.fail("Should contain no joins");
+            }
+        });
+        // Validated using Postgres on the right date
+        ccs.step(issue4909data, """
+                 s | weight
+                ----------------
+                 charlie| 1
+                 india| 1
+                 kilo| 1
+                 mike| 1""");
+    }
+
+    @Test
+    public void issue4909a() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(
+                   s VARCHAR,
+                   d BOOL,
+                   last TIMESTAMP,
+                   clk TIMESTAMP,
+                   op TIMESTAMP,
+                   lp VARCHAR,
+                   lsd TIMESTAMP
+                );
+                
+                create view V
+                as SELECT
+                    s
+                FROM
+                    T
+                WHERE
+                    s LIKE '%i%'
+                    AND d = true
+                    OR (
+                        last >= NOW() - INTERVAL 30 DAYS
+                        AND clk >= NOW() - INTERVAL 60 DAYS
+                        AND op >= NOW() - INTERVAL 90 DAYS
+                    )
+                    AND lp IS NOT NULL
+                    AND (
+                        lsd >= NOW() - INTERVAL 30 DAYS
+                        OR op IS NOT NULL
+                    );
+                """);
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPJoinBaseOperator join) {
+                Assert.fail("Should contain no joins");
+            }
+        });
+        // Validated using Postgres on the right date
+        ccs.step(issue4909data, """
+                 s | weight
+                ----------------
+                 alpha| 1
+                 bravo| 1
+                 charlie| 1
+                 delta| 1
+                 echo| 1
+                 foxtrot| 1
+                 india| 1
+                 kilo| 1
+                 mike| 1
+                 sierra| 1""");
+    }
+
+    @Test
+    public void issue4909b() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(
+                   s VARCHAR,
+                   d BOOL,
+                   last TIMESTAMP,
+                   clk TIMESTAMP,
+                   op TIMESTAMP,
+                   lp VARCHAR,
+                   lsd TIMESTAMP
+                );
+                
+                create view V
+                as SELECT
+                    s
+                FROM
+                    T
+                WHERE
+                    s LIKE '%i%'
+                    AND d = true
+                    OR (
+                        (last >= NOW() - INTERVAL 30 DAYS
+                         AND clk >= NOW() - INTERVAL 60 DAYS)
+                        OR op >= NOW() - INTERVAL 90 DAYS
+                    )
+                    AND lp IS NOT NULL
+                    OR (
+                        lsd >= NOW() - INTERVAL 30 DAYS
+                        AND op IS NOT NULL
+                    );
+                """);
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPJoinBaseOperator join) {
+                Assert.fail("Should contain no joins");
+            }
+        });
+        // Validated using Postgres on the right date
+        ccs.step(issue4909data, """
+                 s | weight
+                ----------------
+                 alpha| 1
+                 bravo| 1
+                 charlie| 1
+                 delta| 1
+                 echo| 1
+                 foxtrot| 1
+                 golf| 1
+                 hotel| 1
+                 india| 1
+                 juliet| 1
+                 kilo| 1
+                 lima| 1
+                 mike| 1
+                 november| 1
+                 oscar| 1
+                 papa| 1
+                 quebec| 1
+                 romeo| 1
+                 sierra| 1""");
     }
 
     @Test

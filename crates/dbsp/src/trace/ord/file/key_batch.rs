@@ -20,7 +20,7 @@ use crate::{
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime, Timestamp,
 };
-use feldera_storage::StoragePath;
+use feldera_storage::{FileReader, StoragePath};
 use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
@@ -163,7 +163,6 @@ where
     #[size_of(skip)]
     factories: FileKeyBatchFactories<K, T, R>,
     #[allow(clippy::type_complexity)]
-    #[size_of(skip)]
     file: Arc<
         Reader<(
             &'static K,
@@ -270,6 +269,10 @@ where
         self.file.byte_size().unwrap_storage() as usize
     }
 
+    fn filter_size(&self) -> usize {
+        self.file.filter_size()
+    }
+
     #[inline]
     fn location(&self) -> BatchLocation {
         BatchLocation::Storage
@@ -319,9 +322,9 @@ where
     type Batcher = MergeBatcher<Self>;
     type Builder = FileKeyBuilder<K, T, R>;
 
-    fn checkpoint_path(&self) -> Option<StoragePath> {
+    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         self.file.mark_for_checkpoint();
-        Some(self.file.path())
+        Some(self.file.file_handle().clone())
     }
 
     fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
@@ -614,7 +617,11 @@ where
     R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn with_capacity(factories: &FileKeyBatchFactories<K, T, R>, capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &FileKeyBatchFactories<K, T, R>,
+        key_capacity: usize,
+        _value_capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
             writer: Writer2::new(
@@ -623,7 +630,7 @@ where
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
                 Runtime::file_writer_parameters(),
-                capacity,
+                key_capacity,
             )
             .unwrap_storage(),
             key: factories.opt_key_factory.default_box(),
@@ -648,6 +655,10 @@ where
             factories: self.factories,
             file: Arc::new(self.writer.into_reader().unwrap_storage()),
         }
+    }
+
+    fn num_keys(&self) -> usize {
+        self.writer.n_rows() as usize
     }
 
     fn num_tuples(&self) -> usize {

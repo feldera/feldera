@@ -67,6 +67,69 @@ class aggtst_atbl_interval_seconds(TstView):
                       FROM interval_tbl"""
 
 
+class aggtst_atbl_interval_seconds_res(TstView):
+    """Interval seconds converted to varchar"""
+
+    def __init__(self):
+        self.data = [
+            {
+                "id": 0,
+                "f_c1": "+1592695620.000000",
+                "f_c2": "-1592695620.000000",
+                "f_c3": "-89155500.000000",
+                "f_c4": "+89155500.000000",
+                "f_c5": "-1681851120.000000",
+                "f_c6": "+1681851120.000000",
+            },
+            {
+                "id": 0,
+                "f_c1": "-318226680.000000",
+                "f_c2": "+318226680.000000",
+                "f_c3": "-169024440.000000",
+                "f_c4": "+169024440.000000",
+                "f_c5": "+149202240.000000",
+                "f_c6": "-149202240.000000",
+            },
+            {
+                "id": 1,
+                "f_c1": "+1592695620.000000",
+                "f_c2": "-1592695620.000000",
+                "f_c3": "-43173180.000000",
+                "f_c4": "+43173180.000000",
+                "f_c5": "-1635868800.000000",
+                "f_c6": "+1635868800.000000",
+            },
+            {
+                "id": 1,
+                "f_c1": "+318185100.000000",
+                "f_c2": "-318185100.000000",
+                "f_c3": "+229712400.000000",
+                "f_c4": "-229712400.000000",
+                "f_c5": "-88472700.000000",
+                "f_c6": "+88472700.000000",
+            },
+            {
+                "id": 1,
+                "f_c1": "-1466619540.000000",
+                "f_c2": "+1466619540.000000",
+                "f_c3": "-571691580.000000",
+                "f_c4": "+571691580.000000",
+                "f_c5": "+894927960.000000",
+                "f_c6": "-894927960.000000",
+            },
+        ]
+
+        self.sql = """CREATE MATERIALIZED VIEW atbl_interval_seconds_res AS SELECT
+                      id,
+                      CAST(c1_minus_c2 AS VARCHAR) AS f_c1,
+                      CAST(c2_minus_c1 AS VARCHAR) AS f_c2,
+                      CAST(c1_minus_c3 AS VARCHAR) AS f_c3,
+                      CAST(c3_minus_c1 AS VARCHAR) AS f_c4,
+                      CAST(c2_minus_c3 AS VARCHAR) AS f_c5,
+                      CAST(c3_minus_c2 AS VARCHAR) AS f_c6
+                      FROM atbl_interval_seconds"""
+
+
 class aggtst_atbl_interval_months(TstView):
     """Define the view used by interval tests as input"""
 
@@ -83,6 +146,69 @@ class aggtst_atbl_interval_months(TstView):
                       (c2 - c3)MONTH AS c2_minus_c3,
                       (c3 - c2)MONTH AS c3_minus_c2
                       FROM interval_tbl"""
+
+
+class aggtst_atbl_interval_months_res(TstView):
+    """Interval months converted to varchar"""
+
+    def __init__(self):
+        self.data = [
+            {
+                "id": 0,
+                "f_c1": "+605",
+                "f_c2": "-605",
+                "f_c3": "-33",
+                "f_c4": "+33",
+                "f_c5": "-639",
+                "f_c6": "+639",
+            },
+            {
+                "id": 0,
+                "f_c1": "-121",
+                "f_c2": "+121",
+                "f_c3": "-64",
+                "f_c4": "+64",
+                "f_c5": "+56",
+                "f_c6": "-56",
+            },
+            {
+                "id": 1,
+                "f_c1": "+120",
+                "f_c2": "-120",
+                "f_c3": "+87",
+                "f_c4": "-87",
+                "f_c5": "-33",
+                "f_c6": "+33",
+            },
+            {
+                "id": 1,
+                "f_c1": "+605",
+                "f_c2": "-605",
+                "f_c3": "-16",
+                "f_c4": "+16",
+                "f_c5": "-622",
+                "f_c6": "+622",
+            },
+            {
+                "id": 1,
+                "f_c1": "-557",
+                "f_c2": "+557",
+                "f_c3": "-217",
+                "f_c4": "+217",
+                "f_c5": "+340",
+                "f_c6": "-340",
+            },
+        ]
+
+        self.sql = """CREATE MATERIALIZED VIEW atbl_interval_months_res AS SELECT
+                      id,
+                      CAST(c1_minus_c2 AS VARCHAR) AS f_c1,
+                      CAST(c2_minus_c1 AS VARCHAR) AS f_c2,
+                      CAST(c1_minus_c3 AS VARCHAR) AS f_c3,
+                      CAST(c3_minus_c1 AS VARCHAR) AS f_c4,
+                      CAST(c2_minus_c3 AS VARCHAR) AS f_c5,
+                      CAST(c3_minus_c2 AS VARCHAR) AS f_c6
+                      FROM atbl_interval_months"""
 
 
 # Equivalent SQL for Postgres
@@ -122,6 +248,7 @@ class aggtst_atbl_interval_months(TstView):
 #     aggregate(c3_minus_c2) AS f_c6
 # FROM atbl_interval;
 
+# For interval seconds:
 # SELECT
 #     EXTRACT(EPOCH FROM f_c1) AS m_c1_seconds,
 #     EXTRACT(EPOCH FROM f_c2) AS m_c2_seconds,
@@ -129,4 +256,14 @@ class aggtst_atbl_interval_months(TstView):
 #     EXTRACT(EPOCH FROM f_c4) AS m_c4_seconds,
 #     EXTRACT(EPOCH FROM f_c5) AS m_c5_seconds,
 #     EXTRACT(EPOCH FROM f_c6) AS m_c6_seconds
+# FROM agg_view;
+
+# For interval months:
+# SELECT
+#   EXTRACT(YEAR FROM f_c1) * 12 + EXTRACT(MONTH FROM f_c1) AS f_c1_months,
+#   EXTRACT(YEAR FROM f_c2) * 12 + EXTRACT(MONTH FROM f_c2) AS f_c2_months,
+#   EXTRACT(YEAR FROM f_c3) * 12 + EXTRACT(MONTH FROM f_c3) AS f_c3_months,
+#   EXTRACT(YEAR FROM f_c4) * 12 + EXTRACT(MONTH FROM f_c4) AS f_c4_months,
+#   EXTRACT(YEAR FROM f_c5) * 12 + EXTRACT(MONTH FROM f_c5) AS f_c5_months,
+#   EXTRACT(YEAR FROM f_c6) * 12 + EXTRACT(MONTH FROM f_c6) AS f_c6_months
 # FROM agg_view;

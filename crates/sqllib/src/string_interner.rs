@@ -10,9 +10,10 @@ use dbsp::{
     circuit::LocalStoreMarker,
     dynamic::{DowncastTrait, DynData},
     operator::communication::new_exchange_operators,
+    storage::file::to_bytes,
     trace::{
-        BatchReader, BatchReaderFactories, Cursor, OrdIndexedWSet as DynOrdIndexedWSet,
-        OrdIndexedWSetFactories, SpineSnapshot,
+        unaligned_deserialize, BatchReader, BatchReaderFactories, Cursor,
+        OrdIndexedWSet as DynOrdIndexedWSet, OrdIndexedWSetFactories, SpineSnapshot,
     },
     utils::Tup1,
     Circuit, DynZWeight, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
@@ -290,30 +291,28 @@ pub fn build_string_interner(
         .delay_trace();
 
     // Collect spine snapshots from all workers and merge them into a single spine snapshot in worker 0.
-    let by_id = if let Some(runtime) = Runtime::runtime() {
-        let num_workers = runtime.num_workers();
-        let (sender, receiver) = new_exchange_operators(
-            &runtime,
-            Runtime::worker_index(),
-            Some(Location::caller()),
-            empty_by_id,
-            move |spine: SpineSnapshot<_>, outputs| {
-                outputs.push(spine.clone());
-                for _ in 1..num_workers {
-                    outputs.push(empty_by_id());
-                }
-            },
-            |snapshot, remote_snapshot| {
-                if Runtime::worker_index() == 0 {
-                    snapshot.extend(remote_snapshot);
-                }
-            },
-        );
-        interned_strings
+    let exchange = new_exchange_operators(
+        Some(Location::caller()),
+        empty_by_id,
+        move |spine: SpineSnapshot<_>, outputs| {
+            outputs.push(spine.clone());
+            for _ in 1..Runtime::num_workers() {
+                outputs.push(empty_by_id());
+            }
+        },
+        |value| to_bytes(&value).unwrap().into_vec(),
+        |data| unaligned_deserialize(&data[..]),
+        |snapshot, remote_snapshot| {
+            if Runtime::worker_index() == 0 {
+                snapshot.extend(remote_snapshot);
+            }
+        },
+    );
+    let by_id = match exchange {
+        Some((sender, receiver)) => interned_strings
             .circuit()
-            .add_exchange(sender, receiver, &by_id)
-    } else {
-        by_id
+            .add_exchange(sender, receiver, &by_id),
+        None => by_id,
     };
 
     // Update global interner state:
@@ -492,7 +491,7 @@ mod interned_string_test {
             ["1", "2", "3", "4", "5"],
         );
 
-        let checkpoint = circuit.checkpoint().unwrap();
+        let checkpoint = circuit.checkpoint().run().unwrap();
         circuit.kill().unwrap();
 
         let (mut circuit, (hinput_strings, hqueries, houtput_strings)) =
@@ -541,7 +540,7 @@ mod interned_string_test {
             );
         }
 
-        let checkpoint = circuit.checkpoint().unwrap();
+        let checkpoint = circuit.checkpoint().run().unwrap();
         circuit.kill().unwrap();
 
         let (mut circuit, (_hinput_strings, hqueries, houtput_strings)) =
@@ -606,7 +605,7 @@ mod interned_string_test {
             );
         }
 
-        let checkpoint = circuit.checkpoint().unwrap();
+        let checkpoint = circuit.checkpoint().run().unwrap();
         circuit.kill().unwrap();
 
         let (mut circuit, (hinput_strings, _hqueries, _houtput_strings)) =
@@ -665,7 +664,7 @@ mod interned_string_test {
             );
         }
 
-        let checkpoint = circuit.checkpoint().unwrap();
+        let checkpoint = circuit.checkpoint().run().unwrap();
         circuit.kill().unwrap();
 
         let (mut circuit, (_hinput_strings, hqueries, houtput_strings)) =

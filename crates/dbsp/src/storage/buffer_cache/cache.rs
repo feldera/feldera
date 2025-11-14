@@ -13,6 +13,7 @@ use std::{collections::BTreeMap, ops::Range};
 
 use enum_map::{Enum, EnumMap};
 use serde::Serialize;
+use size_of::SizeOf;
 
 use crate::circuit::metadata::{MetaItem, OperatorMeta};
 use crate::circuit::runtime::ThreadType;
@@ -237,7 +238,8 @@ impl BufferCache {
 }
 
 /// Cache statistics that can be accessed atomically for multithread updates.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, SizeOf)]
+#[size_of(skip_all)]
 pub struct AtomicCacheStats(EnumMap<ThreadType, EnumMap<CacheAccess, AtomicCacheCounts>>);
 
 impl AtomicCacheStats {

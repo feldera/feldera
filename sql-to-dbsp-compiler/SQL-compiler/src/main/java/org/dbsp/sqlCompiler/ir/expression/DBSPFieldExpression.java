@@ -45,7 +45,7 @@ public final class DBSPFieldExpression extends DBSPExpression {
         super(node, type);
         this.expression = expression;
         this.fieldNo = fieldNo;
-        Utilities.enforce(fieldNo >= 0, "Negative field index " + fieldNo);
+        Utilities.enforce(fieldNo >= 0, () -> "Negative field index " + fieldNo);
         Utilities.enforce(!expression.getType().mayBeNull || type.mayBeNull);
     }
 

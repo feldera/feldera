@@ -14,12 +14,12 @@ in the `Paused` state by setting its
 [`paused`](/connectors/#generic-attributes) property
 to `true`.
 The current connector state can be retrieved via the
-[pipeline statistics endpoint](/api/retrieve-circuit-metrics-of-a-running-or-paused-pipeline).
+[pipeline statistics endpoint](/api/get-pipeline-metrics).
 
 When paused, the connector remains idle until it is reactivated.
 Conversely, a connector in the `Running` state can be paused at any time.
 This can be done by calling its
-[start/pause endpoint](/api/start-resume-or-pause-the-input-connector).
+[start/pause endpoint](/api/control-input-connector).
 
 Note that only if both the pipeline *and* the connector state is `Running`,
 is the input connector active. The following table illustrates this:
@@ -81,7 +81,7 @@ Running           Running            Yes
 
 ## Detecting when a connector has finished ingesting data
 
-A common use case for connector orchestration is loading historical data from a database before switching over to a real-time data source such as Kafka. To implement this scenario, we need to determine when the first connector has exhausted all its inputs. This can be achieved by polling the [connector status endpoint](/api/retrieve-the-status-of-an-input-connector), which provides information about the connector's configuration and current state, including the following fields:
+A common use case for connector orchestration is loading historical data from a database before switching over to a real-time data source such as Kafka. To implement this scenario, we need to determine when the first connector has exhausted all its inputs. This can be achieved by polling the [connector status endpoint](/api/get-input-status), which provides information about the connector's configuration and current state, including the following fields:
 
 ```json
 {

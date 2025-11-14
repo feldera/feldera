@@ -323,10 +323,10 @@ public class TableParser {
                     yield new DBSPBoolLiteral(CalciteObject.EMPTY, fieldType, isTrue);
                 }
                 case ARRAY -> {
-                    DBSPTypeArray vec = fieldType.to(DBSPTypeArray.class);
+                    DBSPTypeArray array = fieldType.to(DBSPTypeArray.class);
                     // TODO: this does not handle nested arrays
                     if (trimmed.equals("NULL")) {
-                        yield new DBSPArrayExpression(fieldType, true);
+                        yield new DBSPArrayExpression(array, true);
                     } else {
                         if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
                             throw new UnimplementedException("Expected array constant to be bracketed: " + trimmed);
@@ -336,11 +336,11 @@ public class TableParser {
                             String[] parts = trimmed.split(",");
                             DBSPExpression[] fields;
                             fields = Linq.map(
-                                    parts, p -> parseValue(vec.getElementType(), p), DBSPExpression.class);
+                                    parts, p -> parseValue(array.getElementType(), p), DBSPExpression.class);
                             yield new DBSPArrayExpression(fieldType.mayBeNull, fields);
                         } else {
                             // empty vector
-                            yield new DBSPArrayExpression(vec, false);
+                            yield new DBSPArrayExpression(array, false);
                         }
                     }
                 }
@@ -381,7 +381,8 @@ public class TableParser {
                         Utilities.enforce(!trimmed.isEmpty());
 
                         String[] parts = trimmed.split(",");
-                        Utilities.enforce(parts.length == tuple.size(), "Expected " + tuple.size() + " fields for tuple, got " + parts.length);
+                        Utilities.enforce(parts.length == tuple.size(),
+                                () -> "Expected " + tuple.size() + " fields for tuple, got " + parts.length);
                         List<DBSPExpression> fields = new ArrayList<>(tuple.size());
                         int index = 0;
                         for (DBSPType ft : tuple.tupFields)

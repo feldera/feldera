@@ -156,6 +156,15 @@ employee_typ(315, 'Francis', 'Logan', 'FLOGAN',
      address_typ('376 Mission', 'San Francisco', 'CA', '94222'))
 ```
 
+Here is an example query creating an object with the user-defined type
+`address_typ` defined above (the `CREATE TYPE` definition should be in
+the same program):
+
+```sql
+CREATE TABLE T(street VARCHAR, city VARCHAR, year INT);
+CREATE VIEW V AS SELECT address_typ(T.street, city, 'CA', 94087) as address, T.year as year FROM T;
+```
+
 Tables can have structure-valued columns, but these have to be fully
 qualified using both the table name and the column name in programs:
 
