@@ -148,7 +148,7 @@ def start_pipeline(name: str, wait: bool = True):
         f"Unexpected start response: {r.status_code} {r.text}"
     )
     if wait:
-        wait_for_deployment_status(name, "Running", 30)
+        wait_for_deployment_status(name, "Running", 120)
     return r
 
 
@@ -168,7 +168,7 @@ def start_pipeline_as_paused(name: str, wait: bool = True):
         f"Unexpected pause response: {r.status_code} {r.text}"
     )
     if wait:
-        wait_for_deployment_status(name, "Paused", 30)
+        wait_for_deployment_status(name, "Paused", 120)
     return r
 
 

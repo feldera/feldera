@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;
 
@@ -18,6 +19,11 @@ public class SymbolicInterpreter<T> extends TranslateVisitor<T> {
     public SymbolicInterpreter(DBSPCompiler compiler) {
         super(compiler);
         this.currentValue = new Scopes<>();
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPType type) {
+        return VisitDecision.STOP;
     }
 
     @Nullable

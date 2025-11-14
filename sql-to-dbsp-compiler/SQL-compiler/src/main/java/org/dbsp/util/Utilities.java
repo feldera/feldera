@@ -43,7 +43,6 @@ import javax.annotation.Nullable;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -61,6 +60,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -110,9 +110,9 @@ public class Utilities {
      * @param expression  When this expression is false, this function throws.
      * @param message     Message for exception when expression is false */
     @Contract("false, _ -> fail")
-    public static void enforce(boolean expression, String message) {
+    public static void enforce(boolean expression, Supplier<String> message) {
         if (!expression)
-            throw new InternalCompilerError(message + System.lineSeparator() + getCurrentStackTrace());
+            throw new InternalCompilerError(message.get() + System.lineSeparator() + getCurrentStackTrace());
     }
 
     public static TimestampString roundMillis(TimestampString ts) {
@@ -162,7 +162,7 @@ public class Utilities {
             return;
         boolean success = file.delete();
         if (enforce)
-            Utilities.enforce(success, "Could not delete file " + file.getName());
+            Utilities.enforce(success, () -> "Could not delete file " + file.getName());
     }
 
     public static String getBaseName(String filePath) {
@@ -340,7 +340,7 @@ public class Utilities {
     public static <T> void removeLast(List<T> data, T expected) {
         T removed = removeLast(data);
         Utilities.enforce(removed.equals(expected),
-                "Unexpected node popped " + removed + " expected " + expected);
+                () -> "Unexpected node popped " + removed + " expected " + expected);
     }
 
     public static <T> T[] arraySlice(T[] data, int start, int endExclusive) {
@@ -539,7 +539,7 @@ public class Utilities {
     public static JsonNode getProperty(JsonNode node, String property) {
         JsonNode prop = node.get(property);
         Utilities.enforce(prop != null,
-                "Node does not have property " + Utilities.singleQuote(property) +
+                () -> "Node does not have property " + Utilities.singleQuote(property) +
                 Utilities.toDepth(node, 1));
         return prop;
     }
@@ -568,5 +568,39 @@ public class Utilities {
         Set<T> result = new HashSet<>(left);
         result.addAll(right);
         return result;
+    }
+
+    static List<String> appendToEach(List<String> list, String suffix) {
+        if (suffix.isEmpty())
+            return list;
+        List<String> result = new ArrayList<>();
+        for (String l: list) {
+            result.add(l + suffix);
+        }
+        return result;
+    }
+
+    /** Given a filename pattern which contains braces (but not ? or *), expand it into multiple filenames */
+    public static List<String> expandBraces(String pattern) {
+        List<String> expansion = new ArrayList<>();
+        expansion.add("");
+        while (true) {
+            int open = pattern.indexOf("{");
+            if (open < 0)
+                return appendToEach(expansion, pattern);
+            String prefix = pattern.substring(0, open);
+            String tail = pattern.substring(open + 1);
+            int close = tail.indexOf("}");
+            if (close < 0)
+                throw new RuntimeException("{} missing close brace");
+            String choices = tail.substring(0, close);
+            String[] split = choices.split(",");
+            List<String> next = new ArrayList<>();
+            for (String s: split) {
+                next.addAll(appendToEach(expansion, prefix + s));
+            }
+            expansion = next;
+            pattern = tail.substring(close + 1);
+        }
     }
 }

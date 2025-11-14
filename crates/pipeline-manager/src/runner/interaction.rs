@@ -12,7 +12,7 @@ use awc::error::{ConnectError, SendRequestError};
 use awc::{ClientRequest, ClientResponse};
 use crossbeam::sync::ShardedLock;
 use feldera_types::query::MAX_WS_FRAME_SIZE;
-use log::error;
+use log::{error, info};
 use std::fmt::Display;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
@@ -229,23 +229,27 @@ impl RunnerInteraction {
         let mut original_response = request.send().await.map_err(|e| match e {
             SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
                 pipeline_name: pipeline_name.to_string(),
-                request: request_str,
+                request: request_str.clone(),
                 error: format_timeout_error_message(timeout, e),
             },
             SendRequestError::Connect(ConnectError::Disconnected) => {
                 RunnerError::PipelineInteractionUnreachable {
                     pipeline_name: pipeline_name.to_string(),
-                    request: request_str,
+                    request: request_str.clone(),
                     error: format_disconnected_error_message(e),
                 }
             }
             _ => RunnerError::PipelineInteractionUnreachable {
                 pipeline_name: pipeline_name.to_string(),
-                request: request_str,
+                request: request_str.clone(),
                 error: format!("unable to send request due to: {e}"),
             },
         })?;
         let status = original_response.status();
+
+        if !status.is_success() {
+            info!("HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}");
+        }
 
         // Build the HTTP response with the original status
         let mut response_builder = HttpResponse::build(status);
@@ -502,25 +506,31 @@ impl RunnerInteraction {
         let response = new_request.send_stream(body).await.map_err(|e| match e {
             SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
                 pipeline_name: pipeline_name.to_string(),
-                request: request_str,
+                request: request_str.to_string(),
                 error: format_timeout_error_message(timeout, e),
             },
             SendRequestError::Connect(ConnectError::Disconnected) => {
                 RunnerError::PipelineInteractionUnreachable {
                     pipeline_name: pipeline_name.to_string(),
-                    request: request_str,
+                    request: request_str.to_string(),
                     error: format_disconnected_error_message(e),
                 }
             }
             _ => RunnerError::PipelineInteractionUnreachable {
                 pipeline_name: pipeline_name.to_string(),
-                request: request_str,
+                request: request_str.to_string(),
                 error: format!("unable to send request due to: {e}"),
             },
         })?;
 
+        let status = response.status();
+
+        if !status.is_success() {
+            info!("HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}");
+        }
+
         // Build the new HTTP response with the same status, headers and streaming body
-        let mut builder = HttpResponseBuilder::new(response.status());
+        let mut builder = HttpResponseBuilder::new(status);
         for header in response.headers().into_iter() {
             builder.append_header(header);
         }

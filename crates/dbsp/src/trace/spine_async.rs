@@ -554,18 +554,30 @@ where
         let mut cache_stats = spine_stats.cache_stats;
         let mut storage_size = 0;
         let mut merging_size = 0;
+        let mut filter_size = 0;
+        let mut storage_records = 0;
         for (batch, merging) in batches {
             cache_stats += batch.cache_stats();
+            filter_size += batch.filter_size();
             let on_storage = batch.location() == BatchLocation::Storage;
             if on_storage || merging {
                 let size = batch.approximate_byte_size();
                 if on_storage {
                     storage_size += size;
+                    storage_records += batch.key_count();
                 }
                 if merging {
                     merging_size += size;
                 }
             }
+        }
+
+        if storage_records > 0 {
+            let bits_per_key = filter_size as f64 * 8.0 / storage_records as f64;
+            let bits_per_key = bits_per_key as usize;
+            meta.extend(metadata! {
+                "Bloom filter bits/key" => MetaItem::Int(bits_per_key)
+            })
         }
 
         meta.extend(metadata! {
@@ -576,9 +588,10 @@ where
             // including any in-progress merges).
             "storage size" => MetaItem::bytes(storage_size),
 
-            // The number of batches currently being merged (currently this
-            // is always an even number because batches are merged in
-            // pairs).
+            // The amount of memory used for Bloom filters.
+            "Bloom filter size" => MetaItem::bytes(filter_size),
+
+            // The number of batches currently being merged.
             "merging batches" => MetaItem::Count(n_merging),
 
             // The number of bytes of batches being merged.
@@ -1023,6 +1036,14 @@ where
             .sum()
     }
 
+    fn filter_size(&self) -> usize {
+        self.merger
+            .get_batches()
+            .iter()
+            .map(|batch| batch.filter_size())
+            .sum()
+    }
+
     fn cursor(&self) -> Self::Cursor<'_> {
         SpineCursor::new_cursor(&self.factories, self.merger.get_batches())
     }
@@ -1310,8 +1331,7 @@ where
 
     fn insert(&mut self, mut batch: Self::Batch) {
         if !batch.is_empty() {
-            // If `batch` is in memory and it's got a fair number of records
-            // (level 2 or higher), and we'll write it to storage on first
+            // If `batch` is in memory and we'll write it to storage on first
             // merge, then write it to storage right away.
             //
             // This addresses a problem with very large in-memory batches being
@@ -1340,7 +1360,6 @@ where
             // addresses individual large batches; it does not help with the
             // Batcher, which should be separately addressed.
             let batch = if batch.location() == BatchLocation::Memory
-                && Spine::<B>::size_to_level(batch.len()) >= 2
                 && pick_merge_destination([&batch], None) == BatchLocation::Storage
             {
                 let factories = batch.factories();
@@ -1364,7 +1383,6 @@ where
     fn insert_arc(&mut self, batch: Arc<Self::Batch>) {
         if !batch.is_empty() {
             let batch = if batch.location() == BatchLocation::Memory
-                && Spine::<B>::size_to_level(batch.len()) >= 2
                 && pick_merge_destination([&batch], None) == BatchLocation::Storage
             {
                 let factories = batch.factories();

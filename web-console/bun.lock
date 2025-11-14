@@ -5,7 +5,7 @@
       "name": "web-console-sveltekit",
       "devDependencies": {
         "@auth/sveltekit": "^1.7.4",
-        "@axa-fr/oidc-client": "^7.25.3",
+        "@axa-fr/oidc-client": "^7.26.0",
         "@bithero/monaco-editor-vite-plugin": "^1.0.2",
         "@fontsource-variable/dm-sans": "^5.1.1",
         "@fontsource/dm-mono": "^5.1.1",
@@ -118,9 +118,9 @@
 
     "@auth/sveltekit": ["@auth/sveltekit@1.7.4", "", { "dependencies": { "@auth/core": "0.37.4", "set-cookie-parser": "^2.7.0" }, "peerDependencies": { "@simplewebauthn/browser": "^9.0.1", "@simplewebauthn/server": "^9.0.3", "@sveltejs/kit": "^1.0.0 || ^2.0.0", "nodemailer": "^6.6.5", "svelte": "^3.54.0 || ^4.0.0 || ^5.0.0-0" }, "optionalPeers": ["@simplewebauthn/browser", "@simplewebauthn/server", "nodemailer"] }, "sha512-jerujN2T6txrVGcblhWrB75sBbtub3v2U1DM9+8W3MOOSfhFdlCLEW+Uow8qAGZzsnTE2WmvcMkXeGd7r2jl5A=="],
 
-    "@axa-fr/oidc-client": ["@axa-fr/oidc-client@7.25.3", "", { "dependencies": { "@axa-fr/oidc-client-service-worker": "7.25.3" } }, "sha512-o13xXuVoZELEw3yI72LPFEw2s0xU40KcFdw6s/aYXNSRbICmlmExclZlrQO4fiA4hYHCVc8TKnemGFgZgredBw=="],
+    "@axa-fr/oidc-client": ["@axa-fr/oidc-client@7.26.0", "", { "dependencies": { "@axa-fr/oidc-client-service-worker": "7.26.0" } }, "sha512-atWufzZ/JOtZUtHkDxVMVqV4yba3sGcZKTSK0tgoACYjmBnYG8wTEIW76wNxZF2nFYAhocyEGzaZrucfKchWqA=="],
 
-    "@axa-fr/oidc-client-service-worker": ["@axa-fr/oidc-client-service-worker@7.25.3", "", {}, "sha512-qc2IWWl8EwpbzFpDqzKW0CQ0y/YNidIs3yxBzVGPq6mWEoczgqK02UA5J3L+8usGjKcfMknaJk/5W0Acym9gnA=="],
+    "@axa-fr/oidc-client-service-worker": ["@axa-fr/oidc-client-service-worker@7.26.0", "", {}, "sha512-g1KkG9bgkezaVLOn+j4zzKDlUihdDeTuG5tetX4AvDJZpmESRx3x8+PJ7HI+414z6da0iigAlHS+bBdmBgRn3g=="],
 
     "@babel/runtime": ["@babel/runtime@7.26.9", "", { "dependencies": { "regenerator-runtime": "^0.14.0" } }, "sha512-aA63XwOkcl4xxQa3HjPMqOP6LiK0ZDv3mUPYEFXkpHbaFjtGggE1A61FjFzJnB+p7/oy2gA8E+rcBNl/zC1tMg=="],
 

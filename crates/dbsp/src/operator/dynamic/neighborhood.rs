@@ -424,6 +424,7 @@ where
             let builder = <<OrdIndexedZSet<_, _> as Batch>::Builder>::with_capacity(
                 &self.output_factories,
                 before.len() + after.len(),
+                before.len() + after.len(),
             );
             let mut builder = TupleBuilder::new(&self.output_factories, builder);
             for update in before.dyn_iter_mut().rev() {
@@ -558,6 +559,7 @@ where
 
             let builder = <<DynNeighborhood<T::Key, T::Val> as Batch>::Builder>::with_capacity(
                 &self.output_factories,
+                before.len() + after.len(),
                 before.len() + after.len(),
             );
             let mut builder = TupleBuilder::new(&self.output_factories, builder);

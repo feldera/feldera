@@ -26,6 +26,7 @@ inventory = { workspace = true }
 tracing = { workspace = true }
 once_cell = { workspace = true }
 itertools = { workspace = true }
+size-of = { workspace = true }
 
 [target.'cfg(target_family = "unix")'.dependencies]
 nix = { version = "0.27.1", features = ["uio", "feature", "fs"] }

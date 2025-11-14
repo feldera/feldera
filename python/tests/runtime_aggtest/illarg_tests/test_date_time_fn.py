@@ -702,6 +702,16 @@ class illarg_parse_date_illegal(TstView):
                       WHERE id = 1"""
 
 
+class illarg_parse_datee_illegal1(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW parse_datee_illegal1 AS SELECT
+                      PARSE_DATE('%Y-%m', roww) AS roww
+                      FROM illegal_tbl
+                      WHERE id = 1"""
+        self.expected_error = "Cannot apply 'PARSE_DATE' to arguments of type"
+
+
 # PARSE_TIMESTAMP
 class illarg_parse_ts_legal(TstView):
     def __init__(self):
@@ -724,6 +734,16 @@ class illarg_parse_ts_illegal(TstView):
                       WHERE id = 1"""
 
 
+class illarg_parse_ts_illegal1(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW parse_ts_illegal1 AS SELECT
+                      PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', roww) AS roww
+                      FROM illegal_tbl
+                      WHERE id = 1"""
+        self.expected_error = "Cannot apply 'PARSE_TIMESTAMP' to arguments of type"
+
+
 # PARSE_TIME
 class illarg_parse_tme_legal(TstView):
     def __init__(self):
@@ -744,3 +764,13 @@ class illarg_parse_tme_illegal(TstView):
                       PARSE_TIME('%H:%M', booll) AS booll
                       FROM illegal_tbl
                       WHERE id = 1"""
+
+
+class illarg_parse_tme_illegal1(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW parse_tme_illegal1 AS SELECT
+                      PARSE_TIME('%H:%M', roww) AS roww
+                      FROM illegal_tbl
+                      WHERE id = 1"""
+        self.expected_error = "Cannot apply 'PARSE_TIME' to arguments of type"

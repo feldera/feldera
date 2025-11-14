@@ -273,6 +273,7 @@ fn pipeline_selected_info_internal_to_external(
         deployment_runtime_status_since: pipeline.deployment_runtime_status_since,
         deployment_runtime_desired_status: pipeline.deployment_runtime_desired_status,
         deployment_runtime_desired_status_since: pipeline.deployment_runtime_desired_status_since,
+        connectors: pipeline.connectors,
     }
 }
 

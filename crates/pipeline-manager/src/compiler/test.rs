@@ -57,6 +57,10 @@ impl CompilerTest {
             compilation_profile: CompilationProfile::Optimized,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
+            binary_upload_endpoint: None,
+            binary_upload_timeout_secs: 600,
+            binary_upload_max_retries: 3,
+            binary_upload_retry_delay_ms: 1000,
         };
 
         // Test in-memory database
@@ -177,6 +181,8 @@ impl CompilerTest {
             .await
             .unwrap();
         attempt_end_to_end_sql_compilation(
+            0, // Use worker 0 for tests
+            1,
             &self.common_config,
             &self.compiler_config,
             self.db.clone(),

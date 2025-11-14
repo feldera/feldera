@@ -1832,6 +1832,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
 
         @Override
+        public VisitDecision preorder(DBSPType type) {
+            return VisitDecision.STOP;
+        }
+
+        @Override
         public VisitDecision preorder(DBSPHandleErrorExpression expression) {
             if (expression.runtimeBehavior == DBSPHandleErrorExpression.RuntimeBehavior.PanicWithSource)
                 this.found = true;

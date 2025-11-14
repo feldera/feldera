@@ -20,7 +20,8 @@ public final class DBSPStreamAntiJoinOperator extends DBSPBinaryOperator {
         super(node, "stream_antijoin", null, left.outputType(), left.isMultiset(), left, right, false);
         left.getOutputIndexedZSetType();
         right.getOutputIndexedZSetType();
-        Utilities.enforce(left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType), "Anti join key types to not match\n" +
+        Utilities.enforce(left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType),
+                () -> "Anti join key types to not match\n" +
                 left.getOutputIndexedZSetType().keyType + " and\n" +
                 right.getOutputIndexedZSetType().keyType);
     }

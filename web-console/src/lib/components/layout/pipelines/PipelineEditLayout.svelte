@@ -20,7 +20,11 @@
     type PipelineAction,
     type PipelineThumb
   } from '$lib/services/pipelineManager'
-  import { isPipelineCodeEditable, isPipelineConfigEditable } from '$lib/functions/pipelines/status'
+  import {
+    isUpgradeRequired,
+    isPipelineCodeEditable,
+    isPipelineConfigEditable
+  } from '$lib/functions/pipelines/status'
   import { nonNull } from '$lib/functions/common/function'
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
@@ -53,6 +57,10 @@
   import { parsePipelineDiff } from '$lib/functions/pipelines/pipelineDiff'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
+  import type { editor } from 'monaco-editor/esm/vs/editor/editor.api'
+  import FocusBanner from '$lib/components/pipelines/editor/FocusBanner.svelte'
+  import StorageInUseBanner from '$lib/components/pipelines/editor/StorageInUseBanner.svelte'
+  import { getRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
 
   let {
     preloaded,
@@ -62,10 +70,21 @@
     pipeline: WritablePipeline
   } = $props()
 
+  let runtimeVersion = $derived(
+    getRuntimeVersion(
+      {
+        runtime: pipeline.current.platformVersion,
+        base: page.data.feldera!.version,
+        configured: pipeline.current.programConfig?.runtime_version
+      },
+      page.data.feldera!.unstableFeatures
+    )
+  )
+
   let editCodeDisabled = $derived(
-    (nonNull(pipeline.current.status) && !isPipelineCodeEditable(pipeline.current.status)) ||
-      (pipeline.current.storageStatus !== 'Cleared' &&
-        !pipeline.current.runtimeConfig?.dev_tweaks?.['backfill_avoidance'])
+    nonNull(pipeline.current.status) &&
+      (!isPipelineCodeEditable(pipeline.current.status) ||
+        isUpgradeRequired(pipeline.current, runtimeVersion))
   )
   let editConfigDisabled = $derived(
     nonNull(pipeline.current.status) && !isPipelineConfigEditable(pipeline.current.status)
@@ -187,6 +206,7 @@ example = "1.0"`
   let downstreamChanged = $state(false)
   let isDraggingPipelineListResizer = $state(false)
   let saveFile = $state(() => {})
+  let codeEditorRef = $state<editor.IStandaloneCodeEditor>()
 
   let pipelineListPane = $state<PaneAPI>()
   $effect(() => {
@@ -242,6 +262,12 @@ example = "1.0"`
     }
     return null
   })
+
+  let showEditorBanner = $derived(
+    pipeline.current.status === 'Stopped' && pipeline.current.storageStatus === 'InUse'
+  )
+
+  let isEditorFocused = $state(false)
 
   let toast = useToast()
   let safeParsePipelineDiff = (pipeline: ExtendedPipeline) => {
@@ -424,7 +450,16 @@ example = "1.0"`
           bind:currentFileName={currentPipelineFile[pipelineName]}
           bind:downstreamChanged
           bind:saveFile
+          bind:editorRef={codeEditorRef}
+          bind:isFocused={isEditorFocused}
         >
+          {#snippet beforeTextArea()}
+            <FocusBanner show={showEditorBanner} isFocused={isEditorFocused}>
+              {#snippet content()}
+                <StorageInUseBanner {pipelineName} {runtimeVersion} />
+              {/snippet}
+            </FocusBanner>
+          {/snippet}
           {#snippet codeEditor(textEditor, statusBar)}
             {#snippet editor()}
               <div class="flex h-full flex-col rounded-container px-4 py-2 bg-surface-50-950">

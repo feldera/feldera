@@ -1,12 +1,12 @@
 import os
 from typing import Optional
 
+from feldera.enums import CompilationProfile, PipelineFieldSelector
+from feldera.pipeline import Pipeline
+from feldera.rest.errors import FelderaAPIError
 from feldera.rest.feldera_client import FelderaClient
 from feldera.rest.pipeline import Pipeline as InnerPipeline
-from feldera.pipeline import Pipeline
-from feldera.enums import CompilationProfile, PipelineFieldSelector
 from feldera.runtime_config import RuntimeConfig
-from feldera.rest.errors import FelderaAPIError
 
 
 class PipelineBuilder:
@@ -49,10 +49,11 @@ class PipelineBuilder:
             "FELDERA_RUNTIME_VERSION", runtime_version
         )
 
-    def create(self) -> Pipeline:
+    def create(self, wait: bool = True) -> Pipeline:
         """
         Create the pipeline if it does not exist.
 
+        :param wait: Whether to wait for the pipeline to be created. True by default
         :return: The created pipeline
         """
 
@@ -82,17 +83,20 @@ class PipelineBuilder:
             runtime_config=self.runtime_config.to_dict(),
         )
 
-        inner = self.client.create_pipeline(inner)
+        inner = self.client.create_pipeline(inner, wait=wait)
         pipeline = Pipeline(self.client)
         pipeline._inner = inner
 
         return pipeline
 
-    def create_or_replace(self) -> Pipeline:
+    def create_or_replace(self, wait: bool = True) -> Pipeline:
         """
         Creates a pipeline if it does not exist and replaces it if it exists.
 
         If the pipeline exists and is running, it will be stopped and replaced.
+
+        :param wait: Whether to wait for the pipeline to be created. True by default
+        :return: The created pipeline
         """
 
         if self.name is None or self.sql is None:
@@ -121,7 +125,7 @@ class PipelineBuilder:
             runtime_config=self.runtime_config.to_dict(),
         )
 
-        inner = self.client.create_or_update_pipeline(inner)
+        inner = self.client.create_or_update_pipeline(inner, wait=wait)
         pipeline = Pipeline(self.client)
         pipeline._inner = inner
 

@@ -43,6 +43,23 @@ public class LeadLagAggregates extends WindowAggregates {
             throw new UnimplementedException("EXCLUDE in OVER", 457, node);
     }
 
+    int getLeadLagAmount(AggregateCall call) {
+        List<Integer> operands = call.getArgList();
+        if (operands.size() <= 1)
+            // Default LAG amount is 1
+            return 1;
+
+        int amountIndex = operands.get(1);
+        RexInputRef ri = new RexInputRef(
+                amountIndex, this.window.getRowType().getFieldList().get(amountIndex).getType());
+        DBSPExpression amount = this.eComp.compile(ri);
+        if (!amount.is(DBSPI32Literal.class)) {
+            throw new UnimplementedException("Currently LAG/LEAD amount must be a compile-time constant", 457, node);
+        }
+        Utilities.enforce(amount.is(DBSPI32Literal.class));
+        return Objects.requireNonNull(amount.to(DBSPI32Literal.class).value);
+    }
+
     @Override
     public DBSPSimpleOperator implement(
             DBSPSimpleOperator unusedInput, DBSPSimpleOperator lastOperator, boolean isLast) {
@@ -50,6 +67,8 @@ public class LeadLagAggregates extends WindowAggregates {
         AggregateCall lastCall = Utilities.last(this.aggregateCalls);
         SqlKind kind = lastCall.getAggregation().getKind();
         int offset = kind == SqlKind.LEAD ? -1 : +1;
+        offset *= this.getLeadLagAmount(lastCall);
+
         OutputPort inputIndexed = this.indexInput(lastOperator);
 
         // This operator is always incremental, so create the non-incremental version
@@ -63,20 +82,6 @@ public class LeadLagAggregates extends WindowAggregates {
                 inputVar.deref().applyClone());
         DBSPComparatorExpression comparator = CalciteToDBSPCompiler.generateComparator(
                 this.node, this.group.orderKeys.getFieldCollations(), row.getType(), false);
-
-        // Lag argument calls
-        List<Integer> operands = lastCall.getArgList();
-        if (operands.size() > 1) {
-            int amountIndex = operands.get(1);
-            RexInputRef ri = new RexInputRef(
-                    amountIndex, this.window.getRowType().getFieldList().get(amountIndex).getType());
-            DBSPExpression amount = this.eComp.compile(ri);
-            if (!amount.is(DBSPI32Literal.class)) {
-                throw new UnimplementedException("Currently LAG/LEAD amount must be a compile-time constant", 457, node);
-            }
-            Utilities.enforce(amount.is(DBSPI32Literal.class));
-            offset *= Objects.requireNonNull(amount.to(DBSPI32Literal.class).value);
-        }
 
         // Lag has this signature
         //     pub fn lag_custom_order<VL, OV, PF, CF, OF>(
@@ -156,18 +161,10 @@ public class LeadLagAggregates extends WindowAggregates {
         SqlKind kind = call.getAggregation().getKind();
         if (lastCall.getAggregation().getKind() != kind)
             return false;
-        // A call is compatible if the first 2 arguments are the same
-        List<Integer> args = call.getArgList();
-        List<Integer> lastArgs = lastCall.getArgList();
-        if (!Objects.equals(args.get(0), lastArgs.get(0)))
-            return false;
-        Integer arg1 = null;
-        Integer lastArg1 = null;
-        if (args.size() > 1)
-            arg1 = args.get(1);
-        if (lastArgs.size() > 1)
-            lastArg1 = lastArgs.get(1);
-        return Objects.equals(arg1, lastArg1);
-        // Argument #3 may be different
+        // A call is compatible if the second argument (lag amount) has the same value
+        int arg1 = this.getLeadLagAmount(call);
+        int lastArg1 = this.getLeadLagAmount(lastCall);
+        return arg1 == lastArg1;
+        // Arguments #0 and #2 may be different
     }
 }

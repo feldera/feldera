@@ -127,6 +127,7 @@ tolerance.
 |[HTTP]|☑|☑|☑|
 |[Iceberg]|☐|☐|☐|
 |[Kafka]|☑|☑|☑|
+|[NATS]|☑|☑|☑|
 |[PostgreSQL]|☐|☐|☐|
 |[Pub/Sub]|☐|☐|☐|
 |[S3]|☑|☑|☑|
@@ -139,6 +140,7 @@ tolerance.
 [HTTP]: /connectors/sources/http.md
 [Iceberg]: /connectors/sources/iceberg.md
 [Kafka]: /connectors/sources/kafka.md
+[NATS]: /connectors/sources/nats.md
 [PostgreSQL]: /connectors/sources/postgresql.md
 [Pub/Sub]: /connectors/sources/pubsub.md
 [S3]: /connectors/sources/s3.md

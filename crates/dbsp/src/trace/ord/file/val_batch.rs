@@ -209,7 +209,6 @@ where
     #[size_of(skip)]
     #[debug(skip)]
     factories: FileValBatchFactories<K, V, T, R>,
-    #[size_of(skip)]
     pub file: RawValBatch<K, V, T, R>,
 }
 
@@ -293,6 +292,10 @@ where
 
     fn approximate_byte_size(&self) -> usize {
         self.file.byte_size().unwrap_storage() as usize
+    }
+
+    fn filter_size(&self) -> usize {
+        self.file.filter_size()
     }
 
     #[inline]
@@ -660,7 +663,11 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    fn with_capacity(factories: &FileValBatchFactories<K, V, T, R>, capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &FileValBatchFactories<K, V, T, R>,
+        key_capacity: usize,
+        _value_capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
             writer: Writer2::new(
@@ -669,7 +676,7 @@ where
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
                 Runtime::file_writer_parameters(),
-                capacity,
+                key_capacity,
             )
             .unwrap_storage(),
             time_diffs: factories.timediff_factory.default_box(),
@@ -699,6 +706,10 @@ where
             .write1((val, &*self.time_diffs))
             .unwrap_storage();
         self.time_diffs.clear();
+    }
+
+    fn num_keys(&self) -> usize {
+        self.writer.n_rows() as usize
     }
 
     fn num_tuples(&self) -> usize {

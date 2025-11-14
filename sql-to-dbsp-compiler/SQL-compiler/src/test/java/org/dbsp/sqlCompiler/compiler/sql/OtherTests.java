@@ -450,7 +450,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     // Execute the circuit on these inputs
                     circuit.transaction().unwrap();
                     // Read the produced output
-                    let out = adult.consolidate();
+                    let out = adult.concat().consolidate();
                     // Print the produced output
                     println!("{:?}", out);
                 }
@@ -609,6 +609,18 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Assert.assertEquals(0, message.exitCode);
         Assert.assertTrue(file.exists());
         ImageIO.read(new File(png.getPath()));
+    }
+
+    @Test
+    public void testUDT() {
+        this.getCCS("""
+                CREATE TYPE address_typ AS (
+                   street          VARCHAR(30),
+                   city            VARCHAR(20),
+                   state           CHAR(2),
+                   postal_code     VARCHAR(6));
+                CREATE TABLE T(street VARCHAR, city VARCHAR, year INT);
+                CREATE VIEW V AS SELECT address_typ(T.street, city, 'CA', 94087) as address, T.year as year FROM T;""");
     }
 
     @Test

@@ -203,6 +203,7 @@ pub struct SupportBundleData {
     pub version: u32,
     pub time: DateTime<Utc>,
     pub circuit_profile: BundleResult<Vec<u8>>,
+    pub json_circuit_profile: BundleResult<Vec<u8>>,
     pub heap_profile: BundleResult<Vec<u8>>,
     pub metrics: BundleResult<Vec<u8>>,
     pub logs: BundleResult<String>,
@@ -214,15 +215,16 @@ pub struct SupportBundleData {
 impl SupportBundleData {
     /// Current version of the support bundle data format
     pub const fn current_version() -> u32 {
-        2
+        3
     }
 
     #[cfg(test)]
     pub(crate) fn test_data() -> Self {
         Self {
-            version: 2,
+            version: 3,
             time: chrono::Utc::now(),
             circuit_profile: Ok(vec![1, 2, 3]),
+            json_circuit_profile: Ok(vec![1, 2, 3]),
             heap_profile: Ok(vec![4, 5, 6]),
             metrics: Ok(vec![7, 8, 9]),
             logs: Ok("test logs".to_string()),
@@ -251,6 +253,8 @@ impl<'de> serde::Deserialize<'de> for SupportBundleData {
             #[serde(default)]
             circuit_profile: Option<BundleResult<Vec<u8>>>,
             #[serde(default)]
+            json_circuit_profile: Option<BundleResult<Vec<u8>>>,
+            #[serde(default)]
             heap_profile: Option<BundleResult<Vec<u8>>>,
             #[serde(default)]
             metrics: Option<BundleResult<Vec<u8>>>,
@@ -270,6 +274,9 @@ impl<'de> serde::Deserialize<'de> for SupportBundleData {
             version: helper.version,
             time: helper.time,
             circuit_profile: helper.circuit_profile.unwrap_or_else(missing_field_error),
+            json_circuit_profile: helper
+                .json_circuit_profile
+                .unwrap_or_else(missing_field_error),
             heap_profile: helper.heap_profile.unwrap_or_else(missing_field_error),
             metrics: helper.metrics.unwrap_or_else(missing_field_error),
             logs: helper.logs.unwrap_or_else(missing_field_error),
@@ -287,8 +294,18 @@ impl SupportBundleData {
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<Self, ManagerError> {
-        let (circuit_profile, heap_profile, metrics, logs, stats, pipeline_config, system_config) = tokio::join!(
+        let (
+            circuit_profile,
+            json_circuit_profile,
+            heap_profile,
+            metrics,
+            logs,
+            stats,
+            pipeline_config,
+            system_config,
+        ) = tokio::join!(
             Self::collect_circuit_profile(state, client, tenant_id, pipeline_name,),
+            Self::collect_json_circuit_profile(state, client, tenant_id, pipeline_name,),
             Self::collect_heap_profile(state, client, tenant_id, pipeline_name,),
             Self::collect_metrics(state, client, tenant_id, pipeline_name),
             Self::collect_logs(state, client, tenant_id, pipeline_name),
@@ -301,6 +318,7 @@ impl SupportBundleData {
             version: Self::current_version(),
             time: chrono::Utc::now(),
             circuit_profile,
+            json_circuit_profile,
             heap_profile,
             metrics,
             logs,
@@ -322,6 +340,25 @@ impl SupportBundleData {
             tenant_id,
             pipeline_name,
             "dump_profile",
+            Some(COLLECTION_TIMEOUT),
+        )
+        .await;
+
+        response_to_bundle_result(response).await
+    }
+
+    async fn collect_json_circuit_profile(
+        state: &ServerState,
+        client: &awc::Client,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> BundleResult<Vec<u8>> {
+        let response = fetch_pipeline_data(
+            state,
+            client,
+            tenant_id,
+            pipeline_name,
+            "dump_json_profile",
             Some(COLLECTION_TIMEOUT),
         )
         .await;
@@ -432,6 +469,15 @@ impl SupportBundleData {
                 }
                 Err(e) => {
                     error_entries.push(format!("✗ circuit_profile.zip: {}", e));
+                }
+            };
+            match &self.json_circuit_profile {
+                Ok(content) => {
+                    let _ = add_to_zip("json_circuit_profile.zip", content);
+                    manifest_entries.push("✓ json_circuit_profile.zip".to_string());
+                }
+                Err(e) => {
+                    error_entries.push(format!("✗ json_circuit_profile.zip: {}", e));
                 }
             }
         } else {
@@ -943,6 +989,7 @@ mod tests {
             version: 1,
             time: chrono::Utc::now(),
             circuit_profile: Ok(vec![1, 2, 3]),
+            json_circuit_profile: Ok(vec![1, 2, 3]),
             heap_profile: Err("test error".to_string()),
             metrics: Ok(vec![4, 5, 6]),
             logs: Ok("test logs".to_string()),
@@ -973,6 +1020,10 @@ mod tests {
         assert_eq!(deserialized.version, 0);
         assert_eq!(
             deserialized.circuit_profile,
+            Err("Missing from data source (field was added in newer version)".to_string())
+        );
+        assert_eq!(
+            deserialized.json_circuit_profile,
             Err("Missing from data source (field was added in newer version)".to_string())
         );
         assert_eq!(
@@ -1007,6 +1058,7 @@ mod tests {
             version: 1,
             time: chrono::Utc::now(),
             circuit_profile: Ok(vec![1, 2, 3]),
+            json_circuit_profile: Ok(vec![1, 2, 3]),
             heap_profile: Ok(vec![4, 5, 6]),
             metrics: Ok(vec![7, 8, 9]),
             logs: Ok("test logs".to_string()),
@@ -1030,9 +1082,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(manifest.len(), 7);
+        assert_eq!(manifest.len(), 8);
         assert_eq!(errors.len(), 0);
-        assert_eq!(zip_entries.len(), 7);
+        assert_eq!(zip_entries.len(), 8);
 
         // Test with some parameters disabled
         let some_disabled = SupportBundleParameters {

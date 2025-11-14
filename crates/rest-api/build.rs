@@ -179,6 +179,32 @@ fn type_replacement() -> Vec<(&'static str, &'static str)> {
             "CheckpointStatusFailure",
             "feldera_types::checkpoint::CheckpointFailure",
         ),
+        (
+            "ConsumerConfig",
+            "feldera_types::transport::nats::ConsumerConfig",
+        ),
+        (
+            "ConnectOptions",
+            "feldera_types::transport::nats::ConnectOptions",
+        ),
+        (
+            "ReplayPolicy",
+            "feldera_types::transport::nats::ReplayPolicy",
+        ),
+        (
+            "DeliverPolicy",
+            "feldera_types::transport::nats::DeliverPolicy",
+        ),
+        ("Credentials", "feldera_types::transport::nats::Credentials"),
+        (
+            "UserAndPassword",
+            "feldera_types::transport::nats::UserAndPassword",
+        ),
+        ("Auth", "feldera_types::transport::nats::Auth"),
+        (
+            "NatsInputConfig",
+            "feldera_types::transport::nats::NatsInputConfig",
+        ),
     ]
 }
 

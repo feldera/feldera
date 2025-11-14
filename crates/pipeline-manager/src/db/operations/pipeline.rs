@@ -670,14 +670,6 @@ pub(crate) async fn update_pipeline(
         return Ok(current.version);
     }
 
-    // Check if backfill avoidance is enabled in dev_tweaks
-    let backfill_avoidance_enabled = current
-        .runtime_config
-        .get("dev_tweaks")
-        .and_then(|dev_tweaks| dev_tweaks.get("backfill_avoidance"))
-        .and_then(|backfill| backfill.as_bool())
-        .unwrap_or(false);
-
     // Certain edits are restricted to cleared storage
     if current.storage_status != StorageStatus::Cleared {
         let mut not_allowed = vec![];
@@ -712,28 +704,7 @@ pub(crate) async fn update_pipeline(
                 not_allowed.push("`runtime_config.resources.storage_mb_max`");
             }
         }
-        if !backfill_avoidance_enabled
-            && program_code
-                .as_ref()
-                .is_some_and(|v| *v != current.program_code)
-        {
-            not_allowed.push("`program_code`")
-        }
-        if !backfill_avoidance_enabled && udf_rust.as_ref().is_some_and(|v| *v != current.udf_rust)
-        {
-            not_allowed.push("`udf_rust`")
-        }
-        if !backfill_avoidance_enabled && udf_toml.as_ref().is_some_and(|v| *v != current.udf_toml)
-        {
-            not_allowed.push("`udf_toml`")
-        }
-        if !backfill_avoidance_enabled
-            && program_config
-                .as_ref()
-                .is_some_and(|v| *v != current.program_config)
-        {
-            not_allowed.push("`program_config`")
-        }
+
         if !not_allowed.is_empty() {
             return Err(DBError::EditRestrictedToClearedStorage {
                 not_allowed: not_allowed.iter_mut().map(|s| s.to_string()).collect(),
@@ -1548,7 +1519,12 @@ pub(crate) async fn list_pipelines_across_all_tenants_for_monitoring(
 pub(crate) async fn get_next_sql_compilation(
     txn: &Transaction<'_>,
     platform_version: &str,
+    worker_id: usize,
+    total_workers: usize,
 ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
+    // The expression `abs(('x' || substr(replace(p.id::text, '-', ''), 1, 16))::bit(64)::bigint) % $2) = $3`
+    // converts the first 8 bytes of the UUID to a bigint, takes its absolute value,
+    // and computes the modulo with the total number of workers.
     let stmt = txn
         .prepare_cached(&format!(
             "SELECT {RETRIEVE_PIPELINE_COLUMNS}
@@ -1556,6 +1532,7 @@ pub(crate) async fn get_next_sql_compilation(
              WHERE p.deployment_resources_status = 'stopped'
                    AND p.program_status = 'pending'
                    AND p.platform_version = $1
+                   AND (abs(('x' || substr(replace(p.id::text, '-', ''), 1, 16))::bit(64)::bigint) % $2) = $3
              ORDER BY p.program_status_since ASC, p.id ASC
              LIMIT 1
             "
@@ -1566,6 +1543,8 @@ pub(crate) async fn get_next_sql_compilation(
             &stmt,
             &[
                 &platform_version.to_string(), // $1: platform_version
+                &(total_workers as i64),       // $2: total_workers
+                &(worker_id as i64),           // $3: worker_id
             ],
         )
         .await?;
@@ -1583,7 +1562,12 @@ pub(crate) async fn get_next_sql_compilation(
 pub(crate) async fn get_next_rust_compilation(
     txn: &Transaction<'_>,
     platform_version: &str,
+    worker_id: usize,
+    total_workers: usize,
 ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
+    // The expression `abs(('x' || substr(replace(p.id::text, '-', ''), 1, 16))::bit(64)::bigint) % $2) = $3`
+    // converts the first 8 bytes of the UUID to a bigint, takes its absolute value,
+    // and computes the modulo with the total number of workers.
     let stmt = txn
         .prepare_cached(&format!(
             "SELECT {RETRIEVE_PIPELINE_COLUMNS}
@@ -1591,6 +1575,7 @@ pub(crate) async fn get_next_rust_compilation(
              WHERE p.deployment_resources_status = 'stopped'
                    AND p.program_status = 'sql_compiled'
                    AND p.platform_version = $1
+                   AND (abs(('x' || substr(replace(p.id::text, '-', ''), 1, 16))::bit(64)::bigint) % $2) = $3
              ORDER BY p.program_status_since ASC, p.id ASC
              LIMIT 1
             "
@@ -1601,6 +1586,8 @@ pub(crate) async fn get_next_rust_compilation(
             &stmt,
             &[
                 &platform_version.to_string(), // $1: platform_version
+                &(total_workers as i64),       // $2: total_workers
+                &(worker_id as i64),           // $3: worker_id
             ],
         )
         .await?;
@@ -1614,15 +1601,16 @@ pub(crate) async fn get_next_rust_compilation(
 }
 
 /// Retrieves the list of successfully compiled pipeline programs (pipeline identifier, program version,
-/// program binary source checksum, program binary integrity checksum) across all tenants.
+/// program binary source checksum, program binary integrity checksum) AND pipeline programs that
+/// are currently being compiled (pipeline identifier, program version) across all tenants.
 pub(crate) async fn list_pipeline_programs_across_all_tenants(
     txn: &Transaction<'_>,
-) -> Result<Vec<(PipelineId, Version, String, String)>, DBError> {
+) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError> {
     let stmt = txn
         .prepare_cached(
             "SELECT p.id, p.program_version, p.program_binary_source_checksum, p.program_binary_integrity_checksum
              FROM pipeline AS p
-             WHERE p.program_status = 'success'
+             WHERE p.program_status = 'success' OR p.program_status = 'compiling_rust'
              ORDER BY p.id ASC
             ",
         )
@@ -1634,8 +1622,8 @@ pub(crate) async fn list_pipeline_programs_across_all_tenants(
             (
                 PipelineId(row.get(0)),
                 Version(row.get(1)),
-                row.get::<_, String>(2),
-                row.get::<_, String>(3),
+                row.get::<_, Option<String>>(2),
+                row.get::<_, Option<String>>(3),
             )
         })
         .collect())

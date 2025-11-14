@@ -661,7 +661,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         // Compute the waterline for the new rolling aggregate operator
         DBSPTypeTupleBase varType = projection.getType().to(DBSPTypeTupleBase.class);
-        Utilities.enforce(varType.size() == 2, "Expected a pair, got " + varType);
+        DBSPTypeTupleBase finalVarType = varType;
+        Utilities.enforce(varType.size() == 2, () -> "Expected a pair, got " + finalVarType);
         varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         final DBSPVariablePath var = varType.var();
         DBSPExpression body = var.field(0).deref();
@@ -1393,7 +1394,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
         DBSPSimpleOperator replacement = operator.withInputs(sources, this.force)
                 .to(DBSPSimpleOperator.class);
-        replacement.setDerivedFrom(operator.derivedFrom);
+        replacement.setDerivedFrom(operator);
         if (!replaceIndexedInput)
             this.addOperator(replacement);
 
@@ -1496,7 +1497,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         DBSPType leftSliceType = Objects.requireNonNull(monotoneType.getProjectedType());
         Utilities.enforce(leftSliceType.sameType(controlType),
-                "Projection type does not match control type " + leftSliceType + "/" + controlType);
+                () -> "Projection type does not match control type " + leftSliceType + "/" + controlType);
 
         DBSPType rowType = data.getOutputRowType();
         DBSPVariablePath dataVar = rowType.ref().var();

@@ -139,7 +139,6 @@ where
     #[size_of(skip)]
     factories: FileIndexedWSetFactories<K, V, R>,
     #[allow(clippy::type_complexity)]
-    #[size_of(skip)]
     file: Arc<Reader<(&'static K, &'static DynUnit, (&'static V, &'static R, ()))>>,
 }
 
@@ -355,6 +354,10 @@ where
 
     fn approximate_byte_size(&self) -> usize {
         self.file.byte_size().unwrap_storage() as usize
+    }
+
+    fn filter_size(&self) -> usize {
+        self.file.filter_size()
     }
 
     #[inline]
@@ -834,7 +837,11 @@ where
     R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn with_capacity(factories: &FileIndexedWSetFactories<K, V, R>, capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &FileIndexedWSetFactories<K, V, R>,
+        key_capacity: usize,
+        _value_capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
             writer: Writer2::new(
@@ -843,7 +850,7 @@ where
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
                 Runtime::file_writer_parameters(),
-                capacity,
+                key_capacity,
             )
             .unwrap_storage(),
             weight: factories.weight_factory().default_box(),
@@ -876,6 +883,10 @@ where
         debug_assert!(!weight.is_zero());
         self.writer.write1((val, weight)).unwrap_storage();
         self.num_tuples += 1;
+    }
+
+    fn num_keys(&self) -> usize {
+        self.writer.n_rows() as usize
     }
 
     fn num_tuples(&self) -> usize {

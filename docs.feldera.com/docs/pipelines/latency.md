@@ -31,7 +31,7 @@ A Feldera pipeline processes data in several stages:
 
 ## Latency metrics
 
-A pipeline exposes key latency metrics through its [`/metrics`](https://docs.feldera.com/api/retrieve-circuit-metrics-of-a-running-or-paused-pipeline/)
+A pipeline exposes key latency metrics through its [`/metrics`](/api/get-pipeline-metrics/)
 endpoint.  See complete list of metrics [here](/operations/metrics).
 
 ### Completion latency (`input_connector_completion_latency_seconds`)
@@ -72,7 +72,7 @@ end-to-end processing latency of your application.
 While this latency is not measured by the pipeline itself, the pipeline exposes
 metadata that helps the user to measure this latency. This per-connector metadata is only
 available for certain connector types,
-via the [`/stats`](https://docs.feldera.com/api/retrieve-statistics-e-g-performance-counters-of-a-running-or-paused-pipeline)
+via the [`/stats`](/api/get-pipeline-stats)
 endpoint in the `.inputs[<connector_index>].completed_frontier` field.
 It describes the latest offset in the input data stream fully processed by the pipeline.
 It includes the following fields:

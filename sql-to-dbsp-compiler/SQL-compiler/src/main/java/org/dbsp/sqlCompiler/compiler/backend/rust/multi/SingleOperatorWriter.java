@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
@@ -63,6 +64,11 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
 
         public FindStatics(DBSPCompiler compiler) {
             super(compiler);
+        }
+
+        @Override
+        public VisitDecision preorder(DBSPType type) {
+            return VisitDecision.STOP;
         }
 
         @Override
@@ -126,9 +132,9 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
             this.builder().append(" -> ");
             if (operator.is(DBSPViewBaseOperator.class)) {
                 DBSPType outputType = operator.outputType(0);
-                this.builder().append("OutputHandle<");
+                this.builder().append("OutputHandle<SpineSnapshot<");
                 outputType.accept(visitor.innerVisitor);
-                this.builder().append(">").newline();
+                this.builder().append(">>").newline();
             } else if (operator.is(DBSPSimpleOperator.class)) {
                 if (operator.is(DBSPSourceBaseOperator.class)) {
                     this.builder().append("(");

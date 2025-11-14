@@ -10,6 +10,7 @@ use serde_json::Value as JsonValue;
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::marker::PhantomData;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -269,18 +270,67 @@ pub enum NonFtInputReaderCommand {
     Transition(PipelineState),
 }
 
+pub struct InputQueueEntry<A> {
+    /// Data buffer to push to the circuit.
+    buffer: Option<Box<dyn InputBuffer>>,
+
+    /// Time when data in this buffer was received from the transport endpoint.
+    /// It is used to track the processing latency in different stages of the pipeline.
+    timestamp: DateTime<Utc>,
+
+    /// Start a transaction with the given label before pushing the buffer to the circuit
+    /// unless a transaction is already in progress.
+    start_transaction: Option<Option<String>>,
+
+    /// Commit the transaction after pushing the buffer to the circuit if there is a transaction in progress.
+    commit_transaction: bool,
+
+    /// Auxiliary data associated with the buffer.
+    aux: A,
+}
+
+impl<A> InputQueueEntry<A> {
+    pub fn new_with_aux(timestamp: DateTime<Utc>, aux: A) -> Self {
+        Self {
+            buffer: None,
+            timestamp,
+            start_transaction: None,
+            commit_transaction: false,
+            aux,
+        }
+    }
+
+    pub fn with_buffer(self, buffer: Option<Box<dyn InputBuffer>>) -> Self {
+        Self { buffer, ..self }
+    }
+
+    /// Start a transaction with the given label before pushing the buffer to the circuit
+    /// unless a transaction is already in progress.
+    pub fn with_start_transaction(self, start_transaction: Option<Option<String>>) -> Self {
+        Self {
+            start_transaction,
+            ..self
+        }
+    }
+
+    /// Commit the transaction after pushing the buffer to the circuit if there is a transaction in progress.
+    pub fn with_commit_transaction(self, commit_transaction: bool) -> Self {
+        Self {
+            commit_transaction,
+            ..self
+        }
+    }
+}
+
 /// A thread-safe queue for collecting and flushing input buffers.
 ///
 /// Commonly used by `InputReader` implementations for staging buffers from
 /// worker threads.
-///
-/// The DateTime component of the tuple is the time when data in this buffer
-/// was received from the transport endpoint.  It is used to track the processing
-/// latency in different stages of the pipeline.
 pub struct InputQueue<A = ()> {
     #[allow(clippy::type_complexity)]
-    pub queue: Mutex<VecDeque<(Option<Box<dyn InputBuffer>>, DateTime<Utc>, A)>>,
+    pub queue: Mutex<VecDeque<InputQueueEntry<A>>>,
     pub consumer: Box<dyn InputConsumer>,
+    pub transaction_in_progress: AtomicBool,
 }
 
 impl<A> InputQueue<A> {
@@ -288,25 +338,16 @@ impl<A> InputQueue<A> {
         Self {
             queue: Mutex::new(VecDeque::new()),
             consumer,
+            transaction_in_progress: AtomicBool::new(false),
         }
     }
 
-    /// Appends `buffer`, to the queue, and associates it with `aux`.  Reports
-    /// to the controller that `errors` have occurred during parsing.
-    ///
-    /// If `buffer` is empty, then this discards `aux`, even if `buffer` is
-    /// non-`None`.
-    pub fn push_with_aux(
-        &self,
-        (buffer, errors): (Option<Box<dyn InputBuffer>>, Vec<ParseError>),
-        timestamp: DateTime<Utc>,
-        aux: A,
-    ) {
+    pub fn push_entry(&self, entry: InputQueueEntry<A>, errors: Vec<ParseError>) {
         self.consumer.parse_errors(errors);
-        let len = buffer.len();
+        let len = entry.buffer.len();
 
         let mut queue = self.queue.lock().unwrap();
-        queue.push_back((buffer, timestamp, aux));
+        queue.push_back(entry);
         self.consumer.buffered(len);
 
         // The endpoint pushed an empty buffer. This likely indicates that the accompanying aux data
@@ -316,6 +357,19 @@ impl<A> InputQueue<A> {
         if len.records == 0 {
             self.consumer.request_step();
         }
+    }
+
+    /// Appends `buffer`, to the queue, and associates it with `aux`.  Reports
+    /// to the controller that `errors` have occurred during parsing.
+    pub fn push_with_aux(
+        &self,
+        (buffer, errors): (Option<Box<dyn InputBuffer>>, Vec<ParseError>),
+        timestamp: DateTime<Utc>,
+        aux: A,
+    ) {
+        let entry = InputQueueEntry::new_with_aux(timestamp, aux).with_buffer(buffer);
+
+        self.push_entry(entry, errors);
     }
 
     /// Flushes a batch of records to the circuit and returns the auxiliary data
@@ -354,9 +408,20 @@ impl<A> InputQueue<A> {
         let mut stop = false;
 
         while !stop && total.records < n {
-            let Some((buffer, timestamp, aux)) = self.queue.lock().unwrap().pop_front() else {
+            let Some(InputQueueEntry {
+                buffer,
+                timestamp,
+                aux,
+                start_transaction,
+                commit_transaction,
+            }) = self.queue.lock().unwrap().pop_front()
+            else {
                 break;
             };
+
+            if let Some(label) = start_transaction {
+                self.start_transaction(label.as_deref());
+            }
 
             if let Some(mut buffer) = buffer {
                 total += buffer.len();
@@ -368,6 +433,10 @@ impl<A> InputQueue<A> {
 
             stop = stop_at(&aux);
             consumed_aux.push((timestamp, aux));
+
+            if commit_transaction && self.commit_transaction() {
+                break;
+            }
         }
 
         // Process any entries with aux data only.
@@ -375,14 +444,29 @@ impl<A> InputQueue<A> {
         while !stop
             && queue
                 .front()
-                .is_some_and(|(buffer, _timestamp, _aux)| buffer.is_none())
+                .is_some_and(|InputQueueEntry { buffer, .. }| buffer.is_none())
         {
-            let Some((_buffer, timestamp, aux)) = queue.pop_front() else {
+            let Some(InputQueueEntry {
+                timestamp,
+                aux,
+                start_transaction,
+                commit_transaction,
+                ..
+            }) = queue.pop_front()
+            else {
                 break;
             };
 
+            if let Some(label) = start_transaction {
+                self.start_transaction(label.as_deref());
+            }
+
             stop = stop_at(&aux);
             consumed_aux.push((timestamp, aux));
+
+            if commit_transaction && self.commit_transaction() {
+                break;
+            }
         }
 
         (total, hasher, consumed_aux)
@@ -394,6 +478,32 @@ impl<A> InputQueue<A> {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    fn start_transaction(&self, label: Option<&str>) -> bool {
+        if self
+            .transaction_in_progress
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            self.consumer.start_transaction(label);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn commit_transaction(&self) -> bool {
+        if self
+            .transaction_in_progress
+            .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            self.consumer.commit_transaction();
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -418,9 +528,26 @@ impl InputQueue<()> {
         let mut consumed = Vec::new();
 
         while total.records < n {
-            let Some((buffer, timestamp, ())) = self.queue.lock().unwrap().pop_front() else {
+            let Some(InputQueueEntry {
+                buffer,
+                timestamp,
+                start_transaction,
+                commit_transaction,
+                ..
+            }) = self.queue.lock().unwrap().pop_front()
+            else {
                 break;
             };
+
+            if let Some(label) = start_transaction {
+                if self
+                    .transaction_in_progress
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+                {
+                    self.consumer.start_transaction(label.as_deref());
+                }
+            }
 
             if let Some(mut buffer) = buffer {
                 let mut taken = buffer.take_some(n - total.records);
@@ -429,12 +556,26 @@ impl InputQueue<()> {
                 taken.flush();
                 drop(taken);
                 if !buffer.is_empty() {
-                    self.queue
-                        .lock()
-                        .unwrap()
-                        .push_front((Some(buffer), timestamp, ()));
+                    self.queue.lock().unwrap().push_front(InputQueueEntry {
+                        buffer: Some(buffer),
+                        timestamp,
+                        start_transaction: None,
+                        commit_transaction,
+                        aux: (),
+                    });
                     break;
                 }
+            }
+
+            if commit_transaction {
+                if self
+                    .transaction_in_progress
+                    .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+                {
+                    self.consumer.commit_transaction();
+                }
+                break;
             }
         }
         self.consumer.extended(total, None, consumed);
@@ -478,6 +619,14 @@ pub trait InputReader: Send + Sync {
 
     fn disconnect(&self) {
         self.request(InputReaderCommand::Disconnect);
+    }
+
+    /// Returns the approximate amount of memory used by the connector's
+    /// underlying implementation.  For the Kafka connectors, for example, this
+    /// is the amount of memory used by librdkafka.  Not all connectors use a
+    /// substantial amount of memory, so the default implementation returns 0.
+    fn memory(&self) -> usize {
+        0
     }
 }
 
@@ -575,6 +724,29 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// Request the controller to schedule a step even if the connector hasn't queued
     /// any records.
     fn request_step(&self);
+
+    /// The connector is initiating a transaction. `label` is an optional label for
+    /// the transaction for debugging purposes.
+    ///
+    /// This function can be invoked in response to a `Queue` command.
+    ///
+    /// Any updates pushed by the connector after this function is invoked will be part
+    /// of the transaction.
+    ///
+    /// The connector _must_ perform a matching call to `commit_transaction` to commit the
+    /// transaction.
+    ///
+    /// Multiple connectors can initiate a transaction concurrently, in which case their
+    /// updates will be combined into a single transaction. The transaction will be committed
+    /// when all the connectors have committed it.
+    fn start_transaction(&self, label: Option<&str>);
+
+    /// The connector is committing a transaction started by a previous `start_transaction` call.
+    ///
+    /// This function can be invoked in response to a `Queue` command after pushing all updates that
+    /// belong to the the transaction, immediately before calling `extended`. The connector cannot
+    /// queue any more updates after this function is invoked, until the next `Queue` command.
+    fn commit_transaction(&self);
 
     /// Endpoint failed.
     ///
@@ -827,6 +999,14 @@ pub trait OutputEndpoint: Send {
 
     /// Whether this endpoint is [fault tolerant](crate#fault-tolerance).
     fn is_fault_tolerant(&self) -> bool;
+
+    /// Returns the approximate amount of memory used by the connector's
+    /// underlying implementation.  For the Kafka connectors, for example, this
+    /// is the amount of memory used by librdkafka.  Not all connectors use a
+    /// substantial amount of memory, so the default implementation returns 0.
+    fn memory(&self) -> usize {
+        0
+    }
 }
 
 /// An [UnboundedReceiver] wrapper for [InputReaderCommand] for fault-tolerant connectors.

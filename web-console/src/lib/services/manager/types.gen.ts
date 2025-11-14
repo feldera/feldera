@@ -58,6 +58,14 @@ export type ApiKeyId = string
  */
 export type ApiPermission = 'Read' | 'Write'
 
+export type Auth = {
+  credentials?: Credentials | null
+  jwt?: string | null
+  nkey?: string | null
+  token?: string | null
+  user_and_password?: UserAndPassword | null
+}
+
 export type AuthProvider =
   | {
       AwsCognito: ProviderAwsCognito
@@ -283,7 +291,7 @@ export type CombinedStatus =
  * other things the compilation speed (how long till the program is ready to be run)
  * and runtime speed (the performance while running).
  */
-export type CompilationProfile = 'dev' | 'unoptimized' | 'optimized'
+export type CompilationProfile = 'dev' | 'unoptimized' | 'optimized' | 'optimized_symbols'
 
 /**
  * Completion token status returned by the `/completion_status` endpoint.
@@ -363,6 +371,11 @@ export type Configuration = {
    * Format is `x.y.z`.
    */
   version: string
+}
+
+export type ConnectOptions = {
+  auth?: Auth
+  server_url: string
 }
 
 /**
@@ -449,6 +462,49 @@ export type ConnectorConfig = OutputBufferConfig & {
   start_after?: Array<string> | null
   transport: TransportConfig
 }
+
+/**
+ * Aggregated connector error statistics.
+ *
+ * This structure contains the sum of all error counts across all input and output connectors
+ * for a pipeline.
+ */
+export type ConnectorStats = {
+  /**
+   * Total number of errors across all connectors.
+   *
+   * This is the sum of:
+   * - `num_transport_errors` from all input connectors
+   * - `num_parse_errors` from all input connectors
+   * - `num_encode_errors` from all output connectors
+   * - `num_transport_errors` from all output connectors
+   */
+  num_errors: number
+}
+
+export type ConsumerConfig = {
+  deliver_policy: DeliverPolicy
+  description?: string | null
+  filter_subjects?: Array<string>
+  max_batch?: number | null
+  max_bytes?: number | null
+  max_expires?: string | null
+  max_waiting?: number
+  metadata?: {
+    [key: string]: string
+  }
+  name?: string | null
+  rate_limit?: number
+  replay_policy?: ReplayPolicy
+}
+
+export type Credentials =
+  | {
+      FromString: string
+    }
+  | {
+      FromFile: string
+    }
 
 /**
  * The JSON representation of a dataflow graph.
@@ -570,6 +626,22 @@ export type DatagenStrategy =
   | 'file_name'
   | 'file_extension'
   | 'dir_path'
+
+export type DeliverPolicy =
+  | 'All'
+  | 'Last'
+  | 'New'
+  | {
+      ByStartSequence: {
+        start_sequence: number
+      }
+    }
+  | {
+      ByStartTime: {
+        start_time: string
+      }
+    }
+  | 'LastPerSubject'
 
 /**
  * Delta table read mode.
@@ -1552,12 +1624,18 @@ export type MirNode = {
   calcite?: CalciteId | null
   inputs?: Array<MirInput>
   operation: string
-  outputs?: Array<MirInput> | null
+  outputs?: Array<MirInput | null> | null
   persistent_id?: string | null
   positions?: Array<SourcePosition>
   table?: string | null
   view?: string | null
   '[key: string]': (unknown | MirInput | string | SourcePosition) | undefined
+}
+
+export type NatsInputConfig = {
+  connection_config: ConnectOptions
+  consumer_config: ConsumerConfig
+  stream_name: string
 }
 
 /**
@@ -1997,6 +2075,9 @@ export type PipelineConfig = {
   storage_config?: StorageConfig | null
 }
 
+/**
+ * Summary of changes in the pipeline between checkpointed and new versions.
+ */
 export type PipelineDiff = {
   added_input_connectors: Array<string>
   added_output_connectors: Array<string>
@@ -2008,7 +2089,7 @@ export type PipelineDiff = {
   removed_output_connectors: Array<string>
 }
 
-export type PipelineFieldSelector = 'all' | 'status'
+export type PipelineFieldSelector = 'all' | 'status' | 'status_with_connectors'
 
 /**
  * Pipeline identifier.
@@ -2061,6 +2142,7 @@ export type PipelineInfo = {
  * If an optional field is not selected (i.e., is `None`), it will not be serialized.
  */
 export type PipelineSelectedInfo = {
+  connectors?: ConnectorStats | null
   created_at: string
   deployment_desired_status: CombinedDesiredStatus
   deployment_desired_status_since: string
@@ -2167,13 +2249,32 @@ export type PostgresWriterConfig = {
    */
   on_conflict_do_nothing?: boolean
   /**
-   * The CA certificate in PEM format.
+   * Path to a file containing a sequence of CA certificates in PEM format.
+   */
+  ssl_ca_location?: string | null
+  /**
+   * A sequence of CA certificates in PEM format.
    */
   ssl_ca_pem?: string | null
+  /**
+   * The path to the certificate chain file.
+   * The file must contain a sequence of PEM-formatted certificates,
+   * the first being the leaf certificate, and the remainder forming
+   * the chain of certificates up to and including the trusted root certificate.
+   */
+  ssl_certificate_chain_location?: string | null
   /**
    * The client certificate key in PEM format.
    */
   ssl_client_key?: string | null
+  /**
+   * Path to the client certificate key.
+   */
+  ssl_client_key_location?: string | null
+  /**
+   * Path to the client certificate.
+   */
+  ssl_client_location?: string | null
   /**
    * The client certificate in PEM format.
    */
@@ -2232,6 +2333,9 @@ export type ProgramConfig = {
   runtime_version?: string | null
 }
 
+/**
+ * Summary of changes in the program between checkpointed and new versions.
+ */
 export type ProgramDiff = {
   added_tables: Array<string>
   added_views: Array<string>
@@ -2286,7 +2390,13 @@ export type ProgramInfo = {
   udf_stubs?: string
 }
 
+/**
+ * Program information included in the pipeline configuration.
+ */
 export type ProgramIr = {
+  /**
+   * The MIR of the program.
+   */
   mir: {
     [key: string]: MirNode
   }
@@ -2453,6 +2563,8 @@ export type Relation = SqlIdentifier & {
     [key: string]: PropertyValue
   }
 }
+
+export type ReplayPolicy = 'Instant' | 'Original'
 
 export type ResourceConfig = {
   /**
@@ -3325,6 +3437,10 @@ export type TransportConfig =
       name: 'file_output'
     }
   | {
+      config: NatsInputConfig
+      name: 'nats_input'
+    }
+  | {
       config: KafkaInputConfig
       name: 'kafka_input'
     }
@@ -3429,6 +3545,11 @@ export type UrlInputConfig = {
    * automatically reconnect when the input adapter starts running again.
    */
   pause_timeout?: number
+}
+
+export type UserAndPassword = {
+  password: string
+  user: string
 }
 
 /**

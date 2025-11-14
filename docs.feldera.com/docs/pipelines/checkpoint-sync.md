@@ -67,7 +67,7 @@ The following minimum permissions are required to be available on the bucket
 being written to:
 
 - `ListBucket`
-- `DeleteBucket`
+- `DeleteObject`
 - `GetObject`
 - `PutObject`
 - `PutObjectACL`

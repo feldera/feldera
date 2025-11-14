@@ -18,6 +18,10 @@ env:
 jobs:
   release:
     runs-on: ubuntu-latest-amd64
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -75,6 +79,17 @@ jobs:
           mv sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies-v${{ env.CURRENT_VERSION }}.jar
           mv feldera-docs.zip feldera-docs-v${{ env.CURRENT_VERSION }}.zip
 
+      - name: Generate Release token
+        id: release-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.CI_ACCESS_APP_ID }}
+          private-key: ${{ secrets.CI_ACCESS_APP_PKEY }}
+          permission-contents: write
+          permission-workflows: write
+          permission-metadata: read
+          repositories: ${{ github.event.repository.name }}
+
       - name: Release on GitHub
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8
         with:
@@ -89,13 +104,13 @@ jobs:
             sql2dbsp-jar-with-dependencies-v${{ env.CURRENT_VERSION }}.jar
           # A custom token is necessary so the ci-post-release.yml workflow is triggered
           # see also https://github.com/softprops/action-gh-release/issues/59
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ steps.release-token.outputs.token }}
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5.1.0
         with:
-          aws-access-key-id: ${{ secrets.SQL2DBSP_S3_ACCESS_KEY }}
-          aws-secret-access-key: ${{ secrets.SQL2DBSP_S3_SECRET_KEY }}
+          role-to-assume: arn:aws:iam::737834633458:role/GhaSql2DbspJarUpload
+          role-session-name: gha-${{ github.run_id }}
           aws-region: ${{ vars.SQL2DBSP_S3_REGION }}
 
       - name: Upload JAR to S3 with SHA in filename

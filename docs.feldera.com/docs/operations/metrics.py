@@ -51,7 +51,7 @@ for line in template:
         for metric in matching_metrics:
             type_ = metrics[metric]["TYPE"]
             help = metrics[metric]["HELP"]
-            output.write(f"| `{metric}` |{type_} | {help} |\n")
+            output.write(f"| <a name='{metric}'>`{metric}`</a> |{type_} | {help} |\n")
             del metrics[metric]
     else:
         output.write(f"{line}\n")

@@ -19,7 +19,8 @@ class illarg_tbl(TstTable):
                       tme TIME,
                       uuidd UUID,
                       arr VARCHAR ARRAY,
-                      mapp MAP<VARCHAR, INT>
+                      mapp MAP<VARCHAR, INT>,
+                      roww ROW(i1 INT, v1 VARCHAR NULL)
                       )"""
         self.data = [
             {
@@ -37,6 +38,7 @@ class illarg_tbl(TstTable):
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
                 "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello "],
                 "mapp": {"a": 12, "b": 17},
+                "roww": {"i1": 4, "v1": "cat"},
             },
             {
                 "id": 1,
@@ -88,6 +90,7 @@ class illarg_tbl(TstTable):
                     "2020-10-01 00:00:00",
                 ],
                 "mapp": {"a": 15, "b": None},
+                "roww": {"i1": 5, "v1": None},
             },
             {
                 "id": 2,
@@ -104,5 +107,6 @@ class illarg_tbl(TstTable):
                 "uuidd": None,
                 "arr": None,
                 "mapp": None,
+                "roww": None,
             },
         ]

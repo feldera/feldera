@@ -274,6 +274,14 @@ where
     }
 
     #[inline]
+    fn filter_size(&self) -> usize {
+        match &self.inner {
+            Inner::File(file) => file.filter_size(),
+            Inner::Vec(vec) => vec.filter_size(),
+        }
+    }
+
+    #[inline]
     fn location(&self) -> BatchLocation {
         match &self.inner {
             Inner::Vec(vec) => vec.location(),
@@ -321,7 +329,11 @@ where
     fn persisted(&self) -> Option<Self> {
         match &self.inner {
             Inner::Vec(vec) => {
-                let mut file = FileValBuilder::with_capacity(&self.factories.file, 0);
+                let mut file = FileValBuilder::with_capacity(
+                    &self.factories.file,
+                    self.key_count(),
+                    self.len(),
+                );
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
                     inner: Inner::File(file.done()),
@@ -384,10 +396,18 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    fn with_capacity(factories: &FallbackValBatchFactories<K, V, T, R>, capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &FallbackValBatchFactories<K, V, T, R>,
+        key_capacity: usize,
+        value_capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
-            inner: BuilderInner::Vec(VecValBuilder::with_capacity(&factories.vec, capacity)),
+            inner: BuilderInner::Vec(VecValBuilder::with_capacity(
+                &factories.vec,
+                key_capacity,
+                value_capacity,
+            )),
         }
     }
 
@@ -400,16 +420,21 @@ where
         B: BatchReader,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let cap = batches.clone().into_iter().map(|b| b.len()).sum();
+        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
+        let value_capacity = batches.clone().into_iter().map(|b| b.len()).sum();
         Self {
             factories: factories.clone(),
             inner: match pick_merge_destination(batches, location) {
-                BatchLocation::Memory => {
-                    BuilderInner::Vec(VecValBuilder::with_capacity(&factories.vec, cap))
-                }
-                BatchLocation::Storage => {
-                    BuilderInner::File(FileValBuilder::with_capacity(&factories.file, cap))
-                }
+                BatchLocation::Memory => BuilderInner::Vec(VecValBuilder::with_capacity(
+                    &factories.vec,
+                    key_capacity,
+                    value_capacity,
+                )),
+                BatchLocation::Storage => BuilderInner::File(FileValBuilder::with_capacity(
+                    &factories.file,
+                    key_capacity,
+                    value_capacity,
+                )),
             },
         }
     }
@@ -490,6 +515,13 @@ where
                 BuilderInner::File(file) => Inner::File(file.done()),
                 BuilderInner::Vec(vec) => Inner::Vec(vec.done()),
             },
+        }
+    }
+
+    fn num_keys(&self) -> usize {
+        match &self.inner {
+            BuilderInner::Vec(vec) => vec.num_keys(),
+            BuilderInner::File(file) => file.num_keys(),
         }
     }
 

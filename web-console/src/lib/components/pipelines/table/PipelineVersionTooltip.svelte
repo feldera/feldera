@@ -9,10 +9,7 @@
     baseRuntimeVersion: string
   } = $props()
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
-  import {
-    getRuntimeVersion,
-    normalizeRuntimeVersion
-  } from '$lib/functions/pipelines/runtimeVersion'
+  import { normalizeRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   let api = usePipelineManager()
 </script>
@@ -24,7 +21,7 @@
     strategy="fixed"
     activeContent
   >
-    <div>A newer runtime version {normalizeRuntimeVersion(baseRuntimeVersion)} is available.</div>
+    <div>A new runtime version {normalizeRuntimeVersion(baseRuntimeVersion)} is available.</div>
     <button
       class="btn mt-2 h-6 preset-filled-primary-500"
       onclick={() => api.postUpdateRuntime(pipelineName)}>Update</button

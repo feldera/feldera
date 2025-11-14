@@ -1,7 +1,8 @@
+use size_of::SizeOf;
 use std::fmt::Display;
 
 /// A block that can be read or written in a [crate::FileReader] or [crate::FileWriter].
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, SizeOf)]
 pub struct BlockLocation {
     /// Byte offset, a multiple of 512.
     pub offset: u64,

@@ -50,7 +50,9 @@ RUN apt-get update --fix-missing && apt-get install -y \
     # somehow it works fine without npm on x86_64 machines :/
     npm \
     # For envsubst (used in some scripts)
-    gettext
+    gettext \
+    # For testing the NATS input connector
+    nats-server
 
 # Install trufflehog
 RUN curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin v3.90.1
@@ -116,7 +118,7 @@ ENV PATH="/home/ubuntu/.local/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.cargo/bin:
 ENV RUSTUP_HOME=/home/ubuntu/.rustup
 ENV CARGO_HOME=/home/ubuntu/.cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile default --default-toolchain 1.87.0
-RUN cargo install cargo-machete@0.7.0 cargo-edit@0.13.1 just@1.40.0
+RUN cargo install --locked cargo-machete@0.7.0 cargo-edit@0.13.1 just@1.40.0
 
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/0.6.5/install.sh | sh
@@ -146,5 +148,5 @@ RUN  arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x8
     && cp sccache-v0.10.0-$arch-unknown-linux-musl/sccache /home/ubuntu/.cargo/bin \
     && chmod +x /home/ubuntu/.cargo/bin/sccache
 
-ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
+ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib"
 RUN rustup default stable

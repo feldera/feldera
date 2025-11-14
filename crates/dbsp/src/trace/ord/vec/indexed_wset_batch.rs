@@ -444,7 +444,11 @@ where
 
     #[inline]
     fn approximate_byte_size(&self) -> usize {
-        self.size_of().total_bytes()
+        self.layer.approximate_byte_size()
+    }
+
+    fn filter_size(&self) -> usize {
+        0
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
@@ -770,18 +774,22 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
-    fn with_capacity(factories: &VecIndexedWSetFactories<K, V, R>, capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &VecIndexedWSetFactories<K, V, R>,
+        key_capacity: usize,
+        value_capacity: usize,
+    ) -> Self {
         let mut keys = factories.layer_factories.keys.default_box();
-        keys.reserve_exact(capacity);
+        keys.reserve_exact(key_capacity);
 
-        let mut offs = Vec::with_capacity(capacity + 1);
+        let mut offs = Vec::with_capacity(key_capacity + 1);
         offs.push(O::zero());
 
         let mut vals = factories.layer_factories.child.keys.default_box();
-        vals.reserve_exact(capacity);
+        vals.reserve_exact(value_capacity);
 
         let mut diffs = factories.layer_factories.child.diffs.default_box();
-        diffs.reserve_exact(capacity);
+        diffs.reserve_exact(value_capacity);
         Self {
             factories: factories.clone(),
             keys,
@@ -846,6 +854,10 @@ where
 
     fn done(self) -> VecIndexedWSet<K, V, R, O> {
         VecIndexedWSet::from_parts(self.factories, self.keys, self.offs, self.vals, self.diffs)
+    }
+
+    fn num_keys(&self) -> usize {
+        self.keys.len()
     }
 
     fn num_tuples(&self) -> usize {

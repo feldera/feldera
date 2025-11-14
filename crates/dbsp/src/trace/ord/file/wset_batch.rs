@@ -132,7 +132,6 @@ where
 {
     #[size_of(skip)]
     factories: FileWSetFactories<K, R>,
-    #[size_of(skip)]
     file: Arc<Reader<(&'static K, &'static R, ())>>,
 }
 
@@ -356,6 +355,10 @@ where
 
     fn approximate_byte_size(&self) -> usize {
         self.file.byte_size().unwrap_storage() as usize
+    }
+
+    fn filter_size(&self) -> usize {
+        self.file.filter_size()
     }
 
     #[inline]
@@ -763,7 +766,8 @@ where
 {
     fn with_capacity(
         factories: &<FileWSet<K, R> as BatchReader>::Factories,
-        capacity: usize,
+        key_capacity: usize,
+        _value_capacity: usize,
     ) -> Self {
         Self {
             factories: factories.clone(),
@@ -772,7 +776,7 @@ where
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
                 Runtime::file_writer_parameters(),
-                capacity,
+                key_capacity,
             )
             .unwrap_storage(),
             weight: factories.weight_factory().default_box(),
@@ -797,6 +801,10 @@ where
         debug_assert!(!weight.is_zero());
         weight.clone_to(&mut self.weight);
         self.num_tuples += 1;
+    }
+
+    fn num_keys(&self) -> usize {
+        self.writer.n_rows() as usize
     }
 
     fn num_tuples(&self) -> usize {

@@ -358,9 +358,11 @@ public class Projection extends InnerVisitor {
                 Utilities.enforce(bodyType.tupFields.length == 2);
                 int totalSize = bodyType.tupFields[0].to(DBSPTypeTupleBase.class).size() +
                         bodyType.tupFields[1].to(DBSPTypeTupleBase.class).size();
-                Utilities.enforce(iomapSize == totalSize, "IOMap has " + iomapSize + " fields, but expected " + totalSize);
+                Utilities.enforce(iomapSize == totalSize,
+                        () -> "IOMap has " + iomapSize + " fields, but expected " + totalSize);
             } else {
-                Utilities.enforce(iomapSize == bodyType.size(), "IOMap has " + iomapSize + " fields, but expected " + bodyType.size());
+                Utilities.enforce(iomapSize == bodyType.size(),
+                        () -> "IOMap has " + iomapSize + " fields, but expected " + bodyType.size());
             }
         }
     }

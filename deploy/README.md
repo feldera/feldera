@@ -143,6 +143,13 @@ get it included:
   At the time of writing these instructions there were 8 files involved, but this
   may change.  You can get the list of files by `grep`-ing for the old hash value.
 
+  A command like the one below will do the trick if you substitute the
+  correct new hash into it:
+
+  ```
+  sed -i 's/feldera-dev:sha-[0-9a-f]*/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36/' .github/workflows/*.yml
+  ```
+
   * `build-java.yml`
   * `build-rust.yml`
   * `ci-post-release.yml`

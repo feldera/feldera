@@ -797,6 +797,7 @@ where
     result: TestBatch<K, V, T, R>,
     time_diffs: Vec<(T, Box<R>)>,
     vals: BTreeMap<Box<V>, Vec<(T, Box<R>)>>,
+    num_keys: usize,
     num_tuples: usize,
 }
 
@@ -807,11 +808,16 @@ where
     R: WeightTrait + ?Sized,
     T: Timestamp,
 {
-    fn with_capacity(factories: &TestBatchFactories<K, V, T, R>, _cap: usize) -> Self {
+    fn with_capacity(
+        factories: &TestBatchFactories<K, V, T, R>,
+        _key_capacity: usize,
+        _value_capacity: usize,
+    ) -> Self {
         Self {
             result: TestBatch::new(factories),
             time_diffs: Vec::new(),
             vals: BTreeMap::new(),
+            num_keys: 0,
             num_tuples: 0,
         }
     }
@@ -832,6 +838,7 @@ where
     fn push_key(&mut self, key: &K) {
         assert!(self.time_diffs.is_empty());
         assert!(!self.vals.is_empty());
+        self.num_keys += 1;
         for (val, time_diffs) in std::mem::take(&mut self.vals) {
             for (t, r) in time_diffs {
                 match self
@@ -851,6 +858,10 @@ where
     fn done(mut self) -> TestBatch<K, V, T, R> {
         self.result.data.retain(|_, r| !r.is_zero());
         self.result
+    }
+
+    fn num_keys(&self) -> usize {
+        self.num_keys
     }
 
     fn num_tuples(&self) -> usize {
@@ -1178,6 +1189,10 @@ where
 
     fn approximate_byte_size(&self) -> usize {
         self.size_of().total_bytes()
+    }
+
+    fn filter_size(&self) -> usize {
+        0
     }
 
     fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut DynVec<Self::Key>)

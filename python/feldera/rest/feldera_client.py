@@ -1,20 +1,20 @@
-import pathlib
-from typing import Any, Dict, Optional
-import logging
-import time
 import json
+import logging
+import pathlib
+import time
 from decimal import Decimal
-from typing import Generator, Mapping
+from typing import Any, Dict, Generator, Mapping, Optional
 from urllib.parse import quote
+
 import requests
 
 from feldera.enums import BootstrapPolicy, PipelineFieldSelector, PipelineStatus
-from feldera.rest.config import Config
-from feldera.rest.feldera_config import FelderaConfig
-from feldera.rest.errors import FelderaTimeoutError, FelderaAPIError
-from feldera.rest.pipeline import Pipeline
+from feldera.rest._helpers import determine_client_version
 from feldera.rest._httprequests import HttpRequests
-from feldera.rest._helpers import client_version
+from feldera.rest.config import Config
+from feldera.rest.errors import FelderaAPIError, FelderaTimeoutError
+from feldera.rest.feldera_config import FelderaConfig
+from feldera.rest.pipeline import Pipeline
 
 
 def _validate_no_none_keys_in_map(data):
@@ -38,10 +38,13 @@ def _prepare_boolean_input(value: bool) -> str:
 
 class FelderaClient:
     """
-    A client for the Feldera HTTP API
+    A client for the Feldera HTTP API.
 
-    A client instance is needed for every Feldera API method to know the
-    location of Feldera and its permissions.
+    The client is initialized with the configuration needed for interacting with the
+    Feldera HTTP API, which it uses in its calls. Its methods are implemented
+    by issuing one or more HTTP requests to the API, and as such can provide higher
+    level operations (e.g., support waiting for the success of asynchronous HTTP API
+    functionality).
     """
 
     def __init__(
@@ -53,22 +56,33 @@ class FelderaClient:
         requests_verify: Optional[bool | str] = None,
     ) -> None:
         """
-        :param url: The url to Feldera API (ex: https://try.feldera.com). If
-            not set, attempts to read from the environment variable
-            `FELDERA_HOST`. Default: `http://localhost:8080`
-        :param api_key: The optional API key for Feldera
-        :param timeout: (optional) The amount of time in seconds that the
-            client will wait for a response before timing out.
-        :param connection_timeout: (optional) The amount of time in seconds
-            that the client will wait to establish connection before timing out
-        :param requests_verify: The `verify` parameter passed to the requests
-            library. `True` by default. To use a self signed certificate, set
-            it to the path to the certificate.
+        Constructs a Feldera client.
+
+        :param url: (Optional) URL to the Feldera API.
+            The default is read from the `FELDERA_HOST` environment variable;
+            if the variable is not set, the default is `"http://localhost:8080"`.
+        :param api_key: (Optional) API key to access Feldera (format: `"apikey:..."`).
+            The default is read from the `FELDERA_API_KEY` environment variable;
+            if the variable is not set, the default is `None` (no API key is provided).
+        :param timeout: (Optional) Duration in seconds that the client will wait to receive
+            a response of an HTTP request, after which it times out.
+            The default is `None` (wait indefinitely; no timeout is enforced).
+        :param connection_timeout: (Optional) Duration in seconds that the client will wait
+            to establish the connection of an HTTP request, after which it times out.
+            The default is `None` (wait indefinitely; no timeout is enforced).
+        :param requests_verify: (Optional) The `verify` parameter passed to the `requests` library,
+            which is used internally to perform HTTP requests.
+            See also: https://requests.readthedocs.io/en/latest/user/advanced/#ssl-cert-verification .
+            The default is based on the `FELDERA_HTTPS_TLS_CERT` or the `FELDERA_TLS_INSECURE` environment variable.
+            By setting `FELDERA_HTTPS_TLS_CERT` to a path, the default becomes the CA bundle it points to.
+            By setting `FELDERA_TLS_INSECURE` to `"1"`, `"true"` or `"yes"` (all case-insensitive), the default becomes
+            `False` which means to disable TLS verification by default. If both variables are set, the former takes
+            priority over the latter. If neither variable is set, the default is `True`.
         """
 
         self.config = Config(
-            url,
-            api_key,
+            url=url,
+            api_key=api_key,
             timeout=timeout,
             connection_timeout=connection_timeout,
             requests_verify=requests_verify,
@@ -76,12 +90,12 @@ class FelderaClient:
         self.http = HttpRequests(self.config)
 
         try:
-            config = self.get_config()
-            version = client_version()
-            if config.version != version:
+            client_version = determine_client_version()
+            server_config = self.get_config()
+            if client_version != server_config.version:
                 logging.warning(
-                    f"Client is on version {version} while server is at "
-                    f"{config.version}. There could be incompatibilities."
+                    f"Feldera client is on version {client_version} while server is at "
+                    f"{server_config.version}. There could be incompatibilities."
                 )
         except Exception as e:
             logging.error(f"Failed to connect to Feldera API: {e}")
@@ -258,12 +272,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             )
             time.sleep(0.1)
 
-    def create_pipeline(self, pipeline: Pipeline) -> Pipeline:
+    def create_pipeline(self, pipeline: Pipeline, wait: bool = True) -> Pipeline:
         """
         Create a pipeline if it doesn't exist and wait for it to compile
 
-
-        :name: The name of the pipeline
+        :param pipeline: The pipeline to create
+        :param wait: Whether to wait for the pipeline to compile. True by default
         """
 
         body = {
@@ -281,12 +295,21 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             body=body,
         )
 
+        if not wait:
+            return pipeline
+
         return self.__wait_for_compilation(pipeline.name)
 
-    def create_or_update_pipeline(self, pipeline: Pipeline) -> Pipeline:
+    def create_or_update_pipeline(
+        self, pipeline: Pipeline, wait: bool = True
+    ) -> Pipeline:
         """
         Create a pipeline if it doesn't exist or update a pipeline and wait for
         it to compile
+
+        :param pipeline: The pipeline to create or update
+        :param wait: Whether to wait for the pipeline to compile. True by default
+        :return: The created or updated pipeline
         """
 
         body = {
@@ -303,6 +326,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             path=f"/pipelines/{pipeline.name}",
             body=body,
         )
+
+        if not wait:
+            return pipeline
 
         return self.__wait_for_compilation(pipeline.name)
 
@@ -1172,7 +1198,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
     def get_config(self) -> FelderaConfig:
         """
-        Get general feldera configuration.
+        Retrieves the general Feldera server configuration.
         """
 
         resp = self.http.get(path="/config")

@@ -227,7 +227,12 @@ const toPipelineThumb = (
   deploymentResourcesStatus: pipeline.deployment_resources_status,
   deploymentResourcesStatusSince: new Date(pipeline.deployment_resources_status_since),
   programConfig: pipeline.program_config!,
-  deploymentRuntimeStatusDetails: pipeline.deployment_runtime_status_details
+  deploymentRuntimeStatusDetails: pipeline.deployment_runtime_status_details,
+  connectors: pipeline.connectors
+    ? {
+        numErrors: pipeline.connectors.num_errors
+      }
+    : undefined
 })
 
 const toPipeline = <
@@ -238,7 +243,7 @@ const toPipeline = <
   name: pipeline.name,
   description: pipeline.description ?? '',
   runtimeConfig: pipeline.runtime_config,
-  programConfig: pipeline.program_config,
+  programConfig: pipeline.program_config!,
   programCode: pipeline.program_code ?? '',
   programUdfRs: pipeline.udf_rust ?? '',
   programUdfToml: pipeline.udf_toml ?? ''
@@ -263,7 +268,7 @@ const toExtendedPipeline = ({
   programCode: pipeline.program_code ?? '',
   programUdfRs: pipeline.udf_rust ?? '',
   programUdfToml: pipeline.udf_toml ?? '',
-  programConfig: pipeline.program_config,
+  programConfig: pipeline.program_config!,
   programInfo: pipeline.program_info,
   programVersion: pipeline.program_version,
   runtimeConfig: pipeline.runtime_config,
@@ -368,8 +373,9 @@ export const patchPipeline = async (pipeline_name: string, pipeline: Partial<Pip
 }
 
 export const getPipelines = async (): Promise<PipelineThumb[]> => {
-  return mapResponse(listPipelines({ query: { selector: 'status' } }), (pipelines) =>
-    pipelines.map(toPipelineThumb)
+  return mapResponse(
+    listPipelines({ query: { selector: 'status_with_connectors' } }),
+    (pipelines) => pipelines.map(toPipelineThumb)
   )
 }
 

@@ -651,7 +651,8 @@ where
         // This is probably ok, because the batch will either get freed at the end
         // of the current clock tick or get added to the trace, where it will likely
         // get merged with other batches soon, at which point the waste is gone.
-        let mut builder = B::Builder::with_capacity(&input.factories(), input.len());
+        let mut builder =
+            B::Builder::with_capacity(&input.factories(), input.key_count(), input.len());
 
         let mut cursor = input.cursor();
         while cursor.key_valid() {
@@ -770,7 +771,8 @@ where
         // This is probably ok, because the batch will either get freed at the end
         // of the current clock tick or get added to the trace, where it will likely
         // get merged with other batches soon, at which point the waste is gone.
-        let mut builder = B::Builder::with_capacity(&input.factories(), input.len());
+        let mut builder =
+            B::Builder::with_capacity(&input.factories(), input.key_count(), input.len());
 
         let mut cursor = input.cursor();
         while cursor.key_valid() {

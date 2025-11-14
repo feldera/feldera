@@ -399,7 +399,7 @@ pub fn test() {
         .delta_handle;
 
     // Read the produced output
-    let reader = adult.concat();
+    let reader = adult.concat().consolidate();
     let mut cursor = reader
         .cursor(RecordFormat::Csv(CsvParserConfig::default()))
         .unwrap();

@@ -79,8 +79,11 @@
     statusBarEnd,
     toolBarEnd,
     fileTab,
+    beforeTextArea,
     downstreamChanged: _downstreamChanged = $bindable(),
-    saveFile: _saveFile = $bindable(() => {})
+    saveFile: _saveFile = $bindable(() => {}),
+    editorRef: _editorRef = $bindable(),
+    isFocused: _isFocused = $bindable(false)
   }: {
     path: string
     files: {
@@ -98,13 +101,43 @@
     statusBarEnd?: Snippet<[downstreamChanged: boolean]>
     toolBarEnd?: Snippet<[{ saveFile: () => void }]>
     fileTab: Snippet<[text: string, onclick: () => void, isCurrent: boolean, isSaved: boolean]>
+    beforeTextArea?: Snippet
     downstreamChanged?: boolean
     saveFile?: () => void
+    editorRef?: editor.IStandaloneCodeEditor
+    isFocused?: boolean
   } = $props()
 
   let editorRef: editor.IStandaloneCodeEditor = $state()!
   const { editorFontSize, autoSavePipeline, showMinimap, showStickyScroll } =
     useCodeEditorSettings()
+
+  $effect(() => {
+    _editorRef = editorRef
+  })
+
+  let isFocused = $state(false)
+
+  $effect(() => {
+    if (!editorRef) return
+
+    const disposables = [
+      editorRef.onDidFocusEditorText(() => {
+        isFocused = true
+      }),
+      editorRef.onDidBlurEditorText(() => {
+        isFocused = false
+      })
+    ]
+
+    return () => {
+      disposables.forEach((d) => d.dispose())
+    }
+  })
+
+  $effect(() => {
+    _isFocused = isFocused
+  })
 
   let wait = $derived(autoSavePipeline.value ? 2000 : ('decoupled' as const))
   let file = $derived(files.find((f) => f.name === currentFileName)!)
@@ -296,6 +329,7 @@
         {/each}
       </div>
     </div>
+    {@render beforeTextArea?.()}
     <div class="relative flex-1">
       <div
         class="absolute h-full w-full"

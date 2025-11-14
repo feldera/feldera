@@ -216,7 +216,7 @@ public class InternInner extends ExpressionTranslator {
             resolveReferences.apply(expression);
             this.refMap = resolveReferences.reference;
             Utilities.enforce(expression.parameters.length == this.parameterTypes.length,
-                    "Parameter count " + this.parameterTypes.length +
+                    () -> "Parameter count " + this.parameterTypes.length +
                             " does not match closure parameter count " + expression.parameters.length);
             for (int i = 0; i < expression.parameters.length; i++) {
                 DBSPType type = this.parameterTypes[i];

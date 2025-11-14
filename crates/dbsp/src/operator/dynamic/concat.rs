@@ -212,7 +212,7 @@ impl<Z: IndexedZSet> StreamingNaryOperator<Option<Spine<Z>>, Z> for AccumulateCo
             let chunk_size = splitter_output_chunk_size();
             let cursors = snapshots.into_iter().enumerate().map(|(i, snapshot)| CursorWithPolarity::new(snapshot.cursor(), self.polarity[i])).collect::<Vec<_>>();
 
-            let mut builder = Z::Builder::with_capacity(&factories, chunk_size);
+            let mut builder = Z::Builder::with_capacity(&factories, chunk_size, chunk_size);
             let mut cursor = CursorList::new(factories.weight_factory(), cursors);
 
             let mut has_val = false;
@@ -230,7 +230,7 @@ impl<Z: IndexedZSet> StreamingNaryOperator<Option<Spine<Z>>, Z> for AccumulateCo
                         let result = builder.done();
                         self.output_batch_stats.borrow_mut().add_batch(result.len());
                         yield (result, false, cursor.position());
-                        builder = Z::Builder::with_capacity(&factories, chunk_size);
+                        builder = Z::Builder::with_capacity(&factories, chunk_size, chunk_size);
                     }
                     cursor.step_val();
                 }

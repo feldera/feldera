@@ -1,18 +1,22 @@
 use crate::db::types::pipeline::PipelineId;
+use crate::db::types::version::Version;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use flate2::Compression;
+use hex;
 use log::{debug, error, warn};
 use nix::libc::pid_t;
 use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
 use openssl::sha::sha256;
+use sha2::{Digest, Sha256};
 use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
-use tokio::fs;
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
+use tokio::{
+    fs::{self, File},
+    io::{AsyncReadExt, AsyncWriteExt},
+};
 
 /// Automatically terminates a process and all subprocesses it spawns using
 /// the group they are all in. The process must have set a process group ID
@@ -149,6 +153,30 @@ pub async fn read_file_content_bytes(file_path: &Path) -> Result<Vec<u8>, UtilEr
             e,
         )
     })
+}
+
+/// Returns the SHA256 checksum of the file as a hex-encoded string.
+pub async fn checksum_file(path: &Path) -> Result<(usize, String), UtilError> {
+    let mut file = File::open(path)
+        .await
+        .map_err(|e| UtilError::IoError(format!("open file '{}'", path.display()), e))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0; 128 * 1024];
+    let mut total_bytes = 0;
+
+    loop {
+        let n = file
+            .read(&mut buffer)
+            .await
+            .map_err(|e| UtilError::IoError(format!("read file '{}'", path.display()), e))?;
+        total_bytes += n;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+
+    Ok((total_bytes, hex::encode(hasher.finalize())))
 }
 
 /// Copies source file to target file, overwriting it.
@@ -576,6 +604,19 @@ pub fn crate_name_pipeline_globals(pipeline_id: PipelineId) -> String {
     )
 }
 
+/// Generate filename for pipeline binary based on pipeline ID, version, and checksums.
+pub fn pipeline_binary_filename(
+    pipeline_id: &PipelineId,
+    program_version: Version,
+    source_checksum: &str,
+    integrity_checksum: &str,
+) -> String {
+    format!(
+        "pipeline_{}_v{}_sc_{}_ic_{}",
+        pipeline_id, program_version, source_checksum, integrity_checksum
+    )
+}
+
 #[cfg(test)]
 mod test {
     use crate::compiler::util::{
@@ -583,10 +624,12 @@ mod test {
         copy_file_if_checksum_differs, crate_name_pipeline_base, crate_name_pipeline_globals,
         crate_name_pipeline_main, create_dir_if_not_exists, create_new_file,
         create_new_file_with_content, decode_string_as_dir, encode_dir_as_string,
-        read_file_content, read_file_content_bytes, recreate_dir, recreate_file_with_content,
-        truncate_sha256_checksum, validate_is_sha256_checksum, CleanupDecision, DirectoryContent,
+        pipeline_binary_filename, read_file_content, read_file_content_bytes, recreate_dir,
+        recreate_file_with_content, truncate_sha256_checksum, validate_is_sha256_checksum,
+        CleanupDecision, DirectoryContent,
     };
     use crate::db::types::pipeline::PipelineId;
+    use crate::db::types::version::Version;
     use openssl::sha::sha256;
     use std::fs::Metadata;
     use std::sync::Arc;
@@ -1136,5 +1179,24 @@ mod test {
             crate_name_pipeline_globals(pipeline_id),
             "feldera_pipe_pipeline_00000000_0000_0000_0000_000000000000_globals"
         );
+    }
+
+    #[test]
+    fn pipeline_binary_filename_test() {
+        let pipeline_id = PipelineId(Uuid::nil());
+        let program_version = Version(42);
+        let source_checksum = "abc123def456";
+        let integrity_checksum = "789xyz012abc";
+
+        let expected =
+            "pipeline_00000000-0000-0000-0000-000000000000_v42_sc_abc123def456_ic_789xyz012abc";
+        let actual = pipeline_binary_filename(
+            &pipeline_id,
+            program_version,
+            source_checksum,
+            integrity_checksum,
+        );
+
+        assert_eq!(actual, expected);
     }
 }

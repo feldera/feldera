@@ -94,8 +94,8 @@ jobs:
             --mount type=bind,src=./test-tls,dst=/home/ubuntu/test-tls,readonly \
             -p 8080:8080 \
             -e AUTH_PROVIDER="${{ vars.OIDC_TEST_ISSUER && 'generic-oidc' || 'none' }}" \
-            -e AUTH_CLIENT_ID="${{ vars.OIDC_TEST_CLIENT_ID }}" \
-            -e AUTH_ISSUER="${{ vars.OIDC_TEST_ISSUER }}" \
+            -e FELDERA_AUTH_CLIENT_ID="${{ vars.OIDC_TEST_CLIENT_ID }}" \
+            -e FELDERA_AUTH_ISSUER="${{ vars.OIDC_TEST_ISSUER }}" \
             -e RUST_LOG=info \
             -e RUST_BACKTRACE=1 \
             ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }} \
@@ -163,15 +163,15 @@ jobs:
       OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-9a54a381bb958ba78da125976a2f7731db3d7a4f
+      image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
     services:
       pipeline-manager:
         image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
         env:
           # Configure OIDC authentication if available, otherwise use no auth
           AUTH_PROVIDER: ${{ vars.OIDC_TEST_ISSUER && 'generic-oidc' || 'none' }}
-          AUTH_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
-          AUTH_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
+          FELDERA_AUTH_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
+          FELDERA_AUTH_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
           RUST_LOG: info
           RUST_BACKTRACE: 1
           # Needed by test_update_runtime.py
@@ -183,6 +183,11 @@ jobs:
           --health-retries 5
 
     steps:
+      - name: Show Kubernetes node
+        if: always()
+        run: |
+          echo "K8S node: ${K8S_NODE_NAME}"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 

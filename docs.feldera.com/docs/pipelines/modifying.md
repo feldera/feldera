@@ -72,13 +72,13 @@ When a modified pipeline is restarted, it performs the following operations:
    argument passed to the pipeline on startup (see [API section](#api) below):
 
    * `bootstrap_policy=await_approval` (default) - the pipeline stops in the `AwaitingApproval`
-     state. Its `deployment_runtime_status_details` property (returned by the [pipeline status endpoint](https://docs.feldera.com/api/retrieve-a-pipeline))
+     state. Its `deployment_runtime_status_details` property (returned by the [pipeline status endpoint](/api/get-pipeline))
      lists tables, views, and connectors
      affected by the changes.
      At this point the pipeline is paused until the user signals their intention.
      The user can either approve the changes by calling the
-     [`/approve`](https://docs.feldera.com/api/approves-the-pipeline-to-proceed-with-bootstrapping)
-     API or terminate the pipeline using [`/stop?force=true`](https://docs.feldera.com/api/stop-the-pipeline-asynchronously-by-updating-the-desired-state).
+     [`/approve`](/api/approve-bootstrap)
+     API or terminate the pipeline using [`/stop?force=true`](/api/stop-pipeline).
 
    * `bootstrap_policy=allow` - the pipeline proceeds to bootstrap modified views
       as described in the [Bootstrapping](#bootstrapping) section below.
@@ -142,7 +142,7 @@ Feldera pipelines are compiled and executed using the SQL runtime associated wit
 installed version of the Feldera platform.
 After a Feldera upgrade, existing pipelines continue using the runtime with which they
 were originally compiled; however once the pipeline is recompiled, either via the
-[`/update_runtime` request](https://docs.feldera.com/api/recompile-a-pipeline-with-the-feldera-runtime-version-included-in-the)
+[`/update_runtime` request](/api/recompile-pipeline)
 or by editing its SQL code, it will use the SQL runtime
 associated with the current version of the Feldera platform. This new runtime may generate
 a slightly different query plan for the same SQL tables and views, which will require going through the bootstrapping process.
@@ -159,8 +159,8 @@ If this is undesirable, use one of the following methods to avoid updating the S
 ### Caveat 2: Starting from an S3 checkpoint
 
 Normally, when restarting, a pipeline continues from the checkpoint taken at the point when the pipeline was stopped, containing
-the pipeline's latest state. If the pipeline crashed or was [force-stopped](https://docs.feldera.com/api/stop-the-pipeline-asynchronously-by-updating-the-desired-state), it will pick up the
-last [periodic checkpoint](https://docs.feldera.com/pipelines/configuration/#program-configuration), if any.
+the pipeline's latest state. If the pipeline crashed or was [force-stopped](/api/stop-pipeline), it will pick up the
+last [periodic checkpoint](/pipelines/configuration/#program-configuration), if any.
 
 Alternatively, the user can start the pipeline from a checkpoint in an S3-compatible object
 store, created using the [S3 sync](https://docs.feldera.com/pipelines/checkpoint-sync) feature. This checkpoint may have been created by an older
@@ -210,12 +210,12 @@ state of the pipeline or rename the UDF to trigger the bootstrapping of any view
 In this section we describe the REST API elements related to bootstrapping.
 All of this functionality is also available via the Python SDK and the `fda` CLI tool.
 
-* The `bootstrap_policy` argument to the [`/start` endpoint](https://docs.feldera.com/api/stop-the-pipeline-asynchronously-by-updating-the-desired-state). This argument specifies how the pipeline should
+* The `bootstrap_policy` argument to the [`/start` endpoint](/api/stop-pipeline). This argument specifies how the pipeline should
   behave when the checkpointed version of the program differs from the current version. The supported values are
   `await_approval`, `allow`, and `reject`. The default value is `await_approval`. See the
   [Restart the pipeline](#3-restart-the-pipeline) section above for details.
 
-* Two runtime states reported by the [pipeline status endpoint](https://docs.feldera.com/api/retrieve-a-pipeline) in the `deployment_runtime_status` field:
+* Two runtime states reported by the [pipeline status endpoint](/api/get-pipeline) in the `deployment_runtime_status` field:
   * `AwaitingApproval` - When starting the pipeline with `bootstrap_policy=await_approval`, if the pipeline
     requires bootstrapping, it will stop in the `AwaitingApproval` state waiting for the user to approve the
     changes. While in this state, the `deployment_runtime_status_details` field lists added, modified, and removed
@@ -225,7 +225,7 @@ All of this functionality is also available via the Python SDK and the `fda` CLI
   * `Bootstrapping` - In this state the pipeline evaluates new and modified views. Once bootstrapping completes,
     the pipeline automatically moves into the `Running` or `Paused` state.
 
-* The [`/approve` endpoint](https://docs.feldera.com/api/approves-the-pipeline-to-proceed-with-bootstrapping).
+* The [`/approve` endpoint](/api/approve-bootstrap).
   Invoking this endpoint transitions the pipeline from the `AwaitingApproval` to `Bootstrapping` state.
 
 ## WebConsole
@@ -378,11 +378,6 @@ pipeline = PipelineBuilder(
     TEST_CLIENT,
     pipeline_name,
     sql=gen_sql("2025-09-01", "2025-12-15"),
-    runtime_config=RuntimeConfig(
-        dev_tweaks={
-            "backfill_avoidance": True
-        },  # This should not be necessary once it is enabled by default.
-    ),
 ).create_or_replace()
 
 pipeline.start()

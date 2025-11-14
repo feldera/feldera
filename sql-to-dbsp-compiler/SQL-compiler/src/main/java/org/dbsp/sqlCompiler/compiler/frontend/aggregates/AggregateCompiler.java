@@ -498,7 +498,8 @@ public class AggregateCompiler implements ICompilerComponent {
         }
 
         DBSPTupleExpression tuple = this.getAggregatedValue().to(DBSPTupleExpression.class);
-        Utilities.enforce(tuple.fields != null && tuple.fields.length == 2, "Expected 2 arguments for " + kind);
+        Utilities.enforce(tuple.fields != null && tuple.fields.length == 2,
+                () -> "Expected 2 arguments for " + kind);
         NonLinearAggregate aggregate;
         // Must compare first on second field
         DBSPTypeTuple dataType = tuple.getTypeAsTuple();

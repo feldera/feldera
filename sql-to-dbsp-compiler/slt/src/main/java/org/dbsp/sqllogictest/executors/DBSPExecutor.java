@@ -349,13 +349,6 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             throws SQLException {
         this.startTest();
         int batchSize = 500;
-        String name = file.toString();
-        if (name.contains("/"))
-            name = name.substring(name.lastIndexOf('/') + 1);
-        if (name.startsWith("select"))
-            batchSize = 20;
-        if (name.startsWith("select5"))
-            batchSize = 5;
         if (this.toSkip > 0)
             batchSize = 1;
 
@@ -478,7 +471,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         list.add(step);
         DBSPLetStatement outputStatement =
                 new DBSPLetStatement("out",
-                        new DBSPApplyExpression("read_output_handle", DBSPTypeAny.getDefault(),
+                        new DBSPApplyExpression("read_output_spine", DBSPTypeAny.getDefault(),
                                 streams.getVarReference().field(circuit.getInputTables().size() + outputNumber).borrow()));
         list.add(outputStatement);
         DBSPExpression sort = new DBSPEnumValue("SortOrder", description.getOrder().toString());

@@ -4,6 +4,7 @@ use crate::circuit::runtime::ThreadType;
 use crate::circuit::schedule::{CommitProgress, CommitProgressSummary};
 use crate::monitor::visual_graph::Graph;
 use crate::storage::backend::StorageError;
+use crate::storage::file::BLOOM_FILTER_FALSE_POSITIVE_RATE;
 use crate::trace::MergerType;
 use crate::{
     circuit::runtime::RuntimeHandle, profile::Profiler, Error as DbspError, RootCircuit, Runtime,
@@ -274,7 +275,7 @@ pub struct CircuitConfig {
     pub dev_tweaks: DevTweaks,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct DevTweaks {
     /// Whether to asynchronously fetch keys needed for the join operator from
@@ -308,10 +309,6 @@ pub struct DevTweaks {
     // adjust `server.rs` accordingly.
     pub stack_overflow_backtrace: bool,
 
-    /// Enable backfill avoidance feature.
-    // This flag is only used by the pipeline manager.
-    pub backfill_avoidance: bool,
-
     /// Controls the maximal number of records output by splitter operators
     /// (joins, distinct, aggregation, rolling window and group operators) at
     /// each step.
@@ -319,6 +316,22 @@ pub struct DevTweaks {
     /// The default value is 10,000 records.
     // TODO: splitter_chunk_size_bytes, per-operator chunk size.
     pub splitter_chunk_size_records: u64,
+
+    /// False-positive rate for Bloom filters on batches on storage, as a
+    /// fraction f, where 0 < f < 1.
+    ///
+    /// The false-positive rate trades off between the amount of memory used by
+    /// Bloom filters and how frequently storage needs to be searched for keys
+    /// that are not actually present.  Typical false-positive rates and their
+    /// corresponding memory costs are:
+    ///
+    /// - 0.1: 4.8 bits per key
+    /// - 0.01: 9.6 bits per key
+    /// - 0.001: 14.4 bits per key
+    /// - 0.0001: 19.2 bits per key (default)
+    ///
+    /// Values outside the valid range, such as 0.0, disable Bloom filters.
+    pub bloom_false_positive_rate: f64,
 }
 
 impl Default for DevTweaks {
@@ -329,8 +342,8 @@ impl Default for DevTweaks {
             merger: MergerType::default(),
             storage_mb_max: None,
             stack_overflow_backtrace: false,
-            backfill_avoidance: false,
             splitter_chunk_size_records: 10_000,
+            bloom_false_positive_rate: BLOOM_FILTER_FALSE_POSITIVE_RATE,
         }
     }
 }

@@ -2,7 +2,7 @@ import logging
 import os
 
 
-def client_version() -> str:
+def determine_client_version() -> str:
     from importlib.metadata import version, PackageNotFoundError
 
     try:

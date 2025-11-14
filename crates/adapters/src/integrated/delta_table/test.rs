@@ -27,12 +27,15 @@ use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
 use feldera_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimestampFormat,
 };
+use feldera_types::transport::delta_table::DeltaTableTransactionMode;
 use proptest::collection::vec;
 use proptest::prelude::{Arbitrary, ProptestConfig, Strategy};
 use proptest::proptest;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
 use serde_json::{json, Value};
+#[cfg(feature = "delta-s3-test")]
+use serial_test::{parallel, serial};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -46,7 +49,7 @@ use std::time::{Duration, Instant};
 use tempfile::{NamedTempFile, TempDir};
 use tokio::sync::mpsc;
 use tokio::time::{sleep, timeout};
-use tracing::info;
+use tracing::{debug, info};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
@@ -691,6 +694,7 @@ async fn test_follow(
     storage_options: &HashMap<String, String>,
     data: Vec<DeltaTestStruct>,
     snapshot: bool,
+    transaction_mode: DeltaTableTransactionMode,
     suspend: bool,
     test_end_version: bool,
     buffer_size: u64,
@@ -806,6 +810,10 @@ async fn test_follow(
         "follow"
     };
     input_config.insert("mode".to_string(), mode.into());
+    input_config.insert(
+        "transaction_mode".to_string(),
+        serde_json::to_value(transaction_mode).unwrap(),
+    );
 
     let end_version = 5;
     if test_end_version {
@@ -876,6 +884,8 @@ async fn test_follow(
     )
     .await;
 
+    println!("initial snapshot processed");
+
     // Write remaining data in 10 chunks, wait for it to show up in the output table.
     for chunk in data[split_at..].chunks(std::cmp::max(data[split_at..].len() / 10, 1)) {
         total_count += chunk.len();
@@ -921,10 +931,10 @@ async fn test_follow(
                         } else {
                             input_table.version()
                         };
-                        println!("pipeline completed version {version}, expected {expected}, waterlines: {:?}", pipeline.status().input_status().values().next().unwrap().completed_frontier.debug());
+                        debug!("pipeline completed version {version}, expected {expected}, waterlines: {:?}", pipeline.status().input_status().values().next().unwrap().completed_frontier.debug());
                         version == expected
                     } else {
-                        println!("pipeline completed version: None");
+                        debug!("pipeline completed version: None");
                         false
                     }
                 },
@@ -1280,7 +1290,12 @@ fn delta_data(max_records: usize) -> impl Strategy<Value = Vec<DeltaTestStruct>>
     })
 }
 
-async fn delta_table_follow_file_test_common(snapshot: bool, suspend: bool, end_version: bool) {
+async fn delta_table_follow_file_test_common(
+    snapshot: bool,
+    transaction_mode: DeltaTableTransactionMode,
+    suspend: bool,
+    end_version: bool,
+) {
     // We cannot use proptest macros in `async` context, so generate
     // some random data manually.
     let mut runner = TestRunner::default();
@@ -1301,6 +1316,7 @@ async fn delta_table_follow_file_test_common(snapshot: bool, suspend: bool, end_
         &HashMap::new(),
         data,
         snapshot,
+        transaction_mode,
         suspend,
         end_version,
         1000,
@@ -1381,6 +1397,7 @@ async fn delta_table_cdc_file_suspend_test() {
 
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[parallel(delta_s3)]
 async fn delta_table_cdc_s3_test_suspend() {
     crate::integrated::delta_table::register_storage_handlers();
 
@@ -1424,27 +1441,49 @@ async fn delta_table_cdc_s3_test_suspend() {
 
 #[tokio::test]
 async fn delta_table_snapshot_and_follow_file_test() {
-    delta_table_follow_file_test_common(true, false, false).await
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::None, false, false).await
+}
+
+#[tokio::test]
+async fn delta_table_transactional_snapshot_and_follow_file_test() {
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::Snapshot, false, false)
+        .await
+}
+
+#[tokio::test]
+async fn delta_table_transactional_always_snapshot_and_follow_file_test() {
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::Always, false, false).await
 }
 
 #[tokio::test]
 async fn delta_table_follow_file_test() {
-    delta_table_follow_file_test_common(false, false, false).await
+    delta_table_follow_file_test_common(false, DeltaTableTransactionMode::None, false, false).await
 }
 
 #[tokio::test]
 async fn delta_table_follow_file_test_end_version() {
-    delta_table_follow_file_test_common(false, false, true).await
+    delta_table_follow_file_test_common(false, DeltaTableTransactionMode::None, false, true).await
 }
 
 #[tokio::test]
 async fn delta_table_snapshot_and_follow_file_test_suspend() {
-    delta_table_follow_file_test_common(true, true, false).await
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::None, true, false).await
+}
+
+#[tokio::test]
+async fn delta_table_transactional_snapshot_and_follow_file_test_suspend() {
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::Snapshot, true, false)
+        .await
+}
+
+#[tokio::test]
+async fn delta_table_transactional_always_snapshot_and_follow_file_test_suspend() {
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::Always, true, false).await
 }
 
 #[tokio::test]
 async fn delta_table_snapshot_and_follow_file_test_suspend_end_version() {
-    delta_table_follow_file_test_common(true, true, true).await
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::None, true, true).await
 }
 
 #[cfg(feature = "delta-s3-test")]
@@ -1497,18 +1536,21 @@ async fn delta_table_follow_s3_test_common(snapshot: bool, suspend: bool) {
 
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[parallel(delta_s3)]
 async fn delta_table_follow_s3_test() {
     delta_table_follow_s3_test_common(false, false).await
 }
 
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[parallel(delta_s3)]
 async fn delta_table_snapshot_and_follow_s3_test() {
     delta_table_follow_s3_test_common(true, false).await
 }
 
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[parallel(delta_s3)]
 async fn delta_table_snapshot_and_follow_s3_test_suspend() {
     delta_table_follow_s3_test_common(true, true).await
 }
@@ -1550,7 +1592,16 @@ proptest! {
         let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_id.as_file_mut());
         assert_eq!(zset, expected_zset);
 
-        // Order delta table by `bigint`, specify range in two differrent ways: using `snapshot_filter` and using `filter`.
+        // Same as above, but commit a transaction after each input chunk.
+        let mut json_file_ordered_by_id = delta_table_snapshot_to_json::<DeltaTestStruct>(
+            &table_uri,
+            &DeltaTestStruct::schema_with_lateness(),
+            &HashMap::from([("timestamp_column".to_string(), "bigint".to_string()), ("transaction_mode".to_string(), "always".to_string())]));
+
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_id.as_file_mut());
+        assert_eq!(zset, expected_zset);
+
+        // Order delta table by `bigint`, specify range in two different ways: using `snapshot_filter` and using `filter`.
         let mut json_file_ordered_filtered1 = delta_table_snapshot_to_json::<DeltaTestStruct>(
             &table_uri,
             &DeltaTestStruct::schema_with_lateness(),
@@ -1560,6 +1611,11 @@ proptest! {
             &table_uri,
             &DeltaTestStruct::schema_with_lateness(),
             &HashMap::from([("timestamp_column".to_string(), "bigint".to_string()), ("filter".to_string(), "bigint >= 10000 ".to_string())]));
+
+            let mut json_file_ordered_filtered3 = delta_table_snapshot_to_json::<DeltaTestStruct>(
+                &table_uri,
+                &DeltaTestStruct::schema_with_lateness(),
+                &HashMap::from([("timestamp_column".to_string(), "bigint".to_string()), ("filter".to_string(), "bigint >= 10000 ".to_string()), ("transaction_mode".to_string(), "always".to_string())]));
 
         let expected_filtered_zset = OrdZSet::from_tuples(
                 (),
@@ -1572,6 +1628,9 @@ proptest! {
         assert_eq!(zset, expected_filtered_zset);
 
         let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_filtered2.as_file_mut());
+        assert_eq!(zset, expected_filtered_zset);
+
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_filtered3.as_file_mut());
         assert_eq!(zset, expected_filtered_zset);
 
         // Specify both `snapshot_filter` and `filter`.
@@ -1657,6 +1716,7 @@ proptest! {
     /// Write to a Delta table in S3.
     #[cfg(feature = "delta-s3-test")]
     #[test]
+    #[parallel(delta_s3)]
     fn delta_table_s3_output_proptest(data in delta_data(20_000))
     {
         let uuid = uuid::Uuid::new_v4();
@@ -1705,6 +1765,7 @@ proptest! {
 /// ```
 #[cfg(feature = "delta-s3-test")]
 #[test]
+#[parallel(delta_s3)]
 fn delta_table_s3_people_2m() {
     use crate::test::DatabricksPeople;
 
@@ -1742,8 +1803,22 @@ fn delta_table_s3_people_2m() {
 }
 
 /// Read the same table using Unity Catalog path.
+// I haven't investigated this in depth but it appears that, when running
+// multiple delta connectors in parallel, some of which use unity catalog,
+// and others use direct S3 URL to connect to the table, this confuses the
+// AWS SDK into using the wrong authentication token in S3-based
+// connectors. This causes authentication failures with errors like this:
+//
+// ```text
+// 2025-10-29T17:59:09.906160Z  WARN dbsp_adapters::integrated::delta_table::output: delta_table test_output1: error creating or opening delta table 's3://feldera-delta-table-test/80007986-0e32-466a-ad60-4700013bc56e/' after 1 attempts (retrying in 1000 ms): ObjectStore { source: Generic { store: "S3", source: ListRequest { source: RetryError(RetryErrorImpl { method: GET, uri: Some(https://s3.us-east-2.amazonaws.com/feldera-delta-table-test?list-type=2&prefix=80007986-0e32-466a-ad60-4700013bc56e%2F_delta_log%2F), retries: 0, max_retries: 10, elapsed: 395.553916ms, retry_timeout: 180s, inner: Status { status: 400, body: Some("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>InvalidToken</Code><Message>The provided token is malformed or otherwise invalid.</Message><Token-0>...skipped....</Token-0><RequestId>6A1SW4R71MWQFS8H</RequestId><HostId>XOF0VWtYySOJlF0t2R9roAqWM0qH4x+j6cbdkSIVep1l+0PxsAI3tq55nVIcsCj4brHzV9kzmGY=</HostId></Error>") } }) } } }
+// ```
+//
+// Running the unity test sequentially with S3 tests seems to solve this
+// reliably.
+
 #[cfg(feature = "delta-s3-test")]
 #[test]
+#[serial(delta_s3)]
 fn delta_table_unity_people_2m() {
     use crate::test::DatabricksPeople;
 

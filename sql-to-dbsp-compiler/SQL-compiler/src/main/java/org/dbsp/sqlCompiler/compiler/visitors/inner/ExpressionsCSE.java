@@ -248,7 +248,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
 
     @Override
     public void endVisit() {
-        Utilities.enforce(this.assignments.isEmpty(), "Unused CSE expressions");
+        Utilities.enforce(this.assignments.isEmpty(), () -> "Unused CSE expressions");
         super.endVisit();
     }
 }

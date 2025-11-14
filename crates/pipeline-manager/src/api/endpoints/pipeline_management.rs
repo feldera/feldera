@@ -26,10 +26,12 @@ use actix_web::{
     HttpResponse,
 };
 use chrono::{DateTime, Utc};
+use feldera_types::adapter_stats::PipelineStatsErrorsResponse;
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
+use futures_util::future::join_all;
 use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -65,6 +67,22 @@ fn remove_large_fields_from_program_info(
         let _ = m.shift_remove("dataflow");
     }
     program_info
+}
+
+/// Aggregated connector error statistics.
+///
+/// This structure contains the sum of all error counts across all input and output connectors
+/// for a pipeline.
+#[derive(Serialize, Deserialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+pub struct ConnectorStats {
+    /// Total number of errors across all connectors.
+    ///
+    /// This is the sum of:
+    /// - `num_transport_errors` from all input connectors
+    /// - `num_parse_errors` from all input connectors
+    /// - `num_encode_errors` from all output connectors
+    /// - `num_transport_errors` from all output connectors
+    pub num_errors: u64,
 }
 
 /// Pipeline information.
@@ -254,6 +272,8 @@ pub struct PipelineSelectedInfo {
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connectors: Option<ConnectorStats>,
 }
 
 /// Pipeline information which has a selected subset of optional fields (internal).
@@ -307,6 +327,8 @@ pub struct PipelineSelectedInfoInternal {
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
     pub bootstrap_policy: Option<BootstrapPolicy>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connectors: Option<ConnectorStats>,
 }
 
 impl PipelineSelectedInfoInternal {
@@ -365,6 +387,7 @@ impl PipelineSelectedInfoInternal {
             deployment_runtime_desired_status_since: extended_pipeline
                 .deployment_runtime_desired_status_since,
             bootstrap_policy: extended_pipeline.bootstrap_policy,
+            connectors: None,
         }
     }
 
@@ -421,7 +444,17 @@ impl PipelineSelectedInfoInternal {
             deployment_runtime_desired_status_since: extended_pipeline
                 .deployment_runtime_desired_status_since,
             bootstrap_policy: extended_pipeline.bootstrap_policy,
+            connectors: None,
         }
+    }
+
+    pub(crate) fn new_status_with_connectors(
+        extended_pipeline: ExtendedPipelineDescrMonitoring,
+        connectors: Option<ConnectorStats>,
+    ) -> Self {
+        let mut result = Self::new_status(extended_pipeline);
+        result.connectors = connectors;
+        result
     }
 }
 
@@ -500,6 +533,14 @@ pub enum PipelineFieldSelector {
     /// - `deployment_runtime_desired_status_since`
     /// - `bootstrap_policy`
     Status,
+    /// Select the fields included in `Status` plus aggregated connector error statistics.
+    ///
+    /// In addition to all fields from `Status`, this selector includes:
+    /// - `connectors`: Aggregated error statistics across all input and output connectors
+    ///   - `num_errors`: Sum of `num_transport_errors`, `num_parse_errors`, and `num_encode_errors`
+    ///
+    /// If a pipeline is unavailable, the `connectors` field will be null.
+    StatusWithConnectors,
 }
 
 /// Default for the `selector` query parameter when GET a pipeline or a list of pipelines.
@@ -629,6 +670,8 @@ pub struct PostStopPipelineParameters {
     force: bool,
 }
 
+/// List Pipelines
+///
 /// Retrieve the list of pipelines.
 /// Configure which fields are included using the `selector` query parameter.
 #[utoipa::path(
@@ -642,7 +685,7 @@ pub struct PostStopPipelineParameters {
             , example = json!(examples::list_pipeline_selected_info())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline CRUD"
 )]
 #[get("/pipelines")]
 pub(crate) async fn list_pipelines(
@@ -670,12 +713,142 @@ pub(crate) async fn list_pipelines(
                 .map(PipelineSelectedInfoInternal::new_status)
                 .collect()
         }
+        PipelineFieldSelector::StatusWithConnectors => {
+            let pipelines = state
+                .db
+                .lock()
+                .await
+                .list_pipelines_for_monitoring(*tenant_id)
+                .await?;
+
+            // Fetch connector stats for all pipelines in parallel
+            let stats_futures: Vec<_> = pipelines
+                .iter()
+                .map(|pipeline| {
+                    let state = state.clone();
+                    let tenant_id = *tenant_id;
+                    let pipeline_name = pipeline.name.clone();
+                    async move {
+                        fetch_connector_error_stats(
+                            &state,
+                            tenant_id,
+                            &pipeline_name,
+                            pipeline.deployment_runtime_status,
+                        )
+                        .await
+                    }
+                })
+                .collect();
+
+            let connector_stats = join_all(stats_futures).await;
+
+            pipelines
+                .into_iter()
+                .zip(connector_stats.into_iter())
+                .map(|(pipeline, stats)| {
+                    PipelineSelectedInfoInternal::new_status_with_connectors(pipeline, stats)
+                })
+                .collect()
+        }
     };
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(returned_pipelines))
 }
 
+/// Aggregate Connector Stats
+///
+/// Fetch and aggregate connector error statistics for a pipeline.
+///
+/// Returns `None` if the pipeline is unavailable, if there's an error fetching stats,
+/// or if the endpoint returns 404 (not implemented on older pipeline versions).
+///
+/// This endpoint is only used by the web-console so it is not published on openapi
+/// and subject to breakage.
+async fn fetch_connector_error_stats(
+    state: &WebData<ServerState>,
+    tenant_id: TenantId,
+    pipeline_name: &str,
+    deployment_runtime_status: Option<RuntimeStatus>,
+) -> Option<ConnectorStats> {
+    // Only forward the request if the pipeline is in a valid runtime status
+    match deployment_runtime_status {
+        Some(RuntimeStatus::Bootstrapping)
+        | Some(RuntimeStatus::Replaying)
+        | Some(RuntimeStatus::Running)
+        | Some(RuntimeStatus::Paused) => {
+            // Pipeline is in a valid state, proceed with the request
+        }
+        _ => {
+            // Pipeline is not in a valid state to fetch connector stats
+            return None;
+        }
+    }
+
+    // Use the existing method to forward the request to the pipeline
+    let client = awc::Client::default();
+    let response = state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            &client,
+            tenant_id,
+            pipeline_name,
+            actix_web::http::Method::GET,
+            "stats/errors",
+            "",
+            Some(std::time::Duration::from_millis(500)),
+        )
+        .await
+        .ok()?;
+
+    // Check status code - quietly ignore 404 (endpoint not available on older pipelines)
+    if response.status() == actix_web::http::StatusCode::NOT_FOUND {
+        log::debug!(
+            "Pipeline '{}' does not support /stats/errors endpoint (404), skipping error stats",
+            pipeline_name
+        );
+        return None;
+    }
+
+    // Parse the response body
+    let body = response.into_body();
+    let bytes = actix_web::body::to_bytes(body).await.ok()?;
+    let stats_response: PipelineStatsErrorsResponse = match serde_json::from_slice(&bytes) {
+        Ok(response) => response,
+        Err(e) => {
+            log::error!(
+                "Failed to deserialize pipeline stats response for '{}': {}",
+                pipeline_name,
+                e
+            );
+            return None;
+        }
+    };
+
+    // Extract and aggregate error counts
+    let mut total_errors = 0u64;
+
+    // Aggregate input connector errors
+    for endpoint in stats_response.inputs {
+        total_errors = total_errors
+            .saturating_add(endpoint.metrics.num_transport_errors)
+            .saturating_add(endpoint.metrics.num_parse_errors);
+    }
+
+    // Aggregate output connector errors
+    for endpoint in stats_response.outputs {
+        total_errors = total_errors
+            .saturating_add(endpoint.metrics.num_encode_errors)
+            .saturating_add(endpoint.metrics.num_transport_errors);
+    }
+
+    Some(ConnectorStats {
+        num_errors: total_errors,
+    })
+}
+
+/// Get Pipeline
+///
 /// Retrieve a pipeline.
 /// Configure which fields are included using the `selector` query parameter.
 #[utoipa::path(
@@ -696,7 +869,7 @@ pub(crate) async fn list_pipelines(
             , example = json!(examples::error_unknown_pipeline_name())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline CRUD"
 )]
 #[get("/pipelines/{pipeline_name}")]
 pub(crate) async fn get_pipeline(
@@ -725,13 +898,31 @@ pub(crate) async fn get_pipeline(
                 .await?;
             PipelineSelectedInfoInternal::new_status(pipeline)
         }
+        PipelineFieldSelector::StatusWithConnectors => {
+            let pipeline = state
+                .db
+                .lock()
+                .await
+                .get_pipeline_for_monitoring(*tenant_id, &pipeline_name)
+                .await?;
+            let connector_stats = fetch_connector_error_stats(
+                &state,
+                *tenant_id,
+                &pipeline_name,
+                pipeline.deployment_runtime_status,
+            )
+            .await;
+            PipelineSelectedInfoInternal::new_status_with_connectors(pipeline, connector_stats)
+        }
     };
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&returned_pipeline))
 }
 
-/// Create a new pipeline.
+/// Create Pipeline
+///
+/// Create a new pipeline with the provided configuration.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -755,7 +946,7 @@ pub(crate) async fn get_pipeline(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline CRUD"
 )]
 #[post("/pipelines")]
 pub(crate) async fn post_pipeline(
@@ -787,6 +978,8 @@ pub(crate) async fn post_pipeline(
         .json(returned_pipeline))
 }
 
+/// Upsert Pipeline
+///
 /// Fully update a pipeline if it already exists, otherwise create a new pipeline.
 #[utoipa::path(
     context_path = "/v0",
@@ -819,7 +1012,7 @@ pub(crate) async fn post_pipeline(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline CRUD"
 )]
 #[put("/pipelines/{pipeline_name}")]
 pub(crate) async fn put_pipeline(
@@ -864,6 +1057,8 @@ pub(crate) async fn put_pipeline(
     }
 }
 
+/// Patch Pipeline
+///
 /// Partially update a pipeline.
 #[utoipa::path(
     context_path = "/v0",
@@ -896,7 +1091,7 @@ pub(crate) async fn put_pipeline(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline CRUD"
 )]
 #[patch("/pipelines/{pipeline_name}")]
 pub(crate) async fn patch_pipeline(
@@ -935,6 +1130,8 @@ pub(crate) async fn patch_pipeline(
         .json(returned_pipeline))
 }
 
+/// Recompile Pipeline
+///
 /// Recompile a pipeline with the Feldera runtime version included in the
 /// currently installed Feldera platform.
 ///
@@ -980,7 +1177,7 @@ pub(crate) async fn patch_pipeline(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/update_runtime")]
 pub(crate) async fn post_update_runtime(
@@ -1018,7 +1215,9 @@ pub(crate) async fn post_update_runtime(
         .json(returned_pipeline))
 }
 
-/// Delete a pipeline.
+/// Delete Pipeline
+///
+/// Delete an existing pipeline by name.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -1038,7 +1237,7 @@ pub(crate) async fn post_update_runtime(
             , example = json!(examples::error_delete_restricted_to_fully_stopped())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline CRUD"
 )]
 #[delete("/pipelines/{pipeline_name}")]
 pub(crate) async fn delete_pipeline(
@@ -1061,6 +1260,8 @@ pub(crate) async fn delete_pipeline(
     Ok(HttpResponse::Ok().finish())
 }
 
+/// Start Pipeline
+///
 /// Start the pipeline asynchronously by updating the desired status.
 ///
 /// The endpoint returns immediately after setting the desired status.
@@ -1093,7 +1294,7 @@ pub(crate) async fn delete_pipeline(
             , example = json!(examples::error_illegal_pipeline_action())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/start")]
 pub(crate) async fn post_pipeline_start(
@@ -1161,6 +1362,8 @@ pub(crate) async fn post_pipeline_start(
     Ok(HttpResponse::Accepted().json(json!("Pipeline is starting")))
 }
 
+/// Stop Pipeline
+///
 /// Stop the pipeline asynchronously by updating the desired state.
 ///
 /// There are two variants:
@@ -1191,7 +1394,7 @@ pub(crate) async fn post_pipeline_start(
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        PostStopPipelineParameters,
+        PostStopPipelineParameters
     ),
     responses(
         (status = ACCEPTED
@@ -1221,7 +1424,7 @@ pub(crate) async fn post_pipeline_start(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/stop")]
 pub(crate) async fn post_pipeline_stop(
@@ -1302,6 +1505,8 @@ pub(crate) async fn post_pipeline_stop(
     }
 }
 
+/// Clear Storage
+///
 /// Clears the pipeline storage asynchronously.
 ///
 /// IMPORTANT: Clearing means disassociating the storage from the pipeline.
@@ -1332,7 +1537,7 @@ pub(crate) async fn post_pipeline_stop(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/clear")]
 pub(crate) async fn post_pipeline_clear(
@@ -1355,6 +1560,8 @@ pub(crate) async fn post_pipeline_clear(
     Ok(HttpResponse::Accepted().json(json!("Pipeline storage is being cleared")))
 }
 
+/// Stream Pipeline Logs
+///
 /// Retrieve logs of a pipeline as a stream.
 ///
 /// The logs stream catches up to the extent of the internally configured per-pipeline
@@ -1391,7 +1598,7 @@ pub(crate) async fn post_pipeline_clear(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Metrics & Debugging"
 )]
 #[get("/pipelines/{pipeline_name}/logs")]
 pub(crate) async fn get_pipeline_logs(
@@ -1413,6 +1620,8 @@ pub struct PostPipelineTesting {
     pub set_platform_version: Option<String>,
 }
 
+/// Test Endpoint
+///
 /// This endpoint is used as part of the test harness. Only available if the `testing`
 /// unstable feature is enabled. Do not use in production.
 #[utoipa::path(
@@ -1434,7 +1643,7 @@ pub struct PostPipelineTesting {
             , body = ErrorResponse
         )
     ),
-    tag = "Pipeline management"
+    tag = "Metrics & Debugging"
 )]
 #[post("/pipelines/{pipeline_name}/testing")]
 pub(crate) async fn post_pipeline_testing(

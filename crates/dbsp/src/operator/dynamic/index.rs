@@ -139,7 +139,8 @@ where
 {
     #[trace]
     async fn eval(&mut self, input: &CI) -> CO {
-        let mut builder = <CO as Batch>::Builder::with_capacity(&self.factories, input.len());
+        let mut builder =
+            <CO as Batch>::Builder::with_capacity(&self.factories, input.len(), input.len());
 
         let mut cursor = input.cursor();
         let mut prev_key = self.factories.key_factory().default_box();

@@ -73,7 +73,7 @@ public class ProfilingTests extends StreamingTestBase {
                 use feldera_sqllib::{
                     append_to_collection_handle,
                     append_to_map_handle,
-                    read_output_handle,
+                    read_output_spine,
                     casts::{cast_to_Timestamp_s,handle_error},
                     string::SqlString,
                 };
@@ -143,7 +143,7 @@ public class ProfilingTests extends StreamingTestBase {
                 use feldera_sqllib::{
                     append_to_collection_handle, append_to_map_handle,
                     casts::{cast_to_Timestamp_s, handle_error},
-                    read_output_handle,
+                    read_output_spine,
                     string::SqlString,
                 };
 
@@ -164,7 +164,7 @@ public class ProfilingTests extends StreamingTestBase {
                         append_to_collection_handle(&data, &streams.0);
                         if i % 100 == 0 {
                             let _ = circuit.transaction().expect("could not run circuit");
-                            let _ = &read_output_handle(&streams.2);
+                            let _ = &read_output_spine(&streams.2);
                         }
                     }
 
@@ -174,7 +174,7 @@ public class ProfilingTests extends StreamingTestBase {
                 }""";
         File script = createInputScript(sql);
         CompilerMessages messages = CompilerMain.execute(
-                "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i",
+                "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i", "--ignoreOrder",
                 script.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
@@ -219,6 +219,7 @@ public class ProfilingTests extends StreamingTestBase {
                     let mut file = File::create("profile.zip").expect("Could not create file");
                     file.write_all(&profile.as_json_zip()).expect("Could not write data");
                 }""";
+
         File dataflow = new File("dataflow-" + script.getName().replace(".sql", ".json"));
         CompilerMessages messages = CompilerMain.execute(
                 "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i", "--ignoreOrder",
@@ -251,9 +252,15 @@ public class ProfilingTests extends StreamingTestBase {
         String profilerData = "../../profiler/data";
         File file = new File("../extra/" + name + ".sql");
         String str = this.getEmptyJsonProfile(file);
-        Utilities.writeFile(Paths.get(profilerData, file.getName().replace(".sql", ".json")), str);
+        Path target = Paths.get(profilerData, file.getName().replace(".sql", ".json"));
+        Utilities.writeFile(target, str);
         String df = "dataflow-" + name + ".json";
-        Files.move(Paths.get(".", df), Paths.get(profilerData, df));
+
+        target = Paths.get(profilerData, df);
+        // File may not exist, so we don't expect success
+        //noinspection ResultOfMethodCallIgnored
+        target.toFile().delete();
+        Files.move(Paths.get(".", df), target);
     }
 
     @Test
@@ -278,13 +285,15 @@ public class ProfilingTests extends StreamingTestBase {
                         append_to_collection_handle(&input, &streams.0);
                         if i % 1000 == 0 {
                             let _ = circuit.transaction().expect("could not run circuit");
-                            let _ = &read_output_handle(&streams.1);
+                            let _ = &read_output_spine(&streams.1);
                         }
                     }""");
         this.profile(sql, main);
     }
 
     void profile(String sql, String main) throws SQLException, IOException, InterruptedException {
+        if (BaseSQLTests.skipRust)
+            return;
         Long[] p0 = this.measure(stripLateness(sql), main);
         Long[] p1 = this.measure(sql, main);
         // Memory consumption of program without lateness is expected to be higher
@@ -334,7 +343,7 @@ public class ProfilingTests extends StreamingTestBase {
                         append_to_collection_handle(&bid, &streams.1);
                         if i % 100 == 0 {
                             let _ = circuit.transaction().expect("could not run circuit");
-                            let _ = &read_output_handle(&streams.2);
+                            let _ = &read_output_spine(&streams.2);
                         }
                     }""");
         this.profile(sql, main);
@@ -364,7 +373,7 @@ public class ProfilingTests extends StreamingTestBase {
                         append_to_map_handle(&auction, &streams.0, |x| Tup1::new(x.2));
                         if i % 100 == 0 {
                             let _ = circuit.transaction().expect("could not run circuit");
-                            let _ = &read_output_handle(&streams.2);
+                            let _ = &read_output_spine(&streams.2);
                         }
                     }""");
         this.profile(sql, main);

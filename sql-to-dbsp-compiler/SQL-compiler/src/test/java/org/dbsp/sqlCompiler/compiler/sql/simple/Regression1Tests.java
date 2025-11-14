@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
@@ -221,11 +222,10 @@ public class Regression1Tests extends SqlIoTest {
                     )
                 );
                 """);
-        String program = ccs.compiler.sources.getWholeProgram();
-
         Function<Integer, String> values =
                 v -> "('" + ((v >> 1) % 2) + "', '" + (v % 2) + "');";
 
+        String program = ccs.compiler.sources.getWholeProgram();
         for (int f1 = 0; f1 < 4; f1++) {
             for (int f2 = 0; f2 < 4; f2++) {
                 for (int f3 = 0; f3 < 4; f3++) {
@@ -1198,6 +1198,111 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW v2 AS SELECT
                 roww NOT IN (roww) AS roww
                 FROM tbl;""");
+    }
+
+    @Test
+    public void issue4975() {
+        this.getCCS("""
+                CREATE TABLE tbl1(id INT, c2 VARCHAR);
+                
+                CREATE TABLE tbl2(id INT, c2 VARCHAR);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                i.id, i.c2 AS i_c2, v.c2 AS v_c2
+                FROM tbl1 i
+                LEFT ASOF JOIN tbl2 v
+                MATCH_CONDITION ( i.c2 >= v.c2 )
+                ON i.id = v.id;""");
+    }
+
+    @Test
+    public void issue4989() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T (
+                    id INT NOT NULL,
+                    step BOOLEAN,
+                    en VARCHAR,
+                    ss INT,
+                    ts BIGINT NOT NULL);
+                
+                CREATE VIEW s AS
+                SELECT
+                    *,
+                    CASE
+                      WHEN LAG(ts) OVER (
+                        PARTITION BY id
+                        ORDER BY ts
+                      ) IS NULL THEN 0
+                      ELSE (ts - LAG(ts) OVER (
+                        PARTITION BY id
+                        ORDER BY ts
+                      )) / 10
+                    END AS X,
+                    LAG(step, 1, FALSE) OVER (
+                      PARTITION BY id
+                      ORDER BY ts
+                    ) as Y,
+                    CASE
+                      WHEN ss = 10 AND en != LAG(en, 1, 'alpha') OVER (
+                        PARTITION BY id
+                        ORDER BY ts
+                      ) THEN TRUE
+                      ELSE FALSE
+                    END as Z
+                  FROM T;
+                """);
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int lagCount = 0;
+            @Override
+            public void postorder(DBSPLagOperator node) {
+                this.lagCount++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.lagCount);
+            }
+        });
+        // Validated using Postgres
+        ccs.step("""
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'alpha', 10, 590);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'beta', 10, 593);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'alpha', 10, 597);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'alpha', 25, 600);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'gamma', 10, 604);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'eta', 12, 608);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'beta', 10, 116);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'gamma', 25, 615);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'delta', 20, 618);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'gamma', 25, 622);""",
+                """
+                 id | step | en   | ss | ts  | x |     y |     z | weight
+                ----------------------------- ----------------------------
+                 1 | true  | beta|	10 | 116 | 0 | false | true  | 1
+                 1 | true  | alpha|	10 | 590 | 47| true  | true  | 1
+                 1 | true  | alpha|	10 | 597 | 0 | true  | false | 1
+                 1 | true  | gamma|	10 | 604 | 0 | true  | true  | 1
+                 1 | true  | delta| 20 | 618 | 1 | true  | false | 1
+                 2 | false | beta|	10 | 593 | 0 | false | true  | 1
+                 2 | false | alpha|	25 | 600 | 0 | false | false | 1
+                 2 | false | eta|	12 | 608 | 0 | false | false | 1
+                 2 | false | gamma|	25 | 615 | 0 | false | false | 1
+                 2 | false | gamma|	25 | 622 | 0 | false | false | 1""");
+    }
+
+    @Test
+    public void testSlt() {
+        this.getCC("""
+                CREATE TABLE tab0(
+                pk INTEGER, col0 INTEGER, col1 REAL, col2 TEXT, col3 INTEGER, col4 REAL, col5 TEXT);
+                
+                CREATE VIEW V AS SELECT pk FROM tab0 WHERE col4 IS NULL AND ((col3 >= 4) OR col1 < 6.94 OR
+                 (((col1 BETWEEN 7.86 AND 3.33) AND (col3 > 3 AND col1 <= 3.18 AND col0 > 4 AND col4 < 2.65)
+                 AND (col0 IS NULL))) OR col4 BETWEEN 2.56 AND 1.46 AND col3 < 5) OR col1 BETWEEN 0.15 AND 9.37 AND
+                 (col3 IS NULL AND ((col4 > 0.44))) OR (col4 > 0.89 AND (col0 <= 6) OR col0 IS NULL OR col4 <= 5.72 AND
+                 (col4 <= 0.76 AND col4 > 1.83 OR (col1 >= 0.82) AND (col3 > 1)) AND ((col0 <= 7 AND col4 > 2.76))
+                 OR col0 > 0 AND (col4 IS NULL) AND (col3 IN (5)) AND
+                 col0 IN (SELECT col3 FROM tab0 WHERE col3 IS NULL)) OR (col0 IS NULL AND col0 = 7 AND col0 IS NULL)""");
     }
 }
  
