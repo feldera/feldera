@@ -11,20 +11,30 @@
 
 <body>
     <div id="page">
-        <div id="app" style="width: 100%; height: 100vh;"></div>
-        <div id="menus" style="position: absolute; top: 0; left: 0" zIndex="1" display="flex" flex-direction="column"
-            align-items="center">
-            <div id="selector" style="background-color: rgba(100, 100, 100, .3)" zIndex="1">
+        <div id="visualizer" style="width: 100%; height: 100vh;"></div>
+        <div id="menus" style="position: absolute; top: 0; left: 0; background-color: rgba(100, 100, 100, .3)"
+            zIndex="1" display="flex" flex-direction="column" align-items="center">
+            <div id="selector" zIndex="1">
                 <table id="selection-tools">
                 </table>
             </div>
-            <!--
-                <input type="text" id="search" placeholder="Search" style="margin: 10px" />
-            -->
-            <div id="navigator-parent" style="width: 100px; height: 100px;"></div>
+            <table>
+                <tr>
+                    <td>
+                        <div>Search: </div>
+                    </td>
+                    <td><input type="text" id="search" placeholder="Search" style="margin: 10px"
+                            title="Node id to search" /></td>
+                </tr>
+            </table>
+            <!-- wide enough to accomodate rectangle borders -->
+            <div id="navigator-parent"
+                style="width: 104px; height: 104px; border: 1px solid rgba(200, 200, 20); margin: 0 auto">
+            </div>
+            <div id="message" style="display: none; font-family: 'monospace'; background-color: transparent;"></div>
             <div id="error-message" style="
-                background-color: white; color: red; display: none; font-family: 'monospace';
-                border: 1px solid red; text-align: center; width: 350px; white-space: pre-wrap;"></div>
+                color: red; display: none; font-family: 'monospace'; background-color: transparent;
+                border: 1px solid red; text-align: center; white-space: pre-wrap"></div>
         </div>
     </div>
 </body>

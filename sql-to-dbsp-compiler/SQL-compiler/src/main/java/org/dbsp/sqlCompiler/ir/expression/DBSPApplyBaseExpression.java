@@ -20,7 +20,7 @@ public abstract class DBSPApplyBaseExpression extends DBSPExpression {
         if (this.function.getType().is(DBSPTypeFunction.class)) {
             DBSPTypeFunction funcType = this.function.getType().to(DBSPTypeFunction.class);
             Utilities.enforce(funcType.parameterTypes.length == this.arguments.length,
-                    "Has " + funcType.parameterTypes.length + " parameters, but " +
+                    () -> "Has " + funcType.parameterTypes.length + " parameters, but " +
                             this.arguments.length + " arguments");
             parameterTypes = funcType.parameterTypes;
         }

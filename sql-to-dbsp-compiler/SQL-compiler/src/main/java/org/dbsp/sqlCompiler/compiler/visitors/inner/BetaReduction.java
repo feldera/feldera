@@ -59,6 +59,11 @@ public class BetaReduction extends InnerRewriteVisitor {
         }
 
         @Override
+        public VisitDecision preorder(DBSPType type) {
+            return VisitDecision.STOP;
+        }
+
+        @Override
         public VisitDecision preorder(IDBSPInnerNode node) {
             if (node.is(IDBSPDeclaration.class)) {
                 this.found = true;

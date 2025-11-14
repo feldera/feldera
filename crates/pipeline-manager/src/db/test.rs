@@ -2,7 +2,7 @@ use crate::api::support_data_collector::SupportBundleData;
 use crate::auth::{generate_api_key, TenantRecord};
 use crate::db::error::DBError;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
-use crate::db::storage_postgres::StoragePostgres;
+use crate::db::storage_postgres::{is_pipeline_assigned_to_worker, StoragePostgres};
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId, ApiPermission};
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
@@ -1230,13 +1230,24 @@ async fn pipeline_program_compilation() {
     let handle = test_setup().await;
     let tenant_id = TenantRecord::default().id;
 
+    let worker_id = 0;
+    let total_workers = 1;
+
     // There is no program to compile
     assert_eq!(
-        handle.db.get_next_sql_compilation("v0").await.unwrap(),
+        handle
+            .db
+            .get_next_sql_compilation("v0", worker_id, total_workers)
+            .await
+            .unwrap(),
         None
     );
     assert_eq!(
-        handle.db.get_next_rust_compilation("v0").await.unwrap(),
+        handle
+            .db
+            .get_next_rust_compilation("v0", worker_id, total_workers)
+            .await
+            .unwrap(),
         None
     );
 
@@ -1280,7 +1291,11 @@ async fn pipeline_program_compilation() {
 
     // Initially, the next program to compile is the one with program status being pending the longest
     assert_eq!(
-        handle.db.get_next_sql_compilation("v0").await.unwrap(),
+        handle
+            .db
+            .get_next_sql_compilation("v0", worker_id, total_workers)
+            .await
+            .unwrap(),
         Some((tenant_id, pipeline1.clone()))
     );
 
@@ -1318,7 +1333,7 @@ async fn pipeline_program_compilation() {
     assert_eq!(
         handle
             .db
-            .get_next_rust_compilation("v0")
+            .get_next_rust_compilation("v0", worker_id, total_workers)
             .await
             .unwrap()
             .unwrap()
@@ -1350,7 +1365,11 @@ async fn pipeline_program_compilation() {
 
     // Next up, it should be pipeline2
     assert_eq!(
-        handle.db.get_next_sql_compilation("v0").await.unwrap(),
+        handle
+            .db
+            .get_next_sql_compilation("v0", worker_id, total_workers)
+            .await
+            .unwrap(),
         Some((tenant_id, pipeline2.clone()))
     );
 
@@ -1377,11 +1396,19 @@ async fn pipeline_program_compilation() {
 
     // There should be nothing left to compile
     assert_eq!(
-        handle.db.get_next_sql_compilation("v0").await.unwrap(),
+        handle
+            .db
+            .get_next_sql_compilation("v0", worker_id, total_workers)
+            .await
+            .unwrap(),
         None
     );
     assert_eq!(
-        handle.db.get_next_rust_compilation("v0").await.unwrap(),
+        handle
+            .db
+            .get_next_rust_compilation("v0", worker_id, total_workers)
+            .await
+            .unwrap(),
         None
     );
 }
@@ -2574,23 +2601,23 @@ fn db_impl_behaves_like_model() {
                                 check_response_pipelines_for_monitoring_with_tenant_id(i, model_response, impl_response);
                             }
                             StorageAction::ClearOngoingSqlCompilation(platform_version) => {
-                                let model_response = model.clear_ongoing_sql_compilation(&platform_version).await;
-                                let impl_response = handle.db.clear_ongoing_sql_compilation(&platform_version).await;
+                                let model_response = model.clear_ongoing_sql_compilation_for_worker(&platform_version, 0, 1).await;
+                                let impl_response = handle.db.clear_ongoing_sql_compilation_for_worker(&platform_version, 0, 1).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::GetNextSqlCompilation(platform_version) => {
-                                let model_response = model.get_next_sql_compilation(&platform_version).await;
-                                let impl_response = handle.db.get_next_sql_compilation(&platform_version).await;
+                                let model_response = model.get_next_sql_compilation(&platform_version, 0, 1).await;
+                                let impl_response = handle.db.get_next_sql_compilation(&platform_version, 0, 1).await;
                                 check_response_optional_pipeline_with_tenant_id(i, model_response, impl_response);
                             }
                             StorageAction::ClearOngoingRustCompilation(platform_version) => {
-                                let model_response = model.clear_ongoing_rust_compilation(&platform_version).await;
-                                let impl_response = handle.db.clear_ongoing_rust_compilation(&platform_version).await;
+                                let model_response = model.clear_ongoing_rust_compilation_for_worker(&platform_version, 0, 1).await;
+                                let impl_response = handle.db.clear_ongoing_rust_compilation_for_worker(&platform_version, 0, 1).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::GetNextRustCompilation(platform_version) => {
-                                let model_response = model.get_next_rust_compilation(&platform_version).await;
-                                let impl_response = handle.db.get_next_rust_compilation(&platform_version).await;
+                                let model_response = model.get_next_rust_compilation(&platform_version, 0, 1).await;
+                                let impl_response = handle.db.get_next_rust_compilation(&platform_version, 0, 1).await;
                                 check_response_optional_pipeline_with_tenant_id(i, model_response, impl_response);
                             }
                             StorageAction::ListPipelineProgramsAcrossAllTenants => {
@@ -3968,11 +3995,21 @@ impl Storage for Mutex<DbModel> {
         Ok(result)
     }
 
-    async fn clear_ongoing_sql_compilation(&self, platform_version: &str) -> Result<(), DBError> {
+    async fn clear_ongoing_sql_compilation_for_worker(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<(), DBError> {
         let pipelines = self
             .list_pipelines_across_all_tenants_for_monitoring()
             .await?;
         for (tid, pipeline) in pipelines {
+            // Skip pipelines not assigned to this worker
+            if !is_pipeline_assigned_to_worker(pipeline.id, worker_id as u64, total_workers as u64)
+            {
+                continue;
+            }
             if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
                 if pipeline.platform_version == platform_version {
                     if pipeline.program_status == ProgramStatus::CompilingSql {
@@ -4007,47 +4044,39 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn get_next_sql_compilation(
+    async fn clear_ongoing_rust_compilation_for_worker(
         &self,
         platform_version: &str,
-    ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
-        let mut pipelines: Vec<(TenantId, ExtendedPipelineDescr)> = self
-            .lock()
-            .await
-            .pipelines
-            .iter()
-            .filter(|(_, p)| {
-                p.deployment_resources_status == ResourcesStatus::Stopped
-                    && p.program_status == ProgramStatus::Pending
-                    && p.platform_version == platform_version
-            })
-            .map(|((tid, _), pipeline)| (*tid, pipeline.clone()))
-            .collect();
-        if pipelines.is_empty() {
-            return Ok(None);
-        }
-        pipelines.sort_by(|(_, p1), (_, p2)| {
-            (p1.program_status_since, p1.id).cmp(&(p2.program_status_since, p2.id))
-        });
-        let chosen = pipelines.first().unwrap().clone(); // Already checked for empty
-        Ok(Some((chosen.0, chosen.1)))
-    }
-
-    async fn clear_ongoing_rust_compilation(&self, platform_version: &str) -> Result<(), DBError> {
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<(), DBError> {
         let pipelines = self
             .list_pipelines_across_all_tenants_for_monitoring()
             .await?;
         for (tid, pipeline) in pipelines {
+            // Skip pipelines not assigned to this worker
+            if !is_pipeline_assigned_to_worker(pipeline.id, worker_id as u64, total_workers as u64)
+            {
+                continue;
+            }
             if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
                 if pipeline.platform_version == platform_version {
                     if pipeline.program_status == ProgramStatus::CompilingRust {
-                        let pipeline_complete = self.get_pipeline_by_id(tid, pipeline.id).await?;
+                        let pipeline_complete = self
+                            .get_pipeline_by_id(tid, pipeline.id)
+                            .await
+                            .expect("Pipeline should already exist");
                         self.transit_program_status_to_sql_compiled(
                             tid,
                             pipeline.id,
                             pipeline.program_version,
-                            &pipeline_complete.program_error.sql_compilation.unwrap(),
-                            &pipeline_complete.program_info.unwrap(),
+                            &pipeline_complete
+                                .program_error
+                                .sql_compilation
+                                .expect("Pipeline should have already had its SQL compiled"),
+                            &pipeline_complete
+                                .program_info
+                                .expect("Pipeline should have already had its SQL compiled"),
                         )
                         .await?;
                     }
@@ -4075,9 +4104,40 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
+    async fn get_next_sql_compilation(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
+        let mut pipelines: Vec<(TenantId, ExtendedPipelineDescr)> = self
+            .lock()
+            .await
+            .pipelines
+            .iter()
+            .filter(|(_, p)| {
+                p.deployment_resources_status == ResourcesStatus::Stopped
+                    && p.program_status == ProgramStatus::Pending
+                    && p.platform_version == platform_version
+                    && is_pipeline_assigned_to_worker(p.id, worker_id as u64, total_workers as u64)
+            })
+            .map(|((tid, _), pipeline)| (*tid, pipeline.clone()))
+            .collect();
+        if pipelines.is_empty() {
+            return Ok(None);
+        }
+        pipelines.sort_by(|(_, p1), (_, p2)| {
+            (p1.program_status_since, p1.id).cmp(&(p2.program_status_since, p2.id))
+        });
+        let chosen = pipelines.first().unwrap().clone(); // Already checked for empty
+        Ok(Some((chosen.0, chosen.1)))
+    }
+
     async fn get_next_rust_compilation(
         &self,
         platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
         let mut pipelines: Vec<(TenantId, ExtendedPipelineDescr)> = self
             .lock()
@@ -4088,6 +4148,7 @@ impl Storage for Mutex<DbModel> {
                 p.deployment_resources_status == ResourcesStatus::Stopped
                     && p.program_status == ProgramStatus::SqlCompiled
                     && p.platform_version == platform_version
+                    && is_pipeline_assigned_to_worker(p.id, worker_id as u64, total_workers as u64)
             })
             .map(|((tid, _), pipeline)| (*tid, pipeline.clone()))
             .collect();
@@ -4103,19 +4164,22 @@ impl Storage for Mutex<DbModel> {
 
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<Vec<(PipelineId, Version, String, String)>, DBError> {
-        let mut checksums: Vec<(PipelineId, Version, String, String)> = self
+    ) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError> {
+        let mut checksums: Vec<(PipelineId, Version, Option<String>, Option<String>)> = self
             .lock()
             .await
             .pipelines
             .values()
-            .filter(|pipeline| pipeline.program_status == ProgramStatus::Success)
+            .filter(|pipeline| {
+                pipeline.program_status == ProgramStatus::Success
+                    || pipeline.program_status == ProgramStatus::CompilingRust
+            })
             .map(|pipeline| {
                 (
                     pipeline.id,
                     pipeline.program_version,
-                    pipeline.program_binary_source_checksum.clone().unwrap(),
-                    pipeline.program_binary_integrity_checksum.clone().unwrap(),
+                    pipeline.program_binary_source_checksum.clone(),
+                    pipeline.program_binary_integrity_checksum.clone(),
                 )
             })
             .collect();

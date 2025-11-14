@@ -44,9 +44,9 @@ public final class DBSPAggregateList extends DBSPNode
             List<DBSPParameter> params = b.getRowVariableReferences();
             for (DBSPParameter p: params) {
                 Utilities.enforce(this.rowVar.getType().sameType(p.getType()),
-                        "Row var type does not match: " + this.rowVar.getType() + " vs " + p.getType());
+                        () -> "Row var type does not match: " + this.rowVar.getType() + " vs " + p.getType());
                 Utilities.enforce(this.rowVar.variable.equals(p.name),
-                        "Row var name does not match: " + this.rowVar.variable + " vs " + p.name);
+                        () -> "Row var name does not match: " + this.rowVar.variable + " vs " + p.name);
             }
         }
     }

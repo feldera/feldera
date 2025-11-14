@@ -381,7 +381,8 @@ public class TableParser {
                         Utilities.enforce(!trimmed.isEmpty());
 
                         String[] parts = trimmed.split(",");
-                        Utilities.enforce(parts.length == tuple.size(), "Expected " + tuple.size() + " fields for tuple, got " + parts.length);
+                        Utilities.enforce(parts.length == tuple.size(),
+                                () -> "Expected " + tuple.size() + " fields for tuple, got " + parts.length);
                         List<DBSPExpression> fields = new ArrayList<>(tuple.size());
                         int index = 0;
                         for (DBSPType ft : tuple.tupFields)

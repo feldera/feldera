@@ -47,12 +47,14 @@ import java.util.Objects;
 public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
     public DBSPTupleExpression(CalciteObject object, DBSPTypeTuple type, DBSPExpression... expressions) {
         super(object, type, expressions);
-        Utilities.enforce(type.size() == expressions.length, "Tuple expression has size " + expressions.length +
+        Utilities.enforce(type.size() == expressions.length,
+                () -> "Tuple expression has size " + expressions.length +
                 " but the declared type is " + type);
         for (int i = 0; i < type.size(); i++) {
+            int finalI = i;
             Utilities.enforce(type.tupFields[i].sameType(expressions[i].getType()),
-                    "Tuple field " + expressions[i] + " has type " + expressions[i].getType() +
-                    " that does not match the declared field type " + type.tupFields[i]);
+                    () -> "Tuple field " + expressions[finalI] + " has type " + expressions[finalI].getType() +
+                    " that does not match the declared field type " + type.tupFields[finalI]);
         }
     }
 

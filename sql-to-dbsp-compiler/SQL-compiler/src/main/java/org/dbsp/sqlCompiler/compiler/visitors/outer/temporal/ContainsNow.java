@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.Logger;
 
@@ -23,6 +24,11 @@ class ContainsNow extends InnerVisitor {
     static boolean isNow(DBSPApplyExpression node) {
         String name = node.getFunctionName();
         return name != null && name.equalsIgnoreCase("now");
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPType type) {
+        return VisitDecision.STOP;
     }
 
     static DBSPTypeTimestamp timestampType() {

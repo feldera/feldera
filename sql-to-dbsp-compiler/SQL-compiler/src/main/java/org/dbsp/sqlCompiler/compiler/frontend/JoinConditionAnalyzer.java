@@ -204,7 +204,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
 
         /** Analyze an equality comparison.  Return 'true' if this is suitable for an equijoin */
         public boolean analyzeEquals(RexCall call) {
-            Utilities.enforce(call.operands.size() == 2, "Expected 2 operands for equality checking");
+            Utilities.enforce(call.operands.size() == 2, () -> "Expected 2 operands for equality checking");
             CalciteObject node = CalciteObject.create(this.join, call);
             RexNode left = call.operands.get(0);
             RexNode right = call.operands.get(1);

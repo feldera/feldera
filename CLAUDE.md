@@ -8593,7 +8593,7 @@ pipeline = client.create_pipeline("my_pipeline")
 
 ### Testing Best Practices
 
-- **Environment Setup**: Tests expect Feldera instance at `$FELDERA_BASE_URL` (default: `http://localhost:8080`)
+- **Environment Setup**: Tests expect Feldera instance at `$FELDERA_HOST` (default: `http://localhost:8080`)
 - **Test Organization**: Group related functionality (aggregates, arithmetic, complex types)
 - **DDL Management**: Use docstring DDLs in shared test classes
 - **Enterprise Testing**: Separate OSS and Enterprise test paths

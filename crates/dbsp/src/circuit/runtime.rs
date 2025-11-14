@@ -678,6 +678,23 @@ impl Runtime {
         self.0.buffer_caches[local_worker_offset][thread_type].clone()
     }
 
+    /// Returns `(current, max)`, reporting the amount of the buffer cache
+    /// that is currently used and its maximum size, both in bytes.
+    pub fn cache_occupancy(&self) -> (usize, usize) {
+        if self.0.storage.is_some() {
+            self.0
+                .buffer_caches
+                .iter()
+                .flat_map(|map| map.values())
+                .map(|cache| cache.occupancy())
+                .fold((0, 0), |(a_cur, a_max), (b_cur, b_max)| {
+                    (a_cur + b_cur, a_max + b_max)
+                })
+        } else {
+            (0, 0)
+        }
+    }
+
     /// Returns 0-based index of the current worker thread within its runtime.
     /// For threads that run without a runtime, this method returns `0`.  In a
     /// multihost runtime, this is a global index across all hosts.
@@ -774,7 +791,7 @@ impl Runtime {
                     .unwrap_or({
                         // This reduces the files stored on disk to a reasonable number.
 
-                        1024 * 1024
+                        10 * 1024 * 1024
                     }),
             )
         })

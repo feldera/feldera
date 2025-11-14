@@ -434,9 +434,23 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple uncollectElementType = this.convertType(
                 node.getPositionRange(), uncollect.getRowType(), false).to(DBSPTypeTuple.class);
         DBSPType collectionElementType = arrayExpression.getResultType().to(ICollectionType.class).getElementType();
-        if (collectionElementType.mayBeNull)
+        if (collectionElementType.mayBeNull) {
             // This seems to be a bug in Calcite, we should not need to do this adjustment
-            uncollectElementType = uncollectElementType.withMayBeNull(true).to(DBSPTypeTuple.class);
+            if (uncollect.withOrdinality) {
+                List<DBSPType> fieldTypes = new ArrayList<>();
+                DBSPTypeTuple tuple = uncollectElementType.to(DBSPTypeTuple.class);
+                for (int i = 0; i < tuple.size(); i++) {
+                    DBSPType ft = tuple.getFieldType(i);
+                    if (i < tuple.size() - 1)
+                        // skip the ordinality field
+                        ft = ft.withMayBeNull(true);
+                    fieldTypes.add(ft);
+                }
+                uncollectElementType = new DBSPTypeTuple(fieldTypes);
+            } else {
+                uncollectElementType = uncollectElementType.withMayBeNull(true).to(DBSPTypeTuple.class);
+            }
+        }
 
         DBSPType indexType = null;
         if (uncollect.withOrdinality) {
@@ -472,7 +486,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         DBSPTypeFunction functionType = new DBSPTypeFunction(type, leftElementType.ref());
         Utilities.enforce(flatmap.getType().sameType(functionType),
-                "Expected type to be\n" + functionType + "\nbut it is\n" + flatmap.getType());
+                () -> "Expected type to be\n" + functionType + "\nbut it is\n" + flatmap.getType());
         DBSPSimpleOperator result = new DBSPFlatMapOperator(
                 new LastRel(correlate, SourcePositionRange.INVALID),
                 flatmap, TypeCompiler.makeZSet(type), left.outputPort());
@@ -2588,7 +2602,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (!lastOperator.getOutputZSetElementType().sameType(resultType)) {
             Utilities.enforce(
                     lastOperator.getOutputZSetElementType().to(DBSPTypeTuple.class).size() == tuple.size(),
-                    "Window aggregate type size does not match expected size");
+                    () -> "Window aggregate type size does not match expected size");
             DBSPVariablePath var = lastOperator.getOutputZSetElementType().ref().var();
             List<DBSPExpression> fields = new ArrayList<>();
             for (int i = 0; i < tuple.size(); i++) {
@@ -2754,7 +2768,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // First process children
         super.visit(node, ordinal, parent);
         RelNode last = Utilities.removeLast(this.ancestors);
-        Utilities.enforce(last == node, "Corrupted stack: got " + last + " expected " + node);
+        Utilities.enforce(last == node, () -> "Corrupted stack: got " + last + " expected " + node);
 
         // Synthesize current node
         boolean success =

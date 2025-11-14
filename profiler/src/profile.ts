@@ -371,10 +371,17 @@ export class Measurement {
             case "slot 0 loose":
             case "slot 1 loose":
             case "slot 2 loose":
+            case "slot 3 loose":
             case "slot 0 completed":
             case "slot 1 completed":
             case "slot 2 completed":
+            case "slot 3 completed":
+            case "slot 0 merging":
+            case "slot 1 merging":
+            case "slot 2 merging":
+            case "slot 3 merging":
                 return Option.some(new StringValue(value[0]));
+            case "batch sizes":
             case "bounds":
             case "mir_node":
                 // TODO: currently ignoring some properties.

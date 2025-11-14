@@ -400,7 +400,7 @@ const pipelines = {
         formats,
         {
             type: 'doc',
-            label: "Lifecycle",
+            label: "Reference: Pipeline Lifecycle",
             id: "pipelines/lifecycle",
         },
         {
@@ -446,6 +446,7 @@ const operations = {
     label: 'Feldera Operations',
     items: [
         'operations/guide',
+        'operations/memory',
         'operations/metrics',
     ]
 };

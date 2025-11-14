@@ -8,12 +8,10 @@
 mod input;
 mod output;
 
-use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
-use feldera_types::transport::kafka::{default_redpanda_server, KafkaLogLevel, KafkaOutputConfig};
-use rdkafka::client::OAuthToken;
+use anyhow::{bail, Context, Result as AnyResult};
+use feldera_types::transport::kafka::{default_redpanda_server, KafkaLogLevel};
 use rdkafka::{
     client::Client as KafkaClient,
-    config::RDKafkaLogLevel,
     consumer::{BaseConsumer, Consumer, ConsumerContext},
     error::{KafkaError, KafkaResult},
     message::BorrowedMessage,
@@ -22,14 +20,12 @@ use rdkafka::{
     util::Timeout,
     ClientConfig, ClientContext, Offset, TopicPartitionList,
 };
-use std::collections::HashMap;
-use std::error::Error;
 use std::{
     collections::BTreeMap,
     fmt::{Display, Formatter, Result as FmtResult},
     marker::PhantomData,
     ops::Range,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Duration,
 };
 use tracing::{debug, error, warn};
@@ -38,10 +34,7 @@ use uuid::Uuid;
 pub use input::KafkaFtInputEndpoint;
 pub use output::KafkaOutputEndpoint as KafkaFtOutputEndpoint;
 
-use super::{
-    generate_oauthbearer_token, rdkafka_loglevel_from, validate_aws_msk_region, DeferredLogging,
-};
-use crate::transport::kafka::MemoryUseReporter;
+use super::rdkafka_loglevel_from;
 
 #[cfg(test)]
 pub mod test;
@@ -430,70 +423,3 @@ fn make_topic_partition_list<'a>(
     }
     Ok(list)
 }
-
-struct DataConsumerContext<F>
-where
-    F: Fn(AnyError) + Send + Sync,
-{
-    error_cb: F,
-    deferred_logging: DeferredLogging,
-    oauthbearer_config: HashMap<String, String>,
-    memory_use_reporter: Mutex<MemoryUseReporter>,
-    topic: String,
-}
-
-impl<F> DataConsumerContext<F>
-where
-    F: Fn(AnyError) + Send + Sync,
-{
-    fn new(error_cb: F, kafka_config: &KafkaOutputConfig) -> AnyResult<Self> {
-        let mut oauthbearer_config = HashMap::new();
-        if let Some(region) =
-            validate_aws_msk_region(&kafka_config.kafka_options, kafka_config.region.clone())?
-        {
-            oauthbearer_config.insert("region".to_owned(), region);
-        };
-
-        Ok(Self {
-            error_cb,
-            deferred_logging: DeferredLogging::new(),
-            oauthbearer_config,
-            topic: kafka_config.topic.clone(),
-            memory_use_reporter: Mutex::new(MemoryUseReporter::new()),
-        })
-    }
-}
-
-impl<F> ClientContext for DataConsumerContext<F>
-where
-    F: Fn(AnyError) + Send + Sync,
-{
-    const ENABLE_REFRESH_OAUTH_TOKEN: bool = true;
-
-    fn error(&self, error: KafkaError, reason: &str) {
-        let fatal = error
-            .rdkafka_error_code()
-            .is_some_and(|code| code == RDKafkaErrorCode::Fatal);
-        if !fatal {
-            (self.error_cb)(anyhow!(reason.to_string()));
-        } else {
-            // The caller will detect this later and bail out with it as its
-            // final action.
-        }
-    }
-
-    fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
-        self.deferred_logging.log(level, fac, log_message);
-    }
-
-    fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
-        generate_oauthbearer_token(&self.oauthbearer_config)
-    }
-
-    fn stats(&self, statistics: rdkafka::Statistics) {
-        let _guard = output::span(&self.topic);
-        self.memory_use_reporter.lock().unwrap().update(&statistics);
-    }
-}
-
-impl<F> ConsumerContext for DataConsumerContext<F> where F: Fn(AnyError) + Send + Sync {}

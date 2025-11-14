@@ -32,7 +32,7 @@ use crate::controller::sync::{
 };
 use crate::samply::SamplySpan;
 use crate::server::metrics::{
-    HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, ValueType,
+    HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value, ValueType,
 };
 use crate::server::{InitializationState, ServerState};
 use crate::transport::clock::now_endpoint_config;
@@ -1069,6 +1069,23 @@ impl Controller {
             labels,
             &status.global_metrics.storage_bytes,
         );
+
+        if let Some(runtime) = self.inner.runtime.upgrade() {
+            let (cache_used, cache_max) = runtime.cache_occupancy();
+            metrics.gauge(
+                "storage_cache_usage_bytes",
+                "The number of bytes of memory currently in use for caching data on storage.",
+                labels,
+                cache_used,
+            );
+            metrics.counter(
+                "storage_cache_usage_limit_bytes_total",
+                "The limit for the number of bytes of memory for caching data on storage.",
+                labels,
+                cache_max,
+            );
+        }
+
         metrics.counter(
             "storage_byte_seconds_total",
             "Storage usage integrated over time during this run of the pipeline, in bytes × seconds.",
@@ -1172,7 +1189,7 @@ impl Controller {
             &CHECKPOINT_SYNC_PULL_FAILURES,
         );
 
-        fn write_input_metric<F, M>(
+        fn write_input_metric<F, M, T>(
             metrics: &mut MetricsWriter<F>,
             labels: &LabelStack,
             status: &ControllerStatus,
@@ -1182,14 +1199,12 @@ impl Controller {
             func: M,
         ) where
             F: MetricsFormatter,
-            M: Fn(&InputEndpointMetrics) -> &AtomicU64,
+            M: Fn(&InputEndpointStatus) -> T,
+            T: Value,
         {
             metrics.values(name, help, value_type, |w| {
                 for input in status.input_status().values() {
-                    w.write_value(
-                        &labels.with("endpoint", &input.endpoint_name),
-                        func(&input.metrics),
-                    );
+                    w.write_value(&labels.with("endpoint", &input.endpoint_name), func(input));
                 }
             });
         }
@@ -1200,7 +1215,7 @@ impl Controller {
             "input_connector_bytes_total",
             "Total number of bytes received by an input connector.",
             ValueType::Counter,
-            |m| &m.total_bytes,
+            |s| s.metrics.total_bytes.load(Ordering::Relaxed),
         );
         write_input_metric(
             metrics,
@@ -1209,7 +1224,7 @@ impl Controller {
             "input_connector_records_total",
             "Total number of records received by an input connector.",
             ValueType::Counter,
-            |m| &m.total_records,
+            |m| m.metrics.total_records.load(Ordering::Relaxed),
         );
         write_input_metric(
             metrics,
@@ -1218,7 +1233,7 @@ impl Controller {
             "input_connector_buffered_records",
             "Amount of data currently buffered by an input connector, in records.",
             ValueType::Gauge,
-            |m| &m.buffered_records,
+            |s| s.metrics.buffered_records.load(Ordering::Relaxed),
         );
         write_input_metric(
             metrics,
@@ -1227,7 +1242,7 @@ impl Controller {
             "input_connector_buffered_records_bytes",
             "Amount of data currently buffered by an input connector, in bytes.",
             ValueType::Gauge,
-            |m| &m.buffered_bytes,
+            |s| s.metrics.buffered_bytes.load(Ordering::Relaxed),
         );
         write_input_metric(
             metrics,
@@ -1236,7 +1251,7 @@ impl Controller {
             "input_connector_errors_transport_total",
             "Total number of errors encountered by the input connector at the transport layer.",
             ValueType::Counter,
-            |m| &m.num_transport_errors,
+            |s| s.metrics.num_transport_errors.load(Ordering::Relaxed),
         );
         write_input_metric(
             metrics,
@@ -1245,7 +1260,16 @@ impl Controller {
             "input_connector_errors_parse_total",
             "Total number of errors encountered parsing records received by the input connector.",
             ValueType::Counter,
-            |m| &m.num_parse_errors,
+            |s| s.metrics.num_parse_errors.load(Ordering::Relaxed),
+        );
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_extra_memory_bytes",
+            "Additional memory used by an input connector beyond that used for buffered records.",
+            ValueType::Gauge,
+            |s| s.reader.as_ref().map_or(0, |reader| reader.memory()),
         );
 
         fn write_input_histogram<F, M>(
@@ -1377,6 +1401,15 @@ impl Controller {
             "Total number of errors encountered encoding records to send.",
             ValueType::Counter,
             |m| &m.num_encode_errors,
+        );
+        write_output_metric(
+            metrics,
+            labels,
+            status,
+            "output_connector_extra_memory_bytes",
+            "Additional memory used by an output connector beyond that used for buffered records.",
+            ValueType::Gauge,
+            |m| &m.memory,
         );
     }
 
@@ -3745,6 +3778,12 @@ impl TransactionInitiators {
                 .any(|ConnectorTransactionPhase { phase, .. }| *phase == TransactionPhase::Started)
     }
 
+    /// Transaction has been initiated and is ready to commit.
+    fn is_ready_to_commit(&self) -> bool {
+        let active = self.initiated_by_api.is_some() || !self.initiated_by_connectors.is_empty();
+        active && !self.is_ongoing()
+    }
+
     /// Number of active participants in the transaction.
     ///
     /// An active participant is a participant that has not committed the transaction and
@@ -4643,6 +4682,9 @@ impl ControllerInner {
                 return;
             }
 
+            controller
+                .status
+                .update_output_memory(endpoint_id, encoder.consumer().memory());
             if output_buffer.flush_needed(&output_buffer_config) {
                 // One of the triggering conditions for flushing the output buffer is satisfied:
                 // go ahead and flush the buffer; we will check for more messages at the next iteration
@@ -5140,6 +5182,13 @@ impl ControllerInner {
 
         transaction_info.start_commit_transaction_from_api()?;
 
+        // All initiators have committed the transaction before it even started.
+        if transaction_info.initiators.is_ready_to_commit()
+            && transaction_info.transaction_state == TransactionState::None
+        {
+            transaction_info.initiators.clear();
+        }
+
         self.update_transaction_status(transaction_info);
         self.unpark_circuit();
 
@@ -5167,6 +5216,14 @@ impl ControllerInner {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
         transaction_info.commit_transaction_from_connector(endpoint_name)?;
+
+        // All initiators have committed the transaction before it even started.
+        if transaction_info.initiators.is_ready_to_commit()
+            && transaction_info.transaction_state == TransactionState::None
+        {
+            transaction_info.initiators.clear();
+        }
+
         self.update_transaction_status(transaction_info);
 
         self.unpark_circuit();
@@ -5513,6 +5570,10 @@ impl OutputConsumer for OutputProbe {
                 Some("outprobe_batch_end"),
             );
         })
+    }
+
+    fn memory(&self) -> usize {
+        self.endpoint.memory()
     }
 }
 

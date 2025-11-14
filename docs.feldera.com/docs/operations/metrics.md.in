@@ -109,3 +109,10 @@ These metrics accumulate across checkpoint and resume.
 
 {{output_connector_}}
 
+## Checkpoint Synchronization
+
+These metrics report the status of [checkpoint synchronization].
+
+[checkpoint synchronization]: /pipelines/checkpoint-sync.md
+
+{{checkpoint_sync_}}

@@ -620,6 +620,14 @@ pub trait InputReader: Send + Sync {
     fn disconnect(&self) {
         self.request(InputReaderCommand::Disconnect);
     }
+
+    /// Returns the approximate amount of memory used by the connector's
+    /// underlying implementation.  For the Kafka connectors, for example, this
+    /// is the amount of memory used by librdkafka.  Not all connectors use a
+    /// substantial amount of memory, so the default implementation returns 0.
+    fn memory(&self) -> usize {
+        0
+    }
 }
 
 /// Position in an input stream, including the timestamp when the data was ingested
@@ -991,6 +999,14 @@ pub trait OutputEndpoint: Send {
 
     /// Whether this endpoint is [fault tolerant](crate#fault-tolerance).
     fn is_fault_tolerant(&self) -> bool;
+
+    /// Returns the approximate amount of memory used by the connector's
+    /// underlying implementation.  For the Kafka connectors, for example, this
+    /// is the amount of memory used by librdkafka.  Not all connectors use a
+    /// substantial amount of memory, so the default implementation returns 0.
+    fn memory(&self) -> usize {
+        0
+    }
 }
 
 /// An [UnboundedReceiver] wrapper for [InputReaderCommand] for fault-tolerant connectors.

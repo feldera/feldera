@@ -715,7 +715,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             SqlCall newCall = Objects.requireNonNull((SqlCall) super.visit(call));
             if (newCall.getOperator().kind == SqlKind.PLUS_PREFIX) {
                 Utilities.enforce(newCall.getOperandList().size() == 1,
-                        "Expected unary plus to have exactly 1 operand");
+                        () -> "Expected unary plus to have exactly 1 operand");
                 return newCall.getOperandList().get(0);
             } else if (newCall.getOperator().kind == SqlKind.CREATE_VIEW) {
                 // The shuttle does not correctly create a view by replacing operands.

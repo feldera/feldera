@@ -97,13 +97,18 @@ export class Globals {
 
         let selection = circuitSelector.getSelection();
         let cytograph = Cytograph.fromProfile(profile, selection);
-        let rendering = new CytographRendering(cytograph.graph, selection, MetadataSelector.getFullSelection());
+        // Build the data required for rendering, but do not render yet
+        let rendering = new CytographRendering(
+            cytograph.graph, selection,
+            MetadataSelector.getFullSelection());
+        rendering.setEvents(n => circuitSelector.toggleExpand(n));
+
         // Compute and set initial view parameters
-        rendering.updateGraph(cytograph);
-        rendering.updateMetadata(profile, metadataSelector.getSelection());
         circuitSelector.setOnChange(() => {
-            // When the circuit to display changes, do these:
+            // Called when the circuit to display changes
+            Globals.message("Recomputing profile graph")
             let graph = Cytograph.fromProfile(profile, selection);
+            Globals.message("Computing graph changes")
             rendering.updateGraph(graph);
             rendering.center(selection.trigger);
             rendering.updateMetadata(profile, metadataSelector.getSelection());
@@ -112,8 +117,17 @@ export class Globals {
             // When the metadata selection changes, do these:
             rendering.updateMetadata(profile, metadataSelector.getSelection());
         });
+        let search = document.getElementById("search") as HTMLInputElement;
+        search.onkeydown = (e) => {
+            if (e.key === "Enter") {
+                const query = search.value;
+                rendering.search(query);
+            }
+        };
 
-        rendering.render(n => circuitSelector.toggleExpand(n));
+        // Produce the graph visualization
+        rendering.updateGraph(cytograph);
+        rendering.updateMetadata(profile, metadataSelector.getSelection());
     }
 
     /** Load two files from the specified directory:
@@ -125,12 +139,14 @@ export class Globals {
         const profileUrl = directory + "/" + basename + ".json";
         const dataflowUrl = directory + "/dataflow-" + basename + ".json";
 
+        Globals.message("Reading profile file...");
         this.fetchJson<JsonProfiles>(profileUrl)
             .then((data: Option<JsonProfiles>) => {
                 if (data.isNone()) {
                     // Error already reported.
                     return;
                 }
+                Globals.message("Reading dataflow graph...");
 
                 this.fetchJson<Dataflow>(dataflowUrl)
                     .then((dfData: Option<Dataflow>) => {
@@ -141,6 +157,7 @@ export class Globals {
 
                         let circuit = null;
                         try {
+                            Globals.message("Extracting profiling information...");
                             circuit = CircuitProfile.fromJson(data.unwrap());
                             circuit.setDataflow(dfData.unwrap());
                         } catch (e) {
@@ -148,11 +165,31 @@ export class Globals {
                             return;
                         }
                         try {
+                            Globals.message("Starting visualization...");
                             this.run(circuit);
                         } catch (e) {
                             this.reportError(this.addTrace("Error displaying circuit profile: ", e));
                         }
                     });
             });
+    }
+
+    static message(message: string) {
+        console.log(message);
+        const messageDiv = document.getElementById("message");
+        if (messageDiv === null) {
+            console.log("Cannot output message");
+            return;
+        }
+        messageDiv.style.display = "block";
+        messageDiv.innerText = message;
+    }
+
+    static clearMessage() {
+        const messageDiv = document.getElementById("message");
+        if (messageDiv === null)
+            return;
+        messageDiv.textContent = "";
+        messageDiv.style.display = "none";
     }
 }

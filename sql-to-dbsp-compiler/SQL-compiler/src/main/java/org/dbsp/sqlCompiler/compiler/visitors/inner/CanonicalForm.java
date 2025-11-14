@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Utilities;
 
 /** Visitor which rewrites a {@link DBSPClosureExpression} in a canonical form,
@@ -86,6 +87,11 @@ public class CanonicalForm extends InnerRewriteVisitor {
         DBSPExpression consumer = this.transform(expr.consumer);
         DBSPLetExpression result = new DBSPLetExpression(var, init, consumer);
         this.map(expr, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPType type) {
         return VisitDecision.STOP;
     }
 

@@ -28,7 +28,8 @@ public class MonotoneExpression {
         this.id = crtId++;
         DBSPType expressionType = expression.getType();
         DBSPType monotoneType = type.getType();
-        Utilities.enforce(expressionType.sameType(monotoneType), "Types differ\n" + expressionType + " and\n" + monotoneType);
+        Utilities.enforce(expressionType.sameType(monotoneType),
+                () -> "Types differ\n" + expressionType + " and\n" + monotoneType);
     }
 
     public DBSPExpression getReducedExpression() {

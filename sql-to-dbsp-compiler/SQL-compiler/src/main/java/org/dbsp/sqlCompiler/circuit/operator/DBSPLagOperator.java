@@ -50,7 +50,7 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
             Utilities.enforce(comparator.to(DBSPComparatorExpression.class)
                     .comparedValueType()
                     .sameType(source.getOutputIndexedZSetType().elementType),
-                    "Comparator type " + comparator + "\ndoes not match element type for LAG\n" +
+                    () -> "Comparator type " + comparator + "\ndoes not match element type for LAG\n" +
                     source.getOutputIndexedZSetType().elementType);
         }
         this.comparator = comparator;
@@ -75,7 +75,7 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
             @Nullable DBSPExpression function, DBSPType outputType,
             List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, function, newInputs, outputType)) {
-            Utilities.enforce(newInputs.size() == 1, "Expected 1 input " + newInputs);
+            Utilities.enforce(newInputs.size() == 1, () -> "Expected 1 input " + newInputs);
             return new DBSPLagOperator(this.getRelNode(), this.offset,
                     this.projection, toClosure(function), this.comparator,
                     outputType.to(DBSPTypeIndexedZSet.class), newInputs.get(0))

@@ -5,7 +5,7 @@ use std::{
     ops::{Deref, DerefMut, Index, IndexMut},
 };
 
-use rand::RngCore;
+use rand::{thread_rng, RngCore};
 
 use crate::{
     declare_trait_object,
@@ -250,7 +250,7 @@ pub trait Vector<T: DataTrait + ?Sized>: Data {
         to: usize,
         rng: &mut dyn RngCore,
         sample_size: usize,
-        sample: &mut DynVec<T>,
+        callback: &mut dyn FnMut(&T),
     );
 
     /// Cast any trait object that implements this trait to `&DynVec`.
@@ -272,6 +272,28 @@ declare_trait_object!(DynVec<T> = dyn Vector<T>
 where
     T: DataTrait + ?Sized
 );
+
+const APPROXIMATE_BYTE_SIZE_SAMPLE_SIZE: usize = 100;
+
+impl<T: DataTrait + ?Sized> DynVec<T> {
+    pub fn approximate_byte_size(&self) -> usize {
+        if self.len() <= APPROXIMATE_BYTE_SIZE_SAMPLE_SIZE {
+            return self.size_of().total_bytes();
+        }
+
+        let mut acc = 0;
+
+        self.sample_slice(
+            0,
+            self.len(),
+            &mut thread_rng(),
+            APPROXIMATE_BYTE_SIZE_SAMPLE_SIZE,
+            &mut |x| acc += x.size_of().total_bytes(),
+        );
+        let average = (acc as f64) / (APPROXIMATE_BYTE_SIZE_SAMPLE_SIZE as f64);
+        (average * self.len() as f64).round() as usize
+    }
+}
 
 impl<T: DataTraitTyped + ?Sized> Deref for DynVec<T> {
     type Target = LeanVec<T::Type>;
@@ -487,11 +509,11 @@ where
         to: usize,
         rng: &mut dyn RngCore,
         sample_size: usize,
-        sample: &mut DynVec<Trait>,
+        callback: &mut dyn FnMut(&Trait),
     ) {
-        let sample: &mut Self = unsafe { sample.downcast_mut::<Self>() };
-
-        utils::sample_slice(&self[from..to], rng, sample_size, sample);
+        utils::sample_slice(&self[from..to], rng, sample_size, &mut |x: &T| {
+            callback(x.erase())
+        });
     }
 
     fn as_vec(&self) -> &DynVec<Trait> {

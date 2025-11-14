@@ -38,15 +38,7 @@ def _get_effective_api_key():
     return oidc_token if oidc_token else API_KEY
 
 
-BASE_URL = (
-    os.environ.get("FELDERA_HOST")
-    or os.environ.get("FELDERA_BASE_URL")
-    or "http://localhost:8080"
-)
-KAFKA_SERVER = os.environ.get("FELDERA_KAFKA_SERVER", "localhost:19092")
-PIPELINE_TO_KAFKA_SERVER = os.environ.get(
-    "FELDERA_PIPELINE_TO_KAFKA_SERVER", "redpanda:9092"
-)
+BASE_URL = os.environ.get("FELDERA_HOST") or "http://localhost:8080"
 FELDERA_REQUESTS_VERIFY = requests_verify_from_env()
 
 

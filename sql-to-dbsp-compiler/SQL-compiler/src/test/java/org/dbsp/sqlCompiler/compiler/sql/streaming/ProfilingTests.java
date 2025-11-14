@@ -292,6 +292,8 @@ public class ProfilingTests extends StreamingTestBase {
     }
 
     void profile(String sql, String main) throws SQLException, IOException, InterruptedException {
+        if (BaseSQLTests.skipRust)
+            return;
         Long[] p0 = this.measure(stripLateness(sql), main);
         Long[] p1 = this.measure(sql, main);
         // Memory consumption of program without lateness is expected to be higher
