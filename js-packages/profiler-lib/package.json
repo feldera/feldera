@@ -1,0 +1,33 @@
+{
+  "name": "profiler-lib",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepare": "npm run clean && npm run build"
+  },
+  "keywords": ["feldera", "profiler", "visualization", "dbsp"],
+  "author": "",
+  "license": "MIT",
+  "description": "Reusable library for visualizing Feldera DBSP circuit profiles",
+  "peerDependencies": {
+    "cytoscape": "^3.33.1",
+    "cytoscape-dblclick": "^0.3.1",
+    "cytoscape-elk": "^2.3.0",
+    "elkjs": "^0.11.0"
+  },
+  "devDependencies": {
+    "@types/cytoscape": "^3.21.9",
+    "typescript": "^5.9.2"
+  }
+}

@@ -7,10 +7,10 @@ use vergen_gitcl::*;
 // These are touched during the build, so it would re-build every time if we
 // don't exclude them from change detection:
 const EXCLUDE_LIST: [&str; 4] = [
-    "../../web-console/node_modules",
-    "../../web-console/build",
-    "../../web-console/.svelte-kit",
-    "../../web-console/pipeline-manager-",
+    "../../js-packages/web-console/node_modules",
+    "../../js-packages/web-console/build",
+    "../../js-packages/web-console/.svelte-kit",
+    "../../js-packages/web-console/pipeline-manager-",
 ];
 
 /// The build script has two modes:
@@ -42,9 +42,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .any(|exclude| path.to_str().unwrap().starts_with(exclude))
             // Also exclude web-console folder itself because we mutate things inside
             // of it
-            || path.to_str().unwrap() == "../../web-console/"
+            || path.to_str().unwrap() == "../../js-packages/web-console/"
         })
-        .path("../../web-console/")
+        .path("../../js-packages/web-console/")
         .path("build.rs")
         .generate();
 
@@ -58,13 +58,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
             env::set_var("BUILD_DIR", rel_build_dir.clone());
         }
-        let asset_path: PathBuf = Path::new("../../web-console/").join(rel_build_dir);
-        let mut resource_dir = NpmBuild::new("../../web-console")
+        let asset_path: PathBuf = Path::new("../../js-packages/web-console/").join(rel_build_dir);
+        let mut resource_dir = NpmBuild::new("../../js-packages/web-console")
             .executable("bun")
             .run("clean-install")
-            .expect("Could not run `bun ci`. Follow set-up instructions in web-console/README.md")
+            .expect("Could not run `bun ci`. Follow set-up instructions in js-packages/web-console/README.md")
             .run("build")
-            .expect("Could not run `bun run build`. Run it manually in web-console/ to debug.")
+            .expect("Could not run `bun run build`. Run it manually in js-packages/web-console/ to debug.")
             .target(asset_path.clone())
             .to_resource_dir();
         let _ = resource_dir.with_generated_filename(out_dir.join("generated.rs"));
