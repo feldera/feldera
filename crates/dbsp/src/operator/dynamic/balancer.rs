@@ -54,7 +54,8 @@ where
     C: Circuit,
     B: Batch,
 {
-    fn dyn_accumulate_trace_with_balancer(
+    #[track_caller]
+    pub fn dyn_accumulate_trace_with_balancer(
         &self,
         balancer: &Balancer,
         stream_index: usize,
@@ -68,9 +69,11 @@ where
 
         // Connect the stream (and register it with the circuit)
 
-        // Integral with feedback connector
+        // Integral
 
-        // Connect the loop.
+        // Connect the accumulator and integral to ExchangeSender.
+
+        // Connect accumulator and integral to Balancer.
     }
 }
 
@@ -161,6 +164,11 @@ where
     fn flush(&mut self) {
         self.flushed = true;
     }
+
+    fn is_flush_complete(&self) -> bool {
+        // flushed == true and all rebalancing state has been flushed
+        todo!()
+    }
 }
 
 impl<B> TernarySinkOperator<B, Spine<B>, Spine<B>> for RebalancingExchangeSender<B>
@@ -182,6 +190,8 @@ where
         // Policy change?
         // - Clean old rebalancing state
         // - Set new rebalancing state
+
+        // Input has been flushed, but there's rebalancing state remaining -- make progress rebalancing.
     }
 
     fn input_preference(
@@ -198,3 +208,19 @@ where
         )
     }
 }
+
+struct JoinBalancer<B1, B2> {}
+
+impl<B1, B2> JoinBalancer<B1, B2> {
+    fn new() -> Self {
+        todo!()
+    }
+}
+
+impl<B1, B2> Operator for JoinBalancer<B1, B2> {
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("JoinBalancer")
+    }
+}
+
+impl<B1, B2> QuaternarySinkOperator<B1, B2, B1, B2> for JoinBalancer<B1, B2> {
