@@ -4,10 +4,7 @@ This guide explains how to configure Okta as an authentication provider for Feld
 
 ## Overview
 
-Okta integration allows organizations to:
-- **Add Feldera as an app** in their Okta portal for centralized access management
-- **Leverage existing user groups** for tenant assignment and access control
-- **Support multiple deployment models** from individual tenancy to enterprise B2B
+Okta integration allows organizations to leverage existing and dedicated Okta user groups for access control.
 
 ## Okta Application Setup
 
@@ -45,13 +42,11 @@ Add the following URLs to your Okta application:
 
 You can skip Trusted Origins configuration.
 
-### 5. Create a Custom Authorization Server
+### 4. Create a Custom Authorization Server
 
-After creating the app, you need to set up a custom authorization server to provide tenant and group claims.
+After creating the app, to take advantage of the flexible tenant-based authorization models you need to set up a custom authorization server that issues custom claims in the Access OIDC token based on Okta user groups.
 
 ## Custom Authorization Server Setup
-
-To provide custom claims in the Access token for tenant assignment and group membership authorization, you must create a custom authorization server in Okta:
 
 ### 1. Create Authorization Server
 
@@ -64,182 +59,76 @@ In your Okta Admin Dashboard:
    - **Audience**: `feldera-api`
    - **Description**: `Authorization server for Feldera tenant and group claims`
 
-### 2. Configure Custom Claims
+:::note
 
-Let's assume you want to differentiate user groups that should be used for tenancy assignment with `feldera_`.
+By default, Feldera expects `feldera-api` audience value. If you want to use the default value from Okta you need to specify it in the `authAudience` option in your Helm config.
 
-In your custom authorization server:
+:::
 
-1. Navigate to **Claims** tab
-2. Click **Add Claim** to create the **tenant** claim:
-   - **Name**: `tenant`
+### 2. Set up an Access Policy
+
+Ensure there is a policy that will allow user authentication. For a simple setup:
+
+1. Press "Add New Access Policy", fill the name and description, in the selector "Assign to" pick "The following clients:" and find the name of the Feldera application(s) you created before, and confirm the creation.
+2. Press "Add rule", and ensure that the following options are selected:
+   - IF Grant type is - "Authorization Code"
+   - AND Scopes requested - "Any scopes"
+
+   The rest can be configured as needed.
+
+### 3. Configure Custom Claims
+
+You can take advantage of the supported authorization models by properly configuring the custom OIDC claims.
+
+## Tenant Assignment with custom claims
+
+Feldera supports multiple authorization use-cases through [managed tenancy](index.mdx#Managed%20Tenancy). You can choose between the supported tenant claims to implement the appropriate authorization scenario. Navigate to the **Claims** tab in the Custom Authorization Server to configure one of:
+
+### `tenants` claim
+
+Example configuration for the `tenants` claim that assigns a single (randomly selected) user group name prefixed with "feldera_" as the tenant name:
+
+   - **Name**: `tenants`
    - **Include in token type**: `Access Token`
    - **Value type**: `Expression`
-   - **Value**: `user.getGroups({"group.profile.name": "feldera_", "operator": "STARTS_WITH"})[0].name`
+   - **Value**: `{user.getGroups({"group.profile.name": "feldera_", "operator": "STARTS_WITH"})[0].name}`
    - **Include in**: `Any scope`
 
-3. Click **Add Claim** to create the **groups** claim:
+In the above example each user should only have one user group assigned to them that satisfies the condition in the expression value.
+
+Example configuration for the `tenants` claim that uses all user groups prefixed with "feldera_" as the list of tenants:
+
+   - **Name**: `tenants`
+   - **Include in token type**: `Access Token`
+   - **Value type**: `Expression`
+   - **Value**: `user.getGroups({"group.profile.name": "feldera_", "operator": "STARTS_WITH"}).![name]`
+   - **Include in**: `Any scope`
+
+## Authorization through group membership with a custom claim
+
+Feldera can restrict access based on Okta group membership using the `groups` claim configured in your custom authorization server. This claim is orthogonal to tenant assignment.
+
+Example configuration for the `groups` claim that communicates all groups that the user is a part of:
    - **Name**: `groups`
    - **Include in token type**: `Access Token`
    - **Value type**: `Groups`
-   - **Value**: Select appropriate group filter or use regex `.*`
+   - **Value**: Select appropriate group filter or use all-inclusive regex `.*`
    - **Include in**: `Any scope`
 
-## Tenant Assignment with a custom claim
+## Configure Feldera
 
-Feldera supports [multiple tenant assignment strategies](index.mdx#Tenant Assignment Strategies).
+Consult the documentation for [configuring the authentication](index.mdx#Configuration%20options) and [examples for common use-cases](index.mdx#Tenant%20Assignment%20use%20cases) to configure Feldera to authorize users properly.
 
-### Individual Tenancy (Development)
-
-No additional Okta configuration required.
-
-### Organization Tenancy (One tenant per org)
-
-No additional Okta configuration required.
-
-### Custom Tenant Claims (Enterprise)
-
-Use the custom authorization server configured above to assign users to specific tenants based on their group membership.
-
-Below is an example configuration that uses the tenant claim based on the user's Feldera-specific group membership. Users should be assigned to groups with a `feldera_` prefix to distinguish them from other organizational groups. For example:
-- User in group `feldera_engineering` → `tenant` claim = `feldera_engineering`
-- User in group `feldera_marketing` → `tenant` claim = `feldera_marketing`
-- User in group `feldera_customer_acme` → `tenant` claim = `feldera_customer_acme`
-
-#### Step 1: Create Tenant Groups
-
-In Okta **Directory** → **Groups**:
-
-1. Create groups using the `feldera_` prefix followed by the tenant name:
-2. Examples:
-   - `feldera_engineering`
-   - `feldera_marketing`
-   - `feldera_customer_acme`
-   - `feldera_customer_globex`
-
-#### Step 2: Assign Users to Groups
-
-Add users to appropriate Feldera tenant groups based on their access requirements. Users can belong to multiple groups, but only groups with the `feldera_` prefix will be considered for tenant assignment.
-
-#### Step 3: Configuring Feldera instance
-
-The `tenant` claim is always respected, so you only need to disable individual tenancy:
-
-**Feldera Configuration:**
-```bash
-pipeline-manager ...\
-  --auth-provider=generic-oidc \
-  --individual-tenant=false
-```
-
-## Group membership authorization with a custom claim
-
-Feldera can restrict access based on Okta group membership using the `groups` claim configured in your custom authorization server. This is separate from tenant assignment and controls who can access Feldera at all.
-
-The groups claim is automatically populated in the custom authorization server setup above. You can adjust the group filter in the claim configuration if needed.
-
-### Configure Feldera Authorization
-
-```bash
-# Require users to belong to specific groups
-pipeline-manager \
-  --auth-provider=generic-oidc \
-  --authorized-groups=feldera-users,analytics-team
-```
-
-Users must belong to at least one of the specified groups to access Feldera. If `--authorized-groups` is not specified, no group restrictions apply.
-
-## Environment Variables
-
-Configure the following environment variables for your Feldera deployment:
-
-### Required Variables
-
-```bash
-# Okta OIDC configuration
-FELDERA_AUTH_ISSUER=https://<your-okta-domain>/oauth2/<custom-auth-server-id>
-FELDERA_AUTH_CLIENT_ID=<your-client-id>
-```
-
-### Optional Variables
-
-```bash
-# Custom authorization server (if not using default)
-FELDERA_AUTH_ISSUER=https://<your-okta-domain>/oauth2/<custom-auth-server-id>
-```
-
-## Helm Chart Configuration
-
-Configure your Feldera Helm chart (`values.yaml`) with Okta settings:
+One example of the Feldera Helm chart configuration for managed tenancy with Okta:
 
 ```yaml
 auth:
   enabled: true
   provider: "okta"
-  clientId: "<your-client-id>"
-  issuer: "https://<your-okta-domain>/oauth2/<custom-auth-server-id>"
+  clientId: "0oa1a2b3c4d5e6f7g8h9"
+  issuer: "https://dev-12345.okta.com/oauth2/aus1a2b3c4d5e6f7g8h9"
 
-# Tenant assignment strategy
-pipelineManager:
-  extraArgs:
-    - "--auth-provider=generic-oidc"
-    - "--issuer-tenant=true"        # Enable organization tenancy
-    - "--individual-tenant=false"   # Disable individual tenancy
+authorization:
+  individualTenant: false
+  authAudience: "0oa1a2b3c4d5e6f7g8h9"
 ```
-
-Replace the placeholders:
-
-| Placeholder | Description | Example |
-|------------|-------------|---------|
-| `<your-okta-domain>` | Your Okta organization domain | `dev-12345.okta.com` |
-| `<your-client-id>` | Application client ID from Okta | `0oa1a2b3c4d5e6f7g8h9` |
-| `<auth-server-id>` | Custom authorization server ID (optional) | `aus1a2b3c4d5e6f7g8h9` |
-
-## Multi-Customer B2B Setup
-
-For B2B deployments where multiple customer organizations use the same Feldera instance:
-
-### 1. Customer Onboarding Process
-
-When a new B2B customer wants to add Feldera:
-
-1. **Customer** creates Feldera application in their Okta portal (following steps above)
-2. **Customer** configures their Okta domain and client ID
-3. **Customer** provides their Okta issuer URL to your team
-4. **You** add customer's issuer to your Feldera deployment configuration
-
-### 2. Multi-Issuer Configuration
-
-Configure Feldera to accept tokens from multiple Okta organizations:
-
-```bash
-# Example supporting multiple customers
-FELDERA_AUTH_ISSUER=https://customer1.okta.com/oauth2/default,https://customer2.okta.com/oauth2/default
-```
-
-### 3. Automatic Tenant Assignment
-
-With `--issuer-tenant=true`, each customer automatically gets their own tenant:
-- Customer 1 users (`customer1.okta.com`) → `customer1` tenant
-- Customer 2 users (`customer2.okta.com`) → `customer2` tenant
-
-## Troubleshooting
-
-### Common Issues
-
-#### "No valid tenant found" Error
-- **Cause**: User doesn't have required tenant assignment
-- **Solution**:
-  - Check tenant group membership in Okta
-  - Verify tenant claim configuration
-  - Ensure `--individual-tenant=true` if using individual tenancy
-
-#### "Invalid audience" Error
-- **Cause**: Client ID mismatch between Okta app and Feldera config
-- **Solution**: Verify `FELDERA_AUTH_CLIENT_ID` matches Okta application client ID
-
-#### "Invalid issuer" Error
-- **Cause**: Issuer URL mismatch
-- **Solution**: Verify `FELDERA_AUTH_ISSUER` matches Okta authorization server URL
-
-For additional help, consult the [Okta Developer Documentation](https://developer.okta.com/docs/) or contact your Feldera support team.

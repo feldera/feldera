@@ -12,7 +12,6 @@ import {
   getPipelineStats,
   getPipelineStatus,
   getPipelineSupportBundleUrl,
-  getAuthorizationHeader,
   patchPipeline,
   pipelineLogsStream,
   pipelineTimeSeriesStream,
@@ -22,15 +21,13 @@ import {
   putPipeline,
   relationEgressStream,
   relationIngress,
-  type PipelineAction,
-  type PipelineStatus,
-  type PipelineThumb,
   type SupportBundleOptions,
   postUpdateRuntime
 } from '$lib/services/pipelineManager'
 import { useToast } from '$lib/compositions/useToastNotification'
 import type { FunctionType } from '$lib/types/common/function'
 import { triggerStreamDownload } from '$lib/services/browser'
+import { getAuthorizationHeaders } from '$lib/services/auth'
 
 const networkErrors = ['Failed to fetch', 'Network request failed', 'Timeout']
 const isNetworkError = (e: any): e is TypeError =>
@@ -95,7 +92,7 @@ export const usePipelineManager = () => {
   ) => {
     const url = getPipelineSupportBundleUrl(pipelineName, options)
     const headers = {
-      ...(await getAuthorizationHeader()),
+      ...(await getAuthorizationHeaders()),
       Accept: 'application/zip'
     }
     const fileName = `fda-bundle-${pipelineName}-${new Date().toISOString().replace(/\.\d{3}/, '')}.zip`
