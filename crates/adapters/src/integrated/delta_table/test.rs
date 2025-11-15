@@ -1526,6 +1526,7 @@ async fn delta_table_follow_s3_test_common(snapshot: bool, suspend: bool) {
         &object_store_config,
         data,
         snapshot,
+        DeltaTableTransactionMode::None,
         suspend,
         false,
         1000,

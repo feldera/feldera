@@ -4,6 +4,7 @@ use crate::{
     array::Array,
     casts::*,
     interval::{LongInterval, ShortInterval},
+    rfc3339::parse_timestamp_from_rfc3339,
     FromInteger, SqlString, ToInteger,
 };
 use chrono::format::ParseErrorKind;
@@ -98,6 +99,17 @@ impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
         S: Serializer,
     {
         match context.timestamp_format {
+            TimestampFormat::Default => {
+                let datetime =
+                    DateTime::from_timestamp_millis(self.milliseconds).ok_or_else(|| {
+                        S::Error::custom(format!(
+                            "timestamp value '{}' out of range",
+                            self.milliseconds
+                        ))
+                    })?;
+
+                serializer.serialize_str(&datetime.format("%F %T%.f").to_string())
+            }
             TimestampFormat::Rfc3339 => {
                 let datetime =
                     DateTime::from_timestamp_millis(self.milliseconds).ok_or_else(|| {
@@ -135,11 +147,11 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Timestamp {
         D: Deserializer<'de>,
     {
         match config.timestamp_format {
-            TimestampFormat::Rfc3339 => {
+            TimestampFormat::Default | TimestampFormat::Rfc3339 => {
                 let timestamp_str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
 
                 let timestamp =
-                    DateTime::parse_from_rfc3339(timestamp_str.trim()).map_err(|e| {
+                    parse_timestamp_from_rfc3339(timestamp_str.trim()).map_err(|e| {
                         D::Error::custom(format!(
                             "invalid RFC3339 timestamp string '{timestamp_str}': {e}"
                         ))

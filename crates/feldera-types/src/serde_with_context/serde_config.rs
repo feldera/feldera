@@ -54,6 +54,10 @@ impl Default for DateFormat {
 /// Representation of the SQL `TIMESTAMP` type.
 #[derive(Clone, Debug)]
 pub enum TimestampFormat {
+    /// Default format:
+    /// - Parsing: accepts RFC3339 ('YYYY-MM-DDTHH:MM:SS.fffZ') as well as 'YYYY-MM-DD HH:MM:SS.fff' formats.
+    /// - Encoding: outputs 'YYYY-MM-DD HH:MM:SS.fff' format.
+    Default,
     /// String formatted using the specified format:
     /// See [`chrono` documentation](https://docs.rs/chrono/0.4.31/chrono/format/strftime/)
     /// for supported formatting syntax.
@@ -68,7 +72,7 @@ pub enum TimestampFormat {
 
 impl Default for TimestampFormat {
     fn default() -> Self {
-        Self::String("%F %T%.f")
+        Self::Default
     }
 }
 
