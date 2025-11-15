@@ -47,7 +47,8 @@ pub use uuid::*;
 #[doc(hidden)]
 pub mod variant;
 pub use variant::*;
-
+#[doc(hidden)]
+pub mod rfc3339;
 #[doc(hidden)]
 pub use num_traits::Float;
 pub use regex::Regex;

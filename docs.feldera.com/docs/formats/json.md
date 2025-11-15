@@ -7,7 +7,7 @@ Feldera can ingest and output data in the JSON format
 - as a payload received from or sent to a connector
 
 Here we document the JSON format supported by Feldera.  The specification
-consists of four parts:
+consists of five parts:
 
 1. [Encoding invividual table rows](#encoding-individual-rows). Describes
    JSON encoding of an individual row in a SQL table or view, e.g.:
@@ -28,7 +28,7 @@ consists of four parts:
    {"insert": {"part": 2, "vendor": 3, "price": 34000}}
    ```
 
-4. [Encoding JSON encoding variations](#configuring-json-flavors).
+4. [JSON encoding variations](#configuring-json-flavors).
    Describes Feldera support for some variations on "vanilla" JSON
    encoding.
 
@@ -70,7 +70,7 @@ the JSON encoding of a row would look like this:
     "V":"quod",
     "CC":"voluptatem",
     "T":"05:05:24",
-    "TS":"2023-11-21 23:19:09",
+    "TS":"2023-11-21T23:19:09+00:00",
     "DT":"2495-03-07",
     "AR":[1,2,3,4,5]
 }
@@ -161,7 +161,7 @@ equal and valid. Leading and trailing whitespaces are ignored.
 
 ### `TIMESTAMP`
 
-Specifies dates using the `YYYY-MM-DD HH:MM:SS.fff` format.
+Specifies dates using the `YYYY-MM-DD HH:MM:SS.fff` format:
 
 - `YYYY` is the year from `0001-9999`
 - `MM` is the month from `01-12`
@@ -169,7 +169,13 @@ Specifies dates using the `YYYY-MM-DD HH:MM:SS.fff` format.
 - `HH` is hours from `00-23`.
 - `MM` is minutes from `00-59`.
 - `SS` is seconds from `00-59`.
-- `fff` is the sub-second precision up to 3 digits from `0` to `999`
+- `fff` is the optional sub-second precision up to 3 digits from `0` to `999`.
+
+Feldera can also parse the RFC3339 format `YYYY-MM-DDTHH:MM:SS.fffZ`, where
+
+- `Z` is the timezone offset like +02:00, or literal "Z" for the UTC timezone.
+  Internally Feldera converts the parsed timestamp into UTC time and stores it
+  as a timestamp without time zone.
 
 Note that the same rules as specified in the Date and Time sections apply,
 except that the sub-second precision is limited to three digits (microseconds).
@@ -254,8 +260,7 @@ used to encode data can vary.  Feldera's JSON format offers
 `json_flavor` as a way to specify which variation of data encoding is
 in use.  Specify `"json_flavor"` as one of the following:
 
-* `"default"`: The default flavor, as documented elsewhere in this
-  page.
+* `"default"`: The default flavor, as documented [above](#types).
 
 * `"debezium_mysql"` or `"debezium_postgres"`: JSON produced by the
   default configuration of the Debezium [Kafka Connect connector] for

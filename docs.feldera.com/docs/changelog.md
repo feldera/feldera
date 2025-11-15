@@ -15,6 +15,8 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+	KAFKA INPUT CONNECTOR CHANGE
+
         The Kafka input connector will now start reading partitions added
         to a topic upon resuming from a checkpoint.  Previously, the
         pipeline would not start in this case.  Please refer to the Kafka
