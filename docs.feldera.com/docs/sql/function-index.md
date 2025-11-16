@@ -151,6 +151,7 @@
 * `MAP`: [map](map.md#map-literals)
 * `MAP_CONTAINS_KEY`: [map](map.md#map_contains_key)
 * `MAP_KEYS`: [map](map.md#map_keys)
+* `MAP_VALUES`: [map](map.md#map_values)
 * `MAX` (aggregate): [aggregates](aggregates.md#max), [aggregates](aggregates.md#window-max)
 * `MD5`: [string](string.md#md5), [binary](binary.md#md5)
 * `MIN` (aggregate): [aggregates](aggregates.md#min), [aggregates](aggregates.md#window-min)

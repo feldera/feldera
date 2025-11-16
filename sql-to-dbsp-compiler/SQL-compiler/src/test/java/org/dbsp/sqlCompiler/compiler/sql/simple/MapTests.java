@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -184,7 +185,7 @@ public class MapTests extends BaseSQLTests {
     }
 
     @Test
-    public void mapVariant() {
+    public void mapKeyVariant() {
         var ccs = this.getCCS("""
                 create table j(j VARCHAR);
                 
@@ -206,5 +207,42 @@ public class MapTests extends BaseSQLTests {
                  c| 1
                  d| 1
                  e| 1""");
+    }
+
+    @Test
+    public void testMapValues() {
+        String sql = "SELECT map_values(map['foo', 1, 'bar', 2])";
+        DBSPZSetExpression result = new DBSPZSetExpression(
+                new DBSPTupleExpression(new DBSPArrayExpression(
+                        false,
+                        new DBSPI32Literal(2),
+                        new DBSPI32Literal(1))));
+        this.testQuery("", sql, new InputOutputChangeStream()
+                .addPair(new Change(), new Change("V", result)));
+    }
+
+    @Test
+    public void mapValuesVariant() {
+        var ccs = this.getCCS("""
+                create table j(j VARCHAR);
+                
+                create LOCAL view user_props AS
+                SELECT PARSE_JSON(j) AS contacts FROM j;
+                
+                create view abc as
+                WITH ref_profile AS (
+                SELECT cast(contacts as MAP<varchar, variant>) contacts
+                    FROM user_props
+                ) SELECT TO_JSON(value)
+                FROM ref_profile profile_0, UNNEST(MAP_VALUES(profile_0.contacts)) AS t(value)""");
+        ccs.step("""
+                INSERT INTO j VALUES('{ "a": "1", "b": 2, "c": [1, 2, 3], "d": null, "e": { "f": 1 } }');""", """
+                 key | weight
+                ------------------------
+                 "1"| 1
+                 2| 1
+                 [1,2,3]| 1
+                 null| 1
+                 {"f":1}| 1""");
     }
 }

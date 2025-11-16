@@ -290,3 +290,21 @@ where
 {
     value.map(|value| map_keys_(value))
 }
+
+#[doc(hidden)]
+pub fn map_values_<I, T>(value: Map<I, T>) -> Array<T>
+where
+    I: Ord + Clone,
+    T: Clone,
+{
+    Arc::new(value.values().cloned().collect())
+}
+
+#[doc(hidden)]
+pub fn map_valuesN<I, T>(value: Option<Map<I, T>>) -> Option<Array<T>>
+where
+    I: Ord + Clone,
+    T: Clone,
+{
+    value.map(|value| map_values_(value))
+}

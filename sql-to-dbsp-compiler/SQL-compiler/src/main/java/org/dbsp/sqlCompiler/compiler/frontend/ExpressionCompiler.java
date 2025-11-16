@@ -1892,6 +1892,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return next;
             }
             case MAP_KEYS:
+            case MAP_VALUES:
                 validateArgCount(node, operationName, ops.size(), 1);
                 DBSPExpression arg0 = ops.get(0);
                 String method = getArrayOrMapCallName(call, arg0);
