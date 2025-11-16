@@ -132,7 +132,7 @@ public class FunctionDocumentation {
 
     static void checkTestedBy(FunctionDescription description, TextFileCache fileContents) throws IOException {
         // A list of file names separated by pipe symbols
-        String[] patterns = description.testedBy().split("\\|");
+        String[] patterns = description.testedBy().replace("\n", "").split("\\|");
         Path pythonTests = Paths.get(PYTHON_TESTS);
         for (String pattern: patterns) {
             if (pattern.equalsIgnoreCase("nofile.py"))
