@@ -66,7 +66,8 @@ public class ExpressionsCSE extends ExpressionTranslator {
     @Override
     protected void map(DBSPExpression expression, DBSPExpression result) {
         ValueNumbering.CanonicalExpression canon = this.numbering.get(expression);
-        Utilities.enforce(this.operatorContext != null);
+        // This may be called without an operator context, when e.g.,
+        // analyzing user-defined functions.
         if (canon != null) {
             DBSPVariablePath var = null;
             if (this.cseVariables.containsKey(canon.expression)) {

@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
@@ -1649,5 +1650,38 @@ public class IncrementalRegressionTests extends SqlIoTest {
                                 new DBSPVariantExpression(null, true),
                                 new DBSPI32Literal(3)))
                 ));
+    }
+
+    @Test
+    public void testCSEUDF() {
+        var ccs = this.getCCS("""
+                CREATE FUNCTION CONVERT_TIMESTAMP(d VARCHAR)
+                RETURNS TIMESTAMP
+                AS ( IF( d IS NULL, NULL, COALESCE(
+                    -- ISO 8601 formats with timezone (Z suffix)
+                    PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S Z', d),
+                    PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S.%3fZ', d),
+                    PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', d))));
+                CREATE VIEW V AS SELECT CONVERT_TIMESTAMP('2020-01-01 10:00:00');""");
+        // CSE should ensure that there are only 3 calls to parse_timestamp;
+        // without it, there would be 6 calls.
+        InnerVisitor visitor = new InnerVisitor(ccs.compiler) {
+            int calls = 0;
+
+            @Override
+            public void postorder(DBSPApplyExpression expression) {
+                if (expression.function.is(DBSPPathExpression.class)) {
+                    String str = expression.function.toString();
+                    if (str.equalsIgnoreCase("parse_timestamp"))
+                        this.calls++;
+                }
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(3, this.calls);
+            }
+        };
+        ccs.visit(visitor.getCircuitVisitor(true));
     }
 }
