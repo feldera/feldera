@@ -369,19 +369,19 @@ mod test {
         let result = parse_timestamp_from_rfc3339("2025-11-15 16:39");
         assert_eq!(
             result,
-            Err(format!("expected character ':', but found end of string"))
+            Err("expected character ':', but found end of string".to_string())
         );
 
         let result = parse_timestamp_from_rfc3339("2025-11-15 16:39:9");
         assert_eq!(
             result,
-            Err(format!("expected at least 2 digits, but found 1"))
+            Err("expected at least 2 digits, but found 1".to_string())
         );
 
         let result = parse_timestamp_from_rfc3339("2025-11-15 16:39:99");
-        assert_eq!(result, Err(format!("input is out of range")));
+        assert_eq!(result, Err("input is out of range".to_string()));
 
         let result = parse_timestamp_from_rfc3339("2025-11-15q16:39:39");
-        assert_eq!(result, Err(format!("invalid time designator 'q' in RFC3339 string; supported designators are 't', 'T', and ' '")));
+        assert_eq!(result, Err("invalid time designator 'q' in RFC3339 string; supported designators are 't', 'T', and ' '".to_string()));
     }
 }
