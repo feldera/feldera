@@ -6,7 +6,10 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionsCSE;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ValueNumbering;
+import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.util.Logger;
 
 /** Perform common-subexpression elimination on the inner IR */
@@ -26,6 +29,17 @@ public class InnerCSE implements IRTransform {
 
     @Override
     public IDBSPInnerNode apply(IDBSPInnerNode node) {
+        if (node.is(DBSPFunctionItem.class)) {
+            DBSPFunctionItem item = node.to(DBSPFunctionItem.class);
+            if (item.function.body == null)
+                return node;
+            DBSPClosureExpression closure = item.function.asClosure();
+            DBSPClosureExpression transformed = this.apply(closure).to(DBSPClosureExpression.class);
+            DBSPFunction function = new DBSPFunction(
+                    item.function.getNode(), item.function.name, item.function.parameters,
+                    item.function.returnType, transformed.body, item.function.annotations);
+            return new DBSPFunctionItem(function);
+        }
         if (!node.isExpression())
             return node;
         this.numbering.apply(node);

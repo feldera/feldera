@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
@@ -67,6 +68,11 @@ public final class DBSPFunction extends DBSPNode
         for (int i = 0; i < argTypes.length; i++)
             argTypes[i] = parameters.get(i).getType();
         this.type = new DBSPTypeFunction(returnType, argTypes);
+    }
+
+    public DBSPClosureExpression asClosure() {
+        Utilities.enforce(this.body != null);
+        return this.body.closure(this.parameters.toArray(new DBSPParameter[0]));
     }
 
     @Override

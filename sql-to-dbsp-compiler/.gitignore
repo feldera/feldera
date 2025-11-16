@@ -23,6 +23,7 @@
 hs_err_pid*
 
 SQL-compiler/target/
+SQL-compiler/*.png
 extra/
 # Compiler-generated test files
 temp/*
