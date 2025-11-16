@@ -5,12 +5,18 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Expensive;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.util.Linq;
 
-/** We do something very simple: if an operator has a fanout greater than 1,
- * and if any of its successors can be merged with it, we just make a clone of the operator. */
+/** We do something very simple:
+ * - if an operator has a fanout greater than 1,
+ * - if any of its successors can be merged with it,
+ * - and if the operator's function is not very expensive
+ * then we just make a clone of the operator. */
 public class CloneOperatorsWithFanout extends CircuitCloneWithGraphsVisitor {
     public CloneOperatorsWithFanout(DBSPCompiler compiler, CircuitGraphs graphs) {
         super(compiler, graphs, false);
@@ -21,9 +27,14 @@ public class CloneOperatorsWithFanout extends CircuitCloneWithGraphsVisitor {
         int inputFanout = this.getGraph().getFanout(input);
         if (inputFanout == 1)
             return false;
-        return input.is(DBSPMapOperator.class) ||
+        if (!(input.is(DBSPMapOperator.class) ||
                 input.is(DBSPMapIndexOperator.class) ||
-                input.is(DBSPFilterOperator.class);
+                input.is(DBSPFilterOperator.class)))
+            return false;
+        DBSPClosureExpression function = input.to(DBSPSimpleOperator.class).getClosureFunction();
+        Expensive expensive = new Expensive(this.compiler);
+        expensive.apply(function);
+        return !expensive.isExpensive();
     }
 
     void cloneInput(DBSPUnaryOperator operator) {
