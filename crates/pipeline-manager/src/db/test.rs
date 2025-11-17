@@ -458,7 +458,7 @@ fn limited_program_info() -> impl Strategy<Value = serde_json::Value> {
 
 /// Generates different pipeline configurations.
 fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
-    any::<(u8, PipelineId, RuntimeConfigPropVal, ProgramInfoPropVal)>().prop_map(|mut val| {
+    any::<(u8, PipelineId, RuntimeConfigPropVal, ProgramInfoPropVal, u8)>().prop_map(|mut val| {
         if val.0 % 8 == 0 {
             json!({ "name": 222 }) // An invalid pipeline configuration
         } else {
@@ -470,6 +470,7 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
             serde_json::to_value(PipelineConfig {
                 global: serde_json::from_value(runtime_config).unwrap(),
                 name: Some(format!("pipeline-{}", val.1)),
+                given_name: Some(format!("given-name-{}", val.4)),
                 storage_config: None,
                 secrets_dir: None,
                 inputs: program_info.input_connectors,
@@ -1537,6 +1538,7 @@ async fn pipeline_deployment() {
             Uuid::nil(),
             serde_json::to_value(generate_pipeline_config(
                 pipeline1.id,
+                &pipeline1.name,
                 &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
                 &ProgramInfo::default(),
             ))
@@ -1659,6 +1661,7 @@ async fn pipeline_deployment() {
             Uuid::nil(),
             serde_json::to_value(generate_pipeline_config(
                 pipeline1.id,
+                &pipeline1.name,
                 &serde_json::from_value(pipeline1.runtime_config).unwrap(),
                 &ProgramInfo::default(),
             ))
@@ -1851,6 +1854,7 @@ async fn pipeline_provision_version_guard() {
                   Uuid::nil(),
                   serde_json::to_value(generate_pipeline_config(
                       pipeline.id,
+                      &pipeline.name,
                       &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
                       &ProgramInfo::default(),
                   )).unwrap(),
@@ -1910,6 +1914,7 @@ async fn pipeline_provision_version_guard() {
             Uuid::now_v7(),
             serde_json::to_value(generate_pipeline_config(
                 pipeline.id,
+                &pipeline.name,
                 &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
                 &ProgramInfo::default(),
             ))

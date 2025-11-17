@@ -258,6 +258,7 @@ mod tests {
         let deployment_config = PipelineConfig {
             global: Default::default(),
             name: None,
+            given_name: None,
             storage_config: None,
             secrets_dir: None,
             inputs: Default::default(),

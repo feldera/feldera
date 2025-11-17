@@ -74,8 +74,18 @@ pub struct PipelineConfig {
     #[schema(inline)]
     pub global: RuntimeConfig,
 
-    /// Pipeline name.
+    /// Unique system-generated name of the pipeline (format: `pipeline-<uuid>`).
+    /// It is unique across all tenants and cannot be changed.
+    ///
+    /// The `<uuid>` is also used in the naming of various resources that back the pipeline,
+    /// and as such this name is useful to find/identify corresponding resources.
     pub name: Option<String>,
+
+    /// Name given by the tenant to the pipeline. It is only unique within the same tenant, and can
+    /// be changed by the tenant when the pipeline is stopped.
+    ///
+    /// Given a specific tenant, it can be used to find/identify a specific pipeline of theirs.
+    pub given_name: Option<String>,
 
     /// Configuration for persistent storage
     ///
@@ -144,6 +154,7 @@ impl PipelineConfig {
         // TODO: we may want to further abbreviate connector config.
         let summary = serde_json::json!({
             "name": self.name,
+            "given_name": self.given_name,
             "global": self.global,
             "storage_config": self.storage_config,
             "secrets_dir": self.secrets_dir,
