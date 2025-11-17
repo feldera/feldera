@@ -1450,6 +1450,11 @@ async fn metrics_handler(
                 .as_ref()
                 .map_or("unnamed", |s| s.as_str()),
         );
+        let labels = if let Some(given_name) = &controller_status.pipeline_config.given_name {
+            labels.with("pipeline_name", given_name)
+        } else {
+            labels
+        };
         controller.write_metrics(&mut metrics_writer, &labels, controller_status);
         metrics_writer.into_output()
     }

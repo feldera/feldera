@@ -11,8 +11,9 @@ automatically generated using the documentation embedded in Prometheus
 output.
 
 All of the metrics exported by a particular Feldera pipeline are
-labeled with the pipeline's UUID as `pipeline`.  Some metrics have
-additional labels, as documented below.
+labeled with the pipeline's UUID as `pipeline` and its name as
+`pipeline_name`.  Some metrics have additional labels, as documented
+below.
 
 See [Monitoring and Profiling] for a guide to setting up Prometheus
 and Grafana with Feldera.  The [Feldera template dashboard] is a
