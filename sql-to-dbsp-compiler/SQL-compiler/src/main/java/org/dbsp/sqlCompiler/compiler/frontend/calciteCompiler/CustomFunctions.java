@@ -55,33 +55,34 @@ public class CustomFunctions {
 
     public CustomFunctions() {
         this.functions = new ArrayList<>();
-        this.functions.add(new RlikeFunction());
-        this.functions.add(new GunzipFunction());
-        this.functions.add(new WriteLogFunction());
-        this.functions.add(new SequenceFunction());
-        this.functions.add(new ToIntFunction());
-        this.functions.add(new NowFunction());
-        this.functions.add(new ParseJsonFunction());
-        this.functions.add(new ToJsonFunction());
-        this.functions.add(new BlackboxFunction());
-        this.functions.add(new ParseTimeFunction());
-        this.functions.add(new ParseDateFunction());
-        this.functions.add(new ParseTimestampFunction());
-        this.functions.add(new FormatDateFunction());
-        this.functions.add(new ArrayExcept());
-        this.functions.add(new ArrayUnion());
-        this.functions.add(new ArrayIntersect());
-        this.functions.add(new ArrayInsertFunction());
-        this.functions.add(new ArraysOverlapFunction());
-        this.functions.add(new ArrayRemoveFunction());
+        // keep this sorted for faster search
         this.functions.add(new ArrayContainsFunction());
+        this.functions.add(new ArrayExcept());
         this.functions.add(new ArrayExistsFunction());
-        this.functions.add(new ArrayTransformFunction());
+        this.functions.add(new ArrayInsertFunction());
+        this.functions.add(new ArrayIntersect());
         this.functions.add(new ArrayPositionFunction());
+        this.functions.add(new ArrayRemoveFunction());
+        this.functions.add(new ArrayTransformFunction());
+        this.functions.add(new ArrayUnion());
+        this.functions.add(new ArraysOverlapFunction());
+        this.functions.add(new BlackboxFunction());
+        this.functions.add(new BroundFunction());
+        this.functions.add(new FormatDateFunction());
         this.functions.add(new GreatestNonNullsFunction());
+        this.functions.add(new GunzipFunction());
         this.functions.add(new InitcapSpacesFunction());
         this.functions.add(new LeastNonNullsFunction());
-        this.functions.add(new BroundFunction());
+        this.functions.add(new NowFunction());
+        this.functions.add(new ParseDateFunction());
+        this.functions.add(new ParseJsonFunction());
+        this.functions.add(new ParseTimeFunction());
+        this.functions.add(new ParseTimestampFunction());
+        this.functions.add(new RlikeFunction());
+        this.functions.add(new SequenceFunction());
+        this.functions.add(new ToIntFunction());
+        this.functions.add(new ToJsonFunction());
+        this.functions.add(new WriteLogFunction());
         this.udf = new HashMap<>();
         this.aggregates = new HashMap<>();
     }
