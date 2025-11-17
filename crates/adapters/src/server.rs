@@ -515,7 +515,16 @@ pub fn run_server(
     })?;
 
     // Initialize the logger by setting its filter and template.
-    let pipeline_name = format!("[{}]", config.name.clone().unwrap_or_default()).cyan();
+    let pipeline_name = format!(
+        "[{}]",
+        config
+            .given_name
+            .as_ref()
+            .or(config.name.as_ref())
+            .cloned()
+            .unwrap_or_default()
+    )
+    .cyan();
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
         .with(get_env_filter(&config))
