@@ -8,18 +8,14 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Logger;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.sql.SQLException;
@@ -1380,6 +1376,41 @@ public class Regression1Tests extends SqlIoTest {
                 --------------------
                  0  | -121| 1
                  0  | -318226680.000000| 1""");
+    }
+
+    @Test
+    public void issue5120() {
+        var ccs = this.getCCS("""
+                CREATE TYPE S AS(i1 INT NOT NULL, i2 INT);
+                CREATE TABLE tbl(id INT, c1_arr S ARRAY);
+                
+                CREATE VIEW v AS SELECT
+                id,  i1_val + 1, i2_val + 1,  idx
+                FROM tbl,
+                UNNEST(c1_arr) WITH ORDINALITY AS t (i1_val, i2_val, idx);""");
+        ccs.step("""
+                INSERT INTO tbl VALUES (0, ARRAY[S(1, NULL), S(5, 6)]);
+                """, """
+                 id | i1 | i2 | idx | weight
+                -----------------------------
+                  0 | 2  |    |   1 | 1
+                  0 | 6  |  7 |   2 | 1""");
+
+        ccs = this.getCCS("""
+                CREATE TABLE tbl(id INT,
+                c1_arr ROW(i1 INT NOT NULL, i2 INT NULL)  ARRAY NOT NULL);
+                
+                CREATE VIEW v AS SELECT
+                id,  i1_val + 1, i2_val + 1,  idx
+                FROM tbl,
+                UNNEST(c1_arr) WITH ORDINALITY AS t (i1_val, i2_val, idx);""");
+        ccs.step("""
+                INSERT INTO tbl VALUES (0, ARRAY[ROW(1, NULL), ROW(5, 6)]);
+                """, """
+                 id | i1 | i2 | idx | weight
+                -----------------------------
+                  0 | 2  |    |   1 | 1
+                  0 | 6  |  7 |   2 | 1""");
     }
 }
  

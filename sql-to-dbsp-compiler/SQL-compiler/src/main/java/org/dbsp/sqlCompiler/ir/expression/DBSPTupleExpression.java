@@ -110,8 +110,7 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
         for (DBSPExpression expression: expressions) {
             DBSPTypeTupleBase type = expression.getType().to(DBSPTypeTupleBase.class);
             for (int i = 0; i < type.size(); i++) {
-                DBSPType fieldType = type.tupFields[i];
-                DBSPExpression field = new DBSPFieldExpression(expression.deepCopy(), i, fieldType)
+                DBSPExpression field = new DBSPFieldExpression(expression.deepCopy(), i)
                         .simplify()
                         .applyCloneIfNeeded();
                 fields.add(field);
