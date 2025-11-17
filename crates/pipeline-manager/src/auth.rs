@@ -875,7 +875,7 @@ const API_KEY_LENGTH: usize = 128;
 pub const API_KEY_PREFIX: &str = "apikey:";
 
 /// HTTP header name for tenant selection in multi-tenant deployments
-pub const TENANT_HEADER: &'static str = "feldera-tenant";
+pub const TENANT_HEADER: &str = "feldera-tenant";
 
 /// Generates a random 128 character API key
 pub fn generate_api_key() -> String {
