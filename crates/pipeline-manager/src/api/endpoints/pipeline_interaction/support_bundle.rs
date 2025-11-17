@@ -154,7 +154,7 @@ impl SupportBundleZip {
 #[get("/pipelines/{pipeline_name}/support_bundle")]
 pub(crate) async fn get_pipeline_support_bundle(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     query: web::Query<SupportBundleParameters>,
