@@ -801,7 +801,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
         // Deployment configuration
         let mut deployment_config =
-            generate_pipeline_config(pipeline.id, &runtime_config, &program_info);
+            generate_pipeline_config(pipeline.id, &pipeline.name, &runtime_config, &program_info);
         deployment_config.storage_config =
             Some(self.pipeline_handle.generate_storage_config().await);
         let deployment_config = match serde_json::to_value(&deployment_config) {

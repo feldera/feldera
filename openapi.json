@@ -7992,6 +7992,11 @@
               "inputs"
             ],
             "properties": {
+              "given_name": {
+                "type": "string",
+                "description": "Name given by the tenant to the pipeline. It is only unique within the same tenant, and can\nbe changed by the tenant when the pipeline is stopped.\n\nGiven a specific tenant, it can be used to find/identify a specific pipeline of theirs.",
+                "nullable": true
+              },
               "inputs": {
                 "type": "object",
                 "description": "Input endpoint configuration.",
@@ -8001,7 +8006,7 @@
               },
               "name": {
                 "type": "string",
-                "description": "Pipeline name.",
+                "description": "Unique system-generated name of the pipeline (format: `pipeline-<uuid>`).\nIt is unique across all tenants and cannot be changed.\n\nThe `<uuid>` is also used in the naming of various resources that back the pipeline,\nand as such this name is useful to find/identify corresponding resources.",
                 "nullable": true
               },
               "outputs": {

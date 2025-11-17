@@ -754,6 +754,7 @@ pub fn generate_program_info(
 /// input/output connectors derived from the program schema.
 pub fn generate_pipeline_config(
     pipeline_id: PipelineId,
+    pipeline_name: &str,
     runtime_config: &RuntimeConfig,
     program_info: &ProgramInfo,
 ) -> PipelineConfig {
@@ -795,6 +796,7 @@ pub fn generate_pipeline_config(
 
     PipelineConfig {
         name: Some(format!("pipeline-{pipeline_id}")),
+        given_name: Some(pipeline_name.to_string()),
         global: runtime_config.clone(),
         storage_config: None, // Set by the runner based on global field
         secrets_dir: None,

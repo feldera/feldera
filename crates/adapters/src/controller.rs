@@ -3198,6 +3198,7 @@ impl ControllerInit {
             // Other settings from the pipeline manager.
             secrets_dir: config.secrets_dir,
             name: config.name,
+            given_name: config.given_name,
             storage_config: config.storage_config,
             program_ir: config.program_ir.clone(),
         };
