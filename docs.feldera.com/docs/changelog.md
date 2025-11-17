@@ -15,12 +15,18 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
-	KAFKA INPUT CONNECTOR CHANGE
+        Prometheus metrics output now also contains pipeline names with a
+        "pipeline_name" label, in addition to the exist "pipeline" label,
+        which still contains the pipeline UUID.
+
+        ## 0.186.00
 
         The Kafka input connector will now start reading partitions added
         to a topic upon resuming from a checkpoint.  Previously, the
         pipeline would not start in this case.  Please refer to the Kafka
         input connector documentation for details.
+
+        ## 0.156.0
 
         BACKWARD-INCOMPATIBLE PYTHON SDK CHANGES
 
