@@ -50,17 +50,12 @@ import type { ControllerStatus, XgressRecord } from '$lib/types/pipelineManager'
 export type { ProgramSchema } from '$lib/services/manager'
 export type ProgramStatus = _ProgramStatus
 
-import * as AxaOidc from '@axa-fr/oidc-client'
-const { OidcClient } = AxaOidc
-
-import { client, createClient, type RequestResult } from '@hey-api/client-fetch'
+import { createClient, type RequestResult } from '@hey-api/client-fetch'
 import JSONbig from 'true-json-bigint'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
-import invariant from 'tiny-invariant'
 import { tuple } from '$lib/functions/common/tuple'
-import { sleep } from '$lib/functions/common/promise'
-import { type NamesInUnion, unionName } from '$lib/functions/common/union'
 import { singleton } from '$lib/functions/common/array'
+import { applyAuthToRequest, handleAuthResponse } from '$lib/services/auth'
 
 const unauthenticatedClient = createClient({
   bodySerializer: JSONbig.stringify,
@@ -76,6 +71,8 @@ export type ExtendedPipelineDescrNoCode = Omit<ExtendedPipelineDescr, 'program_c
 
 export type CompilerOutput = ReturnType<typeof toCompilerOutput>
 
+export type FetchOptions = { fetch?: typeof globalThis.fetch }
+
 const toCompilerOutput = (programError: ProgramError | null | undefined) => {
   return {
     sql: programError?.sql_compilation,
@@ -84,32 +81,47 @@ const toCompilerOutput = (programError: ProgramError | null | undefined) => {
   }
 }
 
-const _postPipelineAction = ({
-  path
-}: {
-  path: {
-    pipeline_name: string
-    action: PipelineAction
-  }
-}) =>
+const _postPipelineAction = (
+  {
+    path
+  }: {
+    path: {
+      pipeline_name: string
+      action: PipelineAction
+    }
+  },
+  options?: FetchOptions
+) =>
   match(path.action)
     .with('start', () =>
-      postPipelineStart({ path, query: { initial: 'running', bootstrap_policy: 'await_approval' } })
+      postPipelineStart({
+        path,
+        query: { initial: 'running', bootstrap_policy: 'await_approval' },
+        ...options
+      })
     )
-    .with('resume', () => postPipelineResume({ path }))
-    .with('pause', () => postPipelinePause({ path }))
+    .with('resume', () => postPipelineResume({ path, ...options }))
+    .with('pause', () => postPipelinePause({ path, ...options }))
     .with('stop', 'kill', (action) =>
-      postPipelineStop({ path, query: { force: action === 'kill' } })
+      postPipelineStop({ path, query: { force: action === 'kill' }, ...options })
     )
     .with('standby', () =>
-      postPipelineStart({ path, query: { initial: 'standby', bootstrap_policy: 'await_approval' } })
+      postPipelineStart({
+        path,
+        query: { initial: 'standby', bootstrap_policy: 'await_approval' },
+        ...options
+      })
     )
-    .with('activate', () => postPipelineActivate({ path }))
+    .with('activate', () => postPipelineActivate({ path, ...options }))
     .with('start_paused', () =>
-      postPipelineStart({ path, query: { initial: 'paused', bootstrap_policy: 'await_approval' } })
+      postPipelineStart({
+        path,
+        query: { initial: 'paused', bootstrap_policy: 'await_approval' },
+        ...options
+      })
     )
-    .with('clear', () => postPipelineClear({ path }))
-    .with('approve_changes', () => postPipelineApprove({ path }))
+    .with('clear', () => postPipelineClear({ path, ...options }))
+    .with('approve_changes', () => postPipelineApprove({ path, ...options }))
     .exhaustive()
 
 export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>['status']
@@ -342,48 +354,62 @@ export const getExtendedPipeline = async (
 /**
  * Fails if pipeline exists
  */
-export const postPipeline = async (pipeline: PipelineDescr) => {
+export const postPipeline = async (pipeline: PipelineDescr, options?: FetchOptions) => {
   if (!pipeline.name) {
     throw new Error('Cannot create pipeline with empty name')
   }
-  return mapResponse(_postPipeline({ body: pipeline }), toPipelineThumb)
+  return mapResponse(_postPipeline({ body: pipeline, ...options }), toPipelineThumb)
 }
 
 /**
  * Pipeline should already exist
  */
-export const putPipeline = async (pipeline_name: string, newPipeline: PipelineDescr) => {
+export const putPipeline = async (
+  pipeline_name: string,
+  newPipeline: PipelineDescr,
+  options?: FetchOptions
+) => {
   await mapResponse(
     _putPipeline({
       body: newPipeline,
-      path: { pipeline_name: encodeURIComponent(pipeline_name) }
+      path: { pipeline_name: encodeURIComponent(pipeline_name) },
+      ...options
     }),
     (v) => v
   )
 }
 
-export const patchPipeline = async (pipeline_name: string, pipeline: Partial<Pipeline>) => {
+export const patchPipeline = async (
+  pipeline_name: string,
+  pipeline: Partial<Pipeline>,
+  options?: FetchOptions
+) => {
   return mapResponse(
     _patchPipeline({
       path: { pipeline_name: encodeURIComponent(pipeline_name) },
-      body: fromPipeline(pipeline)
+      body: fromPipeline(pipeline),
+      ...options
     }),
     toExtendedPipeline
   )
 }
 
-export const getPipelines = async (): Promise<PipelineThumb[]> => {
+export const getPipelines = async (options?: FetchOptions): Promise<PipelineThumb[]> => {
   return mapResponse(
-    listPipelines({ query: { selector: 'status_with_connectors' } }),
+    listPipelines({
+      query: { selector: 'status_with_connectors' },
+      ...options
+    }),
     (pipelines) => pipelines.map(toPipelineThumb)
   )
 }
 
-export const getPipelineStatus = async (pipeline_name: string) => {
+export const getPipelineStatus = async (pipeline_name: string, options?: FetchOptions) => {
   return mapResponse(
     _getPipeline({
       path: { pipeline_name: encodeURIComponent(pipeline_name) },
-      query: { selector: 'status' }
+      query: { selector: 'status' },
+      ...options
     }),
     (pipeline) =>
       consolidatePipelineStatus(
@@ -395,10 +421,11 @@ export const getPipelineStatus = async (pipeline_name: string) => {
   )
 }
 
-export const getPipelineStats = async (pipeline_name: string) => {
+export const getPipelineStats = async (pipeline_name: string, options?: FetchOptions) => {
   return mapResponse(
     _getPipelineStats({
-      path: { pipeline_name: encodeURIComponent(pipeline_name) }
+      path: { pipeline_name: encodeURIComponent(pipeline_name) },
+      ...options
     }),
     (status) => ({
       pipelineName: pipeline_name,
@@ -416,8 +443,8 @@ export const getPipelineStats = async (pipeline_name: string) => {
   )
 }
 
-export const deletePipeline = async (pipeline_name: string) => {
-  await mapResponse(_deletePipeline({ path: { pipeline_name } }), (v) => v)
+export const deletePipeline = async (pipeline_name: string, options?: FetchOptions) => {
+  await mapResponse(_deletePipeline({ path: { pipeline_name }, ...options }), (v) => v)
 }
 
 export type PipelineAction =
@@ -432,47 +459,64 @@ export type PipelineAction =
   | 'clear'
   | 'approve_changes'
 
-export const postPipelineAction = async (pipeline_name: string, action: PipelineAction) => {
+export const postPipelineAction = async (
+  pipeline_name: string,
+  action: PipelineAction,
+  options?: FetchOptions
+) => {
   return mapResponse(
-    _postPipelineAction({
-      path: {
-        pipeline_name,
-        action
-      }
-    }),
+    _postPipelineAction(
+      {
+        path: {
+          pipeline_name,
+          action
+        }
+      },
+      options
+    ),
     (v) => v
   )
 }
 
-export const postUpdateRuntime = async (pipeline_name: string) => {
-  return mapResponse(_postUpdateRuntime({ path: { pipeline_name } }), (v) => v)
+export const postUpdateRuntime = async (pipeline_name: string, options?: FetchOptions) => {
+  return mapResponse(_postUpdateRuntime({ path: { pipeline_name }, ...options }), (v) => v)
 }
 
-export const getAuthConfig = () =>
-  mapResponse(getConfigAuthentication({ client: unauthenticatedClient }), (v) => v)
+export const getAuthConfig = (options?: FetchOptions) =>
+  mapResponse(getConfigAuthentication({ client: unauthenticatedClient, ...options }), (v) => v)
 
-export const getConfig = () => mapResponse(_getConfig(), (v) => v)
-export const getConfigSession = () => mapResponse(_getConfigSession(), (v) => v)
+export const getConfig = (options?: FetchOptions) => mapResponse(_getConfig(options), (v) => v)
+export const getConfigSession = (options?: FetchOptions) =>
+  mapResponse(_getConfigSession(options), (v) => v)
 
-export const getApiKeys = () => mapResponse(listApiKeys(), (v) => v)
+export const getApiKeys = (options?: FetchOptions) => mapResponse(listApiKeys(options), (v) => v)
 
-export const postApiKey = (name: string) => mapResponse(_postApiKey({ body: { name } }), (v) => v)
+export const postApiKey = (name: string, options?: FetchOptions) =>
+  mapResponse(_postApiKey({ body: { name }, ...options }), (v) => v)
 
-export const deleteApiKey = (name: string) =>
+export const deleteApiKey = (name: string, options?: FetchOptions) =>
   mapResponse(
-    _deleteApiKey({ path: { api_key_name: name } }),
+    _deleteApiKey({ path: { api_key_name: name }, ...options }),
     (v) => v,
     () => {
       throw new Error(`Failed to delete ${name} API key`)
     }
   )
 
-const getAuthenticatedFetch = () => {
-  try {
-    const oidcClient = OidcClient.get()
-    return oidcClient.fetchWithTokens(globalThis.fetch)
-  } catch {
-    return globalThis.fetch
+/**
+ * Returns a fetch function that applies authentication headers and handles 401 responses.
+ * Uses the same middleware as the global @hey-api/client-fetch instance.
+ */
+const getAuthenticatedFetch = (options?: FetchOptions): typeof globalThis.fetch => {
+  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    // Create a Request object and apply auth headers
+    const request = applyAuthToRequest(new Request(input, init))
+
+    // Perform the fetch
+    const response = await (options?.fetch ?? globalThis.fetch)(request)
+
+    // Handle 401 responses with token refresh
+    return handleAuthResponse(response, request, options?.fetch ?? globalThis.fetch)
   }
 }
 
@@ -501,10 +545,14 @@ const streamingFetch = async <E1, E2>(
   }
 }
 
-export const relationEgressStream = async (pipelineName: string, relationName: string) => {
+export const relationEgressStream = async (
+  pipelineName: string,
+  relationName: string,
+  options?: FetchOptions
+) => {
   // const result = await httpOutput({path: {pipeline_name: pipelineName, table_name: relationName}, query: {'format': 'json', 'mode': 'watch', 'array': false, 'query': 'table'}})
   return streamingFetch(
-    getAuthenticatedFetch(),
+    getAuthenticatedFetch(options),
     `${felderaEndpoint}/v0/pipelines/${pipelineName}/egress/${encodeURIComponent(relationName)}?format=json&array=false`,
     {
       method: 'POST'
@@ -515,9 +563,13 @@ export const relationEgressStream = async (pipelineName: string, relationName: s
   )
 }
 
-export const pipelineLogsStream = async (pipelineName: string, requestInit?: RequestInit) => {
+export const pipelineLogsStream = async (
+  pipelineName: string,
+  requestInit?: RequestInit,
+  options?: FetchOptions
+) => {
   return streamingFetch(
-    getAuthenticatedFetch(),
+    getAuthenticatedFetch(options),
     `${felderaEndpoint}/v0/pipelines/${pipelineName}/logs`,
     requestInit ?? {},
     (msg) => new Error(`Failed to connect to the log stream: \n${msg}`),
@@ -525,9 +577,9 @@ export const pipelineLogsStream = async (pipelineName: string, requestInit?: Req
   )
 }
 
-export const adHocQuery = async (pipelineName: string, query: string) => {
+export const adHocQuery = async (pipelineName: string, query: string, options?: FetchOptions) => {
   return streamingFetch(
-    getAuthenticatedFetch(),
+    getAuthenticatedFetch(options),
     `${felderaEndpoint}/v0/pipelines/${pipelineName}/query?sql=${encodeURIComponent(query)}&format=json`,
     {},
     (msg) => new Error(`Failed to invoke an ad-hoc query: \n${msg}`),
@@ -535,9 +587,9 @@ export const adHocQuery = async (pipelineName: string, query: string) => {
   )
 }
 
-export const pipelineTimeSeriesStream = async (pipelineName: string) => {
+export const pipelineTimeSeriesStream = async (pipelineName: string, options?: FetchOptions) => {
   return streamingFetch(
-    getAuthenticatedFetch(),
+    getAuthenticatedFetch(options),
     `${felderaEndpoint}/v0/pipelines/${pipelineName}/time_series_stream`,
     {},
     (msg) =>
@@ -560,13 +612,15 @@ export const relationIngress = async (
   pipelineName: string,
   relationName: string,
   data: XgressEntry[],
-  force?: 'force'
+  force?: 'force',
+  options?: FetchOptions
 ) => {
   return httpInput({
     path: { pipeline_name: pipelineName, table_name: relationName },
     parseAs: 'text', // Response is empty, so no need to parse it as JSON
     query: { format: 'json', array: true, update_format: 'insert_delete', force: !!force },
-    body: data as any
+    body: data as any,
+    ...options
   })
 }
 
@@ -578,8 +632,8 @@ const extractDemoType = (demo: { title: string }) => {
   return tuple('Example', match?.[1] ?? '')
 }
 
-export const getDemos = () =>
-  mapResponse(getConfigDemos(), (demos) =>
+export const getDemos = (options?: FetchOptions) =>
+  mapResponse(getConfigDemos(options), (demos) =>
     demos.map((demo) => {
       const [title, type] = extractDemoType(demo)
       return {
@@ -601,16 +655,4 @@ export const getPipelineSupportBundleUrl = (
     query.append(key, String(value))
   }
   return `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/support_bundle?${query.toString()}`
-}
-
-export const getAuthorizationHeader = async (): Promise<Record<string, string>> => {
-  try {
-    const oidcClient = OidcClient.get()
-    const tokens = await oidcClient.getValidTokenAsync()
-    return {
-      Authorization: `Bearer ${tokens.tokens.accessToken}`
-    }
-  } catch {
-    return {}
-  }
 }

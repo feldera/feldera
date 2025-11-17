@@ -7,14 +7,16 @@ export type UserProfile = {
   picture?: string | null
 }
 
+export type SignInDetails = {
+  logout: (params: { callbackUrl: string | undefined }) => Promise<void>
+  userInfo: OidcUserInfo
+  profile: UserProfile
+  accessToken: string
+}
+
 export type AuthDetails =
   | 'none'
   | {
       login: () => Promise<void>
     }
-  | {
-      logout: (params: { callbackUrl: string }) => Promise<void>
-      userInfo: OidcUserInfo
-      profile: UserProfile
-      accessToken: string
-    }
+  | SignInDetails

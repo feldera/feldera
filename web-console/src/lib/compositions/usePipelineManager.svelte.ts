@@ -12,7 +12,6 @@ import {
   getPipelineStats,
   getPipelineStatus,
   getPipelineSupportBundleUrl,
-  getAuthorizationHeader,
   patchPipeline,
   pipelineLogsStream,
   pipelineTimeSeriesStream,
@@ -22,15 +21,14 @@ import {
   putPipeline,
   relationEgressStream,
   relationIngress,
-  type PipelineAction,
-  type PipelineStatus,
-  type PipelineThumb,
   type SupportBundleOptions,
-  postUpdateRuntime
+  postUpdateRuntime,
+  type FetchOptions
 } from '$lib/services/pipelineManager'
 import { useToast } from '$lib/compositions/useToastNotification'
 import type { FunctionType } from '$lib/types/common/function'
 import { triggerStreamDownload } from '$lib/services/browser'
+import { getAuthorizationHeaders } from '$lib/services/auth'
 
 const networkErrors = ['Failed to fetch', 'Network request failed', 'Timeout']
 const isNetworkError = (e: any): e is TypeError =>
@@ -38,10 +36,11 @@ const isNetworkError = (e: any): e is TypeError =>
 
 let isNetworkHealthy = $state(true)
 
-const trackHealth =
-  <Args extends any[], Data>(x: (...a: Args) => Promise<Data>) =>
+const _trackHealth =
+  (options?: FetchOptions) =>
+  <Args extends any[], Data>(x: (...a: [...Args, FetchOptions | undefined]) => Promise<Data>) =>
   (...a: Args) =>
-    x(...a).then(
+    x(...a, options).then(
       (res) => {
         isNetworkHealthy ||= true
         return res
@@ -54,40 +53,44 @@ const trackHealth =
       }
     )
 
+const _reportError =
+  (onError: (e: Error) => void, options?: FetchOptions) =>
+  <F extends FunctionType>(
+    x: F,
+    errorMsg?: (...args: F extends (...args: infer Args) => any ? Args : never) => string
+  ) =>
+  (...a: F extends (...args: infer Args) => any ? Args : never): ReturnType<F> => {
+    return x(...a, options).then(
+      (v: any) => {
+        isNetworkHealthy ||= true
+        return v
+      },
+      (e: any) => {
+        if (isNetworkError(e)) {
+          isNetworkHealthy = false
+        }
+        onError(
+          isNetworkError(e)
+            ? new Error((errorMsg?.(...a) ?? `Request failed`) + ': ' + e.message)
+            : e
+        )
+        throw e
+      }
+    )
+  }
+
 export type PipelineManagerApi = Omit<ReturnType<typeof usePipelineManager>, 'isNetworkHealthy'>
 
 // let toastError: (e: Error) => void
 
-export const usePipelineManager = () => {
+export const usePipelineManager = (options?: FetchOptions) => {
   // try {
   //   toastError ??= useToast().toastError
   // } catch {}
   let { toastError } = useToast()
 
-  const reportError =
-    <F extends FunctionType>(
-      x: F,
-      errorMsg?: (...args: F extends (...args: infer Args) => any ? Args : never) => string
-    ) =>
-    (...a: F extends (...args: infer Args) => any ? Args : never): ReturnType<F> => {
-      return x(...a).then(
-        (v: any) => {
-          isNetworkHealthy ||= true
-          return v
-        },
-        (e: any) => {
-          if (isNetworkError(e)) {
-            isNetworkHealthy = false
-          }
-          toastError(
-            isNetworkError(e)
-              ? new Error((errorMsg?.(...a) ?? `Request failed`) + ': ' + e.message)
-              : e
-          )
-          throw e
-        }
-      )
-    }
+  const reportError = _reportError(toastError, options)
+  const trackHealth = _trackHealth(options)
 
   const downloadPipelineSupportBundle = async (
     pipelineName: string,
@@ -95,7 +98,7 @@ export const usePipelineManager = () => {
   ) => {
     const url = getPipelineSupportBundleUrl(pipelineName, options)
     const headers = {
-      ...(await getAuthorizationHeader()),
+      ...(await getAuthorizationHeaders()),
       Accept: 'application/zip'
     }
     const fileName = `fda-bundle-${pipelineName}-${new Date().toISOString().replace(/\.\d{3}/, '')}.zip`

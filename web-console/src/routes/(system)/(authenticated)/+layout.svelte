@@ -59,6 +59,10 @@
 
   let api = usePipelineManager()
   let { toastMain, dismissMain } = useToast()
+  $effect.pre(() => {
+    // Refresh the pipeline list data when load function re-runs (e.g. tenant is changed)
+    pipelineList.pipelines = data.preloaded.pipelines
+  })
   $effect(() => {
     if (api.isNetworkHealthy) {
       dismissMain()

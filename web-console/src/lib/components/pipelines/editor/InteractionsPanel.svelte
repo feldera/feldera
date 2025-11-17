@@ -39,11 +39,13 @@
 
   let tabs = $derived(
     [
-      tuple('Errors' as const, TabControlPipelineErrors, PanelPipelineErrors),
-      tuple('Performance' as const, TabControlPerformance, PanelPerformance),
-      separateAdHocTab ? null : tuple('Ad-Hoc Queries' as const, TabControlAdhoc, PanelAdHocQuery),
-      tuple('Changes Stream' as const, TabControlChangeStream, PanelChangeStream),
-      tuple('Logs' as const, undefined, PanelLogs)
+      tuple('Errors' as const, TabControlPipelineErrors, PanelPipelineErrors, false),
+      tuple('Performance' as const, TabControlPerformance, PanelPerformance, false),
+      separateAdHocTab
+        ? null
+        : tuple('Ad-Hoc Queries' as const, TabControlAdhoc, PanelAdHocQuery, false),
+      tuple('Changes Stream' as const, TabControlChangeStream, PanelChangeStream, true),
+      tuple('Logs' as const, undefined, PanelLogs, false)
     ].filter(nonNull)
   )
   let currentTab = $derived(
@@ -164,13 +166,18 @@
   {/snippet}
 
   {#snippet content()}
-    {@const TabComponent = tabs.find((tab) => tab[0] === currentTab.value)?.[2]}
-    {#if TabComponent}
-      <div class="relative h-full">
-        <div class="absolute h-full w-full sm:pt-4">
-          <TabComponent {pipeline} {metrics} {errors}></TabComponent>
-        </div>
-      </div>
-    {/if}
+    <div class="relative h-full">
+      {#each tabs as [tabName, , TabComponent, keepAlive]}
+        {#if keepAlive}
+          <div class="absolute h-full w-full sm:pt-4" class:hidden={currentTab.value !== tabName}>
+            <TabComponent {pipeline} {metrics} {errors}></TabComponent>
+          </div>
+        {:else if currentTab.value === tabName}
+          <div class="absolute h-full w-full sm:pt-4">
+            <TabComponent {pipeline} {metrics} {errors}></TabComponent>
+          </div>
+        {/if}
+      {/each}
+    </div>
   {/snippet}
 </Tabs>
