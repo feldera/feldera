@@ -90,10 +90,10 @@
           )
     if (
       selected.length === pipelines.length &&
-      !actions.includes('stop') &&
+      !actions.includes('kill') &&
       !actions.includes('start')
     ) {
-      // If every pipeline is selected, add 'stop' action
+      // Add 'kill' action if every pipeline is selected
       actions.splice(-2, 0, ...stop, 'kill')
     }
 
