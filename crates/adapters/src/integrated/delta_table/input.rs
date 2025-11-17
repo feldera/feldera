@@ -257,8 +257,17 @@ impl DeltaTableInputReader {
             config,
             consumer,
             schema,
-            resume_info,
+            resume_info.clone(),
         ));
+
+        // This is needed to initialize completed_frontier for the connector. It's not ideal, as the completion
+        // status for the frontier will be set to the current time instead of whenever the table version in resume_info
+        // was actually processed. The right solution is to checkpoint the frontier with the connector.
+        if resume_info.is_some() {
+            endpoint
+                .queue
+                .push_with_aux((None, Vec::new()), Utc::now(), resume_info);
+        }
 
         if eoi {
             endpoint.consumer.eoi();
