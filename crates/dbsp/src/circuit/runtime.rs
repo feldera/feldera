@@ -9,7 +9,7 @@ use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::to_bytes;
 use crate::storage::file::writer::Parameters;
-use crate::trace::unaligned_deserialize;
+use crate::trace::{unaligned_deserialize, Deserializable, Serializer};
 use crate::SchedulerError;
 use crate::{
     storage::{backend::StorageError, buffer_cache::BufferCache, dirlock::LockedDirectory},
@@ -1061,7 +1061,10 @@ pub(crate) enum Broadcast<T> {
     },
 }
 
-impl Broadcast {
+impl<T> Broadcast<T>
+where
+    T: Clone + Send + rkyv::Serialize<Serializer> + Deserializable + 'static,
+{
     pub fn new() -> Self {
         match Runtime::runtime() {
             Some(runtime) if Runtime::num_workers() > 1 => {
@@ -1070,7 +1073,7 @@ impl Broadcast {
                 let exchange = Exchange::with_runtime(
                     &runtime,
                     exchange_id,
-                    Box::new(|vote| to_bytes(&vote).unwrap().into_vec()),
+                    Box::new(|x| to_bytes(&x).unwrap().into_vec()),
                     Box::new(|data| unaligned_deserialize(&data[..])),
                 );
 
@@ -1104,13 +1107,13 @@ impl Broadcast {
     /// * `local` - Local vote by the current worker.
     pub async fn collect(&self, local: T) -> Result<Vec<T>, SchedulerError> {
         match self {
-            Self::SingleThreaded => Ok(local),
+            Self::SingleThreaded => Ok(vec![local]),
             Self::MultiThreaded {
                 notify_sender,
                 notify_receiver,
                 exchange,
             } => {
-                while !exchange.try_send_all(Runtime::worker_index(), &mut repeat(local)) {
+                while !exchange.try_send_all(Runtime::worker_index(), &mut repeat(local.clone())) {
                     if Runtime::kill_in_progress() {
                         return Err(SchedulerError::Killed);
                     }

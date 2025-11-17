@@ -1506,6 +1506,22 @@ where
     }
 }
 
+pub struct MetadataExchange {}
+
+impl MetadataExchange {
+    fn new() -> Self {
+        Self {}
+    }
+
+    fn set_operator_metadata(&self, id: NodeId, metadata: &OperatorMeta) {
+        todo!()
+    }
+
+    fn get_operator_metadata(&self, id: NodeId) -> Option<OperatorMeta> {
+        todo!()
+    }
+}
+
 /// An object-safe subset of the circuit API.
 pub trait CircuitBase: 'static {
     fn edges(&self) -> Ref<'_, Edges>;
@@ -1582,7 +1598,7 @@ pub trait CircuitBase: 'static {
         f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
     ) -> Result<(), DbspError>;
 
-    /// Apply `f` to all immedite children of `self`.
+    /// Apply `f` to all immediate children of `self`.
     fn map_local_nodes_mut(
         &mut self,
         f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
@@ -1595,7 +1611,7 @@ pub trait CircuitBase: 'static {
     /// Panics if `id` is not a valid Id of a node in `self`.
     fn apply_local_node_mut(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node));
 
-    /// Apply `f` to all immediate subcricuits of `self`.
+    /// Apply `f` to all immediate subcircuits of `self`.
     ///
     /// Stop at the first error.
     fn map_subcircuits(
@@ -1636,7 +1652,9 @@ pub trait CircuitBase: 'static {
         self.get_node_label(id, LABEL_PERSISTENT_OPERATOR_ID)
     }
 
-    fn check_fixedpoint(&self, scope: Scope) -> bool;
+    fn metadata_exchange(&self) -> &Rc<MetadataExchange> {
+        todo!()
+    }
 }
 
 /// The circuit interface.  All DBSP computation takes place within a circuit.
@@ -1789,7 +1807,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         F: FnOnce() -> T;
 
     /// Add a dependency from `preprocessor_node_id` to all input operators in the
-    /// circuit, making sure that the circuit that this node and all its predecessors
+    /// circuit, making sure that this node and all its predecessors
     /// are evaluated before the rest of the circuit.
     fn add_preprocessor(&self, preprocessor_node_id: NodeId);
 
@@ -3612,7 +3630,8 @@ where
     ) where
         I1: Data,
         I2: Data,
-        Op: BinarySinkOperator<I1, I2>,
+        I3: Data,
+        Op: TernarySinkOperator<I1, I2, I3>,
     {
         let (input_stream1, input_preference1) = input_stream1;
         let (input_stream2, input_preference2) = input_stream2;
@@ -5064,22 +5083,20 @@ where
         &'a mut self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
-            let val1 = match StreamValue::take(self.input_stream1.val()) {
-                Some(val) => Cow::Owned(val),
-                None => Cow::Borrowed(StreamValue::peek(&self.input_stream1.get())),
-            };
+            let val1 = StreamValue::take(self.input_stream1.val()).map(|val| Cow::Owned(val));
+            let r1 = self.input_stream1.get();
+            let val2 = StreamValue::take(self.input_stream2.val()).map(|val| Cow::Owned(val));
+            let r2 = self.input_stream2.get();
+            let val3 = StreamValue::take(self.input_stream3.val()).map(|val| Cow::Owned(val));
+            let r3 = self.input_stream3.get();
 
-            let val2 = match StreamValue::take(self.input_stream2.val()) {
-                Some(val) => Cow::Owned(val),
-                None => Cow::Borrowed(StreamValue::peek(&self.input_stream2.get())),
-            };
-
-            let val3 = match StreamValue::take(self.input_stream3.val()) {
-                Some(val) => Cow::Owned(val),
-                None => Cow::Borrowed(StreamValue::peek(&self.input_stream3.get())),
-            };
-
-            self.operator.eval(val1, val2, val3).await;
+            self.operator
+                .eval(
+                    val1.unwrap_or(Cow::Borrowed(StreamValue::peek(&r1))),
+                    val2.unwrap_or(Cow::Borrowed(StreamValue::peek(&r2))),
+                    val3.unwrap_or(Cow::Borrowed(StreamValue::peek(&r3))),
+                )
+                .await;
 
             StreamValue::consume_token(self.input_stream1.val());
             StreamValue::consume_token(self.input_stream2.val());

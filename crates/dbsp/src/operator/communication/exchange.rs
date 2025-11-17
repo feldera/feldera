@@ -634,7 +634,7 @@ where
 
     /// Read all incoming messages for `receiver`.
     ///
-    /// Values are passed to callback function `cb`.
+    /// Values are passed to callback function `cb` in the order of worker indexes.
     ///
     /// # Errors
     ///

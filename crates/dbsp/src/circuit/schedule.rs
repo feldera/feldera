@@ -273,6 +273,8 @@ where
 {
     fn new() -> Self;
 
+    fn register_postprocessor(&self, postprocessor: Box<dyn Fn() + Send + Sync>);
+
     /// Initialize the scheduler for the circuit.
     ///
     /// Invoked before running the circuit to validate that the circuit is schedulable,

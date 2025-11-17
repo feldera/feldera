@@ -65,15 +65,13 @@ where
 
         // Extra stream for the accumulator
 
-        // Accumulator
+        // Accumulator: with metadata exchange
 
         // Connect the stream (and register it with the circuit)
 
-        // Integral
+        // Integral with metadata exchange
 
         // Connect the accumulator and integral to ExchangeSender.
-
-        // Connect accumulator and integral to Balancer.
     }
 }
 
@@ -154,7 +152,8 @@ where
     }
 
     fn ready(&self) -> bool {
-        self.exchange.ready_to_send(self.worker_index)
+        todo!()
+        //self.exchange.ready_to_send(self.worker_index)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -181,12 +180,15 @@ where
         delayed_accumulator: Cow<'_, Spine<B>>,
         delayed_trace: Cow<'_, Spine<B>>,
     ) {
+        // Get metadata from metadata exchange.
+
         // stats:
         //   input batch size
         //   number of rebalancings
 
         // Reevaluate the policy.
 
+        // If we haven't flushed yet, update metadata, reevaluate policy.
         // Policy change?
         // - Clean old rebalancing state
         // - Set new rebalancing state
@@ -208,19 +210,3 @@ where
         )
     }
 }
-
-struct JoinBalancer<B1, B2> {}
-
-impl<B1, B2> JoinBalancer<B1, B2> {
-    fn new() -> Self {
-        todo!()
-    }
-}
-
-impl<B1, B2> Operator for JoinBalancer<B1, B2> {
-    fn name(&self) -> Cow<'static, str> {
-        Cow::from("JoinBalancer")
-    }
-}
-
-impl<B1, B2> QuaternarySinkOperator<B1, B2, B1, B2> for JoinBalancer<B1, B2> {
