@@ -62,6 +62,14 @@ impl RawVec {
         this
     }
 
+    /// Creates a `RawVec` directly from a pointer, a length, and a capacity.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` must be a valid pointer to `capacity` allocated bytes of which `length` are valid
+    /// - `val_size` must be the size of the elements in the vector
+    /// - `align` must be the alignment of the elements in the vector
+    /// - `length` must be less than or equal to `capacity`
     pub unsafe fn from_raw_parts(
         ptr: *mut u8,
         length: usize,
@@ -177,11 +185,17 @@ impl RawVec {
         }
     }
 
+    /// # Safety
+    ///
+    /// - `idx` must be less than the length of the vector
     pub unsafe fn index_unchecked(&self, idx: usize) -> *const u8 {
         debug_assert!(idx < self.len());
         self.as_ptr().add(idx * self.val_size)
     }
 
+    /// # Safety
+    ///
+    /// - `idx` must be less than the length of the vector
     pub unsafe fn index_mut_unchecked(&mut self, idx: usize) -> *mut u8 {
         debug_assert!(idx < self.len());
         self.as_mut_ptr().add(idx * self.val_size)
@@ -226,6 +240,10 @@ impl RawVec {
         self.length += 1;
     }
 
+    /// # Safety
+    ///
+    /// - `value` must be a valid pointer to an instance of the current vector's type
+    /// - the vector must have available capacity greater than zero
     pub unsafe fn push_unchecked(&mut self, value: *const u8) {
         debug_assert_ne!(self.capacity(), 0, "cannot push to a vec of length zero");
         debug_assert!(
@@ -246,11 +264,14 @@ impl RawVec {
         self.length += 1;
     }
 
+    /// # Safety
+    ///
+    /// - `start` must be a valid pointer to a slice of length `length` of the current vector's type
     pub unsafe fn append_raw_range(&mut self, start: *const u8, length: usize) {
-        // Reserve space for the new element
+        // Reserve space for the new elements
         self.reserve(length);
 
-        // Copy the element into the vector
+        // Copy the elements into the vector
         // Safety: The caller guarantees that the given pointer is valid
         unsafe {
             ptr::copy_nonoverlapping(
@@ -295,6 +316,7 @@ impl RawVec {
         self.len().cmp(&other.len())
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn hash(&self, hash_func: &mut dyn FnMut(*const u8)) {
         for i in 0..self.len() {
             hash_func(self.index(i));
