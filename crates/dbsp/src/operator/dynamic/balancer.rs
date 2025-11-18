@@ -1,77 +1,233 @@
 use std::{
     borrow::Cow,
+    cell::RefMut,
+    panic::Location,
     sync::{atomic::AtomicU64, Arc},
 };
 
 use crate::{
     circuit::{
+        circuit_builder::{RefStreamValue, StreamId},
         metadata::{BatchSizeStats, OperatorLocation, OperatorMeta, INPUT_BATCHES_LABEL},
         operator_traits::{Operator, TernarySinkOperator},
-        OwnershipPreference,
+        NodeId, OwnershipPreference,
     },
-    operator::communication::Exchange,
-    trace::{Batch, Spine},
-    Circuit, Runtime, Scope, Stream,
+    circuit_cache_key,
+    operator::{
+        communication::{Exchange, ExchangeReceiver},
+        dynamic::trace::TimedSpine,
+    },
+    trace::{
+        deserialize_indexed_wset, merge_batches, serialize_indexed_wset, Batch, BatchReader, Spine,
+        SpineSnapshot,
+    },
+    Circuit, Runtime, Scope, Stream, Timestamp,
 };
+
+circuit_cache_key!(BalancedTraceId<C: Circuit, B: Batch>(StreamId => (Stream<C, B>, Stream<C, TimedSpine<B, C>>)));
 
 enum Policy {
     Shard,
     Broadcast,
 }
 
-#[derive(Default, Clone)]
-struct WorkerStats {
-    size: usize,
-}
-
-struct Balancer {
-    stats: Vec<Vec<WorkerStats>>,
-}
+struct Balancer {}
 
 impl Balancer {
-    fn new(num_streams: usize, num_workers: usize) -> Self {
-        Self {
-            stats: vec![vec![WorkerStats::default(); num_workers]; num_streams],
-        }
+    fn register_integral(&self, stream: NodeId, accumulator: NodeId, integral: NodeId) {
+        todo!()
     }
 
-    fn update_worker_stats(
-        &mut self,
-        stream_index: usize,
-        worker_index: usize,
-        stats: WorkerStats,
-    ) {
-        self.stats[stream_index][worker_index] = stats;
-    }
-
-    fn get_policy(&self, stream_index: usize, current_policy: &Policy) -> Policy {
+    fn register_join(left: NodeId, right: NodeId, join: NodeId) {
         todo!()
     }
 }
 
+// pub fn new_exchange_operators<TI, TO, TE, IF, PL, CL, S, D>(
+//     location: OperatorLocation,
+//     init: IF,
+//     partition: PL,
+//     serialize: S,
+//     deserialize: D,
+//     combine: CL,
+// ) -> Option<(ExchangeSender<TI, TE, PL>, ExchangeReceiver<IF, TE, CL>)>
+// where
+//     TO: Clone,
+//     TE: Send + 'static + Clone,
+//     IF: Fn() -> TO + 'static,
+//     PL: FnMut(TI, &mut Vec<TE>) + 'static,
+//     S: Fn(TE) -> Vec<u8> + Send + Sync + 'static,
+//     D: Fn(Vec<u8>) -> TE + Send + Sync + 'static,
+//     CL: Fn(&mut TO, TE) + 'static,
+// {
+//     if Runtime::num_workers() == 1 {
+//         return None;
+//     }
+//     let runtime = Runtime::runtime().unwrap();
+//     let worker_index = Runtime::worker_index();
+
+//     let exchange_id = runtime.sequence_next();
+//     let start_wait_usecs = Arc::new(AtomicU64::new(0));
+//     let exchange = Exchange::with_runtime(
+//         &runtime,
+//         exchange_id,
+//         Box::new(move |(value, flush)| {
+//             let mut vec = serialize(value);
+//             vec.push(flush as u8);
+//             vec
+//         }),
+//         Box::new(move |mut vec| {
+//             let flush = match vec.pop().unwrap() {
+//                 0 => false,
+//                 1 => true,
+//                 _ => unreachable!(),
+//             };
+//             (deserialize(vec), flush)
+//         }),
+//     );
+//     let sender = ExchangeSender::new(
+//         worker_index,
+//         location,
+//         exchange.clone(),
+//         start_wait_usecs.clone(),
+//         partition,
+//     );
+//     let receiver = ExchangeReceiver::new(
+//         worker_index,
+//         location,
+//         exchange,
+//         init,
+//         start_wait_usecs,
+//         combine,
+//     );
+//     Some((sender, receiver))
+// }
+
 impl<C, B> Stream<C, B>
 where
     C: Circuit,
-    B: Batch,
+    B: Batch<Time = ()>,
 {
     #[track_caller]
     pub fn dyn_accumulate_trace_with_balancer(
         &self,
-        balancer: &Balancer,
-        stream_index: usize,
-    ) -> Stream<C, B> {
+        trace_factories: &<TimedSpine<B, C> as BatchReader>::Factories,
+        batch_factories: &B::Factories,
+    ) -> (Stream<C, B>, Stream<C, TimedSpine<B, C>>) {
+        if Runtime::num_workers() == 1 {
+            let trace = self.dyn_accumulate_trace(trace_factories, batch_factories);
+            return (self.clone(), trace);
+        }
 
-        // Exchange sender
+        let location = Location::caller();
 
-        // Extra stream for the accumulator
+        self.circuit()
+            .cache_get_or_insert_with(BalancedTraceId::new(self.stream_id()), || {
+                let circuit = self.circuit();
+                circuit.region("accumulate_trace_with_balancer", || {
+                    // Exchange + receiver
+                    let runtime = Runtime::runtime().unwrap();
+                    let exchange_id = runtime.sequence_next();
+                    let worker_index = Runtime::worker_index();
+                    let batch_factories_clone = batch_factories.clone();
+                    let start_wait_usecs = Arc::new(AtomicU64::new(0));
 
-        // Accumulator: with metadata exchange
+                    let exchange = Exchange::with_runtime(
+                        &runtime,
+                        exchange_id,
+                        Box::new(move |(batch, flush)| {
+                            let mut vec = serialize_indexed_wset(&batch);
+                            vec.push(flush as u8);
+                            vec
+                        }),
+                        Box::new(move |mut vec| {
+                            let flush = match vec.pop().unwrap() {
+                                0 => false,
+                                1 => true,
+                                _ => unreachable!(),
+                            };
+                            (deserialize_indexed_wset(&batch_factories_clone, vec), flush)
+                        }),
+                    );
 
-        // Connect the stream (and register it with the circuit)
+                    let sharded_stream = circuit
+                        .add_source(ExchangeReceiver::new(
+                            worker_index,
+                            Some(location),
+                            exchange,
+                            || Vec::new(),
+                            start_wait_usecs,
+                            |batches: &mut Vec<B>, batch: B| batches.push(batch),
+                        ))
+                        .apply_owned_named("merge shards", move |batches| {
+                            merge_batches(batch_factories, batches, &None, &None)
+                        });
 
-        // Integral with metadata exchange
+                    let accumulator_snapshot_stream_val = RefStreamValue::empty();
 
-        // Connect the accumulator and integral to ExchangeSender.
+                    // let accumulator = Accumulator::<C, B>::new(
+                    //     batch_factories,
+                    //     Location::caller(),
+                    //     accumulator_snapshot_stream_val.clone(),
+                    // );
+                    // accumulator.enable_count.fetch_add(1, Ordering::AcqRel);
+
+                    // let accumulated_stream = self
+                    //     .circuit()
+                    //     .add_unary_operator(accumulator, &sharded_stream);
+
+                    // // Extra stream for the accumulator
+                    // let accumulator_snapshot_stream = Stream::with_value(
+                    //     circuit.clone(),
+                    //     accumulated_stream.local_node_id(),
+                    //     accumulator_snapshot_stream_val.clone(),
+                    // );
+                    // accumulated_stream
+                    //     .operator_mut()
+                    //     .set_snapshot_stream(accumulator_snapshot_stream);
+
+                    let accumulated_stream = sharded_stream.dyn_accumulate_trace_with_bound(
+                        trace_factories,
+                        batch_factories,
+                        TraceBound::new(),
+                        TraceBound::new(),
+                    );
+
+                    // Connect the stream (and register it with the circuit)
+                    let (accumulator_stream, accumulator_snapshot_stream_val) =
+                        sharded_stream.dyn_accumulate_with_feedback_stream(batch_factories);
+
+                    let accumulator_feedback_stream = Stream::with_value(
+                        circuit.clone(),
+                        accumulator_stream.local_node_id(),
+                        accumulator_snapshot_stream_val.clone(),
+                    );
+
+                    // Integral with metadata exchange
+
+                    // Connect the accumulator and integral to ExchangeSender.
+
+                    // Add ExchangeSender -> ExchangeReceiver dependency.
+                    self.add_dependency(todo!(), todo!());
+
+                    // Register accumulator and integral with the balancer, so it knows their IDs.
+
+                    // Register delayed trace in cache (alternatively, return the stream itself).
+                    (sharded_stream, accumulated_stream)
+                })
+            })
+            .clone()
+    }
+}
+
+impl<C, B> Stream<C, Spine<B>>
+where
+    C: Circuit,
+    B: Batch,
+{
+    /// Returns the trace of `self` delayed by one clock cycle.
+    pub fn accumulate_delay_trace_with_balancer(&self) -> Stream<C, SpineSnapshot<B>> {
+        todo!()
     }
 }
 
@@ -188,12 +344,13 @@ where
 
         // Reevaluate the policy.
 
-        // If we haven't flushed yet, update metadata, reevaluate policy.
+        // If we (and all other workers) haven't flushed yet, update metadata, reevaluate policy.
         // Policy change?
         // - Clean old rebalancing state
         // - Set new rebalancing state
 
         // Input has been flushed, but there's rebalancing state remaining -- make progress rebalancing.
+        //
     }
 
     fn input_preference(

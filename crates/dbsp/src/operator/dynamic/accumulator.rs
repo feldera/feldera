@@ -12,7 +12,7 @@ use typedmap::TypedMapKey;
 
 use crate::{
     circuit::{
-        circuit_builder::StreamId,
+        circuit_builder::{RefStreamValue, StreamId},
         metadata::{
             BatchSizeStats, MetaItem, OperatorLocation, OperatorMeta, ALLOCATED_BYTES_LABEL,
             INPUT_BATCHES_LABEL, NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, SHARED_BYTES_LABEL,
@@ -26,7 +26,7 @@ use crate::{
     Circuit, Error, NumEntries, Runtime, Scope, Stream,
 };
 
-circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>)));
+circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>, RefStreamValue<SpineSnapshot<B>>)));
 
 /// `TypedMapKey` entry used to share `enable_count` across instances of the same accumulator in multiple workers.
 #[derive(Hash, PartialEq, Eq)]
@@ -51,27 +51,46 @@ where
 {
     /// See [`Stream::accumulate`].
     pub fn dyn_accumulate(&self, factories: &B::Factories) -> Stream<C, Option<Spine<B>>> {
-        let (stream, enable_count) = self.dyn_accumulate_with_enable_count(factories);
+        let (stream, enable_count, _) = self.dyn_accumulate_with_enable_count(factories);
         enable_count.fetch_add(1, Ordering::AcqRel);
 
         stream
+    }
+
+    pub fn dyn_accumulate_with_feedback_stream(
+        &self,
+        factories: &B::Factories,
+    ) -> (
+        Stream<C, Option<Spine<B>>>,
+        RefStreamValue<SpineSnapshot<B>>,
+    ) {
+        let (stream, enable_count, accumulator_snapshot_stream_val) =
+            self.dyn_accumulate_with_enable_count(factories);
+        enable_count.fetch_add(1, Ordering::AcqRel);
+
+        (stream, accumulator_snapshot_stream_val)
     }
 
     /// See [`Stream::accumulate_with_enable_count`].
     pub fn dyn_accumulate_with_enable_count(
         &self,
         factories: &B::Factories,
-    ) -> (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>) {
+    ) -> (
+        Stream<C, Option<Spine<B>>>,
+        Arc<AtomicUsize>,
+        RefStreamValue<SpineSnapshot<B>>,
+    ) {
         self.circuit()
             .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {
                 let accumulator = Accumulator::<C, B>::new(factories, Location::caller());
                 let enable_count = accumulator.enable_count.clone();
+                let accumulator_snapshot_stream_val = RefStreamValue::empty();
 
                 let stream = self
                     .circuit()
                     .add_unary_operator(accumulator, &self.try_sharded_version());
                 stream.mark_sharded_if(self);
-                (stream, enable_count)
+                (stream, enable_count, accumulator_snapshot_stream_val)
             })
             .clone()
     }
