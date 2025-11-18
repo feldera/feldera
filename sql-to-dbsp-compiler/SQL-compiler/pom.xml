@@ -327,6 +327,7 @@
             <artifactId>hsqldb</artifactId>
             <version>2.7.2</version>
             <classifier>jdk8</classifier>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>
