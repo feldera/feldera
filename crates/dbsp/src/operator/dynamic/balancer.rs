@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     circuit::{
-        circuit_builder::{RefStreamValue, StreamId},
+        circuit_builder::{register_replay_stream, RefStreamValue, StreamId},
         metadata::{BatchSizeStats, OperatorLocation, OperatorMeta, INPUT_BATCHES_LABEL},
         operator_traits::{Operator, TernarySinkOperator},
         NodeId, OwnershipPreference,
@@ -15,7 +15,13 @@ use crate::{
     circuit_cache_key,
     operator::{
         communication::{Exchange, ExchangeReceiver},
-        dynamic::trace::TimedSpine,
+        dynamic::{
+            accumulate_trace::{
+                AccumulateBoundsId, AccumulateTraceAppend, AccumulateTraceId, AccumulateZ1Trace,
+            },
+            trace::{DelayedTraceId, TimedSpine, TraceBounds},
+        },
+        Z1,
     },
     trace::{
         deserialize_indexed_wset, merge_batches, serialize_indexed_wset, Batch, BatchReader, Spine,
@@ -132,6 +138,8 @@ where
                     let batch_factories_clone = batch_factories.clone();
                     let start_wait_usecs = Arc::new(AtomicU64::new(0));
 
+                    let persistent_id = self.get_persistent_id();
+
                     let exchange = Exchange::with_runtime(
                         &runtime,
                         exchange_id,
@@ -146,7 +154,10 @@ where
                                 1 => true,
                                 _ => unreachable!(),
                             };
-                            (deserialize_indexed_wset(&batch_factories_clone, vec), flush)
+                            (
+                                deserialize_indexed_wset(&batch_factories_clone, &vec),
+                                flush,
+                            )
                         }),
                     );
 
@@ -163,7 +174,60 @@ where
                             merge_batches(batch_factories, batches, &None, &None)
                         });
 
-                    let accumulator_snapshot_stream_val = RefStreamValue::empty();
+                    let bounds = TraceBounds::new();
+
+                    let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
+                        persistent_id
+                            .map(|name| format!("{name}.balanced.integral"))
+                            .as_deref(),
+                        AccumulateZ1Trace::new(
+                            trace_factories,
+                            batch_factories,
+                            false,
+                            circuit.root_scope(),
+                            bounds.clone(),
+                        ),
+                    );
+                    delayed_trace.mark_sharded();
+
+                    let replay_stream = z1feedback
+                        .operator_mut()
+                        .prepare_replay_stream(&sharded_stream);
+
+                    let trace = circuit.add_binary_operator_with_preference(
+                        <AccumulateTraceAppend<TimedSpine<B, C>, B, C>>::new(
+                            &trace_factories,
+                            circuit.clone(),
+                        ),
+                        (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                        (
+                            &sharded_stream.dyn_accumulate(&batch_factories),
+                            OwnershipPreference::PREFER_OWNED,
+                        ),
+                    );
+
+                    z1feedback.connect_with_preference(
+                        &trace,
+                        OwnershipPreference::STRONGLY_PREFER_OWNED,
+                    );
+
+                    register_replay_stream(circuit, &sharded_stream, &replay_stream);
+
+                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
+                    circuit.cache_insert(AccumulateTraceId::new(sharded_stream.stream_id()), trace);
+                    circuit.cache_insert(
+                        AccumulateBoundsId::<B>::new(sharded_stream.stream_id()),
+                        bounds,
+                    );
+
+                    let (delayed_acc, acc_feedback) = circuit.add_feedback_persistent(
+                        persistent_id
+                            .map(|name| format!("{name}.balanced.acc_snapshot"))
+                            .as_deref(),
+                        Z1::new(SpineSnapshot::<B>::new(batch_factories.clone())),
+                    );
+
+                    // let accumulator_snapshot_stream_val = RefStreamValue::empty();
 
                     // let accumulator = Accumulator::<C, B>::new(
                     //     batch_factories,
@@ -186,13 +250,6 @@ where
                     //     .operator_mut()
                     //     .set_snapshot_stream(accumulator_snapshot_stream);
 
-                    let accumulated_stream = sharded_stream.dyn_accumulate_trace_with_bound(
-                        trace_factories,
-                        batch_factories,
-                        TraceBound::new(),
-                        TraceBound::new(),
-                    );
-
                     // Connect the stream (and register it with the circuit)
                     let (accumulator_stream, accumulator_snapshot_stream_val) =
                         sharded_stream.dyn_accumulate_with_feedback_stream(batch_factories);
@@ -203,9 +260,22 @@ where
                         accumulator_snapshot_stream_val.clone(),
                     );
 
+                    acc_feedback.connect(&accumulator_feedback_stream);
+
                     // Integral with metadata exchange
 
                     // Connect the accumulator and integral to ExchangeSender.
+                    circuit.add_ternary_sink(
+                        RebalancingExchangeSender::new(
+                            worker_index,
+                            Some(location),
+                            exchange,
+                            start_wait_usecs,
+                        ),
+                        self,
+                        &delayed_acc,
+                        &delayed_trace,
+                    );
 
                     // Add ExchangeSender -> ExchangeReceiver dependency.
                     self.add_dependency(todo!(), todo!());
