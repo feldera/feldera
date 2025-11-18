@@ -4,7 +4,6 @@ set -ex
 FDA_BINARY=${FDA_BINARY:-../../target/debug/fda}
 
 fda() {
-    echo ${SENTRY_DSN}
     ${FDA_BINARY} "$@"
 }
 
