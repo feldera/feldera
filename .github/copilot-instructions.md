@@ -8,7 +8,7 @@
 - **Primary Languages**: Rust (core engine), Java (SQL compiler), TypeScript/Svelte (web console), Python (SDK)
 - **Size**: Large multi-language repository with 14 Rust crates, Java compiler, web console, Python SDK
 - **License**: MIT OR Apache-2.0
-- **MSRV**: Rust 1.87.0
+- **MSRV**: Rust 1.91.1
 
 ### Key Components
 - **DBSP Engine**: Core incremental computation engine (Rust)
@@ -28,9 +28,9 @@ Always install ALL dependencies before building:
 sudo apt-get update
 sudo apt-get install -y cmake libssl-dev libsasl2-dev
 
-# Rust toolchain (required version 1.87.0)
+# Rust toolchain (required version 1.91.1)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustup default 1.87.0
+rustup default 1.91.1
 
 # Java (JDK 19 or newer required)
 # Install OpenJDK 21 or newer

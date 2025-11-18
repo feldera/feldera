@@ -106,7 +106,7 @@ impl RawVec {
     /// - `new_len` must be less than or equal to [`self.capacity()`].
     /// - The elements at `old_len..new_len` must be initialized.
     ///
-    /// [`self.capacity()`]: RawVec ::capacity
+    /// [`self.capacity()`]: RawVec::capacity
     pub unsafe fn set_len(&mut self, new_len: usize) {
         debug_assert!(new_len <= self.capacity());
         self.length = new_len;
@@ -1174,6 +1174,8 @@ impl<T> LeanVec<T> {
     ///
     /// - `new_len` must be less than or equal to `self.capacity()`.
     /// - The elements at `old_len..new_len` must be initialized.
+    ///
+    /// [`self.capacity()`]: RawVec::capacity
     pub unsafe fn set_len(&mut self, new_len: usize) {
         self.vec.set_len(new_len)
     }
