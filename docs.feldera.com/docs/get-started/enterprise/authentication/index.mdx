@@ -22,7 +22,7 @@ For API key authentication, the key is associated with the tenant through which 
 We support multiple authorization use-cases through strategies to assign tenant to Feldera API and clients' users.
 
 As an orthogonal feature, the authorized-groups startup parameter can be used to limit access to the users who are a member of at least one of the groups in this list. The membership is determined based on the `groups` claim of an OIDC Access token.
-Users must belong to at least one of the specified groups to access Feldera. If `--authorized-groups` is not specified or empty, no group restrictions apply.
+Users must belong to at least one of the specified groups to access Feldera. If `authorizedGroups` is not specified or empty, no group restrictions apply.
 
 ## Tenant Assignment Strategies
 
@@ -30,12 +30,11 @@ Feldera provides three different tenant assignment strategies to support differe
 
 ### Individual Tenancy (Enabled by default)
 
-Each authenticated user gets their own private tenant based on the `sub` claim of the OIDC Access token. Does not require authentication provider configuration. Configured with --individual-tenant startup flag.
+Each authenticated user gets their own private tenant based on the `sub` claim of the OIDC Access token. Does not require authentication provider configuration. Configured with `authorization.individualTenant` Helm value.
 
 ### Organization-wide Tenancy
 
-Users from the same organization share a tenant, derived from the issuer hostname of the authentication token. Does not require authentication provider configuration. Configured with --issuer-tenant startup flag.
-
+Users from the same organization share a tenant, derived from the issuer hostname of the authentication token. Does not require authentication provider configuration. Configured with `authorization.issuerTenant` Helm value.
 ### Managed Tenancy
 
 Multiple teams can use the same Feldera instance with complete tenant isolation. Each team's users should be assigned to corresponding tenant(s) with the proper configuration of the dynamic `tenants` claim in the OIDC Access token.
@@ -58,12 +57,6 @@ auth:
   enabled: false
 ```
 
-Direct pipeline-manager configuration:
-
-```bash
-pipeline-manager ... --auth-provider=none
-```
-
 ### Individual access
 
 Every user gets their individual tenant based on their `sub` claim.
@@ -80,12 +73,6 @@ authorization:
   individualTenant: true
   issuerTenant: false
   authAudience: "feldera-api"
-```
-
-Direct pipeline-manager configuration:
-
-```bash
-pipeline-manager ... --auth-provider=generic-oidc --individual-tenant=true
 ```
 
 ### Organization-wide shared access
@@ -109,12 +96,6 @@ authorization:
   authAudience: "feldera-api"
 ```
 
-Direct pipeline-manager configuration:
-
-```bash
-pipeline-manager ... --auth-provider=generic-oidc --issuer-tenant=true --individual-tenant=false
-```
-
 ### Group-based whitelist with organization-wide shared access
 
 Users must belong to at least one of the specified groups to access Feldera. All authorized users share the organization tenant.
@@ -136,12 +117,6 @@ authorization:
   authAudience: "feldera-api"
 ```
 
-Direct pipeline-manager configuration:
-
-```bash
-pipeline-manager ... --auth-provider=generic-oidc --authorized-groups=feldera_engineering,feldera_qa --issuer-tenant=true --individual-tenant=false
-```
-
 ### Shared access within a user group (managed tenancy)
 
 Tenant assignment via `tenants` claim in JWT configured in your OIDC provider.
@@ -158,12 +133,6 @@ authorization:
   individualTenant: false
   issuerTenant: false
   authAudience: "feldera-api"
-```
-
-Direct pipeline-manager configuration:
-
-```bash
-pipeline-manager ... --auth-provider=generic-oidc --individual-tenant=false
 ```
 
 ### Individual access to whitelisted user groups
@@ -187,12 +156,6 @@ authorization:
   authAudience: "feldera-api"
 ```
 
-Direct pipeline-manager configuration:
-
-```bash
-pipeline-manager ... --auth-provider=generic-oidc --individual-tenant=true --authorized-groups=feldera_engineering,feldera_qa
-```
-
 ## Configuration options
 
 ### Mapping Pipeline Manager Options to Helm Chart Values
@@ -207,7 +170,7 @@ Below is a comprehensive template showing all available authentication and autho
 # Authentication provider configuration
 auth:
   enabled: true                        # Enable/disable authentication
-  provider: "generic-oidc"             # Options: "none", "aws-cognito", "generic-oidc"
+  provider: "generic-oidc"             # Maps to: AUTH_PROVIDER; Options: "none", "aws-cognito", "generic-oidc"
   clientId: "your-client-id"           # Maps to: FELDERA_AUTH_CLIENT_ID
   issuer: "https://your-domain/oauth2/default"  # Maps to: FELDERA_AUTH_ISSUER
 
@@ -218,28 +181,19 @@ auth:
 # Authorization and tenant assignment configuration
 authorization:
   # Individual tenant mode - each user gets their own tenant (default: true)
-  # Maps to: --individual-tenant
-  individualTenant: true
+  individualTenant: true                # Maps to: FELDERA_AUTH_INDIVIDUAL_TENANT
 
   # Issuer-based tenant - derive tenant from auth issuer domain (default: false)
-  # Maps to: --issuer-tenant
-  issuerTenant: false
+  issuerTenant: false                   # Maps to: FELDERA_AUTH_ISSUER_TENANT
 
   # Group-based access control - restrict access to specific groups
-  # Maps to: --authorized-groups
   # Users must have at least one of these groups in their 'groups' claim
-  authorizedGroups:
+  authorizedGroups:                     # Maps to: FELDERA_AUTH_AUTHORIZED_GROUPS
     - "feldera-users"
     - "data-engineers"
 
   # OIDC audience claim validation (default: "feldera-api")
-  # Maps to: --auth-audience
-  authAudience: "feldera-api"
-
-# Advanced: Pass additional pipeline-manager arguments directly
-pipelineManager:
-  extraArgs:
-    - "--some-additional-flag=value"
+  authAudience: "feldera-api"           # Maps to: FELDERA_AUTH_AUDIENCE
 ```
 
 ### Environment Variables Reference
@@ -273,10 +227,10 @@ AWS_COGNITO_LOGOUT_URL=https://...
 Feldera resolves tenant assignment using the following priority order:
 
 1. **`tenants` claim** - Explicit tenant assignment via OIDC provider
-2. **Issuer domain `iss` claim** (when `--issuer-tenant=true`)
-3. **User `sub` claim** (when `--individual-tenant=true`)
+2. **Issuer domain `iss` claim** (when `issuerTenant: true`)
+3. **User `sub` claim** (when `individualTenant: true`)
 
-If no valid tenant is found and `--individual-tenant=false` the user will be denied authorization.
+If no valid tenant is found and `individualTenant: false` the user will be denied authorization.
 
 ## Provider-Specific Setup
 

@@ -695,7 +695,7 @@ pub struct ApiServerConfig {
     /// For example, "<https://acme-corp.okta.com/oauth2/default>" becomes "acme-corp".
     /// Useful for simple multi-user access without requiring custom tenant claims.
     #[serde(default)]
-    #[arg(long, env = "FELDERA_AUTH_ISSUER_TENANT")]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = false, env = "FELDERA_AUTH_ISSUER_TENANT")]
     pub issuer_tenant: bool,
 
     /// Allow individual user tenants based on the 'sub' claim.
