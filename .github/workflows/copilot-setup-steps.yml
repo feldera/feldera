@@ -14,7 +14,7 @@ jobs:
   copilot-setup-steps:
     # This doesn't work as usual with new github things
     #container:
-    #  image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
+    #  image: ghcr.io/feldera/feldera-dev:sha-a20fef16d212c8c3314c25c0fb16d8c680f95124
     runs-on: ubuntu-latest-amd64
     permissions:
       contents: read
@@ -25,7 +25,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.87.0
+          toolchain: 1.91.1
       - name: Install uv
         uses: astral-sh/setup-uv@v2
         with:
