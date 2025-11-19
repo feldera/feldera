@@ -17,6 +17,13 @@ from test_row_of_udt import *  # noqa: F403
 from test_udt_of_arr import *  # noqa: F403
 from test_udt_of_udt import *  # noqa: F403
 from test_udt_of_row import *  # noqa: F403
+from test_arr_arr_unnest import *  # noqa: F403
+from test_arr_map_unnest import *  # noqa: F403
+from test_arr_row_unnest import *  # noqa: F403
+from test_arr_udt_unnest import *  # noqa: F403
+from test_arr_unnest import *  # noqa: F403
+from test_row_arr_unnest import *  # noqa: F403
+from test_udt_arr_unnest import *  # noqa: F403
 
 
 def main():

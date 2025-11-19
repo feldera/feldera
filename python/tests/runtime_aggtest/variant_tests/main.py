@@ -7,6 +7,8 @@ from cpmx_variant import *  # noqa: F403
 from arr_of_cmpx_type import *  # noqa: F403
 from row_of_cmpx_type import *  # noqa: F403
 from udt_of_cmpx_type import *  # noqa: F403
+from arr_cmpx_varnt_unnest import *  # noqa: F403
+from arr_unnest_varnt import *  # noqa: F403
 
 
 def main():
