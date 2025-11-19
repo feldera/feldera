@@ -1168,11 +1168,7 @@ impl SupportDataCollector {
         tenant_id: TenantId,
         pipeline: &crate::db::types::pipeline::ExtendedPipelineDescrMonitoring,
     ) -> Result<SupportBundleData, Box<dyn std::error::Error + Send + Sync>> {
-        // Use background collection parameters (excludes expensive items like dataflow graphs)
-        let params = SupportBundleParameters {
-            dataflow_graph: false,
-            ..SupportBundleParameters::default()
-        };
+        let params = SupportBundleParameters::default();
         SupportBundleData::collect(
             &self.state,
             &self.http_client,
@@ -1319,12 +1315,16 @@ mod tests {
             version: 4,
             time: chrono::Utc::now(),
             circuit_profile: Ok(vec![1, 2, 3]),
-            json_circuit_profile: Ok(vec![31, 139, 8, 0, 0, 0, 0, 0, 0, 255, 171, 174, 5, 0, 67, 191, 166, 163, 2, 0, 0, 0]),
+            json_circuit_profile: Ok(vec![
+                31, 139, 8, 0, 0, 0, 0, 0, 0, 255, 171, 174, 5, 0, 67, 191, 166, 163, 2, 0, 0, 0,
+            ]),
             heap_profile: Ok(vec![4, 5, 6]),
             metrics: Ok(vec![7, 8, 9]),
             logs: Ok("test logs".to_string()),
             stats: Ok(vec![10, 11, 12]),
-            pipeline_config: Ok(vec![31, 139, 8, 0, 0, 0, 0, 0, 0, 255, 171, 174, 5, 0, 67, 191, 166, 163, 2, 0, 0, 0]),
+            pipeline_config: Ok(vec![
+                31, 139, 8, 0, 0, 0, 0, 0, 0, 255, 171, 174, 5, 0, 67, 191, 166, 163, 2, 0, 0, 0,
+            ]),
             system_config: Ok(vec![16, 17, 18]),
             dataflow_graph: Ok(vec![19, 20, 21]),
         };
