@@ -50,7 +50,7 @@
         {/if}
       </div>
       <span
-        class="{textClass} whitespace-pre-wrap {showMore
+        class="{textClass} whitespace-pre-wrap break-all {showMore
           ? 'max-h-[30vh] overflow-auto'
           : 'line-clamp-1'}"
       >

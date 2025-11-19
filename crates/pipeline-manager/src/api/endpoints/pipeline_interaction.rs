@@ -744,7 +744,7 @@ pub(crate) async fn get_pipeline_circuit_profile(
     responses(
         (status = OK
             , description = "Circuit performance profile in JSON format"
-            , content_type = "application/zip"
+            , content_type = "application/json"
             , body = Object),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
@@ -772,6 +772,9 @@ pub(crate) async fn get_pipeline_circuit_json_profile(
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
+
+    // Get the JSON profile from the pipeline and return it directly
+    // The Compress middleware will automatically compress the response based on Accept-Encoding
     state
         .runner
         .forward_http_request_to_pipeline_by_name(
@@ -784,6 +787,87 @@ pub(crate) async fn get_pipeline_circuit_json_profile(
             Some(Duration::from_secs(120)),
         )
         .await
+}
+
+/// Shared helper function to extract dataflow graph from a pipeline's program_info.
+///
+/// This function encapsulates the common logic for retrieving and validating
+/// the dataflow graph from a pipeline's compiled program information.
+pub(crate) async fn extract_pipeline_dataflow_graph(
+    state: &ServerState,
+    tenant_id: TenantId,
+    pipeline_name: &str,
+) -> Result<feldera_ir::Dataflow, ManagerError> {
+    // Get pipeline from database
+    let pipeline = state
+        .db
+        .lock()
+        .await
+        .get_pipeline(tenant_id, pipeline_name)
+        .await?;
+
+    // Extract dataflow from program_info
+    if let Some(program_info_value) = &pipeline.program_info {
+        // Parse program_info JSON to extract dataflow field
+        match serde_json::from_value::<crate::db::types::program::ProgramInfo>(
+            program_info_value.clone(),
+        ) {
+            Ok(program_info) => {
+                if let Some(dataflow) = program_info.dataflow {
+                    Ok(dataflow)
+                } else {
+                    Err(ApiError::ProgramInfoMissesDataflow {
+                        pipeline_name: pipeline_name.to_string(),
+                    }
+                    .into())
+                }
+            }
+            Err(e) => Err(ApiError::InvalidProgramInfo {
+                error: e.to_string(),
+            }
+            .into()),
+        }
+    } else {
+        Err(ApiError::ProgramNotCompiled {
+            pipeline_name: pipeline_name.to_string(),
+        }
+        .into())
+    }
+}
+
+/// Get Dataflow Graph
+///
+/// Retrieve the dataflow graph of a pipeline.
+/// The dataflow graph is generated during SQL compilation and shows the structure
+/// of the compiled SQL program including the Calcite plan and MIR nodes.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Dataflow graph retrieved successfully"
+            , content_type = "application/json"
+            , body = Object),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist or dataflow graph is not available"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Metrics & Debugging"
+)]
+#[get("/pipelines/{pipeline_name}/dataflow_graph")]
+pub(crate) async fn get_pipeline_dataflow_graph(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    let dataflow = extract_pipeline_dataflow_graph(&state, *tenant_id, &pipeline_name).await?;
+    Ok(HttpResponse::Ok().json(dataflow))
 }
 
 /// Sync Checkpoints To S3

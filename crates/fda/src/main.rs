@@ -1528,6 +1528,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             no_stats,
             no_pipeline_config,
             no_system_config,
+            no_dataflow_graph,
         } => {
             let mut request = client.get_pipeline_support_bundle().pipeline_name(&name);
 
@@ -1552,6 +1553,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             }
             if no_system_config {
                 request = request.system_config(false);
+            }
+            if no_dataflow_graph {
+                request = request.dataflow_graph(false);
             }
 
             let response = request

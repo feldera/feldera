@@ -171,10 +171,22 @@ pub(crate) async fn get_pipeline_support_bundle(
             state.config.support_data_retention,
         )
         .await?;
-    bundles.insert(
-        0,
-        SupportBundleData::collect(&state, &client, *tenant_id, &pipeline_name).await?,
-    );
+
+    // Only collect all requested data from the running pipeline if collect=true
+    if support_bundle_params.collect {
+        bundles.insert(
+            0,
+            SupportBundleData::collect(
+                &state,
+                &client,
+                *tenant_id,
+                &pipeline_name,
+                &support_bundle_params,
+            )
+            .await?,
+        );
+    };
+
     let bundle = SupportBundleZip::create(&pipeline, bundles, &support_bundle_params).await?;
 
     Ok(HttpResponse::Ok()
@@ -186,5 +198,6 @@ pub(crate) async fn get_pipeline_support_bundle(
                 pipeline_name
             ),
         ))
+        .insert_header(actix_http::ContentEncoding::Identity)
         .body(bundle.buffer))
 }

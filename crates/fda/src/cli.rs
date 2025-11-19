@@ -536,6 +536,9 @@ pub enum PipelineAction {
         /// Skip system configuration collection.
         #[arg(long)]
         no_system_config: bool,
+        /// Skip dataflow graph collection.
+        #[arg(long)]
+        no_dataflow_graph: bool,
     },
     /// Enter the ad-hoc SQL shell for a pipeline.
     Shell {
