@@ -507,7 +507,7 @@ async fn upload_binary_to_endpoint_with_retries(
         .await
         {
             Ok(result) => {
-                if attempts > 1 {
+                if attempts >= 1 {
                     info!(
                         "Binary upload succeeded on attempt {} for pipeline {} (program version: {})",
                         attempts, metadata.pipeline_id, metadata.program_version

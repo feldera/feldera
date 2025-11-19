@@ -842,8 +842,8 @@ pub struct CompilerConfig {
     pub binary_upload_timeout_secs: u64,
 
     /// Maximum number of retry attempts for binary upload requests.
-    /// Default is 3 retries.
-    #[arg(long, default_value_t = 3)]
+    /// Default is 10 retries.
+    #[arg(long, default_value_t = 10)]
     pub binary_upload_max_retries: u32,
 
     /// Initial delay in milliseconds between retry attempts for binary upload requests.
