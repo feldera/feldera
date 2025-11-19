@@ -240,8 +240,9 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                  // all aggregates require an upsert, which is stateful, even the ones that are linear
                  "aggregate", "partitioned_rolling_aggregate",
                  "stream_aggregate", "chain_aggregate", "linear_aggregate",
-                 // some joins require integrators
+                 // joins require integrators
                  "join", "join_flatmap", "asof_join", "join_index", "antijoin",
+                 "left_join", "left_join_index", "left_join_flatmap",
                  "stream_join", "stream_join_index", "stream_antijoin",
                  // delays contain state, but not that much
                  "accumulate_delay_trace", // "transaction_delay", "differentiate",
