@@ -6,7 +6,8 @@
 	],
 	"service": "workspace",
 	"runServices": [
-		"redpanda"
+		"postgres-dev",
+		"db-admin"
 	],
 	"workspaceFolder": "/workspaces/feldera",
 	"shutdownAction": "stopCompose",

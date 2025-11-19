@@ -1556,6 +1556,7 @@ async fn heap_profile() -> impl Responder {
         match prof_ctl.dump_pprof() {
             Ok(profile) => Ok(HttpResponse::Ok()
                 .content_type("application/protobuf")
+                .insert_header(header::ContentEncoding::Identity)
                 .body(profile)),
             Err(e) => Err(PipelineError::HeapProfilerError {
                 error: e.to_string(),
@@ -1575,21 +1576,16 @@ async fn dump_profile(state: WebData<ServerState>) -> Result<HttpResponse, Pipel
     Ok(HttpResponse::Ok()
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("profile.zip"))
+        .insert_header(header::ContentEncoding::Identity)
         .body(state.controller()?.async_graph_profile().await?.as_zip()))
 }
 
 #[get("/dump_json_profile")]
 async fn dump_json_profile(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponse::Ok()
-        .insert_header(header::ContentType("application/zip".parse().unwrap()))
-        .insert_header(header::ContentDisposition::attachment("profile.zip"))
-        .body(
-            state
-                .controller()?
-                .async_json_profile()
-                .await?
-                .as_json_zip(),
-        ))
+        .insert_header(header::ContentType("application/json".parse().unwrap()))
+        .insert_header(header::ContentDisposition::attachment("profile.json"))
+        .body(state.controller()?.async_json_profile().await?.as_json()))
 }
 
 /// Dump the low-level IR of the circuit.

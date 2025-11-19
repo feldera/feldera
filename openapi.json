@@ -2353,6 +2353,127 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/circuit_json_profile": {
+      "get": {
+        "tags": [
+          "Metrics & Debugging"
+        ],
+        "summary": "Performance Profile JSON",
+        "description": "Retrieve the circuit performance profile in JSON format of a running or paused pipeline.",
+        "operationId": "get_pipeline_circuit_json_profile",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Circuit performance profile in JSON format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "status": "Stopped",
+                        "desired_status": "Provisioned"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/circuit_profile": {
       "get": {
         "tags": [
@@ -2809,6 +2930,71 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/dataflow_graph": {
+      "get": {
+        "tags": [
+          "Metrics & Debugging"
+        ],
+        "summary": "Get Dataflow Graph",
+        "description": "Retrieve the dataflow graph of a pipeline.\nThe dataflow graph is generated during SQL compilation and shows the structure\nof the compiled SQL program including the Calcite plan and MIR nodes.",
+        "operationId": "get_pipeline_dataflow_graph",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dataflow graph retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist or dataflow graph is not available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -4324,6 +4510,15 @@
             }
           },
           {
+            "name": "collect",
+            "in": "query",
+            "description": "Whether to collect new data from the running pipeline (default: true)\nWhen false, only previously collected data will be included in the bundle",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "circuit_profile",
             "in": "query",
             "description": "Whether to collect circuit profile data (default: true)",
@@ -4381,6 +4576,15 @@
             "name": "system_config",
             "in": "query",
             "description": "Whether to collect system configuration data (default: true)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "dataflow_graph",
+            "in": "query",
+            "description": "Whether to collect dataflow graph data (default: true)",
             "required": false,
             "schema": {
               "type": "boolean"
