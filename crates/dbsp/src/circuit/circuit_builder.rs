@@ -1652,6 +1652,8 @@ pub trait CircuitBase: 'static {
         self.get_node_label(id, LABEL_PERSISTENT_OPERATOR_ID)
     }
 
+    fn check_fixedpoint(&self, scope: Scope) -> bool;
+
     fn metadata_exchange(&self) -> &Rc<MetadataExchange> {
         todo!()
     }
@@ -1920,7 +1922,8 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         input_stream1: &Stream<Self, I1>,
         input_stream2: &Stream<Self, I2>,
         input_stream3: &Stream<Self, I3>,
-    ) where
+    ) -> NodeId
+    where
         I1: Data,
         I2: Data,
         I3: Data,
@@ -1934,7 +1937,8 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         input_stream1: (&Stream<Self, I1>, OwnershipPreference),
         input_stream2: (&Stream<Self, I2>, OwnershipPreference),
         input_stream3: (&Stream<Self, I3>, OwnershipPreference),
-    ) where
+    ) -> NodeId
+    where
         I1: Data,
         I2: Data,
         I3: Data,
@@ -3606,7 +3610,8 @@ where
         input_stream1: &Stream<Self, I1>,
         input_stream2: &Stream<Self, I2>,
         input_stream3: &Stream<Self, I3>,
-    ) where
+    ) -> NodeId
+    where
         I1: Data,
         I2: Data,
         I3: Data,
@@ -3627,7 +3632,8 @@ where
         input_stream1: (&Stream<Self, I1>, OwnershipPreference),
         input_stream2: (&Stream<Self, I2>, OwnershipPreference),
         input_stream3: (&Stream<Self, I3>, OwnershipPreference),
-    ) where
+    ) -> NodeId
+    where
         I1: Data,
         I2: Data,
         I3: Data,
@@ -3655,8 +3661,8 @@ where
             self.connect_stream(input_stream1, id, input_preference1);
             self.connect_stream(input_stream2, id, input_preference2);
             self.connect_stream(input_stream3, id, input_preference3);
-            (node, ())
-        });
+            (node, id)
+        })
     }
 
     fn add_unary_operator<I, O, Op>(

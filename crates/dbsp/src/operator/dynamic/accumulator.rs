@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     panic::Location,
+    rc::Rc,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -12,7 +13,8 @@ use typedmap::TypedMapKey;
 
 use crate::{
     circuit::{
-        circuit_builder::{RefStreamValue, StreamId},
+        checkpointer::EmptyCheckpoint,
+        circuit_builder::{MetadataExchange, RefStreamValue, StreamId},
         metadata::{
             BatchSizeStats, MetaItem, OperatorLocation, OperatorMeta, ALLOCATED_BYTES_LABEL,
             INPUT_BATCHES_LABEL, NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, SHARED_BYTES_LABEL,
@@ -26,7 +28,7 @@ use crate::{
     Circuit, Error, NumEntries, Runtime, Scope, Stream,
 };
 
-circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>, RefStreamValue<SpineSnapshot<B>>)));
+circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>, RefStreamValue<EmptyCheckpoint<Vec<B>>>)));
 
 /// `TypedMapKey` entry used to share `enable_count` across instances of the same accumulator in multiple workers.
 #[derive(Hash, PartialEq, Eq)]
@@ -51,7 +53,7 @@ where
 {
     /// See [`Stream::accumulate`].
     pub fn dyn_accumulate(&self, factories: &B::Factories) -> Stream<C, Option<Spine<B>>> {
-        let (stream, enable_count, _) = self.dyn_accumulate_with_enable_count(factories);
+        let (stream, enable_count, _) = self.dyn_accumulate_with_enable_count(factories, false);
         enable_count.fetch_add(1, Ordering::AcqRel);
 
         stream
@@ -62,10 +64,10 @@ where
         factories: &B::Factories,
     ) -> (
         Stream<C, Option<Spine<B>>>,
-        RefStreamValue<SpineSnapshot<B>>,
+        RefStreamValue<EmptyCheckpoint<Vec<B>>>,
     ) {
         let (stream, enable_count, accumulator_snapshot_stream_val) =
-            self.dyn_accumulate_with_enable_count(factories);
+            self.dyn_accumulate_with_enable_count(factories, true);
         enable_count.fetch_add(1, Ordering::AcqRel);
 
         (stream, accumulator_snapshot_stream_val)
@@ -75,14 +77,23 @@ where
     pub fn dyn_accumulate_with_enable_count(
         &self,
         factories: &B::Factories,
+        report_metadata: bool,
     ) -> (
         Stream<C, Option<Spine<B>>>,
         Arc<AtomicUsize>,
-        RefStreamValue<SpineSnapshot<B>>,
+        RefStreamValue<EmptyCheckpoint<Vec<B>>>,
     ) {
         self.circuit()
             .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {
-                let accumulator = Accumulator::<C, B>::new(factories, Location::caller());
+                let accumulator = Accumulator::<C, B>::new(
+                    factories,
+                    Location::caller(),
+                    if report_metadata {
+                        Some(self.circuit().metadata_exchange().clone())
+                    } else {
+                        None
+                    },
+                );
                 let enable_count = accumulator.enable_count.clone();
                 let accumulator_snapshot_stream_val = RefStreamValue::empty();
 
@@ -136,6 +147,7 @@ where
     enabled_during_current_transaction: Option<bool>,
 
     feedback_stream: Option<Stream<C, SpineSnapshot<B>>>,
+    metadata_exchange: Option<Rc<MetadataExchange>>,
 }
 
 impl<C, B> Accumulator<C, B>
@@ -143,7 +155,11 @@ where
     B: Batch,
     C: Circuit,
 {
-    pub fn new(factories: &B::Factories, location: &'static Location<'static>) -> Self {
+    pub fn new(
+        factories: &B::Factories,
+        location: &'static Location<'static>,
+        metadata_exchange: Option<Rc<MetadataExchange>>,
+    ) -> Self {
         let enable_count = match Runtime::runtime() {
             None => Arc::new(AtomicUsize::new(0)),
             Some(runtime) => {
@@ -167,6 +183,7 @@ where
             enable_count,
             enabled_during_current_transaction: None,
             feedback_stream: None,
+            metadata_exchange,
         }
     }
 
@@ -265,7 +282,7 @@ where
             feedback_stream.value().put(self.state.ro_snapshot());
         }
 
-        if self.flush {
+        let result = if self.flush {
             self.flush = false;
             self.enabled_during_current_transaction = None;
 
@@ -276,7 +293,13 @@ where
             Some(spine)
         } else {
             None
+        };
+
+        if let Some(metadata_exchange) = &self.metadata_exchange {
+            todo!()
         }
+
+        result
     }
 
     async fn eval_owned(&mut self, batch: B) -> Option<Spine<B>> {

@@ -4,6 +4,7 @@ use crate::circuit::metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL};
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::{DynData, WeightTrait};
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
+use crate::operator::dynamic::balancer::Balancer;
 use crate::operator::dynamic::concat::dyn_accumulate_concat;
 use crate::trace::spine_async::WithSnapshot;
 use crate::trace::{Spine, SpineSnapshot, Trace};
@@ -675,6 +676,8 @@ where
         // as a join of one of the input streams with the trace of the other stream,
         // implemented by the `JoinTrace` operator.
         self.circuit().region("join", || {
+            let balancer = Balancer::get_balancer(self.circuit());
+
             let (left, left_trace) = self.dyn_accumulate_trace_with_balancer(
                 &factories.left_trace_factories,
                 &factories.left_factories,
@@ -720,9 +723,15 @@ where
                 &left_trace.accumulate_delay_trace_with_balancer(),
             );
 
-            todo!("register join with balancer");
+            let result = left.plus(&right);
 
-            left.plus(&right)
+            balancer.register_join(
+                left.local_node_id(),
+                right.local_node_id(),
+                result.local_node_id(),
+            );
+
+            result
         })
     }
 
@@ -1651,7 +1660,6 @@ where
             if !batch.is_empty() {
                 *self.empty_output.borrow_mut() = false;
             }
-
 
             todo!("update join stats with balancer");
 
