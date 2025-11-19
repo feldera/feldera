@@ -39,8 +39,8 @@ jobs:
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-ir
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-types
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-storage
-          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-rest-api
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-observability
+          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-rest-api
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package dbsp
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package fda
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-fxp
