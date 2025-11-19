@@ -2039,6 +2039,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         this.builder.append("(");
         expression.expression.accept(this);
+        if (expression.expression.getType().is(DBSPTypeTupleBase.class))
+            this.builder.append(".as_ref()");
         this.builder.append(".unwrap()");
         this.builder.append(")");
         this.pop(expression);
