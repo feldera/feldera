@@ -210,6 +210,7 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
             Value::Map(ref items) => visitor.visit_map(MapDeserializer::new(items, schema, self.refs)?),
             Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => visitor.visit_bytes(bytes),
             Value::Decimal(ref d) => visitor.visit_str(&deserialize_decimal(d, schema)?),
+            Value::Enum(_, ref s) => visitor.visit_borrowed_str(s),
             value => Err(de::Error::custom(format!(
                 "incorrect value of type: {:?}",
                 SchemaKind::from(value)
@@ -233,7 +234,7 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
         V: Visitor<'de>,
     {
         match unwrap_union(self.input, self.schema).0 {
-            Value::String(ref s) => visitor.visit_borrowed_str(s),
+            Value::String(ref s) | Value::Enum(_, ref s) => visitor.visit_borrowed_str(s),
             Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => ::std::str::from_utf8(bytes)
                 .map_err(|e| de::Error::custom(e.to_string()))
                 .and_then(|s| visitor.visit_borrowed_str(s)),
@@ -249,7 +250,7 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
         V: Visitor<'de>,
     {
         match unwrap_union(self.input, self.schema).0 {
-            Value::Enum(_, ref s) | Value::String(ref s) => visitor.visit_borrowed_str(s),
+            Value::String(ref s) | Value::Enum(_, ref s) => visitor.visit_borrowed_str(s),
             Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => {
                 String::from_utf8(bytes.to_owned())
                     .map_err(|e| de::Error::custom(e.to_string()))

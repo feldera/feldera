@@ -300,9 +300,12 @@ fn validate_uuid_schema(avro_schema: &AvroSchema) -> Result<(), String> {
 }
 
 fn validate_string_schema(avro_schema: &AvroSchema) -> Result<(), String> {
-    if !matches!(avro_schema, AvroSchema::String | AvroSchema::Uuid) {
+    if !matches!(
+        avro_schema,
+        AvroSchema::String | AvroSchema::Uuid | AvroSchema::Enum(_)
+    ) {
         return Err(format!(
-            "invalid Avro schema for a column of type 'STRING': expected 'string' or '{{\"type\": \"string\",\"logicalType\": \"uuid\"}}', but found {}",
+            "invalid Avro schema for a column of type 'STRING': expected 'string', 'enum', or '{{\"type\": \"string\",\"logicalType\": \"uuid\"}}', but found {}",
             schema_json(avro_schema)
         ));
     }

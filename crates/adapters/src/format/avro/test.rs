@@ -12,7 +12,9 @@ use crate::{
     },
     Encoder, FormatConfig, ParseError, SerBatch,
 };
-use apache_avro::{from_avro_datum, schema::ResolvedSchema, to_avro_datum, Schema as AvroSchema};
+use apache_avro::{
+    from_avro_datum, schema::ResolvedSchema, to_avro_datum, types::Value, Schema as AvroSchema,
+};
 use dbsp::{utils::Tup2, OrdIndexedZSet};
 use dbsp::{DBData, OrdZSet};
 use feldera_sqllib::{ByteArray, Uuid};
@@ -209,14 +211,18 @@ where
         + Send
         + 'static,
 {
-    // 5-byte header
-    let mut buffer = vec![0; 5];
     let refs = HashMap::new();
     let serializer = AvroSchemaSerializer::new(schema, &refs, false);
     let val = x
         .serialize_with_context(serializer, &avro_ser_config())
         .unwrap();
-    let mut avro_record = to_avro_datum(schema, val).unwrap();
+    serialize_value(val, schema)
+}
+
+fn serialize_value(x: Value, schema: &AvroSchema) -> Vec<u8> {
+    // 5-byte header
+    let mut buffer = vec![0; 5];
+    let mut avro_record = to_avro_datum(schema, x).unwrap();
     buffer.append(&mut avro_record);
     buffer
 }
@@ -782,6 +788,96 @@ fn test_issue4722_issue4837() {
         config: AvroParserConfig {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(TestUuid::avro_schema().to_string()),
+            skip_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches,
+        expected_output,
+    };
+
+    run_parser_test(vec![test]);
+}
+
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+struct TestEnum {
+    enum_val: String,
+}
+
+impl TestEnum {
+    pub fn avro_schema() -> &'static str {
+        r#"{
+            "type": "record",
+            "name": "TestEnum",
+            "connect.name": "test_namespace.TestEnum",
+            "fields": [
+                { "name": "enum_val", "type": { "type": "enum", "name": "Suit", "symbols" : ["SPADES", "HEARTS", "DIAMONDS", "CLUBS"] } }
+            ]
+        }"#
+    }
+
+    pub fn schema() -> Vec<Field> {
+        vec![Field::new("enum_val".into(), ColumnType::varchar(false))]
+    }
+
+    pub fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("TestEnum", false),
+            fields: Self::schema(),
+            materialized: false,
+            properties: BTreeMap::new(),
+        }
+    }
+}
+
+serialize_table_record!(TestEnum[1]{
+    r#enum_val["enum_val"]: String
+});
+
+deserialize_table_record!(TestEnum["TestEnum", 1] {
+    (r#enum_val, "enum_val", false, String, None)
+});
+
+#[test]
+fn test_enums() {
+    let schema = AvroSchema::parse_str(TestEnum::avro_schema()).unwrap();
+    let vals = [TestEnum {
+        enum_val: "SPADES".to_string(),
+    }];
+
+    let input_batches = vec![(
+        serialize_value(
+            Value::Record(vec![(
+                "enum_val".to_string(),
+                Value::Enum(0, "SPADES".to_string()),
+            )]),
+            &schema,
+        ),
+        vec![],
+    )];
+    let expected_output = vals
+        .iter()
+        .map(|v| MockUpdate::Insert(v.clone()))
+        .collect::<Vec<_>>();
+
+    let test = TestCase {
+        relation_schema: TestEnum::relation_schema(),
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Raw,
+            schema: Some(TestEnum::avro_schema().to_string()),
             skip_schema_id: false,
             registry_config: Default::default(),
         },
