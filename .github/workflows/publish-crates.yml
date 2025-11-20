@@ -6,18 +6,29 @@ permissions:
 
 on:
   workflow_call:
+    inputs:
+      environment:
+        description: "Environment to use (ci or release)"
+        required: false
+        type: string
+        default: "release"
   workflow_dispatch:
     inputs:
       tag:
         description: "Tag to release (WARNING: Only use for emergency fixes, not for regular releases)"
         required: false
         type: string
+      environment:
+        description: "Environment to use (ci or release)"
+        required: false
+        type: string
+        default: "release"
 
 jobs:
   deploy:
     runs-on: [k8s-runners-amd64]
     environment:
-      name: release
+      name: ${{ inputs.environment || 'release' }}
     container:
       image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
     steps:
@@ -31,10 +42,13 @@ jobs:
           ref: ${{ inputs.tag || github.ref }}
 
       - uses: rust-lang/crates-io-auth-action@v1
+        if: ${{ inputs.environment == 'release' }}
         id: auth
 
       - name: Run cargo publish
-        if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
+        # TODO: Once we are on 1.90 rustc we can just use cargo publish workspace
+        # then we can truly test that this works as part of merge queue
+        if: ${{ vars.RELEASE_DRY_RUN == 'false' && inputs.environment == 'release' }}
         run: |
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-ir
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-types

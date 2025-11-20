@@ -56,6 +56,14 @@ jobs:
     uses: ./.github/workflows/test-java.yml
     secrets: inherit
 
+  invoke-publish-crates-dry-run:
+    name: Publish Crates (Dry Run)
+    needs: [invoke-build-rust]
+    uses: ./.github/workflows/publish-crates.yml
+    with:
+      environment: ci
+    secrets: inherit
+
   # This job needs to be called main (the same as the ci-pre-mergequeue.yml workflow)
   # because of how merge queues work: https://stackoverflow.com/a/78030618
   # and https://github.com/orgs/community/discussions/103114
@@ -72,6 +80,7 @@ jobs:
       - invoke-tests-integration-platform
       - invoke-tests-integration-runtime
       - invoke-tests-java
+      - invoke-publish-crates-dry-run
     steps:
       - name: Finalize Workflow
         run: echo "All tasks completed!"

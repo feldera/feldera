@@ -112,7 +112,7 @@ feldera-cloud1-client = "0.1.2"
 feldera-datagen = { path = "crates/datagen" }
 feldera-fxp = { version = "0.192.0", path = "crates/fxp", features = ["dbsp"] }
 feldera-iceberg = { path = "crates/iceberg" }
-feldera-observability = { path = "crates/feldera-observability" }
+feldera-observability = { version = "0.192.0", path = "crates/feldera-observability" }
 feldera-sqllib = { path = "crates/sqllib" }
 feldera-storage = { version = "0.192.0", path = "crates/storage" }
 feldera-types = { version = "0.192.0", path = "crates/feldera-types" }
