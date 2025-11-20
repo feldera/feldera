@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -24,14 +25,14 @@ public final class DBSPDeindexOperator extends DBSPUnaryOperator {
         return TypeCompiler.makeZSet(ix.elementType);
     }
 
-    static DBSPExpression function(DBSPType inputType) {
+    static DBSPExpression function(CalciteObject node, DBSPType inputType) {
         DBSPTypeIndexedZSet ix = inputType.to(DBSPTypeIndexedZSet.class);
-        DBSPVariablePath t = new DBSPVariablePath(ix.getKVRefType());
-        return t.field(1).deref().applyClone().closure(t);
+        DBSPVariablePath t = new DBSPVariablePath(node, ix.getKVRefType());
+        return t.field(1).deref().applyClone().closure(node, t);
     }
 
-    public DBSPDeindexOperator(CalciteRelNode node, OutputPort input) {
-        super(node, "map", function(input.outputType()),
+    public DBSPDeindexOperator(CalciteRelNode node, CalciteObject functionNode, OutputPort input) {
+        super(node, "map", function(functionNode, input.outputType()),
                 outputType(input.getOutputIndexedZSetType()), true, input);
     }
 
@@ -49,7 +50,7 @@ public final class DBSPDeindexOperator extends DBSPUnaryOperator {
             @Nullable DBSPExpression function, DBSPType outputType,
             List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, function, newInputs, outputType)) {
-            return new DBSPDeindexOperator(this.getRelNode(), newInputs.get(0))
+            return new DBSPDeindexOperator(this.getRelNode(), this.getFunctionNode(), newInputs.get(0))
                     .copyAnnotations(this);
         }
         return this;
@@ -60,6 +61,6 @@ public final class DBSPDeindexOperator extends DBSPUnaryOperator {
     @SuppressWarnings("unused")
     public static DBSPDeindexOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        return new DBSPDeindexOperator(CalciteEmptyRel.INSTANCE, info.getInput(0));
+        return new DBSPDeindexOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, info.getInput(0));
     }
 }

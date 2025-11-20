@@ -21,10 +21,12 @@ import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -258,19 +260,29 @@ public class RewriteNow extends CircuitCloneVisitor {
             // The input has type Tup1<Timestamp>
             DBSPVariablePath var = new DBSPTypeTuple(type).ref().var();
             RewriteNowExpression rn = new RewriteNowExpression(this.compiler(), var.deref().field(0));
-            DBSPExpression lowerBound, upperBound;
-            if (this.lower != null)
+            final DBSPExpression lowerBound, upperBound;
+            CalciteObject node = CalciteObject.EMPTY;
+            if (this.lower != null) {
                 lowerBound = rn.apply(this.lower.expression).to(DBSPExpression.class);
-            else
+                node = this.lower.expression.getNode();
+            } else {
                 lowerBound = type.to(IsBoundedType.class).getMinValue();
-            if (this.upper != null)
+            }
+            if (this.upper != null) {
                 upperBound = rn.apply(this.upper.expression).to(DBSPExpression.class);
-            else
+                if (!node.getPositionRange().isValid())
+                    node = this.upper.expression.getNode();
+            } else {
                 upperBound = type.to(IsBoundedType.class).getMaxValue();
-            return new DBSPRawTupleExpression(
+            }
+            return new DBSPRawTupleExpression(node,
                     DBSPTypeTypedBox.wrapTypedBox(lowerBound, false),
                     DBSPTypeTypedBox.wrapTypedBox(upperBound, false))
-                    .closure(var);
+                    .closure(node, var);
+        }
+
+        CalciteObject getNode() {
+            return this.common.getNode();
         }
 
         @Override
@@ -762,13 +774,15 @@ public class RewriteNow extends CircuitCloneVisitor {
         boolean lowerInclusive = bounds.lower == null || bounds.lower.inclusive;
         boolean upperInclusive = bounds.upper == null || bounds.upper.inclusive;
         DBSPSimpleOperator window = new DBSPWindowOperator(
-                operator.getRelNode(), lowerInclusive, upperInclusive, diffIndex.outputPort(), windowBounds.outputPort());
+                operator.getRelNode(), makeWindow.getNode(),
+                lowerInclusive, upperInclusive, diffIndex.outputPort(), windowBounds.outputPort());
         this.addOperator(window);
         DBSPSimpleOperator winInt = new DBSPIntegrateOperator(operator.getRelNode(), window.outputPort());
         this.addOperator(winInt);
 
         // Deindex result of window
-        DBSPSimpleOperator deindex = new DBSPDeindexOperator(operator.getRelNode(), winInt.outputPort());
+        DBSPSimpleOperator deindex = new DBSPDeindexOperator(operator.getRelNode(), window.getFunctionNode(),
+                winInt.outputPort());
         this.addOperator(deindex);
         return deindex;
     }
@@ -900,7 +914,7 @@ public class RewriteNow extends CircuitCloneVisitor {
             this.addOperator(aggregate);
             this.nowIndexed = aggregate;
 
-            this.now = new DBSPDeindexOperator(node, aggregate.outputPort());
+            this.now = new DBSPDeindexOperator(node, aggregate.getFunctionNode(), aggregate.outputPort());
         }
         this.addOperator(this.now);
         this.map(this.now.outputPort(), this.now.outputPort(), false);

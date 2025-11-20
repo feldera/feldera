@@ -199,6 +199,11 @@ public abstract class DBSPExpression
                 Linq.map(parameters, DBSPVariablePath::asParameter, DBSPParameter.class));
     }
 
+    public DBSPClosureExpression closure(CalciteObject node, DBSPVariablePath... parameters) {
+        return new DBSPClosureExpression(node, this,
+                Linq.map(parameters, DBSPVariablePath::asParameter, DBSPParameter.class));
+    }
+
     public DBSPExpression is_null() {
         if (!this.getType().mayBeNull)
             return new DBSPBoolLiteral(false);

@@ -519,7 +519,8 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 // Now project the keys after the join
                 if (newJoin != join)
                     this.addOperator(newJoin);
-                DBSPSimpleOperator result = new DBSPDeindexOperator(operator.getRelNode(), newJoin.outputPort());
+                DBSPSimpleOperator result = new DBSPDeindexOperator(
+                        operator.getRelNode(), newJoin.getFunctionNode(), newJoin.outputPort());
                 this.map(operator, result);
                 return;
             }

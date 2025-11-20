@@ -41,6 +41,7 @@ import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneClosureType;
@@ -606,7 +607,7 @@ public class Monotonicity extends CircuitVisitor {
 
         DBSPTypeIndexedZSet inputType = node.input().getOutputIndexedZSetType();
         DBSPVariablePath kx = new DBSPTypeRawTuple(inputType.keyType.ref(), inputType.elementType.ref()).var();
-        DBSPExpression noExpression = new NoExpression(function.parameters[1].type);
+        DBSPExpression noExpression = new NoExpression(function.getNode(), function.parameters[1].type);
         DBSPExpression dataPart = function.call(kx.field(1), noExpression);
         DBSPExpression transfer = new DBSPRawTupleExpression(
                 kx.field(0).deref(), dataPart).closure(kx).reduce(this.compiler())
@@ -689,7 +690,7 @@ public class Monotonicity extends CircuitVisitor {
                     if (index != node.leftTimestampIndex) {
                         // Since this is not a streaming join, we can't say anything about
                         // non-timestamp fields
-                        expr = new NoExpression(expr.getType());
+                        expr = new NoExpression(expr.getNode(), expr.getType());
                     } else {
                         expr = min.deepCopy();
                     }
@@ -699,7 +700,7 @@ public class Monotonicity extends CircuitVisitor {
                     if (index != node.rightTimestampIndex) {
                         // Since this is not a streaming join, we can't say anything about
                         // non-timestamp fields
-                        expr = new NoExpression(expr.getType());
+                        expr = new NoExpression(expr.getNode(), expr.getType());
                     } else {
                         expr = min.deepCopy().castToNullable();
                     }
@@ -774,7 +775,7 @@ public class Monotonicity extends CircuitVisitor {
      * *DOES NOT WORK PROPERLY FOR EMPTY TUPLES. */
     static DBSPExpression makeNoExpression(DBSPType type) {
         if (type.is(DBSPTypeBaseType.class) || type.is(DBSPTypeArray.class) || type.is(DBSPTypeMap.class)) {
-            return new NoExpression(type);
+            return new NoExpression(CalciteObject.EMPTY, type);
         } else if (type.is(DBSPTypeTupleBase.class)) {
             // Tricky if the tuple is empty, this *will* be monotone!
             DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);

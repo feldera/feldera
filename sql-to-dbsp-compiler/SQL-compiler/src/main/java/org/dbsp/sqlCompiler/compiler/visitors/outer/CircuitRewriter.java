@@ -585,7 +585,8 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
         DBSPSimpleOperator result = operator;
         if (Linq.different(sources, operator.inputs))
-            result = new DBSPWindowOperator(operator.getRelNode(), operator.lowerInclusive, operator.upperInclusive,
+            result = new DBSPWindowOperator(operator.getRelNode(), operator.getFunctionNode(),
+                    operator.lowerInclusive, operator.upperInclusive,
                     sources.get(0), sources.get(1))
                     .copyAnnotations(operator);
         this.map(operator, result);

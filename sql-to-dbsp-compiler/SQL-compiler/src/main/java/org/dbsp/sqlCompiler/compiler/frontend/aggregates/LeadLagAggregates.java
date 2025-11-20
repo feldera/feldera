@@ -144,14 +144,14 @@ public class LeadLagAggregates extends WindowAggregates {
         DBSPExpression function = functionBody.closure(origRow, delayedRow);
 
         DBSPLagOperator lag = new DBSPLagOperator(
-                node, offset, projection, function, comparator,
+                this.node, offset, projection, function, comparator,
                 TypeCompiler.makeIndexedZSet(
                         diff.getOutputIndexedZSetType().keyType, functionBody.getType()), diff.outputPort());
         this.compiler.addOperator(lag);
 
         DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, lag.outputPort());
         this.compiler.addOperator(integral);
-        return new DBSPDeindexOperator(node.maybeFinal(isLast), integral.outputPort());
+        return new DBSPDeindexOperator(this.node.maybeFinal(isLast), this.node, integral.outputPort());
     }
 
     @Override
