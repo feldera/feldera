@@ -1,6 +1,7 @@
 [package]
 name = "feldera-observability"
 description = "Shared observability utilities for Feldera services"
+publish = true
 edition = { workspace = true }
 version = { workspace = true }
 homepage = { workspace = true }

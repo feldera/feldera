@@ -65,6 +65,8 @@ jobs:
   publish-crates:
     name: ""
     uses: ./.github/workflows/publish-crates.yml
+    with:
+      environment: release
     secrets: inherit
 
   adjust-versions:

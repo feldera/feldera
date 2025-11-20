@@ -9,6 +9,7 @@ license = { workspace = true }
 authors = { workspace = true }
 rust-version = { workspace = true }
 readme = { workspace = true }
+publish = false
 
 [features]
 with-avro = ["apache-avro"]
