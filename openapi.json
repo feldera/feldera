@@ -7398,6 +7398,31 @@
             "description": "Maximum timeout in seconds to wait for the endpoint to join the Kafka\nconsumer group during initialization.",
             "minimum": 0
           },
+          "include_headers": {
+            "type": "boolean",
+            "description": "Whether to include Kafka headers in the record metadata.\n\nWhen `true`, Kafka message headers are available via the `CONNECTOR_METADATA()` function.\nSee <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.",
+            "nullable": true
+          },
+          "include_offset": {
+            "type": "boolean",
+            "description": "Whether to include Kafka message offset in the record metadata.\n\nWhen `true`, Kafka message offset is available via the `CONNECTOR_METADATA()` function.\nSee <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.",
+            "nullable": true
+          },
+          "include_partition": {
+            "type": "boolean",
+            "description": "Whether to include Kafka partition in the record metadata.\n\nWhen `true`, Kafka partition from which the message was read is available via the `CONNECTOR_METADATA()` function.\nSee <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.",
+            "nullable": true
+          },
+          "include_timestamp": {
+            "type": "boolean",
+            "description": "Whether to include Kafka message timestamp in the record metadata.\n\nWhen `true`, Kafka message timestamp is available via the `CONNECTOR_METADATA()` function.\nSee <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.",
+            "nullable": true
+          },
+          "include_topic": {
+            "type": "boolean",
+            "description": "Whether to include Kafka topic in the record metadata.\n\nWhen `true`, Kafka topic from which the message was read is available via the `CONNECTOR_METADATA()` function.\nSee <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.",
+            "nullable": true
+          },
           "log_level": {
             "allOf": [
               {

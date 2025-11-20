@@ -68,17 +68,14 @@ type Q14Stream = Stream<RootCircuit, OrdZSet<Q14Output>>;
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
+#[derive(Default)]
 pub enum BidTimeType {
+    #[default]
     Day,
     Night,
     Other,
 }
 
-impl Default for BidTimeType {
-    fn default() -> Self {
-        Self::Day
-    }
-}
 
 // This is used because we can't currently use chrono.Utc, which would simply
 // be Utc.timestamp_millis(b.date_time as i64).hour(), as it's waiting on a

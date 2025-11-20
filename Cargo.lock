@@ -4820,6 +4820,7 @@ dependencies = [
  "dbsp",
  "dyn-clone",
  "erased-serde",
+ "feldera-sqllib",
  "feldera-types",
  "num-derive",
  "num-traits",

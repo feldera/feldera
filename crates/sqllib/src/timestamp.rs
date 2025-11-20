@@ -138,7 +138,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
     }
 }
 
-impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Timestamp {
+impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Timestamp {
     fn deserialize_with_context<D>(
         deserializer: D,
         config: &'de SqlSerdeConfig,
@@ -1289,7 +1289,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Date {
     }
 }
 
-impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Date {
+impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Date {
     fn deserialize_with_context<D>(
         deserializer: D,
         config: &'de SqlSerdeConfig,
@@ -2171,7 +2171,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Time {
     }
 }
 
-impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Time {
+impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Time {
     fn deserialize_with_context<D>(
         deserializer: D,
         config: &'de SqlSerdeConfig,
@@ -2603,9 +2603,9 @@ mod test {
     }
 
     deserialize_table_record!(TestStruct["TestStruct", 3] {
-        (date, "date", false, Date, None),
-        (time, "time", false, Time, None),
-        (timestamp, "timestamp", false, Timestamp, None)
+        (date, "date", false, Date, |_| None),
+        (time, "time", false, Time, |_| None),
+        (timestamp, "timestamp", false, Timestamp, |_| None)
     });
     serialize_table_record!(TestStruct[3] {
         date["date"]: Date,
@@ -2621,7 +2621,7 @@ mod test {
 
     fn deserialize_with_default_config<'de, T>(json: &'de str) -> Result<T, serde_json::Error>
     where
-        T: DeserializeWithContext<'de, SqlSerdeConfig>,
+        T: DeserializeWithContext<'de, SqlSerdeConfig, ()>,
     {
         T::deserialize_with_context(
             &mut serde_json::Deserializer::from_str(json),
@@ -2631,7 +2631,7 @@ mod test {
 
     fn deserialize_with_debezium_config<'de, T>(json: &'de str) -> Result<T, serde_json::Error>
     where
-        T: DeserializeWithContext<'de, SqlSerdeConfig>,
+        T: DeserializeWithContext<'de, SqlSerdeConfig, ()>,
     {
         T::deserialize_with_context(
             &mut serde_json::Deserializer::from_str(json),

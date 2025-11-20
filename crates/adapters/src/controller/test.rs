@@ -1796,8 +1796,8 @@ fn suspend_multiple_barriers(n_inputs: usize) {
     // Check output one more time.
     println!("check output one more time now that controller is stopped");
     let expect = expectations(&written, &barriers);
-    for i in 0..n_inputs {
-        check_file_contents(&output_path(&storage_dir, i), 0..expect[i]);
+    for (i, e) in expect.iter().enumerate().take(n_inputs) {
+        check_file_contents(&output_path(&storage_dir, i), 0..*e);
     }
 
     // Now restart the controller and wait for all the records that we wrote

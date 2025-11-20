@@ -238,7 +238,7 @@ impl<'de> Deserialize<'de> for Variant {
     }
 }
 
-impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Variant {
+impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Variant {
     fn deserialize_with_context<D>(
         deserializer: D,
         context: &'de SqlSerdeConfig,
@@ -906,7 +906,7 @@ pub fn variantnull() -> Variant {
 
 pub fn from_json_string<T>(json: &str) -> Option<T>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
 {
     T::deserialize_with_context(
         &mut serde_json::Deserializer::from_str(json),

@@ -99,7 +99,7 @@ impl Visitor<'_> for ByteVisitor {
     }
 }
 
-impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
+impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for ByteArray {
     fn deserialize_with_context<D>(
         deserializer: D,
         config: &'de SqlSerdeConfig,
@@ -171,11 +171,12 @@ mod test_binary_deserializer {
     fn test_base58() {
         let encoded = "4F85ZySpwyY6FuH7mQYyyr5b8nV9zFRBLj92AJa37w6y";
 
-        let decoded = ByteArray::deserialize_with_context(
-            serde_json::Value::String(encoded.to_string()),
-            &SqlSerdeConfig::from(JsonFlavor::Blockchain),
-        )
-        .unwrap();
+        let decoded =
+            <ByteArray as DeserializeWithContext<SqlSerdeConfig, ()>>::deserialize_with_context(
+                serde_json::Value::String(encoded.to_string()),
+                &SqlSerdeConfig::from(JsonFlavor::Blockchain),
+            )
+            .unwrap();
 
         assert_eq!(
             decoded,

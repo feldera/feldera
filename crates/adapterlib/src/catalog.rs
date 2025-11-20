@@ -15,6 +15,7 @@ use arrow::record_batch::RecordBatch;
 use dbsp::circuit::NodeId;
 use dbsp::operator::StagedBuffers;
 use dyn_clone::DynClone;
+use feldera_sqllib::Variant;
 use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{Relation, SqlIdentifier};
@@ -65,10 +66,14 @@ pub enum RecordFormat {
 pub trait DeCollectionStream: Send + Sync + InputBuffer {
     /// Buffer a new insert update.
     ///
+    /// `metadata` contains optional metadata attached by the transport adapter or parser,
+    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
+    /// `DeserializeWithContext::deserialize_with_context_aux`.
+    ///
     /// Returns an error if deserialization fails, i.e., the serialized
     /// representation is corrupted or does not match the value type of
     /// the underlying input stream.
-    fn insert(&mut self, data: &[u8]) -> AnyResult<()>;
+    fn insert(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()>;
 
     /// Buffer a new delete update.
     ///
@@ -85,19 +90,27 @@ pub trait DeCollectionStream: Send + Sync + InputBuffer {
     /// The record gets deserialized and pushed to the underlying input stream
     /// handle as a delete update.
     ///
+    /// `metadata` contains optional metadata attached by the transport adapter or parser,
+    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
+    /// `DeserializeWithContext::deserialize_with_context_aux`.
+    ///
     /// Returns an error if deserialization fails, i.e., the serialized
     /// representation is corrupted or does not match the value or key
     /// type of the underlying input stream.
-    fn delete(&mut self, data: &[u8]) -> AnyResult<()>;
+    fn delete(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()>;
 
     /// Buffer a new update that will modify an existing record.
+    ///
+    /// `metadata` contains optional metadata attached by the transport adapter or parser,
+    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
+    /// `DeserializeWithContext::deserialize_with_context_aux`.
     ///
     /// This method can only be called on streams created with
     /// [`RootCircuit::add_input_map`](`dbsp::RootCircuit::add_input_map`)
     /// and will fail on other streams.  The serialized record must match
     /// the update type of this stream, specified as a type argument to
     /// `Catalog::register_input_map`.
-    fn update(&mut self, data: &[u8]) -> AnyResult<()>;
+    fn update(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()>;
 
     /// Reserve space for at least `reservation` more updates in the
     /// internal input buffer.
@@ -126,14 +139,29 @@ pub trait DeCollectionStream: Send + Sync + InputBuffer {
 /// Like `DeCollectionStream`, but deserializes Arrow-encoded records before pushing them to a
 /// stream.
 pub trait ArrowStream: InputBuffer + Send + Sync {
-    fn insert(&mut self, data: &RecordBatch) -> AnyResult<()>;
+    /// Buffer a new batch of insert updates.
+    ///
+    /// `metadata` contains optional metadata attached by the transport adapter or parser,
+    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
+    /// `DeserializeWithContext::deserialize_with_context_aux` for each deserialized record.
+    fn insert(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()>;
 
-    fn delete(&mut self, data: &RecordBatch) -> AnyResult<()>;
+    /// Buffer a new batch of delete updates.
+    ///
+    /// `metadata` contains optional metadata attached by the transport adapter or parser,
+    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
+    /// `DeserializeWithContext::deserialize_with_context_aux` for each deserialized record.
+    fn delete(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()>;
 
     /// Insert records in `data` with polarities from the `polarities` array.
     ///
     /// `polarities` must be the same length as `data`.
-    fn insert_with_polarities(&mut self, data: &RecordBatch, polarities: &[bool]) -> AnyResult<()>;
+    fn insert_with_polarities(
+        &mut self,
+        data: &RecordBatch,
+        polarities: &[bool],
+        metadata: &Option<Variant>,
+    ) -> AnyResult<()>;
 
     /// Create a new deserializer with the same configuration connected to
     /// the same input stream.
@@ -161,12 +189,16 @@ pub trait AvroStream: InputBuffer + Send + Sync {
     ///
     /// * `schema` - The Avro schema to use for deserialization.
     /// * `refs` - A map of named schema references that may be used to resolve references within `schema`.
+    /// * `metadata` - Optional metadata attached by the transport adapter or parser,
+    ///   such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
+    ///   `DeserializeWithContext::deserialize_with_context_aux`.
     fn insert(
         &mut self,
         data: &AvroValue,
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
+        metadata: &Option<Variant>,
     ) -> AnyResult<()>;
 
     fn delete(
@@ -175,6 +207,7 @@ pub trait AvroStream: InputBuffer + Send + Sync {
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
+        metadata: &Option<Variant>,
     ) -> AnyResult<()>;
 
     /// Create a new deserializer with the same configuration connected to

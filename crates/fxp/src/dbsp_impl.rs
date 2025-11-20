@@ -97,7 +97,9 @@ impl SerializeWithContext<SqlSerdeConfig> for DynamicDecimal {
     }
 }
 
-impl<'de, C, const P: usize, const S: usize> DeserializeWithContext<'de, C> for Fixed<P, S> {
+impl<'de, C, AUX, const P: usize, const S: usize> DeserializeWithContext<'de, C, AUX>
+    for Fixed<P, S>
+{
     #[inline(never)]
     fn deserialize_with_context<D>(deserializer: D, _context: &'de C) -> Result<Self, D::Error>
     where
@@ -107,7 +109,7 @@ impl<'de, C, const P: usize, const S: usize> DeserializeWithContext<'de, C> for 
     }
 }
 
-impl<'de, C> DeserializeWithContext<'de, C> for DynamicDecimal {
+impl<'de, C, AUX> DeserializeWithContext<'de, C, AUX> for DynamicDecimal {
     #[inline(never)]
     fn deserialize_with_context<D>(deserializer: D, _context: &'de C) -> Result<Self, D::Error>
     where

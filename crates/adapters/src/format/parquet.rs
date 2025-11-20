@@ -12,6 +12,7 @@ use bytes::Bytes;
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::catalog::ArrowStream;
+use feldera_sqllib::Variant;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::serde_with_context::serde_config::{
     BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
@@ -103,7 +104,11 @@ impl ParquetParser {
 
 impl Parser for ParquetParser {
     /// In the chunk case, we got an entire file in `data` and parse it immediately.
-    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+    fn parse(
+        &mut self,
+        data: &[u8],
+        metadata: &Option<Variant>,
+    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let bytes = Bytes::copy_from_slice(data);
 
         let parquet_reader = match ParquetRecordBatchReader::try_new(bytes, 1_000_000) {
@@ -124,7 +129,7 @@ impl Parser for ParquetParser {
         for batch in parquet_reader {
             match batch {
                 Ok(batch) => {
-                    if let Err(e) = self.input_stream.insert(&batch) {
+                    if let Err(e) = self.input_stream.insert(&batch, metadata) {
                         errors.push(ParseError::bin_envelope_error(
                             format!(
                                 "error parsing parquet data (chunk {}): {e}",

@@ -16,6 +16,7 @@ use apache_avro::{
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::catalog::AvroSchemaRefs;
+use feldera_sqllib::Variant;
 use feldera_types::{
     format::avro::{AvroParserConfig, AvroUpdateFormat},
     program_schema::Relation,
@@ -316,7 +317,7 @@ impl AvroParser {
         Ok((schema, refs, value_schema))
     }
 
-    fn input(&mut self, data: &[u8]) -> Result<(), ParseError> {
+    fn input(&mut self, data: &[u8], metadata: &Option<Variant>) -> Result<(), ParseError> {
         self.last_event_number += 1;
 
         let n_bytes = data.len();
@@ -382,7 +383,7 @@ impl AvroParser {
         match self.config.update_format {
             AvroUpdateFormat::Raw => self
                 .input_stream
-                .insert(&avro_value, schema, &self.refs, n_bytes)
+                .insert(&avro_value, schema, &self.refs, n_bytes, metadata)
                 .map_err(|e| {
                     ParseError::bin_event_error(
                         format!(
@@ -404,7 +405,7 @@ impl AvroParser {
                     (false, true) => (0, n_bytes),
                 };
                 if let Some(before) = before {
-                    self.input_stream.delete(before, value_schema, &self.refs, before_bytes).map_err(|e| {
+                    self.input_stream.delete(before, value_schema, &self.refs, before_bytes, metadata).map_err(|e| {
                         ParseError::bin_event_error(
                             format!(
                                 "error converting 'before' record to table row (record: {before:?}): {e}"
@@ -416,7 +417,7 @@ impl AvroParser {
                     })?;
                 }
                 if let Some(after) = after {
-                    self.input_stream.insert(after, value_schema, &self.refs, after_bytes).map_err(|e| {
+                    self.input_stream.insert(after, value_schema, &self.refs, after_bytes, metadata).map_err(|e| {
                             ParseError::bin_event_error(
                                 format!(
                                     "error converting 'after' record to table row (record: {after:?}): {e}"
@@ -495,8 +496,14 @@ impl Parser for AvroParser {
     fn splitter(&self) -> Box<dyn Splitter> {
         Box::new(Sponge)
     }
-    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-        let errors = self.input(data).map_or_else(|e| vec![e], |_| Vec::new());
+    fn parse(
+        &mut self,
+        data: &[u8],
+        metadata: &Option<Variant>,
+    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+        let errors = self
+            .input(data, metadata)
+            .map_or_else(|e| vec![e], |_| Vec::new());
         let buffer = self.input_stream.take_all();
         (buffer, errors)
     }

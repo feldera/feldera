@@ -783,9 +783,9 @@ fn test_lag_custom_ord(transaction: bool) {
     if transaction {
         dbsp.start_transaction().unwrap();
 
-        for i in 0..trace.len() {
+        for i in trace {
             println!("step");
-            let batch = trace[i].clone();
+            let batch = i.clone();
             for (k, v, r) in batch.into_iter() {
                 input_handle.push(k, (v, r));
             }

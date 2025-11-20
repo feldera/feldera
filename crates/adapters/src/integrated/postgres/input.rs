@@ -387,7 +387,7 @@ impl PostgresInputEndpointInner {
             }
             let value = json!(dynamic_values).to_string();
             debug!("postgres about to insert {value}");
-            let ret = input_stream.insert(value.as_ref());
+            let ret = input_stream.insert(value.as_ref(), &None);
             if let Err(ret) = ret {
                 errors.push(ParseError::text_event_error(
                     "Failed to deserialize table record from PostgreSQL",

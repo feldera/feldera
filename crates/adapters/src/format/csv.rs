@@ -8,6 +8,7 @@ use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_sqllib::Variant;
 use feldera_types::{
     config::ConnectorConfig,
     format::csv::{CsvEncoderConfig, CsvParserConfig},
@@ -90,9 +91,14 @@ impl CsvParser {
         }
     }
 
-    fn parse_record(&mut self, record: &[u8], errors: &mut Vec<ParseError>) {
+    fn parse_record(
+        &mut self,
+        record: &[u8],
+        metadata: &Option<Variant>,
+        errors: &mut Vec<ParseError>,
+    ) {
         if !self.headers || self.last_event_number > 0 {
-            if let Err(e) = self.input_stream.insert(record) {
+            if let Err(e) = self.input_stream.insert(record, metadata) {
                 errors.push(ParseError::text_event_error(
                     "failed to deserialize CSV record",
                     e,
@@ -146,15 +152,19 @@ impl Parser for CsvParser {
         Box::new(CsvSplitter::new(self.headers))
     }
 
-    fn parse(&mut self, mut data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+    fn parse(
+        &mut self,
+        mut data: &[u8],
+        metadata: &Option<Variant>,
+    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let mut errors = Vec::new();
         while let Some((record, rest)) = self.split_record(data) {
-            self.parse_record(record, &mut errors);
+            self.parse_record(record, metadata, &mut errors);
             self.last_event_number += 1;
             data = rest;
         }
         if !data.is_empty() {
-            self.parse_record(data, &mut errors);
+            self.parse_record(data, metadata, &mut errors);
         }
         (self.input_stream.take_all(), errors)
     }
@@ -387,9 +397,9 @@ mod test {
     }
 
     deserialize_table_record!(CaseSensitive["CaseSensitive", 3] {
-    (fIeLd1, "fIeLd1", true, bool, None),
-    (field2, "field2", true, String, None),
-    (field3, "field3", false, Option<u8>, Some(None))
+    (fIeLd1, "fIeLd1", true, bool, |_| None),
+    (field2, "field2", true, String, |_| None),
+    (field3, "field3", false, Option<u8>, |_| Some(None))
     });
 
     #[test]

@@ -764,7 +764,7 @@ impl InputGenerator {
                             buffer.extend(END_ARR);
 
                             let timestamp = Utc::now();
-                            let (buffer, errors) = parser.parse(&buffer);
+                            let (buffer, errors) = parser.parse(&buffer, &None);
                             consumer.parse_errors(errors);
                             let _ = completion_sender.send(Completion {
                                 batch: Batch {
@@ -795,7 +795,7 @@ impl InputGenerator {
                 buffer.extend(END_ARR);
                 let timestamp = Utc::now();
 
-                let (buffer, errors) = parser.parse(&buffer);
+                let (buffer, errors) = parser.parse(&buffer, &None);
                 consumer.parse_errors(errors);
                 let _ = completion_sender.send(Completion {
                     batch: Batch {

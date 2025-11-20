@@ -12,7 +12,7 @@ use dbsp::{
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
 };
 use feldera_adapterlib::catalog::CircuitCatalog;
-use feldera_sqllib::{build_string_interner, SqlString};
+use feldera_sqllib::{build_string_interner, SqlString, Variant};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -53,7 +53,7 @@ impl Catalog {
         handle: ZSetHandle<Z::Key>,
         schema: &str,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -90,7 +90,7 @@ impl Catalog {
         handle: ZSetHandle<Z::Key>,
         schema: &str,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -130,7 +130,7 @@ impl Catalog {
         handle: SetHandle<Z::Key>,
         schema: &str,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -167,7 +167,7 @@ impl Catalog {
         handle: SetHandle<Z::Key>,
         schema: &str,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -223,14 +223,14 @@ impl Catalog {
     ) where
         VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
         UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Clone
@@ -239,7 +239,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<U>
             + Send
@@ -278,14 +278,14 @@ impl Catalog {
     ) where
         VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
         UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Clone
@@ -294,7 +294,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<U>
             + Send
@@ -324,7 +324,7 @@ impl Catalog {
     /// Add an output stream of Z-sets to the catalog.
     pub fn register_output_zset<Z, D>(&mut self, stream: Stream<RootCircuit, Z>, schema: &str)
     where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -351,7 +351,7 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         schema: &str,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -405,7 +405,7 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         schema: &str,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -425,7 +425,7 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         schema: &str,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -489,14 +489,14 @@ impl Catalog {
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
         schema: &str,
     ) where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Default
@@ -516,14 +516,14 @@ impl Catalog {
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
         schema: &str,
     ) where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Default
@@ -543,14 +543,14 @@ impl Catalog {
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
         schema: &str,
     ) where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Default
@@ -571,14 +571,14 @@ impl Catalog {
         schema: &str,
         materialized: bool,
     ) where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Default
@@ -653,13 +653,13 @@ impl Catalog {
         key_fields: &[&SqlIdentifier],
     ) -> Option<()>
     where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Send
@@ -681,13 +681,13 @@ impl Catalog {
         key_fields: &[&SqlIdentifier],
     ) -> Option<()>
     where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Send
@@ -807,10 +807,10 @@ mod test {
         // Step 1: insert a couple of values.
 
         input_stream_handle
-            .insert(br#"{"id": 1, "b": true, "s": "1"}"#)
+            .insert(br#"{"id": 1, "b": true, "s": "1"}"#, &None)
             .unwrap();
         input_stream_handle
-            .insert(br#"{"id": 2, "b": true, "s": "2"}"#)
+            .insert(br#"{"id": 2, "b": true, "s": "2"}"#, &None)
             .unwrap();
         input_stream_handle.flush();
 
@@ -827,7 +827,7 @@ mod test {
         // Step 2: replace an entry.
 
         input_stream_handle
-            .insert(br#"{"id": 1, "b": true, "s": "1-modified"}"#)
+            .insert(br#"{"id": 1, "b": true, "s": "1-modified"}"#, &None)
             .unwrap();
         input_stream_handle.flush();
 
@@ -843,7 +843,7 @@ mod test {
 
         // Step 3: delete an entry.
 
-        input_stream_handle.delete(br#"2"#).unwrap();
+        input_stream_handle.delete(br#"2"#, &None).unwrap();
         input_stream_handle.flush();
 
         circuit.transaction().unwrap();

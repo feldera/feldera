@@ -8,8 +8,10 @@ pub const MAX_WS_FRAME_SIZE: usize = 1024 * 1024 * 2;
 /// URL-encoded `format` argument to the `/query` endpoint.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy, ToSchema)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum AdHocResultFormat {
     /// Serialize results as a human-readable text table.
+    #[default]
     Text,
     /// Serialize results as new-line delimited JSON records.
     ///
@@ -49,12 +51,6 @@ impl Display for AdHocResultFormat {
             AdHocResultFormat::ArrowIpc => write!(f, "arrow_ipc"),
             AdHocResultFormat::Hash => write!(f, "hash"),
         }
-    }
-}
-
-impl Default for AdHocResultFormat {
-    fn default() -> Self {
-        Self::Text
     }
 }
 

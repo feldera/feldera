@@ -8,6 +8,7 @@ use crate::{
 use anyhow::Result as AnyResult;
 use dbsp::{DBData, DBSPHandle, OrdZSet, Runtime};
 use feldera_adapterlib::format::InputBuffer;
+use feldera_sqllib::Variant;
 use feldera_types::secret_resolver::default_secrets_directory;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -65,7 +66,10 @@ use dbsp::circuit::{CircuitConfig, NodeId};
 use dbsp::utils::Tup2;
 use feldera_types::format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{Field, Relation, SqlIdentifier};
-pub use mock_dezset::{wait_for_output_ordered, wait_for_output_unordered, MockDeZSet, MockUpdate};
+pub use mock_dezset::{
+    wait_for_output_count, wait_for_output_ordered, wait_for_output_unordered, MockDeZSet,
+    MockUpdate,
+};
 pub use mock_input_consumer::{MockInputConsumer, MockInputParser};
 pub use mock_output_consumer::MockOutputConsumer;
 
@@ -125,14 +129,14 @@ pub fn mock_parser_pipeline<T, U>(
     config: &FormatConfig,
 ) -> AnyResult<(MockInputConsumer, MockInputParser, MockDeZSet<T, U>)>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Hash
         + Send
         + Sync
         + Debug
         + Clone
         + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Hash
         + Send
         + Sync
@@ -171,14 +175,14 @@ pub fn mock_input_pipeline<T, U>(
     MockDeZSet<T, U>,
 )>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Hash
         + Send
         + Sync
         + Debug
         + Clone
         + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Hash
         + Send
         + Sync
@@ -234,7 +238,7 @@ pub fn test_circuit<T>(
 where
     T: DBData
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
     let schema = schema.to_vec();
@@ -298,11 +302,11 @@ where
     KF: Fn(&T) -> K + Clone + Send + Sync + 'static,
     T: DBData
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
     K: DBData
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
     let schema = schema.to_vec();
@@ -398,7 +402,7 @@ pub fn list_files_recursive(dir: &Path, extension: &OsStr) -> Result<Vec<PathBuf
 /// Parse file with data encoded using specified format into a Z-set.
 pub fn file_to_zset<T>(file: &mut File) -> OrdZSet<T>
 where
-    T: DBData + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
+    T: DBData + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
 {
     let format = get_input_format("json").unwrap();
     let buffer = MockDeZSet::<T, T>::new();
@@ -416,7 +420,7 @@ where
 
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes).unwrap();
-    let (mut parsed_buffers, errors) = parser.parse(&bytes);
+    let (mut parsed_buffers, errors) = parser.parse(&bytes, &None);
     parsed_buffers.flush();
 
     // Use assert_eq, so errors are printed in case of a failure.

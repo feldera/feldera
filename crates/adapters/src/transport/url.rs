@@ -325,7 +325,7 @@ impl UrlInputReader {
                 splitter.append(&bytes);
                 remainder -= bytes.len();
                 while let Some(chunk) = splitter.next(remainder == 0) {
-                    let (mut buffer, errors) = parser.parse(chunk);
+                    let (mut buffer, errors) = parser.parse(chunk, &None);
                     consumer.parse_errors(errors);
                     consumer.buffered(buffer.len());
                     total += buffer.len();
@@ -418,7 +418,7 @@ impl UrlInputReader {
                         let Some(chunk) = splitter.next(eof) else {
                             break;
                         };
-                        let (buffer, errors) = parser.parse(chunk);
+                        let (buffer, errors) = parser.parse(chunk, &None);
                         consumer.buffered(buffer.len());
                         consumer.parse_errors(errors);
 

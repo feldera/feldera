@@ -4,7 +4,7 @@ use crate::InputReader;
 use anyhow::Result as AnyResult;
 use dbsp::algebra::F64;
 use feldera_sqllib::binary::ByteArray;
-use feldera_sqllib::{Date, SqlDecimal, Time, Timestamp};
+use feldera_sqllib::{Date, SqlDecimal, Time, Timestamp, Variant};
 use feldera_types::config::{InputEndpointConfig, TransportConfig};
 use feldera_types::program_schema::{ColumnType, Field, Relation};
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
@@ -47,8 +47,8 @@ serialize_table_record!(ByteStruct[1]{
     r#field["bs"]: ByteArray
 });
 
-deserialize_table_record!(ByteStruct["ByteStruct", 1] {
-    (r#field, "bs", false, ByteArray, None)
+deserialize_table_record!(ByteStruct["ByteStruct", Variant, 1] {
+    (r#field, "bs", false, ByteArray, |_| None)
 });
 
 #[derive(
@@ -96,11 +96,11 @@ serialize_table_record!(RealStruct[4]{
     r#field_3["dec_w_scale"]: SqlDecimal<2, 1>
 });
 
-deserialize_table_record!(RealStruct["RealStruct", 4] {
-    (r#field, "double", false, F64, None),
-    (r#field_1, "dec", false, SqlDecimal<28, 0>, None),
-    (r#field_2, "dec_scale", false, SqlDecimal<10, 10>, None),
-    (r#field_3, "dec_w_scale", false, SqlDecimal<2, 1>, None)
+deserialize_table_record!(RealStruct["RealStruct", Variant, 4] {
+    (r#field, "double", false, F64, |_| None),
+    (r#field_1, "dec", false, SqlDecimal<28, 0>, |_| None),
+    (r#field_2, "dec_scale", false, SqlDecimal<10, 10>, |_| None),
+    (r#field_3, "dec_w_scale", false, SqlDecimal<2, 1>, |_| None)
 });
 
 fn mk_pipeline<T, U>(
@@ -108,14 +108,14 @@ fn mk_pipeline<T, U>(
     fields: Vec<Field>,
 ) -> AnyResult<(Box<dyn InputReader>, MockInputConsumer, MockDeZSet<T, U>)>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Hash
         + Send
         + Sync
         + Debug
         + Clone
         + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Hash
         + Send
         + Sync
@@ -1098,10 +1098,10 @@ serialize_table_record!(TimeStuff[3]{
     r#field_2["t"]: Time
 });
 
-deserialize_table_record!(TimeStuff["TimeStuff", 3] {
-    (r#field, "ts", false, Timestamp, None),
-    (r#field_1, "dt", false, Date, None),
-    (r#field_2, "t", false, Time, None)
+deserialize_table_record!(TimeStuff["TimeStuff", Variant, 3] {
+    (r#field, "ts", false, Timestamp, |_| None),
+    (r#field_1, "dt", false, Date, |_| None),
+    (r#field_2, "t", false, Time, |_| None)
 });
 
 #[test]

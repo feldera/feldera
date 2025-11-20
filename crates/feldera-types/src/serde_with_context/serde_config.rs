@@ -52,11 +52,12 @@ impl Default for DateFormat {
 }
 
 /// Representation of the SQL `TIMESTAMP` type.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum TimestampFormat {
     /// Default format:
     /// - Parsing: accepts RFC3339 ('YYYY-MM-DDTHH:MM:SS.fffZ') as well as 'YYYY-MM-DD HH:MM:SS.fff' formats.
     /// - Encoding: outputs 'YYYY-MM-DD HH:MM:SS.fff' format.
+    #[default]
     Default,
     /// String formatted using the specified format:
     /// See [`chrono` documentation](https://docs.rs/chrono/0.4.31/chrono/format/strftime/)
@@ -70,45 +71,30 @@ pub enum TimestampFormat {
     Rfc3339,
 }
 
-impl Default for TimestampFormat {
-    fn default() -> Self {
-        Self::Default
-    }
-}
-
 /// Representation of the SQL `DECIMAL` type.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum DecimalFormat {
+    #[default]
     Numeric,
     String,
     I128,
 }
 
-impl Default for DecimalFormat {
-    fn default() -> Self {
-        Self::Numeric
-    }
-}
-
 /// Representation of the SQL `VARIANT` type.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum VariantFormat {
     /// Serialize VARIANT to/from a JSON value.
     Json,
     /// Represent variant type as a JSON-formatted string.
+    #[default]
     JsonString,
 }
 
-impl Default for VariantFormat {
-    fn default() -> Self {
-        Self::JsonString
-    }
-}
-
 /// Representation of the SQL `BINARY` and `VARBINARY` types.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum BinaryFormat {
     /// Serialize as a sequence of bytes.
+    #[default]
     Array,
     /// Serialize as base64-encoded string.
     Base64,
@@ -122,25 +108,14 @@ pub enum BinaryFormat {
     CHex,
 }
 
-impl Default for BinaryFormat {
-    fn default() -> Self {
-        Self::Array
-    }
-}
-
 /// Representation of the SQL `BINARY` and `VARBINARY` types.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum UuidFormat {
     /// Serialize as string.
+    #[default]
     String,
     /// Serialize as binary.
     Binary,
-}
-
-impl Default for UuidFormat {
-    fn default() -> Self {
-        Self::String
-    }
 }
 
 /// Deserializer configuration for parsing SQL records.

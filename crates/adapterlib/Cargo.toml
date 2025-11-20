@@ -16,6 +16,7 @@ with-avro = ["apache-avro"]
 
 [dependencies]
 feldera-types = { workspace = true }
+feldera-sqllib = { workspace = true }
 dbsp = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
 serde_yaml = { workspace = true }

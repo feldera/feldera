@@ -1,4 +1,5 @@
 use dbsp::{utils::Tup1, Runtime};
+use feldera_sqllib::Variant;
 use feldera_types::{
     deserialize_table_record,
     program_schema::{Relation, SqlIdentifier},
@@ -27,7 +28,7 @@ mod pg {
 
     use chrono::SubsecRound;
     use dbsp::{utils::Tup1, Runtime};
-    use feldera_sqllib::{SqlDecimal, SqlString, F32, F64};
+    use feldera_sqllib::{SqlDecimal, SqlString, Variant, F32, F64};
     use feldera_types::{
         config::PipelineConfig,
         deserialize_table_record,
@@ -118,26 +119,26 @@ mod pg {
         map_["map_"]: BTreeMap<feldera_sqllib::SqlString, TestStruct>
     });
 
-    deserialize_table_record!(PostgresTestStruct["PostgresTestStruct", 19] {
-        (boolean_, "boolean_", false, bool, None),
-        (tinyint_, "tinyint_", false, i8, None),
-        (smallint_, "smallint_", false, i16, None),
-        (int_, "int_", false, i32, None),
-        (bigint_, "bigint_", false, i64, None),
-        (decimal_, "decimal_", false, SqlDecimal<38, 10>, None),
-        (float_, "float_", false, F32, None),
-        (double_, "double_", false, F64, None),
-        (varchar_, "varchar_", false, SqlString, None),
-        (time_, "time_", false, feldera_sqllib::Time, None),
-        (date_, "date_", false, feldera_sqllib::Date, None),
-        (timestamp_, "timestamp_", false, feldera_sqllib::Timestamp, None),
-        (variant_, "variant_", false, feldera_sqllib::Variant, None),
-        (uuid_, "uuid_", false, feldera_sqllib::Uuid, None),
-        (varbinary_, "varbinary_", false, feldera_sqllib::ByteArray, None),
-        (struct_, "struct_", false, TestStruct, None),
-        (string_array_, "string_array_", false, Vec<feldera_sqllib::SqlString>, None),
-        (struct_array_, "struct_array_", false, Vec<TestStruct>, None),
-        (map_, "map_", false, BTreeMap<feldera_sqllib::SqlString, TestStruct>, None)
+    deserialize_table_record!(PostgresTestStruct["PostgresTestStruct", Variant, 19] {
+        (boolean_, "boolean_", false, bool, |_| None),
+        (tinyint_, "tinyint_", false, i8, |_| None),
+        (smallint_, "smallint_", false, i16, |_| None),
+        (int_, "int_", false, i32, |_| None),
+        (bigint_, "bigint_", false, i64, |_| None),
+        (decimal_, "decimal_", false, SqlDecimal<38, 10>, |_| None),
+        (float_, "float_", false, F32, |_| None),
+        (double_, "double_", false, F64, |_| None),
+        (varchar_, "varchar_", false, SqlString, |_| None),
+        (time_, "time_", false, feldera_sqllib::Time, |_| None),
+        (date_, "date_", false, feldera_sqllib::Date, |_| None),
+        (timestamp_, "timestamp_", false, feldera_sqllib::Timestamp, |_| None),
+        (variant_, "variant_", false, feldera_sqllib::Variant, |_| None),
+        (uuid_, "uuid_", false, feldera_sqllib::Uuid, |_| None),
+        (varbinary_, "varbinary_", false, feldera_sqllib::ByteArray, |_| None),
+        (struct_, "struct_", false, TestStruct, |_| None),
+        (string_array_, "string_array_", false, Vec<feldera_sqllib::SqlString>, |_| None),
+        (struct_array_, "struct_array_", false, Vec<TestStruct>, |_| None),
+        (map_, "map_", false, BTreeMap<feldera_sqllib::SqlString, TestStruct>, |_| None)
     });
 
     pub(super) struct TempPgTable {
@@ -358,8 +359,8 @@ CREATE TABLE {name} (
                                 }
                             }
 
-                            deserialize_table_record!(KeyStruct["idx", 1] {
-                                (field0, "bigint_", false, i64, None)
+                            deserialize_table_record!(KeyStruct["idx", Variant, 1] {
+                                (field0, "bigint_", false, i64, |_| None)
                             });
                             serialize_table_record!(KeyStruct[1]{
                                 field0["bigint_"]: i64
@@ -1444,8 +1445,8 @@ fn test_pg_simple() {
                             Self { field0: t.0 }
                         }
                     }
-                    deserialize_table_record!(KeyStruct["v1_idx", 1] {
-                        (field0, "id", false, u32, None)
+                    deserialize_table_record!(KeyStruct["v1_idx", Variant, 1] {
+                        (field0, "id", false, u32, |_| None)
                     });
                     serialize_table_record!(KeyStruct[1]{
                         field0["id"]: u32
