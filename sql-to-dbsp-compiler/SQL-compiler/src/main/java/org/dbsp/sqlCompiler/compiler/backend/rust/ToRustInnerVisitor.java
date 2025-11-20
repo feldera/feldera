@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.apache.calcite.util.TimeString;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
@@ -32,9 +33,19 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.multi.CircuitWriter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateStructs;
+<<<<<<< Updated upstream
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionTranslator;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
+=======
+<<<<<<< Updated upstream
+=======
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionTranslator;
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -119,6 +130,7 @@ import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -911,7 +923,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPStructItem item) {
+        // pretend we are not in an operator context for the generated helper code
+        DBSPOperator save = this.operatorContext;
+        this.operatorContext = null;
         this.generateStructHelpers(item.type, item.metadata);
+        this.operatorContext = save;
         return VisitDecision.STOP;
     }
 
@@ -1029,6 +1045,51 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .newline();
     }
 
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+=======
+>>>>>>> Stashed changes
+    /** Replace every instance of a call to connector_metadata() with
+     * a reference to a variable connector_metadata. */
+    static class RewriteConnectorMetadata extends ExpressionTranslator {
+        public static final DBSPVariablePath var =
+                new DBSPVariablePath(CustomFunctions.ConnectorMetadataFunction.NAME.toLowerCase(Locale.ENGLISH),
+                        DBSPTypeVariant.INSTANCE_NULLABLE);
+
+        public static String variableName() {
+            return var.variable;
+        }
+
+        RewriteConnectorMetadata(DBSPCompiler compiler) {
+            super(compiler);
+        }
+
+        @Override
+<<<<<<< Updated upstream
+=======
+        public void postorder(DBSPHandleErrorExpression expression) {
+            DBSPExpression source = this.getE(expression.source);
+            DBSPExpression result = new DBSPHandleErrorExpression(expression.getNode(), expression.index, source, false);
+            this.map(expression, result);
+        }
+
+        @Override
+>>>>>>> Stashed changes
+        public void postorder(DBSPApplyExpression expression) {
+            String function = expression.getFunctionName();
+            if (function != null && function.equalsIgnoreCase(CustomFunctions.ConnectorMetadataFunction.NAME)) {
+                this.map(expression, var);
+                return;
+            }
+            super.postorder(expression);
+        }
+    }
+
+<<<<<<< Updated upstream
+=======
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
     /**
      * Generate calls to the Rust macros that generate serialization and deserialization code
      * for the struct.
@@ -1041,7 +1102,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append(type.sanitizedName)
                 .append("[")
                 .append(Utilities.doubleQuote(type.name.name(), true))
-                .append(", ")
+                .append(", Variant, ")
                 .append(type.fields.size())
                 .append("] {")
                 .increase();
@@ -1070,17 +1131,39 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     .append(", ");
             field.type.accept(this);
             this.builder.append(", ");
-            if (isOption)
-                this.builder.append("Some(");
             if (meta == null || meta.defaultValue == null) {
+<<<<<<< Updated upstream
+                this.builder.append(field.type.mayBeNull ? "|_| Some(None)" : "|_| None");
+=======
+<<<<<<< Updated upstream
                 this.builder.append(field.type.mayBeNull ? "Some(None)" : "None");
             } else {
+=======
+                this.builder.append("|_| ");
+                if (isOption)
+                    this.builder.append("Some(");
+                this.builder.append(field.type.mayBeNull ? "Some(None)" : "None");
+>>>>>>> Stashed changes
+            } else {
+                RewriteConnectorMetadata rw = new RewriteConnectorMetadata(this.compiler);
+                this.builder.append("|")
+                        .append(RewriteConnectorMetadata.variableName())
+<<<<<<< Updated upstream
+                        .append(": &Option<Variant>| Some(");
+=======
+                        .append(": &Option<Variant>| ");
+                if (isOption)
+                    this.builder.append("Some(");
+>>>>>>> Stashed changes
                 this.builder.append("Some(");
+>>>>>>> Stashed changes
                 IDBSPInnerNode defaultValue = this.createErrorWrappers.apply(meta.defaultValue);
+                defaultValue = rw.apply(defaultValue);
                 defaultValue.accept(this);
                 this.builder.append(")");
             }
             if (isOption)
+                // closes for both branches of the if
                 this.builder.append(")");
 
             if (isOption && user.typeArgs[0].mayBeNull) {

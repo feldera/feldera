@@ -127,6 +127,49 @@ CREATE TABLE empsalary (
 
 ### Table properties that impact the program semantics
 
+#### `DEFAULT` column values
+
+A table column can have an attached `DEFAULT` expression.  Currently
+only deterministic expressions are allowed; this precludes expressions
+that call the `NOW` function.
+
+<a id="connector_metadata"></a> The `CONNECTOR_METADATA()` function
+is a built-in function which returns a nullable value of a `VARIANT`
+type.  This function can be used in a `DEFAULT` expression to obtain
+connector-specific values.  For example, when a table is attached to a
+Kafka connector, the following expression can be used to extract the
+kafka topic name as a column default value:
+
+```sql
+CREATE TABLE T(
+  kafka_partition VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR),
+  ...
+)
+WITH (
+   'connectors': '[{
+      "transport": {
+          "name": "kafka_input",
+          "config": {
+              "topic": "book-fair-sales",
+              "start_from": "earliest",
+              "bootstrap.servers": "example.com:9092",
+              "include_topic": true
+          }
+      },
+      "format": {
+          "name": "json",
+          "config": {
+              "update_format": "insert_delete",
+              "array": false
+          }
+      }
+   }]'
+);
+```
+
+For the available metadata properties that can be extracted, see the
+documentation for each connector.
+
 #### Materialized tables
 
 Unlike a database, Feldera does not normally maintain the contents of

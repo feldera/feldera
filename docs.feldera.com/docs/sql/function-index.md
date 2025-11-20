@@ -71,6 +71,8 @@
 * `COALESCE`: [comparisons](comparisons.md#coalesce)
 * `CONCAT`: [string](string.md#concat)
 * `CONCAT_WS`: [string](string.md#concat_ws)
+* `CONNECTOR_METADATA`: [grammar](grammar.md#connector_metadata)
+* `CONVERT`: [casts](casts.md#casts-and-data-type-conversions)
 * `COS`: [float](float.md#cos)
 * `COSH`: [float](float.md#cosh)
 * `COT`: [float](float.md#cot)

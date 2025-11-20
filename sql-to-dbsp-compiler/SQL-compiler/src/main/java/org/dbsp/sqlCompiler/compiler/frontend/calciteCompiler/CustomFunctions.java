@@ -83,6 +83,7 @@ public class CustomFunctions {
         this.functions.add(new SequenceFunction());
         this.functions.add(new ToIntFunction());
         this.functions.add(new ToJsonFunction());
+        this.functions.add(new ConnectorMetadataFunction());
         this.functions.add(new WriteLogFunction());
         this.udf = new HashMap<>();
         this.aggregates = new HashMap<>();
@@ -529,6 +530,20 @@ public class CustomFunctions {
             super(NAME, ARG1,
                     family(SqlTypeFamily.CHARACTER, SqlTypeFamily.ANY),
                     SqlFunctionCategory.USER_DEFINED_FUNCTION, "", FunctionDocumentation.NO_FILE);
+        }
+    }
+
+    /** CONNECTOR_METADATA() returns a VARIANT which depends on the connector
+     * currently attached to a table.  Can only be used in DEFAULT value
+     * initializers for table columns */
+    public static class ConnectorMetadataFunction extends NonOptimizedFunction {
+        public static final String NAME = "CONNECTOR_METADATA";
+
+        private ConnectorMetadataFunction() {
+            super(NAME, ReturnTypes.VARIANT.andThen(SqlTypeTransforms.TO_NULLABLE),
+                    OperandTypes.NILADIC,
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION, "grammar#connector_metadata",
+                    FunctionDocumentation.NO_FILE);
         }
     }
 
