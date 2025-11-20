@@ -4,7 +4,7 @@ This guide covers issues Feldera Enterprise users and operators might run into i
 
 ## Diagnosing Performance Issues
 
-When investigating pipeline performance, Feldera support will typically request a 
+When investigating pipeline performance, Feldera support will typically request a
 support-bundle. The bundle can be downloaded from your installation with one of
 the following methods:
 
@@ -166,7 +166,7 @@ Its not possible to reinstantiate these leftover (orphaned) pipelines,
 therefore the Kubernetes objects backing these pipelines should be manually
 removed.
 
-1. Identify any stale pipelines in the feldera namespace 
+1. Identify any stale pipelines in the feldera namespace
    (e.g., by running `kubectl get pods -n $NS`)
 2. For each pipeline delete the k8s definitions that feldera
    created for it: Statefulset, Service, ConfigMap, Pod and PVC.
