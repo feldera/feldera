@@ -2304,7 +2304,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 node, new DBSPTypeIndexedZSet(node, DBSPTypeTuple.EMPTY, type), null, aggregate, index.outputPort());
         this.addOperator(aggregateOperator);
 
-        DBSPSimpleOperator deindex = new DBSPDeindexOperator(node.getFinal(), aggregateOperator.outputPort());
+        DBSPSimpleOperator deindex = new DBSPDeindexOperator(node.getFinal(), node, aggregateOperator.outputPort());
         Utilities.enforce(type.sameType(deindex.getOutputZSetElementType()));
         this.assignOperator(collect, deindex);
     }
@@ -2809,7 +2809,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.warnNoSort(node);
             if (done) {
                 // We must drop the index we built.
-                DBSPDeindexOperator deindex = new DBSPDeindexOperator(node.getFinal(), integral.outputPort());
+                DBSPDeindexOperator deindex = new DBSPDeindexOperator(node.getFinal(), node, integral.outputPort());
                 this.assignOperator(sort, deindex);
                 return;
             }

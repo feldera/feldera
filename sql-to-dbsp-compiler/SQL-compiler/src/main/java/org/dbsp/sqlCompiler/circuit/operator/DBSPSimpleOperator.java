@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -68,6 +69,12 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
                 !outputType.is(DBSPTypeIndexedZSet.class))
             throw new InternalCompilerError("Operator " + operation +
                     " output type is unexpected " + outputType);
+    }
+
+    public CalciteObject getFunctionNode() {
+        if (this.function == null)
+            return CalciteObject.EMPTY;
+        return this.getFunction().getNode();
     }
 
     @Override

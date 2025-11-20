@@ -423,7 +423,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     .withInputs(Linq.list(source), false)
                     .to(DBSPSimpleOperator.class);
             this.map(aggregator.outputPort(), filteredAggregator.outputPort());
-            DBSPDeindexOperator deindex = new DBSPDeindexOperator(aggregator.getRelNode(), filteredAggregator.outputPort());
+            DBSPDeindexOperator deindex = new DBSPDeindexOperator(aggregator.getRelNode(), aggregator.getFunctionNode(),
+                    filteredAggregator.outputPort());
             this.addOperator(deindex);
             DBSPTypeTuple tuple = deindex.getOutputZSetElementType().to(DBSPTypeTuple.class);
             DBSPVariablePath t = tuple.ref().var();
@@ -1478,7 +1479,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             waterlineOutputPort = newSource.getOutput(2);
             this.addOperator(newSource);
 
-            result = new DBSPDeindexOperator(multisetInput.getRelNode(), newSource.getOutput(0));
+            result = new DBSPDeindexOperator(multisetInput.getRelNode(), multisetInput.getNode(),
+                    newSource.getOutput(0));
         } else {
             OutputPort errorPort = result.getOutput(1);
             if (!this.reachableFromError.contains(result.inputs.get(0).operator)) {
@@ -1625,9 +1627,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             fields.get(0).getType(), dataType), true, replacement.getOutput(0));
             this.addOperator(ix);
             DBSPWindowOperator window = new DBSPWindowOperator(
-                    operator.getRelNode(), true, true, ix.outputPort(), apply.outputPort());
+                    operator.getRelNode(), t.getNode(),true, true, ix.outputPort(), apply.outputPort());
             this.addOperator(window);
-            replacement = new DBSPDeindexOperator(operator.getRelNode(), window.outputPort());
+            replacement = new DBSPDeindexOperator(operator.getRelNode(), operator.getNode(), window.outputPort());
         }
 
         if (replacement == operator) {
@@ -1891,7 +1893,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     this.addOperator(ix);
                     // The upper bound must be exclusive
                     DBSPWindowOperator window = new DBSPWindowOperator(
-                            operator.getRelNode(), true, false, ix.outputPort(), apply.outputPort());
+                            operator.getRelNode(), t.getNode(), true, false, ix.outputPort(), apply.outputPort());
                     this.addOperator(window);
                     // GC for window: the waterline delayed
                     PartiallyMonotoneTuple projection = new PartiallyMonotoneTuple(
@@ -1915,7 +1917,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     }
                     this.createRetainKeys(operator.getRelNode(), ix.outputPort(), projection, boundSource);
 
-                    DBSPSimpleOperator deindex = new DBSPDeindexOperator(operator.getRelNode(), window.outputPort());
+                    DBSPSimpleOperator deindex = new DBSPDeindexOperator(
+                            operator.getRelNode(), window.getFunctionNode(), window.outputPort());
                     this.addOperator(deindex);
                     DBSPSimpleOperator sink = operator.withInputs(Linq.list(deindex.outputPort()), false)
                             .to(DBSPSimpleOperator.class);

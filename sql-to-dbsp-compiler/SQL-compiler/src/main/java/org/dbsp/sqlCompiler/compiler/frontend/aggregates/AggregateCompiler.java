@@ -217,7 +217,7 @@ public class AggregateCompiler implements ICompilerComponent {
 
     /** Given the body of a closure, make a closure with arguments accumulator, row, weight */
     DBSPClosureExpression makeRowClosure(DBSPExpression body, DBSPVariablePath accumulator) {
-        return body.closure(accumulator, this.v, this.compiler.weightVar);
+        return body.closure(this.node, accumulator, this.v, this.compiler.weightVar);
     }
 
     @Nullable
@@ -298,7 +298,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 // COUNT(*), no filter
                 // map = |v| -> 1
                 // post = |x| -> x
-                map = one.closure(this.v);
+                map = one.closure(this.node, this.v);
                 post = DBSPClosureExpression.id(one.getType());
             } else {
                 // map = |v| ( if filter(v) { indicator(v.field) } else { 0 }, 1)
@@ -317,10 +317,10 @@ public class AggregateCompiler implements ICompilerComponent {
                 DBSPExpression mapBody = new DBSPTupleExpression(combined, one);
                 DBSPVariablePath postVar = mapBody.getType().var();
                 // post = |x| x.0
-                post = postVar.field(0).closure(postVar);
-                map = mapBody.closure(this.v);
+                post = postVar.field(0).closure(this.node, postVar);
+                map = mapBody.closure(this.node, this.v);
             }
-            this.setResult(new LinearAggregate(node, map, post, zero));
+            this.setResult(new LinearAggregate(this.node, map, post, zero));
         } else {
             // The result of 'count' can never be null.
             DBSPExpression increment;
@@ -331,7 +331,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 argument = one;
             } else {
                 DBSPExpression agg = this.getAggregatedValue();
-                argument = ExpressionCompiler.makeIndicator(node, this.resultType, agg);
+                argument = ExpressionCompiler.makeIndicator(this.node, this.resultType, agg);
             }
 
             @Nullable

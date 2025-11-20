@@ -15,8 +15,8 @@ import org.dbsp.util.IIndentStream;
  * of a program.  It is only used as a value in dataflow analyses. */
 @NonCoreIR
 public final class NoExpression extends DBSPExpression {
-    public NoExpression(DBSPType type) {
-        super(CalciteObject.EMPTY, type);
+    public NoExpression(CalciteObject node, DBSPType type) {
+        super(node, type);
     }
 
     @Override
@@ -38,7 +38,7 @@ public final class NoExpression extends DBSPExpression {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new NoExpression(this.type);
+        return new NoExpression(this.node, this.type);
     }
 
     @Override
@@ -54,6 +54,6 @@ public final class NoExpression extends DBSPExpression {
     @SuppressWarnings("unused")
     public static NoExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPType type = getJsonType(node, decoder);
-        return new NoExpression(type);
+        return new NoExpression(CalciteObject.EMPTY, type);
     }
 }

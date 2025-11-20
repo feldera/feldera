@@ -4,11 +4,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -26,9 +29,10 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
     public final boolean upperInclusive;
 
     public DBSPWindowOperator(
-            CalciteRelNode node, boolean lowerInclusive, boolean upperInclusive,
+            CalciteRelNode node, CalciteObject object,
+            boolean lowerInclusive, boolean upperInclusive,
             OutputPort data, OutputPort control) {
-        super(node, "window", null, data.outputType(), data.isMultiset(),
+        super(node, "window", new NoExpression(object, DBSPTypeVoid.INSTANCE), data.outputType(), data.isMultiset(),
                 data, control, true);
         // Check that the left input and output are indexed ZSets
         this.getOutputIndexedZSetType();
@@ -44,7 +48,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
             Utilities.enforce(newInputs.size() == 2, () -> "Expected 2 inputs, got " + newInputs.size());
             if (force || this.inputsDiffer(newInputs))
                 return new DBSPWindowOperator(
-                        this.getRelNode(), this.lowerInclusive, this.upperInclusive,
+                        this.getRelNode(), this.getFunction().getNode(), this.lowerInclusive, this.upperInclusive,
                         newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         }
         return this;
@@ -64,7 +68,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
         DBSPSimpleOperator.CommonInfo info = commonInfoFromJson(node, decoder);
         boolean lowerInclusive = Utilities.getBooleanProperty(node, "lowerInclusive");
         boolean upperInclusive = Utilities.getBooleanProperty(node, "upperInclusive");
-        return new DBSPWindowOperator(CalciteEmptyRel.INSTANCE,
+        return new DBSPWindowOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY,
                 lowerInclusive, upperInclusive, info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPWindowOperator.class);
     }

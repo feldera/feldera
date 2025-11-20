@@ -99,7 +99,7 @@ public class RankAggregate extends WindowAggregates {
         DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, topK.outputPort());
         this.compiler.addOperator(integral);
         // We must drop the index we built.
-        return new DBSPDeindexOperator(node.maybeFinal(isLast), integral.outputPort());
+        return new DBSPDeindexOperator(node.maybeFinal(isLast), node, integral.outputPort());
     }
 
     @Override
