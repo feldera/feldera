@@ -114,12 +114,29 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     runtime_aggtest/aggregate_tests4/test_{array_arg_min,map_arg_min,uuid,varchar_argmin,varcharn_argmin}.py|
                     runtime_aggtest/aggregate_tests6/test_interval_mths_argmin.py
                     """, true),
-            new Func(SqlStdOperatorTable.BIT_AND, "BIT_AND", SqlLibrary.STANDARD, "aggregates#bit_and", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlStdOperatorTable.BIT_OR, "BIT_OR", SqlLibrary.STANDARD, "aggregates#bit_or", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlStdOperatorTable.BIT_XOR, "BIT_XOR", SqlLibrary.STANDARD, "aggregates#bit_xor", FunctionDocumentation.NO_FILE, true),
+            new Func(SqlStdOperatorTable.BIT_AND, "BIT_AND", SqlLibrary.STANDARD, "aggregates#bit_and",
+                    "runtime_aggtest/aggregate_tests/test_bit_and.py", true),
+            new Func(SqlStdOperatorTable.BIT_OR, "BIT_OR", SqlLibrary.STANDARD, "aggregates#bit_or",
+                    "runtime_aggtest/aggregate_tests/test_bit_or.py", true),
+            new Func(SqlStdOperatorTable.BIT_XOR, "BIT_XOR", SqlLibrary.STANDARD, "aggregates#bit_xor",
+                    "runtime_aggtest/aggregate_tests/test_bit_xor.py", true),
             new Func(SqlStdOperatorTable.COUNT, "COUNT", SqlLibrary.STANDARD,
-                    "aggregates#count,aggregates#countstar,aggregates#window-count,aggregates#window-countstar", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlStdOperatorTable.EVERY, "EVERY", SqlLibrary.STANDARD, "aggregates#every", FunctionDocumentation.NO_FILE, true),
+                    "aggregates#count,aggregates#countstar,aggregates#window-count,aggregates#window-countstar",
+                    """
+                    runtime_aggtest/aggregate_tests/test_{count,count_col,decimal_count,decimal_count_col,row_count_col,empty_set}.py|
+                    runtime_aggtest/aggregate_tests2/test_{charn_count,charn_count_col,date_count,date_count_col,interval_count,interval_count_col,time_count,time_count_col,timestamp_count,timestamp_count_col}.py|
+                    runtime_aggtest/aggregate_tests3/test_{binary_count,binary_count_col,un_int_count,un_int_count_col,un_int_countif,varbinary_count,varbinary_count_col,empty_set}.py|
+                    runtime_aggtest/aggregate_tests4/test_{array_count,array_count_col,map_count,map_count_col,varchar_count,varchar_count_col,varcharn_count,varcharn_count_col}.py|
+                    runtime_aggtest/aggregate_tests6/test_{interval_count_mths,interval_count_col_mths}.py
+                    """, true),
+            new Func(SqlStdOperatorTable.EVERY, "EVERY", SqlLibrary.STANDARD, "aggregates#every",
+                    """
+                    runtime_aggtest/aggregate_tests/test_{every,decimal_every,row_every,empty_set}.py|
+                    runtime_aggtest/aggregate_tests2/test_{charn_every,date_every,interval_every,time_every,timestamp_every}.py|
+                    runtime_aggtest/aggregate_tests3/test_{binary_every,un_int_every,varbinary_every,empty_set}.py|
+                    runtime_aggtest/aggregate_tests4/test_{array_every,map_every,varchar_every,varcharn_every}.py|
+                    runtime_aggtest/aggregate_tests6/test_{interval_mths_every}.py
+                    """, true),
             new Func(SqlStdOperatorTable.MAX, "MAX", SqlLibrary.STANDARD, "aggregates#max,aggregates#window-max", FunctionDocumentation.NO_FILE, true),
             new Func(SqlStdOperatorTable.MIN, "MIN", SqlLibrary.STANDARD, "aggregates#min,aggregates#window-min", FunctionDocumentation.NO_FILE, true),
             new Func(SqlStdOperatorTable.SINGLE_VALUE, "SINGLE", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, true),
