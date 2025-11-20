@@ -2,6 +2,35 @@
 
 This guide covers issues Feldera Enterprise users and operators might run into in production, and steps to remedy them.
 
+## Diagnosing Performance Issues
+
+When investigating pipeline performance, Feldera support will typically request a 
+support-bundle. The bundle can be downloaded from your installation with one of
+the following methods:
+
+* The `support-bundle` [fda command](/interface/cli):
+
+ ```bash
+ fda support-bundle affected-pipeline-name
+ ```
+* the `support_bundle` [function in the Python SDK](https://docs.feldera.com/python/examples.html#retrieve-a-support-bundle-for-a-pipeline).
+* the web-console has a button to download the bundle for a pipeline
+* or the `support_bundle` [endpoint in the REST API](/api/download-support-bundle).
+
+The support bundle has the following content:
+
+1. **Pipeline Logs**: for warnings and errors from the [logs](/api/stream-pipeline-logs) endpoint.
+
+2. **Pipeline Configuration**: the [pipeline configuration](/api/get-pipeline), including the SQL code and connector settings.
+
+3. **Pipeline Metrics**: from the [pipeline metrics](/api/get-pipeline-metrics) endpoint.
+
+3. **Endpoint Stats**: from the [stats](/api/get-pipeline-stats) endpoint.
+
+4. **Circuit Profile**: from the [circuit profile](/api/get-performance-profile) endpoint.
+
+5. **Heap Profile**: from [heap usage](/api/get-heap-profile) endpoint.
+
 ## Common Error Messages
 
 ### Delta Lake Connection Errors
@@ -125,28 +154,44 @@ making them eviction candidates. To raise their priority:
 
 **Solution**: Ensure the compiler-server has sufficient disk space (20Gib by default, configured via the `compilerPvcStorageSize` value in the Helm chart).
 
-## Diagnosing Performance Issues
+## Uncommon Problems
 
-When investigating pipeline performance, Feldera support will typically request a support-bundle.  The bundle can be downloaded from your installation with the following:
+### Lost or accidentally deleted the Feldera Control-Plane PostgreSQL database
 
-* The `support-bundle` [fda command](/interface/cli):
+Feldera tracks state about pipelines inside a PostgreSQL database. If for
+some reason the state in this database is ever lost or otherwise can not be
+recovered, and the feldera instance had running pipelines at the time, a
+manual intervention may be necessary to clean-up the leftover pods.
+Its not possible to reinstantiate these leftover (orphaned) pipelines,
+therefore the Kubernetes objects backing these pipelines should be manually
+removed.
 
- ```bash
- fda support-bundle affected-pipeline-name
- ```
-* the `support_bundle` [function in the Python SDK](https://docs.feldera.com/python/examples.html#retrieve-a-support-bundle-for-a-pipeline).
-* or the `support_bundle` [endpoint in the REST API](/api/download-support-bundle).
+1. Identify any stale pipelines in the feldera namespace 
+   (e.g., by running `kubectl get pods -n $NS`)
+2. For each pipeline delete the k8s definitions that feldera
+   created for it: Statefulset, Service, ConfigMap, Pod and PVC.
 
-The support bundle contains the following content:
+Here is an example script that would clean up a stale pipeline. Note: it is generally
+not enough to just delete the pod since the existing statefulset will try to re-create
+it.
 
-1. **Pipeline Logs**: for warnings and errors from the [logs](/api/stream-pipeline-logs) endpoint.
+```bash
+NAMESPACE=feldera-ns
+POD=pipeline-019a7c1d-6a0c-7923-afd7-0125fe589356-0
+NAME=pipeline-019a7c1d-6a0c-7923-afd7-0125fe589356
+PVC=pipeline-019a7c1d-6a0c-7923-afd7-0125fe589356-storage-pipeline-019a7c1d-6a0c-7923-afd7-0125fe589356-0
 
-2. **Pipeline Configuration**: the [pipeline configuration](/api/get-pipeline), including the SQL code and connector settings.
+# Ensure you have the permissions to perform the delete operations
+kubectl auth can-i delete sts -n $NAMESPACE
+kubectl auth can-i delete service -n $NAMESPACE
+kubectl auth can-i delete configmap -n $NAMESPACE
+kubectl auth can-i delete pod -n $NAMESPACE
+kubectl auth can-i delete pvc -n $NAMESPACE
 
-3. **Pipeline Metrics**: from the [pipeline metrics](/api/get-pipeline-metrics) endpoint.
-
-3. **Endpoint Stats**: from the [stats](/api/get-pipeline-stats) endpoint.
-
-4. **Circuit Profile**: from the [circuit profile](/api/get-performance-profile) endpoint.
-
-5. **Heap Profile**: from [heap usage](/api/get-heap-profile) endpoint.
+# Delete the k8s objects manually
+kubectl delete sts -n $NAMESPACE $NAME
+kubectl delete service -n $NAMESPACE $NAME
+kubectl delete configmap -n $NAMESPACE $NAME
+kubectl delete pod -n $NAMESPACE $POD
+kubectl delete pvc -n $NAMESPACE $PVC
+```
