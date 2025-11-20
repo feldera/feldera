@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display};
 use utoipa::ToSchema;
 
 /// Supported Avro data change event formats.
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq, ToSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq, ToSchema, Default)]
 pub enum AvroUpdateFormat {
     /// Raw encoding.
     ///
@@ -21,6 +21,7 @@ pub enum AvroUpdateFormat {
     ///   `insert`, `update`, or `delete`.
     /// - The message key can optionally store the primary key (see the `key_mode` property).
     #[serde(rename = "raw")]
+    #[default]
     Raw,
 
     /// Debezium data change event format.
@@ -30,12 +31,6 @@ pub enum AvroUpdateFormat {
     /// Confluent JDBC connector change event format.
     #[serde(rename = "confluent_jdbc")]
     ConfluentJdbc,
-}
-
-impl Default for AvroUpdateFormat {
-    fn default() -> Self {
-        Self::Raw
-    }
 }
 
 impl Display for AvroUpdateFormat {

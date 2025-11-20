@@ -6,7 +6,7 @@ use crate::{
 };
 use crossbeam::channel::Receiver;
 use dbsp::DBData;
-use feldera_sqllib::{ByteArray, F32, F64};
+use feldera_sqllib::{ByteArray, Variant, F32, F64};
 use feldera_types::{
     program_schema::Field,
     serde_with_context::{DeserializeWithContext, SerializeWithContext, SqlSerdeConfig},
@@ -58,7 +58,7 @@ fn iceberg_snapshot_to_json<T>(schema: &[Field], config: &HashMap<String, String
 where
     T: DBData
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
     let start = Instant::now();
@@ -98,7 +98,7 @@ fn iceberg_input_pipeline<T>(
 where
     T: DBData
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
     init_logging();

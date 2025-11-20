@@ -12,6 +12,7 @@ use actix_web::HttpRequest;
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::format::Splitter;
+use feldera_sqllib::Variant;
 use feldera_types::format::json::{JsonLines, JsonParserConfig, JsonUpdateFormat};
 use serde::Deserialize;
 use serde_json::json;
@@ -27,7 +28,11 @@ trait UpdateFormat {
     fn array_error() -> &'static str;
     fn example() -> Option<&'static str>;
     fn array_example() -> Option<&'static str>;
-    fn apply(self, parser: &mut JsonParser) -> Result<usize, ParseError>;
+    fn apply(
+        self,
+        parser: &mut JsonParser,
+        metadata: &Option<Variant>,
+    ) -> Result<usize, ParseError>;
 }
 
 impl UpdateFormat for InsDelUpdate<&'_ RawValue> {
@@ -47,21 +52,25 @@ impl UpdateFormat for InsDelUpdate<&'_ RawValue> {
         Some("Example valid JSON: '[{{\"insert\": {{...}} }}, {{\"delete\": {{...}} }}]'")
     }
 
-    fn apply(self, parser: &mut JsonParser) -> Result<usize, ParseError> {
+    fn apply(
+        self,
+        parser: &mut JsonParser,
+        metadata: &Option<Variant>,
+    ) -> Result<usize, ParseError> {
         let mut updates = 0;
 
         if let Some(val) = self.delete {
-            parser.delete(val)?;
+            parser.delete(val, metadata)?;
             updates += 1;
         }
 
         if let Some(val) = self.insert {
-            parser.insert(val)?;
+            parser.insert(val, metadata)?;
             updates += 1;
         }
 
         if let Some(val) = self.update {
-            parser.update(val)?;
+            parser.update(val, metadata)?;
             updates += 1;
         }
 
@@ -86,7 +95,11 @@ impl UpdateFormat for DebeziumUpdate<&'_ RawValue> {
         Some("Example valid JSON: '[{{\"payload\": {{\"op\": \"u\", \"before\": {{...}}, \"after\": {{...}} }} }}]'")
     }
 
-    fn apply(self, parser: &mut JsonParser) -> Result<usize, ParseError> {
+    fn apply(
+        self,
+        parser: &mut JsonParser,
+        metadata: &Option<Variant>,
+    ) -> Result<usize, ParseError> {
         // TODO: validate table name.
         // We currently allow a JSON connector to feed data to a single table.
         // The name of the table may or may not match table name in the CDC
@@ -110,12 +123,12 @@ impl UpdateFormat for DebeziumUpdate<&'_ RawValue> {
         let mut updates = 0;
 
         if let Some(before) = &self.payload.before {
-            parser.delete(before)?;
+            parser.delete(before, metadata)?;
             updates += 1;
         };
 
         if let Some(after) = &self.payload.after {
-            parser.insert(after)?;
+            parser.insert(after, metadata)?;
             updates += 1;
         };
 
@@ -140,7 +153,11 @@ impl UpdateFormat for WeightedUpdate<&'_ RawValue> {
         Some("Example valid JSON: '[{{\"weight\": 1, \"data\": {{...}} }}, {{\"weight\": -1, \"data\": {{...}} }}]'")
     }
 
-    fn apply(self, _parser: &mut JsonParser) -> Result<usize, ParseError> {
+    fn apply(
+        self,
+        _parser: &mut JsonParser,
+        _metadata: &Option<Variant>,
+    ) -> Result<usize, ParseError> {
         todo!()
     }
 }
@@ -162,8 +179,12 @@ impl UpdateFormat for &'_ RawValue {
         None
     }
 
-    fn apply(self, parser: &mut JsonParser) -> Result<usize, ParseError> {
-        parser.insert(self)?;
+    fn apply(
+        self,
+        parser: &mut JsonParser,
+        metadata: &Option<Variant>,
+    ) -> Result<usize, ParseError> {
+        parser.insert(self, metadata)?;
         Ok(1)
     }
 }
@@ -243,44 +264,54 @@ impl JsonParser {
         }
     }
 
-    fn delete(&mut self, val: &RawValue) -> Result<(), ParseError> {
-        self.input_stream.delete(val.get().as_bytes()).map_err(|e| {
-            ParseError::text_event_error(
-                "failed to deserialize JSON record",
-                e,
-                self.last_event_number + 1,
-                Some(val.get()),
-                None,
-            )
-        })
+    fn delete(&mut self, val: &RawValue, metadata: &Option<Variant>) -> Result<(), ParseError> {
+        self.input_stream
+            .delete(val.get().as_bytes(), metadata)
+            .map_err(|e| {
+                ParseError::text_event_error(
+                    "failed to deserialize JSON record",
+                    e,
+                    self.last_event_number + 1,
+                    Some(val.get()),
+                    None,
+                )
+            })
     }
 
-    fn insert(&mut self, val: &RawValue) -> Result<(), ParseError> {
-        self.input_stream.insert(val.get().as_bytes()).map_err(|e| {
-            ParseError::text_event_error(
-                "failed to deserialize JSON record",
-                e,
-                self.last_event_number + 1,
-                Some(val.get()),
-                None,
-            )
-        })
+    fn insert(&mut self, val: &RawValue, metadata: &Option<Variant>) -> Result<(), ParseError> {
+        self.input_stream
+            .insert(val.get().as_bytes(), metadata)
+            .map_err(|e| {
+                ParseError::text_event_error(
+                    "failed to deserialize JSON record",
+                    e,
+                    self.last_event_number + 1,
+                    Some(val.get()),
+                    None,
+                )
+            })
     }
 
-    fn update(&mut self, val: &RawValue) -> Result<(), ParseError> {
-        self.input_stream.update(val.get().as_bytes()).map_err(|e| {
-            ParseError::text_event_error(
-                "failed to deserialize JSON record",
-                e,
-                self.last_event_number + 1,
-                Some(val.get()),
-                None,
-            )
-        })
+    fn update(&mut self, val: &RawValue, metadata: &Option<Variant>) -> Result<(), ParseError> {
+        self.input_stream
+            .update(val.get().as_bytes(), metadata)
+            .map_err(|e| {
+                ParseError::text_event_error(
+                    "failed to deserialize JSON record",
+                    e,
+                    self.last_event_number + 1,
+                    Some(val.get()),
+                    None,
+                )
+            })
     }
 
-    fn apply_update<'de, F>(&mut self, update: &'de RawValue, errors: &mut Vec<ParseError>)
-    where
+    fn apply_update<'de, F>(
+        &mut self,
+        update: &'de RawValue,
+        metadata: &Option<Variant>,
+        errors: &mut Vec<ParseError>,
+    ) where
         F: UpdateFormat + Deserialize<'de>,
     {
         if self.config.array {
@@ -296,7 +327,7 @@ impl JsonParser {
                     let mut error = false;
                     let old_n_records = self.input_stream.len().records;
                     for update in updates {
-                        if let Err(e) = update.apply(self) {
+                        if let Err(e) = update.apply(self, metadata) {
                             error = true;
                             errors.push(e);
                         }
@@ -319,7 +350,7 @@ impl JsonParser {
                     ));
                 }
                 Ok(update) => {
-                    if let Err(e) = update.apply(self) {
+                    if let Err(e) = update.apply(self, metadata) {
                         errors.push(e);
                     }
                 }
@@ -330,7 +361,11 @@ impl JsonParser {
 }
 
 impl Parser for JsonParser {
-    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+    fn parse(
+        &mut self,
+        data: &[u8],
+        metadata: &Option<Variant>,
+    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let mut errors = Vec::new();
 
         let mut stream = serde_json::Deserializer::from_slice(data).into_iter::<&RawValue>();
@@ -351,15 +386,17 @@ impl Parser for JsonParser {
 
             match self.config.update_format {
                 JsonUpdateFormat::InsertDelete => {
-                    self.apply_update::<InsDelUpdate<_>>(update, &mut errors)
+                    self.apply_update::<InsDelUpdate<_>>(update, metadata, &mut errors)
                 }
                 JsonUpdateFormat::Debezium => {
-                    self.apply_update::<DebeziumUpdate<_>>(update, &mut errors)
+                    self.apply_update::<DebeziumUpdate<_>>(update, metadata, &mut errors)
                 }
                 JsonUpdateFormat::Weighted => {
-                    self.apply_update::<WeightedUpdate<_>>(update, &mut errors)
+                    self.apply_update::<WeightedUpdate<_>>(update, metadata, &mut errors)
                 }
-                JsonUpdateFormat::Raw => self.apply_update::<&RawValue>(update, &mut errors),
+                JsonUpdateFormat::Raw => {
+                    self.apply_update::<&RawValue>(update, metadata, &mut errors)
+                }
                 JsonUpdateFormat::Redis | JsonUpdateFormat::Snowflake => {
                     panic!("Unexpected update format: {:?}", &self.config.update_format)
                 }
@@ -504,18 +541,21 @@ impl JsonSplitter {
 mod test {
     use crate::{
         format::{InputBuffer, Parser},
-        test::{init_test_logger, mock_parser_pipeline, MockUpdate},
+        test::{init_test_logger, kafka::TestStructMetadata, mock_parser_pipeline, MockUpdate},
         transport::InputConsumer,
         FormatConfig, ParseError,
     };
     use feldera_adapterlib::format::Splitter;
+    use feldera_sqllib::{SqlString, Timestamp, Variant};
     use feldera_types::{
         deserialize_table_record,
         format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat},
         program_schema::Relation,
         serde_with_context::{DeserializeWithContext, SqlSerdeConfig},
     };
-    use std::{borrow::Cow, fmt::Debug, hash::Hash, panic::Location};
+    use std::{
+        borrow::Cow, collections::BTreeMap, fmt::Debug, hash::Hash, panic::Location, sync::Arc,
+    };
     use tracing::trace;
 
     use super::JsonSplitter;
@@ -527,10 +567,10 @@ mod test {
         s: Option<String>,
     }
 
-    deserialize_table_record!(TestStruct["TestStruct", 3] {
-        (b, "b", false, bool, None),
-        (i, "i", false, i32, None),
-        (s, "s", false, Option<String>, Some(None))
+    deserialize_table_record!(TestStruct["TestStruct", Variant, 3] {
+        (b, "b", false, bool, |_| None),
+        (i, "i", false, i32, |_| None),
+        (s, "s", false, Option<String>, |_| Some(None))
     });
 
     // TODO: tests for RecordFormat::Raw.
@@ -558,10 +598,10 @@ mod test {
         s: Option<Option<String>>,
     }
 
-    deserialize_table_record!(TestStructUpd["TestStructUpd", 3] {
-        (b, "b", false, Option<bool>, Some(None)),
-        (i, "i", false, i32, None),
-        (s, "s", false, Option<Option<String>>, Some(None), |x| if x.is_none() { Some(None) } else {x})
+    deserialize_table_record!(TestStructUpd["TestStructUpd", Variant, 3] {
+        (b, "b", false, Option<bool>, |_| Some(None)),
+        (i, "i", false, i32, |_| None),
+        (s, "s", false, Option<Option<String>>, |_| Some(None), |x| if x.is_none() { Some(None) } else {x})
     });
 
     impl TestStructUpd {
@@ -586,13 +626,14 @@ mod test {
         input_batches: Vec<(String, Vec<ParseError>)>,
         /// Expected contents at the end of the test.
         expected_output: Vec<MockUpdate<T, U>>,
+        metadata: Option<Variant>,
     }
 
     fn run_test_cases<T, U>(test_cases: Vec<TestCase<T, U>>)
     where
         T: Debug
             + Eq
-            + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + Hash
             + Send
             + Sync
@@ -601,7 +642,7 @@ mod test {
             + 'static,
         U: Debug
             + Eq
-            + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + Hash
             + Send
             + Sync
@@ -621,7 +662,7 @@ mod test {
             consumer.on_error(Some(Box::new(|_, _| {})));
             parser.on_error(Some(Box::new(|_, _| {})));
             for (json, expected_errors) in test.input_batches {
-                let (mut buffer, errors) = parser.parse(json.as_bytes());
+                let (mut buffer, errors) = parser.parse(json.as_bytes(), &test.metadata);
                 assert_eq!(&errors, &expected_errors);
                 buffer.flush();
             }
@@ -642,6 +683,14 @@ mod test {
                 config,
                 input_batches,
                 expected_output,
+                metadata: None,
+            }
+        }
+
+        fn with_metadata(self, metadata: Variant) -> Self {
+            Self {
+                metadata: Some(metadata),
+                ..self
             }
         }
     }
@@ -1126,6 +1175,57 @@ mod test {
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
             ),
         ];
+
+        run_test_cases(test_cases);
+    }
+
+    #[test]
+    fn test_json_with_metadata() {
+        init_test_logger();
+
+        let mut metadata = BTreeMap::new();
+        metadata.insert(
+            Variant::String(SqlString::from("kafka_headers")),
+            Variant::Map(Arc::new(BTreeMap::new())),
+        );
+        metadata.insert(
+            Variant::String(SqlString::from("kafka_topic")),
+            Variant::String(SqlString::from("my_topic")),
+        );
+        metadata.insert(
+            Variant::String(SqlString::from("kafka_timestamp")),
+            Variant::Timestamp(Timestamp::new(1763626606441)),
+        );
+        metadata.insert(
+            Variant::String(SqlString::from("kafka_partition")),
+            Variant::Int(10),
+        );
+        metadata.insert(
+            Variant::String(SqlString::from("kafka_offset")),
+            Variant::Int(1_000_000),
+        );
+
+        let test_cases: Vec<TestCase<TestStructMetadata, ()>> = vec![TestCase::new(
+            JsonParserConfig {
+                update_format: JsonUpdateFormat::Raw,
+                json_flavor: JsonFlavor::Default,
+                array: false,
+                lines: JsonLines::Single,
+            },
+            vec![(r#"{"i": 0}"#.to_string(), Vec::new())],
+            vec![MockUpdate::with_polarity(
+                TestStructMetadata::new(
+                    0,
+                    Variant::Map(Arc::new(BTreeMap::new())),
+                    SqlString::from("my_topic"),
+                    Timestamp::new(1763626606441),
+                    10,
+                    1_000_000,
+                ),
+                true,
+            )],
+        )
+        .with_metadata(Variant::Map(Arc::new(metadata)))];
 
         run_test_cases(test_cases);
     }

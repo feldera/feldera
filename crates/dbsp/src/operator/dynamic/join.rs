@@ -1996,7 +1996,7 @@ pub(crate) mod test {
             vec![],
         ];
 
-        let inputs2 = vec![
+        let inputs2 = [
             vec![],
             vec![],
             vec![Tup2(1, Tup2(1, 3))],

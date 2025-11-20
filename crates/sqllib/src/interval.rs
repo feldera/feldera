@@ -287,7 +287,7 @@ impl SerializeWithContext<SqlSerdeConfig> for ShortInterval {
 
 /// Deserialize a `ShortInterval` with context.  See
 /// [`DeserializeWithContext`].
-impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ShortInterval {
+impl<'de> DeserializeWithContext<'de, SqlSerdeConfig, ()> for ShortInterval {
     fn deserialize_with_context<D>(
         _deserializer: D,
         _context: &'de SqlSerdeConfig,
@@ -579,7 +579,7 @@ impl SerializeWithContext<SqlSerdeConfig> for LongInterval {
     }
 }
 
-impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for LongInterval {
+impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for LongInterval {
     fn deserialize_with_context<D>(
         _deserializer: D,
         _context: &'de SqlSerdeConfig,

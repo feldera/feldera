@@ -5,6 +5,7 @@ use anyhow::{anyhow, Error as AnyError};
 use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
+use feldera_sqllib::Variant;
 use feldera_types::config::FtModel;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -191,10 +192,14 @@ impl MockInputParser {
 }
 
 impl Parser for MockInputParser {
-    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+    fn parse(
+        &mut self,
+        data: &[u8],
+        metadata: &Option<Variant>,
+    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let mut state = self.0.lock().unwrap();
         state.data.extend_from_slice(data);
-        let (buffer, errors) = state.parser.parse(data);
+        let (buffer, errors) = state.parser.parse(data, metadata);
 
         for error in errors.iter() {
             // println!("parser returned '{:?}'", state.parser_result);

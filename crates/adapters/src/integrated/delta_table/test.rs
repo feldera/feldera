@@ -19,6 +19,7 @@ use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaOps, DeltaTable, DeltaTableBuilder};
 use feldera_adapterlib::utils::datafusion::execute_query_collect;
+use feldera_sqllib::Variant;
 use feldera_types::config::PipelineConfig;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{Field, SqlIdentifier};
@@ -72,7 +73,7 @@ fn delta_table_snapshot_to_json<T>(
 where
     T: DBData
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
     let start = Instant::now();
@@ -107,7 +108,7 @@ async fn wait_for_output_records<T>(
     datafusion: &SessionContext,
     timeout_ms: u64,
 ) where
-    T: for<'a> DeserializeWithContext<'a, SqlSerdeConfig> + DBData,
+    T: for<'a> DeserializeWithContext<'a, SqlSerdeConfig, Variant> + DBData,
 {
     let start = Instant::now();
     loop {
@@ -168,7 +169,7 @@ async fn wait_for_records_materialized<T>(
     table: &SqlIdentifier,
     expected_output: &[T],
 ) where
-    T: for<'a> DeserializeWithContext<'a, SqlSerdeConfig> + DBData,
+    T: for<'a> DeserializeWithContext<'a, SqlSerdeConfig, Variant> + DBData,
 {
     let start = Instant::now();
     loop {
@@ -266,7 +267,7 @@ fn delta_table_input_pipeline<T>(
 where
     T: DBData
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
     init_logging();
@@ -333,7 +334,7 @@ fn delta_to_delta_pipeline<T>(
 where
     T: DBData
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
     info!("creating a pipeline to copy delta table '{input_table_uri}' to '{output_table_uri}'");
@@ -401,11 +402,11 @@ fn delta_read_pipeline<T, K, KF>(
 where
     T: DBData
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
     K: DBData
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
     KF: Fn(&T) -> K + Clone + Send + Sync + 'static,
 {
@@ -463,11 +464,11 @@ fn delta_write_pipeline<T, K, KF>(
 where
     T: DBData
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
     K: DBData
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
     KF: Fn(&T) -> K + Clone + Send + Sync + 'static,
 {
@@ -1038,7 +1039,7 @@ fn write_updates_as_json<T>(file: &mut File, data: &[T], polarity: bool)
 where
     T: DBData
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
     let mut buffer = Vec::new();

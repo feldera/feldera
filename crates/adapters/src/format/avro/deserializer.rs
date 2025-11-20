@@ -566,14 +566,15 @@ pub fn avro_deserializer<'a, 'de>(
 ///
 /// This conversion can fail if the structure of the `Value` does not match the
 /// structure expected by `D`.
-pub fn from_avro_value<'de, D: DeserializeWithContext<'de, SqlSerdeConfig>>(
+pub fn from_avro_value<'de, D: DeserializeWithContext<'de, SqlSerdeConfig, AUX>, AUX>(
     value: &'de Value,
     schema: &'de Schema,
     refs: &'de AvroSchemaRefs,
+    metadata: &'de Option<AUX>,
 ) -> Result<D, erased_serde::Error> {
     let deserializer: Deserializer<'de> = Deserializer::new(value, schema, refs);
 
     let deserializer = avro_deserializer(&deserializer);
 
-    D::deserialize_with_context(deserializer, avro_de_config())
+    D::deserialize_with_context_aux(deserializer, avro_de_config(), metadata)
 }

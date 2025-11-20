@@ -8,6 +8,7 @@ use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
 use dbsp::operator::input::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_sqllib::Variant;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::program_schema::Relation;
 use feldera_types::serde_with_context::FieldParseError;
@@ -204,7 +205,11 @@ pub trait Parser: Send + Sync {
     ///
     /// XXX it would be even better if this were `&self` and avoided keeping
     /// state entirely.
-    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>);
+    fn parse(
+        &mut self,
+        data: &[u8],
+        metadata: &Option<Variant>,
+    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>);
 
     /// Stages all of the `buffers`, which must have been obtained from this
     /// [Parser] or one forked from this one, into a [StagedBuffers] that may

@@ -17,7 +17,7 @@ use apache_avro::{
 };
 use dbsp::{utils::Tup2, OrdIndexedZSet};
 use dbsp::{DBData, OrdZSet};
-use feldera_sqllib::{ByteArray, Uuid};
+use feldera_sqllib::{ByteArray, Uuid, Variant};
 use feldera_types::{
     deserialize_table_record,
     format::avro::{AvroEncoderConfig, AvroEncoderKeyMode},
@@ -207,7 +207,7 @@ where
         + Debug
         + Eq
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Send
         + 'static,
 {
@@ -238,7 +238,7 @@ where
         + Debug
         + Eq
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Send
         + 'static,
 {
@@ -284,7 +284,7 @@ where
         + Debug
         + Eq
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Send
         + 'static,
 {
@@ -332,7 +332,7 @@ fn run_parser_test<T>(test_cases: Vec<TestCase<T>>)
 where
     T: Debug
         + Eq
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Hash
         + Send
         + Sync
@@ -350,7 +350,7 @@ where
             mock_parser_pipeline(&test.relation_schema, &format_config).unwrap();
         consumer.on_error(Some(Box::new(|_, _| {})));
         for (avro, expected_errors) in test.input_batches {
-            let (mut buffer, errors) = parser.parse(&avro);
+            let (mut buffer, errors) = parser.parse(&avro, &None);
             assert_eq!(&errors, &expected_errors);
             buffer.flush();
         }
@@ -663,9 +663,9 @@ serialize_table_record!(TestBinary[2]{
     r#varbinary["varbinary"]: ByteArray
 });
 
-deserialize_table_record!(TestBinary["TestBinary", 2] {
-    (r#binary32, "binary32", false, ByteArray, None),
-    (r#varbinary, "varbinary", false, ByteArray, None)
+deserialize_table_record!(TestBinary["TestBinary", Variant, 2] {
+    (r#binary32, "binary32", false, ByteArray, |_| None),
+    (r#varbinary, "varbinary", false, ByteArray, |_| None)
 });
 
 #[test]
@@ -758,10 +758,10 @@ serialize_table_record!(TestUuid[3]{
     r#varchar["varchar"]: String
 });
 
-deserialize_table_record!(TestUuid["TestUuid", 3] {
-    (r#uuid1, "uuid1", false, Uuid, None),
-    (r#uuid2, "uuid2", false, Uuid, None),
-    (r#varchar, "varchar", false, String, None)
+deserialize_table_record!(TestUuid["TestUuid", Variant, 3] {
+    (r#uuid1, "uuid1", false, Uuid, |_| None),
+    (r#uuid2, "uuid2", false, Uuid, |_| None),
+    (r#varchar, "varchar", false, String, |_| None)
 });
 
 // Test for issue #4722: make sure that we can deserialize UUIDs from both plain string and logicalType uuid.
@@ -847,8 +847,8 @@ serialize_table_record!(TestEnum[1]{
     r#enum_val["enum_val"]: String
 });
 
-deserialize_table_record!(TestEnum["TestEnum", 1] {
-    (r#enum_val, "enum_val", false, String, None)
+deserialize_table_record!(TestEnum["TestEnum", Variant, 1] {
+    (r#enum_val, "enum_val", false, String, |_| None)
 });
 
 #[test]
@@ -1024,11 +1024,11 @@ serialize_table_record!(TestIntConversionsSrc[4]{
     r#long["long"]: i32
 });
 
-deserialize_table_record!(TestIntConversionsSrc["TestIntConversions", 4] {
-    (r#uint, "uint", false, i32, None),
-    (r#ulong, "ulong", false, i32, None),
-    (r#int, "int", false, i32, None),
-    (r#long, "long", false, i32, None)
+deserialize_table_record!(TestIntConversionsSrc["TestIntConversions", Variant, 4] {
+    (r#uint, "uint", false, i32, |_| None),
+    (r#ulong, "ulong", false, i32, |_| None),
+    (r#int, "int", false, i32, |_| None),
+    (r#long, "long", false, i32, |_| None)
 });
 
 /// Type used to deserialize different integer types from Avro `int`.
@@ -1062,11 +1062,11 @@ serialize_table_record!(TestIntConversionsDst[4]{
     r#long["long"]: i64
 });
 
-deserialize_table_record!(TestIntConversionsDst["TestIntConversions", 4] {
-    (r#uint, "uint", false, u32, None),
-    (r#ulong, "ulong", false, u64, None),
-    (r#int, "int", false, i32, None),
-    (r#long, "long", false, i64, None)
+deserialize_table_record!(TestIntConversionsDst["TestIntConversions", Variant, 4] {
+    (r#uint, "uint", false, u32, |_| None),
+    (r#ulong, "ulong", false, u64, |_| None),
+    (r#int, "int", false, i32, |_| None),
+    (r#long, "long", false, i64, |_| None)
 });
 
 /// Test for issue #4664: make sure that we can deserialize different 32-bit and 64-bit integer types from `int`.
@@ -1175,7 +1175,8 @@ where
             .iter()
             .map(|(_k, v, headers)| {
                 let val = from_avro_datum(&schema, &mut &v.as_ref().unwrap()[5..], None).unwrap();
-                let value = from_avro_value::<T>(&val, &schema, &HashMap::new()).unwrap();
+                let value =
+                    from_avro_value::<T, ()>(&val, &schema, &HashMap::new(), &None).unwrap();
                 let w = if headers[0] == ("op".to_string(), Some(b"insert".to_vec())) {
                     1
                 } else {
@@ -1285,12 +1286,14 @@ fn test_raw_avro_output_indexed<K, T>(
         .iter()
         .map(|(k, v, headers)| {
             let val = from_avro_datum(&val_schema, &mut &v.as_ref().unwrap()[5..], None).unwrap();
-            let value = from_avro_value::<T>(&val, &val_schema, &HashMap::new()).unwrap();
+            let value =
+                from_avro_value::<T, ()>(&val, &val_schema, &HashMap::new(), &None).unwrap();
 
             if let Some(key_schema) = &key_schema {
                 let key =
                     from_avro_datum(key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
-                let key = from_avro_value::<K>(&key, key_schema, &HashMap::new()).unwrap();
+                let key =
+                    from_avro_value::<K, ()>(&key, key_schema, &HashMap::new(), &None).unwrap();
                 assert_eq!(key, key_func(&value));
             }
 
@@ -1368,12 +1371,14 @@ fn test_confluent_avro_output<K, V, KF>(
         .map(|(k, v, _headers)| {
             if let Some(v) = v {
                 let val = from_avro_datum(&schema, &mut &v[5..], None).unwrap();
-                let value = from_avro_value::<V>(&val, &schema, &HashMap::new()).unwrap();
+                let value =
+                    from_avro_value::<V, ()>(&val, &schema, &HashMap::new(), &None).unwrap();
                 (Some(Tup2(value, 1)), None)
             } else {
                 let val =
                     from_avro_datum(&key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
-                let value = from_avro_value::<K>(&val, &key_schema, &HashMap::new()).unwrap();
+                let value =
+                    from_avro_value::<K, ()>(&val, &key_schema, &HashMap::new(), &None).unwrap();
                 (None, Some(Tup2(value, -1)))
             }
         })
@@ -1480,11 +1485,11 @@ fn test_confluent_avro_output_indexed<K, V>(
         .iter()
         .map(|(k, v, _headers)| {
             let key = from_avro_datum(&key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
-            let key = from_avro_value::<K>(&key, &key_schema, &HashMap::new()).unwrap();
+            let key = from_avro_value::<K, ()>(&key, &key_schema, &HashMap::new(), &None).unwrap();
 
             let val = v.as_ref().map(|v| {
                 let val = from_avro_datum(&value_schema, &mut &v[5..], None).unwrap();
-                from_avro_value::<V>(&val, &value_schema, &HashMap::new()).unwrap()
+                from_avro_value::<V, ()>(&val, &value_schema, &HashMap::new(), &None).unwrap()
             });
 
             (key, val)

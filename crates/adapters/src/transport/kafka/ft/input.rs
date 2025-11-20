@@ -18,6 +18,7 @@ use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{
     parse_resume_info, InputEndpoint, InputReaderCommand, Resume, Watermark,
 };
+use feldera_sqllib::{ByteArray, SqlString, Timestamp, Variant};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::{KafkaInputConfig, KafkaStartFromConfig};
@@ -25,7 +26,7 @@ use itertools::Itertools;
 use rdkafka::client::OAuthToken;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::base_consumer::PartitionQueue;
-use rdkafka::message::BorrowedMessage;
+use rdkafka::message::{BorrowedMessage, Headers};
 use rdkafka::{
     config::FromClientConfigAndContext,
     consumer::{BaseConsumer, Consumer, ConsumerContext},
@@ -380,7 +381,12 @@ impl KafkaFtInputReaderInner {
                 move || unparker.unpark()
             });
 
-            let receiver = Arc::new(PartitionReceiver::new(*partition, queue, next_offset));
+            let receiver = Arc::new(PartitionReceiver::new(
+                *partition,
+                queue,
+                next_offset,
+                &config,
+            ));
             receivers.insert(partition, receiver.clone());
             thread.receivers.push(receiver);
         }
@@ -867,6 +873,8 @@ impl Metadata {
 struct PartitionReceiver {
     partition: i32,
     queue: PartitionQueue<KafkaFtInputContext>,
+    config: KafkaInputConfig,
+    metadata_requested: bool,
 
     /// The maximum message offset that we want to receive, used as follows:
     ///
@@ -901,7 +909,10 @@ impl PartitionReceiver {
         partition: i32,
         queue: PartitionQueue<KafkaFtInputContext>,
         next_offset: i64,
+        config: &KafkaInputConfig,
     ) -> Self {
+        let metadata_requested = config.metadata_requested();
+
         Self {
             partition,
             queue,
@@ -911,6 +922,8 @@ impl PartitionReceiver {
             messages: Mutex::new(BTreeMap::new()),
             eof: AtomicBool::new(false),
             fatal_error: AtomicBool::new(false),
+            config: config.clone(),
+            metadata_requested,
         }
     }
     pub fn read(&self, max: i64) -> Option<(i64, Option<Box<dyn InputBuffer>>)> {
@@ -941,6 +954,69 @@ impl PartitionReceiver {
         self.next_offset.load(Ordering::Relaxed)
     }
 
+    /// Create record metadata from Kafka message containing only properties specified in the connector config.
+    fn create_metadata(&self, message: &BorrowedMessage<'_>) -> Option<Variant> {
+        if !self.metadata_requested {
+            return None;
+        }
+
+        let mut metadata = BTreeMap::new();
+
+        if self.config.include_topic == Some(true) {
+            metadata.insert(
+                Variant::String(SqlString::from("kafka_topic")),
+                Variant::String(SqlString::from(message.topic())),
+            );
+        };
+
+        if self.config.include_timestamp == Some(true) {
+            let timestamp = message.timestamp().to_millis();
+            if let Some(timestamp) = timestamp {
+                metadata.insert(
+                    Variant::String(SqlString::from("kafka_timestamp")),
+                    Variant::Timestamp(Timestamp::from(timestamp)),
+                );
+            }
+        }
+
+        if self.config.include_partition == Some(true) {
+            metadata.insert(
+                Variant::String(SqlString::from("kafka_partition")),
+                Variant::Int(message.partition()),
+            );
+        }
+
+        if self.config.include_offset == Some(true) {
+            metadata.insert(
+                Variant::String(SqlString::from("kafka_offset")),
+                Variant::BigInt(message.offset()),
+            );
+        }
+
+        if self.config.include_headers == Some(true) {
+            let mut kafka_headers = BTreeMap::new();
+
+            if let Some(headers) = message.headers() {
+                for i in 0..headers.count() {
+                    let header = headers.get(i);
+                    let value = if let Some(value) = header.value {
+                        Variant::Binary(ByteArray::from(value))
+                    } else {
+                        Variant::SqlNull
+                    };
+                    kafka_headers.insert(Variant::String(SqlString::from(header.key)), value);
+                }
+            }
+
+            metadata.insert(
+                Variant::String(SqlString::from("kafka_headers")),
+                Variant::Map(Arc::new(kafka_headers)),
+            );
+        }
+
+        Some(Variant::Map(Arc::new(metadata)))
+    }
+
     fn handle_kafka_message(
         &self,
         base_consumer: &BaseConsumer<KafkaFtInputContext>,
@@ -965,7 +1041,8 @@ impl PartitionReceiver {
                 if offset >= next_offset {
                     self.next_offset.store(offset + 1, Ordering::Relaxed);
                     let payload = message.payload().unwrap_or(&[]);
-                    let (buffer, errors) = parser.parse(payload);
+                    let metadata = self.create_metadata(&message);
+                    let (buffer, errors) = parser.parse(payload, &metadata);
                     self.messages.lock().unwrap().insert(offset, buffer);
                     consumer.parse_errors(errors);
                 } else {

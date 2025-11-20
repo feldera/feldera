@@ -19,6 +19,7 @@ use erased_serde::Deserializer as ErasedDeserializer;
 use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_adapterlib::format::BufferSize;
 
+use feldera_sqllib::Variant;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
 use std::{
@@ -128,14 +129,14 @@ impl<T, U> MockDeZSet<T, U> {
 
 impl<T, U> DeCollectionHandle for MockDeZSet<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Hash
         + Send
         + Sync
         + Debug
         + Clone
         + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Hash
         + Send
         + Sync
@@ -331,27 +332,27 @@ where
 
 impl<De, T, U, C> DeCollectionStream for MockDeZSetStream<De, T, U, C>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
     De: DeserializerFromBytes<C> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
-        let val = DeserializerFromBytes::deserialize::<T>(&mut self.deserializer, data)?;
+    fn insert(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+        let val = DeserializerFromBytes::deserialize::<T>(&mut self.deserializer, data, metadata)?;
         self.buffer.updates.push(MockUpdate::Insert(val));
         self.buffer.n_bytes += data.len();
         Ok(())
     }
 
-    fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
-        let val = DeserializerFromBytes::deserialize::<T>(&mut self.deserializer, data)?;
+    fn delete(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+        let val = DeserializerFromBytes::deserialize::<T>(&mut self.deserializer, data, metadata)?;
         self.buffer.updates.push(MockUpdate::Delete(val));
         self.buffer.n_bytes += data.len();
         Ok(())
     }
 
-    fn update(&mut self, data: &[u8]) -> AnyResult<()> {
-        let val = DeserializerFromBytes::deserialize::<U>(&mut self.deserializer, data)?;
+    fn update(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+        let val = DeserializerFromBytes::deserialize::<U>(&mut self.deserializer, data, metadata)?;
         self.buffer.updates.push(MockUpdate::Update(val));
         self.buffer.n_bytes += data.len();
         Ok(())
@@ -380,8 +381,8 @@ where
 
 impl<De, T, U, C> InputBuffer for MockDeZSetStream<De, T, U, C>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
     De: DeserializerFromBytes<C> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
 {
@@ -428,8 +429,8 @@ where
 
 impl<T, U, C> InputBuffer for MockZSetArrowStream<T, U, C>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
 {
     fn flush(&mut self) {
@@ -451,14 +452,14 @@ where
 
 impl<T, U> ArrowStream for MockZSetArrowStream<T, U, SqlSerdeConfig>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Hash
         + Send
         + Sync
         + Debug
         + Clone
         + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Hash
         + Send
         + Sync
@@ -466,7 +467,7 @@ where
         + Clone
         + 'static,
 {
-    fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
+    fn insert(&mut self, data: &RecordBatch, _metadata: &Option<Variant>) -> AnyResult<()> {
         let deserializer = ArrowDeserializer::from_record_batch(data)?;
         let deserializer =
             &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
@@ -482,7 +483,7 @@ where
         Ok(())
     }
 
-    fn delete(&mut self, _data: &RecordBatch) -> AnyResult<()> {
+    fn delete(&mut self, _data: &RecordBatch, _metadata: &Option<Variant>) -> AnyResult<()> {
         todo!()
     }
 
@@ -490,6 +491,7 @@ where
         &mut self,
         _data: &arrow::array::RecordBatch,
         _polarities: &[bool],
+        _metadata: &Option<Variant>,
     ) -> AnyResult<()> {
         todo!()
     }
@@ -530,8 +532,8 @@ impl<T, U> MockAvroStream<T, U> {
 #[cfg(feature = "with-avro")]
 impl<T, U> AvroStream for MockAvroStream<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
 {
     fn insert(
         &mut self,
@@ -539,8 +541,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
+        metadata: &Option<Variant>,
     ) -> AnyResult<()> {
-        let v: T = from_avro_value(data, schema, refs)
+        let v: T = from_avro_value(data, schema, refs, metadata)
             .map_err(|e| anyhow::anyhow!("error deserializing Avro record: {e}"))?;
         self.updates.push(MockUpdate::Insert(v));
         self.n_bytes += n_bytes;
@@ -553,8 +556,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
+        metadata: &Option<Variant>,
     ) -> AnyResult<()> {
-        let v: T = from_avro_value(data, schema, refs)
+        let v: T = from_avro_value(data, schema, refs, metadata)
             .map_err(|e| anyhow::anyhow!("error deserializing Avro record: {e}"))?;
 
         self.updates.push(MockUpdate::Delete(v));
@@ -574,8 +578,8 @@ where
 #[cfg(feature = "with-avro")]
 impl<T, U> InputBuffer for MockAvroStream<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
 {
     fn flush(&mut self) {
         let mut state = self.handle.0.lock().unwrap();
@@ -632,7 +636,7 @@ where
     )
     .unwrap();
 
-    let expected = zset
+    let received = zset
         .state()
         .flushed
         .iter()
@@ -640,17 +644,40 @@ where
         .cloned()
         .collect::<Vec<_>>();
 
-    let flattened = data
+    let expected = data
         .iter()
         .flat_map(|data| data.iter())
         .cloned()
         .collect::<Vec<_>>();
 
-    assert_eq!(&expected, &flattened);
+    assert_eq!(&received, &expected);
 
     // for (i, val) in data.iter().flat_map(|data| data.iter()).enumerate() {
     //     assert_eq!(zset.state().flushed[i].unwrap_insert(), val);
     // }
+}
+
+/// Wait for `count` records to be received.
+pub fn wait_for_output_count<T, F>(zset: &MockDeZSet<T, T>, count: usize, flush: F) -> Vec<T>
+where
+    T: DBData,
+    F: Fn(),
+{
+    wait(
+        || {
+            flush();
+            zset.state().flushed.len() == count
+        },
+        DEFAULT_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    zset.state()
+        .flushed
+        .iter()
+        .map(|u| u.unwrap_insert())
+        .cloned()
+        .collect::<Vec<_>>()
 }
 
 /// Wait to receive all records in `data` in some order.

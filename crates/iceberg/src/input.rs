@@ -843,9 +843,9 @@ impl IcebergInputEndpointInner {
             // info!("schema: {}", batch.schema());
             num_batches += 1;
             let result = if polarity {
-                input_stream.insert(&batch)
+                input_stream.insert(&batch, &None)
             } else {
-                input_stream.delete(&batch)
+                input_stream.delete(&batch, &None)
             };
             let errors = result.map_or_else(
                 |e| {

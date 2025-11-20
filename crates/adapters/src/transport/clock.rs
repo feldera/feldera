@@ -199,7 +199,7 @@ impl ClockReader {
                             continue;
                         };
                         consumer.buffered(RECORD_SIZE);
-                        let mut buffer = parser.parse(Self::timestamp_to_record(ts_millis).as_bytes()).0.unwrap();
+                        let mut buffer = parser.parse(Self::timestamp_to_record(ts_millis).as_bytes(), &None).0.unwrap();
                         buffer.flush();
                         consumer.replayed(RECORD_SIZE, 0);
                     }
@@ -217,7 +217,7 @@ impl ClockReader {
                         // Push current time;
                         consumer.buffered(RECORD_SIZE);
                         let now = Self::current_time(&config);
-                        let mut buffer = parser.parse(Self::timestamp_to_record(now).as_bytes()).0.unwrap();
+                        let mut buffer = parser.parse(Self::timestamp_to_record(now).as_bytes(), &None).0.unwrap();
                         buffer.flush();
                         consumer.extended(RECORD_SIZE, Some(Resume::Replay {
                              seek: serde_json::Value::Null,
@@ -262,7 +262,7 @@ mod test {
 
     use dbsp::{circuit::CircuitConfig, utils::Tup1, DBSPHandle, Runtime};
     use feldera_adapterlib::catalog::CircuitCatalog;
-    use feldera_sqllib::Timestamp;
+    use feldera_sqllib::{Timestamp, Variant};
     use feldera_types::{
         deserialize_table_record,
         program_schema::{ColumnType, Field, Relation, SqlIdentifier},
@@ -338,8 +338,8 @@ mod test {
                     Self { now: t.0 }
                 }
             }
-            deserialize_table_record!(Clock["now", 1] {
-                (now, "now", false, Timestamp, None)
+            deserialize_table_record!(Clock["now", Variant, 1] {
+                (now, "now", false, Timestamp, |_| None)
             });
             serialize_table_record!(Clock[1]{
                 now["now"]: Timestamp

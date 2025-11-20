@@ -256,6 +256,45 @@ pub fn generate_test_batches_with_weights(
     })
 }
 
+#[derive(PartialEq, Debug, Eq, Hash, Clone)]
+pub struct TestStructMetadata {
+    i: i32,
+    kafka_headers: Variant,
+    kafka_topic: SqlString,
+    kafka_timestamp: Timestamp,
+    kafka_partition: i32,
+    kafka_offset: i64,
+}
+
+deserialize_table_record!(TestStructMetadata["TestStructMetadata", Variant, 6] {
+    (i, "i", false, i32, |_| None),
+    (kafka_headers, "kafka_headers", false, Variant, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().map(|metadata| metadata.index_string("kafka_headers"))),
+    (kafka_topic, "kafka_topic", false, SqlString, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| SqlString::try_from(metadata.index_string("kafka_topic")).ok())),
+    (kafka_timestamp, "kafka_timestamp", false, Timestamp, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| Timestamp::try_from(metadata.index_string("kafka_timestamp")).ok())),
+    (kafka_partition, "kafka_partition", false, i32, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| i32::try_from(metadata.index_string("kafka_partition")).ok())),
+    (kafka_offset, "kafka_offset", false, i64, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| i64::try_from(metadata.index_string("kafka_offset")).ok()))
+});
+
+impl TestStructMetadata {
+    pub fn new(
+        i: i32,
+        kafka_headers: Variant,
+        kafka_topic: SqlString,
+        kafka_timestamp: Timestamp,
+        kafka_partition: i32,
+        kafka_offset: i64,
+    ) -> Self {
+        Self {
+            i,
+            kafka_headers,
+            kafka_topic,
+            kafka_timestamp,
+            kafka_partition,
+            kafka_offset,
+        }
+    }
+}
+
 /// This struct mimics the field naming schema of the compiler.
 #[derive(
     Debug,
@@ -285,8 +324,8 @@ serialize_table_record!(EmbeddedStruct[1]{
     r#field["a"]: bool
 });
 
-deserialize_table_record!(EmbeddedStruct["EmbeddedStruct", 1] {
-    (r#field, "a", false, bool, None)
+deserialize_table_record!(EmbeddedStruct["EmbeddedStruct", Variant, 1] {
+    (r#field, "a", false, bool, |_| None)
 });
 
 /// This struct mimics the field naming schema of the compiler.
@@ -608,16 +647,16 @@ serialize_table_record!(TestStruct2[8]{
     r#field_7["dec"]: SqlDecimal
 });
 
-deserialize_table_record!(TestStruct2["TestStruct", 8] {
-    (r#field, "id", false, i64, None),
-    (r#field_0, "nAmE", true, Option<String>, Some(None)),
-    (r#field_1, "b", false, bool, None),
-    (r#field_2, "ts", false, Timestamp, None),
-    (r#field_3, "dt", false, Date, None),
+deserialize_table_record!(TestStruct2["TestStruct2", Variant, 8] {
+    (r#field, "id", false, i64, |_| None),
+    (r#field_0, "nAmE", true, Option<String>, |_| Some(None)),
+    (r#field_1, "b", false, bool, |_| None),
+    (r#field_2, "ts", false, Timestamp, |_| None),
+    (r#field_3, "dt", false, Date, |_| None),
     // (r#field_4, "t", false, Time, None),
-    (r#field_5, "es", false, Option<EmbeddedStruct>, Some(None)),
-    (r#field_6, "m", false, Option<BTreeMap<String, i64>>, Some(None)),
-    (r#field_7, "dec", false, SqlDecimal<10, 3>, None)
+    (r#field_5, "es", false, Option<EmbeddedStruct>, |_| Some(None)),
+    (r#field_6, "m", false, Option<BTreeMap<String, i64>>, |_| Some(None)),
+    (r#field_7, "dec", false, SqlDecimal<10, 3>, |_| None)
 });
 
 /// Record in the databricks people dataset.
@@ -675,15 +714,15 @@ serialize_table_record!(DatabricksPeople[8]{
     r#salary["salary"]: Option<i32>
 });
 
-deserialize_table_record!(DatabricksPeople["DatabricksPeople", 8] {
-    (r#id, "id", false, i32, None),
-    (r#first_name, "firstname", false, Option<String>, Some(None)),
-    (r#middle_name, "middlename", false, Option<String>, Some(None)),
-    (r#last_name, "lastname", false, Option<String>, Some(None)),
-    (r#gender, "gender", false, Option<String>, Some(None)),
-    (r#birth_date, "birthdate", false, Option<Timestamp>, Some(None)),
-    (r#ssn, "ssn", false, Option<String>, Some(None)),
-    (r#salary, "salary", false, Option<i32>, Some(None))
+deserialize_table_record!(DatabricksPeople["DatabricksPeople", Variant, 8] {
+    (r#id, "id", false, i32, |_| None),
+    (r#first_name, "firstname", false, Option<String>, |_| Some(None)),
+    (r#middle_name, "middlename", false, Option<String>, |_| Some(None)),
+    (r#last_name, "lastname", false, Option<String>, |_| Some(None)),
+    (r#gender, "gender", false, Option<String>, |_| Some(None)),
+    (r#birth_date, "birthdate", false, Option<Timestamp>, |_| Some(None)),
+    (r#ssn, "ssn", false, Option<String>, |_| Some(None)),
+    (r#salary, "salary", false, Option<i32>, |_| Some(None))
 });
 
 /// Struct will all types supported by the Iceberg connector.
@@ -870,20 +909,20 @@ serialize_table_record!(IcebergTestStruct[12]{
     varbin["varbin"]: ByteArray
 });
 
-deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", 12] {
-    (b, "b", false, bool, None),
-    (i, "i", false, i32, None),
-    (l, "l", false, i64, None),
-    (r, "r", false, F32, None),
-    (d, "d", false, F64, None),
-    (dec, "dec", false, SqlDecimal<10, 3>, None),
-    (dt, "dt", false, Date, None),
-    (tm, "tm", false, Time, None),
-    (ts, "ts", false, Timestamp, None),
-    (s, "s", false, String, None),
+deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", Variant, 12] {
+    (b, "b", false, bool, |_| None),
+    (i, "i", false, i32, |_| None),
+    (l, "l", false, i64, |_| None),
+    (r, "r", false, F32, |_| None),
+    (d, "d", false, F64, |_| None),
+    (dec, "dec", false, SqlDecimal<10, 3>, |_| None),
+    (dt, "dt", false, Date, |_| None),
+    (tm, "tm", false, Time, |_| None),
+    (ts, "ts", false, Timestamp, |_| None),
+    (s, "s", false, String, |_| None),
     // (uuid, "uuid", false, ByteArray, None),
-    (fixed, "fixed", false, ByteArray, None),
-    (varbin, "varbin", false, ByteArray, None)
+    (fixed, "fixed", false, ByteArray, |_| None),
+    (varbin, "varbin", false, ByteArray, |_| None)
 });
 
 /// Struct will all types supported by the DeltaLake connector.
@@ -1214,27 +1253,27 @@ serialize_table_record!(DeltaTestStruct[20]{
     uuid["uuid"]: Uuid
 });
 
-deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", 20] {
-    (bigint, "bigint", false, i64, None),
-    (binary, "binary", false, ByteArray, None),
-    (boolean, "boolean", false, bool, None),
-    (date, "date", false, Date, None),
-    (decimal_10_3, "decimal_10_3", false, SqlDecimal<10, 3>, None),
-    (double, "double", false, F64, None),
-    (float, "float", false, F32, None),
-    (int, "int", false, i32, None),
-    (smallint, "smallint", false, i16, None),
-    (string, "string", false, String, None),
-    (unused, "unused", false, Option<String>, Some(None)),
-    (timestamp_ntz, "timestamp_ntz", false, Timestamp, None),
-    (tinyint, "tinyint", false, i8, None),
-    (string_array, "string_array", false, Vec<String>, None),
-    (struct1, "struct1", false, TestStruct, None),
-    (struct_array, "struct_array", false, Vec<TestStruct>, None),
-    (string_string_map, "string_string_map", false, BTreeMap<String, String>, None),
-    (string_struct_map, "string_struct_map", false, BTreeMap<String, TestStruct>, None),
-    (variant, "variant", false, Variant, None),
-    (uuid, "uuid", false, Uuid, None)
+deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", Variant, 20] {
+    (bigint, "bigint", false, i64, |_| None),
+    (binary, "binary", false, ByteArray, |_| None),
+    (boolean, "boolean", false, bool, |_| None),
+    (date, "date", false, Date, |_| None),
+    (decimal_10_3, "decimal_10_3", false, SqlDecimal<10, 3>, |_| None),
+    (double, "double", false, F64, |_| None),
+    (float, "float", false, F32, |_|    None),
+    (int, "int", false, i32, |_| None),
+    (smallint, "smallint", false, i16, |_| None),
+    (string, "string", false, String, |_| None),
+    (unused, "unused", false, Option<String>, |_| Some(None)),
+    (timestamp_ntz, "timestamp_ntz", false, Timestamp, |_| None),
+    (tinyint, "tinyint", false, i8, |_| None),
+    (string_array, "string_array", false, Vec<String>, |_| None),
+    (struct1, "struct1", false, TestStruct, |_| None),
+    (struct_array, "struct_array", false, Vec<TestStruct>, |_| None),
+    (string_string_map, "string_string_map", false, BTreeMap<String, String>, |_| None),
+    (string_struct_map, "string_struct_map", false, BTreeMap<String, TestStruct>, |_| None),
+    (variant, "variant", false, Variant, |_| None),
+    (uuid, "uuid", false, Uuid, |_| None)
 });
 
 /// Struct will all types supported by the DeltaLake connector.
@@ -1261,6 +1300,6 @@ serialize_table_record!(DeltaTestKey[1]{
     bigint["bigint"]: i64
 });
 
-deserialize_table_record!(DeltaTestKey["DeltaTestKey", 1] {
-    (bigint, "bigint", false, i64, None)
+deserialize_table_record!(DeltaTestKey["DeltaTestKey", Variant, 1] {
+    (bigint, "bigint", false, i64, |_| None)
 });

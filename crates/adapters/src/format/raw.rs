@@ -7,6 +7,7 @@ use actix_web::HttpRequest;
 use core::str;
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_sqllib::Variant;
 use feldera_types::{
     format::raw::{RawParserConfig, RawParserMode},
     serde_with_context::{serde_config::BinaryFormat, SqlSerdeConfig},
@@ -107,8 +108,13 @@ impl RawParser {
         }
     }
 
-    fn parse_record(&mut self, record: &[u8], errors: &mut Vec<ParseError>) {
-        if let Err(e) = self.input_stream.insert(record) {
+    fn parse_record(
+        &mut self,
+        record: &[u8],
+        metadata: &Option<Variant>,
+        errors: &mut Vec<ParseError>,
+    ) {
+        if let Err(e) = self.input_stream.insert(record, metadata) {
             errors.push(ParseError::bin_event_error(
                 format!("failed to deserialize raw record: {e}"),
                 self.last_event_number + 1,
@@ -131,18 +137,22 @@ impl Parser for RawParser {
         }
     }
 
-    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+    fn parse(
+        &mut self,
+        data: &[u8],
+        metadata: &Option<Variant>,
+    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let mut errors = Vec::new();
 
         match self.config.mode {
             RawParserMode::Blob => {
-                self.parse_record(data, &mut errors);
+                self.parse_record(data, metadata, &mut errors);
                 self.last_event_number += 1;
             }
             RawParserMode::Lines => {
                 for line in data.split(|b| b == &b'\n') {
                     if !line.is_empty() {
-                        self.parse_record(line, &mut errors);
+                        self.parse_record(line, metadata, &mut errors);
                         self.last_event_number += 1;
                     }
                 }
@@ -293,7 +303,7 @@ mod test {
         format::{InputBuffer, ParseError, Parser},
         transport::InputConsumer,
     };
-    use feldera_sqllib::{ByteArray, SqlString};
+    use feldera_sqllib::{ByteArray, SqlString, Variant};
     use feldera_types::{
         deserialize_table_record,
         format::raw::{RawParserConfig, RawParserMode},
@@ -319,8 +329,8 @@ mod test {
         )
     }
 
-    deserialize_table_record!(Binary["Binary", 1] {
-        (data, "data", false, ByteArray, None)
+    deserialize_table_record!(Binary["Binary", Variant, 1] {
+        (data, "data", false, ByteArray, |_| None)
     });
 
     #[derive(Eq, PartialEq, Debug, Hash, Clone)]
@@ -340,8 +350,8 @@ mod test {
         )
     }
 
-    deserialize_table_record!(OptBinary["OptBinary", 1] {
-        (data, "data", false, Option<ByteArray>, Some(None))
+    deserialize_table_record!(OptBinary["OptBinary", Variant, 1] {
+        (data, "data", false, Option<ByteArray>, |_| Some(None))
     });
 
     #[derive(Eq, PartialEq, Debug, Hash, Clone)]
@@ -349,8 +359,8 @@ mod test {
         data: SqlString,
     }
 
-    deserialize_table_record!(Varchar["Varchar", 1] {
-        (data, "data", false, SqlString, None)
+    deserialize_table_record!(Varchar["Varchar", Variant, 1] {
+        (data, "data", false, SqlString, |_| None)
     });
 
     fn varchar_schema() -> Relation {
@@ -370,8 +380,8 @@ mod test {
         data: Option<SqlString>,
     }
 
-    deserialize_table_record!(OptVarchar["OptVarchar", 1] {
-        (data, "data", false, Option<SqlString>, Some(None))
+    deserialize_table_record!(OptVarchar["OptVarchar", Variant, 1] {
+        (data, "data", false, Option<SqlString>, |_| Some(None))
     });
 
     fn opt_varchar_schema() -> Relation {
@@ -418,7 +428,7 @@ mod test {
         T: Debug
             + Eq
             + Hash
-            + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + Send
             + Sync
             + Debug
@@ -437,7 +447,7 @@ mod test {
             consumer.on_error(Some(Box::new(|_, _| {})));
             parser.on_error(Some(Box::new(|_, _| {})));
             for (data, expected_errors) in test.input_batches {
-                let (mut buffer, errors) = parser.parse(&data);
+                let (mut buffer, errors) = parser.parse(&data, &None);
                 assert_eq!(&errors, &expected_errors);
                 buffer.flush();
             }

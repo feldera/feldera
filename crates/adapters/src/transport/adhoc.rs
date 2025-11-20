@@ -129,7 +129,7 @@ impl AdHocInputEndpoint {
     ) -> AnyResult<u64> {
         let timestamp = Utc::now();
 
-        arrow_inserter.insert(&batch)?;
+        arrow_inserter.insert(&batch, &None)?;
         let buffer = arrow_inserter.take_all();
         let size = buffer.len();
         if !buffer.is_empty() {
@@ -277,7 +277,7 @@ impl InputReader for AdHocInputEndpoint {
                 let mut total = BufferSize::empty();
                 let mut hasher = Xxh3Default::new();
                 for chunk in chunks {
-                    let (mut buffer, errors) = details.parser.parse(&chunk);
+                    let (mut buffer, errors) = details.parser.parse(&chunk, &None);
                     details.consumer.buffered(buffer.len());
                     details.consumer.parse_errors(errors);
                     total += buffer.len();

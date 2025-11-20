@@ -24,6 +24,7 @@ use erased_serde::Deserializer as ErasedDeserializer;
 #[cfg(feature = "with-avro")]
 use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_adapterlib::format::BufferSize;
+use feldera_sqllib::Variant;
 use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
@@ -73,9 +74,12 @@ pub trait DeserializerFromBytes<C> {
     fn create(config: C) -> Self;
 
     /// Parse an object of type `T` from `data`.
-    fn deserialize<T>(&mut self, data: &[u8]) -> AnyResult<T>
+    ///
+    /// * `metadata` - optional record metadata passed as an aux argument to
+    ///   `DeserializeWithContext::deserialize_with_context_aux`.
+    fn deserialize<T>(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<T>
     where
-        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>;
+        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>;
 }
 
 /// Deserializer for CSV-encoded data.
@@ -102,9 +106,9 @@ impl DeserializerFromBytes<(SqlSerdeConfig, CsvParserConfig)> for CsvDeserialize
             config: serde_config,
         }
     }
-    fn deserialize<T>(&mut self, data: &[u8]) -> AnyResult<T>
+    fn deserialize<T>(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<T>
     where
-        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
+        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
     {
         // Push new data to reader.
         self.reader.get_mut().extend(data.iter());
@@ -113,7 +117,8 @@ impl DeserializerFromBytes<(SqlSerdeConfig, CsvParserConfig)> for CsvDeserialize
         let mut deserializer = byte_record_deserializer(&self.record, None);
         let deserializer = csv_deserializer(&mut deserializer);
 
-        T::deserialize_with_context(deserializer, &self.config).map_err(|e| anyhow!(e.to_string()))
+        T::deserialize_with_context_aux(deserializer, &self.config, metadata)
+            .map_err(|e| anyhow!(e.to_string()))
     }
 }
 
@@ -126,14 +131,15 @@ impl DeserializerFromBytes<SqlSerdeConfig> for JsonDeserializerFromBytes {
     fn create(config: SqlSerdeConfig) -> Self {
         JsonDeserializerFromBytes { config }
     }
-    fn deserialize<T>(&mut self, data: &[u8]) -> AnyResult<T>
+    fn deserialize<T>(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<T>
     where
-        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
+        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
     {
         let mut deserializer = serde_json::Deserializer::from_slice(data);
         let deserializer = json_deserializer(&mut deserializer);
 
-        T::deserialize_with_context(deserializer, &self.config).map_err(|e| anyhow!(e.to_string()))
+        T::deserialize_with_context_aux(deserializer, &self.config, metadata)
+            .map_err(|e| anyhow!(e.to_string()))
     }
 }
 
@@ -145,13 +151,14 @@ impl DeserializerFromBytes<SqlSerdeConfig> for RawDeserializerFromBytes {
     fn create(config: SqlSerdeConfig) -> Self {
         RawDeserializerFromBytes { config }
     }
-    fn deserialize<T>(&mut self, data: &[u8]) -> AnyResult<T>
+    fn deserialize<T>(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<T>
     where
-        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
+        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
     {
         let deserializer = raw_deserializer(data);
 
-        T::deserialize_with_context(deserializer, &self.config).map_err(|e| anyhow!(e.to_string()))
+        T::deserialize_with_context_aux(deserializer, &self.config, metadata)
+            .map_err(|e| anyhow!(e.to_string()))
     }
 }
 
@@ -223,7 +230,11 @@ impl<T, D, F> DeScalarHandleImpl<T, D, F> {
 impl<T, D, F> DeScalarHandle for DeScalarHandleImpl<T, D, F>
 where
     T: Default + Send + Clone + 'static,
-    D: Default + for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Clone + 'static,
+    D: Default
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Send
+        + Clone
+        + 'static,
     F: Fn(D) -> T + Send + Sync + Clone + 'static,
 {
     fn configure_deserializer(
@@ -311,19 +322,23 @@ where
 impl<De, T, D, C, F> DeScalarStream for DeScalarStreamImpl<De, T, D, C, F>
 where
     T: Default + Send + Clone + 'static,
-    D: Default + for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Clone + 'static,
+    D: Default
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Send
+        + Clone
+        + 'static,
     De: DeserializerFromBytes<C> + Send + 'static,
     C: Clone + Send + 'static,
     F: Fn(D) -> T + Clone + Send + 'static,
 {
     fn set_for_worker(&mut self, worker: usize, data: &[u8]) -> AnyResult<()> {
-        let val = self.deserializer.deserialize(data)?;
+        let val = self.deserializer.deserialize(data, &None)?;
         self.handle.set_for_worker(worker, (self.map_func)(val));
         Ok(())
     }
 
     fn set_for_all(&mut self, data: &[u8]) -> AnyResult<()> {
-        let val = self.deserializer.deserialize(data)?;
+        let val = self.deserializer.deserialize(data, &None)?;
         self.handle.set_for_all((self.map_func)(val));
         Ok(())
     }
@@ -367,7 +382,7 @@ impl<K, D> DeZSetHandle<K, D> {
 impl<K, D> DeCollectionHandle for DeZSetHandle<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -521,17 +536,17 @@ where
     De: DeserializerFromBytes<C> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
-        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
+    fn insert(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data, metadata)?);
         self.buffer.updates.push_back(Tup2(key, ZWeight::one()));
         self.buffer.n_bytes += data.len();
         Ok(())
     }
 
-    fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
-        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
+    fn delete(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data, metadata)?);
 
         self.buffer
             .updates
@@ -540,7 +555,7 @@ where
         Ok(())
     }
 
-    fn update(&mut self, _data: &[u8]) -> AnyResult<()> {
+    fn update(&mut self, _data: &[u8], _metadata: &Option<Variant>) -> AnyResult<()> {
         bail!("update operation is not supported on this stream")
     }
 
@@ -602,7 +617,7 @@ where
     De: DeserializerFromBytes<C> + Send + 'static,
     C: Clone + Send + 'static,
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + 'static,
 {
     fn flush(&mut self) {
         self.buffer.flush()
@@ -640,13 +655,13 @@ impl<K, D, C> ArrowZSetStream<K, D, C> {
 impl<K, D, C> ArrowStream for ArrowZSetStream<K, D, C>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, C> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, C, Variant> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
+    fn insert(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
         let deserializer = arrow_deserializer(data)?;
 
-        let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
+        let records = Vec::<D>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
         self.buffer
             .updates
             .extend(records.into_iter().map(|r| Tup2(K::from(r), 1)));
@@ -655,10 +670,10 @@ where
         Ok(())
     }
 
-    fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
+    fn delete(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
         let deserializer = arrow_deserializer(data)?;
 
-        let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
+        let records = Vec::<D>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
         self.buffer
             .updates
             .extend(records.into_iter().map(|r| Tup2(K::from(r), -1)));
@@ -667,7 +682,12 @@ where
         Ok(())
     }
 
-    fn insert_with_polarities(&mut self, data: &RecordBatch, polarities: &[bool]) -> AnyResult<()> {
+    fn insert_with_polarities(
+        &mut self,
+        data: &RecordBatch,
+        polarities: &[bool],
+        metadata: &Option<Variant>,
+    ) -> AnyResult<()> {
         if polarities.len() != data.num_rows() {
             // This should never happen. We could use an assertion here, but since the `polarities` array
             // is computed by datafusion, we'll throw an error just to be safe.
@@ -676,7 +696,7 @@ where
 
         let deserializer = arrow_deserializer(data)?;
 
-        let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
+        let records = Vec::<D>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
 
         self.buffer.updates.extend(
             zip(records, polarities)
@@ -704,7 +724,7 @@ where
 impl<K, D, C> InputBuffer for ArrowZSetStream<K, D, C>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, C, Variant> + Send + 'static,
     C: Clone + Send + 'static,
 {
     fn flush(&mut self) {
@@ -753,7 +773,7 @@ impl<K, D> AvroZSetStream<K, D> {
 impl<K, D> AvroStream for AvroZSetStream<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
 {
     fn insert(
         &mut self,
@@ -761,8 +781,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
+        metadata: &Option<Variant>,
     ) -> AnyResult<()> {
-        let v: D = from_avro_value(data, schema, refs)
+        let v: D = from_avro_value(data, schema, refs, metadata)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), 1));
@@ -777,8 +798,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
+        metadata: &Option<Variant>,
     ) -> AnyResult<()> {
-        let v: D = from_avro_value(data, schema, refs)
+        let v: D = from_avro_value(data, schema, refs, metadata)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), -1));
@@ -805,7 +827,7 @@ where
 impl<K, D> InputBuffer for AvroZSetStream<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
 {
     fn flush(&mut self) {
         self.buffer.flush()
@@ -850,7 +872,7 @@ impl<K, D> DeSetHandle<K, D> {
 impl<K, D> DeCollectionHandle for DeSetHandle<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -997,25 +1019,25 @@ where
     De: DeserializerFromBytes<C> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
-        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
+    fn insert(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data, metadata)?);
 
         self.buffer.updates.push_back(Tup2(key, true));
         self.buffer.n_bytes += data.len();
         Ok(())
     }
 
-    fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
-        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
+    fn delete(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data, metadata)?);
 
         self.buffer.updates.push_back(Tup2(key, false));
         self.buffer.n_bytes += data.len();
         Ok(())
     }
 
-    fn update(&mut self, _data: &[u8]) -> AnyResult<()> {
+    fn update(&mut self, _data: &[u8], _metadata: &Option<Variant>) -> AnyResult<()> {
         bail!("update operation is not supported on this stream")
     }
 
@@ -1049,7 +1071,7 @@ where
     De: DeserializerFromBytes<C> + Send + 'static,
     C: Clone + Send + 'static,
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + 'static,
 {
     fn flush(&mut self) {
         self.buffer.flush()
@@ -1087,13 +1109,13 @@ impl<K, D, C> ArrowSetStream<K, D, C> {
 impl<K, D, C> ArrowStream for ArrowSetStream<K, D, C>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, C> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, C, Variant> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
+    fn insert(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
         let deserializer = arrow_deserializer(data)?;
 
-        let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
+        let records = Vec::<D>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
         self.buffer
             .updates
             .extend(records.into_iter().map(|r| Tup2(K::from(r), true)));
@@ -1102,10 +1124,10 @@ where
         Ok(())
     }
 
-    fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
+    fn delete(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
         let deserializer = arrow_deserializer(data)?;
 
-        let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
+        let records = Vec::<D>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
         self.buffer
             .updates
             .extend(records.into_iter().map(|r| Tup2(K::from(r), false)));
@@ -1118,7 +1140,12 @@ where
         Box::new(Self::new(self.buffer.handle.clone(), self.config.clone()))
     }
 
-    fn insert_with_polarities(&mut self, data: &RecordBatch, polarities: &[bool]) -> AnyResult<()> {
+    fn insert_with_polarities(
+        &mut self,
+        data: &RecordBatch,
+        polarities: &[bool],
+        metadata: &Option<Variant>,
+    ) -> AnyResult<()> {
         if polarities.len() != data.num_rows() {
             // This should never happen. We could use an assertion here, but since the `polarities` array
             // is computed by datafusion, we'll throw an error just to be safe.
@@ -1127,7 +1154,7 @@ where
 
         let deserializer = arrow_deserializer(data)?;
 
-        let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
+        let records = Vec::<D>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
         self.buffer.updates.extend(
             zip(records, polarities).map(|(record, polarity)| Tup2(K::from(record), *polarity)),
         );
@@ -1149,7 +1176,7 @@ where
 impl<K, D, C> InputBuffer for ArrowSetStream<K, D, C>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, C, Variant> + Send + 'static,
     C: Clone + Send + 'static,
 {
     fn flush(&mut self) {
@@ -1198,7 +1225,7 @@ impl<K, D> AvroSetStream<K, D> {
 impl<K, D> AvroStream for AvroSetStream<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
 {
     fn insert(
         &mut self,
@@ -1206,8 +1233,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
+        metadata: &Option<Variant>,
     ) -> AnyResult<()> {
-        let v: D = from_avro_value(data, schema, refs)
+        let v: D = from_avro_value(data, schema, refs, metadata)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), true));
@@ -1222,8 +1250,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
+        metadata: &Option<Variant>,
     ) -> AnyResult<()> {
-        let v: D = from_avro_value(data, schema, refs)
+        let v: D = from_avro_value(data, schema, refs, metadata)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), false));
@@ -1250,7 +1279,7 @@ where
 impl<K, D> InputBuffer for AvroSetStream<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + 'static,
 {
     fn flush(&mut self) {
         self.buffer.flush()
@@ -1315,11 +1344,11 @@ where
 impl<K, KD, V, VD, U, UD, VF, UF> DeCollectionHandle for DeMapHandle<K, KD, V, VD, U, UD, VF, UF>
 where
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
     U: DBData + From<UD>,
-    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
     UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
 {
@@ -1536,16 +1565,16 @@ where
     De: DeserializerFromBytes<C> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
     U: DBData + From<UD>,
-    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
     UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
-        let val = V::from(self.deserializer.deserialize::<VD>(data)?);
+    fn insert(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+        let val = V::from(self.deserializer.deserialize::<VD>(data, metadata)?);
         let key = (self.value_key_func)(&val);
 
         self.buffer
@@ -1555,16 +1584,16 @@ where
         Ok(())
     }
 
-    fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
-        let key = K::from(self.deserializer.deserialize::<KD>(data)?);
+    fn delete(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+        let key = K::from(self.deserializer.deserialize::<KD>(data, metadata)?);
 
         self.buffer.updates.push_back(Tup2(key, Update::Delete));
         self.buffer.n_bytes += data.len();
         Ok(())
     }
 
-    fn update(&mut self, data: &[u8]) -> AnyResult<()> {
-        let upd = U::from(self.deserializer.deserialize::<UD>(data)?);
+    fn update(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+        let upd = U::from(self.deserializer.deserialize::<UD>(data, metadata)?);
         let key = (self.update_key_func)(&upd);
 
         self.buffer
@@ -1610,11 +1639,11 @@ where
     De: DeserializerFromBytes<C> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
     U: DBData + From<UD>,
-    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
     UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
 {
@@ -1668,16 +1697,17 @@ impl<K, KD, V, VD, U, VF, C> ArrowStream for ArrowMapStream<K, KD, V, VD, U, VF,
 where
     C: Clone + Send + Sync + 'static,
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, C> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, C, Variant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, C> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, C, Variant> + Send + Sync + 'static,
     U: DBData,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
+    fn insert(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
         let deserializer = arrow_deserializer(data)?;
 
-        let records = Vec::<VD>::deserialize_with_context(deserializer, &self.config)?;
+        let records =
+            Vec::<VD>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
         self.buffer.updates.extend(records.into_iter().map(|r| {
             let v = V::from(r);
             Tup2((self.value_key_func)(&v), Update::Insert(v))
@@ -1687,10 +1717,11 @@ where
         Ok(())
     }
 
-    fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
+    fn delete(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
         let deserializer = arrow_deserializer(data)?;
 
-        let records = Vec::<VD>::deserialize_with_context(deserializer, &self.config)?;
+        let records =
+            Vec::<VD>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
         self.buffer.updates.extend(records.into_iter().map(|r| {
             let v = V::from(r);
             Tup2((self.value_key_func)(&v), Update::Delete)
@@ -1708,7 +1739,12 @@ where
         ))
     }
 
-    fn insert_with_polarities(&mut self, data: &RecordBatch, polarities: &[bool]) -> AnyResult<()> {
+    fn insert_with_polarities(
+        &mut self,
+        data: &RecordBatch,
+        polarities: &[bool],
+        metadata: &Option<Variant>,
+    ) -> AnyResult<()> {
         if polarities.len() != data.num_rows() {
             // This should never happen. We could use an assertion here, but since the `polarities` array
             // is computed by datafusion, we'll throw an error just to be safe.
@@ -1717,7 +1753,8 @@ where
 
         let deserializer = arrow_deserializer(data)?;
 
-        let records = Vec::<VD>::deserialize_with_context(deserializer, &self.config)?;
+        let records =
+            Vec::<VD>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
         self.buffer
             .updates
             .extend(zip(records, polarities).map(|(record, polarity)| {
@@ -1750,9 +1787,9 @@ impl<K, KD, V, VD, U, VF, C> InputBuffer for ArrowMapStream<K, KD, V, VD, U, VF,
 where
     C: Clone + Send + Sync + 'static,
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, C> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, C, Variant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, C> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, C, Variant> + Send + Sync + 'static,
     U: DBData,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
@@ -1820,9 +1857,9 @@ where
 impl<K, KD, V, VD, U, VF> AvroStream for AvroMapStream<K, KD, V, VD, U, VF>
 where
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
     U: DBData,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
@@ -1832,8 +1869,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
+        metadata: &Option<Variant>,
     ) -> AnyResult<()> {
-        let v: VD = from_avro_value(data, schema, refs)
+        let v: VD = from_avro_value(data, schema, refs, metadata)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         let val = V::from(v);
@@ -1851,8 +1889,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
+        metadata: &Option<Variant>,
     ) -> AnyResult<()> {
-        let v: VD = from_avro_value(data, schema, refs)
+        let v: VD = from_avro_value(data, schema, refs, metadata)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         let val = V::from(v);
@@ -1882,9 +1921,9 @@ where
 impl<K, KD, V, VD, U, VF> InputBuffer for AvroMapStream<K, KD, V, VD, U, VF>
 where
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
     U: DBData,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
@@ -2147,15 +2186,17 @@ mod test {
         // Make sure that providing a record with incorrect number of columns doesn't
         // prevent subsequent records from parsing correctly (this works thanks to
         // `CsvReaderBuilder::flexible()`).
-        zset_stream.insert(b"1,x,x,x,x,x,x,x,x\n").unwrap_err();
+        zset_stream
+            .insert(b"1,x,x,x,x,x,x,x,x\n", &None)
+            .unwrap_err();
         loop {
             let (result, bytes_read, _, _) = csv_reader.read_record(data, &mut output, &mut ends);
             match result {
                 ReadRecordResult::End => break,
                 ReadRecordResult::Record => {
-                    zset_stream.insert(&data[0..bytes_read]).unwrap();
-                    set_stream.insert(&data[0..bytes_read]).unwrap();
-                    map_stream.insert(&data[0..bytes_read]).unwrap();
+                    zset_stream.insert(&data[0..bytes_read], &None).unwrap();
+                    set_stream.insert(&data[0..bytes_read], &None).unwrap();
+                    map_stream.insert(&data[0..bytes_read], &None).unwrap();
                     data = &data[bytes_read..];
                 }
                 result => panic!("Unexpected result parsing CSV: {result:?}"),
@@ -2216,14 +2257,14 @@ mod test {
             let id = input.id;
             let input = to_json_string(input).unwrap();
 
-            zset_input.delete(input.as_bytes()).unwrap();
+            zset_input.delete(input.as_bytes(), &None).unwrap();
             zset_input.flush();
 
-            set_input.delete(input.as_bytes()).unwrap();
+            set_input.delete(input.as_bytes(), &None).unwrap();
             set_input.flush();
 
             let input_id = to_json_string(&id).unwrap();
-            map_input.delete(input_id.as_bytes()).unwrap();
+            map_input.delete(input_id.as_bytes(), &None).unwrap();
             map_input.flush();
         }
 

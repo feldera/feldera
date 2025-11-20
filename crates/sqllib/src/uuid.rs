@@ -71,7 +71,7 @@ impl NumEntries for &Uuid {
     }
 }
 
-impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Uuid {
+impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Uuid {
     fn deserialize_with_context<D>(
         deserializer: D,
         config: &'de SqlSerdeConfig,

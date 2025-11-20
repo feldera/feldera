@@ -1490,8 +1490,8 @@ pub mod test {
 
         if transaction {
             dbsp.start_transaction().unwrap();
-            for i in 0..input.len() {
-                input_handle.append(&mut input[i].clone());
+            for i in input {
+                input_handle.append(&mut i.clone());
                 dbsp.step().unwrap();
             }
 
@@ -1601,7 +1601,7 @@ pub mod test {
             ],
         ];
 
-        let expected_outputs = vec![
+        let expected_outputs = [
             indexed_zset! {1 => {Tup1(None) => 1}, 2 => { Tup1(Some(5)) => 1 }},
             indexed_zset! {1 => {Tup1(Some(3)) => 1}, 2 => { Tup1(Some(5)) => 1 }},
             indexed_zset! {1 => {Tup1(Some(3)) => 1}, 2 => { Tup1(None) => 1 }},
@@ -1609,8 +1609,8 @@ pub mod test {
 
         if transaction {
             dbsp.start_transaction().unwrap();
-            for i in 0..inputs.len() {
-                input_handle.append(&mut inputs[i].clone());
+            for i in inputs {
+                input_handle.append(&mut i.clone());
                 dbsp.step().unwrap();
             }
 
@@ -1665,7 +1665,7 @@ pub mod test {
             vec![Tup2(1u64, Tup2(Tup1(1), -1)), Tup2(2u64, Tup2(Tup1(5), -1))],
         ];
 
-        let expected_outputs = vec![
+        let expected_outputs = [
             indexed_zset! {1 => {Tup1(Some(1)) => 1}, 2 => { Tup1(Some(5)) => 1 }},
             indexed_zset! {1 => {Tup1(Some(1)) => 1}, 2 => { Tup1(Some(2)) => 1 }},
             indexed_zset! {1 => {Tup1(Some(3)) => 1}, 2 => { Tup1(Some(2)) => 1 }},
@@ -1673,8 +1673,8 @@ pub mod test {
 
         if transaction {
             dbsp.start_transaction().unwrap();
-            for i in 0..inputs.len() {
-                input_handle.append(&mut inputs[i].clone());
+            for i in inputs {
+                input_handle.append(&mut i.clone());
                 dbsp.step().unwrap();
             }
             dbsp.commit_transaction().unwrap();
@@ -1801,7 +1801,7 @@ pub mod test {
             vec![Tup2(Tup2(1i32, None), -2)],
         ];
 
-        let expected_output = vec![
+        let expected_output = [
             indexed_zset! {1 => {None => 1}},
             indexed_zset! {1 => {Some(5) => 1}},
             indexed_zset! {1 => {Some(11) => 1}},
@@ -1813,8 +1813,8 @@ pub mod test {
         if transaction {
             dbsp.start_transaction().unwrap();
 
-            for i in 0..inputs.len() {
-                input_handle.append(&mut inputs[i].clone());
+            for i in inputs {
+                input_handle.append(&mut i.clone());
                 dbsp.step().unwrap();
             }
 
@@ -1958,7 +1958,7 @@ pub mod test {
             vec![Tup2(Tup2(1i8, None), -2)],
         ];
 
-        let expected_output = vec![
+        let expected_output = [
             indexed_zset! {1 => {None => 1}},
             indexed_zset! {1 => {Some(5) => 1}},
             indexed_zset! {1 => {Some(11) => 1}},
@@ -1970,8 +1970,8 @@ pub mod test {
         if transaction {
             dbsp.start_transaction().unwrap();
 
-            for i in 0..inputs.len() {
-                input_handle.append(&mut inputs[i].clone());
+            for i in inputs {
+                input_handle.append(&mut i.clone());
                 dbsp.step().unwrap();
             }
 

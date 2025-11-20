@@ -76,6 +76,41 @@ pub struct KafkaInputConfig {
     /// available on resume, the input connector starts from the earliest
     /// offsets that are now available.
     pub resume_earliest_if_data_expires: bool,
+
+    /// Whether to include Kafka headers in the record metadata.
+    ///
+    /// When `true`, Kafka message headers are available via the `CONNECTOR_METADATA()` function.
+    /// See [https://docs.feldera.com/connectors/sources/kafka#metadata] for details.
+    #[serde(default)]
+    pub include_headers: Option<bool>,
+
+    /// Whether to include Kafka message timestamp in the record metadata.
+    ///
+    /// When `true`, Kafka message timestamp is available via the `CONNECTOR_METADATA()` function.
+    /// See [https://docs.feldera.com/connectors/sources/kafka#metadata] for details.
+    #[serde(default)]
+    pub include_timestamp: Option<bool>,
+
+    /// Whether to include Kafka partition in the record metadata.
+    ///
+    /// When `true`, Kafka partition from which the message was read is available via the `CONNECTOR_METADATA()` function.
+    /// See [https://docs.feldera.com/connectors/sources/kafka#metadata] for details.
+    #[serde(default)]
+    pub include_partition: Option<bool>,
+
+    /// Whether to include Kafka message offset in the record metadata.
+    ///
+    /// When `true`, Kafka message offset is available via the `CONNECTOR_METADATA()` function.
+    /// See [https://docs.feldera.com/connectors/sources/kafka#metadata] for details.
+    #[serde(default)]
+    pub include_offset: Option<bool>,
+
+    /// Whether to include Kafka topic in the record metadata.
+    ///
+    /// When `true`, Kafka topic from which the message was read is available via the `CONNECTOR_METADATA()` function.
+    /// See [https://docs.feldera.com/connectors/sources/kafka#metadata] for details.
+    #[serde(default)]
+    pub include_topic: Option<bool>,
 }
 
 impl KafkaInputConfig {
@@ -84,6 +119,14 @@ impl KafkaInputConfig {
     pub fn poller_threads(&self) -> usize {
         let max_threads = available_parallelism().map_or(16, NonZeroUsize::get);
         self.poller_threads.unwrap_or(3).clamp(1, max_threads)
+    }
+
+    pub fn metadata_requested(&self) -> bool {
+        self.include_topic == Some(true)
+            || self.include_timestamp == Some(true)
+            || self.include_partition == Some(true)
+            || self.include_offset == Some(true)
+            || self.include_headers == Some(true)
     }
 }
 
@@ -480,6 +523,12 @@ mod compat {
         /// offsets that are now available.
         #[serde(default)]
         pub resume_earliest_if_data_expires: bool,
+
+        include_headers: Option<bool>,
+        include_timestamp: Option<bool>,
+        include_partition: Option<bool>,
+        include_offset: Option<bool>,
+        include_topic: Option<bool>,
     }
 
     impl TryFrom<KafkaInputConfigCompat> for super::KafkaInputConfig {
@@ -547,6 +596,11 @@ mod compat {
                 region: compat.region,
                 partitions: compat.partitions,
                 resume_earliest_if_data_expires: compat.resume_earliest_if_data_expires,
+                include_headers: compat.include_headers,
+                include_timestamp: compat.include_timestamp,
+                include_partition: compat.include_partition,
+                include_offset: compat.include_offset,
+                include_topic: compat.include_topic,
             })
         }
     }

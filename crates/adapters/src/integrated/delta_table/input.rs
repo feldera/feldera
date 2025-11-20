@@ -1552,12 +1552,12 @@ impl DeltaTableInputEndpointInner {
                 //     polarities.len(),
                 //     polarities.iter().filter(|x| **x == true).count()
                 // );
-                input_stream.insert_with_polarities(&batch, &polarities)
+                input_stream.insert_with_polarities(&batch, &polarities, &None)
             } else {
-                input_stream.insert(&batch)
+                input_stream.insert(&batch, &None)
             }
         } else {
-            input_stream.delete(&batch)
+            input_stream.delete(&batch, &None)
         };
         let errors = result.map_or_else(
             |e| {

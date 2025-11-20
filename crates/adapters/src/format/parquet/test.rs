@@ -9,6 +9,7 @@ use std::time::Duration;
 use arrow::array::RecordBatch;
 use dbsp::utils::Tup2;
 use dbsp::OrdZSet;
+use feldera_sqllib::Variant;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::format::parquet::ParquetEncoderConfig;
 use feldera_types::program_schema::Relation;
@@ -32,7 +33,7 @@ use crate::{
 };
 
 /// Parse Parquet file into an array of `T`.
-pub fn load_parquet_file<T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>>(
+pub fn load_parquet_file<T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>>(
     path: &Path,
 ) -> Vec<T> {
     let file = File::open(path).unwrap();

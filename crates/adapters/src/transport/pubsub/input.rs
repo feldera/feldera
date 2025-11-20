@@ -168,7 +168,7 @@ impl PubSubReader {
                                             // Use the time when we start processing the message as the ingestion timestamp,
                                             // since we don't have a way to get the time we _start_ reading the message.
                                             let timestamp = Utc::now();
-                                            queue.push(parser.parse(data), timestamp);
+                                            queue.push(parser.parse(data, &None), timestamp);
                                             message.ack().await.unwrap_or_else(|e| {
                                                 consumer.error(false, anyhow!("gRPC error acknowledging Pub/Sub message: {e}"), Some("pubsub"))
                                             });

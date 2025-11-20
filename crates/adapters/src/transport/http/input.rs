@@ -96,7 +96,7 @@ impl HttpInputEndpointInner {
                     let mut total = BufferSize::empty();
                     let mut hasher = Xxh3Default::new();
                     for chunk in chunks {
-                        let (mut buffer, errors) = details.parser.parse(&chunk);
+                        let (mut buffer, errors) = details.parser.parse(&chunk, &None);
                         details.consumer.buffered(buffer.len());
                         details.consumer.parse_errors(errors);
                         total += buffer.len();
@@ -182,7 +182,7 @@ impl HttpInputEndpoint {
         }
         let mut total_errors = 0;
         while let Some(chunk) = details.splitter.next(bytes.is_none()) {
-            let (buffer, new_errors) = details.parser.parse(chunk);
+            let (buffer, new_errors) = details.parser.parse(chunk, &None);
             let aux = if details.consumer.pipeline_fault_tolerance() == Some(FtModel::ExactlyOnce) {
                 Vec::from(chunk)
             } else {

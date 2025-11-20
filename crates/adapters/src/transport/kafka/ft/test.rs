@@ -1,8 +1,8 @@
 use crate::format::{Splitter, Sponge};
-use crate::test::kafka::BufferConsumer;
+use crate::test::kafka::{BufferConsumer, TestStructMetadata};
 use crate::test::{
-    generate_test_batches, mock_input_pipeline, wait, wait_for_output_ordered,
-    wait_for_output_unordered,
+    generate_test_batches, mock_input_pipeline, wait, wait_for_output_count,
+    wait_for_output_ordered, wait_for_output_unordered,
 };
 use crate::transport::kafka::ft::input::Metadata;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
@@ -20,6 +20,7 @@ use csv::ReaderBuilder as CsvReaderBuilder;
 use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
+use feldera_sqllib::{ByteArray, SqlString, Variant};
 use feldera_types::config::{
     default_max_batch_size, default_max_queued_records, ConnectorConfig, FormatConfig, FtModel,
     InputEndpointConfig, OutputBufferConfig, TransportConfig,
@@ -319,7 +320,11 @@ impl DummyParser {
 }
 
 impl Parser for DummyParser {
-    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+    fn parse(
+        &mut self,
+        data: &[u8],
+        _metadata: &Option<Variant>,
+    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         (
             Some(Box::new(DummyInputBuffer {
                 receiver: self.0.clone(),
@@ -1373,6 +1378,11 @@ fn test_offset(
                 region: None,
                 partitions: None,
                 resume_earliest_if_data_expires: false,
+                include_headers: None,
+                include_timestamp: None,
+                include_partition: None,
+                include_offset: None,
+                include_topic: None,
             }),
             format: Some(FormatConfig {
                 name: Cow::from("csv"),
@@ -1807,6 +1817,11 @@ fn test_input_partition(
                 region: None,
                 partitions: Some(partitions.clone()),
                 resume_earliest_if_data_expires: false,
+                include_headers: None,
+                include_timestamp: None,
+                include_partition: None,
+                include_offset: None,
+                include_topic: None,
             }),
             format: Some(FormatConfig {
                 name: Cow::from("csv"),
@@ -2332,4 +2347,96 @@ proptest! {
     fn proptest_kafka_end_to_end_json_array_small(data in generate_test_batches(0, 30, 1000)) {
         kafka_end_to_end_test("proptest_kafka_end_to_end_json_array_small", "json", json!({"array": true}), 5000, data);
     }
+}
+
+#[test]
+fn test_kafka_metadata() {
+    init_test_logger();
+
+    let topic = "kafka_metadata_test_topic";
+    let _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+
+    let config = serde_json::from_value(json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "kafka_input",
+            "config": {
+                "topic": topic,
+                "log_level": "debug",
+                "auto.offset.reset": "earliest",
+                "include_headers": true,
+                "include_topic": true,
+                "include_timestamp": true,
+                "include_partition": true,
+                "include_offset": true
+            }
+        },
+        "format": {
+            "name": "json",
+            "config": {
+                "update_format": "raw"
+            }
+        }
+    }))
+    .unwrap();
+
+    info!("test_kafka_metadata: Building input pipeline");
+
+    let (endpoint, _, _, zset) =
+        mock_input_pipeline::<TestStructMetadata, TestStructMetadata>(config, Relation::empty())
+            .unwrap();
+
+    endpoint.extend();
+
+    let producer = TestProducer::new();
+
+    info!("test_kafka_metadata: Test: Receive from a topic with a single partition");
+
+    // Send data to a topic with a single partition;
+    producer.send_message(
+        b"{\"i\": 0}",
+        topic,
+        Some(BTreeMap::from([
+            ("header1".to_string(), Some(b"foobar".to_vec())),
+            ("header2".to_string(), None),
+        ])),
+    );
+    producer.send_message(b"{\"i\": 1}", topic, None);
+
+    let flush = || {
+        endpoint.queue(false);
+    };
+
+    let expected = vec![
+        TestStructMetadata::new(
+            0,
+            Variant::Map(Arc::new(BTreeMap::from([
+                (
+                    Variant::String(SqlString::from("header1")),
+                    Variant::Binary(ByteArray::new(b"foobar")),
+                ),
+                (
+                    Variant::String(SqlString::from("header2")),
+                    Variant::SqlNull,
+                ),
+            ]))),
+            SqlString::from(topic),
+            feldera_sqllib::Timestamp::new(0),
+            0,
+            0,
+        ),
+        TestStructMetadata::new(
+            1,
+            Variant::Map(Arc::new(BTreeMap::new())),
+            SqlString::from(topic),
+            feldera_sqllib::Timestamp::new(0),
+            0,
+            1,
+        ),
+    ];
+
+    let mut received = wait_for_output_count(&zset, 2, flush);
+    received[0].kafka_timestamp = feldera_sqllib::Timestamp::new(0);
+    received[1].kafka_timestamp = feldera_sqllib::Timestamp::new(0);
+    assert_eq!(received, expected);
 }
