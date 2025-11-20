@@ -37,6 +37,7 @@ RUN apt-get update --fix-missing && \
 RUN apt-get install -y \
    gcc clang libclang-dev python3-pip python3-plumbum \
    hub numactl openjdk-21-jre-headless maven
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ## Install nodejs (optional)
 RUN mkdir -p /etc/apt/keyrings

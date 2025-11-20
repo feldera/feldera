@@ -540,6 +540,8 @@ impl RunnerInteraction {
         for header in response.headers().into_iter() {
             builder.append_header(header);
         }
+        // Disable compression to avoid gzip frame buffering that causes clients to block
+        builder.insert_header(actix_http::ContentEncoding::Identity);
         Ok(builder.streaming(response))
     }
 
@@ -612,6 +614,8 @@ impl RunnerInteraction {
         for header in response.headers().into_iter() {
             builder.append_header(header);
         }
+        // Disable compression to avoid gzip frame buffering that causes clients to block
+        builder.insert_header(actix_http::ContentEncoding::Identity);
         Ok(builder.streaming(response))
     }
 

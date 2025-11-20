@@ -653,7 +653,7 @@ class TestPipeline(SharedTestPipeline):
             with zipfile.ZipFile(io.BytesIO(support_bundle_bytes), "r") as zip_file:
                 # Check that the ZIP file contains some files
                 file_list = zip_file.namelist()
-                assert any("json_circuit_profile.zip" in item for item in file_list)
+                assert any("circuit_profile.json" in item for item in file_list)
                 assert len(file_list) > 0
         except zipfile.BadZipFile:
             self.fail("Support bundle is not a valid ZIP file")
@@ -688,6 +688,7 @@ class TestPipeline(SharedTestPipeline):
             stats=False,
             pipeline_config=False,
             system_config=False,
+            dataflow_graph=False,
         )
 
         assert isinstance(support_bundle_bytes, bytes)

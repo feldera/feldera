@@ -1337,6 +1337,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         stats: bool = True,
         pipeline_config: bool = True,
         system_config: bool = True,
+        dataflow_graph: bool = True,
     ) -> bytes:
         """
         Generate a support bundle containing diagnostic information from this pipeline.
@@ -1354,6 +1355,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         :param stats: Whether to collect stats data (default: True)
         :param pipeline_config: Whether to collect pipeline configuration data (default: True)
         :param system_config: Whether to collect system configuration data (default: True)
+        :param dataflow_graph: Whether to collect dataflow graph (default: True)
         :return: The support bundle as bytes (ZIP archive)
         :raises FelderaAPIError: If the pipeline does not exist or if there's an error
         """
@@ -1374,6 +1376,8 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             params["pipeline_config"] = "false"
         if not system_config:
             params["system_config"] = "false"
+        if not dataflow_graph:
+            params["dataflow_graph"] = "false"
 
         support_bundle_bytes = self.client.get_pipeline_support_bundle(
             self.name, params=params
