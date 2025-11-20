@@ -5,12 +5,10 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
@@ -59,7 +57,8 @@ public class ImplementStatics extends ExpressionTranslator {
         @Override
         public void postorder(DBSPHandleErrorExpression expression) {
             DBSPExpression source = this.getE(expression.source);
-            DBSPExpression result = new DBSPHandleErrorExpression(expression.getNode(), this.index++, source);
+            DBSPExpression result = new DBSPHandleErrorExpression(
+                    expression.getNode(), this.index++, source, expression.hasSourcePosition);
             this.map(expression, result);
         }
     }

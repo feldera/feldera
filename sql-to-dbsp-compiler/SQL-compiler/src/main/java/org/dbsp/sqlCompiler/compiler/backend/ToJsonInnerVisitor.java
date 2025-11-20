@@ -240,6 +240,8 @@ public class ToJsonInnerVisitor extends InnerVisitor {
         this.stream.append(node.runtimeBehavior.toString());
         this.property("index");
         this.stream.append(node.index);
+        this.property("hasSourcePosition");
+        this.stream.append(node.hasSourcePosition);
         super.postorder(node);
     }
 

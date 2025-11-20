@@ -278,7 +278,7 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     @Override
     public void postorder(DBSPHandleErrorExpression node) {
         DBSPExpression source = this.getE(node.source);
-        this.map(node, new DBSPHandleErrorExpression(node.getNode(), node.index, source));
+        this.map(node, new DBSPHandleErrorExpression(node.getNode(), node.index, source, node.hasSourcePosition));
     }
 
     @Override

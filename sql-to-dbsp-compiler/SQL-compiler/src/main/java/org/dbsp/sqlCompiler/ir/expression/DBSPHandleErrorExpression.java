@@ -20,22 +20,30 @@ import org.dbsp.util.Utilities;
  * be a SqlResult[T], where T is the result type.
  */
 public class DBSPHandleErrorExpression extends DBSPExpression {
+    public final RuntimeBehavior runtimeBehavior;
+    /** Index in the table with error messages; used for PanicWithSource; 0 if unused. */
+    public final int index;
+    public final DBSPExpression source;
+    public final boolean hasSourcePosition;
+
     /** Create an expression that handles an error produced by another expression.
      *
      * @param node             Calcite node of the source expression.
      * @param index            All error handling expressions within one operator
      *                         are densely numbered; this is the number indexing them.
      * @param source           Expression producing a SqlResult.
+     * @param hasSourcePosition True if the expression can access the source position information.
      */
-    public DBSPHandleErrorExpression(CalciteObject node, int index, DBSPExpression source) {
+    public DBSPHandleErrorExpression(CalciteObject node, int index, DBSPExpression source, boolean hasSourcePosition) {
         super(node, source.getType());
         this.source = source;
+        this.hasSourcePosition = hasSourcePosition;
 
         RuntimeBehavior behavior;
         if (source.is(DBSPCastExpression.class) && source.to(DBSPCastExpression.class).safe) {
             index = 0;
             behavior = RuntimeBehavior.ReturnNone;
-        } else if (source.getSourcePosition().isValid()) {
+        } else if (source.getSourcePosition().isValid() && hasSourcePosition) {
             behavior = RuntimeBehavior.PanicWithSource;
         } else {
             index = 0;
@@ -55,11 +63,6 @@ public class DBSPHandleErrorExpression extends DBSPExpression {
         ReturnNone
     }
 
-    public final RuntimeBehavior runtimeBehavior;
-    /** Index in the table with error messages; used for PanicWithSource; 0 if unused. */
-    public final int index;
-    public final DBSPExpression source;
-
     @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
@@ -78,6 +81,7 @@ public class DBSPHandleErrorExpression extends DBSPExpression {
             return false;
         return this.source == o.source &&
                 this.runtimeBehavior == o.runtimeBehavior &&
+                this.hasSourcePosition == o.hasSourcePosition &&
                 this.index == o.index;
     }
 
@@ -99,7 +103,7 @@ public class DBSPHandleErrorExpression extends DBSPExpression {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPHandleErrorExpression(this.node, this.index, this.source.deepCopy());
+        return new DBSPHandleErrorExpression(this.node, this.index, this.source.deepCopy(), this.hasSourcePosition);
     }
 
     @Override
@@ -108,6 +112,7 @@ public class DBSPHandleErrorExpression extends DBSPExpression {
         if (otherExpression == null)
             return false;
         return this.runtimeBehavior == otherExpression.runtimeBehavior &&
+                this.hasSourcePosition == otherExpression.hasSourcePosition &&
                 this.index == otherExpression.index &&
                 context.equivalent(this.source, otherExpression.source);
     }
@@ -116,6 +121,7 @@ public class DBSPHandleErrorExpression extends DBSPExpression {
     public static DBSPHandleErrorExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression source = fromJsonInner(node, "source", decoder, DBSPExpression.class);
         int index = Utilities.getIntProperty(node, "index");
-        return new DBSPHandleErrorExpression(CalciteObject.EMPTY, index, source);
+        boolean hasSourcePosition = Utilities.getBooleanProperty(node, "hasSourcePosition");
+        return new DBSPHandleErrorExpression(CalciteObject.EMPTY, index, source, hasSourcePosition);
     }
 }

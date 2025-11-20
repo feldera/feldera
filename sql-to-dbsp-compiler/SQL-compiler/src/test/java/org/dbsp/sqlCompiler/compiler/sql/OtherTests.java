@@ -471,13 +471,13 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                         .configure_deserializer(RecordFormat::Csv(Default::default()))
                         .expect("Failed to configure deserializer");
                     persons_stream
-                        .insert(b"Bob,12,true")
+                        .insert(b"Bob,12,true", &None)
                         .expect("Failed to insert data");
                     persons_stream
-                        .insert(b"Tom,20,false")
+                        .insert(b"Tom,20,false", &None)
                         .expect("Failed to insert data");
                     persons_stream
-                        .insert(b"Tom,20,false")
+                        .insert(b"Tom,20,false", &None)
                         .expect("Failed to insert data");  // Insert twice
                     persons_stream.flush();
                     // Execute the circuit on these inputs
@@ -548,15 +548,15 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                         .handle
                         .configure_deserializer(RecordFormat::Csv(Default::default()))
                         .unwrap();
-                    writer.insert(b"1").unwrap();
+                    writer.insert(b"1", &None).unwrap();
                     writer.flush();
-                    writer.insert(b"2").unwrap();
+                    writer.insert(b"2", &None).unwrap();
                     writer.flush();
-                    writer.insert(b"3").unwrap();
+                    writer.insert(b"3", &None).unwrap();
                     writer.flush();
                     circuitAndStreams.0.transaction().unwrap();
                     // late value
-                    writer.insert(b"0").unwrap();
+                    writer.insert(b"0", &None).unwrap();
                     writer.flush();
                     circuitAndStreams.0.transaction().unwrap();
                 

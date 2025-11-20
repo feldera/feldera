@@ -540,7 +540,8 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression source = this.transform(expression.source);
         this.pop(expression);
-        DBSPExpression result = new DBSPHandleErrorExpression(expression.getNode(), expression.index, source);
+        DBSPExpression result = new DBSPHandleErrorExpression(
+                expression.getNode(), expression.index, source, expression.hasSourcePosition);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

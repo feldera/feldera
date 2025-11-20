@@ -68,6 +68,12 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void noConnectorMetadata() {
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CONNECTOR_METADATA()['a'];",
+                "Calls to function 'connector_metadata' are only allowed in DEFAULT column initializers");
+    }
+
+    @Test
     public void issue3743() throws IOException, InterruptedException, SQLException {
         File file = createInputScript("""
                 CREATE TYPE X AS (x int);
@@ -904,8 +910,21 @@ public class MetadataTests extends BaseSQLTests {
     @Test
     public void testDefaultColumnValueCompiler() throws IOException, InterruptedException, SQLException {
         String sql = """
-                CREATE TABLE T (COL1 INT NOT NULL DEFAULT 0, COL2 DOUBLE DEFAULT 0.0, COL3 VARCHAR DEFAULT NULL);
+                CREATE FUNCTION PLUSONE(x DOUBLE NOT NULL) RETURNS DOUBLE NOT NULL AS x + 1.0;
+                CREATE TABLE T (COL1 INT NOT NULL DEFAULT 0, COL2 DOUBLE DEFAULT PLUSONE(0.0), COL3 VARCHAR DEFAULT NULL);
                 CREATE VIEW V AS SELECT COL1 FROM T;""";
+        File file = createInputScript(sql);
+        CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        messages.print();
+        Assert.assertEquals(0, messages.errorCount());
+        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+    }
+
+    @Test
+    public void testDefaultConnectorMetadata() throws IOException, InterruptedException, SQLException {
+        String sql = """
+                CREATE TABLE T (KAFKA_TOPIC VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR));
+                CREATE VIEW V AS SELECT KAFKA_TOPIC FROM T;""";
         File file = createInputScript(sql);
         CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();

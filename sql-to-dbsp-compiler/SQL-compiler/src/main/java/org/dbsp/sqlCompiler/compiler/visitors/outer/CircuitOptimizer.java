@@ -74,6 +74,7 @@ public class CircuitOptimizer extends Passes {
         // First part of optimizations may still synthesize some circuit components
         this.add(new ImplementNow(compiler));
         this.add(new DeterministicFunctions(compiler));
+        this.add(new NoConnectorMetadata(compiler).getCircuitVisitor(true));
         this.add(new StopOnError(compiler));
         this.add(new RecursiveComponents(compiler));
         this.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable));

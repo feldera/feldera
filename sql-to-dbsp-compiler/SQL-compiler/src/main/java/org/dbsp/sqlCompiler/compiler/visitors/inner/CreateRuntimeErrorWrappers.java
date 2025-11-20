@@ -68,7 +68,19 @@ public class CreateRuntimeErrorWrappers extends ExpressionTranslator {
         DBSPExpression cast = new DBSPCastExpression(expression.getNode(), source, expression.getType(), expression.safe);
         // Wrap the cast into an error handler
         DBSPHandleErrorExpression handler = new DBSPHandleErrorExpression(
+<<<<<<< Updated upstream
+                expression.getNode(), this.getIndex(expression.getSourcePosition().start), cast,
+                // source code may not be available outside an operator
+                this.operatorContext != null);
+=======
+<<<<<<< Updated upstream
                 expression.getNode(), this.getIndex(expression.getSourcePosition().start), cast);
+=======
+                expression.getNode(), this.getIndex(expression.getSourcePosition().start), cast,
+                // source code may not be available outside an operator
+                true);
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
         this.map(expression, handler);
     }
 

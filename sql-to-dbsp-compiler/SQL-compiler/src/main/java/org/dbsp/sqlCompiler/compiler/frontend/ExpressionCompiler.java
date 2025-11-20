@@ -1337,6 +1337,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "now":
                     case "variantnull":
+                    case "connector_metadata":
                         return compileFunction(call, node, type, ops, 0);
                     case "gunzip":
                         DBSPExpression arg = ops.get(0);

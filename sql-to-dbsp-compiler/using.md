@@ -379,13 +379,13 @@ pub fn test() {
         .configure_deserializer(RecordFormat::Csv(Default::default())
         .expect("Failed to configure deserializer");
     persons_stream
-        .insert(b"Bob,12,true")
+        .insert(b"Bob,12,true", &None)
         .expect("Failed to insert data");
     persons_stream
-        .insert(b"Tom,20,false")
+        .insert(b"Tom,20,false", &None)
         .expect("Failed to insert data");
     persons_stream
-        .insert(b"Tom,20,false")
+        .insert(b"Tom,20,false", &None)
         .expect("Failed to insert data");  // Insert twice
     persons_stream.flush();
     // Execute the circuit on these inputs
