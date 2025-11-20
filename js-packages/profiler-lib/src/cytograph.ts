@@ -15,6 +15,10 @@ import { MetadataSelection } from './metadataSelection.js';
 /** A measurement represented as a string, but also with a normalized value between 0 and 100. */
 class SerializedMeasurement {
     constructor(readonly value: string, readonly percentile: number) { }
+
+    toString(): string {
+        return this.value;
+    }
 }
 
 /** A matrix of measurements */
@@ -41,6 +45,20 @@ class MeasurementMatrix {
     getColumnCount(): number {
         return this.columnNames.length;
     }
+
+    toString(): string {
+        let result = "";
+        for (const a of this.attributes.entries()) {
+            result += a[0] + "=[";
+            for (const m of a[1]) {
+                if (!result.endsWith("["))
+                    result += ",";
+                result += m;
+            }
+            result += "\n";
+        }
+        return result;
+    }
 }
 
 /** Attributes attached to a cytoscape node. */
@@ -57,6 +75,7 @@ class Attributes {
 class GraphNode {
     constructor(
         readonly id: NodeId,
+        readonly persistentId: Option<string>,
         readonly label: string,
         // True if the node has children
         readonly hasChildren: boolean,
@@ -249,7 +268,7 @@ export class Cytograph {
             if (operation === CircuitProfile.Z1_TRACE_OUTPUT)
                 // These nodes were modified in the profile.fixZ1Nodes() function.
                 operation = CircuitProfile.Z1_TRACE;
-            let visibleNode = new GraphNode(nodeId, operation, hasChildren, expand && hasChildren, parent, src);
+            let visibleNode = new GraphNode(nodeId, node.persistentId, operation, hasChildren, expand && hasChildren, parent, src);
             result.addNode(visibleNode);
             inserted.set(nodeId, visibleNode);
         }
@@ -260,7 +279,7 @@ export class Cytograph {
             if (!profile.isTop(nodeId) && visibleParents.has(nodeId)) {
                 let positions = complex.sourcePositions;
                 let src = sources.toString(positions);
-                let node = new GraphNode(nodeId, "region", true, true, parent, src);
+                let node = new GraphNode(nodeId, complex.persistentId, "region", true, true, parent, src);
                 result.addNode(node);
             }
         }
@@ -553,8 +572,6 @@ export class CytographRendering {
             let columnNames = workers.map(w => w.toString());
             let data = new Map<string, Array<SerializedMeasurement>>();
             // Select just the visible metrics
-            let persistentId = Option.none<string>();
-
             // Compute per-worker attributes
             for (let metric of profileNode.measurements.getMetrics()) {
                 let range = profile.propertyRange(metric);
@@ -564,15 +581,12 @@ export class CytographRendering {
                     m => new SerializedMeasurement(
                         m.toString(),
                         CytographRendering.percentile(m.getNumericValue(), range))));
-                if (metric === CircuitProfile.PERSISTENT_ID && metrics.length > 0)
-                    // Set the persistent ID for this node.
-                    persistentId = Option.some(metrics[0]!.getStringValue());
             }
             // additional key-value per node attributes
             let kv = new Map();
             kv.set("id", node.id);
-            if (persistentId.isSome()) {
-                kv.set("persistentId", persistentId.unwrap());
+            if (node.persistentId.isSome()) {
+                kv.set("persistentId", node.persistentId.unwrap());
             }
             kv.set("operation", node.getLabel());
 
@@ -814,7 +828,11 @@ export class CytographRendering {
             }
 
             const MAX_CELL_COUNT = 40;
-            for (const [key, values] of attributes.matrix.getAttributes().entries()) {
+            let matrix = attributes.matrix.getAttributes();
+            let keys = [...matrix.keys()];
+            keys.sort();
+            for (const key of keys) {
+                let values = matrix.get(key)!;
                 let index = 0;
                 for (const value of values) {
                     let position = index % MAX_CELL_COUNT;

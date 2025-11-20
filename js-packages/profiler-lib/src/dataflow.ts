@@ -60,8 +60,8 @@ export class Sources {
         if (range.range.start_line_number == range.range.end_line_number) {
             let prefix = this.prefix(range.start.line);
             let line = prefix + this.lines[range.start.line - 1] + "\n";
-            line += " ".repeat(prefix.length + range.start.column - 1) +
-                "^".repeat(range.end.column - range.start.column + 1) + "\n";
+            //line += " ".repeat(prefix.length + range.start.column - 1)
+            //     + "^".repeat(range.end.column - range.start.column + 1) + "\n";
             return line;
         } else {
             let result = "";
