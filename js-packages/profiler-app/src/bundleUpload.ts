@@ -31,12 +31,12 @@ export function setupBundleUpload(config: ProfilerConfig, profiler: Profiler) {
             console.log(`Processing bundle: ${file.name}`);
 
             // Process the bundle
-            const { profile, dataflow } = await processBundleInBrowser(file);
+            const { profile, dataflow, programCode } = await processBundleInBrowser(file);
 
             // Create circuit profile
             profiler.message('Creating circuit profile...');
             const circuit = CircuitProfile.fromJson(profile);
-            circuit.setDataflow(dataflow);
+            circuit.setDataflow(dataflow, programCode);
 
             // Render the profile
             profiler.message('Rendering visualization...');
