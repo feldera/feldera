@@ -59,6 +59,7 @@ import { tuple } from '$lib/functions/common/tuple'
 import { groupBy, singleton } from '$lib/functions/common/array'
 import type { JsonProfiles } from 'profiler-lib'
 import { applyAuthToRequest, handleAuthResponse } from '$lib/services/auth'
+import { nonNull } from '$lib/functions/common/function'
 
 const unauthenticatedClient = createClient({
   bodySerializer: JSONbig.stringify,
@@ -509,11 +510,14 @@ export const deleteApiKey = (name: string, options?: FetchOptions) =>
 export const getPipelineDataflowGraph = (pipelineName: string) =>
   mapResponse(_getPipelineDataflowGraph({ path: { pipeline_name: pipelineName } }), (v) => v)
 
-export const getPipelineSupportBundle = async (
+/**
+ * Returns the raw stream for downloading a pipeline support bundle.
+ * Use getPipelineSupportBundle wrapper for progress tracking.
+ */
+export const getPipelineSupportBundleStream = async (
   pipelineName: string,
   options: Partial<SupportBundleOptions>
 ) => {
-  // mapResponse(getPipelineCircuitJsonProfile({'path': {'pipeline_name': pipelineName}}), (v) => v)
   const query = new URLSearchParams(
     Object.fromEntries(Object.entries(options).map(([k, v]) => [k, String(v)]))
   )
@@ -529,9 +533,45 @@ export const getPipelineSupportBundle = async (
   if (body instanceof Error) {
     throw body
   }
-  const response = new Response(body.stream)
-  const buffer = await response.arrayBuffer()
-  return new Uint8Array(buffer)
+  return body
+}
+
+// Create a transform stream that tracks progress
+const progressTransform = (
+  totalBytes: number,
+  onProgress: (bytesDownloaded: number, bytesTotal: number) => void
+) => {
+  let bytesDownloaded = 0
+  return new TransformStream({
+    transform(chunk, controller) {
+      bytesDownloaded += chunk.byteLength
+      onProgress?.(bytesDownloaded, totalBytes)
+      controller.enqueue(chunk)
+    }
+  })
+}
+
+/**
+ * Downloads a pipeline support bundle with optional progress tracking.
+ * @param pipelineName - Name of the pipeline
+ * @param options - Support bundle options (profiling, logs, etc.)
+ * @param onProgress - Optional callback for download progress (bytesDownloaded, bytesTotal)
+ */
+export const getPipelineSupportBundle = async (
+  pipelineName: string,
+  options: Partial<SupportBundleOptions>,
+  onProgress?: (bytesDownloaded: number, bytesTotal: number) => void
+) => {
+  const result = await getPipelineSupportBundleStream(pipelineName, options)
+
+  const totalBytes = result.contentLength
+
+  const streamWithProgress =
+    nonNull(totalBytes) && onProgress
+      ? result.stream.pipeThrough(progressTransform(totalBytes, onProgress))
+      : result.stream
+  const response = new Response(streamWithProgress)
+  return response.blob()
 }
 
 /**
@@ -567,6 +607,9 @@ const streamingFetch = async <E1, E2>(
     return result.status === 200 && result.body
       ? {
           stream: result.body,
+          contentLength: ((length) => (length ? parseInt(length) : undefined))(
+            result.headers.get('content-length')
+          ),
           cancel: controller.abort.bind(controller)
         }
       : result.json().then((body) => handleResponseError({ ...body, status_code: result.status }))

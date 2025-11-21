@@ -8206,8 +8206,8 @@ This documentation site serves as the primary resource for Feldera users, provid
 
 ---
 
-## Context: packages/profiler-app/CLAUDE.md
-<!-- SECTION:packages/profiler-app/CLAUDE.md START -->
+## Context: js-packages/profiler-app/CLAUDE.md
+<!-- SECTION:js-packages/profiler-app/CLAUDE.md START -->
 # CLAUDE.md - profiler-app
 
 ## Overview
@@ -8908,12 +8908,12 @@ document.addEventListener('drop', async (e) => {
 - `profiler-lib/README.md` - Library usage guide
 - `web-console/src/lib/components/profiler/README.md` - Svelte component guide
 - `profiler-lib/ARCHITECTURE.md` - Detailed design decisions
-<!-- SECTION:packages/profiler-app/CLAUDE.md END -->
+<!-- SECTION:js-packages/profiler-app/CLAUDE.md END -->
 
 ---
 
-## Context: packages/profiler-lib/CLAUDE.md
-<!-- SECTION:packages/profiler-lib/CLAUDE.md START -->
+## Context: js-packages/profiler-lib/CLAUDE.md
+<!-- SECTION:js-packages/profiler-lib/CLAUDE.md START -->
 # CLAUDE.md - profiler-lib
 
 ## Overview
@@ -9480,12 +9480,12 @@ class Profiler {
 
 - **profiler-app**: Standalone application using profiler-lib with file loading
 - **web-console**: Production UI with `ProfilerDiagram.svelte` wrapper component
-<!-- SECTION:packages/profiler-lib/CLAUDE.md END -->
+<!-- SECTION:js-packages/profiler-lib/CLAUDE.md END -->
 
 ---
 
-## Context: packages/web-console/CLAUDE.md
-<!-- SECTION:packages/web-console/CLAUDE.md START -->
+## Context: js-packages/web-console/CLAUDE.md
+<!-- SECTION:js-packages/web-console/CLAUDE.md START -->
 ## Key Development Commands
 
 ### Package Manager
@@ -9612,52 +9612,14 @@ Web Console is a dasboard UI app deployed as a static website that is served by 
 - `tailwind.config.ts` - Custom theme configuration with Skeleton integration
 - `eslint.config.js` - Flat config with TypeScript and Svelte support
 - `playwright.config.ts` - Test configuration
-<!-- SECTION:packages/web-console/CLAUDE.md END -->
+<!-- SECTION:js-packages/web-console/CLAUDE.md END -->
 
 ---
 
-## Context: packages/web-console/src/lib/CLAUDE.md
-<!-- SECTION:packages/web-console/src/lib/CLAUDE.md START -->
+## Context: js-packages/web-console/src/lib/CLAUDE.md
+<!-- SECTION:js-packages/web-console/src/lib/CLAUDE.md START -->
 # Web Console Library
-
-## Service Workers
-
-### Authorization Proxy
-
-The web-console uses a Service Worker-based **Authorization Proxy** to enable authenticated file downloads without loading entire files into browser memory.
-
-#### The Problem
-
-Modern web applications face a challenge with authenticated file downloads:
-
-- **Direct anchor downloads** (`<a href="..." download>`) cannot include custom headers like `Authorization: Bearer token`
-- **Fetch API downloads** require loading the entire file into memory as a Blob before triggering download
-- **Large files** (support bundles, exports) can exceed browser memory limits or cause poor performance
-
-#### The Solution
-
-Our Authorization Proxy intercepts download requests in a Service Worker and adds authentication headers transparently:
-
-1. **Client** marks download URLs with ADD_AUTH_HEADER query parameter
-2. **Service Worker** detects the marker and intercepts the request
-3. **Proxy** removes the marker, adds `Authorization` headers, forwards to server
-4. **Browser** receives the authenticated response and streams it directly to disk
-
-#### Benefits
-
-- ✅ **True streaming downloads** - No memory buffering regardless of file size
-- ✅ **Authentication support** - Seamless OIDC token injection
-- ✅ **Graceful fallback** - Falls back to fetch/blob approach when Service Worker unavailable
-- ✅ **Clean URLs** - Server receives clean URLs without proxy markers
-
-#### Implementation
-
-- `$lib/services/serviceWorker/authorizationProxy.ts` - Core proxy logic with dependency injection
-- `$lib/services/serviceWorker/authorizationProxyClient.ts` - Client-side helpers for updating auth headers
-- `$lib/types/serviceWorker.ts` - Shared types and enums
-
-The proxy integrates with the OIDC authentication system to automatically refresh and inject bearer tokens for all marked HTTP requests.
-<!-- SECTION:packages/web-console/src/lib/CLAUDE.md END -->
+<!-- SECTION:js-packages/web-console/src/lib/CLAUDE.md END -->
 
 ---
 

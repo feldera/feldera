@@ -5,17 +5,27 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import type { SupportBundleOptions } from '$lib/services/pipelineManager'
-  import { Switch } from '@skeletonlabs/skeleton-svelte'
+  import { Progress, Switch } from '@skeletonlabs/skeleton-svelte'
+  import { humanSize } from '$lib/functions/common/string'
+  import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
+
   let { pipelineName }: { pipelineName: string } = $props()
 
   let api = usePipelineManager()
   const globalDialog = useGlobalDialog()
   const toast = useToast()
+  let isDownloading = $state(false)
+
   const submitHandler = async () => {
     try {
-      await api.downloadPipelineSupportBundle(pipelineName, data)
+      isDownloading = true
+      progress.reset()
+      await api.downloadPipelineSupportBundle(pipelineName, data, progress.onProgress)
+      globalDialog.dialog = null
     } catch (error) {
       toast.toastError(new Error(`Failed to download support bundle: ${error}`))
+    } finally {
+      isDownloading = false
     }
   }
 
@@ -70,6 +80,8 @@
       description: 'Collect latest data. May take some time.'
     }
   }
+
+  let progress = useDownloadProgress()
 </script>
 
 <button
@@ -96,20 +108,34 @@
       globalDialog.dialog = null
     }}
     confirmLabel="Download"
+    disabled={isDownloading}
   >
     {#snippet title()}
       Download Support Bundle
     {/snippet}
     <div class="-mt-2 pb-2 font-semibold">{pipelineName}</div>
-    Select the details you want to include in the bundle
-    {@render supportBundleForm()}
+    {#if isDownloading}
+      <div class="flex flex-col items-center gap-3 py-4">
+        <Progress value={progress.percent} meterBg="bg-primary-500" base="h-2"></Progress>
+        <div class="flex w-full justify-between gap-2">
+          <span>Downloading support bundle...</span>
+          {#if progress.percent}
+            <span>{humanSize(progress.bytes.downloaded)} / {humanSize(progress.bytes.total)}</span>
+          {/if}
+        </div>
+        Close the popup to continue the download in the background.
+      </div>
+    {:else}
+      Select the details you want to include in the bundle
+      {@render supportBundleForm()}
+    {/if}
   </GenericDialog>
 {/snippet}
 
 {#snippet supportBundleForm()}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <form class="flex flex-col gap-3">
-    {#each Object.entries(fields) as [key, { label, description }]}
+    {#each Object.entries(fields) as [key, { label }]}
       <div class="flex items-center gap-4">
         <input
           type="checkbox"
@@ -119,7 +145,6 @@
         />
         <div class="flex flex-col">
           <label for={key} class="cursor-pointer font-medium">{label}</label>
-          <!-- <label for={key} class="cursor-pointer text-sm text-surface-500">{description}</label> -->
         </div>
       </div>
     {/each}

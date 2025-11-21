@@ -36,7 +36,6 @@
 
   // Initialize profiler when all containers are mounted and data is available
   $effect(() => {
-    console.log('first effect a')
     // Wait for all DOM elements to be available
     if (
       !graphContainer ||
