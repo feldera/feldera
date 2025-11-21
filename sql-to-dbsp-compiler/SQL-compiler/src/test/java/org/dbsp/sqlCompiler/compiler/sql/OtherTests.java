@@ -771,11 +771,15 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     }
 
     @Test @Ignore("To be invoked manually every time a new function is added")
-    public void generateFunctionIndex() throws IOException {
+    public void generateFunctionIndex() throws IOException, InterruptedException {
         // When invoked it generates documentation for the supported functions and operators
         // in the specified file.
         String file = "../../docs.feldera.com/docs/sql/function-index.md";
         FunctionDocumentation.generateIndex(file);
+        Utilities.runProcess(BaseSQLTests.PROJECT_DIRECTORY + "/../docs.feldera.com",
+                "yarn");
+        Utilities.runProcess(BaseSQLTests.PROJECT_DIRECTORY + "/../docs.feldera.com",
+                "yarn", "build");
     }
 
     @Test
