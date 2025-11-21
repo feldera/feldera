@@ -7,6 +7,7 @@ import type { JsonProfiles, Dataflow } from 'profiler-lib';
 export interface BundleFiles {
     profile: JsonProfiles;
     dataflow: Dataflow;
+    programCode: string[] | undefined;
 }
 
 /**
@@ -41,12 +42,19 @@ export async function processBundleInBrowser(file: File): Promise<BundleFiles> {
         throw new Error('No dataflow file (*_dataflow_graph.json) found in bundle');
     }
 
+    // Find the file with program code (*_pipeline_config.json)
+    const pipelineConfigEntry = Object.entries(files).find((file) =>
+        file[1].filename.endsWith('_pipeline_config.json')
+    );
+
     // Parse the JSON files
     const profileText = new TextDecoder().decode(await profileEntry[1].read());
     const dataflowText = new TextDecoder().decode(await dataflowEntry[1].read());
+    const pipelineConfigText = pipelineConfigEntry ? new TextDecoder().decode(await pipelineConfigEntry[1].read()) : undefined;
 
-    const profile = JSON.parse(profileText) as JsonProfiles;
-    const dataflow = JSON.parse(dataflowText) as Dataflow;
-
-    return { profile, dataflow };
+    return {
+        profile: JSON.parse(profileText) as JsonProfiles,
+        dataflow: JSON.parse(dataflowText) as Dataflow,
+        programCode: pipelineConfigText ? (JSON.parse(pipelineConfigText).program_code as string).split('\n') : undefined
+    };
 }
