@@ -29,8 +29,7 @@ import {
 } from '$lib/services/pipelineManager'
 import { useToast } from '$lib/compositions/useToastNotification'
 import type { FunctionType } from '$lib/types/common/function'
-import { triggerStreamDownload } from '$lib/services/browser'
-import { getAuthorizationHeaders } from '$lib/services/auth'
+import { triggerFileDownload } from '$lib/services/browser'
 
 const networkErrors = ['Failed to fetch', 'Network request failed', 'Timeout']
 const isNetworkError = (e: any): e is TypeError =>
@@ -96,15 +95,18 @@ export const usePipelineManager = (options?: FetchOptions) => {
 
   const downloadPipelineSupportBundle = async (
     pipelineName: string,
-    options: SupportBundleOptions
+    options: SupportBundleOptions,
+    onProgress?: (bytesDownloaded: number, bytesTotal: number) => void
   ) => {
-    const url = getPipelineSupportBundleUrl(pipelineName, options)
-    const headers = {
-      ...(await getAuthorizationHeaders()),
-      Accept: 'application/zip'
-    }
+    const blob = await getPipelineSupportBundle(pipelineName, options, onProgress)
+    // const url = getPipelineSupportBundleUrl(pipelineName, options)
+    // const headers = {
+    //   ...(await getAuthorizationHeaders()),
+    //   Accept: 'application/zip'
+    // }
     const fileName = `fda-bundle-${pipelineName}-${new Date().toISOString().replace(/\.\d{3}/, '')}.zip`
-    await triggerStreamDownload(fileName, url, headers)
+    // // Use simple fetch approach (loads into memory) instead of streaming
+    triggerFileDownload(fileName, blob)
   }
 
   return {
@@ -179,7 +181,7 @@ export const usePipelineManager = (options?: FetchOptions) => {
     ),
     getPipelineSupportBundle: reportError(
       getPipelineSupportBundle,
-      (pipelineName, _collect) => `Failed to load circuit profile of pipeline ${pipelineName}`
+      (pipelineName) => `Failed to load circuit profile of pipeline ${pipelineName}`
     )
   }
 }

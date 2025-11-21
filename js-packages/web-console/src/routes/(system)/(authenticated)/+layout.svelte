@@ -16,7 +16,6 @@
   import Dayjs from 'dayjs'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
-  import { ServiceWorkerMarkers } from '$lib/types/serviceWorker'
   import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
 
   const dialog = useGlobalDialog()
@@ -65,10 +64,8 @@
   height={2}
   color={'rgb(var(--color-primary-500))'}
   showSpinner={false}
-  ignoreBeforeNavigate={({ to }) =>
-    to?.url?.searchParams?.has(ServiceWorkerMarkers.ADD_AUTH_HEADER) ?? false}
-  ignoreAfterNavigate={({ to }) =>
-    to?.url?.searchParams?.has(ServiceWorkerMarkers.ADD_AUTH_HEADER) ?? false}
+  ignoreBeforeNavigate={() => false}
+  ignoreAfterNavigate={() => false}
 ></SvelteKitTopLoader>
 <div
   class="flex h-full w-full flex-col {api.isNetworkHealthy

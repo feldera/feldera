@@ -17,7 +17,7 @@
   import ProfilerDiagram from '$lib/components/profiler/ProfilerDiagram.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { groupBy } from '$lib/functions/common/array'
-  import { enclosure } from '$lib/functions/common/function'
+  import { enclosure, nonNull } from '$lib/functions/common/function'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import { unzip, type ZipItem } from 'but-unzip'
   import type { JsonProfiles, Dataflow } from 'profiler-lib'
@@ -27,6 +27,7 @@
   import { useToast } from '$lib/compositions/useToastNotification'
   import { tuple } from '$lib/functions/common/tuple'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
+  import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   const api = usePipelineManager()
@@ -64,6 +65,7 @@
   }
 
   const processZipBundle = async (zipData: Uint8Array, sourceName: string, message: string) => {
+    downloadProgress.onProgress(1, 1)
     const profiles = (() => {
       try {
         return unzip(zipData)
@@ -112,14 +114,12 @@
           await profileFiles[1].find((file) => circuitProfileRegex.test(file.filename))!.read()
         )
       ) as unknown as JsonProfiles
-      loadingProgress = 9
       const dataflow = JSON.parse(
         decoder.decode(
           await profileFiles[1].find((file) => dataflowGraphRegex.test(file.filename))!.read()
         )
       ) as unknown as Dataflow
       const sources = pipeline.current.programCode.split('\n')
-      loadingProgress = 10
 
       getProfileData = enclosure({
         profile,
@@ -130,37 +130,40 @@
   })
 
   let collectNewData = $state(true)
-  let loadingProgress = $state(0)
-  const MAX_PROGRESS = 10
+
+  let downloadProgress = useDownloadProgress()
 
   const loadProfileData = async () => {
     errorMessage = ''
-    loadingProgress = 7
 
+    downloadProgress.onProgress(0, 1)
     const supportBundle = await api
-      .getPipelineSupportBundle(pipelineName, {
-        collect: collectNewData,
-        circuit_profile: true,
-        pipeline_config: true,
-        dataflow_graph: true
-      })
+      .getPipelineSupportBundle(
+        pipelineName,
+        {
+          collect: collectNewData,
+          circuit_profile: true,
+          pipeline_config: true,
+          dataflow_graph: true
+        },
+        downloadProgress.onProgress
+      )
       .catch((error) => {
         errorMessage = error instanceof Error ? error.message : String(error)
-        loadingProgress = 0
+        downloadProgress.reset()
         return null
       })
     if (!supportBundle) {
       return
     }
-    loadingProgress = 8
 
     const success = await processZipBundle(
-      supportBundle,
+      new Uint8Array(await supportBundle.arrayBuffer()),
       pipelineName,
       'No suitable profiles found. If you are trying to debug a pipeline of an older version try enabling "Collect new data" option.'
     )
     if (!success) {
-      loadingProgress = 0
+      downloadProgress.reset()
     }
     // If successful, loading will complete when $effect sets the data
   }
@@ -178,10 +181,10 @@
     }
 
     errorMessage = ''
-    loadingProgress = 7
+    downloadProgress.onProgress(0, 1)
     const arrayBuffer = await file.arrayBuffer().catch((error) => {
       errorMessage = `Error processing uploaded support bundle: ${error}`
-      loadingProgress = 0
+      downloadProgress.reset()
       return null
     })
     // Reset file input
@@ -189,21 +192,20 @@
     if (!arrayBuffer) {
       return
     }
-    loadingProgress = 8
     const success = await processZipBundle(
       new Uint8Array(arrayBuffer),
       `uploaded-${file.name}`,
       'No suitable profiles found in the uploaded support bundle. Check if it contains the circuit profile, dataflow graph and pipeline config.'
     )
     if (!success) {
-      loadingProgress = 0
+      downloadProgress.reset()
     }
     // If successful, loading will complete when $effect sets the data
   }
 
   $effect(() => {
-    if (loadingProgress >= MAX_PROGRESS) {
-      loadingProgress = 0
+    if (downloadProgress.percent === 100) {
+      downloadProgress.reset()
     }
   })
 
@@ -228,17 +230,15 @@
     onchange={uploadSupportBundle}
     class="hidden"
   />
-  <div class="{loadingProgress ? '' : 'opacity-0'} transition-opacity">
+  <div class="{nonNull(downloadProgress.percent) ? '' : 'opacity-0'} transition-opacity">
     <Progress
-      value={null}
-      max={MAX_PROGRESS}
+      value={downloadProgress.percent ? downloadProgress.percent : null}
       classes="-mt-1 sm:-mt-5 h-0"
-      meterTransition="duration-1000"
       trackClasses="!h-1"
     />
   </div>
   {#if getProfileData}
-    <div class="flex flex-nowrap gap-4 pb-2 sm:-mt-2">
+    <div class="flex flex-wrap gap-4 pb-2 sm:-mt-2">
       <button class="btn !bg-surface-100-900" onclick={loadProfileData}>Download profile</button>
       <label class="flex cursor-pointer items-center gap-2">
         <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
@@ -252,11 +252,6 @@
           class="select w-40 md:ml-0"
           value={selectedProfile?.getTime()}
           onchange={(e) => {
-            console.log(
-              'e.currentTarget.value',
-              typeof e.currentTarget.value,
-              e.currentTarget.value
-            )
             selectedProfile = new Date(parseInt(e.currentTarget.value))
           }}
         >
