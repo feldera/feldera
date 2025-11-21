@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut resource_dir = NpmBuild::new("../../js-packages/web-console")
             .executable("bun")
             .run("clean-install")
-            .expect("Could not run `bun ci`. Follow set-up instructions in js-packages/web-console/README.md")
+            .expect("Could not run `bun clean-install`. Follow set-up instructions in js-packages/web-console/README.md")
             .run("build")
             .expect("Could not run `bun run build`. Run it manually in js-packages/web-console/ to debug.")
             .target(asset_path.clone())
