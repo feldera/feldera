@@ -185,7 +185,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             // Functions
             new Func(SqlStdOperatorTable.SUBSTRING, "SUBSTRING", SqlLibrary.STANDARD, "string#substring", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.REPLACE, "REPLACE", SqlLibrary.STANDARD, "string#replace", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.CONVERT, "CONVERT", SqlLibrary.STANDARD, "casts#casts-and-data-type-conversions", FunctionDocumentation.NO_FILE, false),
+            // new Func(SqlStdOperatorTable.CONVERT, "CONVERT", SqlLibrary.STANDARD, "casts#casts-and-data-type-conversions", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.TRANSLATE, "TRANSLATE", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
 
             new Func(SqlStdOperatorTable.OVERLAY, "OVERLAY", SqlLibrary.STANDARD, "string#overlay,binary#overlay", FunctionDocumentation.NO_FILE, false),
@@ -270,7 +270,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlLibraryOperators.DATEADD, "DATEADD", SqlLibrary.POSTGRESQL, "", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.DATEDIFF, "DATEDIFF", SqlLibrary.POSTGRESQL,
                     "datetime#date_timestampdiff,datetime#timestamp_timestampdiff", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.MSSQL_CONVERT, "CONVERT", SqlLibrary.POSTGRESQL, "casts", FunctionDocumentation.NO_FILE, false),
+            // new Func(SqlLibraryOperators.MSSQL_CONVERT, "CONVERT", SqlLibrary.POSTGRESQL, "casts", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.DATE_ADD, "DATE_ADD", SqlLibrary.BIG_QUERY, "datetime#date_add", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.DATE_SUB, "DATE_SUB", SqlLibrary.BIG_QUERY, "datetime#date_sub", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.DATE_PART, "DATE_PART", SqlLibrary.POSTGRESQL,

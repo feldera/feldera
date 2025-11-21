@@ -78,6 +78,7 @@ public class CustomFunctions {
         this.functions.add(new ParseJsonFunction());
         this.functions.add(new ParseTimeFunction());
         this.functions.add(new ParseTimestampFunction());
+        this.functions.add(new Bin2Utf8Function());
         this.functions.add(new RlikeFunction());
         this.functions.add(new SequenceFunction());
         this.functions.add(new ToIntFunction());
@@ -483,6 +484,16 @@ public class CustomFunctions {
                     ReturnTypes.BOOLEAN_NULLABLE,
                     OperandTypes.STRING_STRING,
                     SqlFunctionCategory.STRING, "string#rlike", FunctionDocumentation.NO_FILE);
+        }
+    }
+
+    /** Convert a BINARY to a VARCHAR by reinterpreting the bytes as UTF8 characters. */
+    static class Bin2Utf8Function extends NonOptimizedFunction {
+        private Bin2Utf8Function() {
+            super("BIN2UTF8",
+                    ReturnTypes.VARCHAR_FORCE_NULLABLE,
+                    OperandTypes.BINARY,
+                    SqlFunctionCategory.STRING, "binary#bin2utf8", FunctionDocumentation.NO_FILE);
         }
     }
 

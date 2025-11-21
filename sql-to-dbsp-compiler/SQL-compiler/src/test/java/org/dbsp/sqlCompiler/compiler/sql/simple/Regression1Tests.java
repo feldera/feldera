@@ -1412,5 +1412,40 @@ public class Regression1Tests extends SqlIoTest {
                   0 | 2  |    |   1 | 1
                   0 | 6  |  7 |   2 | 1""");
     }
+
+    @Test
+    public void testBinaryStringCast() {
+        this.qs("""
+                SELECT bin2utf8(x'404141');
+                 r
+                ---
+                 @AA
+                (1 row)
+                
+                SELECT bin2utf8(NULL);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                -- FF is invalid
+                SELECT bin2utf8(x'FF');
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT bin2utf8(x'f09f918b');
+                 r
+                ---
+                 👋
+                (1 row)
+                
+                SELECT bin2utf8(CAST('👋' AS VARBINARY));
+                 r
+                ---
+                 👋
+                (1 row)""");
+    }
 }
  

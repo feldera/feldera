@@ -39,6 +39,11 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <th>Examples</th>
   </tr>
   <tr>
+    <td><a id="bin2utf8"></a><codeBIN2UTF8</code></td>
+    <td>Convert a BINARY value into a VARCHAR value by reinterpretting the content as UTF-8 characters; returns NULL on failure</td>
+    <td><code>BIN2UTF8(x'4041')</code> => <code>'AB'</code></td>
+  </tr>
+  <tr>
     <td><a id="concat"></a><code>||</code></td>
     <td>Concatenation of binary values</td>
     <td><code>x'ab' || x'cd'</code> => <code>x'ABCD'</code></td>

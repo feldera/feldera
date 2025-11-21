@@ -1231,6 +1231,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         this.ensureString(ops, 0);
                         // fall through
                     case "to_hex":
+                    case "bin2utf8":
                     case "octet_length": {
                         return compileStrictFunction(call, node, type, ops, 1);
                     }
