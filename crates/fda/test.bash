@@ -161,8 +161,8 @@ fi
 # Count files in the ZIP and verify we have multiple files (manifest + data files)
 # this counts one more than what is in the archive
 file_count=$(unzip -l test-support-bundle-full.zip | grep -E "^\s*[0-9]+" | wc -l)
-if [ "$file_count" -lt 8 ]; then
-    echo "Expected at least 7 files in support bundle (manifest.txt + data files +/- the heap profile which doesnt work on macos), found $file_count"
+if [ "$file_count" -lt 9 ]; then
+    echo "Expected at least 8 files in support bundle (manifest.txt + data files +/- the heap profile which doesnt work on macos), found $file_count"
     unzip -l test-support-bundle-full.zip
     exit 1
 fi
@@ -176,6 +176,7 @@ fda support-bundle p1 \
   --no-stats \
   --no-pipeline-config \
   --no-system-config \
+  --no-dataflow-graph \
   -o test-support-bundle-none.zip
 
 # Verify the ZIP file exists and check its contents

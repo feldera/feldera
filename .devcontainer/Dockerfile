@@ -30,7 +30,8 @@ RUN apt-get update --fix-missing && \
    ca-certificates \
    gnupg \
    protobuf-compiler \
-   git
+   git \
+   jq
 
 ## Setup Java and Python
 
