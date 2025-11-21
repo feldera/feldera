@@ -37,15 +37,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateStructs;
-<<<<<<< Updated upstream
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionTranslator;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
-=======
-<<<<<<< Updated upstream
-=======
-import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionTranslator;
->>>>>>> Stashed changes
->>>>>>> Stashed changes
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -1045,11 +1037,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .newline();
     }
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
     /** Replace every instance of a call to connector_metadata() with
      * a reference to a variable connector_metadata. */
     static class RewriteConnectorMetadata extends ExpressionTranslator {
@@ -1066,8 +1053,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
 
         @Override
-<<<<<<< Updated upstream
-=======
         public void postorder(DBSPHandleErrorExpression expression) {
             DBSPExpression source = this.getE(expression.source);
             DBSPExpression result = new DBSPHandleErrorExpression(expression.getNode(), expression.index, source, false);
@@ -1075,7 +1060,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
 
         @Override
->>>>>>> Stashed changes
         public void postorder(DBSPApplyExpression expression) {
             String function = expression.getFunctionName();
             if (function != null && function.equalsIgnoreCase(CustomFunctions.ConnectorMetadataFunction.NAME)) {
@@ -1086,10 +1070,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
     }
 
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
->>>>>>> Stashed changes
     /**
      * Generate calls to the Rust macros that generate serialization and deserialization code
      * for the struct.
@@ -1132,31 +1112,17 @@ public class ToRustInnerVisitor extends InnerVisitor {
             field.type.accept(this);
             this.builder.append(", ");
             if (meta == null || meta.defaultValue == null) {
-<<<<<<< Updated upstream
-                this.builder.append(field.type.mayBeNull ? "|_| Some(None)" : "|_| None");
-=======
-<<<<<<< Updated upstream
-                this.builder.append(field.type.mayBeNull ? "Some(None)" : "None");
-            } else {
-=======
                 this.builder.append("|_| ");
                 if (isOption)
                     this.builder.append("Some(");
                 this.builder.append(field.type.mayBeNull ? "Some(None)" : "None");
->>>>>>> Stashed changes
             } else {
                 RewriteConnectorMetadata rw = new RewriteConnectorMetadata(this.compiler);
                 this.builder.append("|")
                         .append(RewriteConnectorMetadata.variableName())
-<<<<<<< Updated upstream
                         .append(": &Option<Variant>| Some(");
-=======
-                        .append(": &Option<Variant>| ");
                 if (isOption)
                     this.builder.append("Some(");
->>>>>>> Stashed changes
-                this.builder.append("Some(");
->>>>>>> Stashed changes
                 IDBSPInnerNode defaultValue = this.createErrorWrappers.apply(meta.defaultValue);
                 defaultValue = rw.apply(defaultValue);
                 defaultValue.accept(this);

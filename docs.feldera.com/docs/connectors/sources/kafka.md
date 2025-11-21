@@ -18,6 +18,11 @@ tolerance](/pipelines/fault-tolerance).
 | `group_join_timeout_secs`      | seconds          | 10      | Maximum timeout (in seconds) for the endpoint to join the Kafka consumer group during initialization. |
 | `poller_threads`               | positive integer | 3       | Number of threads used to poll Kafka messages. Setting it to multiple threads can improve performance with small messages. Default is 3. |
 | `resume_earliest_if_data_expires` | boolean       | false   | See [Tolerating missing data on resume](#tolerating-missing-data-on-resume). |
+| `include_headers`              | boolean          | false   | Whether to include Kafka headers in connector metadata (see [Accessing Kafka metadata](#metadata)). |
+| `include_topic`                | boolean          | false   | Whether to include Kafka topic name in connector metadata (see [Accessing Kafka metadata](#metadata)). |
+| `include_partition`            | boolean          | false   | Whether to include Kafka partition in connector metadata (see [Accessing Kafka metadata](#metadata)). |
+| `include_offset`               | boolean          | false   | Whether to include Kafka offset name in connector metadata (see [Accessing Kafka metadata](#metadata)). |
+| `include_timestamp`            | boolean          | false   | Whether to include Kafka timestamp in connector metadata (see [Accessing Kafka metadata](#metadata)). |
 
 The connector passes additional options directly to [**librdkafka**](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).  Some of the relevant options:
 
@@ -261,6 +266,76 @@ CREATE TABLE INPUT (
    }
    ]'
 );
+```
+
+## <a name="metadata"></a>Accessing Kafka metadata
+
+Kafka messages include several metadata attributes in addition to the payload. These can be extracted by the Kafka connector and accessed from SQL:
+
+| Metadata attribute | SQL type                 | `CONNECTOR_METADATA()` field |Configuration option |
+|--------------------|--------------------------|------------------------------|---------------------|
+| Message headers    | `MAP<STRING, VARBINARY>` | `kafka_headers`              |`include_headers`    |
+| Topic name         | `VARCHAR`                | `kafka_topic`                |`include_topic`      |
+| Partition          | `INT`                    | `kafka_partition`            |`include_partition`  |
+| Message offset     | `BIGINT`                 | `kafka_offset`               |`include_offset`     |
+| Timestamp          | `TIMESTAMP`              | `kafka_timestamp`            |`include_timestamp`  |
+
+Some applications need to ingest and store these attributes alongside the message payload.
+The steps below describe how to extract and use Kafka metadata in SQL tables.
+
+1. **Enable metadata extraction in the Kafka connector.**
+   Use the configuration options listed in the table above to enable only the metadata fields your application needs.
+   Extracting unnecessary attributes adds overhead to ingestion and processing.
+
+2. **Use metadata values to populate table columns.**
+   Enabled metadata attributes are exposed via the `CONNECTOR_METADATA()` function, which returns a
+   `VARIANT` containing a map with all selected attributes. You can reference these values in `DEFAULT`
+   expressions to initialize table columns:
+
+```sql
+create table my_table(
+    x int,
+    kafka_headers MAP<STRING, VARBINARY> DEFAULT CAST(CONNECTOR_METADATA()['kafka_headers'] as MAP<STRING, VARBINARY>),
+    kafka_timestamp TIMESTAMP DEFAULT CAST(CONNECTOR_METADATA()['kafka_timestamp'] as TIMESTAMP),
+    kafka_topic VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR),
+    kafka_offset BIGINT DEFAULT CAST(CONNECTOR_METADATA()['kafka_offset'] AS BIGINT),
+    kafka_partition INT DEFAULT CAST(CONNECTOR_METADATA()['kafka_partition'] AS INT)
+) with (
+    'materialized' = 'true',
+    'connectors' = '[{
+      "transport": {
+          "name": "kafka_input",
+          "config": {
+              "topic": "meta_topic",
+              "start_from": "earliest",
+              "bootstrap.servers": "localhost:19092",
+              "include_headers": true,
+              "include_topic": true,
+              "include_offset": true,
+              "include_partition": true,
+              "include_timestamp": true
+          }
+      },
+      "format": {
+          "name": "json",
+          "config": {
+              "update_format": "raw",
+              "array": false
+          }
+      }
+  }]');
+```
+
+### Converting Kafka header values to strings
+
+Kafka headers can contain arbitrary byte arrays, but in practice they typically hold UTF-8–encoded strings.
+Use the `BIN2UTF8` function to convert binary values to text:
+
+```sql
+create materialized view v as
+select
+  BIN2UTF8(kafka_headers['my_header']) as my_header
+from t;
 ```
 
 ## Tolerating missing data on resume
