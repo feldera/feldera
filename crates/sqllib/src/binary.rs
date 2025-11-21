@@ -479,3 +479,18 @@ pub fn md5_bytes(source: ByteArray) -> SqlString {
 }
 
 some_polymorphic_function1!(md5, bytes, ByteArray, SqlString);
+
+#[doc(hidden)]
+pub fn bin2utf8_(bytes: ByteArray) -> Option<SqlString> {
+    std::str::from_utf8(&bytes.data)
+        .ok()
+        .map(SqlString::from_ref)
+}
+
+#[doc(hidden)]
+pub fn bin2utf8N(source: Option<ByteArray>) -> Option<SqlString> {
+    match source {
+        None => None,
+        Some(bytes) => bin2utf8_(bytes),
+    }
+}
