@@ -3,7 +3,7 @@
 //! An example invocation:
 //!
 //! ```shell
-//! cargo run --release --bin bench --features metrics-exporter-tcp -- --cache --threads 2 --total-size 4294967296 --path /path/to/disk
+//! cargo run --release --bin bench -- --cache --threads 2 --total-size 4294967296 --path /path/to/disk
 //! ```
 //!
 //! Run `metrics-observer` in another terminal to see the metrics.

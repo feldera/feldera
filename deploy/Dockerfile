@@ -13,8 +13,8 @@ RUN apt update --fix-missing && apt install \
   # pkg-config is required for cargo to find libssl
   libssl-dev pkg-config \
   cmake \
-  # rdkafka dependency needs libsasl2-dev and the CXX compiler
-  libsasl2-dev build-essential \
+  # rdkafka dependency needs libsasl2-dev and a CXX compiler
+  libsasl2-dev libzstd-dev libzstd1 build-essential \
   # To install rust
   curl  \
   # For running the SQL compiler
@@ -23,12 +23,15 @@ RUN apt update --fix-missing && apt install \
   locales \
   # To add the nodesource debian repository
   ca-certificates gnupg \
-  # Required by the `metrics-exporter-tcp` crate
-  protobuf-compiler \
   # Otherwise, postgresql_embedded complains when it tries to set timezeone to UTC
   tzdata \
   # Used by pipeline manager to switch runtime versions
   git
+
+# Add AWS RDS bundle to trusted certificate store
+RUN curl -sS https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+      -o /usr/local/share/ca-certificates/aws-global-rds-bundle.crt
+RUN update-ca-certificates
 
 # Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \

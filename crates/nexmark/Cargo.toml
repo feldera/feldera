@@ -35,7 +35,7 @@ regex = { workspace = true }
 time = { workspace = true, features = ["formatting"] }
 paste = { workspace = true }
 rand = { workspace = true, features = ["small_rng"] }
-rdkafka = { workspace = true, features = ["ssl-vendored", "gssapi-vendored"], optional = true }
+rdkafka = { workspace = true, features = ["ssl", "gssapi"], optional = true }
 clap = { workspace = true }
 cached = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

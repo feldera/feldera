@@ -545,6 +545,13 @@ impl DatabaseConfig {
                     ),
                     openssl_error: Some(e),
                 })?;
+        } else {
+            builder
+                .set_default_verify_paths()
+                .map_err(|e| DBError::TlsConnection {
+                    hint: format!("Unable to configure default TLS paths"),
+                    openssl_error: Some(e),
+                })?;
         }
 
         let mut connector = MakeTlsConnector::new(builder.build());

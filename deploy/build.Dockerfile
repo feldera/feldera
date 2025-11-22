@@ -20,7 +20,7 @@ RUN apt-get update --fix-missing && apt-get install -y \
     libssl-dev pkg-config \
     cmake \
     # rdkafka dependency needs libsasl2-dev and a CXX compiler
-    libsasl2-dev build-essential \
+    libsasl2-dev libzstd-dev libzstd1 build-essential \
     # bindgen needs this (at least the dec crate uses bindgen)
     libclang-dev \
     # To download tools
@@ -31,8 +31,6 @@ RUN apt-get update --fix-missing && apt-get install -y \
     locales \
     # To add the nodesource debian repository
     ca-certificates gnupg \
-    # Required by the `metrics-exporter-tcp` crate
-    protobuf-compiler \
     # Required for building the SQL compiler
     maven \
     # Required for building of many crates

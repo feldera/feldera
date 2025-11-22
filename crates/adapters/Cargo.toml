@@ -80,8 +80,8 @@ serde_urlencoded = { workspace = true }
 form_urlencoded = { workspace = true }
 csv = { workspace = true }
 rdkafka = { workspace = true, features = [
-    "ssl-vendored",
-    "gssapi-vendored",
+    "ssl",
+    "gssapi",
     "zstd",
     "libz",
 ], optional = true }
