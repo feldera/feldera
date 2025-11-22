@@ -549,7 +549,7 @@ impl DatabaseConfig {
             builder
                 .set_default_verify_paths()
                 .map_err(|e| DBError::TlsConnection {
-                    hint: format!("Unable to configure default TLS paths"),
+                    hint: "Unable to configure default TLS paths".to_string(),
                     openssl_error: Some(e),
                 })?;
         }
