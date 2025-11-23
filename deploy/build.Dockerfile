@@ -20,7 +20,7 @@ RUN apt-get update --fix-missing && apt-get install -y \
     libssl-dev pkg-config \
     cmake \
     # rdkafka dependency needs libsasl2-dev and a CXX compiler
-    libsasl2-dev libzstd-dev libzstd1 build-essential \
+    libsasl2-dev libzstd-dev zlib1g-dev build-essential \
     # bindgen needs this (at least the dec crate uses bindgen)
     libclang-dev \
     # To download tools

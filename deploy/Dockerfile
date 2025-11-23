@@ -13,8 +13,8 @@ RUN apt update --fix-missing && apt install \
   # pkg-config is required for cargo to find libssl
   libssl-dev pkg-config \
   cmake \
-  # rdkafka dependency needs libsasl2-dev and a CXX compiler
-  libsasl2-dev libzstd-dev libzstd1 build-essential \
+  # rdkafka dependency needs libsasl2-dev zlib and a CXX compiler
+  libsasl2-dev zlib1g-dev build-essential \
   # To install rust
   curl  \
   # For running the SQL compiler
