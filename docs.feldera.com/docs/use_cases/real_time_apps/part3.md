@@ -8,7 +8,7 @@ This article is the third part of our series on building a billion cell spreadsh
 
 ![spreadsheet-architecture-parts](./spreadsheet-architecture-parts.svg)
 
-Try the [live demo](https://xls.feldera.io) and see the [GitHub repo](https://github.com/feldera/techdemo-spreadsheet).
+- The code is available in the [GitHub repo](https://github.com/feldera/techdemo-spreadsheet).
 
 ## Introduction
 

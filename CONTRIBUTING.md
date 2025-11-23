@@ -15,23 +15,19 @@ Our team develops and tests using Linux and MacOS. Windows Subsystem for Linux w
 The Feldera container images and CI workflows use Linux. You can see our setup in
 our [Dockerfile](deploy/Dockerfile).
 
-Our dependencies are:
+Our dependencies for building the project are:
 
-- Runtime
-    - a Rust tool chain (install rustup and the default toolchain)
-        - this will need a C and C++ compiler installed (e.g., gcc, gcc++)
-    - cmake
-    - libssl-dev
-    - libsasl2-dev
-- SQL Compiler
-    - a Java Virtual Machine (at least Java 19)
-    - maven
-    - graphviz
-- Cloud
-    - Python 3
-    - Redpanda or Kafka
-- Web Console
-    - Bun (https://bun.sh/docs/installation)
+  - C and C++ compiler toolchain (e.g., gcc, gcc++)
+  - cmake
+  - libssl-dev
+  - libsasl2-dev
+  - zlib1g-dev
+  - a Rust tool chain (install rustup and the default toolchain)
+  - a Java Virtual Machine (at least Java 19)
+  - maven
+  - graphviz
+  - Python 3.10
+  - Bun (https://bun.sh/docs/installation)
 
 Additional dependencies are automatically installed by the Rust,
 maven, Python, and TypeScript build tools.
