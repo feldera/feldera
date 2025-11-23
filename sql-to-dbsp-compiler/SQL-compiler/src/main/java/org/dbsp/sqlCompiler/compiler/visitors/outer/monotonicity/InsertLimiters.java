@@ -1070,7 +1070,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         // we can use these to GC the other input of the join using
         // DBSPIntegrateTraceRetainValuesOperator.
 
-        Projection proj = new Projection(this.compiler(), true);
+        Projection proj = new Projection(this.compiler(), true, false);
         proj.apply(join.getFunction());
         Utilities.enforce((proj.isProjection));
         Projection.IOMap iomap = proj.getIoMap();

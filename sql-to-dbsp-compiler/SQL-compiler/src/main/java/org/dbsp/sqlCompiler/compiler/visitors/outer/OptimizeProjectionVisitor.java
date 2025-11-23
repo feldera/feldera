@@ -48,7 +48,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         OutputPort source = this.mapped(operator.input());
         DBSPExpression function = operator.getFunction();
         int inputFanout = this.getGraph().getFanout(operator.input().node());
-        Projection projection = new Projection(this.compiler, true);
+        Projection projection = new Projection(this.compiler, true, false);
         projection.apply(function);
         if (projection.isProjection) {
             if (source.node().is(DBSPConstantOperator.class)) {
@@ -107,7 +107,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         OutputPort source = this.mapped(operator.input());
         DBSPExpression function = operator.getFunction();
         int inputFanout = this.getGraph().getFanout(operator.input().node());
-        Projection projection = new Projection(this.compiler, true);
+        Projection projection = new Projection(this.compiler, true, false);
         projection.apply(function);
         if (inputFanout == 1 && projection.isProjection && projection.isShuffle()) {
             if (source.node().is(DBSPJoinOperator.class)

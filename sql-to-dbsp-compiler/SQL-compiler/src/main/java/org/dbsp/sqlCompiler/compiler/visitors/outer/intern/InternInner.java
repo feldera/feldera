@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionTranslator;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ReferenceMap;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -268,7 +269,8 @@ public class InternInner extends ExpressionTranslator {
                 DBSPExpression[] fields = new DBSPExpression[tuple.size()];
                 DBSPExpression safeSource = interned.unwrapIfNullable();
                 for (int i = 0; i < tuple.size(); i++) {
-                    fields[i] = callUninternRecursive(safeSource.field(i).simplify(), tuple.getFieldType(i));
+                    DBSPExpression simplified = Simplify.simplify(this.compiler, safeSource.field(i));
+                    fields[i] = callUninternRecursive(simplified, tuple.getFieldType(i));
                 }
                 DBSPExpression convertedTuple;
                 if (originalType.code == RAW_TUPLE) {

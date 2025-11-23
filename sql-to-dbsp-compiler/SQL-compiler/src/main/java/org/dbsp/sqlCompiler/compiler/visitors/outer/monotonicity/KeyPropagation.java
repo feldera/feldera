@@ -204,7 +204,7 @@ public class KeyPropagation extends CircuitVisitor {
             return;
         }
 
-        Projection projection = new Projection(this.compiler(), true);
+        Projection projection = new Projection(this.compiler(), true, false);
         projection.apply(node.getFunction());
         if (!projection.hasIoMap()) {
             super.postorder(node);
@@ -303,7 +303,7 @@ public class KeyPropagation extends CircuitVisitor {
 
         // In addition, the foreign key information is propagated through joins
         // (but not the primary key information).
-        Projection projection = new Projection(this.compiler(), true);
+        Projection projection = new Projection(this.compiler(), true, false);
         projection.apply(operator.getFunction());
         if (projection.hasIoMap()) {
             Projection.IOMap ioMap = projection.getIoMap();

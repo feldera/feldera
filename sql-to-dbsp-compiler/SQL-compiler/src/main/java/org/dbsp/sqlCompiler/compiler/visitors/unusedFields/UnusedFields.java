@@ -66,6 +66,8 @@ public class UnusedFields extends Passes {
                 this.add(new ReplaceCommonProjections(compiler, fcp));
                 this.add(new OptimizeWithGraph(compiler,
                         g -> new TrimFilters(compiler, g, filterFunctions), 1));
+                this.add(new OptimizeWithGraph(compiler,
+                        g -> new TrimWindows(compiler, g), 1));
                 this.add(new CSE(compiler));
             }
         }

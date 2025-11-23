@@ -157,7 +157,7 @@ public final class DBSPClosureExpression extends DBSPExpression {
     }
 
     public boolean shouldInlineComposition(DBSPCompiler compiler, DBSPClosureExpression before) {
-        Projection projection = new Projection(compiler);
+        Projection projection = new Projection(compiler, true, true);
         projection.apply(this);
         if (projection.isProjection && before.body.is(DBSPBaseTupleExpression.class)) {
             return true;

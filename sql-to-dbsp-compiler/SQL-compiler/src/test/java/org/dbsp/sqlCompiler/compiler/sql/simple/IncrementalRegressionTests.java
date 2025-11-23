@@ -823,6 +823,20 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue5156() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x TIMESTAMP, y INT, z INT);
+                CREATE VIEW V AS SELECT T.x FROM T WHERE T.x < NOW();""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override public void postorder(DBSPWindowOperator window) {
+                // only 1 field used by the window
+                Assert.assertEquals(1,
+                        window.left().getOutputIndexedZSetType().elementType.getToplevelFieldCount());
+            }
+        });
+    }
+
+    @Test
     public void issue4503() {
         this.getCC("""
                 CREATE TABLE T (
