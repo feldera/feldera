@@ -83,8 +83,8 @@ public class TranslateVisitor<T> extends InnerVisitor {
         if (this.translationMap.containsKey(node)) {
             T old = this.translationMap.get(node);
             if (old != translation)
-                throw new InternalCompilerError("Changing value of " + node + " from " +
-                        old + " to " + translation, node.getNode());
+                throw new InternalCompilerError("Changing value of " + node + " from\n" +
+                        old + " to\n" + translation, node.getNode());
             return;
         }
         this.translationMap.putNew(node, translation);

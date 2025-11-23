@@ -107,6 +107,11 @@ public class Simplify extends ExpressionTranslator {
         super(compiler);
     }
 
+    public static DBSPExpression simplify(DBSPCompiler compiler, DBSPExpression expression) {
+        Simplify simplify = new Simplify(compiler);
+        return simplify.apply(expression).to(DBSPExpression.class);
+    }
+
     @Override
     public void startVisit(IDBSPInnerNode node) {
         super.startVisit(node);

@@ -35,14 +35,18 @@ import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Substitution;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -116,11 +120,25 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             DBSPClosureExpression thisFunction = operator.getClosureFunction();
             if (thisFunction.parameters.length != 1)
                 throw new InternalCompilerError("Expected closure with 1 parameter", operator);
-            DBSPExpression argument = new DBSPRawTupleExpression(
-                    sourceFunction.body.field(0).borrow(),
-                    sourceFunction.body.field(1).borrow());
-            DBSPExpression apply = thisFunction.call(argument).reduce(this.compiler());
-            DBSPClosureExpression newFunction = apply.closure(sourceFunction.parameters);
+
+            final DBSPClosureExpression newFunction;
+            if (sourceFunction.body.is(DBSPBaseTupleExpression.class)) {
+                DBSPExpression argument = new DBSPRawTupleExpression(
+                        sourceFunction.body.field(0).simplify().borrow(),
+                        sourceFunction.body.field(1).simplify().borrow());
+                DBSPExpression apply = thisFunction.call(argument).reduce(this.compiler());
+                newFunction = apply.closure(sourceFunction.parameters);
+            } else {
+                DBSPVariablePath var = sourceFunction.body.type.var();
+                DBSPLetExpression let = new DBSPLetExpression(var,
+                        sourceFunction.body,
+                        new DBSPLetExpression(thisFunction.parameters[0].asVariable(),
+                        new DBSPRawTupleExpression(
+                                var.field(0).borrow(),
+                                var.field(1).borrow()),
+                                thisFunction.body));
+                newFunction = let.closure(sourceFunction.parameters);
+            }
             CalciteRelNode node = operator.getRelNode().after(source.node().getRelNode());
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
                     node, newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0))
@@ -202,7 +220,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 // On the right of the antijoin we can drop all value fields, but we only do this if
                 // the right input of the antijoin does not have other outputs.
                 OutputPort rightPort = right;
-                DBSPClosureExpression closure = keysOnly(join.right().getOutputIndexedZSetType());
+                DBSPClosureExpression closure = keysOnly(right.getOutputIndexedZSetType());
                 if (!RemoveIdentityOperators.isIdentityFunction(closure)) {
                     DBSPSimpleOperator rightIndex = new DBSPMapIndexOperator(operator.getRelNode(),
                             closure, right).addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
@@ -240,19 +258,40 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
      * @return         A pair of closures.
      *                 The first one has signature (A, B) -> (A, D).  First component is identity.
      *                 The second one has signature (A, D) -> (C, D).  Second component is identity.
+     *                 The assumption is that C only depends on A, but not on B.
      */
     Pair<DBSPClosureExpression, DBSPClosureExpression> splitClosure(DBSPClosureExpression closure) {
         Utilities.enforce(closure.parameters.length == 1);
-        DBSPParameter param = closure.parameters[0];
-        DBSPTypeRawTuple paramType = param.getType().to(DBSPTypeRawTuple.class);
+        final DBSPParameter param = closure.parameters[0];
+        final DBSPTypeRawTuple paramType = param.getType().to(DBSPTypeRawTuple.class);
 
-        DBSPRawTupleExpression tuple = closure.body.to(DBSPRawTupleExpression.class);
+        final DBSPRawTupleExpression tuple = closure.body.to(DBSPRawTupleExpression.class);
         Utilities.enforce(tuple.fields != null);
+        Utilities.enforce(tuple.fields.length == 2);
         DBSPVariablePath var0 = param.asVariable();
+        // Check that C does not depend on B, i.e., var0.1
+        InnerVisitor dependsOnB = new InnerVisitor(this.compiler) {
+            @Override
+            public void postorder(DBSPFieldExpression expression) {
+                if (expression.fieldNo == 1) {
+                    if (expression.expression.is(DBSPVariablePath.class)) {
+                        DBSPVariablePath var = expression.expression.to(DBSPVariablePath.class);
+                        Utilities.enforce(!var0.variable.equals(var.variable),
+                                () -> "splitClosure cannot decompose closure " + closure);
+                    }
+                }
+            }
+        };
+        dependsOnB.apply(tuple.fields[0]);
+
+        final DBSPExpression v00 = var0.field(0).deref();
+        final DBSPExpression flat;
+        if (v00.getType().is(DBSPTypeTupleBase.class))
+            flat = new DBSPTupleExpression(DBSPTypeTupleBase.flatten(var0.field(0).deref()), false);
+        else
+            flat = v00.applyCloneIfNeeded();
         DBSPClosureExpression first =
-                new DBSPRawTupleExpression(
-                        new DBSPTupleExpression(DBSPTypeTupleBase.flatten(var0.field(0).deref()), false),
-                        tuple.fields[1].applyCloneIfNeeded()).closure(param);
+                new DBSPRawTupleExpression(flat, tuple.fields[1].applyCloneIfNeeded()).closure(param);
 
         // Use same name as parameter
         DBSPVariablePath var1 = new DBSPVariablePath(param.name, new DBSPTypeRawTuple(

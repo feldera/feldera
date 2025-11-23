@@ -51,6 +51,8 @@ public class Projection extends InnerVisitor {
     final ResolveReferences resolver;
     /** If true consider casts from a type to the same type non-nullable as noops */
     final boolean allowNoopCasts;
+    /** If true consider projections functions that return nested tuples to a bigger depth than 2 */
+    final boolean allowDeepTuples;
 
     /** If the description can be described as a shuffle, this is it.
      * For a projection to be described as a shuffle,
@@ -121,17 +123,18 @@ public class Projection extends InnerVisitor {
 
     int currentParameterIndex = -1;
 
-    public Projection(DBSPCompiler compiler, boolean allowNoopCasts) {
+    public Projection(DBSPCompiler compiler, boolean allowNoopCasts, boolean allowDeepTuples) {
         super(compiler);
         this.isProjection = true;
         this.ioMap = new IOMap();
         this.shuffle = new ArrayList<>();
         this.resolver = new ResolveReferences(compiler, false);
         this.allowNoopCasts = allowNoopCasts;
+        this.allowDeepTuples = allowDeepTuples;
     }
 
     public Projection(DBSPCompiler compiler) {
-        this(compiler, false);
+        this(compiler, false, false);
     }
 
     @Override
@@ -303,8 +306,14 @@ public class Projection extends InnerVisitor {
         if (expression.parameters.length == 0)
             return this.notProjection();
         // Currently skip expressions that return nested tuples
-        if (!this.isSimpletuple(expression.body.getType()))
-            return this.notProjection();
+        if (!this.isSimpletuple(expression.body.getType())) {
+            if (this.allowDeepTuples) {
+                // Give up maintaining the iomap
+                this.notShuffle();
+            } else {
+                return this.notProjection();
+            }
+        }
 
         this.parameters = expression.parameters;
         return VisitDecision.CONTINUE;
