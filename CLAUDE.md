@@ -8220,7 +8220,6 @@ This is a **development/debugging tool**, not intended for production use. In pr
 
 Enable local, offline development and testing of profiler visualizations:
 - Load profiles from support bundles via browser file picker
-- Load bundles automatically via `?open=` URL parameter
 - Iterate on visualization features without backend dependencies
 - Debug circuit performance issues with saved profile snapshots
 - Test profiler-lib integration before web-console deployment
@@ -8235,15 +8234,13 @@ profiler-app builds to a completely self-contained HTML file with all JavaScript
 - Opened directly in a browser (`file:///path/to/index.html`)
 - Served by any static web server
 - Shared via email, cloud storage, or version control
-- Opened with `?open=path/to/bundle.zip` to auto-load a bundle
 
 ### What It Does
 
 1. **Bundle processing** - Extract profiles from support bundles in the browser
-2. **URL parameter loading** - Auto-load bundles via `?open=<path>` parameter
-3. **File picker UI** - Manual bundle selection through "Load Bundle" button
-4. **Visualization** - Render circuit profiles using profiler-lib
-5. **Error handling** - Display loading and parsing errors
+2. **File picker UI** - Manual bundle selection through "Load Bundle" button
+3. **Visualization** - Render circuit profiles using profiler-lib
+4. **Error handling** - Display loading and parsing errors
 
 ### What It Does NOT Do
 
@@ -8259,7 +8256,7 @@ profiler-app builds to a completely self-contained HTML file with all JavaScript
 ```
 profiler-app/
 ├── src/
-│   ├── index.ts                  # Entry point with ?open= parameter handling
+│   ├── index.ts                  # Entry point
 │   ├── fileLoader.ts             # Profiler lifecycle manager
 │   ├── browserBundleProcessor.ts # Browser-based bundle extraction (but-unzip)
 │   └── bundleUpload.ts           # UI handler for file picker
@@ -8276,38 +8273,26 @@ profiler-app/
 
 ### Entry Point (`index.ts`)
 
-Handles application initialization and bundle loading:
+Handles application initialization:
 
 ```typescript
 async function main() {
     setupBundleUpload(loader);
 
-    // Check for ?open=<relative-path> query parameter
-    const params = new URLSearchParams(window.location.search);
-    const openPath = params.get('open');
-
-    if (openPath) {
-        // Load bundle from file system using file:/// URL
-        const fileUrl = new URL(openPath, baseUrl).href;
-        const response = await fetch(fileUrl);
-        const file = new File([await response.blob()], filename);
-
-        // Process and render
-        const { profile, dataflow, programCode } = await processBundleInBrowser(file);
-        const circuit = CircuitProfile.fromJson(profile);
-        circuit.setDataflow(dataflow, programCode);
-        loader.renderCircuit(circuit);
-    } else {
-        // Show instructions for loading a bundle
-        showWelcomeMessage();
+    // Show welcome message with instructions
+    if (config.messageContainer) {
+        config.messageContainer.innerHTML = `
+            <h2>Welcome to Feldera Profiler</h2>
+            <p>Click the "Load Bundle" button above to select a support bundle (.zip file)<br/> that contains the pipeline profile to visualize.</p>
+        `;
+        config.messageContainer.style.display = 'block';
     }
 }
 ```
 
 **Key Features:**
-- Auto-loads bundles when `?open=` parameter is present
-- Shows welcome screen when opened without parameters
-- Handles file:/// URL loading for local file system access
+- Shows welcome screen on startup
+- Sets up file upload handler for bundle selection
 - All bundle processing happens in the browser
 
 ### Profiler Lifecycle Manager (`fileLoader.ts`)
@@ -8508,7 +8493,30 @@ Minimal dependency set focused on browser-only operation:
 
 ## Usage
 
-### Method 1: File Picker (Interactive)
+### Method 1: Development Server
+
+For development with hot reload:
+
+```bash
+cd js-packages/profiler-app
+bun install
+bun run dev
+# Opens http://localhost:5174
+```
+
+Then use the file picker:
+- Click "Load Bundle" button
+- Select a support bundle (`.zip` file)
+- Profile renders automatically
+
+**Advantages:**
+- Hot Module Replacement (HMR) for rapid development
+- Interactive file selection
+- Works with any bundle location
+
+### Method 2: Standalone HTML
+
+Build and use as a single HTML file:
 
 1. **Build the app:**
    ```bash
@@ -8529,57 +8537,10 @@ Minimal dependency set focused on browser-only operation:
    - Profile renders automatically
 
 **Advantages:**
-- Interactive file selection
-- Works with any bundle location
-- No command-line needed
-
-### Method 2: URL Parameter (Automatic)
-
-1. **Place bundle in known location:**
-   ```bash
-   cp my-bundle.zip dist/data/rec.zip
-   ```
-
-2. **Open with parameter:**
-   ```bash
-   open dist/index.html?open=data/rec.zip
-   # Or navigate in browser to:
-   # file:///path/to/dist/index.html?open=data/rec.zip
-   ```
-
-3. **Bundle loads automatically** on page load
-
-**Advantages:**
-- Automated loading
-- Bookmarkable URLs
-- Scriptable
-- Good for development workflow
-
-**Example URLs:**
-```bash
-# Load bundle from data directory
-file:///path/to/dist/index.html?open=data/rec.zip
-
-# Load bundle from parent directory
-file:///path/to/dist/index.html?open=../bundles/profile.zip
-
-# Load bundle from absolute path (platform-dependent)
-file:///path/to/dist/index.html?open=/home/user/bundles/profile.zip
-```
-
-### Method 3: Serve via HTTP
-
-For development with hot reload:
-
-```bash
-bun run dev
-# Opens http://localhost:5174
-```
-
-Then use either file picker or URL parameter:
-```
-http://localhost:5174?open=data/rec.zip
-```
+- Single self-contained file
+- No server required
+- Can be shared easily
+- Works offline
 
 ## Data Files
 
@@ -8632,56 +8593,6 @@ bun run dev        # Start Vite dev server
 - TypeScript errors show in console
 - No manual rebuild needed
 
-### Testing with Different Bundles
-
-1. **Place bundles in `data/` directory:**
-   ```bash
-   cp /path/to/bundle1.zip data/test1.zip
-   cp /path/to/bundle2.zip data/test2.zip
-   ```
-
-2. **Test with dev server:**
-   ```bash
-   bun run dev
-   # Open http://localhost:5174?open=data/test1.zip
-   # Open http://localhost:5174?open=data/test2.zip
-   ```
-
-3. **Compare visualizations** across different bundles
-
-### Debugging
-
-**Browser DevTools:**
-```javascript
-// Check if bundle loaded
-console.log('Profile loaded:', circuit)
-
-// Inspect Cytoscape instance
-window.cy // (if exposed by profiler-lib)
-
-// Check for errors
-// Look in Console tab for JavaScript errors
-// Look in Network tab for failed file loads
-```
-
-**Common Issues:**
-- File not found: Check `?open=` path is correct relative to HTML file
-- Blank screen: Check Console for JavaScript errors
-- Bundle not loading: Verify zip contains required JSON files
-
-## Differences from Old Architecture
-
-| Aspect | Old Architecture | New Architecture |
-|--------|------------------|------------------|
-| **Output** | Multiple files (HTML + JS + CSS + data) | Single HTML file |
-| **Bundle Loading** | Server preprocessing + HTTP fetch | Browser-only processing |
-| **Data Format** | JSON files extracted to disk | Zip files processed in-memory |
-| **Server** | Required (Vite/serve) | Optional (works with file:///) |
-| **CLI** | launcher.ts for preprocessing | No CLI needed |
-| **Dependencies** | adm-zip, serve, tsx | but-unzip only |
-| **URL Parameters** | Not supported | ?open= parameter supported |
-| **Distribution** | Must extract and serve | Single file, just open |
-
 ## Use Cases
 
 ### 1. Local Development
@@ -8717,7 +8628,8 @@ cp my-bundle.zip share/data.zip
 zip -r profile-visualization.zip share/
 
 # Recipient extracts and opens:
-# share/index.html?open=data.zip
+open share/index.html
+# Then clicks "Load Bundle" and selects data.zip
 ```
 
 ### 3. Offline Analysis
@@ -8733,32 +8645,23 @@ cp dist/index.html /path/to/offline/machine/
 cp bundles/*.zip /path/to/offline/machine/
 
 # Open offline
-# file:///path/to/offline/machine/index.html?open=bundle.zip
+open /path/to/offline/machine/index.html
+# Then use "Load Bundle" button to select bundle files
 ```
 
-### 4. Automated Testing
+### 4. Batch Testing
 
-**Scenario:** Test with many bundles programmatically
+**Scenario:** Test with many bundles
 
 ```bash
-#!/bin/bash
-for bundle in test-bundles/*.zip; do
-    basename=$(basename "$bundle")
-    open "dist/index.html?open=test-bundles/$basename"
-    # Wait for manual inspection or automated screenshot
-done
+# Start dev server
+bun run dev
+
+# Manually load each bundle via the UI to compare visualizations
+# Or use browser automation tools (Playwright, Selenium) to script the file upload
 ```
 
 ## Troubleshooting
-
-### "Failed to fetch" with file:/// URLs
-
-**Cause:** Browser security restrictions on file:/// access
-
-**Fix:** Some browsers restrict file:/// to file:/// access. Options:
-1. Use a local web server: `python -m http.server` in dist/
-2. Use browser with relaxed security (development only)
-3. Check browser console for CORS or security errors
 
 ### Bundle loads but shows blank screen
 
