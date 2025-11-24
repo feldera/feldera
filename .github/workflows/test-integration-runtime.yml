@@ -51,6 +51,7 @@ jobs:
         run: uv run --locked ./tests/runtime_aggtest/run.sh
         working-directory: python
         env:
+          RUNTIME_AGGTEST_JOBS: ${{ vars.RUNTIME_AGGTEST_JOBS }}
           PYTHONPATH: ${{ github.workspace }}/python
           FELDERA_TLS_INSECURE: true
 
