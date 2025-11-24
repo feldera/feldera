@@ -237,7 +237,7 @@
 
   .profiler-tooltip-container :global(table td),
   .profiler-tooltip-container :global(table th) {
-    padding: 0px 4px;
+    padding: 2px 10px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: white;
   }

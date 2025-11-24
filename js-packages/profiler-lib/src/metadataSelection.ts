@@ -80,6 +80,7 @@ export class MetadataSelector {
             const cb = document.createElement("input");
             cb.type = "checkbox";
             cb.checked = true;
+            cb.classList = "checkbox";
             cb.title = `Worker ${i}`;
             cb.dataset['workerIndex'] = i.toString();
             workerCheckboxesContainer.appendChild(cb);
