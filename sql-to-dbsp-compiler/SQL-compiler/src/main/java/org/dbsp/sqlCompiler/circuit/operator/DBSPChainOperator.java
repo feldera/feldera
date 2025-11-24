@@ -169,12 +169,14 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
                 resultType = resultType.to(DBSPTypeIndexedZSet.class).getKVType();
             none = resultType.withMayBeNull(true).none();
             boolean foundFilter = false;
+            boolean foundNonFilter = false;
             List<DBSPStatement> statements = new ArrayList<>();
             for (Computation comp: this.computations) {
                 CalciteObject node = comp.closure().getNode();
                 DBSPStatement stat;
                 switch (comp.kind) {
                     case Map, MapIndex: {
+                        foundNonFilter = true;
                         DBSPVariablePath nextVar = comp.closure.getResultType().var();
                         stat = new DBSPLetStatement(nextVar.variable,
                                 this.call(compiler, comp.closure, currentArg));
@@ -194,6 +196,9 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
                     }
                 }
                 statements.add(stat);
+            }
+            if (!foundNonFilter) {
+                currentArg = currentArg.applyCloneIfNeeded();
             }
             DBSPExpression last = (foundFilter) ? currentArg.some() : currentArg;
             DBSPBlockExpression block = new DBSPBlockExpression(statements, last);
