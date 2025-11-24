@@ -1806,6 +1806,7 @@ impl CircuitThread {
         };
         let _ = init_status_sender.send(Ok(self.controller.clone()));
 
+        let mut output_backpressure_warning = None;
         loop {
             // Run received commands.  Commands can initiate checkpoint
             // requests, so attempt to execute those afterward.  Executing a
@@ -1828,10 +1829,18 @@ impl CircuitThread {
             // become available.
             if self.controller.output_buffers_full() {
                 debug!("circuit thread: park waiting for output buffer space");
-                self.parker.park();
-                debug!("circuit thread: unparked");
+                let warning = output_backpressure_warning
+                    .get_or_insert_with(|| LongOperationWarning::new(Duration::from_secs(1)));
+                warning.check(|elapsed| {
+                    info!(
+                        "pipeline stalled {} seconds because output buffers are full",
+                        elapsed.as_secs()
+                    )
+                });
+                self.parker.park_deadline(warning.next_warning());
                 continue;
             }
+            output_backpressure_warning = None;
 
             match trigger.trigger(
                 self.last_checkpoint,

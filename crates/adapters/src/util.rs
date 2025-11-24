@@ -708,6 +708,10 @@ impl LongOperationWarning {
             self.warn_threshold *= 2;
         }
     }
+
+    pub fn next_warning(&self) -> Instant {
+        self.start + self.warn_threshold
+    }
 }
 
 #[cfg(test)]
