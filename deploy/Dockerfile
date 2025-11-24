@@ -26,7 +26,9 @@ RUN apt update --fix-missing && apt install \
   # Otherwise, postgresql_embedded complains when it tries to set timezeone to UTC
   tzdata \
   # Used by pipeline manager to switch runtime versions
-  git
+  git \
+  # Used to set capabilities to the samply profiler
+  libcap2-bin
 
 # Add AWS RDS bundle to trusted certificate store
 RUN curl -sS https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
@@ -74,6 +76,9 @@ RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86
   && rm mold-2.40.1-$arch-linux.tar.gz
 ENV PATH="$PATH:/home/ubuntu/.cargo/bin:/home/ubuntu/mold/bin"
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib"
+
+# Install Samply for profiling
+RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/abhizer/samply/releases/download/v0.13.2/samply-installer.sh | sh
 
 #
 # Build phase to specifically customize for the feldera OSS container

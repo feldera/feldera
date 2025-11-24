@@ -218,6 +218,8 @@ It contains the following fields:
         endpoints::pipeline_interaction::post_pipeline_pause,
         endpoints::pipeline_interaction::post_pipeline_resume,
         endpoints::pipeline_interaction::post_pipeline_activate,
+        endpoints::pipeline_interaction::get_pipeline_samply_profile,
+        endpoints::pipeline_interaction::start_samply_profile,
         endpoints::pipeline_interaction::post_pipeline_approve,
         endpoints::pipeline_interaction::completion_token,
         endpoints::pipeline_interaction::completion_status,
@@ -537,6 +539,8 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::get_pipeline_circuit_json_profile)
         .service(endpoints::pipeline_interaction::get_pipeline_dataflow_graph)
         .service(endpoints::pipeline_interaction::get_pipeline_heap_profile)
+        .service(endpoints::pipeline_interaction::get_pipeline_samply_profile)
+        .service(endpoints::pipeline_interaction::start_samply_profile)
         .service(endpoints::pipeline_interaction::support_bundle::get_pipeline_support_bundle)
         .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)
         .service(endpoints::pipeline_interaction::completion_token)

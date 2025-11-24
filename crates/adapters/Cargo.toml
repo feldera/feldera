@@ -72,6 +72,7 @@ bytestring = "1.4.0"
 circular-queue = { workspace = true, features = ["serde_support"] }
 crossbeam = { workspace = true }
 dbsp = { workspace = true }
+semver = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
 erased-serde = { workspace = true }
 serde_yaml = { workspace = true }
@@ -194,6 +195,7 @@ thread-id = { workspace = true }
 parking_lot = { workspace = true }
 backoff = { workspace = true }
 sentry = { workspace = true }
+zip = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]

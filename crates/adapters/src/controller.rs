@@ -44,7 +44,7 @@ use crate::{
     CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
     PipelineState, TransportInputEndpoint,
 };
-use anyhow::{anyhow, Error as AnyError};
+use anyhow::{anyhow, Context, Error as AnyError};
 use arrow::datatypes::Schema;
 use atomic::Atomic;
 use checkpoint::Checkpoint;
@@ -117,6 +117,9 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
+use tokio::fs::File;
+use tokio::io::AsyncReadExt;
+use tokio::io::BufReader;
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::TryRecvError;
 use tokio::sync::Mutex as TokioMutex;
@@ -809,6 +812,135 @@ impl Controller {
             }
         }));
         receiver.await.unwrap()
+    }
+
+    pub async fn async_samply_profile(&self, duration: u64) -> Result<Vec<u8>, AnyError> {
+        #[cfg(not(unix))]
+        {
+            anyhow::bail!(
+                "samply is not supported on this platform; only supported on unix platforms"
+            )
+        }
+
+        let err_msg = format!(
+            "is Samply installed and in `$PATH`? try: `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/abhizer/samply/releases/download/v0.13.2/samply-installer.sh | sh`",
+        );
+
+        let version = tokio::process::Command::new("samply")
+            .arg("--version")
+            .output()
+            .await
+            .with_context(|| format!("failed to get samply version; {err_msg}"))?;
+
+        let version = semver::Version::parse(
+            String::from_utf8(version.stdout)?
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or("0.0.0"),
+        )
+        .with_context(|| format!("failed to parse samply version; {err_msg}"))?;
+
+        let req = semver::VersionReq::parse(">=0.13.2").unwrap();
+
+        if !req.matches(&version) {
+            anyhow::bail!(
+                "samply version is too old (found: {}, required: >= {}); {err_msg}",
+                version,
+                req
+            );
+        }
+
+        info!(
+            "collecting samply profile for the next {} seconds",
+            duration
+        );
+
+        let temp = tempfile::Builder::new()
+            .prefix("samply_profile_")
+            .suffix(".json.gz")
+            .rand_bytes(10)
+            .tempfile()
+            .context("failed to create tempfile to store samply profiles")?;
+        let profile_file = temp
+            .path()
+            .to_str()
+            .context("failed to convert path to samply profile to str")?;
+
+        let mut cmd = tokio::process::Command::new("samply");
+        let mut child = cmd
+            .args([
+                "record",
+                "-p",
+                &std::process::id().to_string(),
+                "-o",
+                profile_file,
+                "--save-only",
+                "--presymbolicate",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .context("failed to spawn samply process")?;
+
+        let child_pid = child.id().context("failed to get samply process id")?;
+
+        // Workaround as samply's `--duration` flag doesn't seem to work.
+        // See: https://github.com/mstange/samply/issues/716
+        //
+        // As the duration flag doesn't work, we have to send a SIGINT to
+        // tell samply to stop recording.
+        //
+        // If samply returns before the specified duration, it is likely due
+        // to an error, and in such cases, we want to report it immediately.
+        tokio::select! {
+            _ = child.wait() => {}
+            _ = tokio::time::sleep(Duration::from_secs(duration)) => {
+                // Send SIGINT to the samply process to stop recording.
+                nix::sys::signal::kill(
+                    nix::unistd::Pid::from_raw(child_pid as i32),
+                    nix::sys::signal::Signal::SIGINT,
+                )
+                .context("failed to send SIGINT to samply process")?;
+            }
+        }
+
+        let output = child
+            .wait_with_output()
+            .await
+            .context("failed when waiting for samply process")?;
+
+        if !output.status.success() {
+            anyhow::bail!(
+                "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
+                output.status,
+                String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .replace("\n", "\\n"),
+                String::from_utf8_lossy(&output.stderr)
+                    .trim()
+                    .replace("\n", "\\n"),
+            );
+        }
+
+        let mut file = BufReader::new(File::open(profile_file).await.context(format!(
+            "failed to open samply profile file `{profile_file}`"
+        ))?);
+
+        let mut buf = Vec::with_capacity(10 * 1024 * 1024); // 10 MB
+
+        file.read_to_end(&mut buf).await.context(format!(
+            "failed to read samply profile file `{profile_file}`"
+        ))?;
+
+        if buf.is_empty() {
+            anyhow::bail!(
+                "samply profile is empty; no data collected; profile file: `{profile_file}`"
+            );
+        }
+
+        tracing::info!("collected samply profile ({} bytes)", buf.len());
+
+        Ok(buf)
     }
 
     /// Triggers a sync checkpoint operation. `cb` will be called when it

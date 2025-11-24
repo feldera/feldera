@@ -3910,6 +3910,7 @@ dependencies = [
  "rmpv",
  "rustls 0.23.27",
  "schema_registry_converter",
+ "semver",
  "sentry",
  "serde",
  "serde_arrow",
@@ -3935,6 +3936,7 @@ dependencies = [
  "utoipa",
  "uuid",
  "xxhash-rust",
+ "zip 6.0.0",
 ]
 
 [[package]]

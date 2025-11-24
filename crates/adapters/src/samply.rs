@@ -75,7 +75,7 @@ use nix::{
 };
 use smallstr::SmallString;
 use tempfile::{tempdir, TempDir};
-use tracing::{enabled, error, span::EnteredSpan, Level, Span};
+use tracing::{enabled, error, info, span::EnteredSpan, Level, Span};
 
 #[derive(Copy, Clone, Debug)]
 struct Timestamp(i64);
@@ -294,4 +294,27 @@ fn write_marker(start: Timestamp, end: Timestamp, name: &str) {
     let mut s = SmallString::<[u8; 64]>::new();
     writeln!(&mut s, "{start} {end} {name}").unwrap();
     let _ = with_marker_file(|f| f.write_all(s.as_bytes()));
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) enum SamplyProfile {
+    #[default]
+    None,
+    Success(Vec<u8>),
+    Failure(String),
+}
+
+impl SamplyProfile {
+    pub(crate) fn update(&mut self, result: Result<Vec<u8>, anyhow::Error>) {
+        match result {
+            Ok(data) => {
+                info!("collected samply profile: {} bytes", data.len());
+                *self = SamplyProfile::Success(data);
+            }
+            Err(error) => {
+                error!("samply profiling failed: {:?}", error);
+                *self = SamplyProfile::Failure(error.to_string());
+            }
+        }
+    }
 }
