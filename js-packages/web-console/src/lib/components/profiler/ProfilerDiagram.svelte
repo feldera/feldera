@@ -17,18 +17,33 @@
     programCode: string[]
     /** Optional class for styling the container */
     class?: string
+    /** Metric selector element (dependency injection) */
+    metricSelector: HTMLSelectElement
+    /** Worker checkboxes container element (dependency injection) */
+    workerCheckboxesContainer: HTMLElement
+    /** Toggle workers button element (dependency injection) */
+    toggleWorkersButton: HTMLButtonElement
+    /** Optional search input element */
+    searchInput?: HTMLInputElement
   }
 
-  let { profileData, dataflowData, programCode, class: className }: Props = $props()
+  let {
+    profileData,
+    dataflowData,
+    programCode,
+    class: className,
+    metricSelector,
+    workerCheckboxesContainer,
+    toggleWorkersButton,
+    searchInput
+  }: Props = $props()
 
   // DOM element references
   let graphContainer: HTMLDivElement | undefined = $state()
-  let selectorContainer: HTMLDivElement | undefined = $state()
   let navigatorContainer: HTMLDivElement | undefined = $state()
   let tooltipContainer: HTMLDivElement | undefined = $state()
   let errorContainer: HTMLDivElement | undefined = $state()
   let messageContainer: HTMLDivElement | undefined = $state()
-  let searchInput: HTMLInputElement | undefined = $state()
 
   // Profiler instance
   let profiler: Profiler | null = $state(null)
@@ -39,10 +54,12 @@
     // Wait for all DOM elements to be available
     if (
       !graphContainer ||
-      !selectorContainer ||
       !navigatorContainer ||
       !tooltipContainer ||
-      !errorContainer
+      !errorContainer ||
+      !metricSelector ||
+      !workerCheckboxesContainer ||
+      !toggleWorkersButton
     ) {
       return
     }
@@ -66,11 +83,13 @@
         const profile = CircuitProfile.fromJson(profileData)
         profile.setDataflow(dataflowData, programCode)
 
-        // Create profiler configuration
+        // Create profiler configuration with dependency-injected UI elements
         const config: ProfilerConfig = {
           graphContainer: graphContainer!,
-          selectorContainer: selectorContainer!,
           navigatorContainer: navigatorContainer!,
+          metricSelector: metricSelector,
+          workerCheckboxesContainer: workerCheckboxesContainer,
+          toggleWorkersButton: toggleWorkersButton,
           tooltipContainer: tooltipContainer!,
           errorContainer,
           messageContainer,
@@ -109,25 +128,6 @@
 
   <!-- Overlay menus (positioned on top of graph) -->
   <div class="profiler-menus">
-    <!-- Selector controls (metric selection, worker filters) -->
-    <div bind:this={selectorContainer} class="profiler-selector">
-      <table class="selection-tools">
-        <!-- Profiler will inject UI here -->
-      </table>
-    </div>
-
-    <!-- Search input -->
-    <div class="profiler-search">
-      <label for="profiler-search-input">Search:</label>
-      <input
-        bind:this={searchInput}
-        id="profiler-search-input"
-        type="text"
-        placeholder="Node ID"
-        title="Node id to search"
-      />
-    </div>
-
     <!-- Navigator minimap -->
     <div bind:this={navigatorContainer} class="profiler-navigator"></div>
 
@@ -168,52 +168,33 @@
 
   .profiler-menus {
     position: absolute;
-    top: 0;
-    left: 0;
+    top: 0.5rem;
+    left: 0.5rem;
     z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: start;
-  }
-
-  .profiler-selector {
-    background-color: rgba(100, 100, 100, 0.3);
-    z-index: 1;
-  }
-
-  .profiler-search {
-    display: flex;
-    align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem;
-    background-color: rgba(100, 100, 100, 0.3);
-  }
-
-  .profiler-search label {
-    font-family: monospace;
-    font-size: 14px;
-  }
-
-  .profiler-search input {
-    padding: 0.25rem 0.5rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-family: monospace;
   }
 
   .profiler-navigator {
-    width: 100px;
-    height: 100px;
-    margin: 0.5rem;
-    border: 1px solid rgba(200, 200, 20, 1);
+    width: 108px;
+    height: 108px;
+    background-color: rgba(255, 255, 255, 0.95);
+    border: 2px solid rgb(var(--color-surface-100));
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 2px;
   }
 
   .profiler-message {
     display: none;
     font-family: monospace;
-    background-color: transparent;
+    background-color: rgba(255, 255, 255, 0.9);
     padding: 0.5rem;
     font-size: 14px;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
   .profiler-error {
@@ -222,51 +203,71 @@
     display: none;
     font-family: monospace;
     border: 1px solid red;
+    border-radius: 4px;
     text-align: center;
-    width: 350px;
+    max-width: 350px;
     white-space: pre-wrap;
     padding: 0.5rem;
+    box-shadow: 0 2px 4px rgba(255, 0, 0, 0.2);
   }
 
   .profiler-tooltip-container {
     position: absolute;
-    top: 0;
-    right: 0;
+    top: 0.5rem;
+    right: 0.5rem;
     z-index: 2;
     pointer-events: none;
+    max-width: 600px;
+    max-height: calc(100vh - 1rem);
   }
 
-  /* Selector UI styling (applied to injected content) */
-  .profiler-selector :global(table) {
-    width: 100%;
+  /* Tooltip styling */
+  .profiler-tooltip-container :global(> div) {
+    background-color: rgba(0, 0, 0, 0.9);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  }
+
+  .profiler-tooltip-container :global(table) {
+    background-color: transparent;
     border-collapse: collapse;
-  }
-
-  .profiler-selector :global(td) {
-    padding: 0.5rem;
-    vertical-align: top;
-  }
-
-  .profiler-selector :global(select) {
+    font-size: 12px;
     width: 100%;
-    padding: 0.25rem;
-    border: 1px solid #ccc;
+  }
+
+  .profiler-tooltip-container :global(table td),
+  .profiler-tooltip-container :global(table th) {
+    padding: 0px 4px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: white;
+  }
+
+  .profiler-tooltip-container :global(table th) {
+    background-color: rgba(102, 126, 234, 0.4);
+    font-weight: 600;
+    text-align: center;
+  }
+
+  .profiler-tooltip-container :global(table td) {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+
+  /* Scrollbar styling */
+  .profiler-tooltip-container::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .profiler-tooltip-container::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.1);
     border-radius: 4px;
   }
 
-  .profiler-selector :global(button) {
-    padding: 0.25rem 0.5rem;
-    border: 1px solid #ccc;
+  .profiler-tooltip-container::-webkit-scrollbar-thumb {
+    background: rgba(102, 126, 234, 0.5);
     border-radius: 4px;
-    background-color: white;
-    cursor: pointer;
   }
 
-  .profiler-selector :global(button:hover) {
-    background-color: #f0f0f0;
-  }
-
-  .profiler-selector :global(input[type='checkbox']) {
-    cursor: pointer;
+  .profiler-tooltip-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(102, 126, 234, 0.7);
   }
 </style>

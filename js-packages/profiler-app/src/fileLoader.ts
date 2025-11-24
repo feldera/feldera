@@ -1,8 +1,8 @@
-// File loading utilities for the standalone profiler app
+// Profiler lifecycle management for the standalone profiler app
 
-import { CircuitProfile, type JsonProfiles, type Dataflow, Profiler, type ProfilerConfig } from 'profiler-lib';
+import { CircuitProfile, Profiler, type ProfilerConfig } from 'profiler-lib';
 
-/** Utility class for loading profile data from files and managing profiler lifecycle */
+/** Utility class for managing profiler lifecycle and rendering */
 export class ProfileLoader {
     private profiler: Profiler;
 
@@ -17,34 +17,6 @@ export class ProfileLoader {
             this.config.errorContainer.style.display = 'block';
         }
         console.error(message);
-    }
-
-    /** Fetch a JSON file from the server */
-    private async fetchJson<T = unknown>(url: string): Promise<T | null> {
-        try {
-            const response = await fetch(url);
-            if (!response.ok) {
-                this.reportError(`HTTP error: ${response.status}`);
-                return null;
-            }
-
-            const contentType = response.headers.get('content-type') || '';
-            if (!contentType.includes('application/json')) {
-                this.reportError('Unexpected content type: ' + contentType);
-                return null;
-            }
-
-            const text = await response.text();
-            if (!text) {
-                this.reportError('Empty response body');
-                return null;
-            }
-
-            return JSON.parse(text) as T;
-        } catch (err) {
-            this.reportError('Fetch or JSON parse error: ' + err);
-            return null;
-        }
     }
 
     /**
@@ -66,45 +38,6 @@ export class ProfileLoader {
         } catch (e) {
             this.reportError(`Error displaying circuit profile: ${e}`);
         }
-    }
-
-    /**
-     * Load profile and dataflow files, then render the visualization.
-     *
-     * @param directory Directory containing the JSON files
-     * @param basename Base name for the files (without .json extension)
-     */
-    async loadFiles(directory: string, basename: string): Promise<void> {
-        const profileUrl = `${directory}/${basename}.json`;
-        const dataflowUrl = `${directory}/dataflow-${basename}.json`;
-
-        // Load profile data
-        this.profiler.message("Reading profile file...");
-        const profileData = await this.fetchJson<JsonProfiles>(profileUrl);
-        if (!profileData) {
-            return; // Error already reported
-        }
-
-        // Load dataflow graph
-        this.profiler.message("Reading dataflow graph...");
-        const dataflowData = await this.fetchJson<Dataflow>(dataflowUrl);
-        if (!dataflowData) {
-            return; // Error already reported
-        }
-
-        // Parse and integrate the data
-        let circuit: CircuitProfile;
-        try {
-            this.profiler.message("Extracting profiling information...");
-            circuit = CircuitProfile.fromJson(profileData);
-            circuit.setDataflow(dataflowData);
-        } catch (e) {
-            this.reportError(`Error decoding JSON profile data: ${e}`);
-            return;
-        }
-
-        // Render the profile
-        this.renderCircuit(circuit);
     }
 
     /** Clean up resources */

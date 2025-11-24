@@ -5,14 +5,12 @@
   "keywords": ["feldera", "profiler"],
   "author": "",
   "license": "MIT",
-  "description": "Standalone application for profiling Feldera pipelines",
+  "description": "Standalone single-page application for profiling Feldera pipelines",
   "scripts": {
-    "start": "tsx launcher.ts",
     "dev": "vite dev --host",
     "build": "vite build"
   },
   "dependencies": {
-    "adm-zip": "^0.5.16",
     "but-unzip": "^0.1.7",
     "cytoscape": "^3.33.1",
     "cytoscape-dblclick": "^0.3.1",
@@ -20,13 +18,11 @@
     "elkjs": "^0.11.0"
   },
   "devDependencies": {
-    "@types/adm-zip": "^0.5.6",
     "@types/cytoscape": "^3.21.9",
     "@types/node": "^24.6.0",
     "profiler-lib": "workspace:*",
-    "serve": "^14.2.4",
-    "tsx": "^4.19.2",
     "typescript": "^5.9.2",
-    "vite": "^5.4.20"
+    "vite": "^5.4.20",
+    "vite-plugin-singlefile": "^2.0.2"
   }
 }

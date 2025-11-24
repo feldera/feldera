@@ -9,10 +9,17 @@ import { MetadataSelector } from './metadataSelection.js';
 export interface ProfilerConfig {
     /** Container element for the graph visualization */
     graphContainer: HTMLElement;
-    /** Container element for the selector UI controls */
-    selectorContainer: HTMLElement;
     /** Container element for the navigator minimap */
     navigatorContainer: HTMLElement;
+
+    // UI element references (dependency injection)
+    /** Metric selector dropdown element */
+    metricSelector: HTMLSelectElement;
+    /** Container element where worker checkboxes will be created */
+    workerCheckboxesContainer: HTMLElement;
+    /** Button to toggle all worker checkboxes */
+    toggleWorkersButton: HTMLButtonElement;
+
     /** Optional container element for the tooltip (defaults to document.body if not provided) */
     tooltipContainer?: HTMLElement | undefined;
     /** Optional error message display element */
@@ -21,6 +28,9 @@ export interface ProfilerConfig {
     messageContainer?: HTMLElement | undefined;
     /** Optional search input element for node search */
     searchInput?: HTMLInputElement | undefined;
+
+    /** @deprecated Legacy container for selector UI (kept for backwards compatibility, not used in new architecture) */
+    selectorContainer?: HTMLElement;
 }
 
 /**
@@ -40,10 +50,8 @@ export class Profiler {
         // Create tooltip element
         this.tooltip = document.createElement('div');
         this.tooltip.style.position = 'absolute';
-        this.tooltip.style.padding = '6px 10px';
-        this.tooltip.style.background = 'rgba(0, 0, 0, 0.75)';
+        this.tooltip.style.padding = '0';  // No padding, let the table handle it
         this.tooltip.style.color = 'white';
-        this.tooltip.style.borderRadius = '4px';
         this.tooltip.style.fontSize = '14px';
         this.tooltip.style.pointerEvents = 'none';
         this.tooltip.style.zIndex = '999';
@@ -102,16 +110,12 @@ export class Profiler {
             this.circuitSelector = new CircuitSelector(profile);
             this.metadataSelector = new MetadataSelector(profile);
 
-            // Display metadata selector UI
-            const table = this.config.selectorContainer.querySelector('table');
-            if (!table) {
-                const newTable = document.createElement('table');
-                newTable.id = 'selection-tools';
-                this.config.selectorContainer.appendChild(newTable);
-                this.metadataSelector.display(newTable);
-            } else {
-                this.metadataSelector.display(table as HTMLTableElement);
-            }
+            // Display metadata selector UI using dependency-injected elements
+            this.metadataSelector.display(
+                this.config.metricSelector,
+                this.config.workerCheckboxesContainer,
+                this.config.toggleWorkersButton
+            );
 
             // Get initial selection and create graph
             const selection = this.circuitSelector.getSelection();
@@ -174,13 +178,12 @@ export class Profiler {
             this.tooltip.parentNode.removeChild(this.tooltip);
         }
 
-        // Clear selector UI from DOM
-        const table = this.config.selectorContainer.querySelector('table');
-        if (table) {
-            // Remove all rows
-            while (table.rows.length > 0) {
-                table.deleteRow(0);
-            }
+        // Clear selector UI content (elements are owned by the app, we just clear them)
+        if (this.config.metricSelector) {
+            this.config.metricSelector.innerHTML = '';
+        }
+        if (this.config.workerCheckboxesContainer) {
+            this.config.workerCheckboxesContainer.innerHTML = '';
         }
 
         // Dispose rendering resources

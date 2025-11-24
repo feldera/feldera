@@ -21,17 +21,17 @@
 
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node
-      const bannerElement = document.querySelector('.focus-banner')
+      const bannerElement = globalThis.document.querySelector('.focus-banner')
 
       if (bannerElement && !bannerElement.contains(target)) {
         isInteracting = false
       }
     }
 
-    document.addEventListener('mousedown', handleClickOutside, true)
+    globalThis.document.addEventListener('mousedown', handleClickOutside, true)
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside, true)
+      globalThis.document.removeEventListener('mousedown', handleClickOutside, true)
     }
   })
 </script>
