@@ -5,47 +5,363 @@
     <!-- no favicon -->
     <link rel="icon" href="data:,">
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Feldera Profiler</title>
     <script type="module" src="src/index.ts"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            height: calc(100vh - 1px);
+            width: calc(100vw - 1px);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header Styles */
+        #header {
+            min-height: 60px;
+            background: linear-gradient(135deg, #86237e 0%, #764ba2 100%);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            padding: 10px 20px;
+            gap: 20px;
+        }
+
+        #header-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: white;
+            margin-right: auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #header-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background-color: rgba(255, 255, 255, 0.3);
+            padding: 8px 12px;
+            border-radius: 6px;
+            backdrop-filter: blur(10px);
+        }
+
+        .control-group label {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .control-group select,
+        .control-group input[type="text"] {
+            background-color: rgba(255, 255, 255, 0.95);
+            border: none;
+            border-radius: 4px;
+            padding: 6px 10px;
+            font-size: 13px;
+            color: #333;
+            outline: none;
+            transition: all 0.2s;
+            min-width: 120px;
+        }
+
+        .control-group select:focus,
+        .control-group input[type="text"]:focus {
+            background-color: white;
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+        }
+
+        .control-group input[type="text"] {
+            min-width: 200px;
+        }
+
+        #worker-checkboxes {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0px;
+            align-items: center;
+        }
+
+        #worker-checkboxes input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: #c533b9;
+        }
+
+        #toggle-workers-btn {
+            background-color: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        #toggle-workers-btn:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+
+        #load-bundle-btn {
+            background-color: rgba(255, 255, 255, 0.95);
+            border: none;
+            color: #c533b9;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        #load-bundle-btn:hover {
+            background-color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        #load-bundle-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Main Content Area */
+        #main-content {
+            position: relative;
+            flex-grow: 1;
+        }
+
+        #visualizer {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: white;
+        }
+
+        /* Navigator (Minimap) */
+        #navigator-parent {
+            top: 10px;
+            left: 10px;
+            width: 108px;
+            height: 108px;
+            background-color: rgba(255, 255, 255, 0.95);
+            border: 2px solid #dfdfdf;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            z-index: 50;
+            padding: 2px;
+            position: absolute;
+        }
+
+        /* Tooltip Container */
+        #tooltip-container {
+            /* max-width: 600px; */
+            max-height: calc(100vh - 80px);
+            z-index: 150;  /* Higher than header (100) */
+            pointer-events: none;
+        }
+
+        /* Tooltip wrapper div */
+        #tooltip-container > div {
+            margin: 10px 10px 10px 10px;
+            background-color: rgba(0, 0, 0, 0.9);
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Tooltip tables styling */
+        #tooltip-container table {
+            background-color: transparent;
+            border-collapse: collapse;
+            font-size: 12px;
+            width: 100%;
+        }
+
+        #tooltip-container table td,
+        #tooltip-container table th {
+            padding: 0px 4px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        #tooltip-container table th {
+            background-color: rgba(102, 126, 234, 0.4);
+            font-weight: 600;
+            text-align: center;
+        }
+
+        #tooltip-container table td {
+            background-color: rgba(0, 0, 0, 0.3);
+        }
+
+        /* Message Overlay */
+        #message {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(255, 255, 255, 0.98);
+            border: 2px solid #c533b9;
+            border-radius: 12px;
+            padding: 40px 50px;
+            text-align: center;
+            font-size: 16px;
+            line-height: 1.6;
+            width: max-content;
+            max-width: 100vw;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+        }
+
+        #message h2 {
+            margin: 0 0 20px 0;
+            color: #c533b9;
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        #message p {
+            margin: 12px 0;
+            color: #555;
+        }
+
+        #message code {
+            background-color: #f0f0f0;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            color: #c533b9;
+            font-size: 14px;
+        }
+
+        #message strong {
+            color: #333;
+            font-weight: 600;
+        }
+
+        /* Error Message */
+        #error-message {
+            position: fixed;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #fff;
+            border: 2px solid #ff6b6b;
+            border-radius: 8px;
+            padding: 15px 25px;
+            color: #ff6b6b;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            text-align: center;
+            white-space: pre-wrap;
+            max-width: 600px;
+            box-shadow: 0 4px 12px rgba(255, 107, 107, 0.2);
+            z-index: 200;
+            display: none;
+        }
+
+        /* Hidden file input */
+        #bundle-upload {
+            display: none;
+        }
+
+        /* Scrollbar styling for tooltip */
+        #tooltip-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #tooltip-container::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+        }
+
+        #tooltip-container::-webkit-scrollbar-thumb {
+            background: rgba(102, 126, 234, 0.5);
+            border-radius: 4px;
+        }
+
+        #tooltip-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(102, 126, 234, 0.7);
+        }
+    </style>
 </head>
 
 <body>
-    <div id="page">
-        <div id="visualizer" style="width: 100%; height: 100vh;"></div>
-        <div id="menus" style="position: absolute; top: 0; left: 0; background-color: rgba(100, 100, 100, .3)"
-            zIndex="1" display="flex" flex-direction="column" align-items="center">
-            <div id="selector" zIndex="1">
-                <table id="selection-tools">
-                </table>
-            </div>
-            <table>
-                <tr>
-                    <td>
-                        <div>Search: </div>
-                    </td>
-                    <td><input type="text" id="search" placeholder="Search" style="margin: 10px"
-                            title="Node id to search" /></td>
-                </tr>
-                <tr>
-                    <td colspan="2">
-                        <input type="file" id="bundle-upload" accept=".zip" style="display: none" />
-                        <button id="load-bundle-btn" style="margin: 10px; padding: 5px 10px; cursor: pointer"
-                            title="Load profile from support bundle">
-                            Load Bundle
-                        </button>
-                    </td>
-                </tr>
-            </table>
-            <!-- wide enough to accomodate rectangle borders -->
-            <div id="navigator-parent"
-                style="width: 104px; height: 104px; border: 1px solid rgba(200, 200, 20); margin: 0 auto">
-            </div>
-            <div id="message" style="display: none; font-family: 'monospace'; background-color: transparent;"></div>
-            <div id="error-message" style="
-                color: red; display: none; font-family: 'monospace'; background-color: transparent;
-                border: 1px solid red; text-align: center; white-space: pre-wrap"></div>
+    <!-- Header with all controls -->
+    <header id="header">
+        <div id="header-title">
+            <span>Feldera Profiler</span>
         </div>
-        <div id="tooltip-container" style="position: absolute; top: 0; right: 0; z-index: 2; pointer-events: none;"></div>
+
+        <div id="header-controls">
+            <!-- Metric Selector -->
+            <div class="control-group">
+                <label for="metric-selector">Metric:</label>
+                <select id="metric-selector"></select>
+            </div>
+
+            <!-- Worker Checkboxes -->
+            <div class="control-group">
+                <label>Workers:</label>
+                <button id="toggle-workers-btn">Toggle All</button>
+                <div id="worker-checkboxes"></div>
+            </div>
+
+            <!-- Search -->
+            <div class="control-group">
+                <label for="search">Search:</label>
+                <input type="text" id="search" placeholder="Node ID" title="Node id to search" />
+            </div>
+
+            <!-- Load Bundle Button -->
+            <input type="file" id="bundle-upload" accept=".zip" />
+            <button id="load-bundle-btn">📁 Load Bundle</button>
+        </div>
+    </header>
+
+    <!-- Main content area -->
+    <div id="main-content">
+        <div id="visualizer"></div>
+
+        <!-- Navigator (minimap) - top left under header -->
+        <div id="navigator-parent"></div>
+
+        <!-- Tooltip container - top right -->
+        <div id="tooltip-container"></div>
+    </div>
+
+    <!-- Message overlay (welcome screen) -->
+    <div id="message"></div>
+
+    <!-- Error message -->
+    <div id="error-message"></div>
+
+    <!-- Hidden container for profiler-lib's selector (not displayed) -->
+    <div id="selector" style="display: none;">
+        <table id="selection-tools"></table>
     </div>
 </body>
 

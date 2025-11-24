@@ -8212,712 +8212,634 @@ This documentation site serves as the primary resource for Feldera users, provid
 
 ## Overview
 
-**profiler-app** is a standalone development tool for visualizing Feldera DBSP circuit profiles. It supports loading profiles from support bundles (`.zip` files) or local JSON files, providing a complete HTML interface for testing and debugging visualizations without the full web-console or pipeline manager.
+**profiler-app** is a standalone single-page application for visualizing Feldera DBSP circuit profiles. It builds to a single static HTML file that can load profile bundles (`.zip` files) either through a file picker UI or via URL parameter when opened from the file system.
 
 This is a **development/debugging tool**, not intended for production use. In production, use the web-console's integrated profiler with real-time API data.
 
 ## Purpose
 
 Enable local, offline development and testing of profiler visualizations:
-- Load profiles from support bundles (browser UI or CLI)
-- Load profile and dataflow JSON files from disk
+- Load profiles from support bundles via browser file picker
+- Load bundles automatically via `?open=` URL parameter
 - Iterate on visualization features without backend dependencies
 - Debug circuit performance issues with saved profile snapshots
 - Test profiler-lib integration before web-console deployment
 - Develop new profiler features in isolation
+- Share profile visualizations as a single HTML file
 
 ## Architecture
 
-### Thin Wrapper Pattern
+### Single Static HTML Page
 
-profiler-app is intentionally minimal, providing:
-1. **HTML shell** - DOM structure for profiler containers
-2. **Bundle processing** - Extract profiles from support bundles (browser + CLI)
-3. **File loading** - Fetch and parse JSON files via HTTP
-4. **Error handling** - Display loading and parsing errors
-5. **Entry point** - Wire up profiler-lib with loaded data
+profiler-app builds to a completely self-contained HTML file with all JavaScript and CSS inlined. The built file can be:
+- Opened directly in a browser (`file:///path/to/index.html`)
+- Served by any static web server
+- Shared via email, cloud storage, or version control
+- Opened with `?open=path/to/bundle.zip` to auto-load a bundle
+
+### What It Does
+
+1. **Bundle processing** - Extract profiles from support bundles in the browser
+2. **URL parameter loading** - Auto-load bundles via `?open=<path>` parameter
+3. **File picker UI** - Manual bundle selection through "Load Bundle" button
+4. **Visualization** - Render circuit profiles using profiler-lib
+5. **Error handling** - Display loading and parsing errors
 
 ### What It Does NOT Do
 
-- ❌ API integration or authentication
+- ❌ Server-side processing or HTTP APIs
+- ❌ JSON file fetching or pre-processing
+- ❌ SQL compilation (expects dataflow already in bundles)
+- ❌ Authentication or authorization
 - ❌ Routing or navigation
-- ❌ State management
-- ❌ Complex UI components
-- ❌ Real-time updates
-- ❌ SQL compilation (expects pre-compiled dataflow graphs in bundles)
+- ❌ Real-time updates or WebSocket connections
 
 ### Module Structure
 
 ```
 profiler-app/
 ├── src/
-│   ├── fileLoader.ts             # Profiler lifecycle manager + file fetching from disk
-│   ├── browserBundleProcessor.ts # Bundle processing in browser (but-unzip)
-│   ├── bundleUpload.ts           # UI handler for bundle upload, calls ProfileLoader
-│   ├── bundleProcessor.ts        # Node.js bundle processing (adm-zip)
-│   └── index.ts                  # Entry point
-├── cli.ts                        # Server wrapper (processes bundles at runtime)
+│   ├── index.ts                  # Entry point with ?open= parameter handling
+│   ├── fileLoader.ts             # Profiler lifecycle manager
+│   ├── browserBundleProcessor.ts # Browser-based bundle extraction (but-unzip)
+│   └── bundleUpload.ts           # UI handler for file picker
 ├── data/
-│   ├── rec.json                  # Sample profile data
-│   └── dataflow-rec.json         # Sample dataflow graph
-├── index.html                    # HTML structure with upload button
-├── package.json                  # Dependencies and scripts
-└── vite.config.ts                # Vite configuration
+│   ├── rec.zip                   # Sample profile bundle
+│   └── README.md                 # Data directory documentation
+├── index.html                    # HTML shell with embedded styles
+├── package.json                  # Dependencies and build scripts
+├── vite.config.ts                # Vite config with singlefile plugin
+└── tsconfig.json                 # TypeScript configuration
 ```
-
-**Lifecycle Management**: `ProfileLoader` owns the Profiler instance and handles dispose/recreate cycles to ensure tooltips and event handlers work correctly when loading new profiles.
 
 ## Key Components
 
-### Bundle Processing
+### Entry Point (`index.ts`)
 
-#### `browserBundleProcessor.ts` - Browser Bundle Extraction
-
-Extracts profile files from support bundles in the browser using `but-unzip`:
+Handles application initialization and bundle loading:
 
 ```typescript
-export async function processBundleInBrowser(file: File): Promise<BundleFiles>
-```
+async function main() {
+    setupBundleUpload(loader);
 
-- Finds `*_circuit_profile.json` (profile data)
-- Finds `*_dataflow_graph.json` (pre-compiled dataflow graph)
-- Returns parsed JSON objects ready for visualization
-- No SQL compilation needed (expects dataflow already in bundle)
+    // Check for ?open=<relative-path> query parameter
+    const params = new URLSearchParams(window.location.search);
+    const openPath = params.get('open');
 
-#### `bundleUpload.ts` - UI Handler
+    if (openPath) {
+        // Load bundle from file system using file:/// URL
+        const fileUrl = new URL(openPath, baseUrl).href;
+        const response = await fetch(fileUrl);
+        const file = new File([await response.blob()], filename);
 
-Manages the "Load Bundle" button in the UI:
-
-```typescript
-export function setupBundleUpload(loader: ProfileLoader)
-```
-
-- Handles file picker interaction
-- Processes bundle with `browserBundleProcessor`
-- Creates `CircuitProfile` and delegates to `loader.renderCircuit()`
-- ProfileLoader manages profiler lifecycle (no local profiler instance)
-
-#### `bundleProcessor.ts` - Node.js Bundle Processing
-
-Server-side bundle processor for CLI usage (uses `adm-zip`):
-
-```typescript
-export class BundleProcessor {
-  async process(): Promise<string>  // Returns output name
+        // Process and render
+        const { profile, dataflow, programCode } = await processBundleInBrowser(file);
+        const circuit = CircuitProfile.fromJson(profile);
+        circuit.setDataflow(dataflow, programCode);
+        loader.renderCircuit(circuit);
+    } else {
+        // Show instructions for loading a bundle
+        showWelcomeMessage();
+    }
 }
 ```
 
-- Extracts profile JSON from bundle
-- Extracts config and decompresses (gzip)
-- Invokes SQL compiler to generate dataflow graph
-- Saves files to `data/` directory
+**Key Features:**
+- Auto-loads bundles when `?open=` parameter is present
+- Shows welcome screen when opened without parameters
+- Handles file:/// URL loading for local file system access
+- All bundle processing happens in the browser
 
-#### `cli.ts` - Server Wrapper
+### Profiler Lifecycle Manager (`fileLoader.ts`)
 
-Entry point that processes bundles before starting servers:
-
-- Checks `BUNDLE` environment variable
-- Processes bundle if present
-- Auto-detects dev vs production mode
-- Starts Vite dev server or static file server
-
-**Usage:**
-```bash
-BUNDLE=/path/to/bundle.zip bun run dev
-BUNDLE=/path/to/bundle.zip VERBOSE=1 bun run start
-```
-
-### File Loading
-
-#### `fileLoader.ts` - Profiler Lifecycle Manager
-
-Owns the Profiler instance and provides rendering methods:
+Simplified manager that only handles profiler lifecycle:
 
 ```typescript
 export class ProfileLoader {
-  renderCircuit(circuit: CircuitProfile): void  // Single rendering entry point
-  async loadFiles(directory: string, basename: string): Promise<void>
+    private profiler: Profiler;
+
+    renderCircuit(circuit: CircuitProfile): void {
+        // Dispose old profiler and create new one
+        this.profiler.dispose();
+        this.profiler = new Profiler(this.config);
+
+        this.profiler.render(circuit);
+        this.profiler.clearMessage();
+    }
 }
 ```
 
-**Key Responsibilities:**
-- Creates and owns the Profiler instance
-- Disposes/recreates profiler on each render (ensures tooltips work)
-- Fetches profile and dataflow JSON files via HTTP
-- Single source of truth for profiler lifecycle
+**Key Changes from Old Architecture:**
+- ❌ Removed `loadFiles()` method (no HTTP fetching)
+- ❌ Removed `fetchJson()` method (no server requests)
+- ✅ Only handles profiler lifecycle and rendering
+- ✅ Simpler, focused responsibility
 
-**Usage:**
-```typescript
-const loader = new ProfileLoader(config)
-await loader.loadFiles("data", "rec")  // Load from disk
-loader.renderCircuit(circuit)          // Direct rendering
-```
+### Browser Bundle Processing (`browserBundleProcessor.ts`)
 
-#### `index.ts` - Application Entry Point
-
-Sets up profiler configuration and initializes ProfileLoader:
+Extracts profile files from support bundles entirely in the browser:
 
 ```typescript
-const config: ProfilerConfig = { /* ... */ }
-const loader = new ProfileLoader(config)  // Single profiler lifecycle manager
-setupBundleUpload(loader)                 // Delegates to loader
-await loader.loadFiles("data", "rec")     // Load default profile
+export async function processBundleInBrowser(file: File): Promise<BundleFiles> {
+    const arrayBuffer = await file.arrayBuffer();
+    const { entries } = await unzip(new Uint8Array(arrayBuffer));
+
+    // Find profile, dataflow, and config files by pattern matching
+    const profileEntry = entries.find(e => e.name.endsWith('_circuit_profile.json'));
+    const dataflowEntry = entries.find(e => e.name.endsWith('_dataflow_graph.json'));
+    const configEntry = entries.find(e => e.name.endsWith('_pipeline_config.json'));
+
+    return {
+        profile: JSON.parse(decode(profileEntry)),
+        dataflow: JSON.parse(decode(dataflowEntry)),
+        programCode: configEntry ? JSON.parse(decode(configEntry)).program_code : undefined
+    };
+}
 ```
 
-**Architecture**: ProfileLoader manages all profiler lifecycle. Both file loading and bundle upload use the same loader instance.
+**Technology:** Uses `but-unzip` library for browser-based zip extraction
 
-### `index.html` - HTML Structure
+**Advantages:**
+- No server round-trip needed
+- Works with any support bundle
+- Fast extraction and parsing
+- Suitable for offline use
 
-Provides the DOM structure required by profiler-lib:
+**Limitations:**
+- No SQL compilation (expects dataflow already in bundle)
+- No gzip decompression support (bundles must be uncompressed or pre-extracted)
+
+### Bundle Upload UI (`bundleUpload.ts`)
+
+Handles the "Load Bundle" button interaction:
+
+```typescript
+export function setupBundleUpload(loader: ProfileLoader) {
+    const uploadInput = document.getElementById('bundle-upload') as HTMLInputElement;
+    const loadButton = document.getElementById('load-bundle-btn') as HTMLButtonElement;
+
+    loadButton.addEventListener('click', () => uploadInput.click());
+
+    uploadInput.addEventListener('change', async (event) => {
+        const file = (event.target as HTMLInputElement).files?.[0];
+        if (!file) return;
+
+        const { profile, dataflow, programCode } = await processBundleInBrowser(file);
+        const circuit = CircuitProfile.fromJson(profile);
+        circuit.setDataflow(dataflow, programCode);
+        loader.renderCircuit(circuit);
+    });
+}
+```
+
+### HTML Structure (`index.html`)
+
+Single-page HTML with inline styles and profiler containers:
 
 ```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Feldera Profiler</title>
+    <script type="module" src="src/index.ts"></script>
+    <style>
+        /* Welcome message styling */
+        #message { /* centered welcome screen */ }
+        #error-message { /* error display */ }
+    </style>
+</head>
 <body>
-  <div id="page">
-    <!-- Main graph container -->
-    <div id="app" style="width: 100%; height: 100vh;"></div>
+    <div id="page">
+        <!-- Main graph visualization -->
+        <div id="visualizer" style="width: 100%; height: 100vh;"></div>
 
-    <!-- Overlay menus -->
-    <div id="menus" style="position: absolute; top: 0; left: 0">
-      <!-- Selector controls -->
-      <div id="selector">
-        <table id="selection-tools"></table>
-      </div>
+        <!-- Control panel -->
+        <div id="menus">
+            <div id="selector"><table id="selection-tools"></table></div>
+            <input type="text" id="search" placeholder="Search" />
+            <input type="file" id="bundle-upload" accept=".zip" style="display: none" />
+            <button id="load-bundle-btn">Load Bundle</button>
+            <div id="navigator-parent"></div>
+            <div id="message"></div>
+            <div id="error-message"></div>
+        </div>
 
-      <!-- Navigator minimap -->
-      <div id="navigator-parent" style="width: 100px; height: 100px;"></div>
-
-      <!-- Error message display -->
-      <div id="error-message" style="display: none; color: red;"></div>
+        <!-- Tooltip container -->
+        <div id="tooltip-container"></div>
     </div>
-  </div>
 </body>
+</html>
 ```
 
 **Key Elements:**
-- `#app` - Main Cytoscape graph canvas (full viewport)
+- `#visualizer` - Main Cytoscape graph canvas (full viewport)
 - `#selector` - Metric/worker selection UI (injected by profiler-lib)
+- `#search` - Node search input
+- `#bundle-upload` - Hidden file input for bundle selection
+- `#load-bundle-btn` - Button that triggers file picker
 - `#navigator-parent` - Minimap widget container
+- `#message` - Welcome/instruction message display
 - `#error-message` - Error display area
+
+## Build Configuration
+
+### Vite Configuration (`vite.config.ts`)
+
+Configured to produce a single HTML file with all assets inlined:
+
+```typescript
+import { defineConfig } from 'vite'
+import { viteSingleFile } from 'vite-plugin-singlefile'
+
+export default defineConfig({
+    plugins: [viteSingleFile()],
+    build: {
+        target: 'esnext',
+        assetsInlineLimit: 100000000, // Inline all assets
+        cssCodeSplit: false,
+        rollupOptions: {
+            output: {
+                inlineDynamicImports: true
+            }
+        }
+    }
+})
+```
+
+**Key Configuration:**
+- `viteSingleFile()` - Plugin that inlines all JS/CSS into HTML
+- `assetsInlineLimit` - Set very high to force inlining of all assets
+- `cssCodeSplit: false` - Prevent CSS splitting
+- `inlineDynamicImports: true` - Inline all dynamic imports
+
+### Dependencies (`package.json`)
+
+Minimal dependency set focused on browser-only operation:
+
+```json
+{
+    "scripts": {
+        "dev": "vite dev --host",
+        "build": "vite build"
+    },
+    "dependencies": {
+        "but-unzip": "^0.1.7",           // Browser zip extraction
+        "cytoscape": "^3.33.1",          // Graph visualization (peer dep)
+        "cytoscape-dblclick": "^0.3.1",  // Double-click handler (peer dep)
+        "cytoscape-elk": "^2.3.0",       // Layout algorithm (peer dep)
+        "elkjs": "^0.11.0"               // ELK kernel (peer dep)
+    },
+    "devDependencies": {
+        "profiler-lib": "workspace:*",
+        "typescript": "^5.9.2",
+        "vite": "^5.4.20",
+        "vite-plugin-singlefile": "^2.0.2"
+    }
+}
+```
+
+**Removed Dependencies (from old architecture):**
+- ❌ `adm-zip` - Server-side zip extraction
+- ❌ `serve` - Static file server
+- ❌ `tsx` - TypeScript execution for CLI
+- ❌ `@types/adm-zip` - Type definitions
+
+## Usage
+
+### Method 1: File Picker (Interactive)
+
+1. **Build the app:**
+   ```bash
+   cd js-packages/profiler-app
+   bun install
+   bun run build
+   ```
+
+2. **Open the HTML file:**
+   ```bash
+   open dist/index.html
+   # Or double-click dist/index.html in file browser
+   ```
+
+3. **Load a bundle:**
+   - Click "Load Bundle" button
+   - Select a support bundle (`.zip` file)
+   - Profile renders automatically
+
+**Advantages:**
+- Interactive file selection
+- Works with any bundle location
+- No command-line needed
+
+### Method 2: URL Parameter (Automatic)
+
+1. **Place bundle in known location:**
+   ```bash
+   cp my-bundle.zip dist/data/rec.zip
+   ```
+
+2. **Open with parameter:**
+   ```bash
+   open dist/index.html?open=data/rec.zip
+   # Or navigate in browser to:
+   # file:///path/to/dist/index.html?open=data/rec.zip
+   ```
+
+3. **Bundle loads automatically** on page load
+
+**Advantages:**
+- Automated loading
+- Bookmarkable URLs
+- Scriptable
+- Good for development workflow
+
+**Example URLs:**
+```bash
+# Load bundle from data directory
+file:///path/to/dist/index.html?open=data/rec.zip
+
+# Load bundle from parent directory
+file:///path/to/dist/index.html?open=../bundles/profile.zip
+
+# Load bundle from absolute path (platform-dependent)
+file:///path/to/dist/index.html?open=/home/user/bundles/profile.zip
+```
+
+### Method 3: Serve via HTTP
+
+For development with hot reload:
+
+```bash
+bun run dev
+# Opens http://localhost:5174
+```
+
+Then use either file picker or URL parameter:
+```
+http://localhost:5174?open=data/rec.zip
+```
 
 ## Data Files
 
-### Profile JSON (`data/rec.json`)
+### Profile Bundles (`data/rec.zip`)
 
-Sample profile data from a real pipeline execution. Contains:
-- Worker-level performance measurements
-- Circuit structure (nodes, edges, hierarchies)
-- Operator metadata (IDs, labels, persistent IDs)
+Support bundles contain:
+- `*_circuit_profile.json` - Profile data with metrics and circuit structure
+- `*_dataflow_graph.json` - Dataflow graph from SQL compiler
+- `*_pipeline_config.json` - (Optional) Pipeline configuration with SQL source
 
-**Size:** ~2MB (typical for medium-complexity pipeline)
+**Source:** Generate from running pipeline via download support bundle feature in web-console
 
-**Source:** Generate from running pipeline:
-```bash
-curl -X POST http://localhost:8080/v0/pipelines/{pipeline_name}/circuit_profile > data/my-profile.json
-```
-
-### Dataflow JSON (`data/dataflow-rec.json`)
-
-Dataflow graph from SQL compiler showing circuit structure and SQL mappings.
-
-**Size:** ~25KB (compact JSON representation)
-
-**Source:** Generate during SQL compilation:
-```bash
-cd sql-to-dbsp-compiler
-./SQL-compiler/sql-to-dbsp \
-  --input program.sql \
-  --dataflow ../packages/profiler-app/data/dataflow-my-profile.json
-```
-
-### `data/README.md`
-
-Brief explanation of data directory purpose:
-```markdown
-This directory contains test files with JSON data obtained from
-the pipeline for testing the profile visualization code.
-```
+**Format:** Standard ZIP archive (no compression required, but supported)
 
 ## Development Workflow
-
-### Running the App
-
-```bash
-cd packages/profiler-app
-bun install        # Install dependencies (if needed)
-bun run dev        # Start with default sample data
-```
-
-Opens browser at `http://localhost:5174`.
-
-### Loading Profiles
-
-#### Method 1: Browser UI (Recommended)
-
-1. Start dev server: `bun run dev`
-2. Click **"Load Bundle"** button in UI
-3. Select support bundle (`.zip` file)
-4. Profile loads automatically
-
-**Advantages:**
-- No file system setup needed
-- Works with any support bundle
-- Quick iteration
-
-#### Method 2: CLI with Bundle
-
-```bash
-BUNDLE=/path/to/support-bundle.zip bun run dev
-```
-
-**Advantages:**
-- Automated workflow
-- Can invoke SQL compiler for dataflow generation
-- Scriptable
-
-#### Method 3: Local JSON Files
-
-1. Place files in `data/`:
-   - `data/my-profile.json`
-   - `data/dataflow-my-profile.json`
-
-2. Update `src/index.ts`:
-   ```typescript
-   loader.loadFiles("data", "my-profile")
-   ```
-
-3. Vite HMR reloads automatically
-
-### Environment Variables
-
-- `BUNDLE=/path/to/file.zip` - Process bundle at startup
-- `VERBOSE=1` - Show detailed bundle processing logs
-- `BUNDLE_NAME=custom` - Output name (default: `temp`)
 
 ### Building for Distribution
 
 ```bash
-bun run build    # Outputs to dist/
+cd js-packages/profiler-app
+bun install        # Install dependencies
+bun run build      # Build to dist/index.html
 ```
 
-**Output structure:**
+**Output:**
 ```
 dist/
-├── index.html
-├── assets/
-│   ├── index-[hash].js     # Application bundle
-│   └── index-[hash].css    # Styles (if any)
-└── data/
-    ├── rec.json            # Copied data files
-    └── dataflow-rec.json
+└── index.html     # Single self-contained HTML file (~2-5MB)
 ```
 
-**Serving built version:**
+The single HTML file contains:
+- All JavaScript code (bundled and minified)
+- All CSS styles (inlined)
+- All TypeScript compiled to JavaScript
+- profiler-lib code included
+- Cytoscape and dependencies bundled
+
+### Development Server
+
 ```bash
-cd dist
-python -m http.server 8000
-# Or
-npx serve .
+bun run dev        # Start Vite dev server
+# Opens http://localhost:5174
+# Hot Module Replacement (HMR) enabled
+# Console shows compilation errors
 ```
 
-## Configuration Files
+**During development:**
+- Edit source files in `src/`
+- Changes reflect immediately in browser
+- TypeScript errors show in console
+- No manual rebuild needed
 
-**Key Points:**
-- `cli.ts` entry point enables bundle processing at runtime based on CLI args
-- Two zip libraries: `adm-zip` (Node.js/CLI), `but-unzip` (browser/UI)
-- `tsx` executes TypeScript directly for CLI wrapper
-- `serve` provides static file server for production mode
+### Testing with Different Bundles
 
-### `tsconfig.json`
+1. **Place bundles in `data/` directory:**
+   ```bash
+   cp /path/to/bundle1.zip data/test1.zip
+   cp /path/to/bundle2.zip data/test2.zip
+   ```
 
-Standard TypeScript configuration matching profiler-lib:
-
-```json
-{
-  "compilerOptions": {
-    "rootDir": "./src",
-    "outDir": "./dist",
-    "module": "es6",
-    "target": "esnext",
-    "moduleResolution": "node",
-    "strict": true,
-    // ... strict type checking options
-  },
-  "include": ["src/**/*.ts"]
-}
-```
-
-**Important settings:**
-- `moduleResolution: "node"` - Resolve workspace dependencies
-- `strict: true` - Full type safety
-- `isolatedModules: true` - Compatible with Vite
-
-### `.gitignore`
-
-```
-node_modules
-dist
-.DS_Store
-```
-
-Excludes build artifacts and dependencies from version control.
-
-## Typical Development Session
-
-### Scenario 1: Testing Support Bundle
-
-1. **Start dev server:**
+2. **Test with dev server:**
    ```bash
    bun run dev
+   # Open http://localhost:5174?open=data/test1.zip
+   # Open http://localhost:5174?open=data/test2.zip
    ```
 
-2. **Load bundle via UI:**
-   - Click "Load Bundle" button
-   - Select support bundle `.zip` file
-   - Profile renders automatically
+3. **Compare visualizations** across different bundles
 
-3. **Inspect visualization:**
-   - Check for errors in error banner or console
-   - Test interactions (pan, zoom, expand, hover)
-   - Verify metrics display correctly
-   - Check SQL source attribution
+### Debugging
 
-### Scenario 2: CLI Bundle Processing
+**Browser DevTools:**
+```javascript
+// Check if bundle loaded
+console.log('Profile loaded:', circuit)
 
-1. **Process and start:**
-   ```bash
-   BUNDLE=/path/to/support-bundle.zip VERBOSE=1 bun run dev
-   ```
+// Inspect Cytoscape instance
+window.cy // (if exposed by profiler-lib)
 
-2. **View logs:**
-   - Bundle extraction messages
-   - SQL compilation output
-   - Dataflow generation
+// Check for errors
+// Look in Console tab for JavaScript errors
+// Look in Network tab for failed file loads
+```
 
-3. **Browser opens automatically** with processed profile
+**Common Issues:**
+- File not found: Check `?open=` path is correct relative to HTML file
+- Blank screen: Check Console for JavaScript errors
+- Bundle not loading: Verify zip contains required JSON files
 
-### Scenario 3: Local JSON Development
+## Differences from Old Architecture
 
-1. **Place files in `data/`:**
-   ```bash
-   cp /path/to/profile.json data/my-profile.json
-   cp /path/to/dataflow.json data/dataflow-my-profile.json
-   ```
+| Aspect | Old Architecture | New Architecture |
+|--------|------------------|------------------|
+| **Output** | Multiple files (HTML + JS + CSS + data) | Single HTML file |
+| **Bundle Loading** | Server preprocessing + HTTP fetch | Browser-only processing |
+| **Data Format** | JSON files extracted to disk | Zip files processed in-memory |
+| **Server** | Required (Vite/serve) | Optional (works with file:///) |
+| **CLI** | launcher.ts for preprocessing | No CLI needed |
+| **Dependencies** | adm-zip, serve, tsx | but-unzip only |
+| **URL Parameters** | Not supported | ?open= parameter supported |
+| **Distribution** | Must extract and serve | Single file, just open |
 
-2. **Update `src/index.ts`:**
-   ```typescript
-   loader.loadFiles("data", "my-profile")
-   ```
+## Use Cases
 
-3. **Vite HMR reloads** - test immediately
+### 1. Local Development
 
-### Scenario: Debugging profiler-lib Changes
+**Scenario:** Test profiler-lib changes quickly
 
-1. **Make changes to profiler-lib:**
-   ```bash
-   cd packages/profiler-lib
-   # Edit src/cytograph.ts, etc.
-   bun run build    # Rebuild library
-   ```
+```bash
+# In profiler-lib
+cd js-packages/profiler-lib
+bun run build
 
-2. **profiler-app automatically picks up changes:**
-   - Vite watches workspace dependencies
-   - Changes reflect immediately in browser
+# In profiler-app
+cd ../profiler-app
+bun run dev
+# Click "Load Bundle" and select test bundle
+# Changes to profiler-lib reflect immediately
+```
 
-3. **Test the changes:**
-   - Interact with visualization
-   - Check console for errors
-   - Verify new behavior
+### 2. Sharing Visualizations
 
-This tight feedback loop enables rapid iteration on profiler features.
+**Scenario:** Share a profile with a team member
 
-## Differences from Web Console Integration
+```bash
+# Build app
+bun run build
 
-| Aspect | profiler-app | web-console |
-|--------|--------------|-------------|
-| **Data Source** | Local JSON files via `fetch()` | Live API via pipeline manager client |
-| **UI Framework** | Vanilla JS/TS | SvelteKit with Svelte 5 |
-| **Lifecycle** | Manual via `ProfileLoader` | Reactive via Svelte `$effect` |
-| **Authentication** | None | OIDC/OAuth2 |
-| **Routing** | Single page | Multi-route with SvelteKit |
-| **Error Handling** | Simple DOM display | Toast notifications |
-| **Production Use** | ❌ Development only | ✅ Production ready |
+# Create package with bundle
+mkdir share
+cp dist/index.html share/
+cp my-bundle.zip share/data.zip
+
+# Zip and share
+zip -r profile-visualization.zip share/
+
+# Recipient extracts and opens:
+# share/index.html?open=data.zip
+```
+
+### 3. Offline Analysis
+
+**Scenario:** Analyze profiles without network connection
+
+```bash
+# Build once with network
+bun run build
+
+# Copy to USB drive or offline machine
+cp dist/index.html /path/to/offline/machine/
+cp bundles/*.zip /path/to/offline/machine/
+
+# Open offline
+# file:///path/to/offline/machine/index.html?open=bundle.zip
+```
+
+### 4. Automated Testing
+
+**Scenario:** Test with many bundles programmatically
+
+```bash
+#!/bin/bash
+for bundle in test-bundles/*.zip; do
+    basename=$(basename "$bundle")
+    open "dist/index.html?open=test-bundles/$basename"
+    # Wait for manual inspection or automated screenshot
+done
+```
 
 ## Troubleshooting
 
-### "Failed to fetch" errors
+### "Failed to fetch" with file:/// URLs
 
-**Cause:** Vite dev server not serving data files correctly.
+**Cause:** Browser security restrictions on file:/// access
 
-**Fix:** Ensure data files are in `public/data/` or adjust Vite config:
-```typescript
-// vite.config.ts (if you create one)
-export default {
-  publicDir: 'data'
-}
+**Fix:** Some browsers restrict file:/// to file:/// access. Options:
+1. Use a local web server: `python -m http.server` in dist/
+2. Use browser with relaxed security (development only)
+3. Check browser console for CORS or security errors
+
+### Bundle loads but shows blank screen
+
+**Cause:** Bundle may not contain required files
+
+**Fix:** Verify bundle contains:
+- `*_circuit_profile.json`
+- `*_dataflow_graph.json`
+
+Extract bundle and check:
+```bash
+unzip -l bundle.zip | grep -E "(circuit_profile|dataflow_graph)"
 ```
 
-Or keep files in `data/` and reference as `data/rec.json` (current setup).
+### "Invalid JSON" errors
 
-### Blank screen, no errors
+**Cause:** Bundle files are corrupted or compressed with unsupported format
 
-**Cause:** Missing DOM elements or incorrect IDs.
+**Fix:**
+- Verify bundle is valid zip: `unzip -t bundle.zip`
+- Check files are uncompressed or use standard deflate
+- Re-download bundle from source
 
-**Fix:** Verify `index.html` has all required containers:
-- `#app`
-- `#selector`
-- `#navigator-parent`
-- `#error-message`
+### Memory issues with large profiles
 
-### TypeScript errors with profiler-lib imports
+**Cause:** Large profiles (>1000 nodes) can consume significant memory
 
-**Cause:** profiler-lib not built or types not generated.
+**Fix:**
+- Close other browser tabs
+- Use browser with good memory management (Chrome/Edge)
+- Consider simplifying profile or filtering data
+
+### TypeScript compilation errors during development
+
+**Cause:** profiler-lib types not generated or out of sync
 
 **Fix:**
 ```bash
-cd packages/profiler-lib
-bun run build    # Generate dist/ with .d.ts files
+cd js-packages/profiler-lib
+bun run build    # Regenerate types
+cd ../profiler-app
+# Restart dev server if needed
 ```
 
-### Profile loads but graph doesn't render
+## Performance Considerations
 
-**Causes:**
-1. Container has zero dimensions
-2. Invalid profile data structure
-3. Cytoscape initialization failed
+### Build Size
 
-**Debug steps:**
-1. Check `#app` dimensions in DevTools (should be 100vw × 100vh)
-2. Look for Cytoscape errors in console
-3. Verify profile JSON matches expected schema
-4. Check network tab for failed requests
+The single HTML file is typically **2-5 MB** depending on:
+- profiler-lib size
+- Cytoscape and ELK dependencies
+- Source map inclusion (dev builds larger)
 
-### Memory usage grows over time
+**Optimization:**
+- Production builds are minified
+- Source maps can be disabled for smaller files
+- Tree-shaking removes unused code
 
-**Cause:** Not calling `dispose()` when reloading data.
+### Runtime Performance
 
-**Fix:** `ProfileLoader` already handles this in `loadFiles()`:
-```typescript
-// In loadFiles()
-if (this.profiler) {
-  this.profiler.dispose()  // Clean up previous instance
-}
-```
-
-If you're manually creating `Profiler` instances, always call `dispose()`.
-
-## Testing Strategy
-
-### Manual Testing
-
-This is primarily a manual testing tool:
-
-1. **Load various profile sizes:**
-   - Small (<100 nodes)
-   - Medium (100-500 nodes)
-   - Large (500-1000 nodes)
-   - Very large (1000+ nodes)
-
-2. **Test interactions:**
-   - Pan and zoom smoothness
-   - Double-click expansion
-   - Hover tooltip responsiveness
-   - Metric selection
-   - Worker filtering
-
-3. **Verify data accuracy:**
-   - Check metric values match source data
-   - Verify SQL source attribution
-   - Confirm edge highlighting correctness
-
-### Automated Testing
-
-While profiler-app is mainly for manual testing, you can add E2E tests:
-
-```typescript
-// In web-console's Playwright tests
-test('profiler-app loads and renders', async ({ page }) => {
-  await page.goto('http://localhost:5173')
-
-  // Wait for graph to render
-  await page.waitForSelector('#app canvas')
-
-  // Check for errors
-  const errorDiv = await page.$('#error-message')
-  const isVisible = await errorDiv?.isVisible()
-  expect(isVisible).toBe(false)
-
-  // Verify Cytoscape canvas exists
-  const canvas = await page.$('#app canvas')
-  expect(canvas).toBeTruthy()
-})
-```
-
-## Performance Benchmarking
-
-profiler-app is useful for performance testing:
-
-### Measure Initial Load Time
-
-```typescript
-// Add to src/index.ts
-console.time('profile-load')
-loader.loadFiles("data", "rec").then(() => {
-  console.timeEnd('profile-load')
-
-  console.time('layout-complete')
-  // Layout completion is harder to detect, may need to modify profiler-lib
-})
-```
-
-### Profile Memory Usage
-
-Use browser DevTools:
-1. Open Performance tab
-2. Start recording
-3. Load large profile
-4. Stop recording
-5. Analyze memory timeline
-
-### Test Different Datasets
-
-Create profiles of varying sizes and complexity:
-- `data/small.json` - 50 nodes
-- `data/medium.json` - 250 nodes
-- `data/large.json` - 1000 nodes
-- `data/deep.json` - Deep nesting (10+ levels)
-- `data/wide.json` - Shallow but wide (many siblings)
-
-Compare load times and interaction responsiveness.
-
-## Deployment
-
-### Standalone Deployment
-
-You can deploy profiler-app as a static site:
-
-```bash
-bun run build
-# Deploy dist/ to any static host:
-# - GitHub Pages
-# - Netlify
-# - Vercel
-# - S3 + CloudFront
-# - nginx
-```
-
-**Use case:** Share profile visualizations with team members who don't have local dev setup.
-
-### Docker Container
-
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY package.json bun.lockb ./
-RUN npm install -g bun && bun install
-COPY . .
-RUN bun run build
-EXPOSE 3000
-CMD ["npx", "serve", "dist", "-p", "3000"]
-```
-
-```bash
-docker build -t profiler-app .
-docker run -p 3000:3000 profiler-app
-```
-
-**Use case:** Consistent environment for profiler testing across different machines.
-
-## Relationship to Other Packages
-
-```
-┌─────────────────┐
-│  profiler-app   │  ← Development tool for testing profiler-lib
-│                 │
-│  - File loading │
-│  - Simple UI    │
-│  - Vite dev     │
-└────────┬────────┘
-         │ depends on
-         ▼
-┌─────────────────┐
-│  profiler-lib   │  ← Core visualization library
-│                 │
-│  - Pure viz     │
-│  - No I/O       │
-│  - Framework    │
-│    agnostic     │
-└────────┬────────┘
-         │ used by
-         ▼
-┌─────────────────┐
-│  web-console    │  ← Production application
-│                 │
-│  - SvelteKit    │
-│  - API client   │
-│  - Auth/routing │
-└─────────────────┘
-```
-
-**Flow:**
-1. Develop features in profiler-lib
-2. Test quickly in profiler-app (local files)
-3. Integrate into web-console (live API)
-4. Deploy to production
-
-## Future Enhancements
-
-### Profile Comparison
-
-Add UI to load and compare two profiles side-by-side:
-
-```typescript
-const loader = new ProfileLoader(config)
-await loader.loadProfiles(
-  { directory: "data", basename: "before" },
-  { directory: "data", basename: "after" }
-)
-```
-
-### URL-based File Loading
-
-Support loading profiles via URL parameters:
-
-```typescript
-// Load from URL: ?profile=my-profile&dataflow=my-dataflow
-const params = new URLSearchParams(window.location.search)
-const profileName = params.get('profile') || 'rec'
-loader.loadFiles("data", profileName)
-```
-
-### Profile Browser
-
-Add file selection UI instead of hardcoded filename:
-
-```html
-<select id="profile-selector">
-  <option value="rec">Sample Profile</option>
-  <option value="my-profile">My Profile</option>
-</select>
-```
-
-### Drag-and-Drop
-
-Allow users to drag JSON files into browser:
-
-```typescript
-document.addEventListener('drop', async (e) => {
-  e.preventDefault()
-  const files = e.dataTransfer.files
-  // Parse and load files
-})
-```
+Rendering performance handled by profiler-lib:
+- See `profiler-lib/CLAUDE.md` for optimization details
 
 ## Related Documentation
 
-- `profiler-lib/CLAUDE.md` - Core library architecture
+- `profiler-lib/CLAUDE.md` - Core visualization library architecture
 - `profiler-lib/README.md` - Library usage guide
-- `web-console/src/lib/components/profiler/README.md` - Svelte component guide
-- `profiler-lib/ARCHITECTURE.md` - Detailed design decisions
+- `web-console/src/lib/components/profiler/README.md` - Production profiler integration
+- `data/README.md` - Data directory and bundle format
+
+**Development Flow:**
+1. Develop visualization features in profiler-lib
+2. Test quickly in profiler-app with sample bundles
+3. Integrate into web-console for production use
+4. Deploy web-console to users
+
+**Distribution Flow:**
+1. Build profiler-app to single HTML
+2. Share HTML file + bundle with team members
+3. Recipients open locally without installation
+4. Everyone sees same visualization
 <!-- SECTION:js-packages/profiler-app/CLAUDE.md END -->
 
 ---

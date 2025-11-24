@@ -40,63 +40,68 @@ export class MetadataSelector {
         this.onChange = onChange;
     }
 
-    // Display the html elements used to select circuit metadata
-    display(table: HTMLTableElement): void {
-        // Drop-down to select the metric to highlight
-        let row = table.insertRow();
-        let cell = row.insertCell(0);
-        cell.appendChild(document.createTextNode("Metric"));
-        cell = row.insertCell(1);
-        let select = document.createElement("select");
-        cell.appendChild(select);
+    /**
+     * Initialize UI elements with metadata selection controls
+     * Uses dependency-injected DOM elements rather than creating them
+     *
+     * @param metricSelect Pre-created select element for metric dropdown
+     * @param workerCheckboxesContainer Pre-created container for worker checkboxes
+     * @param toggleWorkersButton Pre-created button to toggle all workers
+     */
+    display(
+        metricSelect: HTMLSelectElement,
+        workerCheckboxesContainer: HTMLElement,
+        toggleWorkersButton: HTMLButtonElement
+    ): void {
+        // Populate metric dropdown
+        metricSelect.innerHTML = ''; // Clear any existing options
         for (const metric of Array.from(this.allMetrics).sort()) {
-            let option = document.createElement("option");
+            const option = document.createElement("option");
             option.value = metric;
             option.text = metric;
             if (metric === this.selectedMetric) {
                 option.selected = true;
             }
-            select.appendChild(option);
+            metricSelect.appendChild(option);
         }
 
-        // Selection tool for workers; will work for a moderate number of workers (e.g. < 50)
-        row = table.insertRow();
-        cell = row.insertCell(0);
-        let button = document.createElement("button");
-        button.textContent = "Workers";
-        button.title = "Toggle worker visibility";
-        cell.appendChild(button);
+        // Wire up metric selection change handler
+        metricSelect.onchange = (ev) => {
+            const target = ev.target as HTMLSelectElement;
+            this.selectedMetric = target.value;
+            this.onChange();
+        };
 
-        let allCheckboxes = new Array<HTMLInputElement>();
-        cell = row.insertCell(1);
+        // Create worker checkboxes in provided container
+        workerCheckboxesContainer.innerHTML = ''; // Clear any existing checkboxes
+        const allCheckboxes = new Array<HTMLInputElement>();
+
         for (let i = 0; i < this.circuit.getWorkerNames().length; i++) {
-            let cb = document.createElement("input");
+            const cb = document.createElement("input");
             cb.type = "checkbox";
             cb.checked = true;
-            cb.title = i.toString();
-            cb.style.margin = "0";
-            cb.style.padding = "0";
-            cell.appendChild(cb);
+            cb.title = `Worker ${i}`;
+            cb.dataset['workerIndex'] = i.toString();
+            workerCheckboxesContainer.appendChild(cb);
             allCheckboxes.push(cb);
+
             cb.onchange = (ev) => {
                 const target = ev.target as HTMLInputElement;
                 this.workersVisible[i] = target.checked;
                 this.onChange();
-            }
-        };
-
-        // When the "workers" button is clicked toggle the state of all workers.
-        button.onclick = (_) => {
-            for (const cb of allCheckboxes) {
-                cb.checked = !cb.checked;
-                this.workersVisible[Number(cb.title)] = cb.checked;
-            }
-            this.onChange();
+            };
         }
 
-        select.onchange = (ev) => {
-            const target = ev.target as HTMLSelectElement;
-            this.selectedMetric = target.value;
+        // Wire up toggle all workers button
+        toggleWorkersButton.onclick = () => {
+            // Determine if we should check or uncheck (if any are unchecked, check all)
+            const someUnchecked = allCheckboxes.some(cb => !cb.checked);
+
+            for (const cb of allCheckboxes) {
+                cb.checked = someUnchecked;
+                const index = Number(cb.dataset['workerIndex']);
+                this.workersVisible[index] = someUnchecked;
+            }
             this.onChange();
         };
     }

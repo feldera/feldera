@@ -13,8 +13,8 @@ export interface BundleFiles {
 /**
  * Process a support bundle file in the browser
  * Extracts:
- * - *_circuit_profile.json - Profile data
- * - *_dataflow_graph.json - Dataflow graph
+ * - *circuit_profile.json - Profile data
+ * - *dataflow_graph.json - Dataflow graph
  */
 export async function processBundleInBrowser(file: File): Promise<BundleFiles> {
     // Read the file as ArrayBuffer
@@ -24,22 +24,22 @@ export async function processBundleInBrowser(file: File): Promise<BundleFiles> {
     const files = await unzip(new Uint8Array(arrayBuffer));
     console.log('files', files)
 
-    // Find the profile file (*_circuit_profile.json)
+    // Find the profile file (*circuit_profile.json)
     const profileEntry = Object.entries(files).find((file) =>
-        file[1].filename.endsWith('_circuit_profile.json')
+        file[1].filename.endsWith('circuit_profile.json')
     );
 
     if (!profileEntry) {
-        throw new Error('No profile file (*_circuit_profile.json) found in bundle');
+        throw new Error('No profile file (*circuit_profile.json) found in bundle');
     }
 
-    // Find the dataflow file (*_dataflow_graph.json)
+    // Find the dataflow file (*dataflow_graph.json)
     const dataflowEntry = Object.entries(files).find((file) =>
-        file[1].filename.endsWith('_dataflow_graph.json')
+        file[1].filename.endsWith('dataflow_graph.json')
     );
 
     if (!dataflowEntry) {
-        throw new Error('No dataflow file (*_dataflow_graph.json) found in bundle');
+        throw new Error('No dataflow file (*dataflow_graph.json) found in bundle');
     }
 
     // Find the file with program code (*_pipeline_config.json)
