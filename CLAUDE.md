@@ -8251,9 +8251,9 @@ profiler-app is intentionally minimal, providing:
 ```
 profiler-app/
 ├── src/
-│   ├── fileLoader.ts             # File fetching from disk
+│   ├── fileLoader.ts             # Profiler lifecycle manager + file fetching from disk
 │   ├── browserBundleProcessor.ts # Bundle processing in browser (but-unzip)
-│   ├── bundleUpload.ts           # UI handler for bundle upload
+│   ├── bundleUpload.ts           # UI handler for bundle upload, calls ProfileLoader
 │   ├── bundleProcessor.ts        # Node.js bundle processing (adm-zip)
 │   └── index.ts                  # Entry point
 ├── cli.ts                        # Server wrapper (processes bundles at runtime)
@@ -8264,6 +8264,8 @@ profiler-app/
 ├── package.json                  # Dependencies and scripts
 └── vite.config.ts                # Vite configuration
 ```
+
+**Lifecycle Management**: `ProfileLoader` owns the Profiler instance and handles dispose/recreate cycles to ensure tooltips and event handlers work correctly when loading new profiles.
 
 ## Key Components
 
@@ -8287,13 +8289,13 @@ export async function processBundleInBrowser(file: File): Promise<BundleFiles>
 Manages the "Load Bundle" button in the UI:
 
 ```typescript
-export function setupBundleUpload(config: ProfilerConfig, profiler: Profiler)
+export function setupBundleUpload(loader: ProfileLoader)
 ```
 
 - Handles file picker interaction
 - Processes bundle with `browserBundleProcessor`
-- Creates and renders `CircuitProfile`
-- Shows progress messages and errors
+- Creates `CircuitProfile` and delegates to `loader.renderCircuit()`
+- ProfileLoader manages profiler lifecycle (no local profiler instance)
 
 #### `bundleProcessor.ts` - Node.js Bundle Processing
 
@@ -8327,34 +8329,42 @@ BUNDLE=/path/to/bundle.zip VERBOSE=1 bun run start
 
 ### File Loading
 
-#### `fileLoader.ts` - Local File Loading
+#### `fileLoader.ts` - Profiler Lifecycle Manager
 
-Fetches JSON files via HTTP:
+Owns the Profiler instance and provides rendering methods:
 
 ```typescript
 export class ProfileLoader {
+  renderCircuit(circuit: CircuitProfile): void  // Single rendering entry point
   async loadFiles(directory: string, basename: string): Promise<void>
 }
 ```
 
+**Key Responsibilities:**
+- Creates and owns the Profiler instance
+- Disposes/recreates profiler on each render (ensures tooltips work)
+- Fetches profile and dataflow JSON files via HTTP
+- Single source of truth for profiler lifecycle
+
 **Usage:**
 ```typescript
 const loader = new ProfileLoader(config)
-await loader.loadFiles("data", "rec")  // Loads rec.json and dataflow-rec.json
+await loader.loadFiles("data", "rec")  // Load from disk
+loader.renderCircuit(circuit)          // Direct rendering
 ```
 
 #### `index.ts` - Application Entry Point
 
-Sets up profiler configuration, bundle upload UI, and loads default data:
+Sets up profiler configuration and initializes ProfileLoader:
 
 ```typescript
-import { setupBundleUpload } from './bundleUpload.js'
-
 const config: ProfilerConfig = { /* ... */ }
-const profiler = new Profiler(config)
-setupBundleUpload(config, profiler)  // Enable bundle upload button
-await loader.loadFiles("data", "rec") // Load default profile
+const loader = new ProfileLoader(config)  // Single profiler lifecycle manager
+setupBundleUpload(loader)                 // Delegates to loader
+await loader.loadFiles("data", "rec")     // Load default profile
 ```
+
+**Architecture**: ProfileLoader manages all profiler lifecycle. Both file loading and bundle upload use the same loader instance.
 
 ### `index.html` - HTML Structure
 

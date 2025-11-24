@@ -2,7 +2,7 @@
 
 import { ProfileLoader } from './fileLoader.js';
 import { setupBundleUpload } from './bundleUpload.js';
-import { Profiler, type ProfilerConfig } from 'profiler-lib';
+import type { ProfilerConfig } from 'profiler-lib';
 
 // Set up the configuration
 const config: ProfilerConfig = {
@@ -15,13 +15,12 @@ const config: ProfilerConfig = {
     searchInput: document.getElementById('search') as HTMLInputElement ?? undefined,
 };
 
-// Create loader and profiler
+// Create loader - this is the single manager for profiler lifecycle
 const loader = new ProfileLoader(config);
-const profiler = new Profiler(config);
 
 async function main() {
-    // Set up bundle upload button
-    setupBundleUpload(config, profiler);
+    // Set up bundle upload button (delegates to loader for rendering)
+    setupBundleUpload(loader);
 
     let dataName = 'rec'; // default
 

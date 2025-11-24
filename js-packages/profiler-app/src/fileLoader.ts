@@ -2,11 +2,13 @@
 
 import { CircuitProfile, type JsonProfiles, type Dataflow, Profiler, type ProfilerConfig } from 'profiler-lib';
 
-/** Utility class for loading profile data from files */
+/** Utility class for loading profile data from files and managing profiler lifecycle */
 export class ProfileLoader {
-    private profiler: Profiler | null = null;
+    private profiler: Profiler;
 
-    constructor(private readonly config: ProfilerConfig) {}
+    constructor(private readonly config: ProfilerConfig) {
+        this.profiler = new Profiler(config);
+    }
 
     /** Display an error on the screen */
     private reportError(message: string): void {
@@ -46,6 +48,27 @@ export class ProfileLoader {
     }
 
     /**
+     * Render a circuit profile, handling profiler recreation for proper event handler setup.
+     * This is the single point for rendering profiles regardless of data source.
+     *
+     * @param circuit The circuit profile to render
+     */
+    renderCircuit(circuit: CircuitProfile): void {
+        try {
+            this.profiler.message("Starting visualization...");
+
+            // Dispose old profiler and create new one (tooltips and event handlers require fresh instance)
+            this.profiler.dispose();
+            this.profiler = new Profiler(this.config);
+
+            this.profiler.render(circuit);
+            this.profiler.clearMessage();
+        } catch (e) {
+            this.reportError(`Error displaying circuit profile: ${e}`);
+        }
+    }
+
+    /**
      * Load profile and dataflow files, then render the visualization.
      *
      * @param directory Directory containing the JSON files
@@ -54,12 +77,6 @@ export class ProfileLoader {
     async loadFiles(directory: string, basename: string): Promise<void> {
         const profileUrl = `${directory}/${basename}.json`;
         const dataflowUrl = `${directory}/dataflow-${basename}.json`;
-
-        // Create profiler early so we can use its message methods
-        if (this.profiler) {
-            this.profiler.dispose();
-        }
-        this.profiler = new Profiler(this.config);
 
         // Load profile data
         this.profiler.message("Reading profile file...");
@@ -87,20 +104,11 @@ export class ProfileLoader {
         }
 
         // Render the profile
-        try {
-            this.profiler.message("Starting visualization...");
-            this.profiler.render(circuit);
-            this.profiler.clearMessage();
-        } catch (e) {
-            this.reportError(`Error displaying circuit profile: ${e}`);
-        }
+        this.renderCircuit(circuit);
     }
 
     /** Clean up resources */
     dispose(): void {
-        if (this.profiler) {
-            this.profiler.dispose();
-            this.profiler = null;
-        }
+        this.profiler.dispose();
     }
 }

@@ -8,7 +8,7 @@
   "description": "Standalone application for profiling Feldera pipelines",
   "scripts": {
     "start": "tsx launcher.ts",
-    "dev": "tsx launcher.ts",
+    "dev": "vite dev --host",
     "build": "vite build"
   },
   "dependencies": {
