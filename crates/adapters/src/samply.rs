@@ -295,3 +295,26 @@ fn write_marker(start: Timestamp, end: Timestamp, name: &str) {
     writeln!(&mut s, "{start} {end} {name}").unwrap();
     let _ = with_marker_file(|f| f.write_all(s.as_bytes()));
 }
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) enum SamplyProfile {
+    #[default]
+    None,
+    Success(Vec<u8>),
+    Failure(String),
+}
+
+impl SamplyProfile {
+    pub(crate) fn update(&mut self, result: Result<Vec<u8>, anyhow::Error>) {
+        match result {
+            Ok(data) => {
+                tracing::info!("collected samply profile: {} bytes", data.len());
+                *self = SamplyProfile::Success(data);
+            }
+            Err(error) => {
+                tracing::error!("samply profiling failed: {:?}", error);
+                *self = SamplyProfile::Failure(error.to_string());
+            }
+        }
+    }
+}
