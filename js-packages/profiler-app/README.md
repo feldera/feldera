@@ -4,11 +4,9 @@ Standalone application for visualizing Feldera DBSP circuit profiles.
 
 ## Overview
 
-Development tool for loading and visualizing circuit profiles using `profiler-lib`. Supports loading from:
-- Support bundles (`.zip` files via UI or CLI)
-- Local JSON files
+This is a SPA web app for loading and visualizing circuit profiles using `profiler-lib`. Supports loading profiles from support bundle `.zip` files.
 
-In production, use the Web Console's integrated profiler.
+Provides the same functionality as the Web Console's integrated profiler.
 
 ## Quick Start
 
@@ -17,45 +15,32 @@ bun install
 bun run dev
 ```
 
-Opens at `http://localhost:5174` with default sample data.
+Web app is available at `http://localhost:5174`.
+
+To apply the changes in the `profiler-lib` project to `profiler-app`, run `cd js-packages/profiler-lib && bun run build`. If you have a dev build running, the app will update on the fly.
 
 ## Loading Profiles
 
-### Browser UI (Recommended)
+Click the **"Load Bundle"** button and select a support bundle `.zip` file to load.
 
-Click **"Load Bundle"** button and select a support bundle (`.zip` file).
-
-### CLI with Bundle
-
-```bash
-BUNDLE=/path/to/support-bundle.zip bun run dev
-```
-
-### Production Mode
+## Build Production App
 
 ```bash
 bun run build
-BUNDLE=/path/to/bundle.zip bun run start
 ```
 
-## Environment Variables
-
-- `BUNDLE` - Path to support bundle zip file
-- `VERBOSE=1` - Enable verbose bundle processing output
-- `BUNDLE_NAME` - Custom output name (default: `temp`)
+The app is compiled into a single dist/index.html. It can be served by a server or opened directly in the browser.
 
 ## Sample Data
 
 Included in `data/`:
 - `rec.json` - Example profile
-- `dataflow-rec.json` - Example dataflow graph
 
 ## Architecture
 
 Thin wrapper around `profiler-lib`:
 - HTML structure for profiler UI
-- File loading via `fetch()` or bundle extraction
-- Browser-based zip processing with `but-unzip`
+- Browser-based .zip archive processing with `but-unzip`
 
 ## License
 

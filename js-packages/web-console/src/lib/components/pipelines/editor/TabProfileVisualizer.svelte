@@ -268,7 +268,7 @@
 
               <!-- Collect New Data Toggle -->
               <label
-                class="flex cursor-pointer items-center justify-between gap-3 rounded-b-container px-4 py-2 hover:preset-tonal-surface"
+                class="flex cursor-pointer items-center justify-between gap-3 px-4 py-2 hover:preset-tonal-surface"
               >
                 <span>Collect new data</span>
                 <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
