@@ -1,36 +1,35 @@
 import logging
-import time
-from datetime import datetime
 import pathlib
-
-import pandas
+import time
+from collections import deque
+from datetime import datetime
+from threading import Event
+from typing import Any, Callable, Dict, Generator, List, Mapping, Optional
 from uuid import UUID
 
-from typing import List, Dict, Callable, Optional, Generator, Mapping, Any
-from threading import Event
-from collections import deque
+import pandas
 
-from feldera.rest.errors import FelderaAPIError
+from feldera._callback_runner import CallbackRunner
+from feldera._helpers import chunk_dataframe, ensure_dataframe_has_columns
 from feldera.enums import (
     BootstrapPolicy,
-    CompletionTokenStatus,
-    PipelineFieldSelector,
-    PipelineStatus,
-    ProgramStatus,
     CheckpointStatus,
-    TransactionStatus,
-    StorageStatus,
+    CompletionTokenStatus,
     DeploymentDesiredStatus,
     DeploymentResourcesDesiredStatus,
     DeploymentResourcesStatus,
     DeploymentRuntimeDesiredStatus,
     DeploymentRuntimeStatus,
+    PipelineFieldSelector,
+    PipelineStatus,
+    ProgramStatus,
+    StorageStatus,
+    TransactionStatus,
 )
-from feldera.rest.pipeline import Pipeline as InnerPipeline
-from feldera.rest.feldera_client import FelderaClient
-from feldera._callback_runner import CallbackRunner
 from feldera.output_handler import OutputHandler
-from feldera._helpers import ensure_dataframe_has_columns, chunk_dataframe
+from feldera.rest.errors import FelderaAPIError
+from feldera.rest.feldera_client import FelderaClient
+from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.sql_table import SQLTable
 from feldera.rest.sql_view import SQLView
 from feldera.runtime_config import RuntimeConfig
@@ -1396,6 +1395,42 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             print(f"Support bundle written to {path}")
 
         return support_bundle_bytes
+
+    def start_samply_profile(self, duration: int = 30):
+        """
+        Starts profiling this pipeline using samply.
+
+        :param duration: The duration of the profile in seconds (default: 30)
+        :raises FelderaAPIError: If the pipeline does not exist or if there's an error
+        """
+
+        self.client.start_samply_profile(self.name, duration)
+
+    def get_samply_profile(self, output_path: Optional[str] = None) -> bytes:
+        """
+        Returns the gzip file of the samply profile as bytes.
+
+        The gzip file contains the samply profile that can be inspected by the samply tool.
+
+        :param output_path: Optional path to save the samply profile file. If None,
+            the samply profile is only returned as bytes.
+        :return: The samply profile as bytes (GZIP file)
+        :raises FelderaAPIError: If the pipeline does not exist or if there's an error
+        """
+
+        samply_profile_bytes = self.client.get_samply_profile(self.name)
+
+        if output_path is not None:
+            path = pathlib.Path(output_path)
+
+            if path.suffix != ".gz":
+                path = path.with_suffix(".gz")
+            with open(path, "wb") as f:
+                f.write(samply_profile_bytes)
+
+            print(f"Samply profile written to {path}")
+
+        return samply_profile_bytes
 
     def generate_completion_token(self, table_name: str, connector_name: str) -> str:
         """

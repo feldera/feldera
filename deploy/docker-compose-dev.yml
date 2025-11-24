@@ -5,3 +5,5 @@ services:
     build:
       context: ../
       dockerfile: deploy/Dockerfile
+    cap_add:
+      - PERFMON

@@ -1,16 +1,20 @@
+import io
 import os
 import pathlib
-import pandas as pd
+import tempfile
 import time
 import unittest
-import io
-import tempfile
 import zipfile
+import gzip
+
+import pandas as pd
 
 from feldera import Pipeline
-from tests.shared_test_pipeline import SharedTestPipeline
+from feldera.enums import CompletionTokenStatus, PipelineFieldSelector, PipelineStatus
+from feldera.rest.errors import FelderaAPIError
+from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT, enterprise_only
-from feldera.enums import PipelineFieldSelector, PipelineStatus, CompletionTokenStatus
+from tests.shared_test_pipeline import SharedTestPipeline
 
 
 class TestPipeline(SharedTestPipeline):
@@ -493,7 +497,7 @@ class TestPipeline(SharedTestPipeline):
         CREATE TABLE tbl_datetime (c1 DATE, c2 TIME, c3 TIMESTAMP);
         CREATE VIEW v_datetime AS SELECT c1, c2, c3 FROM tbl_datetime;
         """
-        from pandas import Timestamp, Timedelta
+        from pandas import Timedelta, Timestamp
 
         data = [{"c1": "2022-01-01", "c2": "12:00:00", "c3": "2022-01-01 12:00:00"}]
         expected = [
@@ -790,6 +794,42 @@ class TestPipeline(SharedTestPipeline):
             self.pipeline.completion_token_status(token)
             == CompletionTokenStatus.COMPLETE
         )
+
+    def test_samply_profile(self):
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(dev_tweaks={"profiling": "samply"})
+        )
+        self.pipeline.start()
+
+        duration = 5
+        self.pipeline.start_samply_profile(duration)
+        time.sleep(duration)
+
+        timeout = time.monotonic() + 5
+
+        samply_profile_bytes = None
+
+        while time.monotonic() < timeout:
+            try:
+                samply_profile_bytes = self.pipeline.get_samply_profile()
+                if samply_profile_bytes:
+                    break
+                time.sleep(0.1)
+            except FelderaAPIError as e:
+                if e.status_code == 500:
+                    raise
+
+        assert isinstance(samply_profile_bytes, bytes)
+        assert len(samply_profile_bytes) > 0
+
+        # Verify it's a valid GZIP file
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(samply_profile_bytes)) as gz:
+                # Try reading a small chunk to verify it's a valid gzip
+                chunk = gz.read(10)
+                assert len(chunk) > 0
+        except OSError:
+            self.fail("Samply profile is not a valid GZIP file")
 
 
 if __name__ == "__main__":

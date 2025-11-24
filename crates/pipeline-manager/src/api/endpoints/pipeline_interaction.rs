@@ -15,7 +15,7 @@ use actix_web::{
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
-use feldera_types::query_params::MetricsParameters;
+use feldera_types::query_params::{MetricsParameters, SamplyProfileParams};
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
 use std::time::Duration;
 use tracing::{debug, info};
@@ -1107,6 +1107,117 @@ pub(crate) async fn get_checkpoint_sync_status(
             "checkpoint/sync_status",
             request.query_string(),
             None,
+        )
+        .await
+}
+
+/// Start a Samply profile
+///
+/// Profile the pipeline using the Samply profiler for the next `duration_secs` seconds.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        SamplyProfileParams,
+    ),
+    responses(
+        (status = OK, description = "Started profiling the pipeline with the Samply tool"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Metrics & Debugging"
+)]
+#[post("/pipelines/{pipeline_name}/samply_profile")]
+pub(crate) async fn start_samply_profile(
+    state: WebData<ServerState>,
+    _client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    _query: web::Query<SamplyProfileParams>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            _client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::POST,
+            "samply_profile",
+            request.query_string(),
+            None,
+        )
+        .await
+}
+
+/// Get Samply Profile
+///
+/// Retrieve the most recent samply profile of a running pipeline.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Samply profile as a gzip containing the profile that can be inspected by the samply tool"
+            , content_type = "application/gzip"
+            , body = Vec<u8>),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "No samply profile exists for the pipeline, create one by calling `POST /pipelines/{pipeline_name}/samply_profile/start?duration_secs=30`"
+            , body = ErrorResponse),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Metrics & Debugging"
+)]
+#[get("/pipelines/{pipeline_name}/samply_profile")]
+pub(crate) async fn get_pipeline_samply_profile(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    body: web::Payload,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_streaming_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            "samply_profile",
+            request,
+            body,
+            Some(Duration::MAX),
         )
         .await
 }

@@ -8,6 +8,7 @@ use crate::{
     adhoc::{adhoc_websocket, stream_adhoc_result},
     controller::ConnectorConfig,
     ensure_default_crypto_provider,
+    samply::SamplyProfile,
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
@@ -49,9 +50,12 @@ use feldera_types::checkpoint::{
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
+use feldera_types::config::RuntimeConfig;
 use feldera_types::constants::STATUS_FILE;
 use feldera_types::pipeline_diff::PipelineDiff;
-use feldera_types::query_params::{ActivateParams, MetricsFormat, MetricsParameters};
+use feldera_types::query_params::{
+    ActivateParams, MetricsFormat, MetricsParameters, SamplyProfileParams,
+};
 use feldera_types::runtime_status::{
     BootstrapPolicy, ExtendedRuntimeStatus, ExtendedRuntimeStatusError, RuntimeDesiredStatus,
     RuntimeStatus,
@@ -239,10 +243,16 @@ pub(crate) struct ServerState {
     /// Leaf lock.
     sync_checkpoint_state: Mutex<CheckpointSyncState>,
 
+    /// Leaf lock.
+    /// Latest samply profile.
+    samply_profile: Arc<Mutex<SamplyProfile>>,
+
     /// Deployment ID.
     deployment_id: Uuid,
 
     metadata: String,
+
+    runtime_config: RuntimeConfig,
 
     // rate limiter based on tags
     // NOTE: we assume that there are a finite small number
@@ -257,6 +267,7 @@ impl ServerState {
         desired_status: RuntimeDesiredStatus,
         bootstrap_policy: BootstrapPolicy,
         deployment_id: Uuid,
+        runtime_config: RuntimeConfig,
     ) -> Self {
         // Max 10 errors per minute
         let rate_limiter = TokenBucketRateLimiter::new(10, Duration::from_secs(60));
@@ -271,16 +282,23 @@ impl ServerState {
             bootstrap_policy: Mutex::new(bootstrap_policy),
             deployment_id,
             rate_limiter,
+            runtime_config,
+            samply_profile: Default::default(),
         }
     }
 
-    fn for_error(error: ControllerError, deployment_id: Uuid) -> Self {
+    fn for_error(
+        error: ControllerError,
+        deployment_id: Uuid,
+        runtime_config: RuntimeConfig,
+    ) -> Self {
         Self::new(
             PipelinePhase::InitializationError(Arc::new(error)),
             String::default(),
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             deployment_id,
+            runtime_config,
         )
     }
 
@@ -651,6 +669,7 @@ pub fn run_server(
             initial_status,
             bootstrap_policy,
             args.deployment_id,
+            config.global.clone(),
         ));
 
         // Initialize the pipeline in a separate thread.  On success, this thread
@@ -695,7 +714,11 @@ pub fn run_server(
     let state = start_controller(&args, &config, circuit_factory, system_runner.runtime())
         .unwrap_or_else(|error| {
             error!("Initialization failed: {error}");
-            WebData::new(ServerState::for_error(error, args.deployment_id))
+            WebData::new(ServerState::for_error(
+                error,
+                args.deployment_id,
+                config.global.clone(),
+            ))
         });
 
     let workers = if let Some(http_workers) = config.global.http_workers {
@@ -1066,6 +1089,8 @@ where
         .service(heap_profile)
         .service(dump_profile)
         .service(dump_json_profile)
+        .service(samply_profile)
+        .service(get_samply_profile)
         .service(lir)
         .service(checkpoint)
         .service(checkpoint_status)
@@ -1562,6 +1587,70 @@ async fn lir(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError>
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("lir.zip"))
         .body(state.controller()?.lir().as_zip()))
+}
+
+#[post("/samply_profile")]
+async fn samply_profile(
+    state: WebData<ServerState>,
+    query_params: web::Query<SamplyProfileParams>,
+) -> Result<HttpResponse, PipelineError> {
+    if state
+        .runtime_config
+        .dev_tweaks
+        .get("profiling")
+        .and_then(|s| s.as_str())
+        .is_none_or(|s| s != "samply")
+    {
+        return Ok(HttpResponse::BadRequest().json(ErrorResponse {
+            message: "samply profiling is not supported; try enabling it by setting `profiling: samply` in `dev_tweaks` in the runtime configuration.".to_string(),
+            error_code: "400".into(),
+            details: serde_json::Value::Null,
+        }));
+    }
+
+    let duration = query_params.duration_secs;
+    let controller = state.controller()?;
+
+    let state_samply_profile = state.samply_profile.clone();
+
+    spawn(async move {
+        let result = controller.async_samply_profile(duration).await;
+        state_samply_profile.lock().unwrap().update(result);
+    });
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[get("/samply_profile")]
+async fn get_samply_profile(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let profile = state.samply_profile.lock().unwrap();
+
+    Ok(match profile.clone() {
+        SamplyProfile::Success(bytes) => {
+            let byte_stream = futures_util::stream::once(async move { Ok::<_, PipelineError>(web::Bytes::from(bytes)) });
+
+            HttpResponse::Ok()
+                .content_type("application/gzip")
+                .insert_header((
+                    "Content-Disposition",
+                    format!(
+                        "attachment; filename=\"{}-samply_profile.json.gz\"",
+                        chrono::Local::now().to_rfc3339()
+                    ),
+                ))
+                .streaming(byte_stream)
+        }
+        SamplyProfile::Failure(ref error) => HttpResponse::InternalServerError().json(ErrorResponse {
+            message: "failed to profile the pipeline using samply".to_string(),
+            error_code: "SamplyProfilingFailure".into(),
+            details: serde_json::Value::String(error.to_string()),
+        }),
+        SamplyProfile::None => HttpResponse::BadRequest().json(json!({
+            "message": "no samply profile found; trigger a samply profile by making a POST request to `/samply_profile`",
+            "error_code": "NoSamplyProfile",
+            "details": null
+        })),
+    })
 }
 
 #[post("/checkpoint/sync")]
@@ -2152,6 +2241,7 @@ outputs:
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             Uuid::new_v4(),
+            parse_config(config_file.path()).unwrap().global.clone(),
         ));
         let state_clone = state.clone();
 
@@ -2441,6 +2531,7 @@ outputs:
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             Uuid::default(),
+            parse_config(config_file.path()).unwrap().global.clone(),
         ));
         let state_clone = state.clone();
 
