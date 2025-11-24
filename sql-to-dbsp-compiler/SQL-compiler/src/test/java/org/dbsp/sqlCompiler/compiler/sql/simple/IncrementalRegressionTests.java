@@ -1698,4 +1698,26 @@ public class IncrementalRegressionTests extends SqlIoTest {
         };
         ccs.visit(visitor.getCircuitVisitor(true));
     }
+
+    @Test
+    public void windowErrorTest() {
+        this.getCCS("""
+                CREATE TABLE T (
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 24 HOURS,
+                    p VARCHAR,
+                    m DECIMAL(38, 7)
+                );
+                
+                CREATE VIEW V0 AS
+                SELECT *
+                FROM T
+                WHERE ts >= NOW() - INTERVAL 1 MINUTE
+                AND p IS NOT NULL
+                AND m > 0;
+                
+                CREATE VIEW V1 AS
+                SELECT COUNT(*)
+                FROM V0
+                GROUP BY p;""");
+    }
 }
