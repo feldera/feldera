@@ -1627,12 +1627,12 @@ async fn samply_profile(
     state: WebData<ServerState>,
     query_params: web::Query<SamplyProfileParams>,
 ) -> Result<HttpResponse, PipelineError> {
-    if !state
+    if state
         .runtime_config
         .dev_tweaks
         .get("profiling")
         .and_then(|s| s.as_str())
-        .is_some_and(|s| s == "samply")
+        .is_none_or(|s| s != "samply")
     {
         return Ok(HttpResponse::BadRequest().json(ErrorResponse {
             message: "samply profiling is not supported; try enabling it by setting `profiling: samply` in `dev_tweaks` in the runtime configuration.".to_string(),

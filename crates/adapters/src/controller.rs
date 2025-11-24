@@ -828,10 +828,7 @@ impl Controller {
                 .context("failed to get samply version; is samply installed and in `$PATH`? try: `cargo install --locked samply`")?;
             let stdout =
                 String::from_utf8(version.stdout).context("failed to parse samply version")?;
-            let version = stdout
-                .split_whitespace()
-                .nth(1)
-                .unwrap_or_else(|| "<unknown>");
+            let version = stdout.split_whitespace().nth(1).unwrap_or("<unknown>");
             tracing::debug!("profiling using samply version: {version}");
 
             tracing::info!(
