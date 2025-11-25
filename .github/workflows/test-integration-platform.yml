@@ -229,3 +229,23 @@ jobs:
           OIDC_TEST_CLIENT_SECRET: ${{ secrets.OIDC_TEST_CLIENT_SECRET }}
           OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
           OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
+
+      - name: Download fda binary
+        uses: actions/download-artifact@v4
+        with:
+          name: feldera-binaries-x86_64-unknown-linux-gnu
+          path: build
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
+      - name: Make fda binary executable
+        run: chmod +x ./build/fda
+
+      - name: Run fda CLI tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: bash test.bash
+        working-directory: crates/fda
+        env:
+          FELDERA_HOST: http://localhost:8080
+          FELDERA_API_KEY: ""
+          FDA_BINARY: ${{ github.workspace }}/build/fda
