@@ -128,3 +128,11 @@ fn print_changes(
     }
 }
 ```
+
+## Parquet-backed batches
+
+DBSP now offers a helper type, [`ParquetIndexedZSet`](src/storage/parquet.rs), that
+wraps any [`OrdIndexedZSet`](crate::OrdIndexedZSet) and persists it as a Parquet
+file. The helper also supports loading the Parquet file back into an
+`OrdIndexedZSet`, so you can move batches between circuits or store checkpoints
+using Arrow's columnar format in addition to the native rkyv-based layer files.

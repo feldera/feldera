@@ -7,6 +7,7 @@ pub mod backend;
 pub mod buffer_cache;
 pub mod dirlock;
 pub mod file;
+pub mod parquet;
 #[cfg(test)]
 mod test;
 
