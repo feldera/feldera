@@ -1,13 +1,13 @@
 {
   "name": "feldera-js",
+  "dependencies": {
+    "@sveltejs/kit": "^2.48.4",
+    "svelte": "^5.43.6"
+  },
   "private": true,
-  "workspaces": ["js-packages/*"],
   "scripts": {
     "split-claude": "bun scripts/claude.js split",
     "merge-claude": "bun scripts/claude.js merge"
   },
-  "dependencies": {
-    "@sveltejs/kit": "^2.48.4",
-    "svelte": "^5.43.6"
-  }
+  "workspaces": ["js-packages/*"]
 }

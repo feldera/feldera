@@ -14,7 +14,7 @@ jobs:
   copilot-setup-steps:
     # This doesn't work as usual with new github things
     #container:
-    #  image: ghcr.io/feldera/feldera-dev:sha-a20fef16d212c8c3314c25c0fb16d8c680f95124
+    #  image: ghcr.io/feldera/feldera-dev:sha-5f0abc505a66168f9f41c38220f9c1ce0abc09db
     runs-on: ubuntu-latest-amd64
     permissions:
       contents: read
@@ -47,5 +47,5 @@ jobs:
           node-version: 20
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.2.22
+          bun-version: 1.3.3
       - uses: taiki-e/install-action@just

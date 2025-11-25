@@ -18,7 +18,7 @@ jobs:
   # because of how merge queues work: https://stackoverflow.com/a/78030618
   main:
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-a20fef16d212c8c3314c25c0fb16d8c680f95124
+      image: ghcr.io/feldera/feldera-dev:sha-5f0abc505a66168f9f41c38220f9c1ce0abc09db
     runs-on: [k8s-runners-amd64]
     steps:
       - name: Show Kubernetes node
