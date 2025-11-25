@@ -10,6 +10,8 @@ import pandas as pd
 
 from feldera import Pipeline
 from feldera.enums import CompletionTokenStatus, PipelineFieldSelector, PipelineStatus
+from feldera.rest.errors import FelderaAPIError
+from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT, enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
 
@@ -792,38 +794,39 @@ class TestPipeline(SharedTestPipeline):
             == CompletionTokenStatus.COMPLETE
         )
 
-    # def test_samply_profile(self):
-    #     self.pipeline.set_runtime_config(
-    #         RuntimeConfig(dev_tweaks={"profiling": "samply"})
-    #     )
-    #     self.pipeline.start()
+    def test_samply_profile(self):
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(dev_tweaks={"profiling": "samply"})
+        )
+        self.pipeline.start()
 
-    #     duration = 5
-    #     self.pipeline.start_samply_profile(duration)
-    #     time.sleep(duration)
+        duration = 5
+        self.pipeline.start_samply_profile(duration)
+        time.sleep(duration)
 
-    #     timeout = time.monotonic() + 5
+        timeout = time.monotonic() + 5
 
-    #     samply_profile_bytes = None
+        samply_profile_bytes = None
 
-    #     while time.monotonic() < timeout:
-    #         try:
-    #             samply_profile_bytes = self.pipeline.get_samply_profile()
-    #             if samply_profile_bytes:
-    #                 break
-    #             time.sleep(0.1)
-    #         except FelderaAPIError:
-    #             pass
+        while time.monotonic() < timeout:
+            try:
+                samply_profile_bytes = self.pipeline.get_samply_profile()
+                if samply_profile_bytes:
+                    break
+                time.sleep(0.1)
+            except FelderaAPIError as e:
+                if e.status_code == 500:
+                    raise
 
-    #     assert isinstance(samply_profile_bytes, bytes)
-    #     assert len(samply_profile_bytes) > 0
+        assert isinstance(samply_profile_bytes, bytes)
+        assert len(samply_profile_bytes) > 0
 
-    #     # Verify it's a valid ZIP file
-    #     with zipfile.ZipFile(io.BytesIO(samply_profile_bytes), "r") as zip_file:
-    #         file_list = zip_file.namelist()
-    #         # Should contain profile.json
-    #         assert len(file_list) > 0
-    #         assert "profile.json" in file_list
+        # Verify it's a valid ZIP file
+        with zipfile.ZipFile(io.BytesIO(samply_profile_bytes), "r") as zip_file:
+            file_list = zip_file.namelist()
+            # Should contain profile.json
+            assert len(file_list) > 0
+            assert "profile.json" in file_list
 
 
 if __name__ == "__main__":

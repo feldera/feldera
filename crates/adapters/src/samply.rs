@@ -75,7 +75,7 @@ use nix::{
 };
 use smallstr::SmallString;
 use tempfile::{tempdir, TempDir};
-use tracing::{enabled, error, span::EnteredSpan, Level, Span};
+use tracing::{enabled, error, info, span::EnteredSpan, Level, Span};
 
 #[derive(Copy, Clone, Debug)]
 struct Timestamp(i64);
@@ -308,11 +308,11 @@ impl SamplyProfile {
     pub(crate) fn update(&mut self, result: Result<Vec<u8>, anyhow::Error>) {
         match result {
             Ok(data) => {
-                tracing::info!("collected samply profile: {} bytes", data.len());
+                info!("collected samply profile: {} bytes", data.len());
                 *self = SamplyProfile::Success(data);
             }
             Err(error) => {
-                tracing::error!("samply profiling failed: {:?}", error);
+                error!("samply profiling failed: {:?}", error);
                 *self = SamplyProfile::Failure(error.to_string());
             }
         }

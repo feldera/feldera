@@ -1204,19 +1204,20 @@ pub(crate) async fn get_pipeline_samply_profile(
     client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
+    body: web::Payload,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
     state
         .runner
-        .forward_http_request_to_pipeline_by_name(
+        .forward_streaming_http_request_to_pipeline_by_name(
             client.as_ref(),
             *tenant_id,
             &pipeline_name,
-            Method::GET,
             "samply_profile",
-            request.query_string(),
-            None,
+            request,
+            body,
+            Some(Duration::MAX),
         )
         .await
 }

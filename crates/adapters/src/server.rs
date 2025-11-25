@@ -1658,25 +1658,29 @@ async fn samply_profile(
 async fn get_samply_profile(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     let profile = state.samply_profile.lock().unwrap();
 
-    Ok(match *profile {
-        SamplyProfile::Success(ref bytes) => HttpResponse::Ok()
-            .content_type("application/zip")
-            .insert_header((
-                "Content-Disposition",
-                format!(
-                    "attachment; filename=\"{}-samply_profile.zip\"",
-                    chrono::Local::now().to_rfc3339()
-                ),
-            ))
-            .body(bytes.clone()),
+    Ok(match profile.clone() {
+        SamplyProfile::Success(bytes) => {
+            let byte_stream = futures_util::stream::once(async move { Ok::<_, PipelineError>(web::Bytes::from(bytes)) });
+
+            HttpResponse::Ok()
+                .content_type("application/zip")
+                .insert_header((
+                    "Content-Disposition",
+                    format!(
+                        "attachment; filename=\"{}-samply_profile.zip\"",
+                        chrono::Local::now().to_rfc3339()
+                    ),
+                ))
+                .streaming(byte_stream)
+        }
         SamplyProfile::Failure(ref error) => HttpResponse::InternalServerError().json(ErrorResponse {
             message: "failed to profile the pipeline using samply".to_string(),
-            error_code: "500".into(),
+            error_code: "SamplyProfilingFailure".into(),
             details: serde_json::Value::String(error.to_string()),
         }),
         SamplyProfile::None => HttpResponse::BadRequest().json(json!({
             "message": "no samply profile found; trigger a samply profile by making a POST request to `/samply_profile`",
-            "error_code": "400",
+            "error_code": "NoSamplyProfile",
             "details": null
         })),
     })

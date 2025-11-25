@@ -100,7 +100,7 @@ use std::borrow::Cow;
 use std::collections::btree_map::Entry;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write};
 use std::mem::replace;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
@@ -117,6 +117,9 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
+use tokio::fs::File;
+use tokio::io::AsyncReadExt;
+use tokio::io::BufReader;
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::TryRecvError;
 use tokio::sync::Mutex as TokioMutex;
@@ -815,134 +818,148 @@ impl Controller {
             )
         }
 
-        async fn inner(duration: u64) -> Result<Vec<u8>, anyhow::Error> {
-            use std::io::Write;
-            use tokio::fs::File;
-            use tokio::io::AsyncReadExt;
-            use tokio::io::BufReader;
-
-            let version = tokio::process::Command::new("samply")
+        let version = tokio::process::Command::new("samply")
                 .arg("--version")
                 .output()
                 .await
                 .context("failed to get samply version; is samply installed and in `$PATH`? try: `cargo install --locked samply`")?;
-            let stdout =
-                String::from_utf8(version.stdout).context("failed to parse samply version")?;
-            let version = stdout.split_whitespace().nth(1).unwrap_or("<unknown>");
-            tracing::debug!("profiling using samply version: {version}");
+        let stdout = String::from_utf8(version.stdout).context("failed to parse samply version")?;
+        let version = stdout.split_whitespace().nth(1).unwrap_or("<unknown>");
+        debug!("profiling using samply version: {version}");
 
-            tracing::info!(
-                "collecting samply profile for the next {} seconds",
-                duration
-            );
+        info!(
+            "collecting samply profile for the next {} seconds",
+            duration
+        );
 
-            let temp = tempfile::NamedTempFile::new()
-                .context("failed to create tempfile to store samply profiles")?;
-            let profile_file = temp
-                .path()
-                .to_str()
-                .context("failed to convert path to samply profile to str")?;
+        let temp = tempfile::NamedTempFile::new()
+            .context("failed to create tempfile to store samply profiles")?;
+        let profile_file = temp
+            .path()
+            .to_str()
+            .context("failed to convert path to samply profile to str")?;
 
-            let mut cmd = tokio::process::Command::new("samply");
-            let mut child = cmd
-                .args([
-                    "record",
-                    "-p",
-                    &std::process::id().to_string(),
-                    "-o",
-                    profile_file,
-                    "--save-only",
-                    "--unstable-presymbolicate",
-                ])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .spawn()
-                .context("failed to spawn samply process")?;
+        let mut cmd = tokio::process::Command::new("samply");
+        let mut child = cmd
+            .args([
+                "record",
+                "-p",
+                &std::process::id().to_string(),
+                "-o",
+                profile_file,
+                "--save-only",
+                "--unstable-presymbolicate",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .context("failed to spawn samply process")?;
 
-            let child_pid = child.id().context("failed to get samply process id")?;
+        let child_pid = child.id().context("failed to get samply process id")?;
 
-            // Workaround as samply's `--duration` flag doesn't seem to work.
-            // See: https://github.com/mstange/samply/issues/716
-            //
-            // As the duration flag doesn't work, we have to send a SIGINT to
-            // tell samply to stop recording.
-            //
-            // If samply returns before the specified duration, it is likely due
-            // to an error, and in such cases, we want to report it immediately.
-            tokio::select! {
-                _ = child.wait() => {}
-                _ = tokio::time::sleep(Duration::from_secs(duration)) => {
-                    // Send SIGINT to the samply process to stop recording.
-                    nix::sys::signal::kill(
-                        nix::unistd::Pid::from_raw(child_pid as i32),
-                        nix::sys::signal::Signal::SIGINT,
-                    )
-                    .context("failed to send SIGINT to samply process")?;
-                }
+        // Workaround as samply's `--duration` flag doesn't seem to work.
+        // See: https://github.com/mstange/samply/issues/716
+        //
+        // As the duration flag doesn't work, we have to send a SIGINT to
+        // tell samply to stop recording.
+        //
+        // If samply returns before the specified duration, it is likely due
+        // to an error, and in such cases, we want to report it immediately.
+        tokio::select! {
+            _ = child.wait() => {}
+            _ = tokio::time::sleep(Duration::from_secs(duration)) => {
+                // Send SIGINT to the samply process to stop recording.
+                nix::sys::signal::kill(
+                    nix::unistd::Pid::from_raw(child_pid as i32),
+                    nix::sys::signal::Signal::SIGINT,
+                )
+                .context("failed to send SIGINT to samply process")?;
             }
-
-            let output = child
-                .wait_with_output()
-                .await
-                .context("failed when waiting for samply process")?;
-
-            if !output.status.success() {
-                anyhow::bail!(
-                    "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
-                    output.status,
-                    String::from_utf8_lossy(&output.stdout).trim().replace("\n", "\\n"),
-                    String::from_utf8_lossy(&output.stderr).trim().replace("\n", "\\n"),
-                );
-            }
-
-            let mut profile_buf = Vec::new();
-
-            BufReader::new(File::open(profile_file).await.context(format!(
-                "failed to open samply profile file `{profile_file}`"
-            ))?)
-            .read_to_end(&mut profile_buf)
-            .await
-            .context(format!(
-                "failed to read samply profile file `{profile_file}`"
-            ))?;
-
-            let mut zip_buf = Vec::with_capacity(profile_buf.len() * 2);
-            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut zip_buf));
-            let options = zip::write::FileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated);
-            zip.start_file("profile.json", options)
-                .context("failed to start writing zip file for samply profile")?;
-            zip.write_all(&profile_buf)
-                .context("failed to write samply profile data zip")?;
-
-            zip.start_file("profile.syms.json", options)
-                .context("failed to start writing zip file for samply symbols")?;
-
-            let mut syms_buf = Vec::new();
-            let symbols_file = format!("{}.syms.json", profile_file);
-
-            let mut syms_reader = BufReader::new(File::open(symbols_file).await.context(
-                format!("failed to open samply symbols file `{profile_file}`"),
-            )?);
-            syms_reader
-                .read_to_end(&mut syms_buf)
-                .await
-                .context(format!(
-                    "failed to read samply symbols file `{profile_file}`"
-                ))?;
-            zip.write_all(&syms_buf)
-                .context("failed to write samply symbols data zip")?;
-
-            tracing::debug!("collected symbols for samply: {} bytes", syms_buf.len());
-
-            drop(zip);
-
-            Ok(zip_buf)
         }
 
-        let res = inner(duration).await;
+        let output = child
+            .wait_with_output()
+            .await
+            .context("failed when waiting for samply process")?;
 
-        res
+        if !output.status.success() {
+            anyhow::bail!(
+                "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
+                output.status,
+                String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .replace("\n", "\\n"),
+                String::from_utf8_lossy(&output.stderr)
+                    .trim()
+                    .replace("\n", "\\n"),
+            );
+        }
+
+        let mut file = BufReader::new(File::open(profile_file).await.context(format!(
+            "failed to open samply profile file `{profile_file}`"
+        ))?);
+
+        let mut buf = vec![0u8; 1024 * 1024]; // 1 MegaByte
+
+        let mut bytes = 0;
+
+        let mut zip_buf = Vec::with_capacity(buf.len() * 10); // 10 MegaBytes
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut zip_buf));
+        let options =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        zip.start_file("profile.json", options)
+            .context("failed to start writing zip file for samply profile")?;
+
+        loop {
+            let n = file
+                .read(&mut buf)
+                .await
+                .with_context(|| format!("failed to read samply profile file `{profile_file}`"))?;
+
+            if n == 0 {
+                break;
+            }
+
+            bytes += n;
+            zip.write_all(&buf[..n])
+                .context("failed to write samply profile data zip")?;
+        }
+
+        if bytes == 0 {
+            error!("no data read from samply profile file `{profile_file}`: 0 bytes");
+        }
+
+        zip.start_file("profile.syms.json", options)
+            .context("failed to start writing zip file for samply symbols")?;
+
+        let mut sym_bytes = 0;
+
+        let symbols_file = format!("{}.syms.json", profile_file);
+
+        let mut syms_reader = BufReader::new(File::open(&symbols_file).await.context(format!(
+            "failed to open samply symbols file `{symbols_file}`"
+        ))?);
+
+        loop {
+            let n = syms_reader
+                .read(&mut buf)
+                .await
+                .with_context(|| format!("failed to read samply symbols file `{symbols_file}`"))?;
+
+            if n == 0 {
+                break;
+            }
+            sym_bytes += n;
+            zip.write_all(&buf[..n])
+                .context("failed to write samply symbols data zip")?;
+        }
+
+        debug!("collected symbols for samply: {sym_bytes} bytes");
+
+        zip.finish().context("failed to flush zip file")?;
+        drop(zip);
+
+        Ok(zip_buf)
     }
 
     /// Triggers a sync checkpoint operation. `cb` will be called when it
