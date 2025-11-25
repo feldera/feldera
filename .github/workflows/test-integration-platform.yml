@@ -233,9 +233,8 @@ jobs:
       - name: Download fda binary
         uses: actions/download-artifact@v4
         with:
-          name: feldera-binaries-x86_64-unknown-linux-gnu
+          name: feldera-binaries-${{ matrix.target }}
           path: build
-          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make fda binary executable
@@ -247,5 +246,4 @@ jobs:
         working-directory: crates/fda
         env:
           FELDERA_HOST: http://localhost:8080
-          FELDERA_API_KEY: ""
           FDA_BINARY: ${{ github.workspace }}/build/fda
