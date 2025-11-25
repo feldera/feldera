@@ -5,6 +5,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -12,6 +15,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitDispatcher;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
@@ -23,6 +27,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -1719,5 +1724,56 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 SELECT COUNT(*)
                 FROM V0
                 GROUP BY p;""");
+    }
+
+    @Test
+    public void xTest() {
+        String sql = """
+                create table U (
+                  bsin uuid not null,
+                  uid varchar,
+                  em varchar,
+                  site_id varchar,
+                  repl varchar,
+                  email varchar,
+                  ts TIMESTAMP,
+                  sts TIMESTAMP
+                );
+                
+                create view seg2c_2
+                as select
+                    bsin
+                from
+                    U
+                where
+                     site_id = 'x'
+                    AND (
+                       (ts >= NOW() AND
+                        ts <= NOW() + INTERVAL 1 months)
+                        OR
+                        sts >= NOW() - INTERVAL 30 DAYS)
+                    ;""";
+        var ccs = this.getCCS(sql);
+        var inner = new InnerVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPType type) {
+                Assert.assertTrue(type.getToplevelFieldCount() < 8);
+            }
+        };
+        var outer = new CircuitDispatcher(ccs.compiler, inner, false) {
+            @Override
+            public void postorder(DBSPSourceMultisetOperator operator) {
+                // skip
+            }
+
+            @Override
+            public void postorder(DBSPUnaryOperator operator) {
+                // Do not analyze operators whose input is not the source
+                if (operator.input().node().is(DBSPSourceMultisetOperator.class))
+                    return;
+                super.postorder(operator);
+            }
+        };
+        ccs.visit(outer);
     }
 }

@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -80,6 +81,12 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPFilterOperator operator) {
+        if (!this.process(operator))
+            super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPDeindexOperator operator) {
         if (!this.process(operator))
             super.postorder(operator);
     }
