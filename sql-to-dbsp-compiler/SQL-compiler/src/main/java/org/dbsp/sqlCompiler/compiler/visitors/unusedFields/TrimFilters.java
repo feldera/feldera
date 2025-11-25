@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -12,7 +13,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneWithGraphsVisito
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.TriFunction;
 import org.dbsp.util.Utilities;
 
@@ -23,12 +23,13 @@ import org.dbsp.util.Utilities;
  * The algorithm looks for projections following filters with unused fields,
  * and replaces both of them in one shot. */
 public class TrimFilters extends CircuitCloneWithGraphsVisitor {
-    final AnalyzedSet<DBSPExpression> functionsAnalyzed;
+    // Map operators following the filters which were analyzed
+    final AnalyzedSet<DBSPOperator> mapAfterFilter;
 
     public TrimFilters(DBSPCompiler compiler, CircuitGraphs graphs,
-                       AnalyzedSet<DBSPExpression> functionsAnalyzed) {
+                       AnalyzedSet<DBSPOperator> mapAfterFilter) {
         super(compiler, graphs, false);
-        this.functionsAnalyzed = functionsAnalyzed;
+        this.mapAfterFilter = mapAfterFilter;
     }
 
     public boolean process(
@@ -38,7 +39,7 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
         OutputPort source = this.mapped(operator.input());
         int inputFanout = this.getGraph().getFanout(operator.input().node());
         if (!operator.getFunction().is(DBSPClosureExpression.class) ||
-                this.functionsAnalyzed.done(operator.getFunction()))
+                this.mapAfterFilter.done(operator))
             return false;
 
         DBSPClosureExpression mapFunction = operator.getClosureFunction();

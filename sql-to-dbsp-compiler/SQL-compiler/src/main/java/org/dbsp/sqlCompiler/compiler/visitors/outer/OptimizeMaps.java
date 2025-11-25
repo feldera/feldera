@@ -484,7 +484,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
             if (source.node().is(DBSPSumOperator.class) || source.node().is(DBSPSubtractOperator.class)) {
-                Projection projection = new Projection(this.compiler());
+                Projection projection = new Projection(this.compiler(), true, true);
                 projection.apply(operator.getFunction());
                 if (!projection.isProjection) {
                     // swapping arbitrary maps with sum is not sound
