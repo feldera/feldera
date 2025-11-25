@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
@@ -55,7 +56,9 @@ public class FindCommonProjections extends CircuitWithGraphsVisitor {
         List<FieldUseMap> usage = new ArrayList<>();
         List<FindUnusedFields> finders = new ArrayList<>();
         for (Port<DBSPOperator> p: successors) {
-            failed = !p.node().is(DBSPMapOperator.class) && !p.node().is(DBSPMapIndexOperator.class);
+            failed = !p.node().is(DBSPMapOperator.class) &&
+                    !p.node().is(DBSPMapIndexOperator.class) &&
+                    !p.node().is(DBSPDeindexOperator.class);
             if (!failed) {
                 DBSPUnaryOperator unary = p.node().to(DBSPUnaryOperator.class);
                 failed = !unary.getFunction().is(DBSPClosureExpression.class);
