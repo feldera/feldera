@@ -3250,7 +3250,7 @@ struct StepTrigger {
 }
 
 /// Action for the controller to take.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum Action {
     /// Park until time `.0`, or forever if `None`.
     Park(Option<Instant>),
@@ -3311,74 +3311,92 @@ impl StepTrigger {
         checkpoint_requested: bool,
         sync_checkpoint_requested: bool,
     ) -> Action {
-        // If any input endpoints are blocking suspend, then those are the only
-        // ones that we count; otherwise, count all of them.
-        //
-        // An input endpoint is blocking suspend if it has a barrier and a
-        // checkpoint has been requested.
-        let mut buffered_records = EnumMap::<bool, u64>::default();
-        for status in self.controller.status.input_status().values() {
-            buffered_records[checkpoint_requested && status.is_barrier()] +=
-                status.metrics.buffered_records.load(Ordering::Relaxed);
-        }
-        let buffered_records = if buffered_records[true] > 0 {
-            buffered_records[true]
+        // Time of the next checkpoint.
+        let next_checkpoint = if let Some(checkpoint_interval) = self.checkpoint_interval {
+            Some(last_checkpoint.timestamp + checkpoint_interval)
         } else {
-            buffered_records[false]
+            None
         };
 
-        // Time of the next checkpoint.
-        let checkpoint = self
-            .checkpoint_interval
-            .map(|interval| last_checkpoint.timestamp + interval);
-
         // Time of the next checkpoint sync.
-        let sync_checkpoint = self
+        let next_checkpoint_sync = self
             .sync_interval
             .map(|interval| last_sync.timestamp + interval);
 
-        // Used to force a step regardless of input
-        let committing = self.controller.transaction_commit_requested();
-
-        fn step(trigger: &mut StepTrigger) -> Action {
-            trigger.buffer_timeout = None;
-            Action::Step
-        }
-
         let now = Instant::now();
 
-        // The last condition detects a transition from bootstrapping to normal
-        // operation and makes sure that the circuit performs an extra step in the normal
-        // mode in order to initialize output table snapshots of output relations that
-        // did not participate in bootstrapping.
-        let result = if replaying || committing || bootstrapping || self.bootstrapping {
-            step(self)
-        } else if checkpoint.is_some_and(|t| now >= t) && !checkpoint_requested {
-            Action::Checkpoint
-        } else if sync_checkpoint.is_some_and(|t| now >= t)
+        fn timer_expired(timer: Option<Instant>, now: Instant) -> bool {
+            timer.is_some_and(|timer| now >= timer)
+        }
+
+        // Decide what to do, or choose `None` to trigger a step based on
+        // whether there is buffered data.
+        let result = if replaying
+            || self.controller.transaction_commit_requested()
+            || bootstrapping
+            || self.bootstrapping
+            || self.controller.status.unset_step_requested()
+        {
+            // The `self.bootstrapping` condition above detects a transition
+            // from bootstrapping to normal operation and makes sure that the
+            // circuit performs an extra step in the normal mode in order to
+            // initialize output table snapshots of output relations that did
+            // not participate in bootstrapping.
+            Some(Action::Step)
+        } else if timer_expired(next_checkpoint, now) && !checkpoint_requested {
+            Some(Action::Checkpoint)
+        } else if timer_expired(next_checkpoint_sync, now)
             && !sync_checkpoint_requested
             && let Some(chk) = last_checkpoint.id
             && !chk.is_nil()
             && Some(chk) != last_sync.id
         {
-            Action::SyncCheckpoint(chk)
-        } else if self.controller.status.unset_step_requested()
-            || buffered_records > self.min_batch_size_records
-            || self.buffer_timeout.is_some_and(|t| now >= t)
-        {
-            step(self)
+            Some(Action::SyncCheckpoint(chk))
         } else {
-            if buffered_records > 0 && self.buffer_timeout.is_none() {
-                self.buffer_timeout = Some(now + self.max_buffering_delay);
+            None
+        };
+
+        // Implement triggering a step based on buffered data.
+        let result = if let Some(result) = result {
+            result
+        } else {
+            // Count buffered records.
+            //
+            // If any input endpoints are blocking suspend, then those are the
+            // only ones that we count; otherwise, count all of them.  An input
+            // endpoint is blocking suspend if it has a barrier and a checkpoint
+            // has been requested.
+            let mut buffered_records = EnumMap::<bool, u64>::default();
+            for status in self.controller.status.input_status().values() {
+                buffered_records[checkpoint_requested && status.is_barrier()] +=
+                    status.metrics.buffered_records.load(Ordering::Relaxed);
             }
-            let wakeup = [self.buffer_timeout, checkpoint]
-                .into_iter()
-                .flatten()
-                .min();
-            Action::Park(wakeup)
+            let buffered_records = if buffered_records[true] > 0 {
+                buffered_records[true]
+            } else {
+                buffered_records[false]
+            };
+
+            if buffered_records > self.min_batch_size_records
+                || timer_expired(self.buffer_timeout, now)
+            {
+                Action::Step
+            } else {
+                if buffered_records > 0 && self.buffer_timeout.is_none() {
+                    self.buffer_timeout = Some(now + self.max_buffering_delay);
+                }
+                let wakeup = [self.buffer_timeout, next_checkpoint]
+                    .into_iter()
+                    .flatten()
+                    .min();
+                Action::Park(wakeup)
+            }
         };
 
         self.bootstrapping = bootstrapping;
+        if result == Action::Step {
+            self.buffer_timeout = None;
+        }
 
         result
     }
