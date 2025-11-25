@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "feldera-js",
@@ -112,6 +113,7 @@
         "prettier": "3.5.0",
         "prettier-plugin-svelte": "3.3.3",
         "prettier-plugin-tailwindcss": "0.6.11",
+        "profiler-lib": "workspace:*",
         "runed": "0.23.3",
         "sass-embedded": "1.83.4",
         "semver": "7.6.3",
