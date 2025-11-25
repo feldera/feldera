@@ -6,11 +6,15 @@ import java.util.HashSet;
 import java.util.Set;
 
 /** A class that tracks objects that have been already analyzed */
-public class AnalyzedSet<T extends IHasId> {
+public class AnalyzedSet<T extends IHasId> implements IHasId {
+    static long crtId = 0;
+    long id;
+
     final Set<Long> operationsAnalyzed;
 
     public AnalyzedSet() {
         this.operationsAnalyzed = new HashSet<>();
+        this.id = crtId++;
     }
 
     public boolean contains(T object) {
@@ -23,5 +27,10 @@ public class AnalyzedSet<T extends IHasId> {
         boolean done = this.operationsAnalyzed.contains(id);
         this.operationsAnalyzed.add(id);
         return done;
+    }
+
+    @Override
+    public long getId() {
+        return this.id;
     }
 }

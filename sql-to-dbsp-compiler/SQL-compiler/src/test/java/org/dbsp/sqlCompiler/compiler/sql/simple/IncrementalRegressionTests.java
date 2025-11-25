@@ -5,8 +5,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -1727,7 +1728,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
-    public void xTest() {
+    public void deindexOptimize() {
         String sql = """
                 create table U (
                   bsin uuid not null,
@@ -1768,12 +1769,108 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
             @Override
             public void postorder(DBSPUnaryOperator operator) {
-                // Do not analyze operators whose input is not the source
+                // Do not analyze operators whose input is the source
                 if (operator.input().node().is(DBSPSourceMultisetOperator.class))
                     return;
                 super.postorder(operator);
             }
         };
         ccs.visit(outer);
+    }
+
+    @Test
+    public void unusedRemoval() {
+        String sql = """
+                CREATE TYPE Properties AS (
+                   flagA BOOLEAN NULL,
+                   flagB BOOLEAN NULL,
+                   flagC BOOLEAN NULL,
+                   ts1 VARCHAR NULL,
+                   ts2 VARCHAR NULL,
+                   ts3 VARCHAR NULL,
+                   ts4 VARCHAR NULL,
+                   ts5 VARCHAR NULL,
+                   ts6 VARCHAR NULL,
+                   value INT NULL
+                );
+                
+                CREATE TABLE input_table (
+                  key UUID NOT NULL PRIMARY KEY,
+                  colA VARCHAR,
+                  colB VARCHAR,
+                  colC MAP<VARCHAR, VARCHAR>,
+                  colD Properties,
+                  colE VARCHAR,
+                  colF VARCHAR,
+                  colG VARCHAR
+                );
+                
+                -- Local view with anonymized names
+                CREATE LOCAL VIEW V AS
+                SELECT
+                  key,
+                  colA,
+                  colB,
+                  colC,
+                  input_table.colD.flagA,
+                  input_table.colD.flagB,
+                  input_table.colD.flagC,
+                  CONVERT_TS(input_table.colD.ts1) ts1,
+                  CONVERT_TS(input_table.colD.ts2) ts2,
+                  CONVERT_TS(input_table.colD.ts3) ts3,
+                  input_table.colD.ts4,
+                  CONVERT_TS(input_table.colD.ts5) ts5,
+                  CONVERT_TS(input_table.colD.ts6) ts6,
+                  input_table.colD.value,
+                  colE,
+                  colF,
+                  colG
+                FROM input_table;
+                
+                CREATE FUNCTION CONVERT_TS(d VARCHAR)
+                RETURNS TIMESTAMP
+                AS PARSE_TIMESTAMP('%m/%e/%Y %H:%M:%S', d);
+                
+                CREATE VIEW V1 AS
+                SELECT key
+                FROM V
+                WHERE
+                    colE = 'x'
+                    AND V.flagA = TRUE
+                    AND V.flagB = TRUE
+                    AND V.flagC = TRUE
+                    AND (
+                        V.ts1 >= NOW() - INTERVAL 180 DAYS
+                        OR V.ts2 >= NOW() - INTERVAL 180 DAYS
+                        OR V.ts3 >= NOW() - INTERVAL 180 DAYS
+                    )
+                    AND V.ts4 IS NULL
+                    AND (
+                        V.ts1 >= NOW() - INTERVAL 180 DAYS
+                        OR V.ts3 IS NOT NULL
+                    );
+                """;
+        var cc = this.getCC(sql);
+        var inner = new InnerVisitor(cc.compiler) {
+            @Override
+            public void postorder(DBSPType type) {
+                Assert.assertTrue(type.getToplevelFieldCount() < 10);
+            }
+        };
+        var outer = new CircuitDispatcher(cc.compiler, inner, false) {
+            @Override
+            public void postorder(DBSPSourceTableOperator operator) {
+                // skip
+            }
+
+            @Override
+            public void postorder(DBSPUnaryOperator operator) {
+                // Do not analyze operators whose input is the source
+                if (operator.input().node().is(DBSPSourceMapOperator.class))
+                    return;
+                super.postorder(operator);
+            }
+        };
+        cc.visit(outer);
     }
 }
