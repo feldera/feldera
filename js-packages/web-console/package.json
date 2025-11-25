@@ -5,6 +5,7 @@
   "scripts": {
     "clean-install": "bun ci",
     "dev": "vite dev --host",
+    "prebuild": "cd ../profiler-lib && bun run build",
     "build": "svelte-kit sync && svelte-check --threshold error && vite build",
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check",
@@ -87,6 +88,7 @@
     "prettier": "3.5.0",
     "prettier-plugin-svelte": "3.3.3",
     "prettier-plugin-tailwindcss": "0.6.11",
+    "profiler-lib": "workspace:*",
     "runed": "0.23.3",
     "sass-embedded": "1.83.4",
     "semver": "7.6.3",
@@ -118,10 +120,10 @@
     "vite-plugin-virtual": "0.4.0",
     "worker-timers": "8.0.14"
   },
-  "type": "module",
   "trustedDependencies": [
     "@axa-fr/oidc-client",
     "sk-oidc-oauth",
     "svelte-preprocess"
-  ]
+  ],
+  "type": "module"
 }

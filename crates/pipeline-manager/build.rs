@@ -10,7 +10,7 @@ const EXCLUDE_LIST: [&str; 4] = [
     "../../js-packages/web-console/node_modules",
     "../../js-packages/web-console/build",
     "../../js-packages/web-console/.svelte-kit",
-    "../../js-packages/web-console/pipeline-manager-",
+    "../../js-packages/profiler-lib/node_modules",
 ];
 
 /// The build script has two modes:
@@ -45,6 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || path.to_str().unwrap() == "../../js-packages/web-console/"
         })
         .path("../../js-packages/web-console/")
+        .path("../../js-packages/profiler-lib/")
         .path("build.rs")
         .generate();
 
@@ -54,11 +55,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .collect::<PathBuf>();
 
+        // Nest the build directory inside web-console/build/
+        let nested_build_dir = Path::new("build").join(&rel_build_dir);
+
         // This should be safe because the build-script is single-threaded
         unsafe {
-            env::set_var("BUILD_DIR", rel_build_dir.clone());
+            env::set_var("BUILD_DIR", nested_build_dir.clone());
         }
-        let asset_path: PathBuf = Path::new("../../js-packages/web-console/").join(rel_build_dir);
+        let asset_path: PathBuf = Path::new("../../js-packages/web-console/").join(nested_build_dir);
         let mut resource_dir = NpmBuild::new("../../js-packages/web-console")
             .executable("bun")
             .run("clean-install")
