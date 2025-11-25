@@ -62,7 +62,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
             env::set_var("BUILD_DIR", nested_build_dir.clone());
         }
-        let asset_path: PathBuf = Path::new("../../js-packages/web-console/").join(nested_build_dir);
+        let asset_path: PathBuf =
+            Path::new("../../js-packages/web-console/").join(nested_build_dir);
         let mut resource_dir = NpmBuild::new("../../js-packages/web-console")
             .executable("bun")
             .run("clean-install")
