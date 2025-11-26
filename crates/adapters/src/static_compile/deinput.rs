@@ -63,8 +63,11 @@ pub fn json_deserializer<'a>(
 }
 
 #[inline(never)]
-pub fn raw_deserializer<'a>(data: &'a [u8]) -> Box<dyn ErasedDeserializer<'a> + 'a> {
-    let deserializer = RawDeserializer::new(data);
+pub fn raw_deserializer<'a>(
+    column_name: &'a str,
+    data: &'a [u8],
+) -> Box<dyn ErasedDeserializer<'a> + 'a> {
+    let deserializer = RawDeserializer::new(column_name, data);
     Box::new(<dyn ErasedDeserializer<'a>>::erase(deserializer))
 }
 
@@ -144,18 +147,22 @@ impl DeserializerFromBytes<SqlSerdeConfig> for JsonDeserializerFromBytes {
 }
 
 pub struct RawDeserializerFromBytes {
+    column_name: String,
     config: SqlSerdeConfig,
 }
 
-impl DeserializerFromBytes<SqlSerdeConfig> for RawDeserializerFromBytes {
-    fn create(config: SqlSerdeConfig) -> Self {
-        RawDeserializerFromBytes { config }
+impl DeserializerFromBytes<(SqlSerdeConfig, String)> for RawDeserializerFromBytes {
+    fn create((config, column_name): (SqlSerdeConfig, String)) -> Self {
+        RawDeserializerFromBytes {
+            column_name,
+            config,
+        }
     }
     fn deserialize<T>(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<T>
     where
         T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
     {
-        let deserializer = raw_deserializer(data);
+        let deserializer = raw_deserializer(&self.column_name, data);
 
         T::deserialize_with_context_aux(deserializer, &self.config, metadata)
             .map_err(|e| anyhow!(e.to_string()))
@@ -270,7 +277,7 @@ where
                     config,
                 )))
             }
-            RecordFormat::Raw => {
+            RecordFormat::Raw(column_name) => {
                 let config = raw_serde_config();
                 Ok(Box::new(DeScalarStreamImpl::<
                     RawDeserializerFromBytes,
@@ -281,7 +288,7 @@ where
                 >::new(
                     self.handle.clone(),
                     self.map_func.clone(),
-                    config,
+                    (config, column_name.clone()),
                 )))
             }
             RecordFormat::Parquet(_) => {
@@ -413,12 +420,12 @@ where
             RecordFormat::Avro => {
                 todo!()
             }
-            RecordFormat::Raw => {
+            RecordFormat::Raw(column_name) => {
                 let config = raw_serde_config();
                 Ok(Box::new(
                     DeZSetStream::<RawDeserializerFromBytes, K, D, _>::new(
                         self.handle.clone(),
-                        config,
+                        (config, column_name.clone()),
                     ),
                 ))
             }
@@ -902,12 +909,14 @@ where
             RecordFormat::Avro => {
                 todo!()
             }
-            RecordFormat::Raw => Ok(Box::new(
-                DeSetStream::<RawDeserializerFromBytes, K, D, _>::new(
-                    self.handle.clone(),
-                    raw_serde_config(),
-                ),
-            )),
+            RecordFormat::Raw(column_name) => {
+                Ok(Box::new(
+                    DeSetStream::<RawDeserializerFromBytes, K, D, _>::new(
+                        self.handle.clone(),
+                        (raw_serde_config(), column_name.clone()),
+                    ),
+                ))
+            }
         }
     }
 
@@ -1398,7 +1407,7 @@ where
             RecordFormat::Avro => {
                 todo!()
             }
-            RecordFormat::Raw => Ok(Box::new(DeMapStream::<
+            RecordFormat::Raw(column_name) => Ok(Box::new(DeMapStream::<
                 RawDeserializerFromBytes,
                 K,
                 KD,
@@ -1413,7 +1422,7 @@ where
                 self.handle.clone(),
                 self.value_key_func.clone(),
                 self.update_key_func.clone(),
-                raw_serde_config(),
+                (raw_serde_config(), column_name.clone()),
             ))),
         }
     }
