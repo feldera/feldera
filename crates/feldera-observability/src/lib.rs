@@ -67,6 +67,8 @@ pub fn actix_middleware() -> sentry::integrations::actix::Sentry {
         .finish()
 }
 
+pub mod json_logging;
+
 fn trace_header_value() -> Option<String> {
     if !sentry_enabled() {
         return None;

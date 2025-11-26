@@ -30,12 +30,13 @@ use actix_web::{
 use async_stream;
 use chrono::Utc;
 use clap::Parser;
-use colored::{ColoredString, Colorize};
+use colored::Colorize;
 use dbsp::{circuit::CircuitConfig, DBSPHandle};
 use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
 use feldera_adapterlib::PipelineState;
 use feldera_observability as observability;
+use feldera_observability::json_logging::init_pipeline_logging;
 use feldera_storage::{StorageBackend, StoragePath};
 use feldera_types::adapter_stats::{
     EndpointErrorStats, InputEndpointErrorMetrics, OutputEndpointErrorMetrics,
@@ -87,12 +88,7 @@ use tokio::sync::Notify;
 use tokio::task::spawn_blocking;
 use tokio::time::sleep;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
-use tracing::{debug, error, info, info_span, warn, Instrument, Level, Subscriber};
-use tracing_subscriber::fmt::format::Format;
-use tracing_subscriber::fmt::{FormatEvent, FormatFields};
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::registry::LookupSpan;
-use tracing_subscriber::util::SubscriberInitExt;
+use tracing::{debug, error, info, info_span, warn, Instrument, Level};
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
@@ -533,15 +529,10 @@ pub fn run_server(
             .unwrap_or_default()
     )
     .cyan();
-    tracing_subscriber::registry()
-        .with(sentry::integrations::tracing::layer())
-        .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
-        .with(get_env_filter(&config))
-        .try_init()
-        .unwrap_or_else(|e| {
-            // This happens in unit tests when another test has initialized logging.
-            eprintln!("Failed to initialize logging: {e}.")
-        });
+    init_pipeline_logging(pipeline_name, get_env_filter(&config)).unwrap_or_else(|e| {
+        // This happens in unit tests when another test has initialized logging.
+        eprintln!("Failed to initialize logging: {e}.")
+    });
     if config.global.tracing {
         warn!("Pipeline tracing was enabled but the 'tracing' option was deprecated, use `FELDERA_SENTRY_ENABLED` for tracing.");
     }
@@ -951,36 +942,6 @@ fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>, tag: Op
             state.set_phase(PipelinePhase::Failed(error));
             controller.initiate_stop();
         }
-    }
-}
-
-struct PipelineFormat {
-    pipeline_name: ColoredString,
-    inner: Format,
-}
-
-impl PipelineFormat {
-    pub fn new(pipeline_name: ColoredString) -> Self {
-        Self {
-            pipeline_name,
-            inner: Format::default(),
-        }
-    }
-}
-
-impl<S, N> FormatEvent<S, N> for PipelineFormat
-where
-    S: Subscriber + for<'a> LookupSpan<'a>,
-    N: for<'a> FormatFields<'a> + 'static,
-{
-    fn format_event(
-        &self,
-        ctx: &tracing_subscriber::fmt::FmtContext<'_, S, N>,
-        mut writer: tracing_subscriber::fmt::format::Writer<'_>,
-        event: &tracing::Event<'_>,
-    ) -> std::fmt::Result {
-        write!(writer, "{} ", self.pipeline_name)?;
-        self.inner.format_event(ctx, writer, event)
     }
 }
 

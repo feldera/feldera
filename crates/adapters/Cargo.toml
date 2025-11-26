@@ -157,7 +157,7 @@ governor = { workspace = true }
 nonzero_ext = { workspace = true }
 xxhash-rust = { workspace = true, features = ["xxh3"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 comfy-table = { workspace = true }
 tokio-postgres = { workspace = true, features = [
     "with-serde_json-1",
