@@ -36,6 +36,9 @@ use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
 use feldera_adapterlib::PipelineState;
 use feldera_observability as observability;
+use feldera_observability::json_logging::{
+    sanitize_pipeline_name, use_json_log_format, JsonPipelineFormat,
+};
 use feldera_storage::{StorageBackend, StoragePath};
 use feldera_types::adapter_stats::{
     EndpointErrorStats, InputEndpointErrorMetrics, OutputEndpointErrorMetrics,
@@ -533,15 +536,28 @@ pub fn run_server(
             .unwrap_or_default()
     )
     .cyan();
-    tracing_subscriber::registry()
-        .with(sentry::integrations::tracing::layer())
-        .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
-        .with(get_env_filter(&config))
-        .try_init()
-        .unwrap_or_else(|e| {
-            // This happens in unit tests when another test has initialized logging.
-            eprintln!("Failed to initialize logging: {e}.")
-        });
+    if use_json_log_format() {
+        let pipeline_name_json = sanitize_pipeline_name(pipeline_name.clone().clear().to_string());
+        tracing_subscriber::registry()
+            .with(sentry::integrations::tracing::layer())
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .event_format(JsonPipelineFormat::new(pipeline_name_json))
+                    .with_ansi(false),
+            )
+            .with(get_env_filter(&config))
+            .try_init()
+    } else {
+        tracing_subscriber::registry()
+            .with(sentry::integrations::tracing::layer())
+            .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
+            .with(get_env_filter(&config))
+            .try_init()
+    }
+    .unwrap_or_else(|e| {
+        // This happens in unit tests when another test has initialized logging.
+        eprintln!("Failed to initialize logging: {e}.")
+    });
     if config.global.tracing {
         warn!("Pipeline tracing was enabled but the 'tracing' option was deprecated, use `FELDERA_SENTRY_ENABLED` for tracing.");
     }
