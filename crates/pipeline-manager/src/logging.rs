@@ -1,4 +1,4 @@
-use colored::{Colorize, ColoredString};
+use colored::{ColoredString, Colorize};
 use feldera_observability::json_logging::{
     sanitize_pipeline_name, use_json_log_format, JsonPipelineFormat,
 };

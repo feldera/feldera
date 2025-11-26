@@ -41,10 +41,7 @@ where
             "target".to_string(),
             Value::String(metadata.target().to_string()),
         );
-        obj.insert(
-            "pipeline".to_string(),
-            Value::String(self.pipeline.clone()),
-        );
+        obj.insert("pipeline".to_string(), Value::String(self.pipeline.clone()));
         obj.insert("fields".to_string(), Value::Object(visitor.fields));
 
         if let Some(span) = ctx.lookup_current() {
@@ -52,7 +49,7 @@ where
         }
 
         let json = Value::Object(obj);
-        write!(writer, "{}\n", json)
+        writeln!(writer, "{}", json)
     }
 }
 
@@ -113,9 +110,7 @@ impl tracing::field::Visit for SerdeVisitor {
 }
 
 fn now_timestamp() -> String {
-    Utc::now()
-        .format("%Y-%m-%dT%H:%M:%S%.6fZ")
-        .to_string()
+    Utc::now().format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
 }
 
 /// True when structured JSON logging is requested via `RUST_LOG_JSON`.

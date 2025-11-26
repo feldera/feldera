@@ -550,16 +550,14 @@ pub fn run_server(
     } else {
         tracing_subscriber::registry()
             .with(sentry::integrations::tracing::layer())
-            .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(
-                pipeline_name,
-            )))
+            .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
             .with(get_env_filter(&config))
             .try_init()
     }
-        .unwrap_or_else(|e| {
-            // This happens in unit tests when another test has initialized logging.
-            eprintln!("Failed to initialize logging: {e}.")
-        });
+    .unwrap_or_else(|e| {
+        // This happens in unit tests when another test has initialized logging.
+        eprintln!("Failed to initialize logging: {e}.")
+    });
     if config.global.tracing {
         warn!("Pipeline tracing was enabled but the 'tracing' option was deprecated, use `FELDERA_SENTRY_ENABLED` for tracing.");
     }
