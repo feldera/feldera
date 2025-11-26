@@ -10,8 +10,11 @@ use std::{
 };
 
 use inkwell::{
-    context::Context, execution_engine::ExecutionEngine, module::Module, AddressSpace,
-    OptimizationLevel,
+    context::Context,
+    execution_engine::ExecutionEngine,
+    module::Module,
+    types::{BasicMetadataTypeEnum, BasicType},
+    AddressSpace, OptimizationLevel,
 };
 use thiserror::Error;
 
@@ -169,6 +172,10 @@ impl LlvmCircuitJit {
         }
     }
 
+    pub fn context(&self) -> &'static Context {
+        self.context
+    }
+
     /// Compile a function that interprets the raw pointer as an `i32` buffer and
     /// adds all `increments` to the pointed-to value in sequence.
     pub fn compile_add_pipeline(&self, increments: &[i32]) -> Result<JitFunction, JitError> {
@@ -239,10 +246,93 @@ impl LlvmCircuitJit {
             SharedJitModule::new(module, execution_engine),
         ))
     }
-}
 
-impl Default for LlvmCircuitJit {
-    fn default() -> Self {
-        Self::new("dbsp_jit")
+    /// Compile a JIT function that wraps a call to an arbitrary function pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `target_fn_ptr` is a valid function pointer
+    /// that will remain valid for the lifetime of the returned `JitFunction`.
+    /// The signature of the `target_fn_ptr` must match what the generated LLVM
+    /// IR expects. This is a sharp tool for advanced FFI scenarios.
+    pub unsafe fn compile_ffi_call(
+        &self,
+        target_fn_ptr: usize,
+        param_types: &[inkwell::types::BasicTypeEnum<'static>],
+        return_type: inkwell::types::BasicTypeEnum<'static>,
+        return_struct_type: Option<inkwell::types::StructType<'static>>,
+    ) -> Result<JitFunction, JitError> {
+        let symbol_name = format!(
+            "{}_fn_{}",
+            self.module_prefix,
+            self.counter.fetch_add(1, Ordering::Relaxed)
+        );
+        let module_name = format!("{}_module", symbol_name);
+        let module = self.context.create_module(&module_name);
+        let builder = self.context.create_builder();
+
+        let metadata_param_types: Vec<BasicMetadataTypeEnum> =
+            param_types.iter().map(|&t| t.into()).collect();
+
+        // Create the JIT function's signature.
+        let fn_ty = if let Some(struct_type) = return_struct_type {
+            struct_type.fn_type(&metadata_param_types, false)
+        } else {
+            return_type.fn_type(&metadata_param_types, false)
+        };
+        let function = module.add_function(&symbol_name, fn_ty, None);
+        let entry = self.context.append_basic_block(function, "entry");
+        builder.position_at_end(entry);
+
+        // Get the function pointer for the target C function.
+        let ptr_ty = self.context.ptr_type(AddressSpace::default());
+        let target_fn_ptr_val = self
+            .context
+            .i64_type()
+            .const_int(target_fn_ptr as u64, false);
+        let target_fn = builder
+            .build_int_to_ptr(target_fn_ptr_val, ptr_ty, "target_fn_ptr")
+            .unwrap();
+
+        // Build the call instruction.
+        let params: Vec<_> = function
+            .get_param_iter()
+            .map(|param| param.into())
+            .collect();
+        let call = builder
+            .build_indirect_call(fn_ty, target_fn, &params, "call")
+            .unwrap();
+
+        // Build the return instruction. A function returns void if `get_return_type()` is `None`.
+        if fn_ty.get_return_type().is_some() {
+            let return_value = call
+                .try_as_basic_value()
+                .expect_basic("expected call to return a basic value");
+            builder.build_return(Some(&return_value)).unwrap();
+        } else {
+            builder.build_return(None).unwrap();
+        }
+
+        module
+            .verify()
+            .map_err(|e| JitError::Verify(e.to_string()))?;
+
+        let execution_engine = module
+            .create_jit_execution_engine(self.optimization)
+            .map_err(|e| JitError::Engine(e.to_string()))?;
+
+        let address = execution_engine
+            .get_function_address(&symbol_name)
+            .map_err(|e| JitError::Lookup {
+                symbol: symbol_name.clone(),
+                error: e.to_string(),
+            })?;
+
+        let func: JitFn = std::mem::transmute(address);
+        Ok(JitFunction::new(
+            Arc::<str>::from(symbol_name),
+            func,
+            SharedJitModule::new(module, execution_engine),
+        ))
     }
 }
