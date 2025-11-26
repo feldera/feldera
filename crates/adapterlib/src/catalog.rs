@@ -42,7 +42,7 @@ pub enum RecordFormat {
     Parquet(SqlSerdeConfig),
     #[cfg(feature = "with-avro")]
     Avro,
-    Raw,
+    Raw(String),
 }
 
 /// An input handle that deserializes and buffers records.

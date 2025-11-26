@@ -7,8 +7,6 @@ use crate::InputBuffer;
 use anyhow::{anyhow, bail, Result as AnyResult};
 use csv::WriterBuilder as CsvWriterBuilder;
 use dbsp::circuit::NodeId;
-use feldera_sqllib::{SqlString, Timestamp, Variant};
-use feldera_types::deserialize_table_record;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::default_redpanda_server;
 use futures::executor::block_on;
@@ -23,7 +21,6 @@ use rdkafka::{
     ClientConfig, ClientContext, Message,
 };
 use serde_json::Value;
-use size_of::SizeOf;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 use std::{
@@ -38,62 +35,6 @@ use std::{
 use tracing::{error, info};
 
 static MAX_TOPIC_PROBE_TIMEOUT: Duration = Duration::from_millis(20_000);
-
-/// Used to test passing of record metadata from Kafka connector to deserializer.
-#[derive(
-    Debug,
-    Default,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    serde::Serialize,
-    serde::Deserialize,
-    Clone,
-    Hash,
-    SizeOf,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
-#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-pub struct TestStructMetadata {
-    pub i: i32,
-    pub kafka_headers: Variant,
-    pub kafka_topic: SqlString,
-    pub kafka_timestamp: Timestamp,
-    pub kafka_partition: i32,
-    pub kafka_offset: i64,
-}
-
-deserialize_table_record!(TestStructMetadata["TestStructMetadata", Variant, 6] {
-    (i, "i", false, i32, |_| None),
-    (kafka_headers, "kafka_headers", false, Variant, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().map(|metadata| metadata.index_string("kafka_headers"))),
-    (kafka_topic, "kafka_topic", false, SqlString, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| SqlString::try_from(metadata.index_string("kafka_topic")).ok())),
-    (kafka_timestamp, "kafka_timestamp", false, Timestamp, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| Timestamp::try_from(metadata.index_string("kafka_timestamp")).ok())),
-    (kafka_partition, "kafka_partition", false, i32, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| i32::try_from(metadata.index_string("kafka_partition")).ok())),
-    (kafka_offset, "kafka_offset", false, i64, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| i64::try_from(metadata.index_string("kafka_offset")).ok()))
-});
-
-impl TestStructMetadata {
-    pub fn new(
-        i: i32,
-        kafka_headers: Variant,
-        kafka_topic: SqlString,
-        kafka_timestamp: Timestamp,
-        kafka_partition: i32,
-        kafka_offset: i64,
-    ) -> Self {
-        Self {
-            i,
-            kafka_headers,
-            kafka_topic,
-            kafka_timestamp,
-            kafka_partition,
-            kafka_offset,
-        }
-    }
-}
 
 pub struct KafkaResources {
     admin_client: AdminClient<DefaultClientContext>,

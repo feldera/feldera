@@ -256,14 +256,31 @@ pub fn generate_test_batches_with_weights(
     })
 }
 
-#[derive(PartialEq, Debug, Eq, Hash, Clone)]
+/// Used to test passing of record metadata from Kafka connector to deserializer.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct TestStructMetadata {
-    i: i32,
-    kafka_headers: Variant,
-    kafka_topic: SqlString,
-    kafka_timestamp: Timestamp,
-    kafka_partition: i32,
-    kafka_offset: i64,
+    pub i: i32,
+    pub kafka_headers: Variant,
+    pub kafka_topic: SqlString,
+    pub kafka_timestamp: Timestamp,
+    pub kafka_partition: i32,
+    pub kafka_offset: i64,
 }
 
 deserialize_table_record!(TestStructMetadata["TestStructMetadata", Variant, 6] {

@@ -435,7 +435,7 @@ where
                 avro_ser_config(),
                 AvroSerializer::create(),
             )),
-            RecordFormat::Raw => todo!(),
+            RecordFormat::Raw(_) => todo!(),
         })
     }
 

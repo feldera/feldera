@@ -541,7 +541,7 @@ impl JsonSplitter {
 mod test {
     use crate::{
         format::{InputBuffer, Parser},
-        test::{init_test_logger, kafka::TestStructMetadata, mock_parser_pipeline, MockUpdate},
+        test::{data::TestStructMetadata, init_test_logger, mock_parser_pipeline, MockUpdate},
         transport::InputConsumer,
         FormatConfig, ParseError,
     };
