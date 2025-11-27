@@ -310,14 +310,13 @@ public class CalciteOptimizer implements IWritesLogs {
         this.addStep(new SimpleOptimizerStep("Expand windows", 0,
                 CoreRules.PROJECT_OVER_SUM_TO_SUM0_RULE,
                 // I suspect that in the absence of the above rule
-                // there is a bug in Calcite in RexOVer which causes
+                // there is a bug in Calcite in RexOver which causes
                 // the following rule to crash the ComplexQueriesTest.calcite6020issueTest().
                 // See discussion in https://issues.apache.org/jira/browse/CALCITE-6020
                 CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW
         ));
         this.addStep(new SimpleOptimizerStep("Isolate DISTINCT aggregates", 0,
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN,
-                // Rule is unsound https://issues.apache.org/jira/browse/CALCITE-6403
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES
         ));
         var hyper = new BaseOptimizerStep("Hypergraph", 0) {

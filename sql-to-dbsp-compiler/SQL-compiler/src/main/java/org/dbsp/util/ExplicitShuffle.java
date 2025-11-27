@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 public class ExplicitShuffle implements Shuffle {
     final int inputLength;
@@ -12,6 +13,8 @@ public class ExplicitShuffle implements Shuffle {
     public ExplicitShuffle(int inputLength, List<Integer> elements) {
         this.indexes = elements;
         this.inputLength = inputLength;
+        for (Integer i: elements)
+            Utilities.enforce(i >= 0 && i < inputLength);
     }
 
     @Override
@@ -20,7 +23,13 @@ public class ExplicitShuffle implements Shuffle {
     }
 
     @Override
+    public int outputLength() {
+        return this.indexes.size();
+    }
+
+    @Override
     public <T> List<T> shuffle(List<T> data) {
+        Utilities.enforce(data.size() == this.inputLength);
         List<T> result = new ArrayList<>(this.indexes.size());
         for (int index: this.indexes)
             result.add(data.get(index));
@@ -29,6 +38,7 @@ public class ExplicitShuffle implements Shuffle {
 
     @Override
     public Shuffle after(Shuffle shuffle) {
+        Utilities.enforce(this.inputLength() == shuffle.outputLength());
         List<Integer> results = new ArrayList<>();
         for (int i = 0; i < shuffle.inputLength(); i++)
             results.add(i);
@@ -96,5 +106,24 @@ public class ExplicitShuffle implements Shuffle {
                 Utilities.getProperty(node, "indexes").elements(),
                 JsonNode::asInt));
         return new ExplicitShuffle(inputLength, indexes);
+    }
+
+    @Override
+    public Shuffle compress(Set<Integer> removeFromShuffle) {
+        // Maps each possible index to its new value
+        List<Integer> newIndex = new ArrayList<>();
+        int current = 0;
+        for (int i = 0; i < this.inputLength; i++) {
+            newIndex.add(current);
+            if (!removeFromShuffle.contains(i))
+                current++;
+        }
+
+        List<Integer> explicit = new ArrayList<>();
+        for (Integer index: this.indexes) {
+            Utilities.enforce(!removeFromShuffle.contains(index));
+            explicit.add(newIndex.get(index));
+        }
+        return new ExplicitShuffle(this.inputLength() - removeFromShuffle.size(), explicit);
     }
 }

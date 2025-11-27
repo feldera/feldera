@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
@@ -31,11 +32,13 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -271,6 +274,48 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPSimpleOperator result = new DBSPAggregateLinearPostprocessOperator(
                 operator.getRelNode(), operator.getOutputIndexedZSetType(), compressed,
                 operator.postProcess, adjust.outputPort());
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPFlatMapOperator operator) {
+        DBSPFlatmap flatmap = operator.getFunction().as(DBSPFlatmap.class);
+        if (flatmap == null) {
+            // At this point in the compilation process we expect all FlatMapOperators to have a Flatmap expression.
+            // Later there will be FlatMapOperators introduced to
+            // represent chains including Filters.
+            super.postorder(operator);
+            return;
+        }
+        DBSPTypeTuple inputTuple = operator.input().getOutputZSetElementType().to(DBSPTypeTuple.class);
+        FindUnusedFields find = new FindUnusedFields(this.compiler);
+        find.apply(flatmap.collectionExpression);
+        FieldUseMap map = find.parameterFieldMap.get(flatmap.collectionExpression.parameters[0]).deref();
+        for (int index: flatmap.leftInputIndexes) {
+            map.setUsed(index);
+        }
+        if (!map.hasUnusedFields(1)) {
+            super.postorder(operator);
+            return;
+        }
+
+        int size = inputTuple.getToplevelFieldCount();
+        DBSPClosureExpression projection = Objects.requireNonNull(map.borrow().getProjection(1));
+        OutputPort source = this.mapped(operator.input());
+        DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getRelNode(), projection, source)
+                .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
+        this.addOperator(adjust);
+        RewriteFields fieldRewriter = find.getFieldRewriter(1);
+        DBSPClosureExpression collectionExpression = fieldRewriter.rewriteClosure(flatmap.collectionExpression);
+
+        List<Integer> indexes = Linq.map(flatmap.leftInputIndexes, map::getNewIndex);
+        DBSPFlatmap replacement = new DBSPFlatmap(flatmap.getNode(),
+                Objects.requireNonNull(map.compressedType(1)).to(DBSPTypeTuple.class),
+                collectionExpression, indexes, flatmap.rightProjections, flatmap.ordinalityIndexType,
+                flatmap.shuffle);
+
+        DBSPSimpleOperator result = new DBSPFlatMapOperator(
+                operator.getRelNode(), replacement, operator.getOutputZSetType(), adjust.outputPort());
         this.map(operator, result);
     }
 

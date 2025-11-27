@@ -455,10 +455,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
         }
 
-        DBSPType indexType = null;
+        DBSPType ordinalityIndexType = null;
         if (uncollect.withOrdinality) {
             // Index field is always last.
-            indexType = uncollectElementType.getFieldType(uncollectElementType.size() - 1);
+            ordinalityIndexType = uncollectElementType.getFieldType(uncollectElementType.size() - 1);
+            // This should really be a BIGINT
+            Utilities.enforce(ordinalityIndexType.is(DBSPTypeBaseType.class));
         }
 
         // Right projections are applied after uncollect
@@ -470,22 +472,21 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         int shuffleSize = leftElementType.size();
-        if (rightProjections != null)
+        if (rightProjections != null) {
             shuffleSize += rightProjections.size();
-        if (indexType != null) {
-            if (indexType.is(DBSPTypeTupleBase.class))
-                shuffleSize += indexType.to(DBSPTypeTupleBase.class).size();
+        } else {
+            if (collectionElementType.is(DBSPTypeTupleBase.class))
+                shuffleSize += collectionElementType.to(DBSPTypeTupleBase.class).size();
             else
                 shuffleSize += 1;
+            if (ordinalityIndexType != null) {
+                shuffleSize += 1;
+            }
         }
-        if (collectionElementType.is(DBSPTypeTupleBase.class))
-            shuffleSize += collectionElementType.to(DBSPTypeTupleBase.class).size();
-        else
-            shuffleSize += 1;
         DBSPFlatmap flatmap = new DBSPFlatmap(node,
                 leftElementType, arrayExpression,
                 Linq.range(0, leftElementType.size()),
-                rightProjections, indexType, new IdShuffle(shuffleSize));
+                rightProjections, ordinalityIndexType, new IdShuffle(shuffleSize));
 
         DBSPTypeFunction functionType = new DBSPTypeFunction(type, leftElementType.ref());
         Utilities.enforce(flatmap.getType().sameType(functionType),
