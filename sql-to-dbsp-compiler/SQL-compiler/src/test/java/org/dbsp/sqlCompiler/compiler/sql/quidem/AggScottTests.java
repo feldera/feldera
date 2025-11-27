@@ -7,6 +7,16 @@ import org.junit.Test;
 // https://github.com/apache/calcite/blob/main/core/src/test/resources/sql/agg.iq
 public class AggScottTests extends ScottBaseTests {
     @Test
+    public void testCalcite6403() {
+        this.qs("""
+                SELECT COUNT(*), COUNT(DISTINCT deptno) FROM emp WHERE false;
+                 c0 | c1
+                ---------
+                  0 | 0
+                (1 row)""");
+    }
+
+    @Test
     public void testPairs() {
         this.qs("""
                 select comm, (comm, comm) in ((500, 500), (300, 300), (0, 0)) from emp;

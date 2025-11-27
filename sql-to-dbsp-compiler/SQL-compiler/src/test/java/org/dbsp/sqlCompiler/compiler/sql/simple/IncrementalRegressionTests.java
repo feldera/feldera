@@ -5,8 +5,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
@@ -18,6 +16,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitDispatcher;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -29,7 +28,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
@@ -1727,6 +1729,33 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 GROUP BY p;""");
     }
 
+    // Check that the maximum width in a circuit (except inputs) is less than the specified one.
+    void checkNarrow(CompilerCircuit cc, int maxWidth) {
+        var inner = new InnerVisitor(cc.compiler) {
+            @Override
+            public void postorder(DBSPType type) {
+                if (type.is(DBSPTypeAny.class) || type.is(DBSPTypeFunction.class))
+                    return;
+                Assert.assertTrue(type.getToplevelFieldCount() < maxWidth);
+            }
+        };
+        var outer = new CircuitDispatcher(cc.compiler, inner, false) {
+            @Override
+            public void postorder(DBSPSourceTableOperator operator) {
+                // skip
+            }
+
+            @Override
+            public void postorder(DBSPUnaryOperator operator) {
+                // Do not analyze operators whose input is the source
+                if (operator.input().node().is(DBSPSourceTableOperator.class))
+                    return;
+                super.postorder(operator);
+            }
+        };
+        cc.visit(outer);
+    }
+
     @Test
     public void deindexOptimize() {
         String sql = """
@@ -1755,32 +1784,10 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         sts >= NOW() - INTERVAL 30 DAYS)
                     ;""";
         var ccs = this.getCCS(sql);
-        var inner = new InnerVisitor(ccs.compiler) {
-            @Override
-            public void postorder(DBSPType type) {
-                Assert.assertTrue(type.getToplevelFieldCount() < 8);
-            }
-        };
-        var outer = new CircuitDispatcher(ccs.compiler, inner, false) {
-            @Override
-            public void postorder(DBSPSourceMultisetOperator operator) {
-                // skip
-            }
-
-            @Override
-            public void postorder(DBSPUnaryOperator operator) {
-                // Do not analyze operators whose input is the source
-                if (operator.input().node().is(DBSPSourceMultisetOperator.class))
-                    return;
-                super.postorder(operator);
-            }
-        };
-        ccs.visit(outer);
+        this.checkNarrow(ccs, 8);
     }
 
-    @Test
-    public void unusedRemoval() {
-        String sql = """
+    static final String WIDE_DATA = """
                 CREATE TYPE Properties AS (
                    flagA BOOLEAN NULL,
                    flagB BOOLEAN NULL,
@@ -1793,7 +1800,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                    ts6 VARCHAR NULL,
                    value INT NULL
                 );
-                
+
                 CREATE TABLE input_table (
                   key UUID NOT NULL PRIMARY KEY,
                   colA VARCHAR,
@@ -1804,8 +1811,11 @@ public class IncrementalRegressionTests extends SqlIoTest {
                   colF VARCHAR,
                   colG VARCHAR
                 );
-                
-                -- Local view with anonymized names
+            
+                CREATE FUNCTION CONVERT_TS(d VARCHAR)
+                RETURNS TIMESTAMP
+                AS PARSE_TIMESTAMP('%m/%e/%Y %H:%M:%S', d);
+            
                 CREATE LOCAL VIEW V AS
                 SELECT
                   key,
@@ -1826,11 +1836,11 @@ public class IncrementalRegressionTests extends SqlIoTest {
                   colF,
                   colG
                 FROM input_table;
-                
-                CREATE FUNCTION CONVERT_TS(d VARCHAR)
-                RETURNS TIMESTAMP
-                AS PARSE_TIMESTAMP('%m/%e/%Y %H:%M:%S', d);
-                
+            """;
+
+    @Test
+    public void unusedRemoval() {
+        String sql = WIDE_DATA + """
                 CREATE VIEW V1 AS
                 SELECT key
                 FROM V
@@ -1851,26 +1861,111 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     );
                 """;
         var cc = this.getCC(sql);
-        var inner = new InnerVisitor(cc.compiler) {
-            @Override
-            public void postorder(DBSPType type) {
-                Assert.assertTrue(type.getToplevelFieldCount() < 10);
-            }
-        };
-        var outer = new CircuitDispatcher(cc.compiler, inner, false) {
-            @Override
-            public void postorder(DBSPSourceTableOperator operator) {
-                // skip
-            }
+        this.checkNarrow(cc, 10);
+    }
 
-            @Override
-            public void postorder(DBSPUnaryOperator operator) {
-                // Do not analyze operators whose input is the source
-                if (operator.input().node().is(DBSPSourceMapOperator.class))
-                    return;
-                super.postorder(operator);
-            }
-        };
-        cc.visit(outer);
+    @Test
+    public void issue5182() {
+        var cc = this.getCC("""
+                create table T(
+                m map<varchar, varchar>,
+                -- three unused fields
+                a INT,
+                b INT,
+                c INT,
+                id UUID,
+                -- two more unused fields
+                d INT,
+                e INT);
+                
+                create view V
+                as SELECT
+                    S.v,
+                    u.id
+                FROM
+                    T u, unnest(u.m) as S(k, v)
+                WHERE S.k = 'x';
+                """);
+        this.checkNarrow(cc, 4);
+    }
+
+    @Test
+    public void issue5182a() {
+        var cc = this.getCC(WIDE_DATA + """
+                create view CE
+                as SELECT
+                    T.val,
+                    V.key
+                FROM
+                    V, unnest(V.colC) as t(k, val)
+                WHERE T.val = 'a';
+                """);
+        this.checkNarrow(cc, 10);
+    }
+
+    @Test
+    public void issue5182b() {
+        Logger.INSTANCE.setLoggingLevel(UnusedFields.class, 6);
+        this.showFinalVerbose(2);
+        var cc = this.getCC("""
+                    CREATE TYPE Properties AS (
+                       flagA BOOLEAN NULL,
+                       flagB BOOLEAN NULL,
+                       flagC BOOLEAN NULL,
+                       ts1 VARCHAR NULL,
+                       ts2 VARCHAR NULL,
+                       ts3 VARCHAR NULL,
+                       ts4 VARCHAR NULL,
+                       ts5 VARCHAR NULL,
+                       ts6 VARCHAR NULL,
+                       value INT NULL
+                    );
+                
+                    create type C as (
+                       type VARCHAR,
+                       value VARCHAR
+                    );
+    
+                    CREATE TABLE input_table (
+                      key UUID NOT NULL PRIMARY KEY,
+                      colA VARCHAR,
+                      colB VARCHAR,
+                      colC MAP<VARCHAR, C>,
+                      colD Properties,
+                      colE VARCHAR,
+                      colF VARCHAR,
+                      colG VARCHAR
+                    );
+                
+                    CREATE FUNCTION CONVERT_TS(d VARCHAR)
+                    RETURNS TIMESTAMP
+                    AS PARSE_TIMESTAMP('%m/%e/%Y %H:%M:%S', d);
+                
+                    CREATE LOCAL VIEW V AS
+                    SELECT
+                      key,
+                      colA,
+                      colB,
+                      colC,
+                      input_table.colD.flagA,
+                      input_table.colD.flagB,
+                      input_table.colD.flagC,
+                      CONVERT_TS(input_table.colD.ts1) ts1,
+                      CONVERT_TS(input_table.colD.ts2) ts2,
+                      CONVERT_TS(input_table.colD.ts3) ts3,
+                      input_table.colD.ts4,
+                      CONVERT_TS(input_table.colD.ts5) ts5,
+                      CONVERT_TS(input_table.colD.ts6) ts6,
+                      input_table.colD.value,
+                      colE,
+                      colF,
+                      colG
+                    FROM input_table;
+                CREATE VIEW CE AS SELECT
+                    t.val.type,
+                    V.key
+                FROM V, UNNEST(V.colC) AS t(k, val)
+                WHERE t.val.type not like '%.com%';""");
+        this.checkNarrow(cc, 10);
     }
 }
