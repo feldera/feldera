@@ -185,10 +185,11 @@
 
         /* Tooltip wrapper div */
         #tooltip-container > div {
-            margin: 10px 10px 10px 10px;
-            background-color: rgba(0, 0, 0, 0.9);
+            margin: 10px;
+            background-color: black;
             border-radius: 8px;
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+            overflow: clip;
         }
 
         /* Tooltip tables styling */
@@ -202,18 +203,18 @@
         #tooltip-container table td,
         #tooltip-container table th {
             padding: 2px 10px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
             color: white;
+            white-space: nowrap;
         }
 
         #tooltip-container table th {
-            background-color: rgba(102, 126, 234, 0.4);
+            background-color: rgb(102, 126, 234);
             font-weight: 600;
             text-align: center;
         }
 
         #tooltip-container table td {
-            background-color: rgba(0, 0, 0, 0.3);
+            background-color: black;
         }
 
         /* Message Overlay */
@@ -358,11 +359,6 @@
 
     <!-- Error message -->
     <div id="error-message"></div>
-
-    <!-- Hidden container for profiler-lib's selector (not displayed) -->
-    <div id="selector" style="display: none;">
-        <table id="selection-tools"></table>
-    </div>
 </body>
 
 </html>

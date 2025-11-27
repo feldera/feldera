@@ -11,6 +11,7 @@ import { Point, Size } from "./planar.js";
 import { ViewNavigator } from './navigator.js';
 import { ZSet } from "./zset.js";
 import { MetadataSelection } from './metadataSelection.js';
+import type { TooltipCell} from './profiler.js'
 
 /** A measurement represented as a string, but also with a normalized value between 0 and 100. */
 class SerializedMeasurement {
@@ -444,8 +445,7 @@ export class CytographRendering {
     constructor(
         graphContainer: HTMLElement,
         navigatorContainer: HTMLElement,
-        private readonly tooltip: HTMLElement,
-        private readonly tooltipContainer: HTMLElement | undefined,
+        private readonly callbacks: import('./profiler.js').ProfilerCallbacks,
         readonly graph: Graph<NodeId>,
         readonly selection: CircuitSelection,
         private metadataSelection: MetadataSelection,
@@ -476,8 +476,9 @@ export class CytographRendering {
         if (el === null) {
             return;
         }
-        let size = el.renderedWidth();
-        let desiredSize = 30;
+        let size = el.renderedHeight();
+        let desiredSize = 15;
+        // We determine the minimum size of found node by its height, because it is tied to font size
         if (size < desiredSize) {
             let zoom = this.cy.zoom();
             let targetZoom = zoom * desiredSize / size;
@@ -485,9 +486,8 @@ export class CytographRendering {
                 level: targetZoom,
                 position: el.position()
             });
-        } else {
-            this.cy.center(el);
         }
+        this.cy.center(el);
     }
 
     // Layout to use for the first graph rendering
@@ -809,125 +809,80 @@ export class CytographRendering {
         reachable = this.reachableFrom(node.id(), false);
         reachable.addClass('highlight-backward');
 
-        // create a table for the matrix attributes
+        // Build structured tooltip data
         let attributes: Attributes = node.data().attributes;
-        let table = document.createElement("table");
-
-        let tableWidth = 1;
         let visible = false;
+
+        const tooltipData: import('./profiler.js').TooltipData = {
+            columns: [],
+            rows: [],
+            attributes: new Map()
+        };
+
+        // Add matrix attributes (per-worker metrics)
         if (attributes.matrix.attributeCount() > 0 && attributes.matrix.getColumnCount() > 0) {
             visible = true;
-            let row = table.insertRow();
-            row.insertCell(0);
-            let colCount = attributes.matrix.getColumnCount();
-            tableWidth = colCount + 1;
+
+            // Set column headers (worker names)
+            const colCount = attributes.matrix.getColumnCount();
             for (let i = 0; i < colCount; i++) {
-                const th = document.createElement("th");
-                th.innerText = attributes.matrix.columnNames[i] || "";
-                row.appendChild(th);
+                tooltipData.columns.push(attributes.matrix.columnNames[i] || "");
             }
 
+            // Add rows (metrics)
             const MAX_CELL_COUNT = 40;
             let matrix = attributes.matrix.getAttributes();
             let keys = [...matrix.keys()];
             keys.sort();
+
             for (const key of keys) {
                 let values = matrix.get(key)!;
-                let index = 0;
-                for (const value of values) {
-                    let position = index % MAX_CELL_COUNT;
-                    if (position === 0) {
-                        // Every MAX_CELL_COUNT start a new row
-                        row = table.insertRow();
-                        let cell = row.insertCell(0);
-                        if (index === 0) {
-                            cell.innerText = key;
-                            cell.style.whiteSpace = "nowrap";
-                            if (key === this.getCurrentMetric()) {
-                                cell.style.backgroundColor = "blue";
-                            }
-                        }
-                    }
+                const cells: TooltipCell[] = [];
 
-                    let cell = row.insertCell(position + 1);
-                    let percent = value.percentile;;
-                    // Interpolate between white and red
-                    let color = `rgb(255, ${255 * (100 - percent) / 100}, ${255 * (100 - percent) / 100})`
-                    cell.style.backgroundColor = color;
-                    cell.style.color = "black";
-                    cell.innerText = value.value;
-                    cell.style.textAlign = "right";
-                    index++;
+                // Limit to MAX_CELL_COUNT cells per metric
+                for (let i = 0; i < Math.min(values.length, MAX_CELL_COUNT); i++) {
+                    const value = values[i];
+                    if (value) {
+                        cells.push({
+                            value: value.value,
+                            percentile: value.percentile
+                        });
+                    }
                 }
+
+                tooltipData.rows.push({
+                    metric: key,
+                    isCurrentMetric: key === this.getCurrentMetric(),
+                    cells
+                });
             }
         }
 
-        // display source position information
+        // Add source position information
         let sources = node.data("sources");
         if (sources.length > 0) {
             visible = true;
-            let row = table.insertRow();
-            let cell = row.insertCell(0);
-            cell.innerText = "sources";
-
-            cell = row.insertCell(1);
-            cell.colSpan = tableWidth - 1;
-            cell.style.textAlign = "left";
-            cell.style.fontFamily = "monospace";
-            cell.style.whiteSpace = "pre-wrap";
-            cell.style.minWidth = "80ch";
-            cell.innerText = sources;
+            tooltipData.sources = sources;
         }
 
-        // display additional attributes
-        if (attributes.kv.size != 0) {
+        // Add additional key-value attributes
+        if (attributes.kv.size !== 0) {
             visible = true;
-            for (const kv of attributes.kv.entries()) {
-                let row = table.insertRow();
-                let cell = row.insertCell(0);
-                cell.innerText = kv[0];
-                cell.style.whiteSpace = "nowrap";
-
-                cell = row.insertCell(1);
-                cell.colSpan = tableWidth - 1;
-                cell.style.whiteSpace = "nowrap";
-                cell.innerText = kv[1];
+            for (const [key, value] of attributes.kv.entries()) {
+                tooltipData.attributes.set(key, value);
             }
         }
 
         if (!visible)
             return;
 
-        // display the computed table
-        this.tooltip.innerHTML = "";  // Clear previous content.
-        this.tooltip.appendChild(table);
-        this.tooltip.style.display = 'block';
-
-        // Position tooltip based on mode and container
-        if (this.tooltipContainer) {
-            // Stick to top-right of tooltip container
-            this.tooltip.style.right = '0px';
-            this.tooltip.style.top = '0px';
-            this.tooltip.style.left = 'auto';
-        } else if (!CytographRendering.FIXED_TOOLTIP_POSITION) {
-            // Follow mouse position
-            const canvasRect = this.cy.container()!.getBoundingClientRect();
-            const x = canvasRect.left + event.renderedPosition.x;
-            const y = canvasRect.top + event.renderedPosition.y;
-            this.tooltip.style.left = x + 'px';
-            this.tooltip.style.top = y + 'px';
-            this.tooltip.style.right = 'auto';
-        } else {
-            // Stick to top-right of viewport (document.body)
-            this.tooltip.style.right = '0px';
-            this.tooltip.style.top = '0px';
-            this.tooltip.style.left = 'auto';
-        }
+        // Send tooltip data via callback
+        this.callbacks.onTooltipUpdate(tooltipData, true);
     }
 
     // hide the information shown when hovering
     mouseOut(event: EventObject) {
-        this.tooltip.style.display = 'none';
+        this.callbacks.onTooltipUpdate(null, false);
         let node: NodeSingular = event.target;
         let reachable = this.reachableFrom(node.id(), true);
         reachable.removeClass('highlight-forward');
@@ -945,13 +900,9 @@ export class CytographRendering {
         }
 
         // Hide tooltip
-        this.tooltip.style.display = 'none';
+        this.callbacks.onTooltipUpdate(null, false);
 
         // Clear references
         this.currentGraph = null;
     }
-
-    // Set to true to display the tooltip in a fixed position.
-    // Set to false to display the tooltip at the mouse position.
-    static readonly FIXED_TOOLTIP_POSITION = true;
 }
