@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
@@ -46,6 +47,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -57,6 +59,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Maybe;
+import org.dbsp.util.Shuffle;
 import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
@@ -444,6 +447,22 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             if (!this.onlyProjections || projection.isProjection) {
                 DBSPSimpleOperator result = OptimizeProjectionVisitor.mapAfterJoinIndex(
                         this.compiler(), source.node().to(DBSPJoinBaseOperator.class), operator);
+                this.map(operator, result);
+                return;
+            }
+        } else if (source.node().is(DBSPFlatMapOperator.class)) {
+            DBSPFlatmap sourceFlatmap = source.simpleNode().getFunction().as(DBSPFlatmap.class);
+            Projection projection = new Projection(this.compiler(), true, true);
+            projection.apply(operator.getFunction());
+            if (sourceFlatmap != null && projection.isProjection && projection.isShuffle()) {
+                Logger.INSTANCE.belowLevel(this, 2)
+                        .appendSupplier(() -> source.simpleNode().operation + " -> Map")
+                        .newline();
+                Shuffle shuffle = projection.getShuffle().after(sourceFlatmap.shuffle);
+                DBSPExpression newFunction = sourceFlatmap.withShuffle(shuffle);
+                DBSPSimpleOperator result = source.simpleNode()
+                        .withFunction(newFunction, operator.outputType)
+                        .to(DBSPSimpleOperator.class);
                 this.map(operator, result);
                 return;
             }

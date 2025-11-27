@@ -24,7 +24,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.util.Maybe;
 import org.dbsp.util.Shuffle;
 import org.dbsp.util.Utilities;
@@ -48,7 +47,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         OutputPort source = this.mapped(operator.input());
         DBSPExpression function = operator.getFunction();
         int inputFanout = this.getGraph().getFanout(operator.input().node());
-        Projection projection = new Projection(this.compiler, true, false);
+        Projection projection = new Projection(this.compiler, true, true);
         projection.apply(function);
         if (projection.isProjection) {
             if (source.node().is(DBSPConstantOperator.class)) {
@@ -62,12 +61,8 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
             } else if (source.node().is(DBSPFlatMapOperator.class)) {
                 DBSPFlatmap sourceFunction = source.simpleNode().getFunction().as(DBSPFlatmap.class);
                 if (sourceFunction != null && projection.isShuffle()) {
-                    DBSPTypeFunction previousFunctionType = sourceFunction.getType().to(DBSPTypeFunction.class);
                     Shuffle shuffle = projection.getShuffle().after(sourceFunction.shuffle);
-                    DBSPExpression newFunction = new DBSPFlatmap(
-                            operator.getRelNode(), sourceFunction.inputRowType,
-                            sourceFunction.collectionExpression, sourceFunction.leftInputIndexes,
-                            sourceFunction.rightProjections, sourceFunction.ordinalityIndexType, shuffle);
+                    DBSPExpression newFunction = sourceFunction.withShuffle(shuffle);
                     DBSPSimpleOperator result = source.simpleNode()
                             .withFunction(newFunction, operator.outputType)
                             .to(DBSPSimpleOperator.class);

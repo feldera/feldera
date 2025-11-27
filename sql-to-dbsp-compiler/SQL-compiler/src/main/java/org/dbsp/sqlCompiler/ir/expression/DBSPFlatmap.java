@@ -23,7 +23,9 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.IntStream;
 
 /**
@@ -88,7 +90,8 @@ public final class DBSPFlatmap extends DBSPExpression {
                        List<DBSPClosureExpression> rightProjections,
                        @Nullable DBSPType ordinalityIndexType,
                        Shuffle shuffle) {
-        super(node, computeFunctionType(inputRowType, collectionExpression, leftInputIndexes, rightProjections, ordinalityIndexType, shuffle));
+        super(node, computeFunctionType(inputRowType, collectionExpression, leftInputIndexes,
+                rightProjections, ordinalityIndexType, shuffle));
         this.inputRowType = inputRowType;
         this.rightProjections = rightProjections;
         this.collectionExpression = collectionExpression;
@@ -111,6 +114,36 @@ public final class DBSPFlatmap extends DBSPExpression {
         Utilities.enforce(this.ordinalityIndexType == null ||
                 this.ordinalityIndexType.is(DBSPTypeBaseType.class));
         this.shuffle = shuffle;
+    }
+
+    /** Create a new DBSPFlatmap which is identical to this one in all respects except the shuffle */
+    public DBSPFlatmap withShuffle(Shuffle shuffle) {
+        List<Integer> leftInputIndexes = new ArrayList<>();
+        Set<Integer> removeFromShuffle = new HashSet<>();
+        int shuffleIndex;
+        for (shuffleIndex = 0; shuffleIndex < this.leftInputIndexes.size(); shuffleIndex++) {
+            int li = this.leftInputIndexes.get(shuffleIndex);
+            if (shuffle.emitsIndex(li))
+                leftInputIndexes.add(li);
+            else
+                removeFromShuffle.add(shuffleIndex);
+        }
+        List<DBSPClosureExpression> rightProjections = null;
+        if (this.rightProjections != null) {
+            rightProjections = new ArrayList<>();
+            for (int i = 0;
+                 shuffleIndex < this.leftInputIndexes.size() + this.rightProjections.size();
+                 shuffleIndex++, i++) {
+                if (shuffle.emitsIndex(shuffleIndex)) {
+                    rightProjections.add(this.rightProjections.get(i));
+                } else {
+                    removeFromShuffle.add(shuffleIndex);
+                }
+            }
+        }
+        var shuffle1 = shuffle.compress(removeFromShuffle);
+        return new DBSPFlatmap(this.getNode(), this.inputRowType, this.collectionExpression,
+                leftInputIndexes, rightProjections, this.ordinalityIndexType, shuffle1);
     }
 
     /** Given the constructor arguments, compute the type of the Flatmap as a function */
