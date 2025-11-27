@@ -6,31 +6,73 @@ import { Cytograph, CytographRendering } from "./cytograph.js";
 import { CircuitSelector } from "./selection.js";
 import { MetadataSelector } from './metadataSelection.js';
 
+/** Represents a selectable metric option */
+export interface MetricOption {
+    id: string;
+    label: string;
+}
+
+/** Represents a worker checkbox option */
+export interface WorkerOption {
+    id: string;
+    label: string;
+    checked: boolean;
+}
+
+/** Represents a cell in the tooltip heatmap */
+export interface TooltipCell {
+    value: string;
+    percentile: number;
+}
+
+/** Represents a row in the tooltip heatmap */
+export interface TooltipRow {
+    metric: string;
+    isCurrentMetric: boolean;
+    cells: TooltipCell[];
+}
+
+/** Tooltip data structure */
+export interface TooltipData {
+    /** Column headers (worker names) */
+    columns: string[];
+    /** Rows of metrics with values */
+    rows: TooltipRow[];
+    /** Source code information */
+    sources?: string;
+    /** Additional key-value attributes */
+    attributes: Map<string, string>;
+}
+
+/** Callbacks for profiler to communicate UI updates */
+export interface ProfilerCallbacks {
+    /** Called when the tooltip should be updated */
+    onTooltipUpdate: (data: TooltipData | null, visible: boolean) => void;
+
+    /** Called when the available metrics change */
+    onMetricsChanged: (metrics: MetricOption[], selectedMetricId: string) => void;
+
+    /** Called when the workers state changes */
+    onWorkersChanged: (workers: WorkerOption[]) => void;
+
+    /** Called when a status message should be displayed */
+    onMessage: (message: string) => void;
+
+    /** Called when the status message should be cleared */
+    onMessageClear: () => void;
+
+    /** Called when an error should be displayed */
+    onError: (error: string) => void;
+}
+
 export interface ProfilerConfig {
     /** Container element for the graph visualization */
     graphContainer: HTMLElement;
     /** Container element for the navigator minimap */
     navigatorContainer: HTMLElement;
 
-    // UI element references (dependency injection)
-    /** Metric selector dropdown element */
-    metricSelector: HTMLSelectElement;
-    /** Container element where worker checkboxes will be created */
-    workerCheckboxesContainer: HTMLElement;
-    /** Button to toggle all worker checkboxes */
-    toggleWorkersButton: HTMLButtonElement;
-
-    /** Optional container element for the tooltip (defaults to document.body if not provided) */
-    tooltipContainer?: HTMLElement | undefined;
-    /** Optional error message display element */
-    errorContainer?: HTMLElement | undefined;
-    /** Optional message display element for status messages */
-    messageContainer?: HTMLElement | undefined;
-    /** Optional search input element for node search */
-    searchInput?: HTMLInputElement | undefined;
-
-    /** @deprecated Legacy container for selector UI (kept for backwards compatibility, not used in new architecture) */
-    selectorContainer?: HTMLElement;
+    /** Callbacks for UI updates */
+    callbacks: ProfilerCallbacks;
 }
 
 /**
@@ -38,7 +80,6 @@ export interface ProfilerConfig {
  * This is the primary API for embedding the profiler in other applications.
  */
 export class Profiler {
-    private readonly tooltip: HTMLElement;
     private readonly config: ProfilerConfig;
     private circuitSelector: CircuitSelector | null = null;
     private metadataSelector: MetadataSelector | null = null;
@@ -46,51 +87,23 @@ export class Profiler {
 
     constructor(config: ProfilerConfig) {
         this.config = config;
-
-        // Create tooltip element
-        this.tooltip = document.createElement('div');
-        this.tooltip.style.position = 'absolute';
-        this.tooltip.style.padding = '0';  // No padding, let the table handle it
-        this.tooltip.style.color = 'white';
-        this.tooltip.style.fontSize = '14px';
-        this.tooltip.style.pointerEvents = 'none';
-        this.tooltip.style.zIndex = '999';
-        this.tooltip.style.display = 'none';
-
-        // Append tooltip to specified container or document.body
-        const tooltipContainer = config.tooltipContainer || document.body;
-        tooltipContainer.appendChild(this.tooltip);
-    }
-
-    /** Get the tooltip element for hover interactions */
-    getTooltip(): HTMLElement {
-        return this.tooltip;
     }
 
     /** Display an error message */
     reportError(message: string): void {
-        if (this.config.errorContainer) {
-            this.config.errorContainer.textContent = message;
-            this.config.errorContainer.style.display = 'block';
-        }
+        this.config.callbacks.onError(message);
         console.error(message);
     }
 
     /** Display a status message */
     message(message: string): void {
         console.log(message);
-        if (this.config.messageContainer) {
-            this.config.messageContainer.style.display = 'block';
-            this.config.messageContainer.innerText = message;
-        }
+        this.config.callbacks.onMessage(message);
     }
 
     /** Clear the status message */
     clearMessage(): void {
-        if (this.config.messageContainer) {
-            this.config.messageContainer.textContent = '';
-            this.config.messageContainer.style.display = 'none';
-        }
+        this.config.callbacks.onMessageClear();
     }
 
     /**
@@ -101,21 +114,12 @@ export class Profiler {
      */
     render(profile: CircuitProfile): void {
         try {
-            // Clear any previous error
-            if (this.config.errorContainer) {
-                this.config.errorContainer.style.display = 'none';
-            }
-
             // Create selectors
             this.circuitSelector = new CircuitSelector(profile);
-            this.metadataSelector = new MetadataSelector(profile);
+            this.metadataSelector = new MetadataSelector(profile, this.config.callbacks);
 
-            // Display metadata selector UI using dependency-injected elements
-            this.metadataSelector.display(
-                this.config.metricSelector,
-                this.config.workerCheckboxesContainer,
-                this.config.toggleWorkersButton
-            );
+            // Initialize metadata selector (will trigger callbacks for initial state)
+            this.metadataSelector.initialize();
 
             // Get initial selection and create graph
             const selection = this.circuitSelector.getSelection();
@@ -125,8 +129,7 @@ export class Profiler {
             this.rendering = new CytographRendering(
                 this.config.graphContainer,
                 this.config.navigatorContainer,
-                this.tooltip,
-                this.config.tooltipContainer,
+                this.config.callbacks,
                 cytograph.graph, selection,
                 MetadataSelector.getFullSelection(),
                 this.message.bind(this),
@@ -149,16 +152,6 @@ export class Profiler {
                 this.rendering!.updateMetadata(profile, this.metadataSelector!.getSelection());
             });
 
-            // Wire up search functionality if search input is provided
-            if (this.config.searchInput) {
-                this.config.searchInput.onkeydown = (e) => {
-                    if (e.key === "Enter") {
-                        const query = this.config.searchInput!.value;
-                        this.rendering!.search(query);
-                    }
-                };
-            }
-
             // Produce the graph visualization
             this.rendering.updateGraph(cytograph);
             this.rendering.updateMetadata(profile, this.metadataSelector.getSelection());
@@ -170,22 +163,37 @@ export class Profiler {
     }
 
     /**
+     * Select a metric by ID
+     */
+    selectMetric(metricId: string): void {
+        this.metadataSelector?.selectMetric(metricId);
+    }
+
+    /**
+     * Toggle a worker's visibility
+     */
+    toggleWorker(workerId: string): void {
+        this.metadataSelector?.toggleWorker(workerId);
+    }
+
+    /**
+     * Toggle all workers on/off
+     */
+    toggleAllWorkers(): void {
+        this.metadataSelector?.toggleAllWorkers();
+    }
+
+    /**
+     * Search for a node by ID
+     */
+    search(query: string): void {
+        this.rendering?.search(query);
+    }
+
+    /**
      * Clean up resources when the profiler is no longer needed
      */
     dispose(): void {
-        // Remove tooltip from DOM
-        if (this.tooltip.parentNode) {
-            this.tooltip.parentNode.removeChild(this.tooltip);
-        }
-
-        // Clear selector UI content (elements are owned by the app, we just clear them)
-        if (this.config.metricSelector) {
-            this.config.metricSelector.innerHTML = '';
-        }
-        if (this.config.workerCheckboxesContainer) {
-            this.config.workerCheckboxesContainer.innerHTML = '';
-        }
-
         // Dispose rendering resources
         if (this.rendering) {
             this.rendering.dispose();

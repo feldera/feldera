@@ -26,9 +26,8 @@ export class ViewNavigator {
         this.root = document.createElement("div");
         this.root.id = "navigator";
         this.root.style.position = "relative";
-        this.root.style.x = `${this.MAX_WIDTH}px`;
-        this.root.style.y = `${this.MAX_HEIGHT}px`;
-        this.root.style.backgroundColor = 'rgb(220, 220, 220)';
+        this.root.style.width = `${this.MAX_WIDTH}px`;
+        this.root.style.height = `${this.MAX_HEIGHT}px`;
         // delete existing children
         parent.innerHTML = "";
         parent.appendChild(this.root);

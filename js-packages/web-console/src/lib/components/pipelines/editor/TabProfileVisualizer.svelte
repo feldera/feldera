@@ -12,7 +12,7 @@
 </script>
 
 <script lang="ts">
-  import ProfilerDiagram from '$lib/components/profiler/ProfilerDiagram.svelte'
+  import ProfilerLayout from '$lib/components/profiler/ProfilerLayout.svelte'
   import Popup from '$lib/components/common/Popup.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { groupBy } from '$lib/functions/common/array'
@@ -219,12 +219,6 @@
       toast.toastError(new Error(errorMessage), 10000)
     }
   })
-
-  // Profiler control element references (dependency injection)
-  let metricSelector: HTMLSelectElement | undefined = $state()
-  let workerCheckboxesContainer: HTMLDivElement | undefined = $state()
-  let toggleWorkersButton: HTMLButtonElement | undefined = $state()
-  let searchInput: HTMLInputElement | undefined = $state()
 </script>
 
 <div class="flex h-full flex-col">
@@ -243,143 +237,99 @@
     />
   </div>
   {#if getProfileData}
-    <div class="flex flex-wrap items-center gap-2 pb-2 sm:-mt-2">
-      <!-- File Menu Popup -->
-      <Popup>
-        {#snippet trigger(toggle)}
-          <button class="btn !bg-surface-100-900" onclick={toggle}>Load profile</button>
-        {/snippet}
-        {#snippet content(close)}
-          <div
-            transition:fade={{ duration: 100 }}
-            class="absolute left-0 top-10 z-30 w-max min-w-[200px]"
-          >
-            <div class="bg-white-dark flex flex-col rounded-container shadow-md">
-              <!-- Download Profile -->
-              <button
-                class="flex items-center gap-2 rounded-t-container px-4 py-2 text-left hover:preset-tonal-surface"
-                onclick={() => {
-                  loadProfileData()
-                  close()
-                }}
-              >
-                Download profile
-              </button>
-
-              <!-- Collect New Data Toggle -->
-              <label
-                class="flex cursor-pointer items-center justify-between gap-3 px-4 py-2 hover:preset-tonal-surface"
-              >
-                <span>Collect new data</span>
-                <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
-              </label>
-
-              <!-- Divider -->
-              <div class="hr"></div>
-
-              <!-- Upload Support Bundle -->
-              <button
-                class="flex items-center gap-2 rounded-b-container px-4 py-2 text-left hover:preset-tonal-surface"
-                onclick={() => {
-                  triggerFileUpload()
-                  close()
-                }}
-              >
-                Upload support bundle
-              </button>
-            </div>
-          </div>
-        {/snippet}
-      </Popup>
-
-      <!-- Profile Timestamp Selector -->
-      <label class="flex items-center gap-2 text-sm">
-        <span class="text-surface-600-400">Snapshot:</span>
-        <select
-          class="select w-40 md:ml-0"
-          value={selectedProfile?.getTime()}
-          onchange={(e) => {
-            selectedProfile = new Date(parseInt(e.currentTarget.value))
-          }}
-        >
-          {#each getProfileFiles().map((p) => p[0]) as timestamp (timestamp)}
-            <option value={timestamp.getTime()}>{timestamp.toLocaleTimeString()}</option>
-          {/each}
-        </select>
-      </label>
-
-      <div class="ml-auto">
-        <!-- Profiler Controls -->
-        <div class="flex flex-wrap items-center gap-2">
-          <!-- Metric Selector -->
-          <label class="flex items-center gap-2 text-sm">
-            <span class="text-surface-600-400">Metric:</span>
-            <select bind:this={metricSelector} class="select w-40 text-sm"></select>
-          </label>
-
-          <!-- Workers Control -->
-          <label class="flex items-center gap-2 text-sm">
-            <span class="text-surface-600-400">Workers:</span>
-            <button
-              bind:this={toggleWorkersButton}
-              class="btn btn-sm px-2 text-xs !bg-surface-100-900"
+    {@const { profile, dataflow, sources } = getProfileData()}
+    <ProfilerLayout
+      profileData={profile}
+      dataflowData={dataflow}
+      programCode={sources}
+      class="bg-white-dark rounded"
+    >
+      {#snippet toolbarStart()}
+        <!-- File Menu Popup -->
+        <Popup>
+          {#snippet trigger(toggle)}
+            <button class="btn !bg-surface-100-900" onclick={toggle}>Load profile</button>
+          {/snippet}
+          {#snippet content(close)}
+            <div
+              transition:fade={{ duration: 100 }}
+              class="absolute left-0 top-10 z-30 w-max min-w-[200px]"
             >
-              Toggle All
-            </button>
-            <div bind:this={workerCheckboxesContainer} class="flex gap-1"></div>
-          </label>
+              <div class="bg-white-dark flex flex-col rounded-container shadow-md">
+                <!-- Download Profile -->
+                <button
+                  class="flex items-center gap-2 rounded-t-container px-4 py-2 text-left hover:preset-tonal-surface"
+                  onclick={() => {
+                    loadProfileData()
+                    close()
+                  }}
+                >
+                  Download profile
+                </button>
 
-          <!-- Search Input -->
-          <label class="flex items-center gap-2 text-sm">
-            <span class="text-surface-600-400">Search:</span>
-            <input
-              bind:this={searchInput}
-              type="text"
-              placeholder="Node ID"
-              title="Search for node by ID"
-              class="input w-32 text-sm"
-            />
-          </label>
+                <!-- Collect New Data Toggle -->
+                <label
+                  class="flex cursor-pointer items-center justify-between gap-3 px-4 py-2 hover:preset-tonal-surface"
+                >
+                  <span>Collect new data</span>
+                  <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
+                </label>
+
+                <!-- Divider -->
+                <div class="hr"></div>
+
+                <!-- Upload Support Bundle -->
+                <button
+                  class="flex items-center gap-2 rounded-b-container px-4 py-2 text-left hover:preset-tonal-surface"
+                  onclick={() => {
+                    triggerFileUpload()
+                    close()
+                  }}
+                >
+                  Upload support bundle
+                </button>
+              </div>
+            </div>
+          {/snippet}
+        </Popup>
+
+        <!-- Profile Timestamp Selector -->
+        <label class="flex items-center gap-2 text-sm">
+          <span class="text-surface-600-400">Snapshot:</span>
+          <select
+            class="select w-40 md:ml-0"
+            value={selectedProfile?.getTime()}
+            onchange={(e) => {
+              selectedProfile = new Date(parseInt(e.currentTarget.value))
+            }}
+          >
+            {#each getProfileFiles().map((p) => p[0]) as timestamp (timestamp)}
+              <option value={timestamp.getTime()}>{timestamp.toLocaleTimeString()}</option>
+            {/each}
+          </select>
+        </label>
+      {/snippet}
+    </ProfilerLayout>
+  {:else}
+    <div class="flex h-full flex-col items-center justify-center gap-4">
+      {#if errorMessage}
+        <div class="rounded p-2 preset-outlined-error-600-400" transition:slide>
+          {errorMessage}
         </div>
+      {/if}
+      <div class="flex gap-4">
+        <button class="btn preset-filled-primary-500" onclick={loadProfileData}>
+          Download pipeline profile
+        </button>
+        <label class="flex cursor-pointer items-center gap-2">
+          <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
+          <span class="text-sm">Collect new data</span>
+        </label>
       </div>
+      or
+      <button class="link -mt-2 p-2 hover:underline" onclick={triggerFileUpload}>
+        upload a support bundle zip
+      </button>
     </div>
   {/if}
-  <div class="relative h-full w-full">
-    {#if getProfileData}
-      {@const { profile, dataflow, sources } = getProfileData()}
-      {#if metricSelector && workerCheckboxesContainer && toggleWorkersButton}
-        <ProfilerDiagram
-          profileData={profile}
-          dataflowData={dataflow}
-          programCode={sources}
-          {metricSelector}
-          {workerCheckboxesContainer}
-          {toggleWorkersButton}
-          {searchInput}
-          class="bg-white-dark rounded"
-        ></ProfilerDiagram>
-      {/if}
-    {:else}
-      <div class="flex h-full flex-col items-center justify-center gap-4">
-        {#if errorMessage}
-          <div class="rounded p-2 preset-outlined-error-600-400" transition:slide>
-            {errorMessage}
-          </div>
-        {/if}
-        <div class="flex gap-4">
-          <button class="btn preset-filled-primary-500" onclick={loadProfileData}>
-            Download pipeline profile
-          </button>
-          <label class="flex cursor-pointer items-center gap-2">
-            <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
-            <span class="text-sm">Collect new data</span>
-          </label>
-        </div>
-        or
-        <button class="link -mt-2 p-2 hover:underline" onclick={triggerFileUpload}>
-          upload a support bundle zip
-        </button>
-      </div>
-    {/if}
-  </div>
 </div>

@@ -8212,9 +8212,11 @@ This documentation site serves as the primary resource for Feldera users, provid
 
 ## Overview
 
-**profiler-app** is a standalone single-page application for visualizing Feldera DBSP circuit profiles. It builds to a single static HTML file that can load profile bundles (`.zip` files) either through a file picker UI or via URL parameter when opened from the file system.
+**profiler-app** is a standalone single-page application for visualizing Feldera DBSP circuit profiles. It builds to a single static HTML file that can load profile bundles (`.zip` files) through a browser file picker UI.
 
 This is a **development/debugging tool**, not intended for production use. In production, use the web-console's integrated profiler with real-time API data.
+
+**Architecture:** Uses profiler-lib's callback-based API to render visualizations. The app manages UI controls and responds to profiler callbacks for tooltip rendering and control state updates.
 
 ## Purpose
 
@@ -8273,31 +8275,48 @@ profiler-app/
 
 ### Entry Point (`index.ts`)
 
-Handles application initialization:
+Handles application initialization with callback-based profiler integration:
 
 ```typescript
-async function main() {
-    setupBundleUpload(loader);
+// Define callbacks for profiler UI updates
+const callbacks: ProfilerCallbacks = {
+    onTooltipUpdate: (data, visible) => {
+        // Render tooltip from structured data
+    },
+    onMetricsChanged: (metrics, selectedId) => {
+        // Populate metric dropdown
+    },
+    onWorkersChanged: (workers) => {
+        // Render worker checkboxes
+    },
+    onMessage: (msg) => { /* Show status */ },
+    onMessageClear: () => { /* Hide status */ },
+    onError: (err) => { /* Display error */ }
+};
 
-    // Show welcome message with instructions
-    if (config.messageContainer) {
-        config.messageContainer.innerHTML = `
-            <h2>Welcome to Feldera Profiler</h2>
-            <p>Click the "Load Bundle" button above to select a support bundle (.zip file)<br/> that contains the pipeline profile to visualize.</p>
-        `;
-        config.messageContainer.style.display = 'block';
-    }
-}
+// Wire up UI event handlers
+metricSelector.addEventListener('change', (e) => {
+    loader.selectMetric(e.target.value);
+});
+
+toggleWorkersButton.addEventListener('click', () => {
+    loader.toggleAllWorkers();
+});
+
+searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') loader.search(searchInput.value);
+});
 ```
 
 **Key Features:**
-- Shows welcome screen on startup
-- Sets up file upload handler for bundle selection
+- Callback-based architecture for UI updates
+- Structured tooltip data rendering
+- Event handlers wire UI controls to profiler methods
 - All bundle processing happens in the browser
 
 ### Profiler Lifecycle Manager (`fileLoader.ts`)
 
-Simplified manager that only handles profiler lifecycle:
+Simplified manager that handles profiler lifecycle and proxies profiler methods:
 
 ```typescript
 export class ProfileLoader {
@@ -8307,18 +8326,33 @@ export class ProfileLoader {
         // Dispose old profiler and create new one
         this.profiler.dispose();
         this.profiler = new Profiler(this.config);
-
         this.profiler.render(circuit);
-        this.profiler.clearMessage();
+    }
+
+    // Proxy methods to profiler
+    selectMetric(metricId: string): void {
+        this.profiler.selectMetric(metricId);
+    }
+
+    toggleWorker(workerId: string): void {
+        this.profiler.toggleWorker(workerId);
+    }
+
+    toggleAllWorkers(): void {
+        this.profiler.toggleAllWorkers();
+    }
+
+    search(query: string): void {
+        this.profiler.search(query);
     }
 }
 ```
 
-**Key Changes from Old Architecture:**
-- ❌ Removed `loadFiles()` method (no HTTP fetching)
-- ❌ Removed `fetchJson()` method (no server requests)
-- ✅ Only handles profiler lifecycle and rendering
-- ✅ Simpler, focused responsibility
+**Architecture:**
+- Uses callback-based profiler-lib API
+- Proxies profiler methods to UI event handlers
+- Manages profiler lifecycle (create, render, dispose)
+- No direct UI manipulation (done via callbacks)
 
 ### Browser Bundle Processing (`browserBundleProcessor.ts`)
 
@@ -8379,54 +8413,60 @@ export function setupBundleUpload(loader: ProfileLoader) {
 
 ### HTML Structure (`index.html`)
 
-Single-page HTML with inline styles and profiler containers:
+Single-page HTML with inline styles, header toolbar, and profiler containers:
 
 ```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Feldera Profiler</title>
     <script type="module" src="src/index.ts"></script>
     <style>
-        /* Welcome message styling */
-        #message { /* centered welcome screen */ }
-        #error-message { /* error display */ }
+        /* Gradient header with controls */
+        #header { /* Purple gradient toolbar */ }
+        /* Tooltip styling (black background, no opacity) */
+        #tooltip-container > div { background-color: black; }
     </style>
 </head>
 <body>
-    <div id="page">
-        <!-- Main graph visualization -->
-        <div id="visualizer" style="width: 100%; height: 100vh;"></div>
-
-        <!-- Control panel -->
-        <div id="menus">
-            <div id="selector"><table id="selection-tools"></table></div>
-            <input type="text" id="search" placeholder="Search" />
-            <input type="file" id="bundle-upload" accept=".zip" style="display: none" />
-            <button id="load-bundle-btn">Load Bundle</button>
-            <div id="navigator-parent"></div>
-            <div id="message"></div>
-            <div id="error-message"></div>
+    <!-- Header with all controls -->
+    <header id="header">
+        <div id="header-title">Feldera Profiler</div>
+        <div id="header-controls">
+            <select id="metric-selector"></select>
+            <button id="toggle-workers-btn">Toggle All</button>
+            <div id="worker-checkboxes"></div>
+            <input id="search" placeholder="Node ID" />
+            <button id="load-bundle-btn">📁 Load Bundle</button>
         </div>
+    </header>
 
-        <!-- Tooltip container -->
+    <!-- Main content area -->
+    <div id="main-content">
+        <div id="visualizer"></div>
+        <div id="navigator-parent"></div>
         <div id="tooltip-container"></div>
     </div>
+
+    <div id="message"></div>
+    <div id="error-message"></div>
 </body>
 </html>
 ```
 
 **Key Elements:**
-- `#visualizer` - Main Cytoscape graph canvas (full viewport)
-- `#selector` - Metric/worker selection UI (injected by profiler-lib)
+- `#header` - Top toolbar with purple gradient containing all controls
+- `#visualizer` - Main Cytoscape graph canvas
+- `#metric-selector` - Metric dropdown (populated via callbacks)
+- `#worker-checkboxes` - Worker checkboxes container (populated via callbacks)
+- `#toggle-workers-btn` - Toggle all workers button
 - `#search` - Node search input
-- `#bundle-upload` - Hidden file input for bundle selection
-- `#load-bundle-btn` - Button that triggers file picker
-- `#navigator-parent` - Minimap widget container
-- `#message` - Welcome/instruction message display
-- `#error-message` - Error display area
+- `#load-bundle-btn` - Bundle file picker trigger
+- `#navigator-parent` - Minimap widget container (top-left)
+- `#tooltip-container` - Tooltip display (top-right, fixed position)
+- `#message` - Welcome/instruction message overlay
+- `#error-message` - Error display banner
 
 ## Build Configuration
 
@@ -8471,13 +8511,13 @@ Minimal dependency set focused on browser-only operation:
     },
     "dependencies": {
         "but-unzip": "^0.1.7",           // Browser zip extraction
-        "cytoscape": "^3.33.1",          // Graph visualization (peer dep)
-        "cytoscape-dblclick": "^0.3.1",  // Double-click handler (peer dep)
-        "cytoscape-elk": "^2.3.0",       // Layout algorithm (peer dep)
-        "elkjs": "^0.11.0"               // ELK kernel (peer dep)
+        "cytoscape": "^3.33.1",          // Graph visualization
+        "cytoscape-dblclick": "^0.3.1",  // Double-click handler
+        "cytoscape-elk": "^2.3.0",       // Layout algorithm
+        "elkjs": "^0.11.0"               // ELK kernel
     },
     "devDependencies": {
-        "profiler-lib": "workspace:*",
+        "profiler-lib": "workspace:*",    // Callback-based profiler library
         "typescript": "^5.9.2",
         "vite": "^5.4.20",
         "vite-plugin-singlefile": "^2.0.2"
@@ -8485,252 +8525,11 @@ Minimal dependency set focused on browser-only operation:
 }
 ```
 
-**Removed Dependencies (from old architecture):**
-- ❌ `adm-zip` - Server-side zip extraction
-- ❌ `serve` - Static file server
-- ❌ `tsx` - TypeScript execution for CLI
-- ❌ `@types/adm-zip` - Type definitions
-
-## Usage
-
-### Method 1: Development Server
-
-For development with hot reload:
-
-```bash
-cd js-packages/profiler-app
-bun install
-bun run dev
-# Opens http://localhost:5174
-```
-
-Then use the file picker:
-- Click "Load Bundle" button
-- Select a support bundle (`.zip` file)
-- Profile renders automatically
-
-**Advantages:**
-- Hot Module Replacement (HMR) for rapid development
-- Interactive file selection
-- Works with any bundle location
-
-### Method 2: Standalone HTML
-
-Build and use as a single HTML file:
-
-1. **Build the app:**
-   ```bash
-   cd js-packages/profiler-app
-   bun install
-   bun run build
-   ```
-
-2. **Open the HTML file:**
-   ```bash
-   open dist/index.html
-   # Or double-click dist/index.html in file browser
-   ```
-
-3. **Load a bundle:**
-   - Click "Load Bundle" button
-   - Select a support bundle (`.zip` file)
-   - Profile renders automatically
-
-**Advantages:**
-- Single self-contained file
-- No server required
-- Can be shared easily
-- Works offline
-
-## Data Files
-
-### Profile Bundles (`data/rec.zip`)
-
-Support bundles contain:
-- `*_circuit_profile.json` - Profile data with metrics and circuit structure
-- `*_dataflow_graph.json` - Dataflow graph from SQL compiler
-- `*_pipeline_config.json` - (Optional) Pipeline configuration with SQL source
-
-**Source:** Generate from running pipeline via download support bundle feature in web-console
-
-**Format:** Standard ZIP archive (no compression required, but supported)
-
-## Development Workflow
-
-### Building for Distribution
-
-```bash
-cd js-packages/profiler-app
-bun install        # Install dependencies
-bun run build      # Build to dist/index.html
-```
-
-**Output:**
-```
-dist/
-└── index.html     # Single self-contained HTML file (~2-5MB)
-```
-
-The single HTML file contains:
-- All JavaScript code (bundled and minified)
-- All CSS styles (inlined)
-- All TypeScript compiled to JavaScript
-- profiler-lib code included
-- Cytoscape and dependencies bundled
-
-### Development Server
-
-```bash
-bun run dev        # Start Vite dev server
-# Opens http://localhost:5174
-# Hot Module Replacement (HMR) enabled
-# Console shows compilation errors
-```
-
-**During development:**
-- Edit source files in `src/`
-- Changes reflect immediately in browser
-- TypeScript errors show in console
-- No manual rebuild needed
-
-## Use Cases
-
-### 1. Local Development
-
-**Scenario:** Test profiler-lib changes quickly
-
-```bash
-# In profiler-lib
-cd js-packages/profiler-lib
-bun run build
-
-# In profiler-app
-cd ../profiler-app
-bun run dev
-# Click "Load Bundle" and select test bundle
-# Changes to profiler-lib reflect immediately
-```
-
-### 2. Sharing Visualizations
-
-**Scenario:** Share a profile with a team member
-
-```bash
-# Build app
-bun run build
-
-# Create package with bundle
-mkdir share
-cp dist/index.html share/
-cp my-bundle.zip share/data.zip
-
-# Zip and share
-zip -r profile-visualization.zip share/
-
-# Recipient extracts and opens:
-open share/index.html
-# Then clicks "Load Bundle" and selects data.zip
-```
-
-### 3. Offline Analysis
-
-**Scenario:** Analyze profiles without network connection
-
-```bash
-# Build once with network
-bun run build
-
-# Copy to USB drive or offline machine
-cp dist/index.html /path/to/offline/machine/
-cp bundles/*.zip /path/to/offline/machine/
-
-# Open offline
-open /path/to/offline/machine/index.html
-# Then use "Load Bundle" button to select bundle files
-```
-
-### 4. Batch Testing
-
-**Scenario:** Test with many bundles
-
-```bash
-# Start dev server
-bun run dev
-
-# Manually load each bundle via the UI to compare visualizations
-# Or use browser automation tools (Playwright, Selenium) to script the file upload
-```
-
-## Troubleshooting
-
-### Bundle loads but shows blank screen
-
-**Cause:** Bundle may not contain required files
-
-**Fix:** Verify bundle contains:
-- `*_circuit_profile.json`
-- `*_dataflow_graph.json`
-
-Extract bundle and check:
-```bash
-unzip -l bundle.zip | grep -E "(circuit_profile|dataflow_graph)"
-```
-
-### "Invalid JSON" errors
-
-**Cause:** Bundle files are corrupted or compressed with unsupported format
-
-**Fix:**
-- Verify bundle is valid zip: `unzip -t bundle.zip`
-- Check files are uncompressed or use standard deflate
-- Re-download bundle from source
-
-### Memory issues with large profiles
-
-**Cause:** Large profiles (>1000 nodes) can consume significant memory
-
-**Fix:**
-- Close other browser tabs
-- Use browser with good memory management (Chrome/Edge)
-- Consider simplifying profile or filtering data
-
-### TypeScript compilation errors during development
-
-**Cause:** profiler-lib types not generated or out of sync
-
-**Fix:**
-```bash
-cd js-packages/profiler-lib
-bun run build    # Regenerate types
-cd ../profiler-app
-# Restart dev server if needed
-```
-
-## Performance Considerations
-
-### Build Size
-
-The single HTML file is typically **2-5 MB** depending on:
-- profiler-lib size
-- Cytoscape and ELK dependencies
-- Source map inclusion (dev builds larger)
-
-**Optimization:**
-- Production builds are minified
-- Source maps can be disabled for smaller files
-- Tree-shaking removes unused code
-
-### Runtime Performance
-
-Rendering performance handled by profiler-lib:
-- See `profiler-lib/CLAUDE.md` for optimization details
-
-## Related Documentation
-
-- `profiler-lib/CLAUDE.md` - Core visualization library architecture
-- `profiler-lib/README.md` - Library usage guide
-- `web-console/src/lib/components/profiler/README.md` - Production profiler integration
-- `data/README.md` - Data directory and bundle format
+**Key Points:**
+- Uses profiler-lib's callback-based API (no UI element injection)
+- All Cytoscape dependencies are direct dependencies (not peer deps)
+- Browser-only operation via `but-unzip` for zip extraction
+- Single HTML file output via `vite-plugin-singlefile`
 
 **Development Flow:**
 1. Develop visualization features in profiler-lib
@@ -8741,7 +8540,7 @@ Rendering performance handled by profiler-lib:
 **Distribution Flow:**
 1. Build profiler-app to single HTML
 2. Share HTML file + bundle with team members
-3. Recipients open locally without installation
+3. Recipients open profile in browser without installation
 4. Everyone sees same visualization
 <!-- SECTION:js-packages/profiler-app/CLAUDE.md END -->
 
@@ -8770,41 +8569,49 @@ Transform raw profile data into interactive visualizations that help developers:
 
 ### Clean Separation of Concerns
 
-This library handles **only visualization**:
-- ✅ Accepts parsed `CircuitProfile` and DOM container elements
-- ✅ Manages Cytoscape graph lifecycle
+This library handles **only visualization and calculation**:
+- ✅ Calculates graph layout and renders diagram using Cytoscape
+- ✅ Computes metric visualizations and tooltip data
 - ✅ Handles user interactions (pan, zoom, hover, double-click)
+- ✅ Communicates UI state changes via callbacks
 - ✅ No file I/O, no network requests, no global singletons
-- ✅ Explicit dependency injection throughout
+- ✅ No UI control rendering or DOM manipulation outside graph containers
 
 What it does **not** do:
 - ❌ Fetch data from files or APIs (caller's responsibility)
-- ❌ Provide HTML shell or application structure
+- ❌ Render UI controls (metric selectors, worker checkboxes, tooltips)
 - ❌ Manage authentication or authorization
 - ❌ Handle routing or navigation
 
 ### Public API Surface
 
-The library exports a minimal, explicit API via `src/index.ts`:
+The library exports a minimal, callback-based API via `src/index.ts`:
 
 ```typescript
-// Main profiler class
-export { Profiler, type ProfilerConfig } from './profiler.js'
+// Main profiler class and configuration
+export { Profiler, type ProfilerConfig, type ProfilerCallbacks } from './profiler.js'
 
-// Data types for parsing
+// UI state types
+export { type MetricOption, type WorkerOption } from './profiler.js'
+
+// Tooltip data types
+export { type TooltipData, type TooltipRow, type TooltipCell } from './profiler.js'
+
+// Data parsing types
 export { CircuitProfile, type JsonProfiles } from './profile.js'
 export { type Dataflow } from './dataflow.js'
 ```
 
 ### Core Module Responsibilities
 
-**`profiler.ts`** - Main API Class (140 lines)
+**`profiler.ts`** - Main API Class (~190 lines)
 - Primary entry point for library users
-- Accepts `ProfilerConfig` with explicit DOM container references
+- Accepts `ProfilerConfig` with graph/navigator containers and `ProfilerCallbacks`
 - Orchestrates initialization of selectors, graph, and rendering
 - Manages profiler lifecycle (create, render, dispose)
-- Provides error reporting through injected error container
-- Key class: `Profiler` with `render()` and `dispose()` methods
+- Exports public methods for interaction: `selectMetric()`, `toggleWorker()`, `toggleAllWorkers()`, `search()`
+- Defines callback interfaces and UI state types
+- Key types: `ProfilerCallbacks`, `TooltipData`, `MetricOption`, `WorkerOption`
 
 **`profile.ts`** - Profile Data Model (787 lines)
 - Parses `JsonProfiles` from Feldera pipeline manager
@@ -8823,16 +8630,16 @@ export { type Dataflow } from './dataflow.js'
 - Extracts SQL source fragments with highlighting for debugging
 - Key classes: `Dataflow`, `MirNode`, `Sources`, `SourcePositionRange`
 
-**`cytograph.ts`** - Cytoscape Rendering (894 lines)
+**`cytograph.ts`** - Cytoscape Rendering (~900 lines)
 - Converts `CircuitProfile` to Cytoscape-compatible graph structure
 - Manages node expansion/collapse for hierarchical circuits
 - Computes incremental graph diffs using `ZSet` for efficient updates
 - Handles edge rewriting when nodes are collapsed into parent containers
 - Renders performance metrics as node colors (percentile-based heatmap)
-- Implements rich hover tooltips with metrics tables, SQL source, and metadata
+- Builds structured tooltip data on hover with per-worker heatmap rows (sorted alphabetically), source code, and attributes
 - Highlights reachable edges on hover (forward paths in red, backward in blue)
 - Uses ELK hierarchical layout algorithm for high-quality graph positioning
-- **Dependency injection**: Accepts `graphContainer`, `navigatorContainer`, and `tooltip` as constructor parameters
+- Communicates tooltip updates via callbacks with structured data
 - Key classes: `Cytograph`, `CytographRendering`, `GraphNode`, `GraphEdge`
 
 **`selection.ts`** - Node Expansion State (60 lines)
@@ -8842,11 +8649,11 @@ export { type Dataflow } from './dataflow.js'
 - Triggers graph recomputation when selection changes
 - Key classes: `CircuitSelector`, `CircuitSelection`
 
-**`metadataSelection.ts`** - Metric/Worker Filtering (112 lines)
-- Controls which performance metrics drive node coloring
-- Generates UI for metric selection (dropdown) and worker filtering (checkboxes)
-- Updates visualization when user changes metadata view
-- Provides "toggle all workers" button for convenience
+**`metadataSelection.ts`** - Metric/Worker State Management (~120 lines)
+- Manages which performance metrics drive node coloring
+- Tracks worker visibility state
+- Notifies UI via callbacks when metrics or workers change
+- Provides methods for metric selection and worker toggling
 - Key classes: `MetadataSelector`, `MetadataSelection`
 
 **`navigator.ts`** - Minimap Widget (84 lines)
@@ -8884,96 +8691,138 @@ export { type Dataflow } from './dataflow.js'
 
 ## Usage Pattern
 
-### Basic Usage
+### Basic Usage with Callbacks
 
 ```typescript
-import { Profiler, CircuitProfile, type ProfilerConfig, type JsonProfiles, type Dataflow } from 'profiler-lib'
+import {
+  Profiler,
+  CircuitProfile,
+  type ProfilerConfig,
+  type ProfilerCallbacks,
+  type TooltipData,
+  type JsonProfiles,
+  type Dataflow
+} from 'profiler-lib'
 
-// 1. Obtain profile and dataflow data (from API, files, etc.)
+// 1. Obtain profile and dataflow data
 const profileData: JsonProfiles = await fetchProfileFromAPI()
 const dataflowData: Dataflow = await fetchDataflowFromAPI()
 
 // 2. Parse the data
 const profile = CircuitProfile.fromJson(profileData)
-profile.setDataflow(dataflowData)
+profile.setDataflow(dataflowData, programCode)
 
-// 3. Set up DOM containers (must exist in document)
-const config: ProfilerConfig = {
-  graphContainer: document.getElementById('graph')!,
-  selectorContainer: document.getElementById('controls')!,
-  navigatorContainer: document.getElementById('minimap')!,
-  errorContainer: document.getElementById('errors'), // optional
+// 3. Define callbacks for UI updates
+const callbacks: ProfilerCallbacks = {
+  onTooltipUpdate: (data: TooltipData | null, visible: boolean) => {
+    // Render tooltip with data.columns, data.rows, data.sources, data.attributes
+    updateTooltipUI(data, visible)
+  },
+  onMetricsChanged: (metrics, selectedMetricId) => {
+    // Populate metric dropdown with available metrics
+    renderMetricSelector(metrics, selectedMetricId)
+  },
+  onWorkersChanged: (workers) => {
+    // Render worker checkboxes with checked state
+    renderWorkerCheckboxes(workers)
+  },
+  onMessage: (msg) => console.log(msg),
+  onMessageClear: () => {},
+  onError: (err) => console.error(err)
 }
 
-// 4. Create profiler and render
+// 4. Set up configuration
+const config: ProfilerConfig = {
+  graphContainer: document.getElementById('graph')!,
+  navigatorContainer: document.getElementById('minimap')!,
+  callbacks
+}
+
+// 5. Create profiler and render
 const profiler = new Profiler(config)
 profiler.render(profile)
 
-// 5. Clean up when done (important!)
+// 6. Interact with profiler via public methods
+profiler.selectMetric('time')
+profiler.toggleWorker('0')
+profiler.search('node-123')
+
+// 7. Clean up when done
 profiler.dispose()
 ```
 
 ### Required HTML Structure
 
 ```html
+<!-- Graph container -->
 <div id="graph" style="width: 100%; height: 80vh;"></div>
-<div id="controls">
-  <!-- Metric/worker selector UI will be injected here -->
-</div>
-<div id="minimap" style="width: 100px; height: 100px;"></div>
-<div id="errors" style="display: none; color: red;"></div>
+
+<!-- Navigator minimap -->
+<div id="minimap" style="width: 108px; height: 108px;"></div>
+
+<!-- UI controls (managed by your application, not profiler-lib) -->
+<select id="metric-selector"></select>
+<div id="worker-checkboxes"></div>
+<button id="toggle-workers">Toggle All</button>
+<input id="search" placeholder="Node ID" />
+
+<!-- Tooltip container (managed by your application) -->
+<div id="tooltip"></div>
 ```
 
-### Framework Integration Examples
+### Callback-Based Architecture
 
-**Svelte 5:**
-```svelte
-<script lang="ts">
-  import { onMount, onDestroy } from 'svelte'
-  import { Profiler, CircuitProfile, type ProfilerConfig } from 'profiler-lib'
+The library uses callbacks to communicate UI state changes to the parent application:
 
-  let graphContainer: HTMLDivElement
-  let profiler: Profiler | null = null
+**`ProfilerCallbacks` Interface:**
+```typescript
+interface ProfilerCallbacks {
+  // Tooltip data updates (null = hide tooltip)
+  onTooltipUpdate: (data: TooltipData | null, visible: boolean) => void
 
-  $effect(() => {
-    if (!graphContainer || !profileData) return
+  // Available metrics changed (initialize dropdown)
+  onMetricsChanged: (metrics: MetricOption[], selectedMetricId: string) => void
 
-    const profile = CircuitProfile.fromJson(profileData)
-    profile.setDataflow(dataflowData)
+  // Worker state changed (update checkboxes)
+  onWorkersChanged: (workers: WorkerOption[]) => void
 
-    profiler = new Profiler({ graphContainer, ... })
-    profiler.render(profile)
-  })
+  // Status messages
+  onMessage: (message: string) => void
+  onMessageClear: () => void
 
-  onDestroy(() => profiler?.dispose())
-</script>
-
-<div bind:this={graphContainer}></div>
-```
-
-**React:**
-```tsx
-import { useEffect, useRef } from 'react'
-import { Profiler, CircuitProfile } from 'profiler-lib'
-
-function ProfilerComponent({ profileData, dataflowData }) {
-  const graphRef = useRef<HTMLDivElement>(null)
-  const profilerRef = useRef<Profiler | null>(null)
-
-  useEffect(() => {
-    if (!graphRef.current) return
-
-    const profile = CircuitProfile.fromJson(profileData)
-    profile.setDataflow(dataflowData)
-
-    profilerRef.current = new Profiler({ graphContainer: graphRef.current, ... })
-    profilerRef.current.render(profile)
-
-    return () => profilerRef.current?.dispose()
-  }, [profileData, dataflowData])
-
-  return <div ref={graphRef} style={{ width: '100%', height: '80vh' }} />
+  // Error reporting
+  onError: (error: string) => void
 }
+```
+
+**`TooltipData` Structure:**
+```typescript
+interface TooltipData {
+  columns: string[]                  // Worker names
+  rows: TooltipRow[]                 // Metrics with per-worker values
+  sources?: string                   // SQL source code
+  attributes: Map<string, string>    // Additional node attributes
+}
+
+interface TooltipRow {
+  metric: string                     // Metric name
+  isCurrentMetric: boolean           // True if this drives node coloring
+  cells: TooltipCell[]               // Per-worker values
+}
+
+interface TooltipCell {
+  value: string                      // Formatted value
+  percentile: number                 // 0-100 for heatmap coloring
+}
+```
+
+**Public Methods:**
+```typescript
+profiler.selectMetric(metricId: string)     // Change selected metric
+profiler.toggleWorker(workerId: string)     // Toggle worker visibility
+profiler.toggleAllWorkers()                 // Toggle all workers
+profiler.search(query: string)              // Search for node by ID
+profiler.dispose()                          // Clean up resources
 ```
 
 ## Data Format Requirements
@@ -9027,60 +8876,6 @@ interface Dataflow {
     }
   }
 }
-```
-
-## Key Refactorings from Monolithic Profiler
-
-### Before: Global Singleton Pattern
-
-```typescript
-// Old globals.ts
-export class Globals {
-  private static instance: Globals
-  public readonly tooltip: HTMLElement
-
-  static getInstance(): Globals { ... }
-
-  run(profile: CircuitProfile) {
-    let table = document.getElementById("selection-tools")!  // Hard-coded DOM lookup
-    // ...
-  }
-}
-
-// Old usage
-Globals.getInstance().loadFiles("data", "rec")  // Mixed concerns
-```
-
-### After: Dependency Injection
-
-```typescript
-// New profiler.ts
-export class Profiler {
-  private readonly tooltip: HTMLElement
-
-  constructor(config: ProfilerConfig) {
-    // Explicit injection, no DOM lookups
-    this.tooltip = document.createElement('div')
-    document.body.appendChild(this.tooltip)
-  }
-
-  render(profile: CircuitProfile) {
-    // Uses injected containers, not global lookups
-    this.metadataSelector.display(this.config.selectorContainer)
-  }
-
-  dispose() {
-    // Explicit cleanup
-    if (this.tooltip.parentNode) {
-      this.tooltip.parentNode.removeChild(this.tooltip)
-    }
-  }
-}
-
-// New usage
-const profiler = new Profiler(config)  // Explicit dependencies
-profiler.render(profile)               // Pure rendering
-profiler.dispose()                     // Explicit cleanup
 ```
 
 ## Development Workflow
@@ -9171,24 +8966,38 @@ describe('CircuitProfile', () => {
 Test with real DOM and Cytoscape:
 
 ```typescript
-import { Profiler } from 'profiler-lib'
+import { Profiler, type ProfilerCallbacks } from 'profiler-lib'
 
 describe('Profiler rendering', () => {
-  let container: HTMLDivElement
+  let graphContainer: HTMLDivElement
+  let navigatorContainer: HTMLDivElement
 
   beforeEach(() => {
-    container = document.createElement('div')
-    document.body.appendChild(container)
+    graphContainer = document.createElement('div')
+    navigatorContainer = document.createElement('div')
+    document.body.appendChild(graphContainer)
+    document.body.appendChild(navigatorContainer)
   })
 
   afterEach(() => {
-    document.body.removeChild(container)
+    document.body.removeChild(graphContainer)
+    document.body.removeChild(navigatorContainer)
   })
 
   it('renders without errors', () => {
+    const callbacks: ProfilerCallbacks = {
+      onTooltipUpdate: () => {},
+      onMetricsChanged: () => {},
+      onWorkersChanged: () => {},
+      onMessage: () => {},
+      onMessageClear: () => {},
+      onError: () => {}
+    }
+
     const profiler = new Profiler({
-      graphContainer: container,
-      // ... other containers
+      graphContainer,
+      navigatorContainer,
+      callbacks
     })
 
     expect(() => profiler.render(mockProfile)).not.toThrow()
@@ -9264,57 +9073,13 @@ Ensure `moduleResolution: "node"` in `tsconfig.json`:
 }
 ```
 
-## Future Enhancements
-
-### Streaming Updates
-
-Support incremental profile updates for live profiling:
-
-```typescript
-class Profiler {
-  updateProfile(delta: Partial<JsonProfiles>): void {
-    // Apply incremental changes without full re-render
-  }
-}
-```
-
-### Custom Styling
-
-Allow theme customization:
-
-```typescript
-interface ProfilerConfig {
-  // ... existing
-  theme?: {
-    nodeColors: { min: string, max: string }
-    edgeColors: { forward: string, backward: string }
-    backgroundColor: string
-  }
-}
-```
-
-### Export Capabilities
-
-Add visualization export:
-
-```typescript
-class Profiler {
-  exportAsImage(format: 'png' | 'svg'): Blob
-  exportData(): { nodes: any[], edges: any[] }
-}
-```
-
-### Accessibility
-
-- ARIA labels for graph elements
-- Keyboard navigation support
-- High contrast mode
-- Screen reader announcements
-
 ## Related Packages
 
 - **profiler-app**: Standalone application using profiler-lib with file loading
-- **web-console**: Production UI with `ProfilerDiagram.svelte` wrapper component
+- **web-console**: Production UI with three-layer architecture:
+  - `TabProfileVisualizer.svelte` - Data loading and snapshot management
+  - `ProfilerLayout.svelte` - UI controls and tooltip rendering
+  - `ProfilerDiagram.svelte` - Glue layer between ProfilerLayout and profiler-lib
 <!-- SECTION:js-packages/profiler-lib/CLAUDE.md END -->
 
 ---
