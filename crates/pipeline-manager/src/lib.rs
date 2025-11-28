@@ -6,7 +6,7 @@ use tracing::{debug, warn};
 mod auth;
 
 pub mod api;
-pub mod cluster_health;
+pub mod cluster_monitor;
 pub mod common_error;
 pub mod compiler;
 pub mod config;

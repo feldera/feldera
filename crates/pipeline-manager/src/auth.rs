@@ -1000,6 +1000,7 @@ mod test {
 
         let common_config = CommonConfig {
             bind_address: "127.0.0.1".to_string(),
+            api_host: "127.0.0.1".to_string(),
             api_port: 0,
             compiler_host: "127.0.0.1".to_string(),
             compiler_port: 8085,
@@ -1011,6 +1012,7 @@ mod test {
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
+            enable_cluster_monitor_resources: false,
         };
 
         let manager_config = ApiServerConfig {
@@ -1054,7 +1056,6 @@ mod test {
                 common_config,
                 manager_config,
                 db,
-                Arc::new(RwLock::new(None)),
                 Arc::new(RwLock::new(None)),
             )
             .await

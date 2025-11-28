@@ -237,6 +237,122 @@
         ]
       }
     },
+    "/v0/cluster/events": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "List of retained cluster monitor events.",
+        "operationId": "list_cluster_events",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ClusterMonitorEventSelectedInfo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/cluster/events/{event_id}": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Get specific cluster monitor event.",
+        "operationId": "get_cluster_event",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "Cluster monitor event identifier or `latest`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterMonitorEventSelectedInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/cluster_healthz": {
       "get": {
         "tags": [
@@ -244,7 +360,7 @@
         ],
         "summary": "Check Cluster Health",
         "description": "Retrieve the health status of the Feldera control-plane.",
-        "operationId": "get_health",
+        "operationId": "get_cluster_health",
         "responses": {
           "200": {
             "description": "All services healthy",
@@ -6096,6 +6212,98 @@
           }
         }
       },
+      "ClusterMonitorEvent": {
+        "type": "object",
+        "description": "Brief cluster monitoring event with only the identifier, timestamp and health conclusions.",
+        "required": [
+          "id",
+          "recorded_at",
+          "api_status",
+          "runner_status",
+          "compiler_status"
+        ],
+        "properties": {
+          "api_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "compiler_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ClusterMonitorEventId"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp at which the event was recorded in the database. Because collecting the data for\nthe health checks can take time, this timestamp is approximate."
+          },
+          "runner_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          }
+        }
+      },
+      "ClusterMonitorEventId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Cluster monitor event identifier."
+      },
+      "ClusterMonitorEventSelectedInfo": {
+        "type": "object",
+        "description": "Cluster monitor event information which has a selected subset of optional fields.\nIf an optional field is not selected (i.e., is `None`), it will not be serialized.",
+        "required": [
+          "id",
+          "recorded_at",
+          "all_healthy",
+          "api_status",
+          "runner_status",
+          "compiler_status"
+        ],
+        "properties": {
+          "all_healthy": {
+            "type": "boolean"
+          },
+          "api_resources_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "api_self_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "api_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "compiler_resources_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "compiler_self_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "compiler_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ClusterMonitorEventId"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "runner_resources_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "runner_self_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "runner_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          }
+        }
+      },
       "ColumnType": {
         "type": "object",
         "description": "A SQL column type description.\n\nMatches the Calcite JSON format.",
@@ -6948,6 +7156,66 @@
           }
         }
       },
+      "ExtendedClusterMonitorEvent": {
+        "type": "object",
+        "description": "Extended cluster monitoring event with full details.",
+        "required": [
+          "id",
+          "recorded_at",
+          "api_status",
+          "api_self_info",
+          "api_resources_info",
+          "runner_status",
+          "runner_self_info",
+          "runner_resources_info",
+          "compiler_status",
+          "compiler_self_info",
+          "compiler_resources_info"
+        ],
+        "properties": {
+          "api_resources_info": {
+            "type": "string",
+            "description": "Human-readable status report based on checking the resources backing the API server(s)."
+          },
+          "api_self_info": {
+            "type": "string",
+            "description": "Human-readable status report reported by the API server(s) themselves."
+          },
+          "api_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "compiler_resources_info": {
+            "type": "string",
+            "description": "Human-readable status report based on checking the resources backing the compiler server(s)."
+          },
+          "compiler_self_info": {
+            "type": "string",
+            "description": "Human-readable status report reported by the compiler server(s) themselves."
+          },
+          "compiler_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ClusterMonitorEventId"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp at which the event was recorded in the database. Because collecting the data for\nthe health checks can take time, this timestamp is approximate."
+          },
+          "runner_resources_info": {
+            "type": "string",
+            "description": "Human-readable status report based on checking the resources backing the runner."
+          },
+          "runner_self_info": {
+            "type": "string",
+            "description": "Human-readable status report reported by the runner itself."
+          },
+          "runner_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          }
+        }
+      },
       "Field": {
         "allOf": [
           {
@@ -7194,10 +7462,18 @@
       "HealthStatus": {
         "type": "object",
         "required": [
+          "all_healthy",
+          "api",
           "runner",
           "compiler"
         ],
         "properties": {
+          "all_healthy": {
+            "type": "boolean"
+          },
+          "api": {
+            "$ref": "#/components/schemas/ServiceStatus"
+          },
           "compiler": {
             "$ref": "#/components/schemas/ServiceStatus"
           },
@@ -7768,6 +8044,14 @@
           }
         },
         "additionalProperties": {}
+      },
+      "MonitorStatus": {
+        "type": "string",
+        "enum": [
+          "InitialUnhealthy",
+          "Unhealthy",
+          "Healthy"
+        ]
       },
       "NatsInputConfig": {
         "type": "object",
