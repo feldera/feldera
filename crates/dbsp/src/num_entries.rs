@@ -159,7 +159,7 @@ num_entries_scalar_test! {
 
 // FIXME: This is incorrect, it doesn't take into account any entries
 //        of the underlying types
-#[impl_for_tuples(12)]
+#[impl_for_tuples(14)]
 impl NumEntries for Tuple {
     const CONST_NUM_ENTRIES: Option<usize> = Some(1);
 
