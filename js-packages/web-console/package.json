@@ -5,7 +5,7 @@
   "scripts": {
     "clean-install": "bun ci",
     "dev": "vite dev --host",
-    "prebuild": "cd ../profiler-lib && bun run build",
+    "prebuild": "cd ../profiler-lib && ([ \"$CI\" = \"TRUE\" ] && bun install || true) && bun run build",
     "build": "svelte-kit sync && svelte-check --threshold error && vite build",
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check",
@@ -32,7 +32,7 @@
     "@fortawesome/fontawesome-free": "6.7.2",
     "@hey-api/client-fetch": "0.1.10",
     "@hey-api/openapi-ts": "0.47.2",
-    "@monaco-editor/loader": "1.7.0",
+    "@monaco-editor/loader": "1.6.1",
     "@playwright/experimental-ct-svelte": "1.50.1",
     "@playwright/test": "1.50.1",
     "@poppanator/sveltekit-svg": "5.0.0",
