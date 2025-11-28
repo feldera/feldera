@@ -235,9 +235,10 @@ class TstAccumulator:
             pipeline.start()
 
             for table in self.tables:
-                pipeline.input_json(
-                    table.name, table.get_data(), update_format="insert_delete"
-                )
+                if table.get_data() != []:
+                    pipeline.input_json(
+                        table.name, table.get_data(), update_format="insert_delete"
+                    )
 
                 pipeline.wait_for_completion(force_stop=False, timeout_s=320)
 
