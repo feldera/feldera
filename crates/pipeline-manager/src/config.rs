@@ -190,6 +190,10 @@ pub struct CommonConfig {
     #[arg(long, default_value = "127.0.0.1")]
     pub bind_address: String,
 
+    /// Host (hostname or IP address) at which the API HTTP server can be reached by the others.
+    #[arg(long, default_value = "127.0.0.1")]
+    pub api_host: String,
+
     /// Port used by the API server to both bind its HTTP server, and on which it can be reached.
     #[arg(long, default_value_t = 8080)]
     pub api_port: u16,
@@ -260,6 +264,10 @@ pub struct CommonConfig {
     /// certificate.
     #[arg(long)]
     pub https_tls_key_path: Option<String>,
+
+    /// Whether to enable cluster monitoring of the underlying resources.
+    #[arg(long, default_value_t = false)]
+    pub enable_cluster_monitor_resources: bool,
 }
 
 impl CommonConfig {
@@ -408,6 +416,7 @@ impl CommonConfig {
     pub(crate) fn test_config() -> Self {
         Self {
             bind_address: "127.0.0.1".to_string(),
+            api_host: "127.0.0.1".to_string(),
             api_port: 8080,
             compiler_host: "127.0.0.1".to_string(),
             compiler_port: 8085,
@@ -419,6 +428,7 @@ impl CommonConfig {
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
+            enable_cluster_monitor_resources: false,
         }
     }
 }

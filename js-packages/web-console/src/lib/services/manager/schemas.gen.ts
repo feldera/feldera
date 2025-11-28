@@ -360,6 +360,91 @@ export const $ClockConfig = {
   }
 } as const
 
+export const $ClusterMonitorEvent = {
+  type: 'object',
+  description:
+    'Brief cluster monitoring event with only the identifier, timestamp and health conclusions.',
+  required: ['id', 'recorded_at', 'api_status', 'runner_status', 'compiler_status'],
+  properties: {
+    api_status: {
+      $ref: '#/components/schemas/MonitorStatus'
+    },
+    compiler_status: {
+      $ref: '#/components/schemas/MonitorStatus'
+    },
+    id: {
+      $ref: '#/components/schemas/ClusterMonitorEventId'
+    },
+    recorded_at: {
+      type: 'string',
+      format: 'date-time',
+      description: `Timestamp at which the event was recorded in the database. Because collecting the data for
+the health checks can take time, this timestamp is approximate.`
+    },
+    runner_status: {
+      $ref: '#/components/schemas/MonitorStatus'
+    }
+  }
+} as const
+
+export const $ClusterMonitorEventId = {
+  type: 'string',
+  format: 'uuid',
+  description: 'Cluster monitor event identifier.'
+} as const
+
+export const $ClusterMonitorEventSelectedInfo = {
+  type: 'object',
+  description: `Cluster monitor event information which has a selected subset of optional fields.
+If an optional field is not selected (i.e., is \`None\`), it will not be serialized.`,
+  required: ['id', 'recorded_at', 'all_healthy', 'api_status', 'runner_status', 'compiler_status'],
+  properties: {
+    all_healthy: {
+      type: 'boolean'
+    },
+    api_resources_info: {
+      type: 'string',
+      nullable: true
+    },
+    api_self_info: {
+      type: 'string',
+      nullable: true
+    },
+    api_status: {
+      $ref: '#/components/schemas/MonitorStatus'
+    },
+    compiler_resources_info: {
+      type: 'string',
+      nullable: true
+    },
+    compiler_self_info: {
+      type: 'string',
+      nullable: true
+    },
+    compiler_status: {
+      $ref: '#/components/schemas/MonitorStatus'
+    },
+    id: {
+      $ref: '#/components/schemas/ClusterMonitorEventId'
+    },
+    recorded_at: {
+      type: 'string',
+      format: 'date-time'
+    },
+    runner_resources_info: {
+      type: 'string',
+      nullable: true
+    },
+    runner_self_info: {
+      type: 'string',
+      nullable: true
+    },
+    runner_status: {
+      $ref: '#/components/schemas/MonitorStatus'
+    }
+  }
+} as const
+
 export const $ColumnType = {
   type: 'object',
   description: `A SQL column type description.
@@ -1422,6 +1507,71 @@ The contents of this field is determined by \`error_code\`.`
   }
 } as const
 
+export const $ExtendedClusterMonitorEvent = {
+  type: 'object',
+  description: 'Extended cluster monitoring event with full details.',
+  required: [
+    'id',
+    'recorded_at',
+    'api_status',
+    'api_self_info',
+    'api_resources_info',
+    'runner_status',
+    'runner_self_info',
+    'runner_resources_info',
+    'compiler_status',
+    'compiler_self_info',
+    'compiler_resources_info'
+  ],
+  properties: {
+    api_resources_info: {
+      type: 'string',
+      description:
+        'Human-readable status report based on checking the resources backing the API server(s).'
+    },
+    api_self_info: {
+      type: 'string',
+      description: 'Human-readable status report reported by the API server(s) themselves.'
+    },
+    api_status: {
+      $ref: '#/components/schemas/MonitorStatus'
+    },
+    compiler_resources_info: {
+      type: 'string',
+      description:
+        'Human-readable status report based on checking the resources backing the compiler server(s).'
+    },
+    compiler_self_info: {
+      type: 'string',
+      description: 'Human-readable status report reported by the compiler server(s) themselves.'
+    },
+    compiler_status: {
+      $ref: '#/components/schemas/MonitorStatus'
+    },
+    id: {
+      $ref: '#/components/schemas/ClusterMonitorEventId'
+    },
+    recorded_at: {
+      type: 'string',
+      format: 'date-time',
+      description: `Timestamp at which the event was recorded in the database. Because collecting the data for
+the health checks can take time, this timestamp is approximate.`
+    },
+    runner_resources_info: {
+      type: 'string',
+      description:
+        'Human-readable status report based on checking the resources backing the runner.'
+    },
+    runner_self_info: {
+      type: 'string',
+      description: 'Human-readable status report reported by the runner itself.'
+    },
+    runner_status: {
+      $ref: '#/components/schemas/MonitorStatus'
+    }
+  }
+} as const
+
 export const $Field = {
   allOf: [
     {
@@ -1731,8 +1881,14 @@ Example: \`"s3://my-data-warehouse/tables/"\``,
 
 export const $HealthStatus = {
   type: 'object',
-  required: ['runner', 'compiler'],
+  required: ['all_healthy', 'api', 'runner', 'compiler'],
   properties: {
+    all_healthy: {
+      type: 'boolean'
+    },
+    api: {
+      $ref: '#/components/schemas/ServiceStatus'
+    },
     compiler: {
       $ref: '#/components/schemas/ServiceStatus'
     },
@@ -2059,6 +2215,46 @@ export const $KafkaInputConfig = {
       description: `Maximum timeout in seconds to wait for the endpoint to join the Kafka
 consumer group during initialization.`,
       minimum: 0
+    },
+    include_headers: {
+      type: 'boolean',
+      description: `Whether to include Kafka headers in the record metadata.
+
+When \`true\`, Kafka message headers are available via the \`CONNECTOR_METADATA()\` function.
+See <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.`,
+      nullable: true
+    },
+    include_offset: {
+      type: 'boolean',
+      description: `Whether to include Kafka message offset in the record metadata.
+
+When \`true\`, Kafka message offset is available via the \`CONNECTOR_METADATA()\` function.
+See <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.`,
+      nullable: true
+    },
+    include_partition: {
+      type: 'boolean',
+      description: `Whether to include Kafka partition in the record metadata.
+
+When \`true\`, Kafka partition from which the message was read is available via the \`CONNECTOR_METADATA()\` function.
+See <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.`,
+      nullable: true
+    },
+    include_timestamp: {
+      type: 'boolean',
+      description: `Whether to include Kafka message timestamp in the record metadata.
+
+When \`true\`, Kafka message timestamp is available via the \`CONNECTOR_METADATA()\` function.
+See <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.`,
+      nullable: true
+    },
+    include_topic: {
+      type: 'boolean',
+      description: `Whether to include Kafka topic in the record metadata.
+
+When \`true\`, Kafka topic from which the message was read is available via the \`CONNECTOR_METADATA()\` function.
+See <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.`,
+      nullable: true
     },
     log_level: {
       allOf: [
@@ -2437,6 +2633,11 @@ export const $MirNode = {
     }
   },
   additionalProperties: {}
+} as const
+
+export const $MonitorStatus = {
+  type: 'string',
+  enum: ['InitialUnhealthy', 'Unhealthy', 'Healthy']
 } as const
 
 export const $NatsInputConfig = {

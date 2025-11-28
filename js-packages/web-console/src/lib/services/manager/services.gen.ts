@@ -15,8 +15,13 @@ import type {
   DeleteApiKeyData,
   DeleteApiKeyError,
   DeleteApiKeyResponse,
-  GetHealthError,
-  GetHealthResponse,
+  ListClusterEventsError,
+  ListClusterEventsResponse,
+  GetClusterEventData,
+  GetClusterEventError,
+  GetClusterEventResponse,
+  GetClusterHealthError,
+  GetClusterHealthResponse,
   GetConfigError,
   GetConfigResponse,
   GetConfigDemosError,
@@ -204,11 +209,31 @@ export const deleteApiKey = (options: Options<DeleteApiKeyData>) => {
 }
 
 /**
+ * List of retained cluster monitor events.
+ */
+export const listClusterEvents = (options?: Options) => {
+  return (options?.client ?? client).get<ListClusterEventsResponse, ListClusterEventsError>({
+    ...options,
+    url: '/v0/cluster/events'
+  })
+}
+
+/**
+ * Get specific cluster monitor event.
+ */
+export const getClusterEvent = (options: Options<GetClusterEventData>) => {
+  return (options?.client ?? client).get<GetClusterEventResponse, GetClusterEventError>({
+    ...options,
+    url: '/v0/cluster/events/{event_id}'
+  })
+}
+
+/**
  * Check Cluster Health
  * Retrieve the health status of the Feldera control-plane.
  */
-export const getHealth = (options?: Options) => {
-  return (options?.client ?? client).get<GetHealthResponse, GetHealthError>({
+export const getClusterHealth = (options?: Options) => {
+  return (options?.client ?? client).get<GetClusterHealthResponse, GetClusterHealthError>({
     ...options,
     url: '/v0/cluster_healthz'
   })

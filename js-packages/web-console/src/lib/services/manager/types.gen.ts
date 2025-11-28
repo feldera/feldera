@@ -206,6 +206,45 @@ export type ClockConfig = {
 }
 
 /**
+ * Brief cluster monitoring event with only the identifier, timestamp and health conclusions.
+ */
+export type ClusterMonitorEvent = {
+  api_status: MonitorStatus
+  compiler_status: MonitorStatus
+  id: ClusterMonitorEventId
+  /**
+   * Timestamp at which the event was recorded in the database. Because collecting the data for
+   * the health checks can take time, this timestamp is approximate.
+   */
+  recorded_at: string
+  runner_status: MonitorStatus
+}
+
+/**
+ * Cluster monitor event identifier.
+ */
+export type ClusterMonitorEventId = string
+
+/**
+ * Cluster monitor event information which has a selected subset of optional fields.
+ * If an optional field is not selected (i.e., is `None`), it will not be serialized.
+ */
+export type ClusterMonitorEventSelectedInfo = {
+  all_healthy: boolean
+  api_resources_info?: string | null
+  api_self_info?: string | null
+  api_status: MonitorStatus
+  compiler_resources_info?: string | null
+  compiler_self_info?: string | null
+  compiler_status: MonitorStatus
+  id: ClusterMonitorEventId
+  recorded_at: string
+  runner_resources_info?: string | null
+  runner_self_info?: string | null
+  runner_status: MonitorStatus
+}
+
+/**
  * A SQL column type description.
  *
  * Matches the Calcite JSON format.
@@ -952,6 +991,45 @@ export type ErrorResponse = {
 }
 
 /**
+ * Extended cluster monitoring event with full details.
+ */
+export type ExtendedClusterMonitorEvent = {
+  /**
+   * Human-readable status report based on checking the resources backing the API server(s).
+   */
+  api_resources_info: string
+  /**
+   * Human-readable status report reported by the API server(s) themselves.
+   */
+  api_self_info: string
+  api_status: MonitorStatus
+  /**
+   * Human-readable status report based on checking the resources backing the compiler server(s).
+   */
+  compiler_resources_info: string
+  /**
+   * Human-readable status report reported by the compiler server(s) themselves.
+   */
+  compiler_self_info: string
+  compiler_status: MonitorStatus
+  id: ClusterMonitorEventId
+  /**
+   * Timestamp at which the event was recorded in the database. Because collecting the data for
+   * the health checks can take time, this timestamp is approximate.
+   */
+  recorded_at: string
+  /**
+   * Human-readable status report based on checking the resources backing the runner.
+   */
+  runner_resources_info: string
+  /**
+   * Human-readable status report reported by the runner itself.
+   */
+  runner_self_info: string
+  runner_status: MonitorStatus
+}
+
+/**
  * A SQL field.
  *
  * Matches the SQL compiler JSON format.
@@ -1171,6 +1249,8 @@ export type GlueCatalogConfig = {
 }
 
 export type HealthStatus = {
+  all_healthy: boolean
+  api: ServiceStatus
   compiler: ServiceStatus
   runner: ServiceStatus
 }
@@ -1438,6 +1518,41 @@ export type KafkaInputConfig = {
    * consumer group during initialization.
    */
   group_join_timeout_secs?: number
+  /**
+   * Whether to include Kafka headers in the record metadata.
+   *
+   * When `true`, Kafka message headers are available via the `CONNECTOR_METADATA()` function.
+   * See <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.
+   */
+  include_headers?: boolean | null
+  /**
+   * Whether to include Kafka message offset in the record metadata.
+   *
+   * When `true`, Kafka message offset is available via the `CONNECTOR_METADATA()` function.
+   * See <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.
+   */
+  include_offset?: boolean | null
+  /**
+   * Whether to include Kafka partition in the record metadata.
+   *
+   * When `true`, Kafka partition from which the message was read is available via the `CONNECTOR_METADATA()` function.
+   * See <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.
+   */
+  include_partition?: boolean | null
+  /**
+   * Whether to include Kafka message timestamp in the record metadata.
+   *
+   * When `true`, Kafka message timestamp is available via the `CONNECTOR_METADATA()` function.
+   * See <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.
+   */
+  include_timestamp?: boolean | null
+  /**
+   * Whether to include Kafka topic in the record metadata.
+   *
+   * When `true`, Kafka topic from which the message was read is available via the `CONNECTOR_METADATA()` function.
+   * See <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.
+   */
+  include_topic?: boolean | null
   log_level?: KafkaLogLevel | null
   /**
    * The list of Kafka partitions to read from.
@@ -1494,7 +1609,7 @@ export type KafkaInputConfig = {
    * * "enable.auto.commit", if present, must be set to "false".
    * * "enable.auto.offset.store", if present, must be set to "false".
    */
-  '[key: string]': (string | number | unknown | boolean | KafkaStartFromConfig) | undefined
+  '[key: string]': (string | number | boolean | unknown | KafkaStartFromConfig) | undefined
 }
 
 /**
@@ -1668,6 +1783,8 @@ export type MirNode = {
   view?: string | null
   '[key: string]': (unknown | MirInput | string | SourcePosition) | undefined
 }
+
+export type MonitorStatus = 'InitialUnhealthy' | 'Unhealthy' | 'Healthy'
 
 export type NatsInputConfig = {
   connection_config: ConnectOptions
@@ -3647,9 +3764,26 @@ export type DeleteApiKeyResponse = unknown
 
 export type DeleteApiKeyError = ErrorResponse
 
-export type GetHealthResponse = HealthStatus
+export type ListClusterEventsResponse = Array<ClusterMonitorEventSelectedInfo>
 
-export type GetHealthError = HealthStatus
+export type ListClusterEventsError = ErrorResponse
+
+export type GetClusterEventData = {
+  path: {
+    /**
+     * Cluster monitor event identifier or `latest`
+     */
+    event_id: string
+  }
+}
+
+export type GetClusterEventResponse = ClusterMonitorEventSelectedInfo
+
+export type GetClusterEventError = ErrorResponse
+
+export type GetClusterHealthResponse = HealthStatus
+
+export type GetClusterHealthError = HealthStatus
 
 export type GetConfigResponse = Configuration
 
@@ -4418,6 +4552,26 @@ export type $OpenApiTs = {
          * API key with that name does not exist
          */
         '404': ErrorResponse
+      }
+    }
+  }
+  '/v0/cluster/events': {
+    get: {
+      res: {
+        '200': Array<ClusterMonitorEventSelectedInfo>
+        '500': ErrorResponse
+        '501': ErrorResponse
+      }
+    }
+  }
+  '/v0/cluster/events/{event_id}': {
+    get: {
+      req: GetClusterEventData
+      res: {
+        '200': ClusterMonitorEventSelectedInfo
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '501': ErrorResponse
       }
     }
   }

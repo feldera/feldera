@@ -31,10 +31,8 @@ def test_cluster_health_check():
                 f"Invalid JSON response from cluster health endpoint: status={status_code}, body={resp.text!r}"
             )
 
-        runner_healthy = bool(body.get("runner", {}).get("healthy") is True)
-        compiler_healthy = bool(body.get("compiler", {}).get("healthy") is True)
-
-        if runner_healthy and compiler_healthy:
+        all_healthy = bool(body.get("all_healthy", False) is True)
+        if all_healthy:
             # Both components healthy; must be HTTP 200.
             assert status_code == HTTPStatus.OK, (
                 f"Expected 200 when both runner and compiler are healthy; got {status_code}, body={body}"
