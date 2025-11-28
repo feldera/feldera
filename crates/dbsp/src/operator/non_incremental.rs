@@ -63,7 +63,7 @@ where
 }
 
 #[allow(clippy::unused_unit)]
-#[impl_for_tuples(12)]
+#[impl_for_tuples(14)]
 #[tuple_types_custom_trait_bound(NonIncrementalInputStreams<C>)]
 impl<C> NonIncrementalInputStreams<C> for Tuple
 where
