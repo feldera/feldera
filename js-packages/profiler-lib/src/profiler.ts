@@ -5,6 +5,7 @@ import { CircuitProfile } from "./profile.js";
 import { Cytograph, CytographRendering } from "./cytograph.js";
 import { CircuitSelector } from "./selection.js";
 import { MetadataSelector } from './metadataSelection.js';
+import { Option } from "./util.js";
 
 /** Represents a selectable metric option */
 export interface MetricOption {
@@ -33,7 +34,7 @@ export interface TooltipRow {
 }
 
 /** Tooltip data structure */
-export interface TooltipData {
+export interface DisplayedAttributes {
     /** Column headers (worker names) */
     columns: string[];
     /** Rows of metrics with values */
@@ -46,8 +47,7 @@ export interface TooltipData {
 
 /** Callbacks for profiler to communicate UI updates */
 export interface ProfilerCallbacks {
-    /** Called when the tooltip should be updated */
-    onTooltipUpdate: (data: TooltipData | null, visible: boolean) => void;
+    displayNodeAttributes: (data: Option<DisplayedAttributes>, visible: boolean) => void;
 
     /** Called when the available metrics change */
     onMetricsChanged: (metrics: MetricOption[], selectedMetricId: string) => void;
@@ -55,11 +55,8 @@ export interface ProfilerCallbacks {
     /** Called when the workers state changes */
     onWorkersChanged: (workers: WorkerOption[]) => void;
 
-    /** Called when a status message should be displayed */
-    onMessage: (message: string) => void;
-
-    /** Called when the status message should be cleared */
-    onMessageClear: () => void;
+    /** Called when a status message should be displayed; if the message is None, the messages are cleared */
+    displayMessage: (message: Option<string>) => void;
 
     /** Called when an error should be displayed */
     onError: (error: string) => void;
@@ -97,13 +94,12 @@ export class Profiler {
 
     /** Display a status message */
     message(message: string): void {
-        console.log(message);
-        this.config.callbacks.onMessage(message);
+        this.config.callbacks.displayMessage(Option.some(message));
     }
 
     /** Clear the status message */
     clearMessage(): void {
-        this.config.callbacks.onMessageClear();
+        this.config.callbacks.displayMessage(Option.none());
     }
 
     /**
@@ -139,12 +135,11 @@ export class Profiler {
 
             // Wire up event handlers
             this.circuitSelector.setOnChange(() => {
-                // Called when the circuit to display changes
+                // Called when the circuit has been modified to display changes
                 this.message("Recomputing profile graph")
                 const graph = Cytograph.fromProfile(profile, selection);
                 this.message("Computing graph changes")
                 this.rendering!.updateGraph(graph);
-                this.rendering!.center(selection.trigger);
                 this.rendering!.updateMetadata(profile, this.metadataSelector!.getSelection());
             });
 

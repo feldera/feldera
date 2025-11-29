@@ -22,7 +22,7 @@ export async function processBundleInBrowser(file: File): Promise<BundleFiles> {
 
     // Unzip the bundle
     const files = await unzip(new Uint8Array(arrayBuffer));
-    console.log('files', files)
+    // console.log('files', files)
 
     // Find the profile file (*circuit_profile.json)
     const profileEntry = Object.entries(files).find((file) =>

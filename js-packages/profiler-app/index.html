@@ -102,8 +102,9 @@
         }
 
         #worker-checkboxes input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
+            width: 15px;
+            height: 15px;
+            margin: 0px;
             cursor: pointer;
             accent-color: #c533b9;
         }
@@ -167,9 +168,7 @@
             width: 108px;
             height: 108px;
             background-color: rgba(255, 255, 255, 0.95);
-            border: 2px solid #dfdfdf;
             border-radius: 4px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             z-index: 50;
             padding: 2px;
             position: absolute;
@@ -179,17 +178,18 @@
         #tooltip-container {
             /* max-width: 600px; */
             max-height: calc(100vh - 80px);
-            z-index: 150;  /* Higher than header (100) */
-            pointer-events: none;
+            z-index: 150;
+            /* Higher than header (100) */
+            pointer-events: auto;
+            overflow: scroll;
         }
 
         /* Tooltip wrapper div */
-        #tooltip-container > div {
+        #tooltip-container>div {
             margin: 10px;
             background-color: black;
             border-radius: 8px;
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-            overflow: clip;
         }
 
         /* Tooltip tables styling */

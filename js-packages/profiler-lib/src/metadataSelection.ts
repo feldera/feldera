@@ -93,14 +93,11 @@ export class MetadataSelector {
     }
 
     /**
-     * Toggle all workers on/off
+     * Toggle the display state of all workers.
      */
     toggleAllWorkers(): void {
-        // Determine if we should check or uncheck (if any are unchecked, check all)
-        const someUnchecked = this.workersVisible.some(visible => !visible);
-
         for (let i = 0; i < this.workersVisible.length; i++) {
-            this.workersVisible[i] = someUnchecked;
+            this.workersVisible[i] = !this.workersVisible[i];
         }
         this.notifyWorkersChanged();
         this.onChange();
