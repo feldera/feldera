@@ -538,6 +538,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 );
                 self.logs_sender
                     .send(LogMessage::new_from_control_plane(
+                        module_path!(),
+                        pipeline.name.clone(),
                         Level::INFO,
                         "Storage has been cleared",
                     ))
@@ -552,7 +554,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     );
                     info!("{message} for pipeline {}", pipeline.id);
                     self.logs_sender
-                        .send(LogMessage::new_from_control_plane(Level::INFO, &message))
+                        .send(LogMessage::new_from_control_plane(
+                            module_path!(),
+                            pipeline.name.clone(),
+                            Level::INFO,
+                            &message,
+                        ))
                         .await;
                 };
                 if pipeline.deployment_runtime_status != new_runtime_status
@@ -573,7 +580,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     );
                     info!("{message} for pipeline {}", pipeline.id);
                     self.logs_sender
-                        .send(LogMessage::new_from_control_plane(Level::INFO, &message))
+                        .send(LogMessage::new_from_control_plane(
+                            module_path!(),
+                            pipeline.name.clone(),
+                            Level::INFO,
+                            &message,
+                        ))
                         .await;
                 }
             }
