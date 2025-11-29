@@ -47,6 +47,7 @@ pub trait PipelineExecutor: Sync + Send {
         deployment_id: &Uuid,
         deployment_config: &PipelineConfig,
         program_binary_url: &str,
+        program_info_url: Option<&str>,
         program_version: Version,
         suspend_info: Option<serde_json::Value>,
     ) -> Result<(), ManagerError>;

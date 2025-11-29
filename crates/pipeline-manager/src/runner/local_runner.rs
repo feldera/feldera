@@ -13,7 +13,9 @@ use crate::runner::pipeline_executor::PipelineExecutor;
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use async_trait::async_trait;
 use feldera_observability::ReqwestTracingExt;
-use feldera_types::config::{PipelineConfig, StorageCacheConfig, StorageConfig};
+use feldera_types::config::{
+    PipelineConfig, PipelineConfigProgramInfo, StorageCacheConfig, StorageConfig,
+};
 use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus};
 use reqwest::StatusCode;
 use std::path::Path;
@@ -148,22 +150,31 @@ impl LocalRunner {
         (terminate_sender, join_handle)
     }
 
-    /// Retrieves the binary executable of the pipeline from the compiler server using the
-    /// `binary_url` and stores it in the local runner working directory for that pipeline
+    /// Retrieves the binary executable or program info file of the pipeline from the compiler
+    /// server and stores it in the local runner working directory for that pipeline
     /// located at `target_file_path`.
     ///
     /// Attempts to retrieve several times. Attempts are only made again if a sending error
     /// occurred, not when a response was returned.
-    async fn retrieve_pipeline_binary(
+    ///
+    /// # Arguments
+    ///
+    /// * `file_url` - The URL of the file to retrieve.
+    /// * `description` - The description of the file to retrieve (e.g. "binary", "program info").
+    /// * `target_file_path` - The path to store the file.
+    /// * `mode` - File access mode for the created file.
+    async fn retrieve_pipeline_file(
         &self,
-        binary_url: &str,
+        file_url: &str,
+        description: &str,
         target_file_path: &Path,
+        mode: u32,
     ) -> Result<(), ManagerError> {
         // URL validation
-        let parsed = url::Url::parse(binary_url).map_err(|e| {
+        let parsed = url::Url::parse(file_url).map_err(|e| {
             ManagerError::from(RunnerError::RunnerProvisionError {
                 error: format!(
-                    "pipeline binary retrieval failed: invalid URL '{binary_url}' due to: {e}"
+                    "pipeline {description} retrieval failed: invalid URL '{file_url}' due to: {e}"
                 ),
             })
         })?;
@@ -172,31 +183,25 @@ impl LocalRunner {
         let scheme = parsed.scheme();
         if !self.common_config.enable_https && scheme != "http" {
             return Err(RunnerError::RunnerProvisionError {
-                error: format!("pipeline binary retrieval failed: URL '{binary_url}' has scheme '{scheme}' whereas 'http' is expected"),
+                error: format!("pipeline {description} retrieval failed: URL '{file_url}' has scheme '{scheme}' whereas 'http' is expected"),
             }.into());
         }
         if self.common_config.enable_https && parsed.scheme() != "https" {
             return Err(RunnerError::RunnerProvisionError {
-                error: format!("pipeline binary retrieval failed: URL '{binary_url}' has scheme '{scheme}' whereas 'https' is expected"),
+                error: format!("pipeline {description} retrieval failed: URL '{file_url}' has scheme '{scheme}' whereas 'https' is expected"),
             }.into());
         }
 
         // Perform request
         let mut attempt = 1;
         loop {
-            match self
-                .client
-                .get(binary_url)
-                .with_sentry_tracing()
-                .send()
-                .await
-            {
+            match self.client.get(file_url).with_sentry_tracing().send().await {
                 Ok(response) => {
                     // Check status code
                     if response.status() != StatusCode::OK {
                         return Err(RunnerError::RunnerProvisionError {
                             error: format!(
-                                "pipeline binary retrieval failed: GET '{binary_url}': expected response status code {} but got {}",
+                                "pipeline {description} retrieval failed: GET '{file_url}': expected response status code {} but got {}",
                                 StatusCode::OK, response.status(),
                             ),
                         }.into());
@@ -205,7 +210,7 @@ impl LocalRunner {
                     // Parse response as bytes
                     let body = response.bytes().await.map_err(|_e| {
                         ManagerError::from(RunnerError::RunnerProvisionError {
-                            error: format!("pipeline binary retrieval failed: GET '{binary_url}': could not convert response body into bytes")
+                            error: format!("pipeline {description} retrieval failed: GET '{file_url}': could not convert response body into bytes")
                         })
                     })?;
 
@@ -215,13 +220,13 @@ impl LocalRunner {
                         .truncate(true)
                         .write(true)
                         .read(true)
-                        .mode(0o760) // User: rwx, Group: rw, Others: /
+                        .mode(mode)
                         .open(target_file_path)
                         .await
                         .map_err(|e| {
                             ManagerError::from(RunnerError::RunnerProvisionError {
                                 error: format!(
-                                    "pipeline binary retrieval failed: unable to create file '{}': {e}",
+                                    "pipeline {description} retrieval failed: unable to create file '{}': {e}",
                                     target_file_path.display()
                                 ),
                             })
@@ -229,7 +234,7 @@ impl LocalRunner {
                     file.write_all(&body).await.map_err(|e| {
                         ManagerError::from(RunnerError::RunnerProvisionError {
                             error: format!(
-                                "pipeline binary retrieval failed: unable to write file '{}': {e}",
+                                "pipeline {description} retrieval failed: unable to write file '{}': {e}",
                                 target_file_path.display()
                             ),
                         })
@@ -237,7 +242,7 @@ impl LocalRunner {
                     file.flush().await.map_err(|e| {
                         ManagerError::from(RunnerError::RunnerProvisionError {
                             error: format!(
-                                "pipeline binary retrieval failed: unable to flush file '{}': {e}",
+                                "pipeline {description} retrieval failed: unable to flush file '{}': {e}",
                                 target_file_path.display()
                             ),
                         })
@@ -247,7 +252,7 @@ impl LocalRunner {
                 }
                 Err(e) => {
                     let error = format!(
-                        "pipeline binary retrieval failed (attempt {attempt} / {BINARY_RETRIEVAL_ATTEMPTS}): GET '{binary_url}': unable to get response: {e}, source: {}",
+                        "pipeline {description} retrieval failed (attempt {attempt} / {BINARY_RETRIEVAL_ATTEMPTS}): GET '{file_url}': unable to get response: {e}, source: {}",
                         source_error(&e)
                     );
                     error!("{error}");
@@ -380,6 +385,7 @@ impl PipelineExecutor for LocalRunner {
         deployment_id: &Uuid,
         deployment_config: &PipelineConfig,
         program_binary_url: &str,
+        program_info_url: Option<&str>,
         program_version: Version,
         _suspend_info: Option<serde_json::Value>,
     ) -> Result<(), ManagerError> {
@@ -408,6 +414,53 @@ impl PipelineExecutor for LocalRunner {
             })?;
         }
 
+        // If program_info_url is provided, combine information in deployment_config and program info.
+        // TODO: This implementation ensures backward compatibility with older pipelines.
+        // Going forward, we should be able to pass program info and deployment config files
+        // as separate arguments to the pipeline instead of merging them into one JSON file.
+        let mut deployment_config = deployment_config.clone();
+        if let Some(program_info_url) = program_info_url {
+            // Retrieve and store executable in pipeline working directory
+            let program_info_file_path = self.config.program_info_file_path(self.pipeline_id);
+
+            self.retrieve_pipeline_file(
+                program_info_url,
+                "program info",
+                &program_info_file_path,
+                0o660, // User: rw, Group: rw, Others: /
+            )
+            .await?;
+
+            // Read and parse the program info file
+            let program_info_contents =
+                fs::read_to_string(&program_info_file_path)
+                    .await
+                    .map_err(|e| {
+                        ManagerError::from(CommonError::io_error(
+                            format!(
+                                "read program info file '{}'",
+                                program_info_file_path.display()
+                            ),
+                            e,
+                        ))
+                    })?;
+
+            let program_info: PipelineConfigProgramInfo =
+                serde_json::from_str(&program_info_contents).map_err(|e| {
+                    ManagerError::from(RunnerError::RunnerProvisionError {
+                        error: format!(
+                            "failed to parse program info file '{}': {e}",
+                            program_info_file_path.display()
+                        ),
+                    })
+                })?;
+
+            // Merge program info into deployment_config
+            deployment_config.inputs = program_info.inputs;
+            deployment_config.outputs = program_info.outputs;
+            deployment_config.program_ir = program_info.program_ir;
+        }
+
         // Write config as YAML and JSON
         //
         // Newer pipelines will read the JSON, older ones will read the YAML.
@@ -432,17 +485,22 @@ impl PipelineExecutor for LocalRunner {
         let _ = remove_file(&self.config.port_file_path(self.pipeline_id)).await;
 
         // Retrieve and store executable in pipeline working directory
-        let target_file_path = self
+        let binary_file_path = self
             .config
             .binary_file_path(self.pipeline_id, program_version);
-        self.retrieve_pipeline_binary(program_binary_url, &target_file_path)
-            .await?;
+        self.retrieve_pipeline_file(
+            program_binary_url,
+            "binary",
+            &binary_file_path,
+            0o760, // User: rwx, Group: rw, Others: /
+        )
+        .await?;
 
         // Run executable:
         // - Current directory: pipeline working directory
         // - Configuration file: path to config.yaml
         // - Stdout/stderr are piped to follow logs
-        let mut command = Command::new(target_file_path);
+        let mut command = Command::new(binary_file_path);
         command
             .env(
                 "TOKIO_WORKER_THREADS",

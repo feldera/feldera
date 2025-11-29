@@ -179,6 +179,14 @@ pub async fn checksum_file(path: &Path) -> Result<(usize, String), UtilError> {
     Ok((total_bytes, hex::encode(hasher.finalize())))
 }
 
+/// Returns the SHA256 checksum of the buffer.
+pub async fn checksum_buffer(buffer: &[u8]) -> Result<String, UtilError> {
+    let mut hasher = Sha256::new();
+    hasher.update(buffer);
+
+    Ok(hex::encode(hasher.finalize()))
+}
+
 /// Copies source file to target file, overwriting it.
 /// Only the source file must already exist.
 pub async fn copy_file(source_file_path: &Path, target_file_path: &Path) -> Result<(), UtilError> {
@@ -195,6 +203,13 @@ pub async fn copy_file(source_file_path: &Path, target_file_path: &Path) -> Resu
             )
         })
         .map(|_| ())
+}
+
+/// Writes data to a file, overwriting it.
+pub async fn write_file(data: &[u8], target_file_path: &Path) -> Result<(), UtilError> {
+    fs::write(target_file_path, data).await.map_err(|e| {
+        UtilError::IoError(format!("writing file '{}'", target_file_path.display()), e)
+    })
 }
 
 /// Copies source file to target file, overwriting it.
@@ -613,6 +628,19 @@ pub fn pipeline_binary_filename(
 ) -> String {
     format!(
         "pipeline_{}_v{}_sc_{}_ic_{}",
+        pipeline_id, program_version, source_checksum, integrity_checksum
+    )
+}
+
+/// Generate filename for pipeline program info based on pipeline ID, version, and checksums.
+pub fn program_info_filename(
+    pipeline_id: &PipelineId,
+    program_version: Version,
+    source_checksum: &str,
+    integrity_checksum: &str,
+) -> String {
+    format!(
+        "program_info_{}_v{}_sc_{}_ic_{}.json",
         pipeline_id, program_version, source_checksum, integrity_checksum
     )
 }

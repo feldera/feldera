@@ -269,6 +269,7 @@ pub(crate) trait Storage {
         rust_compilation: &RustCompilationInfo,
         program_binary_source_checksum: &str,
         program_binary_integrity_checksum: &str,
+        program_info_integrity_checksum: &str,
     ) -> Result<(), DBError>;
 
     /// Transitions program status to `SqlError`.
@@ -451,7 +452,16 @@ pub(crate) trait Storage {
     /// are currently being compiled (pipeline identifier, program version) across all tenants.
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError>;
+    ) -> Result<
+        Vec<(
+            PipelineId,
+            Version,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        )>,
+        DBError,
+    >;
 
     async fn get_support_bundle_data(
         &self,

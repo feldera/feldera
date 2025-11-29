@@ -7,7 +7,9 @@ use crate::compiler::rust_compiler::{
 use crate::compiler::sql_compiler::{
     perform_sql_compilation, sql_compiler_task, SqlCompilationError,
 };
-use crate::compiler::util::{pipeline_binary_filename, validate_is_sha256_checksum};
+use crate::compiler::util::{
+    pipeline_binary_filename, program_info_filename, validate_is_sha256_checksum,
+};
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
@@ -20,6 +22,7 @@ use actix_files::NamedFile;
 use actix_web::{get, post, web, HttpRequest, HttpResponse, HttpServer, Responder};
 use futures_util::{join, StreamExt};
 use std::net::TcpListener;
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::{fs, io::AsyncWriteExt, spawn, sync::Mutex};
@@ -102,13 +105,76 @@ async fn get_binary(
     Ok(NamedFile::open_async(binary_file_path).await)
 }
 
+/// Retrieves the program info file (that contains `PipelineConfigProgramInfo` data).
+#[get("/program_info/{pipeline_id}/{program_version}/{source_checksum}/{integrity_checksum}")]
+async fn get_program_info(
+    config: web::Data<CompilerConfig>,
+    req: HttpRequest,
+) -> Result<impl Responder, ManagerError> {
+    // Retrieve URL encoded parameters
+    let path_parameters = req.match_info();
+    let pipeline_id =
+        decode_url_encoded_parameter("pipeline_id", path_parameters.get("pipeline_id"))?;
+    let program_version =
+        decode_url_encoded_parameter("program_version", path_parameters.get("program_version"))?;
+    let source_checksum =
+        decode_url_encoded_parameter("source_checksum", path_parameters.get("source_checksum"))?;
+    let integrity_checksum = decode_url_encoded_parameter(
+        "integrity_checksum",
+        path_parameters.get("integrity_checksum"),
+    )?;
+
+    // Validate each of them follows expected format
+    let pipeline_id =
+        PipelineId(
+            Uuid::from_str(&pipeline_id).map_err(|e| ApiError::InvalidUuidParam {
+                value: pipeline_id.clone(),
+                error: e.to_string(),
+            })?,
+        );
+    let program_version =
+        Version(
+            i64::from_str(&program_version).map_err(|e| ApiError::InvalidVersionParam {
+                value: program_version.clone(),
+                error: e.to_string(),
+            })?,
+        );
+    validate_is_sha256_checksum(&source_checksum).map_err(|e| {
+        ManagerError::from(ApiError::InvalidChecksumParam {
+            value: source_checksum.to_string(),
+            error: e,
+        })
+    })?;
+    validate_is_sha256_checksum(&integrity_checksum).map_err(|e| {
+        ManagerError::from(ApiError::InvalidChecksumParam {
+            value: integrity_checksum.to_string(),
+            error: e,
+        })
+    })?;
+
+    // Form file path
+    let info_file_path = config
+        .working_dir()
+        .join("rust-compilation")
+        .join("pipeline-binaries")
+        .join(program_info_filename(
+            &pipeline_id,
+            program_version,
+            &source_checksum,
+            &integrity_checksum,
+        ));
+
+    // Read and return file as response
+    Ok(NamedFile::open_async(info_file_path).await)
+}
+
 /// Uploads a compiled binary using streaming.
 /// Metadata is passed via path parameters and the binary is streamed directly to disk.
 #[post("/binary/{pipeline_id}/{program_version}/{source_checksum}/{integrity_checksum}")]
 async fn upload_binary(
     config: web::Data<CompilerConfig>,
     req: HttpRequest,
-    mut payload: web::Payload,
+    payload: web::Payload,
 ) -> Result<impl Responder, ManagerError> {
     // Retrieve URL encoded parameters
     let path_parameters = req.match_info();
@@ -176,6 +242,121 @@ async fn upload_binary(
         &expected_integrity_checksum,
     ));
 
+    let total_size = save_file(&target_file_path, payload, &expected_integrity_checksum).await?;
+
+    info!(
+        "Successfully received binary for pipeline {} (program version: {}) ({} bytes)",
+        pipeline_id, program_version, total_size
+    );
+
+    // Return success response
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "message": "Binary uploaded successfully",
+        "pipeline_id": pipeline_id.to_string(),
+        "program_version": program_version.0,
+        "source_checksum": source_checksum,
+        "integrity_checksum": expected_integrity_checksum,
+        "file_size": total_size
+    })))
+}
+
+/// Uploads a pipeline's program info using streaming.
+/// Metadata is passed via path parameters and the JSON file is streamed directly to disk.
+#[post("/program_info/{pipeline_id}/{program_version}/{source_checksum}/{integrity_checksum}")]
+async fn upload_program_info(
+    config: web::Data<CompilerConfig>,
+    req: HttpRequest,
+    payload: web::Payload,
+) -> Result<impl Responder, ManagerError> {
+    // Retrieve URL encoded parameters
+    let path_parameters = req.match_info();
+    let pipeline_id =
+        decode_url_encoded_parameter("pipeline_id", path_parameters.get("pipeline_id"))?;
+    let program_version =
+        decode_url_encoded_parameter("program_version", path_parameters.get("program_version"))?;
+    let source_checksum =
+        decode_url_encoded_parameter("source_checksum", path_parameters.get("source_checksum"))?;
+    let expected_integrity_checksum = decode_url_encoded_parameter(
+        "integrity_checksum",
+        path_parameters.get("integrity_checksum"),
+    )?;
+
+    // Validate parameters
+    let pipeline_id_uuid =
+        Uuid::from_str(&pipeline_id).map_err(|e| ApiError::InvalidUuidParam {
+            value: pipeline_id.clone(),
+            error: e.to_string(),
+        })?;
+    let pipeline_id = PipelineId(pipeline_id_uuid);
+
+    let program_version =
+        Version(
+            i64::from_str(&program_version).map_err(|e| ApiError::InvalidVersionParam {
+                value: program_version.clone(),
+                error: e.to_string(),
+            })?,
+        );
+
+    validate_is_sha256_checksum(&source_checksum).map_err(|e| {
+        ManagerError::from(ApiError::InvalidChecksumParam {
+            value: source_checksum.to_string(),
+            error: e,
+        })
+    })?;
+
+    validate_is_sha256_checksum(&expected_integrity_checksum).map_err(|e| {
+        ManagerError::from(ApiError::InvalidChecksumParam {
+            value: expected_integrity_checksum.to_string(),
+            error: e,
+        })
+    })?;
+
+    // Create pipeline-binaries directory if it doesn't exist
+    let pipeline_binaries_dir = config
+        .working_dir()
+        .join("rust-compilation")
+        .join("pipeline-binaries");
+
+    fs::create_dir_all(&pipeline_binaries_dir)
+        .await
+        .map_err(|e| {
+            ManagerError::from(CommonError::io_error(
+                format!("creating directory '{}'", pipeline_binaries_dir.display()),
+                e,
+            ))
+        })?;
+
+    // Form the target file path
+    let target_file_path = pipeline_binaries_dir.join(program_info_filename(
+        &pipeline_id,
+        program_version,
+        &source_checksum,
+        &expected_integrity_checksum,
+    ));
+
+    let total_size = save_file(&target_file_path, payload, &expected_integrity_checksum).await?;
+
+    info!(
+        "Successfully received program info for pipeline {} (program version: {}) ({} bytes)",
+        pipeline_id, program_version, total_size
+    );
+
+    // Return success response
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "message": "Program info uploaded successfully",
+        "pipeline_id": pipeline_id.to_string(),
+        "program_version": program_version.0,
+        "source_checksum": source_checksum,
+        "integrity_checksum": expected_integrity_checksum,
+        "file_size": total_size
+    })))
+}
+
+async fn save_file(
+    target_file_path: &Path,
+    mut payload: web::Payload,
+    expected_integrity_checksum: &str,
+) -> Result<usize, ManagerError> {
     // Stream the binary directly to disk with integrity checksum validation
     let mut file = fs::File::create(&target_file_path).await.map_err(|e| {
         ManagerError::from(CommonError::io_error(
@@ -231,20 +412,7 @@ async fn upload_binary(
         }));
     }
 
-    info!(
-        "Successfully received binary for pipeline {} (program version: {}) ({} bytes)",
-        pipeline_id, program_version, total_size
-    );
-
-    // Return success response
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "message": "Binary uploaded successfully",
-        "pipeline_id": pipeline_id.to_string(),
-        "program_version": program_version.0,
-        "source_checksum": source_checksum,
-        "integrity_checksum": expected_integrity_checksum,
-        "file_size": total_size
-    })))
+    Ok(total_size)
 }
 
 /// Health check which returns success if it is able to reach the database.
@@ -332,8 +500,9 @@ pub async fn compiler_precompile(
     // Rust
     let RustCompilationResult {
         source_checksum,
-        integrity_checksum,
+        binary_integrity_checksum,
         binary_size,
+        program_info_integrity_checksum,
         profile,
         duration: rust_duration,
         rustc_result: _rustc_result,
@@ -365,19 +534,20 @@ pub async fn compiler_precompile(
             error: compilation_info.to_string(),
         },
         RustCompilationError::SystemError(error) => CompilerError::PrecompilationError { error },
-        RustCompilationError::BinaryUploadError(error) => {
+        RustCompilationError::FileUploadError(error) => {
             CompilerError::PrecompilationError { error }
         }
     })?;
 
     // Success
     info!(
-        "Pre-compilation finished: SQL took {:.2}s and Rust took {:.2}s (source checksum: {}; integrity checksum: {}, size: {} bytes, profile: {})",
+        "Pre-compilation finished: SQL took {:.2}s and Rust took {:.2}s (source checksum: {}; binary integrity checksum: {}, binary size: {} bytes, program info integrity checksum: {}, profile: {})",
         sql_duration.as_secs_f64(),
         rust_duration.as_secs_f64(),
         source_checksum,
-        integrity_checksum,
+        binary_integrity_checksum,
         binary_size,
+        program_info_integrity_checksum,
         profile
     );
     Ok(())
@@ -423,7 +593,9 @@ pub async fn compiler_main(
             .app_data(config.clone())
             .app_data(probe.clone())
             .service(get_binary)
+            .service(get_program_info)
             .service(upload_binary)
+            .service(upload_program_info)
             .service(healthz)
     })
     .workers(common_config.http_workers)
