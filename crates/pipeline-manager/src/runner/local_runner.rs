@@ -112,13 +112,20 @@ impl LocalRunner {
                                 }
                                 Some(line) => {
                                     println!("{line}"); // Print to manager stdout
-                                    logs_sender.send(LogMessage::new_from_pipeline(&line)).await;
+                                    logs_sender
+                                        .send(LogMessage::new_from_pipeline(&line))
+                                        .await;
                                 }
                             },
                             Err(e) => {
                                 stdout_finished = true;
                                 let line = format!("stdout encountered I/O error: {e}");
-                                logs_sender.send(LogMessage::new_from_control_plane(Level::ERROR, &line)).await;
+                                logs_sender.send(LogMessage::new_from_control_plane(
+                                    module_path!(),
+                                    "control-plane",
+                                    Level::ERROR,
+                                    &line,
+                                )).await;
                                 error!("Logs of pipeline {pipeline_id}: {line}");
                             }
                         }
@@ -133,13 +140,20 @@ impl LocalRunner {
                                 }
                                 Some(line) => {
                                     eprintln!("{line}"); // Print to manager stderr
-                                    logs_sender.send(LogMessage::new_from_pipeline(&line)).await;
+                                    logs_sender
+                                        .send(LogMessage::new_from_pipeline(&line))
+                                        .await;
                                 }
                             },
                             Err(e) => {
                                 stderr_finished = true;
                                 let line = format!("stderr encountered I/O error: {e}");
-                                logs_sender.send(LogMessage::new_from_control_plane(Level::ERROR, &line)).await;
+                                logs_sender.send(LogMessage::new_from_control_plane(
+                                    module_path!(),
+                                    "control-plane",
+                                    Level::ERROR,
+                                    &line,
+                                )).await;
                                 error!("Logs of pipeline {pipeline_id}: {line}");
                             }
                         }
@@ -320,6 +334,8 @@ impl LocalRunner {
             );
             self.logs_sender
                 .send(LogMessage::new_from_control_plane(
+                    module_path!(),
+                    "control-plane",
                     Level::ERROR,
                     &format!("Resources error: {error}"),
                 ))
