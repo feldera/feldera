@@ -11,7 +11,7 @@ import { Point, Size } from "./planar.js";
 import { ViewNavigator } from './navigator.js';
 import { ZSet } from "./zset.js";
 import { MetadataSelection } from './metadataSelection.js';
-import type { TooltipCell} from './profiler.js'
+import { type DisplayedAttributes, type TooltipCell, type ProfilerCallbacks } from './profiler.js';
 
 /** A measurement represented as a string, but also with a normalized value between 0 and 100. */
 class SerializedMeasurement {
@@ -345,7 +345,10 @@ export class CytographRendering {
     currentGraph: Cytograph | null;
     readonly cy: cytoscape.Core;
     readonly navigator: ViewNavigator;
-    // If not read, do not render
+    // If true do not remove the node information from the screen on mouse leave
+    stickyInformation: boolean;
+    // Last node that triggered a recomputation of the layout
+    lastNode: Option<NodeId>;
 
     readonly graph_style: StylesheetJson = [
         {
@@ -445,7 +448,7 @@ export class CytographRendering {
     constructor(
         graphContainer: HTMLElement,
         navigatorContainer: HTMLElement,
-        private readonly callbacks: import('./profiler.js').ProfilerCallbacks,
+        private readonly callbacks: ProfilerCallbacks,
         readonly graph: Graph<NodeId>,
         readonly selection: CircuitSelection,
         private metadataSelection: MetadataSelection,
@@ -456,6 +459,7 @@ export class CytographRendering {
 
         this.navigator = new ViewNavigator(navigatorContainer);
         this.currentGraph = null;
+        this.stickyInformation = false;
         // Start with an empty graph
         this.cy = cytoscape({
             container: graphContainer,
@@ -464,6 +468,7 @@ export class CytographRendering {
         // double-clicking on the navigator will adjust the graph to fit
         this.navigator.setOnDoubleClick(() => this.cy.fit());
         this.cy.style(this.graph_style);
+        this.lastNode = Option.none();
     }
 
     /** Metric chosen by the user to drive the color of the nodes. */
@@ -476,18 +481,7 @@ export class CytographRendering {
         if (el === null) {
             return;
         }
-        let size = el.renderedHeight();
-        let desiredSize = 15;
-        // We determine the minimum size of found node by its height, because it is tied to font size
-        if (size < desiredSize) {
-            let zoom = this.cy.zoom();
-            let targetZoom = zoom * desiredSize / size;
-            this.cy.zoom({
-                level: targetZoom,
-                position: el.position()
-            });
-        }
-        this.cy.center(el);
+        this.center(Option.some(value));
     }
 
     // Layout to use for the first graph rendering
@@ -520,7 +514,7 @@ export class CytographRendering {
         }
     };
 
-    /** The graph has changed; adjust the display. */
+    /** The graph has changed; adjust the display; this completes asynchronously */
     updateGraph(newGraph: Cytograph) {
         this.cy.startBatch();
         this.cy.container()!.style.visibility = "hidden";
@@ -546,8 +540,23 @@ export class CytographRendering {
 
     /** Center the visualization around the node with the specified id. */
     center(node: Option<NodeId>): void {
-        if (node.isSome())
-            this.cy.center(this.cy.getElementById(node.unwrap()));
+        if (!node.isSome()) {
+            return;
+        }
+
+        const el = this.cy.getElementById(node.unwrap());
+        let size = el.renderedHeight();
+        let desiredSize = 15;
+        // We determine the minimum size of found node by its height, because it is tied to font size
+        if (size < desiredSize) {
+            let zoom = this.cy.zoom();
+            let targetZoom = zoom * desiredSize / size;
+            this.cy.zoom({
+                level: targetZoom,
+                position: el.position()
+            });
+        }
+        this.cy.center(el);
     }
 
     /** Get a handle to the node in the rendering with the specified id. */
@@ -609,6 +618,7 @@ export class CytographRendering {
     computeImportance(profile: CircuitProfile, selection: MetadataSelection) {
         let rangeO = profile.dataRange.get(selection.metric);
         for (const node of this.currentGraph!.nodes) {
+            if (node.expanded) { continue; }
             let profileNode = profile.getNode(node.getId()).unwrap();
             let percents = 0;
             if (rangeO.isSome()) {
@@ -707,29 +717,68 @@ export class CytographRendering {
         }
     }
 
+    keyup(event: KeyboardEvent) {
+        if (event.key === "Escape") {
+            this.setStickyNodeInformation(false);
+            this.hideNodeInformation();
+        }
+    }
+
+    setStickyNodeInformation(sticky: boolean) {
+        this.stickyInformation = sticky;
+    }
+
     setEvents(onDoubleClick: (node: NodeId) => void) {
+        document.addEventListener('keyup', (e) => this.keyup(e));
         this.cy
             //.on('render', () => console.log("rendering"))
             //.on('layoutstart', () => console.log("start layout"))
             .on('layoutstop', () => this.layoutComplete())
-            .on('mouseover', 'node', event => this.hover(event))
+            .on('mouseover', 'node', event => this.displayNodeAttributes(event))
             .on('mouseout', 'node', event => this.mouseOut(event))
             .on('zoom pan resize', () => this.updateNavigator(this.navigator))
+            .on('click', 'node', (e) => {
+                // Hide previous node if any
+                this.setStickyNodeInformation(false);
+                this.hideNodeInformation();
+                // Display current node
+                this.displayNodeAttributes(e);
+                // Keep the information after mouse out
+                this.setStickyNodeInformation(true);
+            })
             .on('dblclick', 'node', (e) => {
                 let node = e.target as NodeSingular;
                 if (node === null || !node.data("has_children")) {
                     // Do not dispatch double click to nodes without children
                     return;
                 }
+                this.hideNodeInformation();
+                this.setStickyNodeInformation(false);
                 let id = e.target.id();
+                this.lastNode = Option.some(id);
                 onDoubleClick(id);
             });
     }
 
     layoutComplete() {
+        // console.log("layout complete");
         this.clearMessage();
         this.cy.container()!.style.visibility = "visible";
         this.updateNavigator(this.navigator);
+        if (this.lastNode.isSome()) {
+            this.center(this.lastNode);
+            this.lastNode = Option.none();
+        }
+        // Set minimum/maximum zoom levels
+        // Do not allow to zoom in more than 1.5; this should be enough to make any node visible
+        this.cy.maxZoom(1.5);
+        const rect = this.cy.container()?.getBoundingClientRect();
+        if (rect !== undefined) {
+            const bb = this.cy.elements().boundingBox();
+            let maxRatio = Math.min(rect.height / bb.h, rect.width / bb.w);
+            // Do not allow zoom out more than required to fit the entire graph
+            this.cy.minZoom(maxRatio);
+        }
     }
 
     // The user has panned/zoomed => tell the navigator about it.
@@ -791,13 +840,15 @@ export class CytographRendering {
     }
 
     // Called when someones hovers over a node.
+    // If the previous display is sticky, do nothing.
     // Currently it displays
     // (1) the attributes of the node,
     // (2) it highlights the edges reaching the node,
     // (3) it displays the source position of the node.
-    hover(event: EventObject) {
-        if (this.cy === null)
+    displayNodeAttributes(event: EventObject) {
+        if (this.cy === null || this.stickyInformation) {
             return;
+        }
 
         let node: NodeSingular = event.target;
         if (node.data("expanded") === true)
@@ -813,7 +864,7 @@ export class CytographRendering {
         let attributes: Attributes = node.data().attributes;
         let visible = false;
 
-        const tooltipData: import('./profiler.js').TooltipData = {
+        const tooltipData: DisplayedAttributes = {
             columns: [],
             rows: [],
             attributes: new Map()
@@ -877,16 +928,20 @@ export class CytographRendering {
             return;
 
         // Send tooltip data via callback
-        this.callbacks.onTooltipUpdate(tooltipData, true);
+        this.callbacks.displayNodeAttributes(Option.some(tooltipData), true);
     }
 
     // hide the information shown when hovering
-    mouseOut(event: EventObject) {
-        this.callbacks.onTooltipUpdate(null, false);
-        let node: NodeSingular = event.target;
-        let reachable = this.reachableFrom(node.id(), true);
+    mouseOut(_event: EventObject) {
+        if (!this.stickyInformation) {
+            this.hideNodeInformation();
+        }
+    }
+
+    hideNodeInformation() {
+        this.callbacks.displayNodeAttributes(Option.none(), false);
+        let reachable = this.cy.edges();
         reachable.removeClass('highlight-forward');
-        reachable = this.reachableFrom(node.id(), false);
         reachable.removeClass('highlight-backward');
     }
 
@@ -900,7 +955,7 @@ export class CytographRendering {
         }
 
         // Hide tooltip
-        this.callbacks.onTooltipUpdate(null, false);
+        this.callbacks.displayNodeAttributes(Option.none(), false);
 
         // Clear references
         this.currentGraph = null;

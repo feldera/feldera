@@ -6,9 +6,10 @@ export {
     type ProfilerCallbacks,
     type MetricOption,
     type WorkerOption,
-    type TooltipData,
+    type DisplayedAttributes as TooltipData,
     type TooltipRow,
     type TooltipCell
 } from './profiler.js';
 export { CircuitProfile, type JsonProfiles } from './profile.js';
 export { type Dataflow } from './dataflow.js';
+export { type Option } from './util.js';

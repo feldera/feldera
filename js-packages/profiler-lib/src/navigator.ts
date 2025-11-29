@@ -28,6 +28,7 @@ export class ViewNavigator {
         this.root.style.position = "relative";
         this.root.style.width = `${this.MAX_WIDTH}px`;
         this.root.style.height = `${this.MAX_HEIGHT}px`;
+        this.root.title = "Double click to recenter";
         // delete existing children
         parent.innerHTML = "";
         parent.appendChild(this.root);

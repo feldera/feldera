@@ -21,8 +21,8 @@ export interface OutputPort {
 
 export interface MirNode {
     operation: string;
-    table?: string;
-    view?: string;
+    table: string | null;
+    view: string | null;
     inputs: Array<OutputPort>;
     // We don't care about this yet
     calcite: any;
@@ -54,29 +54,35 @@ export class Sources {
         return line.toString().padStart(5, " ") + "| ";
     }
 
-    /** Given a position range, generate a string with the relevant source fragment. */
-    public toStringFromPositionRange(range: SourcePositionRange): string {
-        if (range.is_empty()) return "";
-        if (range.range.start_line_number == range.range.end_line_number) {
-            let prefix = this.prefix(range.start.line);
-            let line = prefix + this.lines[range.start.line - 1] + "\n";
-            //line += " ".repeat(prefix.length + range.start.column - 1)
-            //     + "^".repeat(range.end.column - range.start.column + 1) + "\n";
-            return line;
-        } else {
-            let result = "";
-            for (let line = range.start.line; line <= range.end.line; line++) {
-                result += this.prefix(line) + this.lines[line - 1] + "\n";
-            }
-            return result;
+    truncate(s: string): string {
+        if (s.length > 100) {
+            return s.substring(0, 97) + "...";
         }
+        return s;
     }
 
-    /** Given multiple position ranges, generate the relevant source fragment. */
+    /** Given a position range, generate a string with the relevant source fragment.
+     * Currently only full lines are generated, ignoring the column information. */
+    public toStringFromPositionRange(range: SourcePositionRange): string {
+        if (range.is_empty()) return "";
+        let result = "";
+        for (let line = range.start.line; line <= range.end.line; line++) {
+            let l = this.truncate(this.lines[line - 1]!);
+            result += this.prefix(line) + l + "\n";
+        }
+        return result;
+    }
+
+    /** Given multiple position ranges, generate the relevant source fragment.
+     * Since the source fragment includes only full lines, we do not really currently
+     * use the column information in any way. */
     public toString(positions: SourcePositionRanges): string {
         let result = "";
+        let lastLine = 0;
         for (const range of positions.sort()) {
-            result += this.toStringFromPositionRange(range);
+            let nonOverlap = range.after(lastLine);
+            result += this.toStringFromPositionRange(nonOverlap);
+            lastLine = range.end.line;
         }
         return result;
     }
@@ -84,14 +90,26 @@ export class Sources {
 
 /** Zero or more SourcePositionRange values. */
 export class SourcePositionRanges {
-    constructor(public readonly positions: Array<SourcePositionRange>) { }
+    constructor(readonly positions: Array<SourcePositionRange>) { }
 
     static empty(): SourcePositionRanges {
         return new SourcePositionRanges(new Array<SourcePositionRange>());
     }
 
+    /** Return the source positions ranges sorted and with duplicates eliminated. */
     sort(): Array<SourcePositionRange> {
-        return this.positions.sort((a, b) => a.start.compareTo(b.start));
+        this.positions.sort((a, b) => a.compareTo(b));
+        if (this.positions.length > 1) {
+            let write = 1;
+            for (let read = 1; read < this.positions.length; read++) {
+                if (!this.positions[read]!.equals(this.positions[read - 1]!)) {
+                    this.positions[write] = this.positions[read]!;
+                    write++;
+                }
+            }
+            this.positions.length = write; // truncate
+        }
+        return this.positions;
     }
 
     // Append includes deduplication
@@ -123,7 +141,7 @@ export class SourcePosition implements Comparable<SourcePosition> {
 }
 
 /** A range between two source positions; the second one must be after the first one. */
-export class SourcePositionRange {
+export class SourcePositionRange implements Comparable<SourcePositionRange> {
     constructor(readonly range: JsonPositionRange) { }
 
     static empty(): SourcePositionRange {
@@ -138,6 +156,15 @@ export class SourcePositionRange {
         return new SourcePosition(this.range.end_line_number, this.range.end_column);
     }
 
+    /** Compare two ranges; comparison is done lexicographically on start, end. */
+    public compareTo(other: SourcePositionRange): number {
+        let c = this.start.compareTo(other.start);
+        if (c != 0) {
+            return c;
+        }
+        return this.end.compareTo(other.end);
+    }
+
     public is_empty(): boolean {
         return this.start.line === 0 && this.start.column === 0 && this.end.line === 0 && this.end.column === 0;
     }
@@ -147,5 +174,22 @@ export class SourcePositionRange {
             this.range.start_line_number === position.range.start_line_number &&
             this.range.end_line_number === position.range.end_line_number &&
             this.range.end_column === position.range.end_column;
+    }
+
+    /** Return a range containing only the lines strictly after the specified line. */
+    public after(line: number): SourcePositionRange {
+        if (line >= this.end.line) {
+            return SourcePositionRange.empty();
+        }
+        let start = this.start;
+        if (start.line <= line) {
+            start = new SourcePosition(line, 1);
+        }
+        return new SourcePositionRange({
+            start_line_number: start.line,
+            start_column: start.column,
+            end_line_number: this.end.line,
+            end_column: this.end.column
+        });
     }
 }

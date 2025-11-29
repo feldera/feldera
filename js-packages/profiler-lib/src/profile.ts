@@ -94,7 +94,22 @@ export abstract class PropertyValue implements Comparable<PropertyValue> {
     toString(): string {
         let v = this.getNumericValue();
         if (v.isSome()) {
-            return v.unwrap().toLocaleString('en-US', { maximumFractionDigits: 2 });
+            let value = v.unwrap();
+            let unit = "";
+            if (value > 1_000_000_000_000) {
+                unit = "T";
+                value = value / 1_000_000_000_000;
+            } else if (value > 1_000_000_000) {
+                unit = "G";
+                value = value / 1_000_000_000;
+            } else if (value > 1_000_000) {
+                unit = "M";
+                value = value / 1_000_000;
+            } else if (value > 1_000) {
+                unit = "K";
+                value = value / 1000;
+            }
+            return value.toLocaleString('en-US', { maximumFractionDigits: 2 }) + unit;
         } else {
             return "N/A";
         }
@@ -118,7 +133,7 @@ class PercentValue extends PropertyValue {
         if (this.denominator === 0) {
             return Option.some(0);
         }
-        return Option.some(this.numerator / this.denominator);
+        return Option.some(100 * this.numerator / this.denominator);
     }
 
     override toString(): string {
@@ -232,16 +247,16 @@ class MissingValue extends PropertyValue {
 
 /** A property value that represents a time with seconds and nanoseconds. */
 class TimeValue extends PropertyValue {
-    constructor(readonly milliseconds: number) {
+    constructor(readonly seconds: number) {
         super();
     }
 
     static fromSecondsNanos(secs: any, nanos: any) {
-        return new TimeValue(enforceNumber(secs) * 1000 + enforceNumber(nanos) / 1000000);
+        return new TimeValue(enforceNumber(secs) + enforceNumber(nanos) / 1_000_000_000);
     }
 
     getNumericValue(): Option<number> {
-        return Option.some(this.milliseconds);
+        return Option.some(this.seconds);
     }
 
     plus(other: PropertyValue): PropertyValue {
@@ -249,7 +264,7 @@ class TimeValue extends PropertyValue {
             return this;
         }
         if (other instanceof TimeValue) {
-            return new TimeValue(this.milliseconds + other.milliseconds);
+            return new TimeValue(this.seconds + other.seconds);
         }
         throw new Error("Cannot add TimeValue to " + other);
     }
@@ -380,14 +395,17 @@ export class Measurement {
             case "slot 1 loose":
             case "slot 2 loose":
             case "slot 3 loose":
+            case "slot 4 loose":
             case "slot 0 completed":
             case "slot 1 completed":
             case "slot 2 completed":
             case "slot 3 completed":
+            case "slot 4 completed":
             case "slot 0 merging":
             case "slot 1 merging":
             case "slot 2 merging":
             case "slot 3 merging":
+            case "slot 4 merging":
                 return Option.some(new StringValue(value[0]));
             case "batch sizes":
             case "bounds":
@@ -588,9 +606,9 @@ export class CircuitProfile {
         // This can happen for some Z nodes in recursive components
         if (profileNode.isNone()) return;
         let n = profileNode.unwrap();
-        if (mir.table !== undefined) {
+        if (mir.table !== null) {
             n.operation += " " + mir.table;
-        } else if (mir.view !== undefined) {
+        } else if (mir.view !== null) {
             n.operation += " " + mir.view;
         }
 

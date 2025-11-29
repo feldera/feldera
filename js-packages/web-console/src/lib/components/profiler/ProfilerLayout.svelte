@@ -45,8 +45,8 @@
 
   // Callbacks for profiler-lib
   const callbacks: ProfilerCallbacks = {
-    onTooltipUpdate: (data: TooltipData | null, visible: boolean) => {
-      tooltipData = data
+    displayNodeAttributes: (data, visible) => {
+      tooltipData = data.match({ some: v => v, none: () => null})
       tooltipVisible = visible
     },
     onMetricsChanged: (newMetrics: MetricOption[], newSelectedMetricId: string) => {
@@ -56,11 +56,8 @@
     onWorkersChanged: (newWorkers: WorkerOption[]) => {
       workers = newWorkers
     },
-    onMessage: (msg: string) => {
-      message = msg
-    },
-    onMessageClear: () => {
-      message = ''
+    displayMessage: (msg) => {
+      message = msg.unwrapOr('')
     },
     onError: (err: string) => {
       error = err
