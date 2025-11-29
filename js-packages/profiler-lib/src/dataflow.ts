@@ -66,7 +66,11 @@ export class Sources {
         } else {
             let result = "";
             for (let line = range.start.line; line <= range.end.line; line++) {
-                result += this.prefix(line) + this.lines[line - 1] + "\n";
+                let l = this.lines[line - 1]!;
+                if (l.length > 100) {
+                    l = l.substring(0, 97) + "...";
+                }
+                result += this.prefix(line) + l + "\n";
             }
             return result;
         }
