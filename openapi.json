@@ -8217,9 +8217,6 @@
           },
           {
             "type": "object",
-            "required": [
-              "inputs"
-            ],
             "properties": {
               "given_name": {
                 "type": "string",

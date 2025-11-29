@@ -5,8 +5,8 @@ use crate::has_unstable_feature;
 use clap::Parser;
 use feldera_ir::Dataflow;
 use feldera_types::config::{
-    ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, ProgramIr,
-    RuntimeConfig, TransportConfig,
+    ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
+    PipelineConfigProgramInfo, ProgramIr, RuntimeConfig, TransportConfig,
 };
 use feldera_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition, SqlIdentifier};
 use regex::Regex;
@@ -632,6 +632,22 @@ pub struct ProgramInfo {
     pub output_connectors: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
 }
 
+impl ProgramInfo {
+    /// Extract fields from `ProgramInfo` to create a `PipelineConfigProgramInfo` instance.
+    pub fn to_pipeline_config_program_info(&self) -> PipelineConfigProgramInfo {
+        let program_ir = self.dataflow.as_ref().map(|d| ProgramIr {
+            mir: d.mir.clone(),
+            program_schema: self.schema.clone(),
+        });
+
+        PipelineConfigProgramInfo {
+            inputs: self.input_connectors.clone(),
+            outputs: self.output_connectors.clone(),
+            program_ir,
+        }
+    }
+}
+
 /// Generates the program info using the program schema.
 /// The info includes the schema and the input/output connectors derived from it.
 pub fn generate_program_info(
@@ -752,57 +768,76 @@ pub fn generate_program_info(
 
 /// Generates the pipeline configuration derived from the runtime configuration and the
 /// input/output connectors derived from the program schema.
+///
+/// `program_info` is specified if the program was compiled by an older version of
+/// the runtime and its program info hasn't been uploaded to the compiler server.
+/// Such programs require the pipeline manager to provide program info via PipelineConfig.
+// TODO: remove the program_info parameter once we're allowed to stop supporting
+// platform versions <=0.199.0.
 pub fn generate_pipeline_config(
     pipeline_id: PipelineId,
     pipeline_name: &str,
     runtime_config: &RuntimeConfig,
-    program_info: &ProgramInfo,
+    program_info: Option<&ProgramInfo>,
 ) -> PipelineConfig {
-    // Only keep tables and views, ignoring intermediate nodes.
-    // These are currently the only nodes used by the pipeline
-    // (to compute pipeline diffs). Including all nodes can cause the IR
-    // to exceed the maximum ConfigMap size supported by k8s (1MB).
-    let mir = program_info
-        .dataflow
-        .as_ref()
-        .map(|d| {
-            d.mir
-                .iter()
-                .filter_map(|(k, v)| {
-                    if v.is_relation() {
-                        Some((k.clone(), v.clone()))
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    if let Some(program_info) = program_info {
+        // Only keep tables and views, ignoring intermediate nodes.
+        // These are currently the only nodes used by the pipeline
+        // (to compute pipeline diffs). Including all nodes can cause the IR
+        // to exceed the maximum ConfigMap size supported by k8s (1MB).
+        let mir = program_info
+            .dataflow
+            .as_ref()
+            .map(|d| {
+                d.mir
+                    .iter()
+                    .filter_map(|(k, v)| {
+                        if v.is_relation() {
+                            Some((k.clone(), v.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
-    // Remove inputs and outputs that do not have lateness.
-    // This field is currently only used for backfill avoidance, which only cares about
-    // relations with lateness. Including the entire schema would cause the IR to exceed the
-    // maximum ConfigMap size supported by k8s (1MB).
-    let mut program_schema = program_info.schema.clone();
-    program_schema.inputs.retain(|input| input.has_lateness());
-    program_schema
-        .outputs
-        .retain(|output| output.has_lateness());
+        // Remove inputs and outputs that do not have lateness.
+        // This field is currently only used for backfill avoidance, which only cares about
+        // relations with lateness. Including the entire schema would cause the IR to exceed the
+        // maximum ConfigMap size supported by k8s (1MB).
+        let mut program_schema = program_info.schema.clone();
+        program_schema.inputs.retain(|input| input.has_lateness());
+        program_schema
+            .outputs
+            .retain(|output| output.has_lateness());
 
-    let program_ir = ProgramIr {
-        mir,
-        program_schema,
-    };
+        let program_ir = ProgramIr {
+            mir,
+            program_schema,
+        };
 
-    PipelineConfig {
-        name: Some(format!("pipeline-{pipeline_id}")),
-        given_name: Some(pipeline_name.to_string()),
-        global: runtime_config.clone(),
-        storage_config: None, // Set by the runner based on global field
-        secrets_dir: None,
-        inputs: program_info.input_connectors.clone(),
-        outputs: program_info.output_connectors.clone(),
-        program_ir: Some(program_ir),
+        PipelineConfig {
+            name: Some(format!("pipeline-{pipeline_id}")),
+            given_name: Some(pipeline_name.to_string()),
+            global: runtime_config.clone(),
+            storage_config: None, // Set by the runner based on global field
+            secrets_dir: None,
+            inputs: program_info.input_connectors.clone(),
+            outputs: program_info.output_connectors.clone(),
+            program_ir: Some(program_ir),
+        }
+    } else {
+        PipelineConfig {
+            name: Some(format!("pipeline-{pipeline_id}")),
+            given_name: Some(pipeline_name.to_string()),
+            global: runtime_config.clone(),
+            storage_config: None, // Set by the runner based on global field
+            secrets_dir: None,
+            inputs: BTreeMap::new(),
+            outputs: BTreeMap::new(),
+            program_ir: None,
+        }
     }
 }
 

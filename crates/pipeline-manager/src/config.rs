@@ -918,6 +918,11 @@ impl LocalRunnerConfig {
             .join(format!("program_{pipeline_id}_v{version}"))
     }
 
+    /// Location to write the fetched pipeline binary to.
+    pub(crate) fn program_info_file_path(&self, pipeline_id: PipelineId) -> PathBuf {
+        self.pipeline_dir(pipeline_id).join("program_info.json")
+    }
+
     /// Location to write the pipeline config file.
     pub(crate) fn config_file_path(&self, pipeline_id: PipelineId, extension: &str) -> PathBuf {
         self.pipeline_dir(pipeline_id)

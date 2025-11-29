@@ -1437,6 +1437,7 @@ mod tests {
                 &RustCompilationInfo::success(),
                 "test-checksum",
                 "test-integrity-checksum",
+                "test-info-integrity-checksum",
             )
             .await
             .unwrap();
@@ -1635,6 +1636,7 @@ mod tests {
                 &RustCompilationInfo::success(),
                 "checksum1",
                 "checksum2",
+                "checksum3",
             )
             .await
             .unwrap();
@@ -1802,6 +1804,7 @@ mod tests {
                 &RustCompilationInfo::success(),
                 "checksum1",
                 "checksum2",
+                "checksum3",
             )
             .await
             .unwrap();

@@ -211,6 +211,9 @@ pub struct ExtendedPipelineDescr {
     /// Checksum of the binary file itself.
     pub program_binary_integrity_checksum: Option<String>,
 
+    /// Checksum of the program information.
+    pub program_info_integrity_checksum: Option<String>,
+
     /// Resource or runtime error that caused the pipeline to stop unexpectedly.
     ///
     /// Can only be set when `Stopping` or `Stopped`.

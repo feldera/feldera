@@ -802,8 +802,16 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let deployment_id = Uuid::now_v7();
 
         // Deployment configuration
-        let mut deployment_config =
-            generate_pipeline_config(pipeline.id, &pipeline.name, &runtime_config, &program_info);
+        let mut deployment_config = generate_pipeline_config(
+            pipeline.id,
+            &pipeline.name,
+            &runtime_config,
+            if pipeline.program_info_integrity_checksum.is_none() {
+                Some(&program_info)
+            } else {
+                None
+            },
+        );
         deployment_config.storage_config =
             Some(self.pipeline_handle.generate_storage_config().await);
         let deployment_config = match serde_json::to_value(&deployment_config) {
@@ -925,6 +933,17 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             },
         };
 
+        let Some(source_checksum) = pipeline.program_binary_source_checksum.as_ref() else {
+            return State::TransitionToStopping {
+                error: Some(ErrorResponse::from_error_nolog(
+                    &RunnerError::AutomatonCannotConstructProgramBinaryUrl {
+                        error: "source checksum is missing".to_string(),
+                    },
+                )),
+                suspend_info: None,
+            };
+        };
+
         // URL where the program binary can be downloaded from
         let program_binary_url = format!(
             "{}://{}:{}/binary/{}/{}/{}/{}",
@@ -937,18 +956,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             self.common_config.compiler_port,
             self.pipeline_id,
             pipeline.program_version,
-            if let Some(source_checksum) = pipeline.program_binary_source_checksum.as_ref() {
-                source_checksum
-            } else {
-                return State::TransitionToStopping {
-                    error: Some(ErrorResponse::from_error_nolog(
-                        &RunnerError::AutomatonCannotConstructProgramBinaryUrl {
-                            error: "source checksum is missing".to_string(),
-                        },
-                    )),
-                    suspend_info: None,
-                };
-            },
+            source_checksum,
             if let Some(integrity_checksum) = pipeline.program_binary_integrity_checksum.as_ref() {
                 integrity_checksum
             } else {
@@ -962,6 +970,27 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 };
             },
         );
+
+        let program_info_url = if let Some(program_info_integrity_checksum) =
+            pipeline.program_info_integrity_checksum.as_ref()
+        {
+            Some(format!(
+                "{}://{}:{}/program_info/{}/{}/{}/{}",
+                if self.common_config.enable_https {
+                    "https"
+                } else {
+                    "http"
+                },
+                self.common_config.compiler_host,
+                self.common_config.compiler_port,
+                self.pipeline_id,
+                pipeline.program_version,
+                source_checksum,
+                program_info_integrity_checksum,
+            ))
+        } else {
+            None
+        };
 
         let bootstrap_policy =
             if Self::platform_version_requires_bootstrap_policy(&pipeline.platform_version) {
@@ -978,6 +1007,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 &deployment_id,
                 &deployment_config,
                 &program_binary_url,
+                program_info_url.as_deref(),
                 pipeline.program_version,
                 pipeline.suspend_info.clone(),
             )
@@ -1416,6 +1446,7 @@ mod test {
             _: &Uuid,
             _: &PipelineConfig,
             _: &str,
+            _: Option<&str>,
             _: Version,
             _: Option<serde_json::Value>,
         ) -> Result<(), ManagerError> {
@@ -1591,6 +1622,7 @@ mod test {
                 },
                 "not-used-program-binary-source-checksum",
                 "not-used-program-binary-integrity-checksum",
+                "not-used-program-info-integrity-checksum",
             )
             .await
             .unwrap();
