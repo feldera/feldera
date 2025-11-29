@@ -6,8 +6,9 @@ import {
     type ProfilerConfig,
     type ProfilerCallbacks,
     type TooltipData,
+    type Option,
     type MetricOption,
-    type WorkerOption
+    type WorkerOption,
 } from 'profiler-lib';
 
 // UI element references
@@ -21,8 +22,8 @@ const messageContainer = document.getElementById('message')!;
 
 // Profiler callbacks for UI updates
 const callbacks: ProfilerCallbacks = {
-    onTooltipUpdate: (data: TooltipData | null, visible: boolean) => {
-        if (!visible || !data) {
+    displayNodeAttributes: (odata: Option<TooltipData>, visible: boolean) => {
+        if (!visible || odata.isNone()) {
             tooltipContainer.innerHTML = '';
             tooltipContainer.style.position = '';
             return;
@@ -30,6 +31,7 @@ const callbacks: ProfilerCallbacks = {
 
         // Build tooltip HTML from structured data
         const table = document.createElement('table');
+        let data = odata.unwrap();
 
         // Header row
         const thead = document.createElement('thead');
@@ -127,15 +129,15 @@ const callbacks: ProfilerCallbacks = {
         }
     },
 
-    onMessage: (msg: string) => {
-        console.log(msg);
-        messageContainer.textContent = msg;
-        messageContainer.style.display = 'block';
-    },
-
-    onMessageClear: () => {
-        messageContainer.textContent = '';
-        messageContainer.style.display = 'none';
+    displayMessage: (msg: Option<string>) => {
+        if (msg.isNone()) {
+            messageContainer.textContent = "";
+            messageContainer.style.display = 'none';
+        } else {
+            console.log(msg.unwrap());
+            messageContainer.textContent = msg.unwrap();
+            messageContainer.style.display = 'block';
+        }
     },
 
     onError: (err: string) => {
