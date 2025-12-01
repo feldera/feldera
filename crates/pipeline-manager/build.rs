@@ -10,7 +10,7 @@ const EXCLUDE_LIST: [&str; 4] = [
     "../../js-packages/web-console/node_modules",
     "../../js-packages/web-console/build",
     "../../js-packages/web-console/.svelte-kit",
-    "../../js-packages/profiler-lib/node_modules",
+    "../../js-packages/profiler-lib",
 ];
 
 /// The build script has two modes:
