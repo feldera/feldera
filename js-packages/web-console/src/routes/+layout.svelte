@@ -26,13 +26,13 @@
     afterNavigate(() => posthog.capture('$pageview'))
   }
 
-  const { replace } = useSystemMessages()
+  const { upsert } = useSystemMessages()
   useInterval(() => {
     if (!page.data.feldera) {
       return
     }
-    replace(/^license_/, getLicenseMessage(page.data.feldera.config, newDate()))
-  }, 1000)
+    upsert(/^license_/, getLicenseMessage(page.data.feldera.config, newDate()))
+  }, 60000)
 </script>
 
 <BodyAttr

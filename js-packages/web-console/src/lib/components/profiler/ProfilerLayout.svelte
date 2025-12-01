@@ -107,7 +107,7 @@
 <div class="flex flex-wrap items-center gap-2 pb-2 sm:-mt-2">
   <!-- Toolbar start snippet (Load Profile and Snapshot) -->
   <!-- <div class="toolbar-start"> -->
-    {@render toolbarStart?.()}
+  {@render toolbarStart?.()}
   <!-- </div> -->
 
   <!-- Toolbar end (Metrics, Workers, Search) -->
@@ -235,13 +235,13 @@
                   </tr>
                 {/if}
 
-              <!-- Additional attributes -->
-              {#each Array.from(tooltipData.attributes.entries()) as [key, value]}
-                <tr>
-                  <td class="whitespace-nowrap">{key}</td>
-                  <td colspan={tooltipData.columns.length} class="whitespace-nowrap">{value}</td>
-                </tr>
-              {/each}
+                <!-- Additional attributes -->
+                {#each Array.from(tooltipData.attributes.entries()) as [key, value]}
+                  <tr>
+                    <td class="whitespace-nowrap">{key}</td>
+                    <td colspan={tooltipData.columns.length} class="whitespace-nowrap">{value}</td>
+                  </tr>
+                {/each}
               </tbody>
             </table>
           </div>

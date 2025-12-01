@@ -17,6 +17,8 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
+  import { getConfig } from '$lib/services/pipelineManager'
+  import { invalidateAll } from '$app/navigation'
 
   const dialog = useGlobalDialog()
 
@@ -28,6 +30,41 @@
 
   const systemMessages = useSystemMessages()
   const now = useInterval(() => new Date(), 3600000, 3600000 - (Date.now() % 3600000))
+
+  // Check for backend version changes every 30 seconds
+  useInterval(
+    async () => {
+      try {
+        const config = await getConfig()
+        const currentVersion = data.feldera?.version
+        const currentRevision = data.feldera?.revision
+        if (
+          currentVersion &&
+          currentRevision &&
+          (config.version !== currentVersion || config.revision !== currentRevision)
+        ) {
+          // Automatically refresh the page data to get the new backend version
+          await invalidateAll()
+
+          // Show a notification that the backend was updated
+          const msgId = `backend_version_changed`
+
+          const dismissTimeout = setTimeout(() => systemMessages.dismiss(msgId), 30000) // Auto-dismiss after 30 seconds
+          systemMessages.upsert(msgId, {
+            id: msgId,
+            text: `Feldera was updated from version ${currentVersion} to ${config.version}.`,
+            dismissable: { forMs: 0 },
+            onDismiss: () => clearTimeout(dismissTimeout)
+          })
+        }
+      } catch (e) {
+        // Silently ignore errors when checking for version changes
+        console.error('Failed to check backend version:', e)
+      }
+    },
+    10000 // Check every 10 seconds
+  )
+
   const displayedMessages = $derived(
     systemMessages.displayedMessages.map((message) => {
       const text = message.text.replace(/\{toDaysHoursFromNow (\d+)\}/, (_match, milliseconds) => {

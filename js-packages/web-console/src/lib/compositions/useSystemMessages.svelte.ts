@@ -53,13 +53,15 @@ export const useSystemMessages = () => {
       systemMessages.push(message)
     },
     dismiss(id: string) {
-      const dismissed = systemMessages.find((message) => message.id === id)
-      if (!dismissed) {
+      const dismissedIdx = systemMessages.findIndex((message) => message.id === id)
+      if (dismissedIdx === -1) {
         return
       }
-      if (dismissed.dismissable === 'never') {
+      if (systemMessages[dismissedIdx].dismissable === 'never') {
         throw new Error('The message cannot be dismissed')
       }
+      systemMessages[dismissedIdx].onDismiss?.()
+      systemMessages.splice(dismissedIdx, 1)
       shownMessages.value = nubLast(
         [{ id, timestamp: Date.now() }, ...shownMessages.value],
         (shown) => shown.id
@@ -67,12 +69,10 @@ export const useSystemMessages = () => {
     },
     /**
      * If the element to replace is found - remove it or replace with the newMessage
+     *
      * If the element to replace is not found - push the newMessage
      */
-    replace(id: string | RegExp, newMessage: SystemMessage | null) {
-      if (typeof id === 'string' && id === newMessage?.id) {
-        return
-      }
+    upsert(id: string | RegExp, newMessage: SystemMessage | null) {
       const matchesId = (message: { id: string }) =>
         typeof id === 'string' ? message.id === id : id.test(message.id)
       if (!findSplice(systemMessages, matchesId, ...singleton(newMessage))) {
