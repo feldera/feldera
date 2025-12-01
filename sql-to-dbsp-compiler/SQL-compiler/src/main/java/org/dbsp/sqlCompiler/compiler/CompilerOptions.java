@@ -84,15 +84,15 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Override
         public String toString() {
             return "Language{" +
-                    "\n\tincrementalize=" + this.incrementalize +
+                    "\n\tgenerateInputForEveryTable=" + this.generateInputForEveryTable +
                     ",\n\tignoreOrderBy=" + this.ignoreOrderBy +
-                    ",\n\toutputsAreSets=" + this.outputsAreSets +
-                    ",\n\toptimizationLevel=" + this.optimizationLevel +
-                    ",\n\tthrowOnError=" + this.throwOnError +
-                    ",\n\tgenerateInputForEveryTable=" + this.generateInputForEveryTable +
-                    ",\n\tunrestrictedIOTypes=" + this.unrestrictedIOTypes +
-                    ",\n\tunaryPlusNoop=" + this.unaryPlusNoop +
+                    ",\n\tincrementalize=" + this.incrementalize +
                     ",\n\tlenient=" + this.lenient +
+                    ",\n\toptimizationLevel=" + this.optimizationLevel +
+                    ",\n\toutputsAreSets=" + this.outputsAreSets +
+                    ",\n\tthrowOnError=" + this.throwOnError +
+                    ",\n\tunaryPlusNoop=" + this.unaryPlusNoop +
+                    ",\n\tunrestrictedIOTypes=" + this.unrestrictedIOTypes +
                     '}';
         }
 
@@ -210,6 +210,9 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--crates", description = "Followed by a program name. Generates code using multiple crates; " +
                 "`outputFile` is interpreted as a directory.")
         public String crates = "";
+        @Parameter(names = "--runtime", description = "Followed by a path.  Path to the runtime to use.  " +
+                "Used in conjunction with '--crates'.")
+        public String runtimePath = "";
         @Parameter(hidden = true, names = "--input_circuit",
                 description = "Do not process the circuit, return immediately after creation.  Used for testing")
         public boolean inputCircuit = false;
@@ -247,20 +250,22 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Override
         public String toString() {
             return "IO{" +
-                    "\n\toutputFile=" + Utilities.singleQuote(this.outputFile) +
-                    ",\n\tmetadataSource=" + this.metadataSource +
-                    ",\n\terrorFile=" + Utilities.singleQuote(this.errorFile) +
+                    "\n\tcrates=" + this.crates +
                     ",\n\temitHandles=" + this.emitHandles +
                     ",\n\temitJpeg=" + this.emitJpeg +
-                    ",\n\temitPng=" + this.emitPng +
-                    ",\n\temitPlan=" + this.emitPlan +
                     ",\n\temitJsonErrors=" + this.emitJsonErrors +
                     ",\n\temitJsonSchema=" + Utilities.singleQuote(this.emitJsonSchema) +
+                    ",\n\temitPlan=" + this.emitPlan +
+                    ",\n\temitPng=" + this.emitPng +
+                    ",\n\terrorFile=" + Utilities.singleQuote(this.errorFile) +
                     ",\n\tinputFile=" + Utilities.singleQuote(this.inputFile) +
+                    ",\n\tmetadataSource=" + this.metadataSource +
+                    ",\n\tnoRust=" + this.noRust +
+                    ",\n\toutputFile=" + Utilities.singleQuote(this.outputFile) +
+                    ",\n\tquiet=" + this.quiet +
+                    ",\n\truntime=" + Utilities.singleQuote(this.runtimePath) +
                     ",\n\ttrimInputs=" + this.trimInputs +
                     ",\n\tverbosity=" + this.verbosity +
-                    ",\n\tquiet=" + this.quiet +
-                    ",\n\tnoRust=" + this.noRust +
                     '}';
         }
 
@@ -310,6 +315,11 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
 
     public static CompilerOptions getDefault() {
         return new CompilerOptions();
+    }
+
+    public boolean generateMultiCrateMain() {
+        return this.ioOptions.multiCrates() &&
+                !this.ioOptions.runtimePath.isEmpty();
     }
 
     @Override
