@@ -23,10 +23,6 @@ sudo curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.3"
 
 # Install OpenAPI typings generator
 sudo bun install --global @hey-api/openapi-ts
-
-# Clone the repo for the UI
-git clone https://github.com/feldera/feldera.git
-cd dbsp/web-console
 ```
 
 ## Development

@@ -5,7 +5,7 @@
   "scripts": {
     "clean-install": "bun ci",
     "dev": "vite dev --host",
-    "prebuild": "cd ../profiler-lib && ([ \"$CI\" = \"TRUE\" ] && bun install || true) && bun run build",
+    "prebuild": "cd ../profiler-lib && bun run build",
     "build": "svelte-kit sync && svelte-check --threshold error && vite build",
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check",
