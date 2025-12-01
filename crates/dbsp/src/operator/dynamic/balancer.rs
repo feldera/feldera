@@ -3,9 +3,7 @@ use crate::{
     circuit::{
         checkpointer::EmptyCheckpoint,
         circuit_builder::{register_replay_stream, MetadataExchange, StreamId},
-        metadata::{
-            BatchSizeStats, OperatorLocation, OperatorMeta, INPUT_BATCHES_LABEL, NUM_ENTRIES_LABEL,
-        },
+        metadata::{BatchSizeStats, OperatorLocation, OperatorMeta, INPUT_BATCHES_LABEL},
         operator_traits::{Operator, TernarySinkOperator},
         GlobalNodeId, NodeId, OwnershipPreference, WithClock,
     },
@@ -32,6 +30,7 @@ use crate::{
 };
 use ouroboros::self_referencing;
 use petgraph::graph::UnGraph;
+use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
     cell::RefCell,
@@ -113,7 +112,7 @@ impl HardConstraint for JoinConstraint {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Policy {
     Shard = 0,
@@ -151,7 +150,7 @@ struct Cluster {
 
 #[derive(Default, Debug)]
 struct BalancerInner {
-    integrals: BTreeMap<NodeId, (NodeId, NodeId)>,
+    integrals: BTreeMap<NodeId, (NodeId, NodeId, NodeId)>,
     joins: BTreeMap<NodeId, (NodeId, NodeId)>,
     clusters: Vec<Cluster>,
     stream_to_cluster: BTreeMap<NodeId, usize>,
@@ -176,7 +175,7 @@ impl BalancerInner {
         let mut variable_indexes = BTreeMap::new();
 
         for stream in self.clusters[cluster_index].streams.clone().iter() {
-            let mut domain = self.estimate_cost(*stream);
+            let mut domain = self.compute_domain(*stream);
             if let Some(fixed_policy) = self.clusters[cluster_index].fixed_policy.get(stream) {
                 domain.retain(|policy, _| *policy == *fixed_policy);
             }
@@ -214,30 +213,51 @@ impl BalancerInner {
         }
     }
 
-    fn estimate_cost(&self, stream: NodeId) -> BTreeMap<Policy, Cost> {
-        let (accumulator, integral) = self.integrals.get(&stream).unwrap();
+    // Called when an exchange operator is flushed. At this point
+    // it can no longer change its policy until the next transaction.
+    pub fn fix_policy_for_transaction(&mut self, node_id: NodeId, policy: Policy) {
+        let cluster_index = *self.stream_to_cluster.get(&node_id).unwrap();
+        self.clusters[cluster_index]
+            .fixed_policy
+            .insert(node_id, policy);
+    }
+
+    fn compute_domain(&mut self, stream: NodeId) -> BTreeMap<Policy, Cost> {
+        let (exchange_sender, accumulator, integral) = self.integrals.get(&stream).unwrap();
 
         let accumulator_metadata = self
             .metadata_exchange
-            .get_global_operator_metadata(*accumulator);
+            .get_global_operator_metadata_typed::<AccumulatorMeta>(*accumulator);
         let integral_metadata = self
             .metadata_exchange
-            .get_global_operator_metadata(*integral);
+            .get_global_operator_metadata_typed::<IntegralMeta>(*integral);
+
+        let exchange_sender_metadata: Vec<Option<RebalancingExchangeSenderExchangeMetadata>> = self
+            .metadata_exchange
+            .get_global_operator_metadata_typed::<RebalancingExchangeSenderExchangeMetadata>(
+                *exchange_sender,
+            );
+
+        if exchange_sender_metadata.iter().any(|metadata| {
+            if let Some(metadata) = metadata {
+                metadata.flushed
+            } else {
+                false
+            }
+        }) {
+            assert!(exchange_sender_metadata
+                .iter()
+                .all(|metadata| metadata.is_some()));
+            assert!(exchange_sender_metadata
+                .iter()
+                .all(|metadata| metadata == &exchange_sender_metadata[0]));
+            let policy = exchange_sender_metadata[0].as_ref().unwrap().current_policy;
+            self.fix_policy_for_transaction(*exchange_sender, policy);
+        }
 
         let worker_sizes: Vec<u64> = std::iter::zip(accumulator_metadata, integral_metadata)
             .map(|(accumulator_metadata, integral_metadata)| {
-                accumulator_metadata
-                    .unwrap()
-                    .get(NUM_ENTRIES_LABEL)
-                    .unwrap()
-                    .as_u64()
-                    .unwrap()
-                    + integral_metadata
-                        .unwrap()
-                        .get(NUM_ENTRIES_LABEL)
-                        .unwrap()
-                        .as_u64()
-                        .unwrap()
+                accumulator_metadata.unwrap().num_entries + integral_metadata.unwrap().num_entries
             })
             .collect();
 
@@ -274,11 +294,17 @@ impl Balancer {
         }
     }
 
-    pub fn register_integral(&self, stream: NodeId, accumulator: NodeId, integral: NodeId) {
+    pub fn register_integral(
+        &self,
+        stream: NodeId,
+        exchange_sender: NodeId,
+        accumulator: NodeId,
+        integral: NodeId,
+    ) {
         self.inner
             .borrow_mut()
             .integrals
-            .insert(stream, (accumulator, integral));
+            .insert(stream, (exchange_sender, accumulator, integral));
     }
 
     pub fn register_join(&self, join: NodeId, left: NodeId, right: NodeId) {
@@ -305,10 +331,9 @@ impl Balancer {
     // Called when an exchange operator is flushed. At this point
     // it can no longer change its policy until the next transaction.
     pub fn fix_policy_for_transaction(&self, node_id: NodeId, policy: Policy) {
-        let cluster_index = *self.inner.borrow().stream_to_cluster.get(&node_id).unwrap();
-        self.inner.borrow_mut().clusters[cluster_index]
-            .fixed_policy
-            .insert(node_id, policy);
+        self.inner
+            .borrow_mut()
+            .fix_policy_for_transaction(node_id, policy);
     }
 
     /// Optimal policy computed at the start of the step.
@@ -517,6 +542,7 @@ where
                             exchange,
                             start_wait_usecs,
                             circuit.balancer().clone(),
+                            circuit.metadata_exchange().clone(),
                         ),
                         self,
                         &delayed_acc,
@@ -529,6 +555,7 @@ where
                     // Register accumulator and integral with the balancer, so it knows their IDs.
                     balancer.register_integral(
                         self.local_node_id(),
+                        sender_node_id,
                         accumulator_stream.local_node_id(),
                         trace.local_node_id(),
                     );
@@ -574,6 +601,7 @@ where
     exchange: Arc<Exchange<(B, bool)>>,
 
     balancer: Balancer,
+    metadata_exchange: MetadataExchange,
 
     // Input batch sizes.
     input_batch_stats: BatchSizeStats,
@@ -602,6 +630,7 @@ where
         exchange: Arc<Exchange<(B, bool)>>,
         start_wait_usecs: Arc<AtomicU64>,
         balancer: Balancer,
+        metadata_exchange: MetadataExchange,
     ) -> Self {
         debug_assert!(worker_index < Runtime::num_workers());
         Self {
@@ -611,6 +640,7 @@ where
             outputs: Vec::with_capacity(Runtime::num_workers()),
             exchange,
             balancer,
+            metadata_exchange,
             input_batch_stats: BatchSizeStats::new(),
             flush_state: FlushState::TransactionStarted,
             current_policy: Policy::Shard,
@@ -620,11 +650,15 @@ where
         }
     }
 
-    /// Is policy change allowed during the current transaction?
-    ///
-    /// Must return the same result for all workers.
-    fn policy_change_allowed(&self) -> bool {
-        todo!("None of the workers have flushed yet")
+    fn exchange_metadata(&self) -> RebalancingExchangeSenderExchangeMetadata {
+        RebalancingExchangeSenderExchangeMetadata {
+            flushed: self.flush_state == FlushState::FlushCompleted,
+            current_policy: self.current_policy,
+        }
+    }
+
+    fn start_rebalancing(&mut self) {
+        todo!()
     }
 }
 
@@ -633,6 +667,22 @@ enum FlushState {
     TransactionStarted,
     FlushRequested,
     FlushCompleted,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct RebalancingExchangeSenderExchangeMetadata {
+    flushed: bool,
+    current_policy: Policy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AccumulatorMeta {
+    num_entries: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct IntegralMeta {
+    num_entries: u64,
 }
 
 impl<B, C> Operator for RebalancingExchangeSender<B, C>
@@ -731,25 +781,14 @@ where
     ) {
         match self.flush_state {
             FlushState::TransactionStarted | FlushState::FlushRequested => {
-                let new_policy = if self.policy_change_allowed() {
-                    let new_policy = self.balancer.get_optimal_policy(self.node_id).unwrap();
-                    if todo!("Admission check: rate limit the number of policy changes, threshold on cost/benefit ratio?") {
-                        new_policy
-                    } else {
-                        self.current_policy
-                    }
-                } else {
-                    self.balancer
-                        .fix_policy_for_transaction(self.node_id, self.current_policy);
-                    self.current_policy
-                };
+                let new_policy = self.balancer.get_optimal_policy(self.node_id).unwrap();
 
                 // Policy change?
                 // - Clean old rebalancing state
                 // - Set new rebalancing state
                 if new_policy != self.current_policy {
                     self.current_policy = new_policy;
-                    todo!()
+                    self.start_rebalancing();
                 }
 
                 // Input has been flushed, but there's rebalancing state remaining -- make progress rebalancing.
@@ -764,9 +803,20 @@ where
                 }
             }
             FlushState::FlushCompleted => {
+                // Policy changes shouldn't happen after the flush.
+                assert_eq!(
+                    self.current_policy,
+                    self.balancer.get_optimal_policy(self.node_id).unwrap()
+                );
+                assert!(self.retractions.is_none());
                 // Output empty batch.
             }
         }
+
+        self.metadata_exchange.set_local_operator_metadata(
+            self.node_id,
+            serde_json::to_value(self.exchange_metadata()).unwrap(),
+        );
 
         // stats:
         //   input batch size

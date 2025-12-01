@@ -57,7 +57,7 @@ use anyhow::Error as AnyError;
 use dyn_clone::{clone_box, DynClone};
 use feldera_ir::{LirCircuit, LirNodeId};
 use feldera_storage::{FileCommitter, StoragePath};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{de::DeserializeOwned, Deserialize, Serialize, Serializer};
 use std::{
     any::{type_name_of_val, Any, TypeId},
     borrow::Cow,
@@ -1564,6 +1564,24 @@ impl MetadataExchange {
             .borrow()
             .iter()
             .map(|global_metadata| global_metadata.metadata.get(&id).cloned())
+            .collect()
+    }
+
+    pub fn get_global_operator_metadata_typed<T>(&self, id: NodeId) -> Vec<Option<T>>
+    where
+        T: DeserializeOwned,
+    {
+        self.inner
+            .global_metadata
+            .borrow()
+            .iter()
+            .map(|global_metadata| {
+                global_metadata
+                    .metadata
+                    .get(&id)
+                    .cloned()
+                    .map(|val| serde_json::from_value::<T>(val).unwrap())
+            })
             .collect()
     }
 }
