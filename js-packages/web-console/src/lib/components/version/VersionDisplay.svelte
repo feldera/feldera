@@ -3,10 +3,14 @@
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
 
-  let versionText = page.data.feldera
-    ? `Feldera ${page.data.feldera.edition} v${page.data.feldera.version} `
-    : undefined
-  let revisionText = page.data.feldera ? `(rev. ${page.data.feldera.revision})` : undefined
+  let versionText = $derived(
+    page.data.feldera
+      ? `Feldera ${page.data.feldera.edition} v${page.data.feldera.version} `
+      : undefined
+  )
+  let revisionText = $derived(
+    page.data.feldera ? `(rev. ${page.data.feldera.revision})` : undefined
+  )
 </script>
 
 <div class="hr flex justify-between pt-4 text-surface-500">
