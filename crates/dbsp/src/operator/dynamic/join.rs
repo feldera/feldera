@@ -4,7 +4,6 @@ use crate::circuit::metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL};
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::DynData;
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
-use crate::operator::dynamic::balancer::Balancer;
 use crate::operator::dynamic::concat::dyn_accumulate_concat;
 use crate::trace::cursor::SaturatingCursor;
 use crate::trace::spine_async::WithSnapshot;
@@ -676,24 +675,13 @@ where
         // as a join of one of the input streams with the trace of the other stream,
         // implemented by the `JoinTrace` operator.
         self.circuit().region("join", || {
-            let balancer = self.circuit().balancer();
+            let left = self.dyn_shard(&factories.left_factories);
+            let right = other.dyn_shard(&factories.right_factories);
 
-            let (left, left_trace) = self.dyn_accumulate_trace_with_balancer(
-                &factories.left_trace_factories,
-                &factories.left_factories,
-            );
-            let (right, right_trace) = other.dyn_accumulate_trace_with_balancer(
-                &factories.right_trace_factories,
-                &factories.right_factories,
-            );
-
-            // let left = self.dyn_shard(&factories.left_factories);
-            // let right = other.dyn_shard(&factories.right_factories);
-
-            // let left_trace = left
-            //     .dyn_accumulate_trace(&factories.left_trace_factories, &factories.left_factories);
-            // let right_trace = right
-            //     .dyn_accumulate_trace(&factories.right_trace_factories, &factories.right_factories);
+            let left_trace = left
+                .dyn_accumulate_trace(&factories.left_trace_factories, &factories.left_factories);
+            let right_trace = right
+                .dyn_accumulate_trace(&factories.right_trace_factories, &factories.right_factories);
 
             let left = self.circuit().add_binary_operator(
                 StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
@@ -720,18 +708,10 @@ where
                     self.circuit().clone(),
                 )),
                 &right.dyn_accumulate(&factories.right_factories),
-                &left_trace.accumulate_delay_trace_with_balancer(),
+                &left_trace.accumulate_delay_trace(),
             );
 
-            let result = left.plus(&right);
-
-            balancer.register_join(
-                left.local_node_id(),
-                right.local_node_id(),
-                result.local_node_id(),
-            );
-
-            result
+            left.plus(&right)
         })
     }
 
@@ -1682,10 +1662,7 @@ where
                 *self.empty_output.borrow_mut() = false;
             }
 
-            todo!("update join stats with balancer");
-
             yield (batch, true, joint_cursor.position())
-
         }
     }
 }
