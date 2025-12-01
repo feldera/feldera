@@ -7,7 +7,7 @@ repository = "https://github.com/feldera/feldera"
 keywords = ["ivm", "analytics", "database", "incremental", "sql"]
 readme = "README.md"
 # Define Minimum Supported Rust Version (MSRV)
-rust-version = "1.87.0"
+rust-version = "1.91.1"
 edition = "2021"
 
 [workspace]
