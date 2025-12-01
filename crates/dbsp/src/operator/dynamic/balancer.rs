@@ -668,6 +668,10 @@ where
         todo!()
     }
 
+    fn flush_progress(&self) -> Option<Position> {
+        todo!()
+    }
+
     fn checkpoint(
         &mut self,
         base: &feldera_storage::StoragePath,

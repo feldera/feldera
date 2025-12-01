@@ -432,11 +432,13 @@ impl Inner {
     where
         C: Circuit,
     {
-        // Reset unsatisfied dependencies, initialize runnable queue.
+        // Reset unflushed dependencies.
         for task in self.tasks.values_mut() {
             task.flush_state = FlushState::UnflushedDependencies(task.num_predecessors);
         }
         self.transaction_phase = TransactionPhase::Started;
+
+        circuit.notify_start_transaction();
 
         circuit.balancer().start_transaction();
     }

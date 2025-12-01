@@ -273,6 +273,11 @@ pub trait Operator: 'static {
         panic!("end_replay() is not implemented for this operator")
     }
 
+    /// Notify the operator about start of a transaction.
+    ///
+    /// The operator can initialize any state needed for the transaction.
+    fn start_transaction(&mut self) {}
+
     /// Notifies the operator that all of its predecessors have produced
     /// all outputs for the current transaction.
     ///

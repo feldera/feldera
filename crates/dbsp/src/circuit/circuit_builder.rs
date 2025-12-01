@@ -998,6 +998,10 @@ pub trait Node: Any {
 
     fn import(&mut self) {}
 
+    /// Notify the operator that the circuit is starting a transaction.
+    fn start_transaction(&mut self);
+
+    /// Notify the node about start of a transaction.
     /// Call `Operator::flush` on the operator.
     fn flush(&mut self);
 
@@ -1642,7 +1646,7 @@ pub trait CircuitBase: 'static {
 
     /// Apply `f` to all immediate children of `self`.
     fn map_local_nodes_mut(
-        &mut self,
+        &self,
         f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
     ) -> Result<(), DbspError>;
 
@@ -1695,6 +1699,13 @@ pub trait CircuitBase: 'static {
     }
 
     fn check_fixedpoint(&self, scope: Scope) -> bool;
+
+    fn notify_start_transaction(&self) {
+        self.map_local_nodes_mut(&mut |node| {
+            node.start_transaction();
+            Ok(())
+        });
+    }
 
     fn metadata_exchange(&self) -> &MetadataExchange;
 
@@ -3173,7 +3184,7 @@ where
     }
 
     fn map_local_nodes_mut(
-        &mut self,
+        &self,
         f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
     ) -> Result<(), DbspError> {
         for node in self.inner().nodes.borrow_mut().iter_mut() {
@@ -4337,6 +4348,10 @@ where
         StreamValue::consume_token(self.parent_stream.val());
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.flush();
     }
@@ -4478,6 +4493,10 @@ where
             self.output_stream.put(self.operator.eval().await);
             Ok(self.operator.flush_progress())
         })
+    }
+
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
     }
 
     fn flush(&mut self) {
@@ -4637,6 +4656,10 @@ where
         })
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.flush();
     }
@@ -4785,6 +4808,10 @@ where
 
             Ok(self.operator.flush_progress())
         })
+    }
+
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
     }
 
     fn flush(&mut self) {
@@ -4994,6 +5021,10 @@ where
         })
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.flush();
     }
@@ -5171,6 +5202,10 @@ where
 
             Ok(self.operator.flush_progress())
         })
+    }
+
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
     }
 
     fn flush(&mut self) {
@@ -5380,6 +5415,10 @@ where
         })
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.flush();
     }
@@ -5559,6 +5598,10 @@ where
 
             Ok(self.operator.flush_progress())
         })
+    }
+
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
     }
 
     fn flush(&mut self) {
@@ -5763,6 +5806,10 @@ where
         })
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.flush();
     }
@@ -5950,6 +5997,10 @@ where
         })
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.flush();
     }
@@ -6118,6 +6169,10 @@ where
         })
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.borrow_mut().start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.borrow_mut().flush();
     }
@@ -6282,6 +6337,10 @@ where
 
             Ok(None)
         })
+    }
+
+    fn start_transaction(&mut self) {
+        self.operator.borrow_mut().start_transaction();
     }
 
     fn flush(&mut self) {
@@ -6510,6 +6569,10 @@ where
             self.executor.transaction(&self.circuit).await?;
             Ok(None)
         })
+    }
+
+    fn start_transaction(&mut self) {
+        // Nested circuit has its own transactions.
     }
 
     fn flush(&mut self) {
