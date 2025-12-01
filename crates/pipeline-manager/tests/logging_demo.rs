@@ -52,7 +52,7 @@ fn emits_sample_log() {
     assert_eq!(parsed["pipeline"], "logging-demo");
     assert_eq!(parsed["fields"]["demo_int"], 42);
     assert_eq!(parsed["fields"]["demo_u64"], Value::from(u64::MAX));
-    assert_eq!(parsed["fields"]["demo_float"], 3.1415);
+    assert_eq!(parsed["fields"]["demo_float"], 1.23456);
     assert_eq!(parsed["fields"]["demo_neg_float"], -2.5);
     assert_eq!(parsed["fields"]["demo_text"], "sample");
 }
@@ -92,7 +92,7 @@ fn emit_logs(json: bool) {
     info!(
         demo_int = 42i64,
         demo_u64 = u64::MAX,
-        demo_float = 3.1415f64,
+        demo_float = 1.23456f64,
         demo_neg_float = -2.5f64,
         demo_text = "sample",
         "typed field coverage"
