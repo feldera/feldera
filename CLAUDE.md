@@ -9586,7 +9586,15 @@ This script manages all `CLAUDE.md` files in the repository by **merging** them 
   - Preserves directory structure when restoring files.
 
 ### **Usage**
-Run from any subdirectory (e.g., `/web-console`) and optionally pass the repo root path:
+
+Run from the repository root through package.json scripts:
+
+```bash
+bun run split-claude
+bun run merge-claude
+```
+
+Run from any subdirectory by passing the root CLAUDE.md path:
 
 ```bash
 bun ../scripts/claude.js merge --root ..

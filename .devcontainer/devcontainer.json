@@ -36,7 +36,7 @@
 				},
 				"importSorter.generalConfiguration.configurationFilePath": "./import-sorter.json",
 				"editor.defaultFormatter": "esbenp.prettier-vscode",
-				"prettier.configPath": "web-console/.prettierrc"
+				"prettier.configPath": "js-packages/web-console/.prettierrc"
 			}
 		}
 	},

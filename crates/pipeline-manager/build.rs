@@ -6,11 +6,12 @@ use vergen_gitcl::*;
 
 // These are touched during the build, so it would re-build every time if we
 // don't exclude them from change detection:
-const EXCLUDE_LIST: [&str; 4] = [
+const EXCLUDE_LIST: [&str; 5] = [
     "../../js-packages/web-console/node_modules",
     "../../js-packages/web-console/build",
     "../../js-packages/web-console/.svelte-kit",
-    "../../js-packages/profiler-lib",
+    "../../js-packages/profiler-lib/node_modules",
+    "../../js-packages/profiler-lib/dist",
 ];
 
 /// The build script has two modes:
@@ -40,9 +41,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             EXCLUDE_LIST
             .iter()
             .any(|exclude| path.to_str().unwrap().starts_with(exclude))
-            // Also exclude web-console folder itself because we mutate things inside
-            // of it
+            // Exclude web-console and profiler-lib dirs themselves because we mutate ignored dirs inside of them
             || path.to_str().unwrap() == "../../js-packages/web-console/"
+            || path.to_str().unwrap() == "../../js-packages/profiler-lib/"
         })
         .path("../../js-packages/web-console/")
         .path("../../js-packages/profiler-lib/")
