@@ -1,15 +1,3 @@
-use std::{
-    borrow::Cow,
-    cell::RefCell,
-    collections::{BTreeMap, BTreeSet},
-    marker::PhantomData,
-    panic::Location,
-    sync::{atomic::AtomicU64, Arc},
-};
-
-use ouroboros::self_referencing;
-use petgraph::graph::UnGraph;
-
 use crate::{
     algebra::IndexedZSet,
     circuit::{
@@ -19,7 +7,7 @@ use crate::{
             BatchSizeStats, OperatorLocation, OperatorMeta, INPUT_BATCHES_LABEL, NUM_ENTRIES_LABEL,
         },
         operator_traits::{Operator, TernarySinkOperator},
-        NodeId, OwnershipPreference, WithClock,
+        GlobalNodeId, NodeId, OwnershipPreference, WithClock,
     },
     circuit_cache_key,
     operator::{
@@ -34,13 +22,23 @@ use crate::{
     },
     trace::{
         deserialize_indexed_wset, merge_batches, serialize_indexed_wset, spine_async::SpineCursor,
-        Batch, BatchReader, Spine, SpineSnapshot,
+        Batch, BatchReader, SpineSnapshot,
     },
     utils::{
         components,
         maxsat::{Cost, HardConstraint, MaxSat, Variable, VariableIndex},
     },
-    Circuit, Runtime, Scope, Stream,
+    Circuit, Position, Runtime, Scope, Stream,
+};
+use ouroboros::self_referencing;
+use petgraph::graph::UnGraph;
+use std::{
+    borrow::Cow,
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet},
+    marker::PhantomData,
+    panic::Location,
+    sync::{atomic::AtomicU64, Arc},
 };
 
 circuit_cache_key!(BalancedTraceId<C: Circuit, B: IndexedZSet>(StreamId => (Stream<C, B>, Stream<C, TimedSpine<B, C>>)));
@@ -518,6 +516,7 @@ where
                             Some(location),
                             exchange,
                             start_wait_usecs,
+                            circuit.balancer().clone(),
                         ),
                         self,
                         &delayed_acc,
@@ -568,15 +567,18 @@ where
     B: Batch,
     C: WithClock + 'static,
 {
+    node_id: NodeId,
     worker_index: usize,
     location: OperatorLocation,
     outputs: Vec<B>,
     exchange: Arc<Exchange<(B, bool)>>,
 
+    balancer: Balancer,
+
     // Input batch sizes.
     input_batch_stats: BatchSizeStats,
 
-    flush_requested: bool,
+    flush_state: FlushState,
 
     current_policy: Policy,
 
@@ -599,21 +601,38 @@ where
         location: OperatorLocation,
         exchange: Arc<Exchange<(B, bool)>>,
         start_wait_usecs: Arc<AtomicU64>,
+        balancer: Balancer,
     ) -> Self {
         debug_assert!(worker_index < Runtime::num_workers());
         Self {
+            node_id: NodeId::new(0),
             worker_index,
             location,
             outputs: Vec::with_capacity(Runtime::num_workers()),
             exchange,
+            balancer,
             input_batch_stats: BatchSizeStats::new(),
-            flushed: false,
+            flush_state: FlushState::TransactionStarted,
             current_policy: Policy::Shard,
             retractions: None,
             start_wait_usecs,
             phantom: PhantomData,
         }
     }
+
+    /// Is policy change allowed during the current transaction?
+    ///
+    /// Must return the same result for all workers.
+    fn policy_change_allowed(&self) -> bool {
+        todo!("None of the workers have flushed yet")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FlushState {
+    TransactionStarted,
+    FlushRequested,
+    FlushCompleted,
 }
 
 impl<B, C> Operator for RebalancingExchangeSender<B, C>
@@ -642,6 +661,10 @@ where
         true
     }
 
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.node_id = global_id.local_node_id().unwrap();
+    }
+
     fn register_ready_callback<F>(&mut self, cb: F)
     where
         F: Fn() + Send + Sync + 'static,
@@ -659,13 +682,17 @@ where
         true
     }
 
+    fn start_transaction(&mut self) {
+        self.flush_state = FlushState::TransactionStarted;
+    }
+
     fn flush(&mut self) {
-        self.flushed = true;
+        self.flush_state = FlushState::FlushRequested;
     }
 
     fn is_flush_complete(&self) -> bool {
         // flushed == true and all rebalancing state has been flushed
-        todo!()
+        self.flush_state == FlushState::FlushCompleted
     }
 
     fn flush_progress(&self) -> Option<Position> {
@@ -702,21 +729,48 @@ where
         delayed_accumulator: Cow<'_, EmptyCheckpoint<Vec<B>>>,
         delayed_trace: Cow<'_, TimedSpine<B, C>>,
     ) {
-        // Get metadata from metadata exchange.
+        match self.flush_state {
+            FlushState::TransactionStarted | FlushState::FlushRequested => {
+                let new_policy = if self.policy_change_allowed() {
+                    let new_policy = self.balancer.get_optimal_policy(self.node_id).unwrap();
+                    if todo!("Admission check: rate limit the number of policy changes, threshold on cost/benefit ratio?") {
+                        new_policy
+                    } else {
+                        self.current_policy
+                    }
+                } else {
+                    self.balancer
+                        .fix_policy_for_transaction(self.node_id, self.current_policy);
+                    self.current_policy
+                };
+
+                // Policy change?
+                // - Clean old rebalancing state
+                // - Set new rebalancing state
+                if new_policy != self.current_policy {
+                    self.current_policy = new_policy;
+                    todo!()
+                }
+
+                // Input has been flushed, but there's rebalancing state remaining -- make progress rebalancing.
+                if self.flush_state == FlushState::FlushRequested {
+                    todo!("Make progress rebalancing");
+                    if todo!("Rebalancing finished") {
+                        // Nothing more to do:
+                        self.flush_state = FlushState::FlushCompleted;
+                    }
+                } else {
+                    todo!("Shard delta input");
+                }
+            }
+            FlushState::FlushCompleted => {
+                // Output empty batch.
+            }
+        }
 
         // stats:
         //   input batch size
         //   number of rebalancings
-
-        // Reevaluate the policy.
-
-        // If we (and all other workers) haven't flushed yet, update metadata, reevaluate policy.
-        // Policy change?
-        // - Clean old rebalancing state
-        // - Set new rebalancing state
-
-        // Input has been flushed, but there's rebalancing state remaining -- make progress rebalancing.
-        //
     }
 
     fn input_preference(
