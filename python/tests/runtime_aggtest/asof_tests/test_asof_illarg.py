@@ -47,3 +47,32 @@ class asof_test_illarg4(TstView):
                         MATCH_CONDITION (t1.intt >= t2.intt )
                         ON t1.id = t2.id;"""
         self.expected_error = "Currently only left asof joins are supported."
+
+
+class asof_test_illarg5(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW illarg5 AS
+                        WITH combined AS (SELECT
+                        t1.id AS t1_id, t1.intt AS t1_intt
+                        FROM asof_tbl1 t1)
+                        SELECT
+                        c.t1_id, c.t1_intt
+                        FROM combined c
+                        LEFT ASOF JOIN asof_tbl2 t2
+                        MATCH_CONDITION (t2.intt >= c.t1_intt)
+                        ON c.t1_id = t2.id;"""
+        self.expected_error = "currently the only match_condition comparison supported by asof joins is 'leftcol >= rightcol'"
+
+
+class asof_test_illarg6(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW illarg6 AS SELECT
+                        t1.id,
+                        t2.intt AS t2_int
+                        FROM asof_tbl1 AS t1
+                        LEFT ASOF JOIN asof_tbl2 AS t2
+                        MATCH_CONDITION (t2.intt = (SELECT t2_sub.intt))
+                        ON t1.id = t2.id;"""
+        self.expected_error = "table 't2_sub' not found"
