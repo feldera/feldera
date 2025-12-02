@@ -4,6 +4,15 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  RUSTC_WRAPPER: sccache
+  SCCACHE_CACHE_SIZE: ${{ vars.SCCACHE_CACHE_SIZE }}
+  SCCACHE_BUCKET: ${{ vars.SCCACHE_BUCKET }}
+  SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
+  SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
+  AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
+  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
+
 on:
   workflow_call:
     inputs:
@@ -46,18 +55,8 @@ jobs:
         id: auth
 
       - name: Run cargo publish
-        # TODO: Once we are on 1.90 rustc we can just use cargo publish workspace
-        # then we can truly test that this works as part of merge queue
-        if: ${{ vars.RELEASE_DRY_RUN == 'false' && inputs.environment == 'release' }}
+        if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
         run: |
-          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-ir
-          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-types
-          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-storage
-          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-observability
-          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-rest-api
-          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package dbsp
-          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package fda
-          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-fxp
-          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-sqllib
+          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
