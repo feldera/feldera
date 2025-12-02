@@ -21,21 +21,16 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
-import org.dbsp.util.ExplicitShuffle;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Shuffle;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.List;
 import java.util.Objects;
 
@@ -55,14 +50,12 @@ public class Projection extends InnerVisitor {
     /** If true, analyze functions that return nested tuples to a bigger depth than 2; these can be projections */
     final boolean allowDeepTuples;
 
-    /** If the description can be described as a shuffle, this is it.
-     * For a projection to be described as a shuffle,
-     * it cannot contain constant fields, or nested fields.
-     * (a.1, a.3) is a shuffle, while
-     * (2, a.3, a.3.2) is not.
-     * Only makes sense for functions with a single parameter. */
-    @Nullable
-    List<Integer> shuffle;
+    /** True if the analyzed function only contains tuple from fields of the input parameter.
+     * E.g., it cannot contain constant fields, or nested fields.
+     * (a.1, a.3) returns true, while
+     * (2, a.3, a.3.2) return false.
+     * Only defined for functions with a single parameter. */
+    boolean onlyFieldAccesses;
 
     /** A pair containing an input (parameter) number (0, 1, 2, etc.)
      * and an index field in the tuple of the corresponding input .*/
@@ -110,13 +103,14 @@ public class Projection extends InnerVisitor {
     @Nullable
     IOMap ioMap;
 
-    void notShuffle() {
-        this.shuffle = null;
+    /** The analyzed function does not only contain simple field accesses */
+    void notOnlyFields() {
+        this.onlyFieldAccesses = false;
         this.ioMap = null;
     }
 
     VisitDecision notProjection() {
-        this.notShuffle();
+        this.notOnlyFields();
         this.isProjection = false;
         this.parameters = null;
         return VisitDecision.STOP;
@@ -126,7 +120,7 @@ public class Projection extends InnerVisitor {
         super(compiler);
         this.isProjection = true;
         this.ioMap = new IOMap();
-        this.shuffle = new ArrayList<>();
+        this.onlyFieldAccesses = true;
         this.resolver = new ResolveReferences(compiler, false);
         this.allowNoopCasts = allowNoopCasts;
         this.allowDeepTuples = allowDeepTuples;
@@ -162,8 +156,7 @@ public class Projection extends InnerVisitor {
     }
 
     /** Which parameter of the current function is referenced by this variable?
-     * @return -1 if there is no such parameter.
-     */
+     * @return -1 if there is no such parameter. */
     int getParameterIndex(DBSPVariablePath var) {
         IDBSPDeclaration declaration = this.resolver.reference.getDeclaration(var);
         if (!declaration.is(DBSPParameter.class)) {
@@ -183,7 +176,7 @@ public class Projection extends InnerVisitor {
                     expression.expression.to(DBSPFieldExpression.class)
                             .expression.is(DBSPVariablePath.class);
         if (!legal) {
-            this.notShuffle();
+            this.notOnlyFields();
         }
         return VisitDecision.CONTINUE;
     }
@@ -213,18 +206,16 @@ public class Projection extends InnerVisitor {
     public VisitDecision preorder(DBSPFieldExpression field) {
         if (!field.expression.is(DBSPDerefExpression.class) &&
             !field.expression.is(DBSPUnwrapCustomOrdExpression.class)) {
-            this.notShuffle();
+            this.notOnlyFields();
             return VisitDecision.CONTINUE;
         }
-        if (this.shuffle != null)
-            this.shuffle.add(field.fieldNo);
         return VisitDecision.CONTINUE;
     }
 
     @Override
     public VisitDecision preorder(DBSPUnwrapCustomOrdExpression field) {
         if (!field.expression.is(DBSPDerefExpression.class)) {
-            this.notShuffle();
+            this.notOnlyFields();
             return VisitDecision.CONTINUE;
         }
         return VisitDecision.CONTINUE;
@@ -236,8 +227,6 @@ public class Projection extends InnerVisitor {
             this.notProjection();
             return VisitDecision.CONTINUE;
         }
-        if (this.shuffle != null)
-            this.shuffle.add(field.fieldNo);
         return VisitDecision.CONTINUE;
     }
 
@@ -284,12 +273,9 @@ public class Projection extends InnerVisitor {
     VisitDecision checkNestedTuples(DBSPBaseTupleExpression expression) {
         if (expression.fields != null) {
             // If this creates a nested tuple, give up.
-            // Note: this fundamentally relies on the analyzed function shape looking like
-            // TupN::new(expr0, expr1, expr2).
-            // For a shuffle each expr should look like a parameter field reference.
             for (DBSPExpression field : expression.fields)
                 if (field.type.is(DBSPTypeTupleBase.class)) {
-                    this.notShuffle();
+                    this.notOnlyFields();
                     return VisitDecision.STOP;
                 }
         }
@@ -307,7 +293,7 @@ public class Projection extends InnerVisitor {
     }
 
     public VisitDecision preorder(DBSPLiteral expression) {
-        this.notShuffle();
+        this.notOnlyFields();
         return VisitDecision.CONTINUE;
     }
 
@@ -355,42 +341,12 @@ public class Projection extends InnerVisitor {
         return VisitDecision.CONTINUE;
     }
 
-    public Shuffle getShuffle() {
-        Utilities.enforce(this.isProjection);
-        Utilities.enforce(this.parameters != null);
-        DBSPType type = this.parameters[0].getType();
-        int size = type.deref().to(DBSPTypeTupleBase.class).size();
-        return new ExplicitShuffle(size, Objects.requireNonNull(this.shuffle));
-    }
-
-    /** Compose this projection with a constant expression.
-     * @param before Constant expression.
-     * @return A new constant expression. */
-    public DBSPExpression applyAfter(DBSPZSetExpression before) {
-        Objects.requireNonNull(this.expression);
-
-        Map<DBSPExpression, Long> result = new HashMap<>();
-        InnerPasses inner = new InnerPasses(
-                new BetaReduction(this.compiler),
-                new Simplify(this.compiler)
-        );
-
-        DBSPType elementType = this.expression.getResultType();
-        for (Map.Entry<DBSPExpression, Long> entry: before.data.entrySet()) {
-            DBSPExpression row = entry.getKey();
-            DBSPExpression apply = this.expression.call(row.borrow());
-            DBSPExpression simplified = inner.apply(apply).to(DBSPExpression.class);
-            result.put(simplified, entry.getValue());
-        }
-        return new DBSPZSetExpression(result, elementType);
-    }
-
     @Override
     public void startVisit(IDBSPInnerNode node) {
         this.resolver.apply(node);
         super.startVisit(node);
         this.ioMap = new IOMap();
-        this.shuffle = new ArrayList<>();
+        this.onlyFieldAccesses = true;
         this.isProjection = true;
     }
 
@@ -412,9 +368,9 @@ public class Projection extends InnerVisitor {
         }
     }
 
-    public boolean isShuffle() {
+    public boolean isOnlyFieldAccesses() {
         Utilities.enforce(Objects.requireNonNull(this.parameters).length == 1);
-        return this.shuffle != null;
+        return this.onlyFieldAccesses;
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")

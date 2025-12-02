@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.DetectShuffle;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -24,9 +25,13 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Maybe;
-import org.dbsp.util.Shuffle;
 import org.dbsp.util.Utilities;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
 
 /** Optimizes patterns containing projections.
  * - constant followed by projection
@@ -51,8 +56,21 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         projection.apply(function);
         if (projection.isProjection) {
             if (source.node().is(DBSPConstantOperator.class)) {
-                DBSPExpression newConstant = projection.applyAfter(
-                        source.node().to(DBSPConstantOperator.class).getFunction().to(DBSPZSetExpression.class));
+                DBSPZSetExpression before = source.node().to(DBSPConstantOperator.class)
+                        .getFunction()
+                        .to(DBSPZSetExpression.class);
+                Objects.requireNonNull(projection.expression);
+
+                Map<DBSPExpression, Long> result1 = new HashMap<>();
+                DBSPType elementType = projection.expression.getResultType();
+                for (Map.Entry<DBSPExpression, Long> entry: before.data.entrySet()) {
+                    DBSPExpression row = entry.getKey();
+                    DBSPExpression simplified = projection.expression
+                            .call(row.borrow())
+                            .reduce(this.compiler);
+                    result1.put(simplified, entry.getValue());
+                }
+                DBSPExpression newConstant = new DBSPZSetExpression(result1, elementType);
                 DBSPSimpleOperator result = source.simpleNode()
                         .withFunction(newConstant, operator.outputType)
                         .to(DBSPSimpleOperator.class);
@@ -60,8 +78,9 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                 return;
             } else if (source.node().is(DBSPFlatMapOperator.class)) {
                 DBSPFlatmap sourceFunction = source.simpleNode().getFunction().as(DBSPFlatmap.class);
-                if (sourceFunction != null && projection.isShuffle()) {
-                    Shuffle shuffle = projection.getShuffle().after(sourceFunction.shuffle);
+                var shuffle = DetectShuffle.analyze(this.compiler, function.to(DBSPClosureExpression.class));
+                if (sourceFunction != null && shuffle != null) {
+                    shuffle = shuffle.after(sourceFunction.shuffle);
                     DBSPExpression newFunction = sourceFunction.withShuffle(shuffle);
                     DBSPSimpleOperator result = source.simpleNode()
                             .withFunction(newFunction, operator.outputType)
@@ -73,7 +92,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                     || source.node().is(DBSPLeftJoinOperator.class)
                     || source.node().is(DBSPStreamJoinOperator.class)
                     || source.node().is(DBSPAsofJoinOperator.class)) {
-                if (inputFanout == 1 && projection.isShuffle()) {
+                if (inputFanout == 1 && projection.isOnlyFieldAccesses()) {
                     // We only do this if the source is a projection, because then the join function
                     // will still have a simple shape.  Subsequent analyses may care about this.
                     DBSPSimpleOperator result = mapAfterJoin(
@@ -84,7 +103,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
             } else if (source.node().is(DBSPJoinIndexOperator.class)
                     || source.node().is(DBSPLeftJoinIndexOperator.class)
                     || source.node().is(DBSPStreamJoinIndexOperator.class)) {
-                if (inputFanout == 1 && projection.isShuffle()) {
+                if (inputFanout == 1 && projection.isOnlyFieldAccesses()) {
                     // We only do this if the source is a projection, because then the join function
                     // will still have a simple shape.  Subsequent analyses may care about this.
                     DBSPSimpleOperator result = mapAfterJoinIndex(
@@ -104,7 +123,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         int inputFanout = this.getGraph().getFanout(operator.input().node());
         Projection projection = new Projection(this.compiler, true, false);
         projection.apply(function);
-        if (inputFanout == 1 && projection.isProjection && projection.isShuffle()) {
+        if (inputFanout == 1 && projection.isProjection && projection.isOnlyFieldAccesses()) {
             if (source.node().is(DBSPJoinOperator.class)
                     || source.node().is(DBSPStreamJoinOperator.class)
                     || source.node().is(DBSPLeftJoinOperator.class)) {
