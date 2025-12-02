@@ -116,11 +116,13 @@ public final class DBSPFlatmap extends DBSPExpression {
         this.shuffle = shuffle;
     }
 
-    /** Create a new DBSPFlatmap which is identical to this one in all respects except the shuffle */
+    /** Create a new DBSPFlatmap which is identical to this one in all respects except the final shuffle */
     public DBSPFlatmap withShuffle(Shuffle shuffle) {
         List<Integer> leftInputIndexes = new ArrayList<>();
         Set<Integer> removeFromShuffle = new HashSet<>();
         int shuffleIndex;
+
+        // Remove the left input indexes which are not used by the output shuffle
         for (shuffleIndex = 0; shuffleIndex < this.leftInputIndexes.size(); shuffleIndex++) {
             int li = this.leftInputIndexes.get(shuffleIndex);
             if (shuffle.emitsIndex(li))
@@ -128,6 +130,8 @@ public final class DBSPFlatmap extends DBSPExpression {
             else
                 removeFromShuffle.add(shuffleIndex);
         }
+
+        // Remove the right projections which are not used by the output shuffle
         List<DBSPClosureExpression> rightProjections = null;
         if (this.rightProjections != null) {
             rightProjections = new ArrayList<>();
@@ -141,6 +145,8 @@ public final class DBSPFlatmap extends DBSPExpression {
                 }
             }
         }
+
+        // Compute the new shuffle which does not use the removed input fields
         var shuffle1 = shuffle.compress(removeFromShuffle);
         return new DBSPFlatmap(this.getNode(), this.inputRowType, this.collectionExpression,
                 leftInputIndexes, rightProjections, this.ordinalityIndexType, shuffle1);

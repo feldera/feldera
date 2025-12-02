@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.DetectShuffle;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
@@ -59,7 +60,6 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Maybe;
-import org.dbsp.util.Shuffle;
 import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
@@ -450,15 +450,15 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 this.map(operator, result);
                 return;
             }
-        } else if (source.node().is(DBSPFlatMapOperator.class)) {
+        } else if (source.node().is(DBSPFlatMapOperator.class)
+                && operator.getFunction().is(DBSPClosureExpression.class)) {
             DBSPFlatmap sourceFlatmap = source.simpleNode().getFunction().as(DBSPFlatmap.class);
-            Projection projection = new Projection(this.compiler(), true, true);
-            projection.apply(operator.getFunction());
-            if (sourceFlatmap != null && projection.isProjection && projection.isShuffle()) {
+            var shuffle = DetectShuffle.analyze(this.compiler, operator.getClosureFunction());
+            if (sourceFlatmap != null && shuffle != null) {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                         .newline();
-                Shuffle shuffle = projection.getShuffle().after(sourceFlatmap.shuffle);
+                shuffle = shuffle.after(sourceFlatmap.shuffle);
                 DBSPExpression newFunction = sourceFlatmap.withShuffle(shuffle);
                 DBSPSimpleOperator result = source.simpleNode()
                         .withFunction(newFunction, operator.outputType)

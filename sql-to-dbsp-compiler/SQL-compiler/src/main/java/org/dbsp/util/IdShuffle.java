@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Set;
 
-/** Identity shuffle */
+/** Identity shuffle, also an identity permutation. */
 public class IdShuffle implements Shuffle {
     final int inputLength;
 

@@ -6,8 +6,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+/** A shuftle described explicitly using a list of input indexes in the order they appear in the eoutput */
 public class ExplicitShuffle implements Shuffle {
+    /** The length of the input sequence */
     final int inputLength;
+    /** List of input indexes in the order they appear in the output */
     final List<Integer> indexes;
 
     public ExplicitShuffle(int inputLength, List<Integer> elements) {
@@ -27,6 +30,7 @@ public class ExplicitShuffle implements Shuffle {
         return this.indexes.size();
     }
 
+    /** Apply the shuffle to a list of values; returns the shuffled values. */
     @Override
     public <T> List<T> shuffle(List<T> data) {
         Utilities.enforce(data.size() == this.inputLength);
@@ -36,6 +40,7 @@ public class ExplicitShuffle implements Shuffle {
         return result;
     }
 
+    /** Compose two shuffles; the output of 'shuffle' must have the right size for the input of this */
     @Override
     public Shuffle after(Shuffle shuffle) {
         Utilities.enforce(this.inputLength() == shuffle.outputLength());
@@ -108,6 +113,14 @@ public class ExplicitShuffle implements Shuffle {
         return new ExplicitShuffle(inputLength, indexes);
     }
 
+    /** Compress a shuffle by removing from the input list the specified indexes.
+     * None of these indexes can be in the output list.
+     * @param removeFromShuffle List of collection indexes to remove.  None of these indexes
+     *                          can be in the list of emitted indexes.
+     *
+     * <p>For example, consider the shuffle [3, 0] where we remove the element with index 1.
+     * The result is the shuffle [2, 0].
+     */
     @Override
     public Shuffle compress(Set<Integer> removeFromShuffle) {
         // Maps each possible index to its new value
