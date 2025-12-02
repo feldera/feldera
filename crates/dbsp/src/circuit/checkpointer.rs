@@ -398,7 +398,7 @@ impl Checkpoint for dyn DataTyped<Type = u64> + 'static {
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, SizeOf)]
 pub struct EmptyCheckpoint<T: Default> {
-    val: T,
+    pub val: T,
 }
 
 impl<T> NumEntries for EmptyCheckpoint<T>

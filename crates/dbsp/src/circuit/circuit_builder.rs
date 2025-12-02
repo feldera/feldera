@@ -1545,6 +1545,17 @@ impl MetadataExchange {
             .insert(id, metadata.clone());
     }
 
+    pub fn set_local_operator_metadata_typed<T>(&self, id: NodeId, metadata: T)
+    where
+        T: Serialize,
+    {
+        self.inner
+            .local_metadata
+            .borrow_mut()
+            .metadata
+            .insert(id, serde_json::to_value(metadata).unwrap());
+    }
+
     pub fn get_local_operator_metadata(&self, id: NodeId) -> Option<serde_json::Value> {
         self.inner
             .local_metadata

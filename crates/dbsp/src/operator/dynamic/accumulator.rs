@@ -28,7 +28,7 @@ use crate::{
     Circuit, Error, NumEntries, Runtime, Scope, Stream,
 };
 
-circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>, RefStreamValue<EmptyCheckpoint<Vec<B>>>)));
+circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>, RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>)));
 
 /// `TypedMapKey` entry used to share `enable_count` across instances of the same accumulator in multiple workers.
 #[derive(Hash, PartialEq, Eq)]
@@ -64,7 +64,7 @@ where
         factories: &B::Factories,
     ) -> (
         Stream<C, Option<Spine<B>>>,
-        RefStreamValue<EmptyCheckpoint<Vec<B>>>,
+        RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>,
     ) {
         let (stream, enable_count, accumulator_snapshot_stream_val) =
             self.dyn_accumulate_with_enable_count(factories, true);
@@ -81,7 +81,7 @@ where
     ) -> (
         Stream<C, Option<Spine<B>>>,
         Arc<AtomicUsize>,
-        RefStreamValue<EmptyCheckpoint<Vec<B>>>,
+        RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>,
     ) {
         self.circuit()
             .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {

@@ -4,11 +4,12 @@ use crate::{
         checkpointer::EmptyCheckpoint,
         circuit_builder::{register_replay_stream, MetadataExchange, StreamId},
         metadata::{BatchSizeStats, OperatorLocation, OperatorMeta, INPUT_BATCHES_LABEL},
-        operator_traits::{Operator, TernarySinkOperator},
-        GlobalNodeId, NodeId, OwnershipPreference, WithClock,
+        operator_traits::Operator,
+        splitter_output_chunk_size, GlobalNodeId, NodeId, OwnershipPreference, WithClock,
     },
     circuit_cache_key,
     operator::{
+        async_stream_operators::StreamingTernarySinkOperator,
         communication::{Exchange, ExchangeReceiver},
         dynamic::{
             accumulate_trace::{
@@ -20,15 +21,16 @@ use crate::{
     },
     trace::{
         deserialize_indexed_wset, merge_batches, serialize_indexed_wset, spine_async::SpineCursor,
-        Batch, BatchReader, SpineSnapshot,
+        Batch, BatchReader, Builder, Cursor, SpineSnapshot, WithSnapshot,
     },
     utils::{
         components,
         maxsat::{Cost, HardConstraint, MaxSat, Variable, VariableIndex},
     },
-    Circuit, Position, Runtime, Scope, Stream,
+    Circuit, Position, Runtime, Scope, Stream, Timestamp,
 };
-use ouroboros::self_referencing;
+use async_stream::stream;
+use futures::Stream as AsyncStream;
 use petgraph::graph::UnGraph;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -37,6 +39,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
     panic::Location,
+    rc::Rc,
     sync::{atomic::AtomicU64, Arc},
 };
 
@@ -282,15 +285,15 @@ impl BalancerInner {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Balancer {
-    inner: RefCell<BalancerInner>,
+    inner: Rc<RefCell<BalancerInner>>,
 }
 
 impl Balancer {
     pub fn new(metadata_exchange: &MetadataExchange) -> Self {
         Self {
-            inner: RefCell::new(BalancerInner::new(metadata_exchange)),
+            inner: Rc::new(RefCell::new(BalancerInner::new(metadata_exchange))),
         }
     }
 
@@ -522,7 +525,7 @@ where
                         persistent_id
                             .map(|name| format!("{name}.balanced.acc_snapshot"))
                             .as_deref(),
-                        Z1::new(EmptyCheckpoint::<Vec<B>>::new()),
+                        Z1::new(EmptyCheckpoint::<Vec<Arc<B>>>::new()),
                     );
 
                     let accumulator_feedback_stream = Stream::with_value(
@@ -536,13 +539,16 @@ where
 
                     // Exchange sender.
                     let sender_node_id = circuit.add_ternary_sink(
-                        RebalancingExchangeSender::<B, C>::new(
-                            worker_index,
-                            Some(location),
-                            exchange,
-                            start_wait_usecs,
-                            circuit.balancer().clone(),
-                            circuit.metadata_exchange().clone(),
+                        AsyncStreamingTernarySinkWrapper::new(
+                            RebalancingExchangeSender::<B, C>::new(
+                                batch_factories,
+                                trace_factories,
+                                worker_index,
+                                Some(location),
+                                exchange,
+                                circuit.balancer().clone(),
+                                circuit.metadata_exchange().clone(),
+                            ),
                         ),
                         self,
                         &delayed_acc,
@@ -578,26 +584,23 @@ where
 //     }
 // }
 
-#[self_referencing]
-struct RetractionState<B: Batch> {
-    accumulator_snapshot: SpineSnapshot<B>,
-    #[borrows(accumulator_snapshot)]
-    accumulator_cursor: SpineCursor<B>,
-
-    integral_snapshot: SpineSnapshot<B>,
-    #[borrows(integral_snapshot)]
-    integral_cursor: SpineCursor<B>,
+struct RetractionState<B: Batch<Time = ()>, C: WithClock> {
+    accumulator: Vec<Arc<B>>,
+    trace: SpineSnapshot<<C::Time as Timestamp>::TimedBatch<B>>,
 }
 
 pub struct RebalancingExchangeSender<B, C>
 where
-    B: Batch,
+    B: Batch<Time = ()>,
     C: WithClock + 'static,
 {
+    batch_factories: B::Factories,
+    trace_factories: <TimedSpine<B, C> as BatchReader>::Factories,
+
     node_id: NodeId,
     worker_index: usize,
     location: OperatorLocation,
-    outputs: Vec<B>,
+
     exchange: Arc<Exchange<(B, bool)>>,
 
     balancer: Balancer,
@@ -606,58 +609,162 @@ where
     // Input batch sizes.
     input_batch_stats: BatchSizeStats,
 
-    flush_state: FlushState,
+    flush_state: RefCell<FlushState>,
 
-    current_policy: Policy,
+    current_policy: RefCell<Policy>,
 
-    retractions: Option<RetractionState<B>>,
+    retractions: RefCell<Option<RetractionState<B, C>>>,
 
-    // The instant when the sender produced its outputs, and the
-    // receiver starts waiting for all other workers to produce their
-    // outputs.
-    start_wait_usecs: Arc<AtomicU64>,
     phantom: PhantomData<C>,
 }
 
 impl<B, C> RebalancingExchangeSender<B, C>
 where
-    B: Batch,
+    B: Batch<Time = ()>,
     C: WithClock,
 {
     fn new(
+        batch_factories: &B::Factories,
+        trace_factories: &<TimedSpine<B, C> as BatchReader>::Factories,
         worker_index: usize,
         location: OperatorLocation,
         exchange: Arc<Exchange<(B, bool)>>,
-        start_wait_usecs: Arc<AtomicU64>,
         balancer: Balancer,
         metadata_exchange: MetadataExchange,
     ) -> Self {
         debug_assert!(worker_index < Runtime::num_workers());
         Self {
+            batch_factories: batch_factories.clone(),
+            trace_factories: trace_factories.clone(),
             node_id: NodeId::new(0),
             worker_index,
             location,
-            outputs: Vec::with_capacity(Runtime::num_workers()),
             exchange,
             balancer,
             metadata_exchange,
             input_batch_stats: BatchSizeStats::new(),
-            flush_state: FlushState::TransactionStarted,
-            current_policy: Policy::Shard,
-            retractions: None,
-            start_wait_usecs,
+            flush_state: RefCell::new(FlushState::TransactionStarted),
+            current_policy: RefCell::new(Policy::Shard),
+            retractions: RefCell::new(None),
             phantom: PhantomData,
         }
     }
 
     fn exchange_metadata(&self) -> RebalancingExchangeSenderExchangeMetadata {
         RebalancingExchangeSenderExchangeMetadata {
-            flushed: self.flush_state == FlushState::FlushCompleted,
-            current_policy: self.current_policy,
+            flushed: self.flush_state.borrow() == FlushState::FlushCompleted,
+            current_policy: *self.current_policy.borrow(),
         }
     }
 
-    fn start_rebalancing(&mut self) {
+    fn start_rebalancing(
+        &self,
+        delayed_accumulator: Vec<Arc<B>>,
+        delayed_trace: SpineSnapshot<<C::Time as Timestamp>::TimedBatch<B>>,
+    ) {
+        *self.retractions.borrow_mut() = Some(RetractionState {
+            accumulator: delayed_accumulator,
+            trace: delayed_trace,
+        });
+    }
+
+    // fn compute_outputs(&mut self, delta: &B) -> Vec<B> {
+    //     let mut builders = Vec::with_capacity(Runtime::num_workers());
+
+    //     let chunk_size = splitter_output_chunk_size();
+
+    //     for _ in 0..Runtime::num_workers() {
+    //         // We iterate over tuples in the batch in order; hence tuples added
+    //         // to each shard are also ordered, so we can use the more efficient
+    //         // `Builder` API (instead of `Batcher`) to construct output batches.
+    //         builders.push(B::Builder::with_capacity(
+    //             &self.batch_factories,
+    //             chunk_size,
+    //             chunk_size,
+    //         ));
+    //     }
+
+    //     // Process all tuples in delta.
+    //     let delta_cursor = delta.cursor();
+    //     Self::compute_outputs_from_cursor(&mut Some(delta_cursor), &mut builders, false);
+
+    //     // Process retractions from accumulator_cursor.
+    //     Self::compute_outputs_from_cursor(
+    //         &mut self.retractions.accumulator_cursor,
+    //         &mut builders,
+    //         true,
+    //     );
+
+    //     // Process retractions from integral_cursor.
+    //     Self::compute_outputs_from_cursor(
+    //         &mut self.retractions.integral_cursor,
+    //         &mut builders,
+    //         true,
+    //     );
+
+    //     // let mut cursor = batch.consuming_cursor(None, None);
+    //     // if cursor.has_mut() {
+    //     //     while cursor.key_valid() {
+    //     //         let b = &mut builders[cursor.key().default_hash() as usize % shards];
+    //     //         while cursor.val_valid() {
+    //     //             b.push_diff_mut(cursor.weight_mut());
+    //     //             b.push_val_mut(cursor.val_mut());
+    //     //             cursor.step_val();
+    //     //         }
+    //     //         b.push_key_mut(cursor.key_mut());
+    //     //         cursor.step_key();
+    //     //     }
+    //     // } else {
+    //     //     while cursor.key_valid() {
+    //     //         let b = &mut builders[cursor.key().default_hash() as usize % shards];
+    //     //         while cursor.val_valid() {
+    //     //             b.push_diff(cursor.weight());
+    //     //             b.push_val(cursor.val());
+    //     //             cursor.step_val();
+    //     //         }
+    //     //         b.push_key(cursor.key());
+    //     //         cursor.step_key();
+    //     //     }
+    //     // }
+
+    //     builders.into_iter().map(|builder| builder.done()).collect()
+    // }
+
+    // fn compute_outputs_from_cursor<Cur, T: Timestamp>(
+    //     opt_cursor: &mut Option<Cur>,
+    //     builders: &mut Vec<B::Builder>,
+    //     invert: bool,
+    // ) -> usize
+    // where
+    //     Cur: Cursor<B::Key, B::Val, T, B::R>,
+    // {
+    //     let Some(cursor) = opt_cursor else {
+    //         return 0;
+    //     };
+
+    //     todo!();
+
+    //     if !cursor.key_valid() {
+    //         *opt_cursor = None;
+    //     }
+
+    //     todo!()
+    // }
+
+    fn update_policy(
+        &self,
+        new_policy: Policy,
+        delayed_accumulator: Vec<Arc<B>>,
+        delayed_trace: SpineSnapshot<<C::Time as Timestamp>::TimedBatch<B>>,
+    ) {
+        if new_policy != *self.current_policy.borrow() {
+            *self.current_policy.borrow_mut() = new_policy;
+            self.start_rebalancing(delayed_accumulator, delayed_trace);
+        }
+    }
+
+    /// Partition delta based on the current policy.
+    fn partition_batch(&self, delta: B) -> Vec<B> {
         todo!()
     }
 }
@@ -687,7 +794,7 @@ struct IntegralMeta {
 
 impl<B, C> Operator for RebalancingExchangeSender<B, C>
 where
-    B: Batch,
+    B: Batch<Time = ()>,
     C: WithClock + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -733,16 +840,16 @@ where
     }
 
     fn start_transaction(&mut self) {
-        self.flush_state = FlushState::TransactionStarted;
+        *self.flush_state.borrow_mut() = FlushState::TransactionStarted;
     }
 
     fn flush(&mut self) {
-        self.flush_state = FlushState::FlushRequested;
+        *self.flush_state.borrow_mut() = FlushState::FlushRequested;
     }
 
     fn is_flush_complete(&self) -> bool {
         // flushed == true and all rebalancing state has been flushed
-        self.flush_state == FlushState::FlushCompleted
+        *self.flush_state.borrow() == FlushState::FlushCompleted
     }
 
     fn flush_progress(&self) -> Option<Position> {
@@ -767,73 +874,113 @@ where
     }
 }
 
-impl<B, C> TernarySinkOperator<B, EmptyCheckpoint<Vec<B>>, TimedSpine<B, C>>
+impl<B, C> StreamingTernarySinkOperator<B, EmptyCheckpoint<Vec<Arc<B>>>, TimedSpine<B, C>>
     for RebalancingExchangeSender<B, C>
 where
     B: Batch<Time = ()>,
     C: WithClock + 'static,
 {
-    async fn eval(
-        &mut self,
+    fn eval(
+        self: Rc<Self>,
         delta: Cow<'_, B>,
-        delayed_accumulator: Cow<'_, EmptyCheckpoint<Vec<B>>>,
+        delayed_accumulator: Cow<'_, EmptyCheckpoint<Vec<Arc<B>>>>,
         delayed_trace: Cow<'_, TimedSpine<B, C>>,
-    ) {
-        match self.flush_state {
-            FlushState::TransactionStarted | FlushState::FlushRequested => {
-                let new_policy = self.balancer.get_optimal_policy(self.node_id).unwrap();
+    ) -> impl futures::Stream<Item = (bool, Option<Position>)> + 'static {
+        let batch_factories = self.batch_factories.clone();
+        let delayed_accumulator = delayed_accumulator.into_owned().val;
+        let delayed_trace = delayed_trace.ro_snapshot();
 
-                // Policy change?
-                // - Clean old rebalancing state
-                // - Set new rebalancing state
-                if new_policy != self.current_policy {
-                    self.current_policy = new_policy;
-                    self.start_rebalancing();
-                }
+        let new_policy = self.balancer.get_optimal_policy(self.node_id).unwrap();
 
-                // Input has been flushed, but there's rebalancing state remaining -- make progress rebalancing.
-                if self.flush_state == FlushState::FlushRequested {
-                    todo!("Make progress rebalancing");
-                    if todo!("Rebalancing finished") {
-                        // Nothing more to do:
-                        self.flush_state = FlushState::FlushCompleted;
-                    }
-                } else {
-                    todo!("Shard delta input");
-                }
+        let delta = delta.into_owned();
+
+        stream! {
+            if *self.flush_state.borrow() == FlushState::FlushCompleted {
+                assert!(self.exchange.try_send_all(
+                    self.worker_index,
+                    &mut std::iter::repeat_with(move || (B::dyn_empty(&batch_factories), true)).take(Runtime::num_workers()),
+                ));
+
+                yield (true, None);
+                return;
             }
-            FlushState::FlushCompleted => {
-                // Policy changes shouldn't happen after the flush.
-                assert_eq!(
-                    self.current_policy,
-                    self.balancer.get_optimal_policy(self.node_id).unwrap()
-                );
-                assert!(self.retractions.is_none());
-                // Output empty batch.
+
+            // Policy change?
+            // - Clean old rebalancing state
+            // - Set new rebalancing state
+            self.update_policy(new_policy, delayed_accumulator, delayed_trace);
+
+            // Partition `delta` based on the current policy.
+
+            // If the flush state is FlushRequested and there is no rebalancing to be done, this will be the final output.
+            let flushed = *self.flush_state.borrow() == FlushState::FlushRequested && self.retractions.borrow().is_none();
+
+            let outputs = self.partition_batch(delta);
+            assert!(self.exchange.try_send_all(
+                self.worker_index,
+                &mut outputs.into_iter().map(|output| (output, flushed)),
+            ));
+
+            if flushed {
+                *self.flush_state.borrow_mut() = FlushState::FlushCompleted;
+                yield (true, None);
+                return;
             }
+
+            // We have no more inputs to process, but there is rebalancing work to be done.
+
+            // match self.flush_state {
+            //     FlushState::TransactionStarted | FlushState::FlushRequested => {
+            //         let new_policy = self.balancer.get_optimal_policy(self.node_id).unwrap();
+
+            //         // Policy change?
+            //         // - Clean old rebalancing state
+            //         // - Set new rebalancing state
+            //         if new_policy != self.current_policy {
+            //             self.current_policy = new_policy;
+            //             self.start_rebalancing(delayed_accumulator, delayed_trace);
+            //         }
+
+            //         let outputs = self.compute_outputs();
+
+            //         todo!("Send outputs to the exchange");
+
+            //         if self.flush_state == FlushState::FlushRequested && self.retractions.is_empty() {
+            //             self.flush_state = FlushState::FlushCompleted;
+            //         }
+            //     }
+            //     FlushState::FlushCompleted => {
+            //         // Policy changes shouldn't happen after the flush.
+            //         assert_eq!(
+            //             self.current_policy,
+            //             self.balancer.get_optimal_policy(self.node_id).unwrap()
+            //         );
+            //         assert!(self.retractions.is_empty());
+            //         // Output empty batch.
+            //     }
+            // }
+
+            // self.metadata_exchange
+            //     .set_local_operator_metadata_typed(self.node_id, self.exchange_metadata());
+
+            // yield (true, None);
+            // // stats:
+            //   input batch size
+            //   number of rebalancings
         }
-
-        self.metadata_exchange.set_local_operator_metadata(
-            self.node_id,
-            serde_json::to_value(self.exchange_metadata()).unwrap(),
-        );
-
-        // stats:
-        //   input batch size
-        //   number of rebalancings
     }
 
-    fn input_preference(
-        &self,
-    ) -> (
-        OwnershipPreference,
-        OwnershipPreference,
-        OwnershipPreference,
-    ) {
-        (
-            OwnershipPreference::PREFER_OWNED,
-            OwnershipPreference::INDIFFERENT,
-            OwnershipPreference::INDIFFERENT,
-        )
-    }
+    // fn input_preference(
+    //     &self,
+    // ) -> (
+    //     OwnershipPreference,
+    //     OwnershipPreference,
+    //     OwnershipPreference,
+    // ) {
+    //     (
+    //         OwnershipPreference::PREFER_OWNED,
+    //         OwnershipPreference::INDIFFERENT,
+    //         OwnershipPreference::INDIFFERENT,
+    //     )
+    // }
 }
