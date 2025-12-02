@@ -1,5 +1,5 @@
 use crate::{
-    algebra::IndexedZSet,
+    algebra::{IndexedZSet, ZBatch},
     circuit::{
         checkpointer::EmptyCheckpoint,
         circuit_builder::{register_replay_stream, MetadataExchange, StreamId},
@@ -8,20 +8,22 @@ use crate::{
         splitter_output_chunk_size, GlobalNodeId, NodeId, OwnershipPreference, WithClock,
     },
     circuit_cache_key,
+    dynamic::Data as _,
     operator::{
-        async_stream_operators::StreamingTernarySinkOperator,
+        async_stream_operators::{StreamingTernarySinkOperator, StreamingTernarySinkWrapper},
         communication::{Exchange, ExchangeReceiver},
         dynamic::{
             accumulate_trace::{
                 AccumulateBoundsId, AccumulateTraceAppend, AccumulateTraceId, AccumulateZ1Trace,
             },
+            communication::shard::{balance_batch, shard_batch},
             trace::{DelayedTraceId, TimedSpine, TraceBounds},
         },
-        Z1,
+        require_persistent_id, Z1,
     },
     trace::{
         deserialize_indexed_wset, merge_batches, serialize_indexed_wset, spine_async::SpineCursor,
-        Batch, BatchReader, Builder, Cursor, SpineSnapshot, WithSnapshot,
+        Batch, BatchReader, Builder, Cursor, MergeCursor, SpineSnapshot, WithSnapshot,
     },
     utils::{
         components,
@@ -30,7 +32,7 @@ use crate::{
     Circuit, Position, Runtime, Scope, Stream, Timestamp,
 };
 use async_stream::stream;
-use futures::Stream as AsyncStream;
+use feldera_storage::{fbuf::FBuf, FileCommitter, StoragePath};
 use petgraph::graph::UnGraph;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -539,17 +541,14 @@ where
 
                     // Exchange sender.
                     let sender_node_id = circuit.add_ternary_sink(
-                        AsyncStreamingTernarySinkWrapper::new(
-                            RebalancingExchangeSender::<B, C>::new(
-                                batch_factories,
-                                trace_factories,
-                                worker_index,
-                                Some(location),
-                                exchange,
-                                circuit.balancer().clone(),
-                                circuit.metadata_exchange().clone(),
-                            ),
-                        ),
+                        StreamingTernarySinkWrapper::new(RebalancingExchangeSender::<B, C>::new(
+                            batch_factories,
+                            worker_index,
+                            Some(location),
+                            exchange,
+                            circuit.balancer().clone(),
+                            circuit.metadata_exchange().clone(),
+                        )),
                         self,
                         &delayed_acc,
                         &delayed_trace,
@@ -585,7 +584,7 @@ where
 // }
 
 struct RetractionState<B: Batch<Time = ()>, C: WithClock> {
-    accumulator: Vec<Arc<B>>,
+    accumulator: SpineSnapshot<B>,
     trace: SpineSnapshot<<C::Time as Timestamp>::TimedBatch<B>>,
 }
 
@@ -595,9 +594,8 @@ where
     C: WithClock + 'static,
 {
     batch_factories: B::Factories,
-    trace_factories: <TimedSpine<B, C> as BatchReader>::Factories,
 
-    node_id: NodeId,
+    global_id: GlobalNodeId,
     worker_index: usize,
     location: OperatorLocation,
 
@@ -620,12 +618,11 @@ where
 
 impl<B, C> RebalancingExchangeSender<B, C>
 where
-    B: Batch<Time = ()>,
+    B: ZBatch<Time = ()>,
     C: WithClock,
 {
     fn new(
         batch_factories: &B::Factories,
-        trace_factories: &<TimedSpine<B, C> as BatchReader>::Factories,
         worker_index: usize,
         location: OperatorLocation,
         exchange: Arc<Exchange<(B, bool)>>,
@@ -635,8 +632,7 @@ where
         debug_assert!(worker_index < Runtime::num_workers());
         Self {
             batch_factories: batch_factories.clone(),
-            trace_factories: trace_factories.clone(),
-            node_id: NodeId::new(0),
+            global_id: GlobalNodeId::root(),
             worker_index,
             location,
             exchange,
@@ -650,11 +646,21 @@ where
         }
     }
 
-    fn exchange_metadata(&self) -> RebalancingExchangeSenderExchangeMetadata {
-        RebalancingExchangeSenderExchangeMetadata {
-            flushed: self.flush_state.borrow() == FlushState::FlushCompleted,
+    // fn exchange_metadata(&self) -> RebalancingExchangeSenderExchangeMetadata {
+    //     RebalancingExchangeSenderExchangeMetadata {
+    //         flushed: *self.flush_state.borrow() == FlushState::FlushCompleted,
+    //         current_policy: *self.current_policy.borrow(),
+    //     }
+    // }
+
+    fn update_exchange_metadata(&self) {
+        let metadata = RebalancingExchangeSenderExchangeMetadata {
+            flushed: *self.flush_state.borrow() == FlushState::FlushCompleted,
             current_policy: *self.current_policy.borrow(),
-        }
+        };
+
+        self.metadata_exchange
+            .set_local_operator_metadata_typed(self.global_id.local_node_id().unwrap(), metadata);
     }
 
     fn start_rebalancing(
@@ -663,93 +669,10 @@ where
         delayed_trace: SpineSnapshot<<C::Time as Timestamp>::TimedBatch<B>>,
     ) {
         *self.retractions.borrow_mut() = Some(RetractionState {
-            accumulator: delayed_accumulator,
+            accumulator: SpineSnapshot::with_batches(&self.batch_factories, delayed_accumulator),
             trace: delayed_trace,
         });
     }
-
-    // fn compute_outputs(&mut self, delta: &B) -> Vec<B> {
-    //     let mut builders = Vec::with_capacity(Runtime::num_workers());
-
-    //     let chunk_size = splitter_output_chunk_size();
-
-    //     for _ in 0..Runtime::num_workers() {
-    //         // We iterate over tuples in the batch in order; hence tuples added
-    //         // to each shard are also ordered, so we can use the more efficient
-    //         // `Builder` API (instead of `Batcher`) to construct output batches.
-    //         builders.push(B::Builder::with_capacity(
-    //             &self.batch_factories,
-    //             chunk_size,
-    //             chunk_size,
-    //         ));
-    //     }
-
-    //     // Process all tuples in delta.
-    //     let delta_cursor = delta.cursor();
-    //     Self::compute_outputs_from_cursor(&mut Some(delta_cursor), &mut builders, false);
-
-    //     // Process retractions from accumulator_cursor.
-    //     Self::compute_outputs_from_cursor(
-    //         &mut self.retractions.accumulator_cursor,
-    //         &mut builders,
-    //         true,
-    //     );
-
-    //     // Process retractions from integral_cursor.
-    //     Self::compute_outputs_from_cursor(
-    //         &mut self.retractions.integral_cursor,
-    //         &mut builders,
-    //         true,
-    //     );
-
-    //     // let mut cursor = batch.consuming_cursor(None, None);
-    //     // if cursor.has_mut() {
-    //     //     while cursor.key_valid() {
-    //     //         let b = &mut builders[cursor.key().default_hash() as usize % shards];
-    //     //         while cursor.val_valid() {
-    //     //             b.push_diff_mut(cursor.weight_mut());
-    //     //             b.push_val_mut(cursor.val_mut());
-    //     //             cursor.step_val();
-    //     //         }
-    //     //         b.push_key_mut(cursor.key_mut());
-    //     //         cursor.step_key();
-    //     //     }
-    //     // } else {
-    //     //     while cursor.key_valid() {
-    //     //         let b = &mut builders[cursor.key().default_hash() as usize % shards];
-    //     //         while cursor.val_valid() {
-    //     //             b.push_diff(cursor.weight());
-    //     //             b.push_val(cursor.val());
-    //     //             cursor.step_val();
-    //     //         }
-    //     //         b.push_key(cursor.key());
-    //     //         cursor.step_key();
-    //     //     }
-    //     // }
-
-    //     builders.into_iter().map(|builder| builder.done()).collect()
-    // }
-
-    // fn compute_outputs_from_cursor<Cur, T: Timestamp>(
-    //     opt_cursor: &mut Option<Cur>,
-    //     builders: &mut Vec<B::Builder>,
-    //     invert: bool,
-    // ) -> usize
-    // where
-    //     Cur: Cursor<B::Key, B::Val, T, B::R>,
-    // {
-    //     let Some(cursor) = opt_cursor else {
-    //         return 0;
-    //     };
-
-    //     todo!();
-
-    //     if !cursor.key_valid() {
-    //         *opt_cursor = None;
-    //     }
-
-    //     todo!()
-    // }
 
     fn update_policy(
         &self,
@@ -763,9 +686,180 @@ where
         }
     }
 
-    /// Partition delta based on the current policy.
     fn partition_batch(&self, delta: B) -> Vec<B> {
-        todo!()
+        match *self.current_policy.borrow() {
+            Policy::Shard => {
+                let mut outputs = Vec::with_capacity(Runtime::num_workers());
+                shard_batch(
+                    delta,
+                    Runtime::num_workers(),
+                    &mut Vec::with_capacity(Runtime::num_workers()),
+                    &mut outputs,
+                    &self.batch_factories,
+                );
+                outputs
+            }
+            Policy::Balance => balance_batch(delta, Runtime::num_workers(), &self.batch_factories),
+            Policy::Broadcast => {
+                let mut outputs = Vec::with_capacity(Runtime::num_workers());
+                for _i in 0..Runtime::num_workers() - 1 {
+                    outputs.push(delta.clone());
+                }
+                outputs.push(delta);
+                outputs
+            }
+        }
+    }
+
+    /// Partition delta based on the current policy.
+    ///
+    /// Returns after exhausting the cursor or when one of the builders reaches chunk_size entries,
+    /// whichever comes first.
+    fn process_insertions<TS>(
+        &self,
+        cursor: &mut dyn MergeCursor<B::Key, B::Val, TS, B::R>,
+        builders: &mut [B::Builder],
+        chunk_size: usize,
+    ) where
+        TS: Timestamp,
+    {
+        let shards = builders.len();
+
+        match *self.current_policy.borrow() {
+            Policy::Shard => {
+                while cursor.key_valid() {
+                    let b = &mut builders[cursor.key().default_hash() as usize % shards];
+                    let mut has_values = false;
+
+                    while cursor.val_valid() && b.num_tuples() < chunk_size {
+                        let mut weight = 0;
+                        cursor.map_times(&mut |_t, w| {
+                            weight += **w;
+                        });
+                        if weight != 0 {
+                            has_values = true;
+                            b.push_val_diff(cursor.val(), &weight);
+                        }
+                        cursor.step_val();
+                    }
+                    if has_values {
+                        b.push_key(cursor.key());
+                    }
+                    cursor.step_key();
+                    if b.num_tuples() >= chunk_size {
+                        break;
+                    }
+                }
+            }
+            Policy::Balance => {
+                let mut has_values = vec![false; shards];
+                let mut shard = 0;
+
+                while cursor.key_valid() {
+                    while cursor.val_valid() && builders[shard].num_tuples() < chunk_size {
+                        let mut weight = 0;
+                        cursor.map_times(&mut |_t, w| {
+                            weight += **w;
+                        });
+                        if weight != 0 {
+                            shard = cursor.key().default_hash() as usize % shards;
+                            let b = &mut builders[shard];
+
+                            has_values[shard] = true;
+                            b.push_val_diff(cursor.val(), &weight);
+                        }
+                        cursor.step_val();
+                    }
+
+                    for (shard, builder) in builders.iter_mut().enumerate() {
+                        if has_values[shard] {
+                            builder.push_key(cursor.key());
+                        }
+                    }
+
+                    cursor.step_key();
+                    has_values.fill(false);
+
+                    if builders[shard].num_tuples() >= chunk_size {
+                        break;
+                    }
+                }
+            }
+            Policy::Broadcast => {
+                while cursor.key_valid() {
+                    let mut has_values = false;
+
+                    while cursor.val_valid() && builders[0].num_tuples() < chunk_size {
+                        let mut weight = 0;
+                        cursor.map_times(&mut |_t, w| {
+                            weight += **w;
+                        });
+                        for b in builders.iter_mut() {
+                            if weight != 0 {
+                                has_values = true;
+                                b.push_val_diff(cursor.val(), &weight);
+                            }
+                        }
+                        cursor.step_val();
+                    }
+                    if has_values {
+                        for b in builders.iter_mut() {
+                            b.push_key(cursor.key());
+                        }
+                    }
+                    cursor.step_key();
+                    if builders[0].num_tuples() >= chunk_size {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    fn process_retractions<TB>(
+        &self,
+        cursor: &mut SpineCursor<TB>,
+        builders: &mut [B::Builder],
+        chunk_size: usize,
+    ) where
+        TB: Batch<Key = B::Key, Val = B::Val, R = B::R>,
+    {
+        let builder = &mut builders[Runtime::worker_index()];
+
+        while cursor.key_valid() {
+            let mut has_values = false;
+
+            while cursor.val_valid() && builder.num_tuples() < chunk_size {
+                let mut weight = 0;
+                cursor.map_times(&mut |_t, w| {
+                    weight -= **w;
+                });
+                if weight != 0 {
+                    has_values = true;
+                    builder.push_val_diff(cursor.val(), &weight);
+                }
+                cursor.step_val();
+            }
+            if has_values {
+                builder.push_key(cursor.key());
+            }
+            cursor.step_key();
+            if builder.num_tuples() >= chunk_size {
+                break;
+            }
+        }
+    }
+
+    fn create_builders(&self, chunk_size: usize) -> Vec<B::Builder> {
+        std::iter::repeat_with(|| {
+            B::Builder::with_capacity(&self.batch_factories, chunk_size, chunk_size)
+        })
+        .take(Runtime::num_workers())
+        .collect()
+    }
+
+    fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
+        base.child(format!("rebalancing-exchange-{}.dat", persistent_id))
     }
 }
 
@@ -794,7 +888,7 @@ struct IntegralMeta {
 
 impl<B, C> Operator for RebalancingExchangeSender<B, C>
 where
-    B: Batch<Time = ()>,
+    B: ZBatch<Time = ()>,
     C: WithClock + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -819,7 +913,7 @@ where
     }
 
     fn init(&mut self, global_id: &GlobalNodeId) {
-        self.node_id = global_id.local_node_id().unwrap();
+        self.global_id = global_id.clone();
     }
 
     fn register_ready_callback<F>(&mut self, cb: F)
@@ -831,8 +925,7 @@ where
     }
 
     fn ready(&self) -> bool {
-        todo!()
-        //self.exchange.ready_to_send(self.worker_index)
+        self.exchange.ready_to_send(self.worker_index)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -852,32 +945,46 @@ where
         *self.flush_state.borrow() == FlushState::FlushCompleted
     }
 
-    fn flush_progress(&self) -> Option<Position> {
-        todo!()
-    }
-
     fn checkpoint(
         &mut self,
-        base: &feldera_storage::StoragePath,
-        persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn feldera_storage::FileCommitter>>,
+        base: &StoragePath,
+        pid: Option<&str>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), crate::Error> {
-        todo!("checkpoint current policy")
+        let pid = require_persistent_id(pid, &self.global_id)?;
+
+        let mut buf = FBuf::new();
+        buf.push(u8::from(*self.current_policy.borrow()));
+
+        files.push(
+            Runtime::storage_backend()
+                .unwrap()
+                .write(&Self::checkpoint_file(base, pid), buf)?,
+        );
+
+        Ok(())
     }
 
-    fn restore(
-        &mut self,
-        base: &feldera_storage::StoragePath,
-        persistent_id: Option<&str>,
-    ) -> Result<(), crate::Error> {
-        todo!()
+    fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), crate::Error> {
+        let pid = require_persistent_id(pid, &self.global_id)?;
+
+        let file_path = Self::checkpoint_file(base, pid);
+        let content = Runtime::storage_backend().unwrap().read(&file_path)?;
+
+        assert_eq!(content.len(), 1);
+
+        let policy = Policy::try_from(content[0]).unwrap();
+
+        *self.current_policy.borrow_mut() = policy;
+
+        Ok(())
     }
 }
 
 impl<B, C> StreamingTernarySinkOperator<B, EmptyCheckpoint<Vec<Arc<B>>>, TimedSpine<B, C>>
     for RebalancingExchangeSender<B, C>
 where
-    B: Batch<Time = ()>,
+    B: ZBatch<Time = ()>,
     C: WithClock + 'static,
 {
     fn eval(
@@ -889,8 +996,7 @@ where
         let batch_factories = self.batch_factories.clone();
         let delayed_accumulator = delayed_accumulator.into_owned().val;
         let delayed_trace = delayed_trace.ro_snapshot();
-
-        let new_policy = self.balancer.get_optimal_policy(self.node_id).unwrap();
+        let chunk_size = splitter_output_chunk_size();
 
         let delta = delta.into_owned();
 
@@ -901,6 +1007,7 @@ where
                     &mut std::iter::repeat_with(move || (B::dyn_empty(&batch_factories), true)).take(Runtime::num_workers()),
                 ));
 
+                self.update_exchange_metadata();
                 yield (true, None);
                 return;
             }
@@ -908,65 +1015,117 @@ where
             // Policy change?
             // - Clean old rebalancing state
             // - Set new rebalancing state
+            let new_policy = self.balancer.get_optimal_policy(self.global_id.local_node_id().unwrap()).unwrap();
             self.update_policy(new_policy, delayed_accumulator, delayed_trace);
 
             // Partition `delta` based on the current policy.
 
-            // If the flush state is FlushRequested and there is no rebalancing to be done, this will be the final output.
-            let flushed = *self.flush_state.borrow() == FlushState::FlushRequested && self.retractions.borrow().is_none();
+            // If this is not the last input or it is the last input and there is no rebalancing to be done, this will be the final output.
+            let flushed = *self.flush_state.borrow() == FlushState::TransactionStarted || self.retractions.borrow().is_none();
 
-            let outputs = self.partition_batch(delta);
+            let batches = self.partition_batch(delta);
+
             assert!(self.exchange.try_send_all(
                 self.worker_index,
-                &mut outputs.into_iter().map(|output| (output, flushed)),
+                &mut batches.into_iter().map(|batch| (batch, flushed)),
             ));
 
             if flushed {
-                *self.flush_state.borrow_mut() = FlushState::FlushCompleted;
+                if *self.flush_state.borrow() == FlushState::FlushRequested {
+                    *self.flush_state.borrow_mut() = FlushState::FlushCompleted;
+                }
+                self.update_exchange_metadata();
                 yield (true, None);
                 return;
             }
 
             // We have no more inputs to process, but there is rebalancing work to be done.
 
-            // match self.flush_state {
-            //     FlushState::TransactionStarted | FlushState::FlushRequested => {
-            //         let new_policy = self.balancer.get_optimal_policy(self.node_id).unwrap();
+            let RetractionState { mut accumulator, mut trace } = self.retractions.borrow_mut().take().unwrap();
 
-            //         // Policy change?
-            //         // - Clean old rebalancing state
-            //         // - Set new rebalancing state
-            //         if new_policy != self.current_policy {
-            //             self.current_policy = new_policy;
-            //             self.start_rebalancing(delayed_accumulator, delayed_trace);
-            //         }
+            let mut accumulator_cursor = accumulator.cursor();
+            let mut integral_cursor = trace.cursor();
 
-            //         let outputs = self.compute_outputs();
+            let mut builders = self.create_builders(chunk_size);
 
-            //         todo!("Send outputs to the exchange");
+            // Accumulator retractions
+            while accumulator_cursor.key_valid() {
+                self.process_retractions(&mut accumulator_cursor, &mut builders, chunk_size);
 
-            //         if self.flush_state == FlushState::FlushRequested && self.retractions.is_empty() {
-            //             self.flush_state = FlushState::FlushCompleted;
-            //         }
-            //     }
-            //     FlushState::FlushCompleted => {
-            //         // Policy changes shouldn't happen after the flush.
-            //         assert_eq!(
-            //             self.current_policy,
-            //             self.balancer.get_optimal_policy(self.node_id).unwrap()
-            //         );
-            //         assert!(self.retractions.is_empty());
-            //         // Output empty batch.
-            //     }
-            // }
+                if accumulator_cursor.key_valid() {
+                    let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                    assert!(self.exchange.try_send_all(
+                        self.worker_index,
+                        &mut batches.into_iter(),
+                    ));
+                    builders = self.create_builders(chunk_size);
+                    self.update_exchange_metadata();
+                    yield (false, None);
+                }
+            }
 
-            // self.metadata_exchange
-            //     .set_local_operator_metadata_typed(self.node_id, self.exchange_metadata());
+            // Integral retractions
+            while integral_cursor.key_valid() {
+                self.process_retractions(&mut integral_cursor, &mut builders, chunk_size);
 
-            // yield (true, None);
-            // // stats:
-            //   input batch size
-            //   number of rebalancings
+                if integral_cursor.key_valid() {
+                    let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                    assert!(self.exchange.try_send_all(
+                        self.worker_index,
+                        &mut batches.into_iter(),
+                    ));
+                    builders = self.create_builders(chunk_size);
+                    self.update_exchange_metadata();
+                    yield (false, None);
+                }
+            }
+
+            // Start new cursors.
+            let mut accumulator_cursor = accumulator.consuming_cursor(None, None);
+            let mut integral_cursor = trace.consuming_cursor(None, None);
+
+            // Re-partition accumulator
+            while accumulator_cursor.key_valid() {
+                self.process_insertions(&mut accumulator_cursor, &mut builders, chunk_size);
+
+                if accumulator_cursor.key_valid() {
+                    let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                    assert!(self.exchange.try_send_all(
+                        self.worker_index,
+                        &mut batches.into_iter(),
+                    ));
+                    builders = self.create_builders(chunk_size);
+                    self.update_exchange_metadata();
+                    yield (false, None);
+                }
+            }
+
+            // Repartition integral
+            while integral_cursor.key_valid() {
+                self.process_insertions(&mut integral_cursor, &mut builders, chunk_size);
+
+                if integral_cursor.key_valid() {
+                    let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                    assert!(self.exchange.try_send_all(
+                        self.worker_index,
+                        &mut batches.into_iter(),
+                    ));
+                    builders = self.create_builders(chunk_size);
+                    self.update_exchange_metadata();
+                    yield (false, None);
+                }
+            }
+
+            // Send final output batches.
+            let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), true)).collect();
+
+            assert!(self.exchange.try_send_all(
+                self.worker_index,
+                &mut batches.into_iter(),
+            ));
+            self.update_exchange_metadata();
+            yield (true, None);
+            *self.flush_state.borrow_mut() = FlushState::FlushCompleted;
         }
     }
 

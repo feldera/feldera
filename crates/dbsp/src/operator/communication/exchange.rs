@@ -512,7 +512,7 @@ where
     ///
     /// Once this function returns true, a subsequent `try_send_all` operation
     /// is guaranteed to succeed for `sender`.
-    fn ready_to_send(&self, sender: usize) -> bool {
+    pub fn ready_to_send(&self, sender: usize) -> bool {
         self.inner.ready_to_send(sender)
     }
 

@@ -114,6 +114,13 @@ where
         }
     }
 
+    pub fn with_batches(factories: &B::Factories, batches: Vec<Arc<B>>) -> Self {
+        Self {
+            batches,
+            factories: factories.clone(),
+        }
+    }
+
     pub fn extend(&mut self, other: Self) {
         self.batches.extend(other.batches.iter().cloned())
     }
