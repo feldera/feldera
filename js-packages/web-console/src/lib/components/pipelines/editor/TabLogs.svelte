@@ -14,7 +14,7 @@
     }
   > = {}
   let getStreams = $state(() => streams)
-  const pipelineActionCallbacks = usePipelineActionCallbacks()
+  const pipelineActionCallbacks = getPipelineActionCallbacks()
   const dropLogHistory = async (pipelineName: string) => {
     if ('open' in streams[pipelineName].stream) {
       streams[pipelineName].stream.stop()
@@ -32,7 +32,7 @@
     SplitNewlineTransformStream
   } from '$lib/functions/pipelines/changeStream'
   import { type ExtendedPipeline, type PipelineStatus } from '$lib/services/pipelineManager'
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import { getPipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { untrack } from 'svelte'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'

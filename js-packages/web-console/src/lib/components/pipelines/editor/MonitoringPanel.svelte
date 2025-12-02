@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  const pipelineActionCallbacks = usePipelineActionCallbacks()
+  const pipelineActionCallbacks = getPipelineActionCallbacks()
 </script>
 
 <script lang="ts">
@@ -13,7 +13,7 @@
   import { tuple } from '$lib/functions/common/tuple'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import { getPipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { count } from '$lib/functions/common/array'
   import { untrack } from 'svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'

@@ -30,7 +30,7 @@
     }
   })
 
-  const pipelineActionCallbacks = usePipelineActionCallbacks()
+  const pipelineActionCallbacks = getPipelineActionCallbacks()
   const dropOpenedFile = async (pipelineName: string) => {
     const files = ['program.sql', 'stubs.rs', 'udf.rs', 'udf.toml'].map(
       (file) => `${pipelineName}/${file}`
@@ -63,7 +63,7 @@
   import { pipelineFileNameRegex } from '$lib/compositions/health/systemErrors'
   import { effectMonacoContentPlaceholder } from '$lib/components/monacoEditor/effectMonacoContentPlaceholder.svelte'
   import { GenericOverlayWidget } from '$lib/components/monacoEditor/GenericOverlayWidget'
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import { getPipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
   import { rgbToHex } from '$lib/functions/common/color'
   import type { $ } from 'bun'

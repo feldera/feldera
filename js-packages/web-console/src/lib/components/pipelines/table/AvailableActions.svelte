@@ -15,7 +15,7 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import { getPipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import type { PipelineAction as Action } from '$lib/services/pipelineManager'
 
   let {
@@ -23,7 +23,7 @@
     selectedPipelines = $bindable()
   }: { pipelines: PipelineThumb[]; selectedPipelines: string[] } = $props()
   const { updatePipelines, updatePipeline } = useUpdatePipelineList()
-  const pipelineActionCallbacks = usePipelineActionCallbacks()
+  const pipelineActionCallbacks = getPipelineActionCallbacks()
   const sortedSelectedPipelines = $derived([...selectedPipelines].sort())
 
   // Helper to wait for a pipeline action to complete

@@ -290,10 +290,7 @@ example = "1.0"`
       {changes}
       onCancel={() => (contextDrawer.content = null)}
       onApprove={async () => {
-        await pipelineAction.postPipelineAction(
-          pipeline.current.name,
-          'approve_changes'
-        )
+        await pipelineAction.postPipelineAction(pipeline.current.name, 'approve_changes')
       }}
     >
       {#snippet titleEnd()}

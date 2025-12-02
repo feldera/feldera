@@ -1,4 +1,5 @@
 import type { PipelineAction, PipelineThumb } from '$lib/services/pipelineManager'
+import { untrack } from 'svelte'
 import { usePipelineList } from './usePipelineList.svelte'
 
 type Cb = (pipelineName: string) => Promise<void>
@@ -37,58 +38,62 @@ export function usePipelineActionCallbacks(preloaded?: { pipelines: PipelineThum
   // Reactive effect to monitor pipeline changes and trigger callbacks
   $effect(() => {
     const currentPipelines = pipelineList.pipelines
-    const currentPipelineNames = new Set(currentPipelines.map(p => p.name))
+    untrack(() => {
+      const currentPipelineNames = new Set(currentPipelines.map((p) => p.name))
 
-    // Check for deleted pipelines
-    const deletedPipelines = Array.from(previousPipelineNames).filter(
-      name => !currentPipelineNames.has(name)
-    )
+      // Check for deleted pipelines
+      const deletedPipelines = Array.from(previousPipelineNames).filter(
+        (name) => !currentPipelineNames.has(name)
+      )
 
-    // Only process deletions if we had pipelines before (not initial load)
-    if (previousPipelineNames.size > 0) {
-      for (const deletedPipelineName of deletedPipelines) {
-        // Call delete callbacks for specific pipeline
-        const specificCbs = callbacks[deletedPipelineName]?.['delete'] ?? []
-        // Call global delete callbacks
-        const globalCbs = callbacks['']?.['delete'] ?? []
-        const allDeleteCbs = [...specificCbs, ...globalCbs]
+      // Only process deletions if we had pipelines before (not initial load)
+      if (previousPipelineNames.size > 0) {
+        for (const deletedPipelineName of deletedPipelines) {
+          // Call delete callbacks for specific pipeline
+          const specificCbs = callbacks[deletedPipelineName]?.['delete'] ?? []
+          // Call global delete callbacks
+          const globalCbs = callbacks['']?.['delete'] ?? []
+          const allDeleteCbs = [...specificCbs, ...globalCbs]
 
-        // Execute callbacks
-        Promise.allSettled(allDeleteCbs.map(cb => cb(deletedPipelineName)))
+          // Execute callbacks
+          Promise.allSettled(allDeleteCbs.map((cb) => cb(deletedPipelineName)))
 
-        // Clean up callbacks for deleted pipeline
-        delete callbacks[deletedPipelineName]
-      }
-    }
-
-    // Check all registered callbacks to see if their desired states are reached
-    for (const pipelineName in callbacks) {
-      if (pipelineName === '') continue // Skip global callbacks (only used for delete)
-
-      const pipeline = currentPipelines.find(p => p.name === pipelineName)
-      if (!pipeline) continue // Pipeline not found
-
-      for (const action in callbacks[pipelineName]) {
-        const actionKey = action as Action
-        if (actionKey === 'delete') continue // Delete handled above
-
-        const cbs = callbacks[pipelineName][actionKey] ?? []
-        if (cbs.length === 0) continue
-
-        // Check if desired state is reached
-        if (isDesiredState[actionKey](pipeline)) {
-          // Execute all callbacks for this action
-          // Note: Callbacks are NOT automatically removed - callers must remove them explicitly
-          // callbacks[pipelineName][actionKey] = []
-          Promise.allSettled(cbs.map(cb => cb(pipelineName)))
+          // Clean up callbacks for deleted pipeline
+          delete callbacks[deletedPipelineName]
         }
       }
-    }
 
-    // Update previous pipeline names
-    previousPipelineNames = currentPipelineNames
+      // Check all registered callbacks to see if their desired states are reached
+      for (const pipelineName in callbacks) {
+        if (pipelineName === '') continue // Skip global callbacks (only used for delete)
+
+        const pipeline = currentPipelines.find((p) => p.name === pipelineName)
+        if (!pipeline) continue // Pipeline not found
+
+        for (const action in callbacks[pipelineName]) {
+          const actionKey = action as Action
+          if (actionKey === 'delete') continue // Delete handled above
+
+          const cbs = callbacks[pipelineName][actionKey] ?? []
+          if (cbs.length === 0) continue
+
+          // Check if desired state is reached
+          if (isDesiredState[actionKey](pipeline)) {
+            // Execute all callbacks for this action
+            // Note: Callbacks are NOT automatically removed - callers must remove them explicitly
+            // callbacks[pipelineName][actionKey] = []
+            Promise.allSettled(cbs.map((cb) => cb(pipelineName)))
+          }
+        }
+      }
+
+      // Update previous pipeline names
+      previousPipelineNames = currentPipelineNames
+    })
   })
+}
 
+export function getPipelineActionCallbacks() {
   return {
     add(pipelineName: string, action: Action, callback: Cb) {
       callbacks[pipelineName] ??= {}
