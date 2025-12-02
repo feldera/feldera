@@ -305,13 +305,160 @@ impl LlvmCircuitJit {
 
         // Build the return instruction. A function returns void if `get_return_type()` is `None`.
         if fn_ty.get_return_type().is_some() {
-            let return_value = call
-                .try_as_basic_value()
-                .expect_basic("expected call to return a basic value");
+            let return_value = call.try_as_basic_value().unwrap_basic();
             builder.build_return(Some(&return_value)).unwrap();
         } else {
             builder.build_return(None).unwrap();
         }
+
+        module
+            .verify()
+            .map_err(|e| JitError::Verify(e.to_string()))?;
+
+        let execution_engine = module
+            .create_jit_execution_engine(self.optimization)
+            .map_err(|e| JitError::Engine(e.to_string()))?;
+
+        let address = execution_engine
+            .get_function_address(&symbol_name)
+            .map_err(|e| JitError::Lookup {
+                symbol: symbol_name.clone(),
+                error: e.to_string(),
+            })?;
+
+        let func: JitFn = std::mem::transmute(address);
+        Ok(JitFunction::new(
+            Arc::<str>::from(symbol_name),
+            func,
+            SharedJitModule::new(module, execution_engine),
+        ))
+    }
+
+    /// This is a temporary function to compile a circuit builder.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `add_input_stream_fn_ptr` and `invoke_jit_fn_ptr` are valid
+    /// function pointers that will remain valid for the lifetime of the returned `JitFunction`.
+    /// The signatures of these function pointers must match what the generated LLVM IR expects.
+    pub unsafe fn compile_circuit_builder(
+        &self,
+        add_input_stream_fn_ptr: usize,
+        invoke_jit_fn_ptr: usize,
+        return_struct_type: Option<inkwell::types::StructType<'static>>,
+    ) -> Result<JitFunction, JitError> {
+        let symbol_name = format!(
+            "{}_fn_{}",
+            self.module_prefix,
+            self.counter.fetch_add(1, Ordering::Relaxed)
+        );
+        let module_name = format!("{}_module", symbol_name);
+        let module = self.context.create_module(&module_name);
+        let builder = self.context.create_builder();
+
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+        // JIT function signature
+        let fn_type = return_struct_type.unwrap().fn_type(
+            &[ptr_type.into(), ptr_type.into()],
+            false,
+        );
+        let function = module.add_function(&symbol_name, fn_type, None);
+        let entry = self.context.append_basic_block(function, "entry");
+        builder.position_at_end(entry);
+
+        // Call `add_input_stream_helper`
+        let add_input_stream_fn_type =
+            return_struct_type.unwrap().fn_type(&[ptr_type.into()], false);
+        let add_input_stream_fn_ptr_val = self
+            .context
+            .i64_type()
+            .const_int(add_input_stream_fn_ptr as u64, false);
+        let add_input_stream_fn = builder
+            .build_int_to_ptr(
+                add_input_stream_fn_ptr_val,
+                ptr_type,
+                "add_input_stream_fn_ptr",
+            )
+            .unwrap();
+        let circuit_arg = function.get_first_param().unwrap();
+        let stream_handle_pair = builder
+            .build_indirect_call(
+                add_input_stream_fn_type,
+                add_input_stream_fn,
+                &[circuit_arg.into()],
+                "call_add_input_stream",
+            )
+            .unwrap()
+            .try_as_basic_value()
+            .unwrap_basic()
+            .into_struct_value();
+
+        // Call `invoke_jit_helper`
+        let invoke_jit_fn_type = ptr_type.fn_type(&[ptr_type.into()], false);
+        let invoke_jit_fn_ptr_val = self
+            .context
+            .i64_type()
+            .const_int(invoke_jit_fn_ptr as u64, false);
+        let invoke_jit_fn = builder
+            .build_int_to_ptr(invoke_jit_fn_ptr_val, ptr_type, "invoke_jit_fn_ptr")
+            .unwrap();
+
+        let stream_ptr = builder
+            .build_extract_value(stream_handle_pair, 0, "stream_ptr")
+            .unwrap();
+        let handle_ptr = builder
+            .build_extract_value(stream_handle_pair, 1, "handle_ptr")
+            .unwrap();
+        let data_pipeline_ptr = function.get_nth_param(1).unwrap();
+
+        // Create `StreamAndJitFunction` struct
+        let stream_and_jit_function_type =
+            self.context.struct_type(&[ptr_type.into(), ptr_type.into()], false);
+        let stream_and_jit_function_ptr = builder
+            .build_alloca(stream_and_jit_function_type, "arg_struct")
+            .unwrap();
+        let stream_field_ptr = builder
+            .build_struct_gep(
+                stream_and_jit_function_type,
+                stream_and_jit_function_ptr,
+                0,
+                "stream_field_ptr",
+            )
+            .unwrap();
+        let jit_function_field_ptr = builder
+            .build_struct_gep(
+                stream_and_jit_function_type,
+                stream_and_jit_function_ptr,
+                1,
+                "jit_function_field_ptr",
+            )
+            .unwrap();
+        builder.build_store(stream_field_ptr, stream_ptr).unwrap();
+        builder
+            .build_store(jit_function_field_ptr, data_pipeline_ptr)
+            .unwrap();
+
+        let output_stream_ptr = builder
+            .build_indirect_call(
+                invoke_jit_fn_type,
+                invoke_jit_fn,
+                &[stream_and_jit_function_ptr.into()],
+                "call_invoke_jit",
+            )
+            .unwrap()
+            .try_as_basic_value()
+            .unwrap_basic();
+
+        // Return the final stream and handle
+        let final_pair = return_struct_type.unwrap().const_zero();
+        let final_pair = builder
+            .build_insert_value(final_pair, output_stream_ptr, 0, "final_pair")
+            .unwrap();
+        let final_pair = builder
+            .build_insert_value(final_pair, handle_ptr, 1, "final_pair")
+            .unwrap();
+        builder.build_return(Some(&final_pair)).unwrap();
 
         module
             .verify()

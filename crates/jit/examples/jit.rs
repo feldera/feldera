@@ -1,9 +1,5 @@
-use dbsp::{
-    circuit::{Circuit, Stream},
-    operator::InputHandle,
-    RootCircuit, Runtime,
-};
-use jit::{LlvmCircuitJit, RawJitBatch};
+use dbsp::{circuit::Stream, operator::InputHandle, RootCircuit, Runtime};
+use jit::{JitFunction, LlvmCircuitJit, RawJitBatch};
 use std::{ffi::c_void, mem};
 
 /// A C-compatible struct to pass a stream and a handle across the FFI boundary.
@@ -11,6 +7,13 @@ use std::{ffi::c_void, mem};
 struct StreamHandlePair {
     stream: *mut c_void,
     handle: *mut c_void,
+}
+
+/// A C-compatible struct to pass a stream and a JIT function across the FFI boundary.
+#[repr(C)]
+struct StreamAndJitFunction {
+    stream: *mut c_void,
+    jit_function: *mut c_void,
 }
 
 /// An `extern "C"` function that wraps the `add_input_stream` call.
@@ -33,6 +36,19 @@ unsafe extern "C" fn add_input_stream_helper(circuit: *mut c_void) -> StreamHand
     }
 }
 
+/// An `extern "C"` function that wraps the `invoke_jit` call.
+///
+/// # Safety
+///
+/// This function is highly unsafe. It casts pointers and leaks the created stream.
+#[no_mangle]
+unsafe extern "C" fn invoke_jit_helper(input: *mut StreamAndJitFunction) -> *mut c_void {
+    let stream = &*(*(input)).stream.cast::<Stream<RootCircuit, RawJitBatch>>();
+    let jit_function = &*(*(input)).jit_function.cast::<JitFunction>();
+    let output_stream = stream.invoke_jit("llvm-add", jit_function.clone());
+    Box::into_raw(Box::new(output_stream)).cast()
+}
+
 fn main() -> anyhow::Result<()> {
     // ---- Part 1: JIT-compile a simple data-parallel pipeline ----
     let jit = LlvmCircuitJit::new("jit_demo");
@@ -44,21 +60,23 @@ fn main() -> anyhow::Result<()> {
     let pair_struct_type = context.struct_type(&[ptr_type.into(), ptr_type.into()], false);
 
     let circuit_builder = unsafe {
-        jit.compile_ffi_call(
+        jit.compile_circuit_builder(
             add_input_stream_helper as usize,
-            &[ptr_type.into()],
-            pair_struct_type.into(),
+            invoke_jit_helper as usize,
             Some(pair_struct_type),
         )?
     };
-    type CircuitBuilderFn = unsafe extern "C" fn(*mut c_void) -> StreamHandlePair;
+
+    type CircuitBuilderFn = unsafe extern "C" fn(*mut c_void, *mut c_void) -> StreamHandlePair;
     let circuit_builder_fn: CircuitBuilderFn = unsafe { mem::transmute(circuit_builder.raw()) };
 
     // ---- Part 3: Build and run the DBSP circuit ----
     let (mut dbsp, (input_handle, scratch_handle)) = Runtime::init_circuit(1, move |circuit| {
-        // Use the JIT-compiled function to create the input stream.
+        // Use the JIT-compiled function to create the input stream and attach the JIT-compiled
+        // pipeline.
         let circuit_ptr = circuit as *mut _ as *mut c_void;
-        let pair = unsafe { circuit_builder_fn(circuit_ptr) };
+        let data_pipeline_ptr = &data_pipeline as *const _ as *mut c_void;
+        let pair = unsafe { circuit_builder_fn(circuit_ptr, data_pipeline_ptr) };
 
         // Reconstitute the stream and handle. This is the counterpart to the memory
         // leak in the helper function.
@@ -67,14 +85,12 @@ fn main() -> anyhow::Result<()> {
         let handle: Box<InputHandle<RawJitBatch>> = unsafe { Box::from_raw(pair.handle.cast()) };
 
         // Now, use the reconstituted stream to continue building the circuit.
-        stream
-            .invoke_jit("llvm-add", data_pipeline.clone())
-            .inspect(|batch| unsafe {
-                let ptr = batch.as_ptr() as *const i32;
-                if !ptr.is_null() {
-                    println!("JIT produced value: {}", *ptr);
-                }
-            });
+        stream.inspect(|batch| unsafe {
+            let ptr = batch.as_ptr() as *const i32;
+            if !ptr.is_null() {
+                println!("JIT produced value: {}", *ptr);
+            }
+        });
 
         // Create another input for testing.
         let (scratch_stream, scratch_handle) = circuit.add_input_stream::<i32>();
