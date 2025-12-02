@@ -13,6 +13,7 @@ import { useReactiveWaiter } from './useReactiveWaiter.svelte'
 import { unionName } from '$lib/functions/common/union'
 import { page } from '$app/state'
 import { match } from 'ts-pattern'
+import { usePipelineActionCallbacks } from './pipelines/usePipelineActionCallbacks.svelte'
 
 /**
  * Composition for handling pipeline actions with optimistic updates and state management.
@@ -47,6 +48,7 @@ export const usePipelineAction = () => {
   const api = usePipelineManager()
   const pipelineList = usePipelineList(data.preloaded)
   const { updatePipeline } = useUpdatePipelineList()
+  const { registerPendingAction } = $derived(usePipelineActionCallbacks(data.preloaded))
 
   const ignoreStatuses: NamesInUnion<PipelineStatus>[] = [
     'Preparing',
@@ -98,7 +100,17 @@ export const usePipelineAction = () => {
         // First start in paused state
         await api.postPipelineAction(pipeline_name, 'start_paused')
 
-        // Wait for paused state and run callbacks
+        // Register pending action for start_paused intermediate state
+        const pausedStatePredicate = (p: PipelineThumb) => {
+          return (
+            (['Paused', 'AwaitingApproval'] satisfies PipelineStatus[]).findIndex(
+              (status) => status === p.status
+            ) !== -1
+          )
+        }
+        registerPendingAction(pipeline_name, 'start_paused', pausedStatePredicate)
+
+        // Wait for paused state
         const pausedWaiter = reactiveWaiter.createWaiter({
           predicate: (ps) => {
             const p = ps.find((p) => p.name === pipeline_name)
@@ -108,11 +120,7 @@ export const usePipelineAction = () => {
             if (ignoreStatuses.includes(unionName(p.status))) {
               return null
             }
-            if (
-              (['Paused', 'AwaitingApproval'] satisfies PipelineStatus[]).findIndex(
-                (status) => status === p.status
-              ) !== -1
-            ) {
+            if (pausedStatePredicate(p)) {
               return { value: true }
             }
             if (p.status === 'Stopped') {
@@ -181,6 +189,9 @@ export const usePipelineAction = () => {
           () => (pipeline: PipelineThumb) => ignoreStatuses.includes(unionName(pipeline.status))
         )
         .exhaustive()
+
+      // Register pending action for callback system
+      registerPendingAction(pipeline_name, action, isDesiredState)
 
       return {
         waitFor: async () => {
