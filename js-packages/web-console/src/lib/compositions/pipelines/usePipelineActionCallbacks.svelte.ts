@@ -5,14 +5,22 @@ type Cb = (pipelineName: string) => Promise<void>
 
 type Action = PipelineAction | 'delete'
 
-type PendingAction = {
-  pipelineName: string
-  action: Action
-  isDesiredState: (pipeline: PipelineThumb) => boolean
-}
-
 const callbacks: Record<string, Partial<Record<Action, Cb[]>>> = $state({})
-const pendingActions: PendingAction[] = $state([])
+
+// Map of action types to their desired state predicates
+const isDesiredState: Record<Action, (pipeline: PipelineThumb) => boolean> = {
+  start: (p) => p.status === 'Running',
+  resume: (p) => p.status === 'Running',
+  pause: (p) => p.status === 'Paused',
+  start_paused: (p) => p.status === 'Paused',
+  stop: (p) => p.status === 'Stopped',
+  kill: (p) => p.status === 'Stopped',
+  clear: (p) => p.storageStatus === 'Cleared',
+  standby: (p) => p.status === 'Standby',
+  activate: (p) => p.status === 'Running',
+  approve_changes: (p) => p.status !== 'AwaitingApproval',
+  delete: () => false // Never check for desired state on delete - handled separately
+}
 
 const pop = (pipelineName: string, action: Action) => {
   callbacks[pipelineName] ??= {}
@@ -48,47 +56,34 @@ export function usePipelineActionCallbacks(preloaded?: { pipelines: PipelineThum
         // Execute callbacks
         Promise.allSettled(allDeleteCbs.map(cb => cb(deletedPipelineName)))
 
-        // Remove pending actions for deleted pipeline
-        const toRemove = pendingActions.filter(pa => pa.pipelineName === deletedPipelineName)
-        toRemove.forEach(pa => {
-          const idx = pendingActions.indexOf(pa)
-          if (idx !== -1) {
-            pendingActions.splice(idx, 1)
-          }
-        })
+        // Clean up callbacks for deleted pipeline
+        delete callbacks[deletedPipelineName]
       }
     }
 
-    // Check pending actions for state matches
-    const toRemove: PendingAction[] = []
-    for (const pendingAction of pendingActions) {
-      const pipeline = currentPipelines.find(p => p.name === pendingAction.pipelineName)
+    // Check all registered callbacks to see if their desired states are reached
+    for (const pipelineName in callbacks) {
+      if (pipelineName === '') continue // Skip global callbacks (only used for delete)
 
-      if (!pipeline) {
-        // Pipeline not found, skip for now (might be deleted, handled above)
-        continue
-      }
+      const pipeline = currentPipelines.find(p => p.name === pipelineName)
+      if (!pipeline) continue // Pipeline not found
 
-      // Check if desired state is reached
-      if (pendingAction.isDesiredState(pipeline)) {
-        // Get callbacks for this action
-        const cbs = callbacks[pendingAction.pipelineName]?.[pendingAction.action] ?? []
+      for (const action in callbacks[pipelineName]) {
+        const actionKey = action as Action
+        if (actionKey === 'delete') continue // Delete handled above
 
-        // Execute callbacks
-        Promise.allSettled(cbs.map(cb => cb(pendingAction.pipelineName)))
+        const cbs = callbacks[pipelineName][actionKey] ?? []
+        if (cbs.length === 0) continue
 
-        // Mark for removal
-        toRemove.push(pendingAction)
+        // Check if desired state is reached
+        if (isDesiredState[actionKey](pipeline)) {
+          // Execute all callbacks for this action
+          // Note: Callbacks are NOT automatically removed - callers must remove them explicitly
+          // callbacks[pipelineName][actionKey] = []
+          Promise.allSettled(cbs.map(cb => cb(pipelineName)))
+        }
       }
     }
-
-    // Remove completed pending actions
-    toRemove.forEach(pa => {
-      const idx = pendingActions.indexOf(pa)
-      if (idx !== -1) {
-        pendingActions.splice(idx, 1)
-      }
-    })
 
     // Update previous pipeline names
     previousPipelineNames = currentPipelineNames
@@ -108,17 +103,6 @@ export function usePipelineActionCallbacks(preloaded?: { pipelines: PipelineThum
         return
       }
       callbacks[pipelineName][action].splice(idx, 1)
-    },
-    registerPendingAction(
-      pipelineName: string,
-      action: Action,
-      isDesiredState: (pipeline: PipelineThumb) => boolean
-    ) {
-      pendingActions.push({
-        pipelineName,
-        action,
-        isDesiredState
-      })
     },
     pop,
     popIterator: (pipelineName: string, action: Action) => ({

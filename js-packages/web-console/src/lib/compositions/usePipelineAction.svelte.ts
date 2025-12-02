@@ -2,45 +2,36 @@
 
 import type { NamesInUnion } from '$lib/functions/common/union'
 import type {
-  ExtendedPipeline,
   PipelineAction,
   PipelineStatus,
   PipelineThumb
 } from '$lib/services/pipelineManager'
 import { usePipelineList, useUpdatePipelineList } from './pipelines/usePipelineList.svelte'
-import { usePipelineManager, type PipelineManagerApi } from './usePipelineManager.svelte'
+import { usePipelineManager } from './usePipelineManager.svelte'
 import { useReactiveWaiter } from './useReactiveWaiter.svelte'
 import { unionName } from '$lib/functions/common/union'
 import { page } from '$app/state'
 import { match } from 'ts-pattern'
-import { usePipelineActionCallbacks } from './pipelines/usePipelineActionCallbacks.svelte'
 
 /**
  * Composition for handling pipeline actions with optimistic updates and state management.
  *
- * This composition encapsulates all the complexity of pipeline state transitions, including:
+ * This composition encapsulates pipeline state transitions, including:
  * - Optimistic UI updates for immediate feedback
  * - Complex action flows (e.g., start action with hidden paused intermediate state)
  * - State synchronization between local pipeline and global pipeline list
- * - Reactive waiting for target states with proper error handling
- * - Automatic determination of intermediate and final states for each action
  *
  * Supported actions:
- * - `start`: Starts pipeline normally or resumes from paused (with optimistic status update)
+ * - `start`: Starts pipeline normally via hidden start_paused + resume flow (with optimistic status update)
  * - `start_paused`: Starts pipeline in paused state (with optimistic status update)
  * - `pause`: Pauses running pipeline (with optimistic status update)
  * - `stop`: Gracefully stops pipeline with checkpoint (with optimistic status update)
  * - `kill`: Force stops pipeline immediately (with optimistic status update)
  * - `clear`: Clears pipeline storage and checkpoints (with optimistic storageStatus update)
  *
- * Special handling:
- * - The `start` action can include hidden paused intermediate state logic when callbacks are provided
- * - All actions apply optimistic updates immediately for responsive UI
- * - Returns a waiter that resolves to `true` when the action reaches its target state
- * - The waiter resolves to `false` if the pipeline won't reach the target state (e.g. stopped after the `start` action with a `paused` intermediate)
- * - The waiter rejects with an error if the pipeline enters an unexpected state
+ * Note: To be notified when actions complete, use usePipelineActionCallbacks().add() to register callbacks.
+ * The reactive callback system will automatically execute callbacks when desired states are reached.
  *
- * @param pipeline - Pipeline object with current state and optimistic update function
  * @returns Object with postPipelineAction function for executing actions
  */
 export const usePipelineAction = () => {
@@ -48,7 +39,6 @@ export const usePipelineAction = () => {
   const api = usePipelineManager()
   const pipelineList = usePipelineList(data.preloaded)
   const { updatePipeline } = useUpdatePipelineList()
-  const { registerPendingAction } = $derived(usePipelineActionCallbacks(data.preloaded))
 
   const ignoreStatuses: NamesInUnion<PipelineStatus>[] = [
     'Preparing',
@@ -66,14 +56,11 @@ export const usePipelineAction = () => {
     'Replaying'
   ]
   const reactiveWaiter = useReactiveWaiter(() => pipelineList.pipelines)
-  return {
-    postPipelineAction: async (
-      pipeline_name: string,
-      action: PipelineAction | 'resume',
-      callbacks?: {
-        onPausedReady?: (pipelineName: string) => Promise<void>
-      }
-    ) => {
+
+  const postPipelineAction = async (
+    pipeline_name: string,
+    action: PipelineAction | 'resume'
+  ): Promise<void> => {
       // Optimistic status update based on action
       const optimisticStatus = match(action)
         .returnType<PipelineThumb['status'] | undefined>()
@@ -100,16 +87,6 @@ export const usePipelineAction = () => {
         // First start in paused state
         await api.postPipelineAction(pipeline_name, 'start_paused')
 
-        // Register pending action for start_paused intermediate state
-        const pausedStatePredicate = (p: PipelineThumb) => {
-          return (
-            (['Paused', 'AwaitingApproval'] satisfies PipelineStatus[]).findIndex(
-              (status) => status === p.status
-            ) !== -1
-          )
-        }
-        registerPendingAction(pipeline_name, 'start_paused', pausedStatePredicate)
-
         // Wait for paused state
         const pausedWaiter = reactiveWaiter.createWaiter({
           predicate: (ps) => {
@@ -120,7 +97,11 @@ export const usePipelineAction = () => {
             if (ignoreStatuses.includes(unionName(p.status))) {
               return null
             }
-            if (pausedStatePredicate(p)) {
+            if (
+              (['Paused', 'AwaitingApproval'] satisfies PipelineStatus[]).findIndex(
+                (status) => status === p.status
+              ) !== -1
+            ) {
               return { value: true }
             }
             if (p.status === 'Stopped') {
@@ -132,89 +113,22 @@ export const usePipelineAction = () => {
           }
         })
 
-        try {
-          const shouldContinue = await pausedWaiter.waitFor()
-          if (!shouldContinue) {
-            return {
-              waitFor: async () => {
-                // Pipeline was stopped before it could be resumed, listeners should not wait for running state
-                return false
-              }
-            }
-          }
-        } catch (e) {
-          return {
-            waitFor: async () => {
-              throw e
-            }
-          }
+        const shouldContinue = await pausedWaiter.waitFor()
+        if (!shouldContinue) {
+          // Pipeline was stopped before it could be resumed, don't try to resume
+          return
         }
 
         updatePipeline(pipeline_name, (p) => ({ ...p, status: 'Initializing' }))
-        await callbacks?.onPausedReady?.(pipeline_name)
 
-        // Then start normally
+        // Then start normally (resume action will trigger its own callbacks reactively)
         await api.postPipelineAction(pipeline_name, 'resume')
       } else {
         await api.postPipelineAction(pipeline_name, action)
       }
-
-      const isDesiredState = (
-        {
-          start: (p) => p.status === 'Running',
-          resume: (p) => p.status === 'Running',
-          pause: (p) => p.status === 'Paused',
-          start_paused: (p) => p.status === 'Paused',
-          stop: (p) => p.status === 'Stopped',
-          kill: (p) => p.status === 'Stopped',
-          clear: (p) => p.storageStatus === 'Cleared',
-          standby: (p) => p.status === 'Standby',
-          activate: (p) => p.status === 'Running',
-          approve_changes: (p) => p.status !== 'AwaitingApproval'
-        } satisfies Record<PipelineAction | 'resume', (pipeline: PipelineThumb) => boolean>
-      )[action]
-
-      const isIntermediateState = match(action)
-        .with('clear', () => (pipeline: PipelineThumb) => pipeline.storageStatus === 'Clearing')
-        .with(
-          'start',
-          'resume',
-          'pause',
-          'start_paused',
-          'stop',
-          'kill',
-          'standby',
-          'activate',
-          'approve_changes',
-          () => (pipeline: PipelineThumb) => ignoreStatuses.includes(unionName(pipeline.status))
-        )
-        .exhaustive()
-
-      // Register pending action for callback system
-      registerPendingAction(pipeline_name, action, isDesiredState)
-
-      return {
-        waitFor: async () => {
-          const waiter = reactiveWaiter.createWaiter({
-            predicate: (ps) => {
-              const p = ps.find((p) => p.name === pipeline_name)
-              if (!p) {
-                throw new Error('Pipeline not found in pipelines list')
-              }
-              if (isDesiredState(p)) {
-                return { value: true }
-              }
-              if (isIntermediateState(p)) {
-                return null
-              }
-              throw new Error(
-                `Unexpected status ${JSON.stringify(p.status)}/${JSON.stringify(p.storageStatus)} while waiting for pipeline ${pipeline_name} to complete action ${action}`
-              )
-            }
-          })
-          return waiter.waitFor()
-        }
-      }
     }
+
+  return {
+    postPipelineAction
   }
 }
