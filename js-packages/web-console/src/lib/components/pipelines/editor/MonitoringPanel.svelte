@@ -80,7 +80,7 @@
   $effect(() => {
     untrack(() => pipelineActionCallbacks.add('', 'delete', forgetCurrentTab))
     return () => {
-      pipelineActionCallbacks.remove('', 'start_paused', forgetCurrentTab)
+      pipelineActionCallbacks.remove('', 'delete', forgetCurrentTab)
     }
   })
 
