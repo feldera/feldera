@@ -19,7 +19,7 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use actix_files::NamedFile;
-use actix_web::{get, post, web, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web::{get, head, post, web, HttpRequest, HttpResponse, HttpServer, Responder};
 use futures_util::{join, StreamExt};
 use std::net::TcpListener;
 use std::path::Path;
@@ -39,6 +39,76 @@ fn decode_url_encoded_parameter(
             param,
         })),
         Some(value) => Ok(value.to_string()),
+    }
+}
+
+/// Check if the binary executable exists
+#[head("/binary/{pipeline_id}/{program_version}/{source_checksum}/{integrity_checksum}")]
+async fn check_binary(
+    config: web::Data<CompilerConfig>,
+    req: HttpRequest,
+) -> Result<impl Responder, ManagerError> {
+    // Retrieve URL encoded parameters
+    let path_parameters = req.match_info();
+    let pipeline_id =
+        decode_url_encoded_parameter("pipeline_id", path_parameters.get("pipeline_id"))?;
+    let program_version =
+        decode_url_encoded_parameter("program_version", path_parameters.get("program_version"))?;
+    let source_checksum =
+        decode_url_encoded_parameter("source_checksum", path_parameters.get("source_checksum"))?;
+    let integrity_checksum = decode_url_encoded_parameter(
+        "integrity_checksum",
+        path_parameters.get("integrity_checksum"),
+    )?;
+
+    // Validate each of them follows expected format
+    let pipeline_id =
+        PipelineId(
+            Uuid::from_str(&pipeline_id).map_err(|e| ApiError::InvalidUuidParam {
+                value: pipeline_id.clone(),
+                error: e.to_string(),
+            })?,
+        );
+    let program_version =
+        Version(
+            i64::from_str(&program_version).map_err(|e| ApiError::InvalidVersionParam {
+                value: program_version.clone(),
+                error: e.to_string(),
+            })?,
+        );
+    validate_is_sha256_checksum(&source_checksum).map_err(|e| {
+        ManagerError::from(ApiError::InvalidChecksumParam {
+            value: source_checksum.to_string(),
+            error: e,
+        })
+    })?;
+    validate_is_sha256_checksum(&integrity_checksum).map_err(|e| {
+        ManagerError::from(ApiError::InvalidChecksumParam {
+            value: integrity_checksum.to_string(),
+            error: e,
+        })
+    })?;
+
+    // Form file path
+    let binary_file_path = config
+        .working_dir()
+        .join("rust-compilation")
+        .join("pipeline-binaries")
+        .join(pipeline_binary_filename(
+            &pipeline_id,
+            program_version,
+            &source_checksum,
+            &integrity_checksum,
+        ));
+
+    // Check if binary file path exists
+    if binary_file_path.exists() {
+        Ok(HttpResponse::Ok().finish())
+    } else {
+        Ok(HttpResponse::NotFound().body(format!(
+            "Binary not found for pipeline id '{}' ( version: '{}' )",
+            pipeline_id, program_version
+        )))
     }
 }
 
@@ -600,6 +670,7 @@ pub async fn compiler_main(
         actix_web::App::new()
             .app_data(config.clone())
             .app_data(probe.clone())
+            .service(check_binary)
             .service(get_binary)
             .service(get_program_info)
             .service(upload_binary)
