@@ -11,6 +11,7 @@ import { useReactiveWaiter } from './useReactiveWaiter.svelte'
 import { unionName } from '$lib/functions/common/union'
 import { page } from '$app/state'
 import { match } from 'ts-pattern'
+import { hasSelectedRelations } from '$lib/components/pipelines/editor/TabChangeStream.svelte'
 
 let postPipelineAction: (pipeline_name: string, action: PipelineAction, callbacks?: {
     onPausedReady?: (pipelineName: string) => Promise<void>;
@@ -100,58 +101,67 @@ export const usePipelineAction = () => {
 
       // Handle 'start' action with hidden paused intermediate state
       if (action === 'start') {
-        // First start in paused state
-        await api.postPipelineAction(pipeline_name, 'start_paused')
+        // Optimization: Skip pause-unpause sequence if no relations are selected in Change Stream tab
+        const needsPauseUnpause = hasSelectedRelations(pipeline_name)
 
-        // Wait for paused state and run callbacks
-        const pausedWaiter = reactiveWaiter.createWaiter({
-          predicate: (ps) => {
-            const p = ps.find((p) => p.name === pipeline_name)
-            if (!p) {
-              throw new Error('Pipeline not found in pipelines list')
-            }
-            if (ignoreStatuses.includes(unionName(p.status))) {
-              return null
-            }
-            if (
-              (['Paused', 'AwaitingApproval'] satisfies PipelineStatus[]).findIndex(
-                (status) => status === p.status
-              ) !== -1
-            ) {
-              return { value: true }
-            }
-            if (p.status === 'Stopped') {
-              return { value: false }
-            }
-            throw new Error(
-              `Unexpected status ${JSON.stringify(p.status)} while waiting for pipeline ${pipeline_name} to reach paused state`
-            )
-          }
-        })
+        if (needsPauseUnpause) {
+          // Relations are selected, use pause-unpause sequence to allow callbacks to run
+          // First start in paused state
+          await api.postPipelineAction(pipeline_name, 'start_paused')
 
-        try {
-          const shouldContinue = await pausedWaiter.waitFor()
-          if (!shouldContinue) {
+          // Wait for paused state and run callbacks
+          const pausedWaiter = reactiveWaiter.createWaiter({
+            predicate: (ps) => {
+              const p = ps.find((p) => p.name === pipeline_name)
+              if (!p) {
+                throw new Error('Pipeline not found in pipelines list')
+              }
+              if (ignoreStatuses.includes(unionName(p.status))) {
+                return null
+              }
+              if (
+                (['Paused', 'AwaitingApproval'] satisfies PipelineStatus[]).findIndex(
+                  (status) => status === p.status
+                ) !== -1
+              ) {
+                return { value: true }
+              }
+              if (p.status === 'Stopped') {
+                return { value: false }
+              }
+              throw new Error(
+                `Unexpected status ${JSON.stringify(p.status)} while waiting for pipeline ${pipeline_name} to reach paused state`
+              )
+            }
+          })
+
+          try {
+            const shouldContinue = await pausedWaiter.waitFor()
+            if (!shouldContinue) {
+              return {
+                waitFor: async () => {
+                  // Pipeline was stopped before it could be resumed, listeners should not wait for running state
+                  return false
+                }
+              }
+            }
+          } catch (e) {
             return {
               waitFor: async () => {
-                // Pipeline was stopped before it could be resumed, listeners should not wait for running state
-                return false
+                throw e
               }
             }
           }
-        } catch (e) {
-          return {
-            waitFor: async () => {
-              throw e
-            }
-          }
+
+          updatePipeline(pipeline_name, (p) => ({ ...p, status: 'Initializing' }))
+          await callbacks?.onPausedReady?.(pipeline_name)
+
+          // Then start normally
+          await api.postPipelineAction(pipeline_name, 'resume')
+        } else {
+          // No relations selected, start directly without pausing first
+          await api.postPipelineAction(pipeline_name, 'start')
         }
-
-        updatePipeline(pipeline_name, (p) => ({ ...p, status: 'Initializing' }))
-        await callbacks?.onPausedReady?.(pipeline_name)
-
-        // Then start normally
-        await api.postPipelineAction(pipeline_name, 'resume')
       } else {
         await api.postPipelineAction(pipeline_name, action)
       }

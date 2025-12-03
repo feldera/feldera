@@ -217,6 +217,20 @@
       delete changeStream[tenantName][pipelineName]
     }
   }
+
+  /**
+   * Check if a pipeline has any selected relations in the Change Stream tab.
+   * This is used to optimize pipeline start behavior - if no relations are selected,
+   * we can skip the pause-unpause sequence.
+   */
+  export const hasSelectedRelations = (pipelineName: string): boolean => {
+    const tenantName = getSelectedTenant() || ''
+    const relations = pipelinesRelations[tenantName]?.[pipelineName]
+    if (!relations) {
+      return false
+    }
+    return Object.values(relations).some((r) => r.selected)
+  }
 </script>
 
 <script lang="ts">
