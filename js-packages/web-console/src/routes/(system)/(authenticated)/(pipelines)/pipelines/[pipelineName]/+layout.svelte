@@ -13,10 +13,6 @@
   const isTablet = useIsTablet()
   const { showPipelinesPanel: leftDrawer } = useLayoutSettings()
   const pipelineList = usePipelineList(data.preloaded)
-  $effect.pre(() => {
-    // Refresh the pipeline list data when load function re-runs (e.g. tenant is changed)
-    pipelineList.pipelines = data.preloaded.pipelines
-  })
 </script>
 
 {@render children()}
