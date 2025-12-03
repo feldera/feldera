@@ -1,6 +1,5 @@
 import { type PipelineThumb } from '$lib/services/pipelineManager'
 import { onMount } from 'svelte'
-import { useToast } from '$lib/compositions/useToastNotification'
 import { closedIntervalAction } from '$lib/functions/common/promise'
 import { usePipelineManager, type PipelineManagerApi } from '../usePipelineManager.svelte'
 
@@ -33,6 +32,7 @@ export const useRefreshPipelineList = () => {
 
 export const usePipelineList = (preloaded?: { pipelines: PipelineThumb[] }) => {
   if (preloaded && !pipelines) {
+    console.log('setting in usePipelineList:', preloaded, pipelines)
     pipelines = preloaded.pipelines
   }
   return {
