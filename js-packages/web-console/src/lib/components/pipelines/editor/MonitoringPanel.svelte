@@ -71,16 +71,16 @@
   }
   $effect(() => {
     pipelineName
-    untrack(() => pipelineActionCallbacks.add(pipelineName, 'start_paused', switchTo))
+    untrack(() => pipelineActionCallbacks.add(pipelineName, 'start', switchTo))
     return () => {
-      pipelineActionCallbacks.remove(pipelineName, 'start_paused', switchTo)
+      pipelineActionCallbacks.remove(pipelineName, 'start', switchTo)
     }
   })
   const forgetCurrentTab = async () => currentTab.remove()
   $effect(() => {
     untrack(() => pipelineActionCallbacks.add('', 'delete', forgetCurrentTab))
     return () => {
-      pipelineActionCallbacks.remove('', 'start_paused', forgetCurrentTab)
+      pipelineActionCallbacks.remove('', 'delete', forgetCurrentTab)
     }
   })
 
