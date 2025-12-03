@@ -767,9 +767,15 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(".clone(), ")
                     .append(this.handleName(operator.asOperator()))
                     .append(".clone() , ");
-            operator.getKeyFunc().accept(this.innerVisitor);
+
+            CanonicalForm cf = new CanonicalForm(this.compiler);
+            DBSPExpression key = operator.getKeyFunc();
+            key = cf.apply(key).to(DBSPExpression.class);
+            key.accept(this.innerVisitor);
             this.builder.append(", ");
-            operator.getUpdateKeyFunc(upsertStruct).accept(this.innerVisitor);
+            DBSPExpression update = operator.getUpdateKeyFunc(upsertStruct);
+            update = cf.apply(update).to(DBSPExpression.class);
+            update.accept(this.innerVisitor);
             this.builder.append(", ");
             json.accept(this.innerVisitor);
             this.builder.append(");")
