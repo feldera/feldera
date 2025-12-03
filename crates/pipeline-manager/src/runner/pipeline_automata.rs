@@ -1011,6 +1011,18 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 None
             };
 
+        let program_info = match &pipeline.program_info {
+            None => {
+                return State::TransitionToStopping {
+                    error: Some(ErrorResponse::from_error_nolog(
+                        &RunnerError::AutomatonMissingProgramInfo,
+                    )),
+                    suspend_info: None,
+                };
+            }
+            Some(program_info) => program_info,
+        };
+
         match self
             .pipeline_handle
             .provision(
@@ -1018,6 +1030,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 bootstrap_policy,
                 &deployment_id,
                 &deployment_config,
+                program_info,
                 &program_binary_url,
                 program_info_url.as_deref(),
                 pipeline.program_version,
@@ -1457,6 +1470,7 @@ mod test {
             _: Option<BootstrapPolicy>,
             _: &Uuid,
             _: &PipelineConfig,
+            _: &serde_json::Value,
             _: &str,
             _: Option<&str>,
             _: Version,
