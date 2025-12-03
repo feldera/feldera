@@ -1,5 +1,3 @@
-// export const usePipelineAction = (api: PipelineManagerApi, pipelines: () => PipelineThumb[]) => {
-
 import type { NamesInUnion } from '$lib/functions/common/union'
 import type {
   ExtendedPipeline,
@@ -13,6 +11,12 @@ import { useReactiveWaiter } from './useReactiveWaiter.svelte'
 import { unionName } from '$lib/functions/common/union'
 import { page } from '$app/state'
 import { match } from 'ts-pattern'
+
+let postPipelineAction: (pipeline_name: string, action: PipelineAction, callbacks?: {
+    onPausedReady?: (pipelineName: string) => Promise<void>;
+}) => Promise<{
+    waitFor: () => Promise<boolean>;
+}> = undefined!
 
 /**
  * Composition for handling pipeline actions with optimistic updates and state management.
@@ -64,8 +68,9 @@ export const usePipelineAction = () => {
     'Replaying'
   ]
   const reactiveWaiter = useReactiveWaiter(() => pipelineList.pipelines)
-  return {
-    postPipelineAction: async (
+  // We initialize a global state that will be reused across all calls to `getPipelineAction`.
+  // This allows keeping the same waiters alive while switching UI context
+  postPipelineAction ??= async (
       pipeline_name: string,
       action: PipelineAction | 'resume',
       callbacks?: {
@@ -205,5 +210,10 @@ export const usePipelineAction = () => {
         }
       }
     }
+}
+
+export const getPipelineAction = () => {
+  return {
+    postPipelineAction
   }
 }
