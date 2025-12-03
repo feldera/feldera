@@ -32,7 +32,6 @@ export const useRefreshPipelineList = () => {
 
 export const usePipelineList = (preloaded?: { pipelines: PipelineThumb[] }) => {
   if (preloaded && !pipelines) {
-    console.log('setting in usePipelineList:', preloaded, pipelines)
     pipelines = preloaded.pipelines
   }
   return {
