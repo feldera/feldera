@@ -12,11 +12,15 @@ use tracing_subscriber::EnvFilter;
 /// Shared JSON formatter that injects pipeline/service name and structured fields.
 pub struct JsonPipelineFormat {
     pipeline: String,
+    pipeline_id: Option<String>,
 }
 
 impl JsonPipelineFormat {
-    pub fn new(pipeline: String) -> Self {
-        Self { pipeline }
+    pub fn new(pipeline: String, pipeline_id: Option<String>) -> Self {
+        Self {
+            pipeline,
+            pipeline_id,
+        }
     }
 }
 
@@ -46,6 +50,13 @@ where
             Value::String(metadata.target().to_string()),
         );
         obj.insert("pipeline".to_string(), Value::String(self.pipeline.clone()));
+        obj.insert(
+            "pipeline-id".to_string(),
+            self.pipeline_id
+                .as_ref()
+                .map(|v| Value::String(v.clone()))
+                .unwrap_or(Value::Null),
+        );
         obj.insert("fields".to_string(), Value::Object(visitor.fields));
 
         if let Some(span) = ctx.lookup_current() {
@@ -140,12 +151,21 @@ pub fn init_pipeline_logging(
     pipeline_name: ColoredString,
     env_filter: EnvFilter,
 ) -> Result<(), tracing_subscriber::util::TryInitError> {
+    init_pipeline_logging_with_id(pipeline_name, None, env_filter)
+}
+
+/// Initialize logging with either the JSON or text pipeline format, optionally attaching a pipeline id.
+pub fn init_pipeline_logging_with_id(
+    pipeline_name: ColoredString,
+    pipeline_id: Option<String>,
+    env_filter: EnvFilter,
+) -> Result<(), tracing_subscriber::util::TryInitError> {
     if use_json_log_format() {
         let pipeline_name_json = sanitize_pipeline_name(pipeline_name.clone().clear().to_string());
         tracing_subscriber::registry()
             .with(
                 tracing_subscriber::fmt::layer()
-                    .event_format(JsonPipelineFormat::new(pipeline_name_json))
+                    .event_format(JsonPipelineFormat::new(pipeline_name_json, pipeline_id))
                     .with_ansi(false),
             )
             .with(env_filter)
