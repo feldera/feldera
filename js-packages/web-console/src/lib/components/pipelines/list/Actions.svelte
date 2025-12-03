@@ -61,7 +61,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import Popup from '$lib/components/common/Popup.svelte'
   import { slide } from 'svelte/transition'
   import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
-  import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
+  import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
 
@@ -329,7 +329,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   const basicBtnColor = 'preset-filled-surface-100-900'
   const importantBtnColor = 'preset-filled-primary-500'
 
-  const { postPipelineAction } = usePipelineAction()
+  const { postPipelineAction } = getPipelineAction()
   const pipelineActionCallbacks = usePipelineActionCallbacks()
 
   const performStartAction = async (

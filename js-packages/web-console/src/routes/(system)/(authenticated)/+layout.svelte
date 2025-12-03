@@ -19,12 +19,15 @@
   import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
   import { getConfig } from '$lib/services/pipelineManager'
   import { invalidateAll } from '$app/navigation'
+  import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
 
   const dialog = useGlobalDialog()
 
   let { children, data }: { children: Snippet; data: LayoutData } = $props()
 
   useRefreshPipelineList()
+  usePipelineAction()
+
   const rightDrawer = useAdaptiveDrawer('right')
   const contextDrawer = useContextDrawer()
 

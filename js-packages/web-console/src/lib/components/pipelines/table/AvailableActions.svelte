@@ -14,7 +14,7 @@
   import { useToast } from '$lib/compositions/useToastNotification'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
-  import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
+  import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   let {
     pipelines,
     selectedPipelines = $bindable()
@@ -117,7 +117,7 @@
     selectedPipelines = []
   }
   const { toastError } = useToast()
-  const { postPipelineAction } = usePipelineAction()
+  const { postPipelineAction } = getPipelineAction()
   let deletePipelines = () => {
     selected.forEach(async (pipeline) => {
       if (!isPipelineCodeEditable(pipeline.status)) {

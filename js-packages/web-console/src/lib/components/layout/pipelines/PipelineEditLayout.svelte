@@ -56,7 +56,7 @@
   import ReviewPipelineChanges from '$lib/components/pipelines/editor/ReviewPipelineChangesDialog.svelte'
   import { parsePipelineDiff } from '$lib/functions/pipelines/pipelineDiff'
   import { useToast } from '$lib/compositions/useToastNotification'
-  import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
+  import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import type { editor } from 'monaco-editor/esm/vs/editor/editor.api'
   import FocusBanner from '$lib/components/pipelines/editor/FocusBanner.svelte'
   import StorageInUseBanner from '$lib/components/pipelines/editor/StorageInUseBanner.svelte'
@@ -91,10 +91,8 @@
     nonNull(pipeline.current.status) && !isPipelineConfigEditable(pipeline.current.status)
   )
 
-  const { updatePipelines, updatePipeline } = useUpdatePipelineList()
-  const pipelineAction = usePipelineAction()
-
-  const api = usePipelineManager()
+  const { updatePipelines } = useUpdatePipelineList()
+  const pipelineAction = getPipelineAction()
   const pipelineActionCallbacks = usePipelineActionCallbacks()
   const handleActionSuccess = async (pipelineName: string, action: PipelineAction) => {
     const cbs = pipelineActionCallbacks.getAll(pipelineName, action)
