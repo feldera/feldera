@@ -3210,6 +3210,7 @@ impl ControllerInit {
             given_name: config.given_name,
             storage_config: config.storage_config,
             program_ir: config.program_ir.clone(),
+            program_info_separately_available: config.program_info_separately_available,
         };
 
         Ok(Self {

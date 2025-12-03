@@ -806,11 +806,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             pipeline.id,
             &pipeline.name,
             &runtime_config,
-            if pipeline.program_info_integrity_checksum.is_none() {
-                Some(&program_info)
-            } else {
-                None
-            },
+            &program_info,
+            pipeline.program_info_integrity_checksum.is_some(),
         );
         deployment_config.storage_config =
             Some(self.pipeline_handle.generate_storage_config().await);

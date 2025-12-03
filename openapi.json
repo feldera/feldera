@@ -8242,6 +8242,11 @@
                   "$ref": "#/components/schemas/OutputEndpointConfig"
                 }
               },
+              "program_info_separately_available": {
+                "type": "boolean",
+                "description": "True iff the program information is also separately available for download.\nThis is added for backward compatibility.",
+                "nullable": true
+              },
               "program_ir": {
                 "allOf": [
                   {

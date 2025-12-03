@@ -264,6 +264,7 @@ mod tests {
             inputs: Default::default(),
             outputs: Default::default(),
             program_ir: None,
+            program_info_separately_available: Some(true),
         };
         let value = serde_json::to_value(deployment_config.clone()).unwrap();
         assert_eq!(

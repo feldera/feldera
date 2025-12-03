@@ -491,6 +491,7 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
                         .unwrap_or_default(),
                     program_schema: program_info.schema.clone(),
                 }),
+                program_info_separately_available: Some(true),
             })
             .unwrap()
         }
@@ -1550,7 +1551,8 @@ async fn pipeline_deployment() {
                 pipeline1.id,
                 &pipeline1.name,
                 &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
-                None,
+                &ProgramInfo::default(),
+                true,
             ))
             .unwrap(),
         )
@@ -1673,7 +1675,8 @@ async fn pipeline_deployment() {
                 pipeline1.id,
                 &pipeline1.name,
                 &serde_json::from_value(pipeline1.runtime_config).unwrap(),
-                Some(&ProgramInfo::default()),
+                &ProgramInfo::default(),
+                false,
             ))
             .unwrap(),
         )
@@ -1867,7 +1870,8 @@ async fn pipeline_provision_version_guard() {
                       pipeline.id,
                       &pipeline.name,
                       &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
-                      None,
+                      &ProgramInfo::default(),
+                      true,
                   )).unwrap(),
               )
               .await.unwrap_err(),
@@ -1927,7 +1931,8 @@ async fn pipeline_provision_version_guard() {
                 pipeline.id,
                 &pipeline.name,
                 &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
-                Some(&ProgramInfo::default()),
+                &ProgramInfo::default(),
+                true,
             ))
             .unwrap(),
         )

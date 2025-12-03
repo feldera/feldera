@@ -111,6 +111,11 @@ pub struct PipelineConfig {
     /// Program information.
     #[serde(default)]
     pub program_ir: Option<ProgramIr>,
+
+    /// True iff the program information is also separately available for download.
+    /// This is added for backward compatibility.
+    #[serde(default)]
+    pub program_info_separately_available: Option<bool>,
 }
 
 impl PipelineConfig {
