@@ -25,7 +25,10 @@ pub fn discover_secret_references_in_connector_config(
     connector_config: &serde_json::Value,
 ) -> Result<BTreeSet<SecretRef>, SecretRefDiscoveryError> {
     let mut result = BTreeSet::new();
-    if let Some(transport_config_json) = connector_config.get("transport").and_then(|v| v.get("config")) {
+    if let Some(transport_config_json) = connector_config
+        .get("transport")
+        .and_then(|v| v.get("config"))
+    {
         result.extend(discover_secret_references_in_json(transport_config_json)?);
     }
     if let Some(format_config_json) = connector_config.get("format").and_then(|v| v.get("config")) {
