@@ -169,9 +169,21 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                 runtime_aggtest/negative_tests/test_agg_arithmetic.py
                 """, true),
             new Func(SqlStdOperatorTable.SUM0, "SUM", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlStdOperatorTable.STDDEV, "STDDEV", SqlLibrary.STANDARD, "aggregates#stddev", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlStdOperatorTable.STDDEV_POP, "STDDEV_POP", SqlLibrary.STANDARD, "aggregates#stddev_pop", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlStdOperatorTable.STDDEV_SAMP, "STDDEV_SAMP", SqlLibrary.STANDARD, "aggregates#stddev_samp", FunctionDocumentation.NO_FILE, true),
+            new Func(SqlStdOperatorTable.STDDEV, "STDDEV", SqlLibrary.STANDARD, "aggregates#stddev",
+                """
+                runtime_aggtest/aggregate_tests/test_{stddev_samp,decimal_stddev_samp,empty_set}.py|
+                runtime_aggtest/aggregate_tests3/test_un_int_stddev.py
+                """, true),
+            new Func(SqlStdOperatorTable.STDDEV_POP, "STDDEV_POP", SqlLibrary.STANDARD, "aggregates#stddev_pop",
+                """
+                runtime_aggtest/aggregate_tests/test_{stddev_pop,decimal_stddev_pop,empty_set}.py|
+                runtime_aggtest/aggregate_tests3/test_un_int_stddev_pop.py
+                """, true),
+            new Func(SqlStdOperatorTable.STDDEV_SAMP, "STDDEV_SAMP", SqlLibrary.STANDARD, "aggregates#stddev_samp",
+                """
+                runtime_aggtest/aggregate_tests/test_{stddev_samp,decimal_stddev_samp,empty_set}.py|
+                runtime_aggtest/aggregate_tests3/test_un_int_stddev.py
+                """, true),
             // window
             new Func(SqlStdOperatorTable.DENSE_RANK, "DENSE_RANK", SqlLibrary.STANDARD, "aggregates#dense_rank", FunctionDocumentation.NO_FILE, true),
             new Func(SqlStdOperatorTable.LAG, "LAG", SqlLibrary.STANDARD, "aggregates#lag", FunctionDocumentation.NO_FILE, true),
@@ -209,16 +221,37 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.REINTERPRET, "", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
 
             // Functions
-            new Func(SqlStdOperatorTable.SUBSTRING, "SUBSTRING", SqlLibrary.STANDARD, "string#substring", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.REPLACE, "REPLACE", SqlLibrary.STANDARD, "string#replace", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.SUBSTRING, "SUBSTRING", SqlLibrary.STANDARD, "string#substring",
+                """
+                runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py
+                """, true),
+            new Func(SqlStdOperatorTable.REPLACE, "REPLACE", SqlLibrary.STANDARD, "string#replace",
+                """
+                runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py
+                """, true),
             // new Func(SqlStdOperatorTable.CONVERT, "CONVERT", SqlLibrary.STANDARD, "casts#casts-and-data-type-conversions", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.TRANSLATE, "TRANSLATE", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
 
-            new Func(SqlStdOperatorTable.OVERLAY, "OVERLAY", SqlLibrary.STANDARD, "string#overlay,binary#overlay", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.TRIM, "TRIM", SqlLibrary.STANDARD, "string#trim", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.POSITION, "POSITION", SqlLibrary.STANDARD, "string#position", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.CHAR_LENGTH, "CHAR_LENGTH", SqlLibrary.STANDARD, "string#char_length", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.OCTET_LENGTH, "OCTET_LENGTH", SqlLibrary.STANDARD, "binary#octet_length", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.OVERLAY, "OVERLAY", SqlLibrary.STANDARD, "string#overlay,binary#overlay",
+                """
+                runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py
+                """, true),
+            new Func(SqlStdOperatorTable.TRIM, "TRIM", SqlLibrary.STANDARD, "string#trim",
+                """
+                runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py
+                """, true),
+            new Func(SqlStdOperatorTable.POSITION, "POSITION", SqlLibrary.STANDARD, "string#position",
+                """
+                runtime_aggtest/illarg_tests/test_{arr_map_type_fn,str_bin_type_fn,str_unicode_fn}.py
+                """, true),
+            new Func(SqlStdOperatorTable.CHAR_LENGTH, "CHAR_LENGTH", SqlLibrary.STANDARD, "string#char_length",
+                """
+                runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py
+                """, true),
+            new Func(SqlStdOperatorTable.OCTET_LENGTH, "OCTET_LENGTH", SqlLibrary.STANDARD, "binary#octet_length",
+                """
+                runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py
+                """, true),
             new Func(SqlStdOperatorTable.UPPER, "UPPER", SqlLibrary.STANDARD, "string#upper", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.LOWER, "LOWER", SqlLibrary.STANDARD, "string#lower", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.INITCAP, "INITCAP", SqlLibrary.STANDARD, "string#initcap", FunctionDocumentation.NO_FILE, false),
