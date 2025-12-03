@@ -183,8 +183,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         logs_receiver: mpsc::Receiver<LogMessage>,
     ) -> Self {
         // Start the thread which composes the pipeline logs and serves them
-        let logs_thread_terminate_sender_and_join_handle =
-            start_thread_pipeline_logs(follow_request_receiver, logs_receiver);
+        let logs_thread_terminate_sender_and_join_handle = start_thread_pipeline_logs(
+            pipeline_id.to_string(),
+            follow_request_receiver,
+            logs_receiver,
+        );
 
         Self {
             platform_version: common_config.platform_version.clone(),
@@ -540,6 +543,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .send(LogMessage::new_from_control_plane(
                         module_path!(),
                         pipeline.name.clone(),
+                        pipeline.id.to_string(),
                         Level::INFO,
                         "Storage has been cleared",
                     ))
@@ -557,6 +561,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         .send(LogMessage::new_from_control_plane(
                             module_path!(),
                             pipeline.name.clone(),
+                            pipeline.id.to_string(),
                             Level::INFO,
                             &message,
                         ))
@@ -583,6 +588,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         .send(LogMessage::new_from_control_plane(
                             module_path!(),
                             pipeline.name.clone(),
+                            pipeline.id.to_string(),
                             Level::INFO,
                             &message,
                         ))

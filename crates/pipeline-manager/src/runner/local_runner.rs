@@ -123,6 +123,7 @@ impl LocalRunner {
                                 logs_sender.send(LogMessage::new_from_control_plane(
                                     module_path!(),
                                     "control-plane",
+                                    pipeline_id.to_string(),
                                     Level::ERROR,
                                     &line,
                                 )).await;
@@ -151,6 +152,7 @@ impl LocalRunner {
                                 logs_sender.send(LogMessage::new_from_control_plane(
                                     module_path!(),
                                     "control-plane",
+                                    pipeline_id.to_string(),
                                     Level::ERROR,
                                     &line,
                                 )).await;
@@ -336,6 +338,7 @@ impl LocalRunner {
                 .send(LogMessage::new_from_control_plane(
                     module_path!(),
                     "control-plane",
+                    self.pipeline_id.to_string(),
                     Level::ERROR,
                     &format!("Resources error: {error}"),
                 ))

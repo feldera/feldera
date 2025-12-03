@@ -28,6 +28,7 @@ pub enum LogMessage {
     ControlPlane {
         target: &'static str,
         pipeline_name: String,
+        pipeline_id: String,
         level: Level,
         line: String,
         timestamp: String,
@@ -47,12 +48,14 @@ impl LogMessage {
     pub fn new_from_control_plane(
         target: &'static str,
         pipeline_name: impl Into<String>,
+        pipeline_id: impl Into<String>,
         level: Level,
         line: &str,
     ) -> LogMessage {
         LogMessage::ControlPlane {
             target,
             pipeline_name: pipeline_name.into(),
+            pipeline_id: pipeline_id.into(),
             level,
             line: line.to_string(),
             timestamp: Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true),
@@ -65,9 +68,11 @@ impl LogMessage {
 /// Returns a termination sender and the corresponding join handle.
 #[allow(clippy::type_complexity)]
 pub fn start_thread_pipeline_logs(
+    pipeline_id: impl Into<String>,
     mut follow_request_receiver: mpsc::Receiver<mpsc::Sender<String>>,
     mut logs_receiver: mpsc::Receiver<LogMessage>,
 ) -> (oneshot::Sender<()>, JoinHandle<()>) {
+    let pipeline_id = pipeline_id.into();
     let (terminate_sender, mut terminate_receiver) = oneshot::channel::<()>();
     let join_handle = spawn(async move {
         // Buffer with the latest lines
@@ -77,6 +82,7 @@ pub fn start_thread_pipeline_logs(
         logs.append(format_log_line(&LogMessage::new_from_control_plane(
             module_path!(),
             "control-plane",
+            pipeline_id.clone(),
             Level::INFO,
             "Fresh start of pipeline logs",
         )));
@@ -100,7 +106,13 @@ pub fn start_thread_pipeline_logs(
                 // Follow request
                 follower = follow_request_receiver.recv() => {
                     if let Some(follower) = follower {
-                        catch_up_and_add_follower(&mut logs, &mut log_followers, follower).await;
+                        catch_up_and_add_follower(
+                            &pipeline_id,
+                            &mut logs,
+                            &mut log_followers,
+                            follower,
+                        )
+                        .await;
                     } else {
                         // The follow request sender has been dropped, which occurs when the pipeline is deleted.
                         // In this case, the logs thread is also terminated.
@@ -141,6 +153,7 @@ pub fn start_thread_pipeline_logs(
 /// Afterward, adds it to the list of known followers if there was
 /// no error during sending the catch-up.
 async fn catch_up_and_add_follower(
+    pipeline_id: &str,
     logs: &mut LogsBuffer,
     log_followers: &mut Vec<mpsc::Sender<String>>,
     new_follower: mpsc::Sender<String>,
@@ -155,6 +168,7 @@ async fn catch_up_and_add_follower(
         let formatted_notice = format_log_line(&LogMessage::new_from_control_plane(
             module_path!(),
             "control-plane",
+            pipeline_id.to_string(),
             Level::WARN,
             &first_line,
         ));
@@ -244,6 +258,7 @@ fn format_log_line(message: &LogMessage) -> String {
             LogMessage::ControlPlane {
                 target: _,
                 pipeline_name: _,
+                pipeline_id: _,
                 level,
                 line,
                 timestamp,
@@ -257,6 +272,7 @@ fn format_log_line(message: &LogMessage) -> String {
         LogMessage::ControlPlane {
             target,
             pipeline_name,
+            pipeline_id,
             level,
             line,
             timestamp,
@@ -265,6 +281,7 @@ fn format_log_line(message: &LogMessage) -> String {
             "level": level.as_str(),
             "target": target,
             "pipeline": pipeline_name,
+            "pipeline-id": pipeline_id,
             "fields": { "line": line },
         })
         .to_string(),
