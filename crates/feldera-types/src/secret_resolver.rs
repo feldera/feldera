@@ -22,18 +22,13 @@ pub enum SecretRefDiscoveryError {
 
 /// Discovers the secret references of the connector configuration.
 pub fn discover_secret_references_in_connector_config(
-    connector_config: &ConnectorConfig,
+    connector_config: &serde_json::Value,
 ) -> Result<BTreeSet<SecretRef>, SecretRefDiscoveryError> {
-    let json_value = serde_json::to_value(connector_config).map_err(|e| {
-        SecretRefDiscoveryError::SerializationFailed {
-            error: e.to_string(),
-        }
-    })?;
     let mut result = BTreeSet::new();
-    if let Some(transport_config_json) = json_value.get("transport").and_then(|v| v.get("config")) {
+    if let Some(transport_config_json) = connector_config.get("transport").and_then(|v| v.get("config")) {
         result.extend(discover_secret_references_in_json(transport_config_json)?);
     }
-    if let Some(format_config_json) = json_value.get("format").and_then(|v| v.get("config")) {
+    if let Some(format_config_json) = connector_config.get("format").and_then(|v| v.get("config")) {
         result.extend(discover_secret_references_in_json(format_config_json)?);
     }
     Ok(result)
@@ -517,10 +512,8 @@ mod tests {
             },
             "index": "${secret:kubernetes:e/f}"
         });
-        let connector_config: ConnectorConfig =
-            serde_json::from_value(connector_config_json).unwrap();
         assert_eq!(
-            discover_secret_references_in_connector_config(&connector_config).unwrap(),
+            discover_secret_references_in_connector_config(&connector_config_json).unwrap(),
             BTreeSet::from([
                 SecretRef::Kubernetes {
                     name: "a".to_string(),
@@ -532,6 +525,10 @@ mod tests {
                 },
             ])
         );
+
+        let connector_config: ConnectorConfig =
+            serde_json::from_value(connector_config_json).unwrap();
+
         let connector_config_secrets_resolved =
             resolve_secret_references_in_connector_config(dir_path, &connector_config).unwrap();
 

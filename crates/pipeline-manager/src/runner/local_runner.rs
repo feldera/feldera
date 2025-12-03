@@ -400,6 +400,7 @@ impl PipelineExecutor for LocalRunner {
         bootstrap_policy: Option<BootstrapPolicy>,
         deployment_id: &Uuid,
         deployment_config: &PipelineConfig,
+        _program_info: &serde_json::Value,
         program_binary_url: &str,
         program_info_url: Option<&str>,
         program_version: Version,

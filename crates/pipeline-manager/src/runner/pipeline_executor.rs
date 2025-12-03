@@ -39,6 +39,8 @@ pub trait PipelineExecutor: Sync + Send {
     /// while the pipeline is running). This operation is idempotent and as non-blocking as possible
     /// such that the user can stop the provisioning. After calling this once, completion should be
     /// checked using `is_provisioned()`.
+    /// 
+    /// Note: `program_info` is used to discover the set of secrets to mount into the pipeline.
     #[allow(clippy::too_many_arguments)]
     async fn provision(
         &mut self,
@@ -46,6 +48,7 @@ pub trait PipelineExecutor: Sync + Send {
         bootstrap_policy: Option<BootstrapPolicy>,
         deployment_id: &Uuid,
         deployment_config: &PipelineConfig,
+        program_info: &serde_json::Value,
         program_binary_url: &str,
         program_info_url: Option<&str>,
         program_version: Version,
