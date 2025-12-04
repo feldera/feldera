@@ -699,6 +699,35 @@ export class CircuitProfile {
         return this.complexNodes.get(id);
     }
 
+    /**
+     * Get the first source code position range for a given node ID.
+     *
+     * A node can have multiple source position ranges when a single DBSP operator
+     * corresponds to multiple SQL fragments (e.g., a join referencing tables defined
+     * in different parts of the SQL). This method returns the first (primary) range,
+     * typically used for navigation purposes.
+     *
+     * @param id - The node ID to look up
+     * @returns Option containing the first SourcePositionRange with both start and end positions, or none if:
+     *          - Node doesn't exist
+     *          - Node has no source position information
+     */
+    // This method is in CircuitProfile rather than Profiler because CircuitProfile
+    // owns both the node data (simpleNodes/complexNodes) and the source data (sources).
+    getFirstSourceRange(id: NodeId): Option<SourcePositionRange> {
+        const node = this.getNode(id);
+        if (node.isNone()) {
+            return Option.none();
+        }
+
+        const positions = node.unwrap().sourcePositions;
+        if (positions.positions.length === 0) {
+            return Option.none();
+        }
+
+        return Option.some(positions.positions[0]!);
+    }
+
     constructor(readonly worker_count: number) { }
 
     // Scan the nodes and compute the range of each property

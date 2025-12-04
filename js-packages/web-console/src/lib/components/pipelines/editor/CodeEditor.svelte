@@ -15,7 +15,8 @@
     colors: {
       'editor.background': rgbToHex(
         getComputedStyle(document.body).getPropertyValue('--body-background-color').trim()
-      )
+      ),
+      'editor.inactiveSelectionBackground': '#add6ff90' // More visible selection when editor is not focused
     }
   })
 
@@ -26,7 +27,8 @@
     colors: {
       'editor.background': rgbToHex(
         getComputedStyle(document.body).getPropertyValue('--body-background-color-dark').trim()
-      )
+      ),
+      'editor.inactiveSelectionBackground': '#264f7890' // More visible selection when editor is not focused
     }
   })
 
@@ -251,16 +253,52 @@
     if (!editorRef) {
       return
     }
-    const [, fileName, line, , column] =
-      page.url.hash.match(new RegExp(`#(${pipelineFileNameRegex}):(\\d+)(:(\\d+))?`)) ?? []
-    if (!line) {
+    // Basic format: #filename:line:column
+    // When detected, just scroll to code position
+    // Extended format: #filename:startLine:startColumn[:endLine:endColumn]
+    // When detected, highlight the code range and scroll to code position
+    const match = page.url.hash.match(
+      new RegExp(`#(${pipelineFileNameRegex}):(\\d+)(?::(\\d+))?(?::(\\d+))?(?::(\\d+))?`)
+    )
+    if (!match) {
       return
     }
+
+    const [, fileName, startLine, startColumn, endLine, endColumn] = match
+    if (!startLine) {
+      return
+    }
+
     if (currentFileName !== fileName) {
       currentFileName = fileName
     }
+
     setTimeout(() => {
-      editorRef.revealPosition({ lineNumber: parseInt(line), column: parseInt(column) ?? 1 })
+      const startLineNum = parseInt(startLine)
+      const startColNum = parseInt(startColumn) ?? 1
+
+      if (endLine && endColumn) {
+        // Both start and end positions provided - highlight the range
+        const endLineNum = parseInt(endLine)
+        const endColNum = parseInt(endColumn)
+
+        editorRef.setSelection({
+          startLineNumber: startLineNum,
+          startColumn: startColNum,
+          endLineNumber: endLineNum,
+          endColumn: endColNum
+        })
+        editorRef.revealRangeInCenter({
+          startLineNumber: startLineNum,
+          startColumn: startColNum,
+          endLineNumber: endLineNum,
+          endColumn: endColNum
+        })
+      } else {
+        // Only start position - just scroll to it
+        editorRef.revealPosition({ lineNumber: startLineNum, column: startColNum })
+      }
+
       window.location.hash = ''
     }, 50)
   })

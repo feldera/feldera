@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { goto } from '$app/navigation'
   import ProfilerDiagram from './ProfilerDiagram.svelte'
   import type {
     ProfilerCallbacks,
@@ -6,7 +7,8 @@
     WorkerOption,
     JsonProfiles,
     Dataflow,
-    TooltipData
+    TooltipData,
+    CircuitProfile
   } from 'profiler-lib'
 
   interface Props {
@@ -40,6 +42,7 @@
         toggleWorker: (workerId: string) => void
         toggleAllWorkers: () => void
         search: (query: string) => void
+        getProfile: () => CircuitProfile | null
       }
     | undefined = $state()
 
@@ -61,7 +64,8 @@
     },
     onError: (err: string) => {
       error = err
-    }
+    },
+    onLeafNodeDoubleClick: handleLeafNodeDoubleClick
   }
 
   // Handle metric selection change
@@ -88,6 +92,29 @@
     if (searchQuery) {
       profilerDiagram?.search(searchQuery)
     }
+  }
+
+  // Handle leaf node double-click to navigate to SQL source position
+  function handleLeafNodeDoubleClick(nodeId: string) {
+    const profile = profilerDiagram?.getProfile()
+    if (!profile) {
+      return
+    }
+
+    const sourceRange = profile.getFirstSourceRange(nodeId)
+    if (sourceRange.isNone()) {
+      return
+    }
+
+    const range = sourceRange.unwrap()
+    const startLine = range.start.line
+    const startColumn = range.start.column
+    const endLine = range.end.line
+    const endColumn = range.end.column
+
+    // Navigate to the source position using URL hash with range for highlighting
+    // Format: #program.sql:startLine:startColumn:endLine:endColumn
+    goto(`#program.sql:${startLine}:${startColumn}:${endLine}:${endColumn}`)
   }
 
   // Public method for search (called by parent)
