@@ -586,7 +586,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
         // Assume type is not monotone
         IMaybeMonotoneType resultType = new NonMonotoneType(expression.type);
-        if ((expression.opcode == DBSPOpcode.ADD || expression.opcode == DBSPOpcode.TS_ADD)
+        if ((expression.opcode == DBSPOpcode.ADD || expression.opcode.isTimeRelatedAddition())
                 && lm && rm) {
             // The addition of two monotone expressions is monotone
             resultType = new MonotoneType(expression.type);
@@ -617,8 +617,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         }
         // Some expressions are monotone if some of their operands are constant
         if (left.mayBeMonotone() &&
-                (expression.opcode == DBSPOpcode.SUB ||
-                        expression.opcode == DBSPOpcode.TS_SUB)) {
+                (expression.opcode == DBSPOpcode.SUB
+                        || expression.opcode.isTimeRelatedSubtraction())) {
             // Subtracting a constant from a monotone expression produces a monotone result
             if (this.constantExpressions.contains(expression.right)) {
                 resultType = left.copyMonotonicity(expression.type);

@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.Utilities;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 /** This enum encodes the various opcodes for unary and
  * binary operations used in the IR of the SQL compiler. */
 public enum DBSPOpcode {
@@ -56,8 +59,47 @@ public enum DBSPOpcode {
     INTEGER_TO_DECIMAL("integer_to_decimal", false),
 
     // Timestamp-based operations
-    TS_ADD("+", false),
-    TS_SUB("-", false),
+    // Naming pattern: left type, operation, right type, result type
+    // Add short interval to timestamp produce timestamp
+    TS_ADD_SHORT_TS("+", false),
+    // Add long interval to timestamp
+    TS_ADD_LONG_TS("+", false),
+    DATE_ADD_SHORT_DATE("+", false),
+    DATE_ADD_SHORT_TS("+", false),
+    DATE_ADD_LONG_DATE("+", false),
+    TIME_ADD_SHORT_TIME("+", false),
+    TIME_ADD_LONG_TIME("+", false),
+    SHORT_ADD_SHORT_SHORT("+", false),
+    LONG_ADD_LONG_LONG("+", false),
+
+    SHORT_SUB_SHORT_SHORT("-", false),
+    LONG_SUB_LONG_LONG("-", false),
+    // Subtract a timestamp from a timestamp to produce a short interval
+    TS_SUB_TS_SHORT("-", false),
+    // Subtract a timestamp from a timestamp to produce a long interval
+    TS_SUB_TS_LONG("-", false),
+    TS_SUB_DATE_SHORT("-", false),
+    TS_SUB_DATE_LONG("-", false),
+    // Subtract a long interval from a timestamp
+    TS_SUB_LONG_TS("-", false),
+    // Subtract a short interval from a timestamp
+    TS_SUB_SHORT_TS("-", false),
+
+    // Subtract a date from a date to produce a short interval
+    DATE_SUB_DATE_SHORT("-", false),
+    // Subtract a date from a date to produce a long interval
+    DATE_SUB_DATE_LONG("-", false),
+    // Subtract a long interval from a date
+    DATE_SUB_LONG_DATE("-", false),
+    // Subtract a short interval from a date
+    DATE_SUB_SHORT_DATE("-", false),
+
+    // Subtract a TIME from a TIME to produce a short interval
+    TIME_SUB_TIME_SHORT("-", false),
+    // Subtract a short interval from a TIME
+    TIME_SUB_SHORT_TIME("-", false),
+    TIME_SUB_LONG_TIME("-", false),
+
     // Interval-based operations
     INTERVAL_MUL("*", false),
     INTERVAL_DIV("/", false),
@@ -116,16 +158,35 @@ public enum DBSPOpcode {
     /** True when applied to any null value the operator produces null.
      * A conservative approximation: always safe to say "false" */
     public boolean isStrict() {
+        if (this.isTimeRelatedSubtraction() || this.isTimeRelatedAddition())
+            return true;
         return switch (this) {
             case WRAP_BOOL, MAP_CONVERT, ARRAY_CONVERT, CONTROLLED_FILTER_GTE, AGG_LTE, AGG_GTE, AGG_ADD, AGG_MIN,
                  AGG_MAX, AGG_XOR, AGG_OR, AGG_AND, IS_DISTINCT, CONCAT, MIN, MAX, OR, AND, IS_NOT_FALSE, IS_NOT_TRUE,
                  AGG_MAX1, AGG_MIN1, INDICATOR -> false;
-            case NEG, INTERVAL_DIV, INTERVAL_MUL, TS_SUB, TS_ADD, DECIMAL_TO_INTEGER, INTEGER_TO_DECIMAL,
+            case NEG, INTERVAL_DIV, INTERVAL_MUL, DECIMAL_TO_INTEGER, INTEGER_TO_DECIMAL,
                  RUST_INDEX, VARIANT_INDEX, MAP_INDEX,
                  SQL_INDEX, XOR, BW_OR, MUL_WEIGHT, BW_AND, GTE, LTE, GT, LT, NEQ, EQ, MOD, DIV_NULL, DIV, MUL, SUB,
                  ADD, TYPEDBOX, IS_TRUE, IS_FALSE, NOT, UNARY_PLUS -> true;
             default -> throw new UnimplementedException();
         };
+    }
+
+    public static final Pattern TIME_ARITHMETIC_PATTERN = Pattern.compile("([A-Z]+)_([A-Z]{3})_([A-Z]+)_([A-Z]+)");
+
+    private boolean isTimeRelatedAbbrev(String str) {
+        return str.equals("TS") || str.equals("TIME") || str.equals("DATE")
+                || str.equals("SHORT") || str.equals("LONG");
+    }
+
+    public boolean isTimeRelatedAddition() {
+        Matcher matcher = TIME_ARITHMETIC_PATTERN.matcher(this.name());
+        return (matcher.matches() && matcher.group(2).equals("ADD") && isTimeRelatedAbbrev(matcher.group(1)));
+    }
+
+    public boolean isTimeRelatedSubtraction() {
+        Matcher matcher = TIME_ARITHMETIC_PATTERN.matcher(this.name());
+        return (matcher.matches() && matcher.group(2).equals("SUB") && isTimeRelatedAbbrev(matcher.group(1)));
     }
 
     public static DBSPOpcode fromJson(JsonNode node) {

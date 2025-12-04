@@ -3,9 +3,9 @@
 
 use crate::{
     operators::{eq, gt, gte, lt, lte, neq},
-    polymorphic_return_function2, some_existing_operator, some_operator,
-    some_polymorphic_function1, some_polymorphic_function2,
-    timestamp::{extract_epoch_Date, extract_quarter_Date, plus_Date_LongInterval_Date},
+    some_existing_operator, some_function2, some_operator, some_polymorphic_function1,
+    some_polymorphic_function2,
+    timestamp::{extract_epoch_Date, extract_quarter_Date, plus_Date_Date_LongInterval__},
     Date, SqlDecimal,
 };
 use dbsp::{algebra::F64, num_entries_scalar};
@@ -371,36 +371,30 @@ pub fn div_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
 some_polymorphic_function2!(div, ShortInterval, ShortInterval, i64, i64, ShortInterval);
 
 #[doc(hidden)]
-pub fn plus_ShortInterval_ShortInterval_ShortInterval(
+pub fn plus_ShortInterval_ShortInterval_ShortInterval__(
     left: ShortInterval,
     right: ShortInterval,
 ) -> ShortInterval {
     left + right
 }
 
-polymorphic_return_function2!(
-    plus,
-    ShortInterval,
-    ShortInterval,
-    ShortInterval,
+some_function2!(
+    plus_ShortInterval_ShortInterval_ShortInterval,
     ShortInterval,
     ShortInterval,
     ShortInterval
 );
 
 #[doc(hidden)]
-pub fn minus_ShortInterval_ShortInterval_ShortInterval(
+pub fn minus_ShortInterval_ShortInterval_ShortInterval__(
     left: ShortInterval,
     right: ShortInterval,
 ) -> ShortInterval {
     left - right
 }
 
-polymorphic_return_function2!(
-    minus,
-    ShortInterval,
-    ShortInterval,
-    ShortInterval,
+some_function2!(
+    minus_ShortInterval_ShortInterval_ShortInterval,
     ShortInterval,
     ShortInterval,
     ShortInterval
@@ -705,36 +699,30 @@ some_polymorphic_function2!(
 );
 
 #[doc(hidden)]
-pub fn plus_LongInterval_LongInterval_LongInterval(
+pub fn plus_LongInterval_LongInterval_LongInterval__(
     left: LongInterval,
     right: LongInterval,
 ) -> LongInterval {
     left + right
 }
 
-polymorphic_return_function2!(
-    plus,
-    LongInterval,
-    LongInterval,
-    LongInterval,
+some_function2!(
+    plus_LongInterval_LongInterval_LongInterval,
     LongInterval,
     LongInterval,
     LongInterval
 );
 
 #[doc(hidden)]
-pub fn minus_LongInterval_LongInterval_LongInterval(
+pub fn minus_LongInterval_LongInterval_LongInterval__(
     left: LongInterval,
     right: LongInterval,
 ) -> LongInterval {
     left - right
 }
 
-polymorphic_return_function2!(
-    minus,
-    LongInterval,
-    LongInterval,
-    LongInterval,
+some_function2!(
+    minus_LongInterval_LongInterval_LongInterval,
     LongInterval,
     LongInterval,
     LongInterval
@@ -753,7 +741,7 @@ pub fn extract_month_LongInterval(value: LongInterval) -> i64 {
 #[doc(hidden)]
 pub fn extract_quarter_LongInterval(value: LongInterval) -> i64 {
     let dt = Date::from(0);
-    let dt = plus_Date_LongInterval_Date(dt, value);
+    let dt = plus_Date_Date_LongInterval__(dt, value);
     extract_quarter_Date(dt)
 }
 
@@ -783,7 +771,7 @@ pub fn extract_day_LongInterval(_value: LongInterval) -> i64 {
 #[doc(hidden)]
 pub fn extract_epoch_LongInterval(value: LongInterval) -> i64 {
     let dt = Date::from(0);
-    let dt = plus_Date_LongInterval_Date(dt, value);
+    let dt = plus_Date_Date_LongInterval__(dt, value);
     // I think this is right and Postgres is wrong
     extract_epoch_Date(dt)
 }

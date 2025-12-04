@@ -1001,8 +1001,22 @@ public class Monotonicity extends CircuitVisitor {
 
         static DBSPOpcode inverse(DBSPOpcode opcode) {
             return switch (opcode) {
-                case TS_ADD -> DBSPOpcode.TS_SUB;
-                case TS_SUB -> DBSPOpcode.TS_ADD;
+                case TS_ADD_LONG_TS -> DBSPOpcode.TS_SUB_TS_LONG;
+                case TS_ADD_SHORT_TS -> DBSPOpcode.TS_SUB_SHORT_TS;
+                case DATE_ADD_LONG_DATE -> DBSPOpcode.DATE_SUB_LONG_DATE;
+                case DATE_ADD_SHORT_DATE -> DBSPOpcode.DATE_SUB_SHORT_DATE;
+                case TIME_ADD_SHORT_TIME -> DBSPOpcode.TIME_SUB_SHORT_TIME;
+                case LONG_ADD_LONG_LONG -> DBSPOpcode.LONG_SUB_LONG_LONG;
+                case SHORT_ADD_SHORT_SHORT -> DBSPOpcode.SHORT_SUB_SHORT_SHORT;
+
+                case TS_SUB_LONG_TS -> DBSPOpcode.TS_ADD_LONG_TS;
+                case TS_SUB_SHORT_TS -> DBSPOpcode.TS_ADD_SHORT_TS;
+                case DATE_SUB_LONG_DATE -> DBSPOpcode.DATE_ADD_LONG_DATE;
+                case DATE_SUB_SHORT_DATE -> DBSPOpcode.DATE_ADD_SHORT_DATE;
+                case TIME_SUB_SHORT_TIME -> DBSPOpcode.TIME_ADD_SHORT_TIME;
+                case LONG_SUB_LONG_LONG -> DBSPOpcode.LONG_ADD_LONG_LONG;
+                case SHORT_SUB_SHORT_SHORT -> DBSPOpcode.SHORT_ADD_SHORT_SHORT;
+
                 case ADD -> DBSPOpcode.SUB;
                 case SUB -> DBSPOpcode.ADD;
                 case LT -> DBSPOpcode.GTE;
@@ -1022,7 +1036,7 @@ public class Monotonicity extends CircuitVisitor {
             if (binary == null)
                 return false;
             if (binary.opcode != DBSPOpcode.ADD && binary.opcode != DBSPOpcode.SUB &&
-                binary.opcode != DBSPOpcode.TS_ADD && binary.opcode != DBSPOpcode.TS_SUB)
+                !binary.opcode.isTimeRelatedAddition() && !binary.opcode.isTimeRelatedSubtraction())
                 return false;
             DBSPOpcode inverse = inverse(binary.opcode);
             int column = isColumn(binary.left, param);
@@ -1036,7 +1050,7 @@ public class Monotonicity extends CircuitVisitor {
                 return true;
             }
 
-            if ((binary.opcode == DBSPOpcode.SUB) || (binary.opcode == DBSPOpcode.TS_SUB))
+            if ((binary.opcode == DBSPOpcode.SUB) || (binary.opcode.isTimeRelatedSubtraction()))
                 return false;
 
             // constant + col
