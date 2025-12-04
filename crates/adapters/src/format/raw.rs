@@ -1,7 +1,7 @@
 use crate::{
+    ControllerError,
     catalog::{DeCollectionStream, RecordFormat},
     format::{InputFormat, ParseError, Parser},
-    ControllerError,
 };
 use actix_web::HttpRequest;
 use core::str;
@@ -11,11 +11,12 @@ use feldera_adapterlib::ConnectorMetadata;
 use feldera_sqllib::Variant;
 use feldera_types::{
     format::raw::{RawParserConfig, RawParserMode},
-    serde_with_context::{serde_config::BinaryFormat, SqlSerdeConfig},
+    serde_with_context::{SqlSerdeConfig, serde_config::BinaryFormat},
 };
 use serde::{
-    de::{value::StrDeserializer, Error as _, MapAccess},
-    forward_to_deserialize_any, Deserialize, Deserializer,
+    Deserialize, Deserializer,
+    de::{Error as _, MapAccess, value::StrDeserializer},
+    forward_to_deserialize_any,
 };
 use serde_json::json;
 use serde_urlencoded::Deserializer as UrlDeserializer;
@@ -104,7 +105,10 @@ impl InputFormat for RawInputFormat {
         if !typ.is_varchar() && !typ.is_varbinary() {
             return Err(ControllerError::invalid_parser_configuration(
                 endpoint_name,
-                &format!("'raw' input format can only be used with a column of type 'VARCHAR' or 'VARBINARY', but column {} has type {typ}", field.name),
+                &format!(
+                    "'raw' input format can only be used with a column of type 'VARCHAR' or 'VARBINARY', but column {} has type {typ}",
+                    field.name
+                ),
             ));
         }
 
@@ -337,8 +341,8 @@ impl<'de> Deserializer<'de> for RawDeserializer<'de> {
 
 #[cfg(test)]
 mod test {
-    use crate::test::{mock_parser_pipeline, MockUpdate};
     use crate::FormatConfig;
+    use crate::test::{MockUpdate, mock_parser_pipeline};
     use feldera_adapterlib::ConnectorMetadata;
     use feldera_adapterlib::{
         format::{InputBuffer, ParseError, Parser},

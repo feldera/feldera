@@ -3,6 +3,7 @@ use std::{
 };
 
 use super::{error::BackoffError, prepared_statements::PreparedStatements};
+use crate::{ControllerError, util::indexed_operation_type};
 use crate::{
     buffer_op,
     catalog::{RecordFormat, SerBatchReader},
@@ -12,8 +13,7 @@ use crate::{
     transport::OutputEndpoint,
     util::IndexedOperationType,
 };
-use crate::{util::indexed_operation_type, ControllerError};
-use anyhow::{anyhow, Context, Result as AnyResult};
+use anyhow::{Context, Result as AnyResult, anyhow};
 use feldera_adapterlib::transport::{AsyncErrorCallback, Step};
 use feldera_types::{
     format::json::JsonFlavor,
@@ -85,7 +85,9 @@ fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -
         (Some(location), None) => PathBuf::from_str(location)
             .context("failed to parse `ssl_ca_location` as file path; is the path valid?")?,
         (Some(_), Some(pem)) => {
-            tracing::warn!("postgres: both `ssl_ca_pem` and `ssl_ca_location` are provided; using `ssl_ca_pem`");
+            tracing::warn!(
+                "postgres: both `ssl_ca_pem` and `ssl_ca_location` are provided; using `ssl_ca_pem`"
+            );
             write_ca_cert_to_file(pem)?
         }
         (None, Some(pem)) => write_ca_cert_to_file(pem)?,
@@ -121,7 +123,9 @@ fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -
     // Set the client certificate, `ssl_client_pem` takes priority.
     match (&config.ssl_client_pem, &config.ssl_client_location) {
         (Some(pem), Some(_)) => {
-            tracing::warn!("postgres: both `ssl_client_pem` and `ssl_client_location` are provided; using `ssl_client_pem`");
+            tracing::warn!(
+                "postgres: both `ssl_client_pem` and `ssl_client_location` are provided; using `ssl_client_pem`"
+            );
             builder_set_client_from_pem(builder, pem)?;
         }
         (Some(pem), None) => {
@@ -138,7 +142,9 @@ fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -
     // Set the client key, `ssl_client_key` takes priority.
     match (&config.ssl_client_key, &config.ssl_client_key_location) {
         (Some(key), Some(_)) => {
-            tracing::warn!("postgres: both `ssl_client_key` and `ssl_client_key_location` are provided; using `ssl_client_key`");
+            tracing::warn!(
+                "postgres: both `ssl_client_key` and `ssl_client_key_location` are provided; using `ssl_client_key`"
+            );
             builder_set_client_key_from_pem(builder, key)?;
         }
         (Some(key), None) => {

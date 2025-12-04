@@ -1,18 +1,18 @@
 use super::InputReaderCommand;
 use crate::transport::InputEndpoint;
 use crate::{
-    format::StreamSplitter, InputBuffer, InputConsumer, InputReader, Parser, TransportInputEndpoint,
+    InputBuffer, InputConsumer, InputReader, Parser, TransportInputEndpoint, format::StreamSplitter,
 };
 use anyhow::anyhow;
-use anyhow::{bail, Result as AnyResult};
-use async_channel::{bounded, unbounded, Receiver, SendError, Sender};
+use anyhow::{Result as AnyResult, bail};
+use async_channel::{Receiver, SendError, Sender, bounded, unbounded};
 use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
 use chrono::{DateTime, Utc};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
-    format::BufferSize,
-    transport::{parse_resume_info, Resume, Watermark},
     PipelineState,
+    format::BufferSize,
+    transport::{Resume, Watermark, parse_resume_info},
 };
 use feldera_types::transport::s3::S3InputConfig;
 use feldera_types::{config::FtModel, program_schema::Relation};
@@ -27,9 +27,9 @@ use std::{
     sync::Arc,
     thread,
 };
-use tokio::sync::watch::{channel as watch_channel, error::RecvError, Receiver as WatchReceiver};
 use tokio::sync::Mutex;
-use tracing::{error, info_span, Instrument};
+use tokio::sync::watch::{Receiver as WatchReceiver, channel as watch_channel, error::RecvError};
+use tracing::{Instrument, error, info_span};
 
 /// Number of object paths in the queue.
 /// Must be small, since these paths are considered in-progress and
@@ -45,10 +45,16 @@ impl S3InputEndpoint {
         if !config.no_sign_request {
             match (&config.aws_access_key_id, &config.aws_secret_access_key) {
                 (None, None) => {
-                    tracing::info!("both 'aws_access_key_id' and 'aws_secret_access_key' are not set; reading credentials from the environment");
-                },
-                (Some(_), None) => bail!("'aws_access_key_id' set but 'aws_secret_access_key' not set; either set both or unset both to read from the environment"),
-                (None, Some(_)) => bail!("'aws_secret_access_key' set but 'aws_access_key_id' not set; either set both or unset both to read from the environment"),
+                    tracing::info!(
+                        "both 'aws_access_key_id' and 'aws_secret_access_key' are not set; reading credentials from the environment"
+                    );
+                }
+                (Some(_), None) => bail!(
+                    "'aws_access_key_id' set but 'aws_secret_access_key' not set; either set both or unset both to read from the environment"
+                ),
+                (None, Some(_)) => bail!(
+                    "'aws_secret_access_key' set but 'aws_access_key_id' not set; either set both or unset both to read from the environment"
+                ),
                 _ => {}
             }
         }
@@ -58,11 +64,15 @@ impl S3InputEndpoint {
         }
 
         if config.key.is_some() && config.prefix.is_some() {
-            bail!("connector configuration specifies both 'key' and 'prefix' properties; please specify only one");
+            bail!(
+                "connector configuration specifies both 'key' and 'prefix' properties; please specify only one"
+            );
         }
 
         if config.max_concurrent_fetches == 0 {
-            bail!("invalid 'max_concurrent_fetches' value: 'max_concurrent_fetches' must be greater than 0");
+            bail!(
+                "invalid 'max_concurrent_fetches' value: 'max_concurrent_fetches' must be greater than 0"
+            );
         }
 
         Ok(Self {
@@ -799,7 +809,8 @@ impl S3InputReader {
             match command_receiver.recv().await {
                 Some(InputReaderCommand::Replay { .. }) => {
                     panic!(
-                        "replay command is not supported by the S3 input connector; this is a bug, please report it to developers")
+                        "replay command is not supported by the S3 input connector; this is a bug, please report it to developers"
+                    )
                 }
                 Some(InputReaderCommand::Extend) => {
                     let _ = status_sender.send_replace(PipelineState::Running);
@@ -947,7 +958,7 @@ fn to_s3_config(config: &Arc<S3InputConfig>) -> aws_sdk_s3::Config {
 #[cfg(test)]
 mod test {
     use crate::{
-        test::{mock_parser_pipeline, wait, MockDeZSet, MockInputConsumer, MockInputParser},
+        test::{MockDeZSet, MockInputConsumer, MockInputParser, mock_parser_pipeline, wait},
         transport::s3::{S3InputConfig, S3InputReader},
     };
     use aws_sdk_s3::{

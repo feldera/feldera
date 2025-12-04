@@ -1,5 +1,5 @@
 use crate::test::{
-    init_test_logger, mock_input_pipeline, test_circuit, wait, TestStruct, DEFAULT_TIMEOUT_MS,
+    DEFAULT_TIMEOUT_MS, TestStruct, init_test_logger, mock_input_pipeline, test_circuit, wait,
 };
 use crate::{Controller, PipelineConfig};
 use anyhow::Result as AnyResult;
@@ -445,7 +445,7 @@ fn test_nats_ft_empty_step_checkpoint() {
 
 mod util {
     use crate::test::wait;
-    use anyhow::{anyhow, Result as AnyResult};
+    use anyhow::{Result as AnyResult, anyhow};
     use async_nats::Client;
     use serde::Deserialize;
     use std::env;

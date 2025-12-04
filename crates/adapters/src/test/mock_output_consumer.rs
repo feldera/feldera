@@ -1,6 +1,6 @@
 #![allow(clippy::type_complexity)]
 
-use crate::{transport::Step, OutputConsumer};
+use crate::{OutputConsumer, transport::Step};
 use std::sync::{Arc, Mutex};
 
 pub struct MockOutputConsumer {

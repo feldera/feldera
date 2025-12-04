@@ -14,21 +14,21 @@
 //!
 //! The connector supports exactly-once FT.
 
-use anyhow::{anyhow, Result as AnyResult};
+use anyhow::{Result as AnyResult, anyhow};
 use chrono::Utc;
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
+    PipelineState,
     format::{BufferSize, Parser},
     transport::{
         InputConsumer, InputEndpoint, InputReader, InputReaderCommand, Resume,
         TransportInputEndpoint, Watermark,
     },
-    PipelineState,
 };
 use feldera_types::{
     config::{
-        ConnectorConfig, FormatConfig, FtModel, InputEndpointConfig, OutputBufferConfig,
-        PipelineConfig, TransportConfig, DEFAULT_CLOCK_RESOLUTION_USECS,
+        ConnectorConfig, DEFAULT_CLOCK_RESOLUTION_USECS, FormatConfig, FtModel,
+        InputEndpointConfig, OutputBufferConfig, PipelineConfig, TransportConfig,
     },
     format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat},
     program_schema::Relation,
@@ -42,8 +42,8 @@ use std::{
 };
 use tokio::{
     select,
-    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-    time::{sleep_until, Instant},
+    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
+    time::{Instant, sleep_until},
 };
 
 /// The controller uses this configuration to add a clock input connector to each pipeline.
@@ -253,14 +253,14 @@ mod test {
         collections::BTreeMap,
         fs::create_dir,
         sync::{
-            atomic::{AtomicUsize, Ordering},
             Arc,
+            atomic::{AtomicUsize, Ordering},
         },
         thread::sleep,
         time::Duration,
     };
 
-    use dbsp::{circuit::CircuitConfig, utils::Tup1, DBSPHandle, Runtime};
+    use dbsp::{DBSPHandle, Runtime, circuit::CircuitConfig, utils::Tup1};
     use feldera_adapterlib::catalog::CircuitCatalog;
     use feldera_sqllib::{Timestamp, Variant};
     use feldera_types::{

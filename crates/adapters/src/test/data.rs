@@ -5,7 +5,7 @@ use arrow::array::{
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
 use feldera_sqllib::{
-    ByteArray, Date, SqlDecimal, SqlString, Time, Timestamp, Uuid, Variant, F32, F64,
+    ByteArray, Date, F32, F64, SqlDecimal, SqlString, Time, Timestamp, Uuid, Variant,
 };
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::{
@@ -99,9 +99,9 @@ impl Distribution<TestStruct> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> TestStruct {
         TestStruct {
             id: rng.gen_range(0..(i32::MAX as u32)),
-            b: rng.gen(),
-            i: rng.gen(),
-            s: rng.gen::<u32>().to_string(),
+            b: rng.r#gen(),
+            i: rng.r#gen(),
+            s: rng.r#gen::<u32>().to_string(),
         }
     }
 }

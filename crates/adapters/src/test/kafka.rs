@@ -1,10 +1,10 @@
 #![allow(clippy::type_complexity)]
 
+use crate::InputBuffer;
 use crate::catalog::InputCollectionHandle;
 use crate::format::get_input_format;
-use crate::test::{wait, MockDeZSet, MockUpdate, TestStruct, DEFAULT_TIMEOUT_MS};
-use crate::InputBuffer;
-use anyhow::{anyhow, bail, Result as AnyResult};
+use crate::test::{DEFAULT_TIMEOUT_MS, MockDeZSet, MockUpdate, TestStruct, wait};
+use anyhow::{Result as AnyResult, anyhow, bail};
 use csv::WriterBuilder as CsvWriterBuilder;
 use dbsp::circuit::NodeId;
 use feldera_types::program_schema::Relation;
@@ -12,24 +12,24 @@ use feldera_types::transport::kafka::default_redpanda_server;
 use futures::executor::block_on;
 use rdkafka::message::{BorrowedMessage, Header, OwnedHeaders};
 use rdkafka::{
+    ClientConfig, ClientContext, Message,
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
     client::{Client, DefaultClientContext},
     config::{FromClientConfig, RDKafkaLogLevel},
     consumer::{BaseConsumer, Consumer},
     producer::{BaseRecord, DefaultProducerContext, Producer, ThreadedProducer},
     util::Timeout,
-    ClientConfig, ClientContext, Message,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
     },
     thread,
-    thread::{sleep, JoinHandle},
+    thread::{JoinHandle, sleep},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tracing::{error, info};
@@ -81,9 +81,14 @@ fn wait_for_completion<C: ClientContext>(admin_client: &AdminClient<C>, topics: 
     let mut backoff = 100;
     let mut n_retries = 0;
     while let Err(err) = check_topics(admin_client.inner(), topics) {
-        info!("KafkaResources::create_topics {topic_names:?}: unable to connect to newly created topics, retrying: {err}");
+        info!(
+            "KafkaResources::create_topics {topic_names:?}: unable to connect to newly created topics, retrying: {err}"
+        );
         if start.elapsed() > MAX_TOPIC_PROBE_TIMEOUT {
-            panic!("KafkaResources::create_topics {topic_names:?}: unable to connect to newly created topics, giving up after {}ms: {err}", MAX_TOPIC_PROBE_TIMEOUT.as_millis());
+            panic!(
+                "KafkaResources::create_topics {topic_names:?}: unable to connect to newly created topics, giving up after {}ms: {err}",
+                MAX_TOPIC_PROBE_TIMEOUT.as_millis()
+            );
         }
         sleep(Duration::from_millis(backoff));
         backoff = 1000.min(backoff * 2);

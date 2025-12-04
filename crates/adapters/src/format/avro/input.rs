@@ -1,31 +1,30 @@
 use crate::{
+    ControllerError, DeCollectionHandle, InputBuffer, InputFormat, ParseError, Parser,
     catalog::{AvroStream, InputCollectionHandle},
     format::{
-        avro::schema::{schema_json, validate_struct_schema},
         Splitter, Sponge,
+        avro::schema::{schema_json, validate_struct_schema},
     },
-    ControllerError, DeCollectionHandle, InputBuffer, InputFormat, ParseError, Parser,
 };
 use actix_web::HttpRequest;
 use apache_avro::{
-    from_avro_datum,
+    Schema as AvroSchema, from_avro_datum,
     schema::{Name as AvroName, ResolvedSchema},
     types::Value as AvroValue,
-    Schema as AvroSchema,
 };
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
-use feldera_adapterlib::{catalog::AvroSchemaRefs, ConnectorMetadata};
+use feldera_adapterlib::{ConnectorMetadata, catalog::AvroSchemaRefs};
 use feldera_sqllib::Variant;
 use feldera_types::{
     format::avro::{AvroParserConfig, AvroUpdateFormat},
     program_schema::Relation,
     serde_with_context::{
-        serde_config::{BinaryFormat, DecimalFormat, UuidFormat, VariantFormat},
         DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat,
+        serde_config::{BinaryFormat, DecimalFormat, UuidFormat, VariantFormat},
     },
 };
-use schema_registry_converter::blocking::schema_registry::{get_schema_by_id, SrSettings};
+use schema_registry_converter::blocking::schema_registry::{SrSettings, get_schema_by_id};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::{

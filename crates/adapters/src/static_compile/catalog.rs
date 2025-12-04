@@ -1,18 +1,18 @@
 use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
 use crate::catalog::{InputCollectionHandle, SerBatchReaderHandle};
-use crate::{catalog::OutputCollectionHandles, Catalog, ControllerError};
+use crate::{Catalog, ControllerError, catalog::OutputCollectionHandles};
+use dbsp::OrdZSet;
 use dbsp::circuit::circuit_builder::CircuitBase;
 use dbsp::trace::spine_async::WithSnapshot;
 use dbsp::typed_batch::TypedBatch;
 use dbsp::utils::Tup1;
-use dbsp::OrdZSet;
 use dbsp::{
+    DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
     operator::{MapHandle, SetHandle, ZSetHandle},
     typed_batch::BatchReader,
-    DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
 };
 use feldera_adapterlib::catalog::CircuitCatalog;
-use feldera_sqllib::{build_string_interner, SqlString, Variant};
+use feldera_sqllib::{SqlString, Variant, build_string_interner};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -368,7 +368,10 @@ impl Catalog {
 
         if name == SqlIdentifier::new(INTERNED_STRING_RELATION_NAME, false) {
             if TypeId::of::<Z>() != TypeId::of::<OrdZSet<Tup1<SqlString>>>() {
-                panic!("Reserved relation {INTERNED_STRING_RELATION_NAME} must have type OrdZSet<Tup1<SqlString>>, but it was declared with type {}", std::any::type_name::<Z>());
+                panic!(
+                    "Reserved relation {INTERNED_STRING_RELATION_NAME} must have type OrdZSet<Tup1<SqlString>>, but it was declared with type {}",
+                    std::any::type_name::<Z>()
+                );
             } else {
                 let stream = unsafe {
                     transmute::<Stream<RootCircuit, Z>, Stream<RootCircuit, OrdZSet<Tup1<SqlString>>>>(
@@ -751,7 +754,7 @@ fn index_schema(
 mod test {
     use std::{io::Write, ops::Deref, sync::atomic::Ordering};
 
-    use crate::{catalog::RecordFormat, test::TestStruct, Catalog, CircuitCatalog};
+    use crate::{Catalog, CircuitCatalog, catalog::RecordFormat, test::TestStruct};
     use dbsp::Runtime;
     use feldera_adapterlib::catalog::SerBatchReader;
     use feldera_types::format::json::JsonFlavor;

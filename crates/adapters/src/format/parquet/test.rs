@@ -7,8 +7,8 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use arrow::array::RecordBatch;
-use dbsp::utils::Tup2;
 use dbsp::OrdZSet;
+use dbsp::utils::Tup2;
 use feldera_sqllib::Variant;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::format::parquet::ParquetEncoderConfig;
@@ -21,15 +21,15 @@ use parquet::file::serialized_reader::SerializedFileReader;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::NamedTempFile;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 use crate::{
     catalog::SerBatchReader,
-    format::{parquet::ParquetEncoder, Encoder},
+    format::{Encoder, parquet::ParquetEncoder},
     static_compile::seroutput::SerBatchImpl,
-    test::{mock_input_pipeline, wait, MockOutputConsumer, TestStruct2, DEFAULT_TIMEOUT_MS},
+    test::{DEFAULT_TIMEOUT_MS, MockOutputConsumer, TestStruct2, mock_input_pipeline, wait},
 };
 
 /// Parse Parquet file into an array of `T`.

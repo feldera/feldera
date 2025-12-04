@@ -1,10 +1,10 @@
 use crate::PipelineError;
-use actix_web::{http::header, web::Payload, HttpRequest, HttpResponse};
+use actix_web::{HttpRequest, HttpResponse, http::header, web::Payload};
 use actix_ws::{AggregatedMessage, CloseCode, CloseReason, Closed, Session as WsSession};
 use datafusion::common::ScalarValue;
+use datafusion::execution::SessionStateBuilder;
 use datafusion::execution::memory_pool::FairSpillPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
-use datafusion::execution::SessionStateBuilder;
 use datafusion::prelude::*;
 use executor::{
     hash_query_result, infallible_from_bytestring, stream_arrow_query, stream_json_query,

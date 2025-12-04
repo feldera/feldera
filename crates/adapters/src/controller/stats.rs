@@ -32,17 +32,17 @@
 
 use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig};
 use crate::{
+    PipelineState,
     controller::{
+        TransactionInitiators,
         checkpoint::{CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics},
         journal::{InputChecksums, InputLog},
-        TransactionInitiators,
     },
-    PipelineState,
 };
-use anyhow::anyhow;
 use anyhow::Error as AnyError;
+use anyhow::anyhow;
 use atomic::Atomic;
-use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use bytemuck::NoUninit;
 use chrono::{DateTime, Utc};
 use cpu_time::ProcessTime;
@@ -62,14 +62,14 @@ use feldera_types::{
 };
 use memory_stats::memory_stats;
 use parking_lot::{RwLock, RwLockReadGuard};
-use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
 use serde_json::Value as JsonValue;
 use std::{
     cmp::min,
     collections::{BTreeMap, BTreeSet, VecDeque},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -587,7 +587,10 @@ impl ControllerStatus {
                     .iter()
                     .all(|label| !unfinished_labels.contains(label))
                 {
-                    info!("starting endpoint {}, whose 'start_after' dependencies have been satisfied", input.endpoint_name);
+                    info!(
+                        "starting endpoint {}, whose 'start_after' dependencies have been satisfied",
+                        input.endpoint_name
+                    );
                     endpoints_to_start.push(*endpoint_id);
                 }
             }
@@ -823,8 +826,7 @@ impl ControllerStatus {
         if completion_token.incarnation != self.global_metrics.incarnation_uuid {
             return Err(ControllerError::pipeline_restarted(&format!(
                 "Completion token was created by a previous incarnation of the pipeline (incarnation uuid: {}) and is not valid for the current incarnation ({}). This indicates that the pipeline was suspended and resumed from a checkpoint or restarted after a failure.",
-                &completion_token.incarnation,
-                &self.global_metrics.incarnation_uuid
+                &completion_token.incarnation, &self.global_metrics.incarnation_uuid
             )));
         }
 

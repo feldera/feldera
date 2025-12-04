@@ -1,25 +1,25 @@
 use crate::catalog::{CursorWithPolarity, SerBatchReader};
 use crate::controller::{ControllerInner, EndpointId};
-use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::MAX_DUPLICATES;
+use crate::format::parquet::relation_to_arrow_fields;
 use crate::integrated::delta_table::register_storage_handlers;
 use crate::transport::Step;
-use crate::util::{indexed_operation_type, IndexedOperationType};
+use crate::util::{IndexedOperationType, indexed_operation_type};
 use crate::{
     AsyncErrorCallback, ControllerError, Encoder, OutputConsumer, OutputEndpoint, RecordFormat,
     SerCursor,
 };
-use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use arrow::array::RecordBatch;
 use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
 use chrono::Utc;
 use dbsp::circuit::tokio::TOKIO;
+use deltalake::DeltaTable;
 use deltalake::kernel::transaction::{CommitBuilder, TableReference};
 use deltalake::kernel::{Action, DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
-use deltalake::DeltaTable;
 use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::serde_with_context::serde_config::{
     BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
@@ -28,13 +28,13 @@ use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, 
 use feldera_types::transport::delta_table::DeltaTableWriteMode;
 use feldera_types::{program_schema::Relation, transport::delta_table::DeltaTableWriterConfig};
 use serde::Serialize;
-use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
+use serde_arrow::schema::SerdeArrowSchema;
 use std::cmp::min;
 use std::sync::{Arc, Weak};
 use std::thread;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::time::{sleep, Duration};
+use tokio::sync::mpsc::{Receiver, Sender, channel};
+use tokio::time::{Duration, sleep};
 use tracing::{info, trace, warn};
 
 /// Arrow serde config for reading/writing Delta tables.
@@ -307,8 +307,7 @@ impl WriterTask {
                             let backoff_ms = min(1000 * (1 << (retry_count - 1)), 10_000);
                             warn!(
                                 "delta_table {}: error creating or opening delta table '{}' after {retry_count} attempts (retrying in {backoff_ms} ms): {e:?}",
-                                &inner.endpoint_name,
-                                &inner.config.uri,
+                                &inner.endpoint_name, &inner.config.uri,
                             );
 
                             sleep(Duration::from_millis(backoff_ms)).await;
@@ -328,8 +327,7 @@ impl WriterTask {
                         } else {
                             warn!(
                                 "delta_table {}: timeout creating or opening delta table '{}' after {retry_count} attempts, retrying",
-                                &inner.endpoint_name,
-                                &inner.config.uri,
+                                &inner.endpoint_name, &inner.config.uri,
                             );
                             retry_count += 1;
                             if operation_timeout < Duration::from_secs(240) {
@@ -387,53 +385,60 @@ impl WriterTask {
             &self.inner.endpoint_name,
             self.delta_table.version()
         );
-        if let Some(writer) = self.writer.take() {
-            let actions = writer
-                .close()
-                .await
-                .map_err(|e| anyhow!("error flushing {} Parquet rows: {e}", self.num_rows))?;
+        match self.writer.take() {
+            Some(writer) => {
+                let actions = writer
+                    .close()
+                    .await
+                    .map_err(|e| anyhow!("error flushing {} Parquet rows: {e}", self.num_rows))?;
 
-            if actions.is_empty() {
-                return Ok(());
+                if actions.is_empty() {
+                    return Ok(());
+                }
+
+                let num_bytes = actions.iter().map(|action| action.size as usize).sum();
+
+                // The snapshot version for the next commit is computed as the current version + 1.
+                // We need to update the current version manually, since it doesn't happen automatically.
+                self.delta_table
+                    .update_incremental(None)
+                    .await
+                    .map_err(|e| {
+                        anyhow!("error updating delta table version before commit: {e}")
+                    })?;
+
+                CommitBuilder::default()
+                    .with_actions(actions.into_iter().map(Action::Add).collect::<Vec<_>>())
+                    .build(
+                        self.delta_table
+                            .state
+                            .as_ref()
+                            .map(|state| state as &dyn TableReference),
+                        self.delta_table.log_store(),
+                        DeltaOperation::Write {
+                            mode: SaveMode::Append,
+                            partition_by: None,
+                            predicate: None,
+                        },
+                    )
+                    .await
+                    .map_err(|e| anyhow!("error committing changes to the delta table: {e}"))?;
+
+                if let Some(controller) = self.inner.controller.upgrade() {
+                    controller.status.output_buffer(
+                        self.inner.endpoint_id,
+                        num_bytes,
+                        self.num_rows,
+                    )
+                };
+                Ok(())
             }
-
-            let num_bytes = actions.iter().map(|action| action.size as usize).sum();
-
-            // The snapshot version for the next commit is computed as the current version + 1.
-            // We need to update the current version manually, since it doesn't happen automatically.
-            self.delta_table
-                .update_incremental(None)
-                .await
-                .map_err(|e| anyhow!("error updating delta table version before commit: {e}"))?;
-
-            CommitBuilder::default()
-                .with_actions(actions.into_iter().map(Action::Add).collect::<Vec<_>>())
-                .build(
-                    self.delta_table
-                        .state
-                        .as_ref()
-                        .map(|state| state as &dyn TableReference),
-                    self.delta_table.log_store(),
-                    DeltaOperation::Write {
-                        mode: SaveMode::Append,
-                        partition_by: None,
-                        predicate: None,
-                    },
+            _ => {
+                bail!(
+                    "delta_table {}: received a BatchEnd without a matching BatchStart",
+                    &self.inner.endpoint_name
                 )
-                .await
-                .map_err(|e| anyhow!("error committing changes to the delta table: {e}"))?;
-
-            if let Some(controller) = self.inner.controller.upgrade() {
-                controller
-                    .status
-                    .output_buffer(self.inner.endpoint_id, num_bytes, self.num_rows)
-            };
-            Ok(())
-        } else {
-            bail!(
-                "delta_table {}: received a BatchEnd without a matching BatchStart",
-                &self.inner.endpoint_name
-            )
+            }
         }
     }
 
@@ -442,8 +447,7 @@ impl WriterTask {
             self.num_rows += batch.num_rows();
             trace!(
                 "delta_table {}: writing {} records",
-                &self.inner.endpoint_name,
-                self.num_rows,
+                &self.inner.endpoint_name, self.num_rows,
             );
 
             // TODO: add logic to retry failed writes.
@@ -604,7 +608,9 @@ impl Encoder for DeltaTableWriter {
 
                 let mut w = cursor.weight();
                 if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
-                    bail!("Unable to output record with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.");
+                    bail!(
+                        "Unable to output record with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'."
+                    );
                 }
 
                 while w != 0 {

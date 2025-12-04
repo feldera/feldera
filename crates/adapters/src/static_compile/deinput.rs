@@ -3,22 +3,22 @@ use crate::catalog::AvroStream;
 #[cfg(feature = "with-avro")]
 use crate::format::avro::from_avro_value;
 use crate::format::csv::deserializer::ByteRecordDeserializer;
-use crate::format::raw::{raw_serde_config, RawDeserializer};
-use crate::{catalog::ArrowStream, format::InputBuffer};
+use crate::format::raw::{RawDeserializer, raw_serde_config};
 use crate::{
+    ControllerError, DeCollectionHandle,
     catalog::{DeCollectionStream, RecordFormat},
     format::byte_record_deserializer,
-    ControllerError, DeCollectionHandle,
 };
-use anyhow::{anyhow, bail, Result as AnyResult};
+use crate::{catalog::ArrowStream, format::InputBuffer};
+use anyhow::{Result as AnyResult, anyhow, bail};
 #[cfg(feature = "with-avro")]
-use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
+use apache_avro::{Schema as AvroSchema, types::Value as AvroValue};
 use arrow::array::RecordBatch;
 use dbsp::dynamic::Data;
 use dbsp::operator::StagedBuffers;
 use dbsp::{
-    algebra::HasOne, operator::Update, utils::Tup2, DBData, InputHandle, MapHandle, SetHandle,
-    ZSetHandle, ZWeight,
+    DBData, InputHandle, MapHandle, SetHandle, ZSetHandle, ZWeight, algebra::HasOne,
+    operator::Update, utils::Tup2,
 };
 use erased_serde::Deserializer as ErasedDeserializer;
 #[cfg(feature = "with-avro")]
@@ -698,7 +698,11 @@ where
         if polarities.len() != data.num_rows() {
             // This should never happen. We could use an assertion here, but since the `polarities` array
             // is computed by datafusion, we'll throw an error just to be safe.
-            bail!("insert_with_polarities: RecordBatch contains {} records, but 'polarities' array has length {}", data.num_rows(), polarities.len());
+            bail!(
+                "insert_with_polarities: RecordBatch contains {} records, but 'polarities' array has length {}",
+                data.num_rows(),
+                polarities.len()
+            );
         }
 
         let deserializer = arrow_deserializer(data)?;
@@ -1158,7 +1162,11 @@ where
         if polarities.len() != data.num_rows() {
             // This should never happen. We could use an assertion here, but since the `polarities` array
             // is computed by datafusion, we'll throw an error just to be safe.
-            bail!("insert_with_polarities: RecordBatch contains {} records, but 'polarities' array has length {}", data.num_rows(), polarities.len());
+            bail!(
+                "insert_with_polarities: RecordBatch contains {} records, but 'polarities' array has length {}",
+                data.num_rows(),
+                polarities.len()
+            );
         }
 
         let deserializer = arrow_deserializer(data)?;
@@ -1757,7 +1765,11 @@ where
         if polarities.len() != data.num_rows() {
             // This should never happen. We could use an assertion here, but since the `polarities` array
             // is computed by datafusion, we'll throw an error just to be safe.
-            bail!("insert_with_polarities: RecordBatch contains {} records, but 'polarities' array has length {}", data.num_rows(), polarities.len());
+            bail!(
+                "insert_with_polarities: RecordBatch contains {} records, but 'polarities' array has length {}",
+                data.num_rows(),
+                polarities.len()
+            );
         }
 
         let deserializer = arrow_deserializer(data)?;
@@ -1956,16 +1968,16 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        static_compile::{
-            deinput::{fraction, RecordFormat},
-            DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
-        },
         DeCollectionHandle,
+        static_compile::{
+            DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
+            deinput::{RecordFormat, fraction},
+        },
     };
     use csv::WriterBuilder as CsvWriterBuilder;
     use csv_core::{ReadRecordResult, Reader as CsvReader};
     use dbsp::{
-        algebra::F32, utils::Tup2, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
+        DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime, algebra::F32, utils::Tup2,
     };
 
     use feldera_types::{deserialize_without_context, format::json::JsonFlavor};

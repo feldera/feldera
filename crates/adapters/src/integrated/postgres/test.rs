@@ -1,4 +1,4 @@
-use dbsp::{utils::Tup1, Runtime};
+use dbsp::{Runtime, utils::Tup1};
 use feldera_sqllib::Variant;
 use feldera_types::{
     deserialize_table_record,
@@ -14,8 +14,8 @@ use std::{collections::BTreeMap, io::Write, path::Path};
 use tempfile::NamedTempFile;
 
 use crate::{
-    test::{wait, TestStruct},
     Catalog, Controller,
+    test::{TestStruct, wait},
 };
 
 fn postgres_url() -> String {
@@ -27,8 +27,8 @@ mod pg {
     use std::collections::BTreeMap;
 
     use chrono::SubsecRound;
-    use dbsp::{utils::Tup1, Runtime};
-    use feldera_sqllib::{SqlDecimal, SqlString, Variant, F32, F64};
+    use dbsp::{Runtime, utils::Tup1};
+    use feldera_sqllib::{F32, F64, SqlDecimal, SqlString, Variant};
     use feldera_types::{
         config::PipelineConfig,
         deserialize_table_record,
@@ -36,9 +36,9 @@ mod pg {
         serialize_table_record,
     };
     use postgres::{NoTls, Row};
-    use rand::{distributions::Standard, prelude::Distribution, Rng};
+    use rand::{Rng, distributions::Standard, prelude::Distribution};
 
-    use crate::{test::TestStruct, Catalog, Controller};
+    use crate::{Catalog, Controller, test::TestStruct};
 
     #[derive(Debug, postgres_types::ToSql, postgres_types::FromSql)]
     #[postgres(name = "test_struct")]
@@ -401,16 +401,16 @@ CREATE TABLE {name} (
     impl Distribution<PostgresTestStruct> for Standard {
         fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> PostgresTestStruct {
             PostgresTestStruct {
-                boolean_: rng.gen(),
-                tinyint_: rng.gen(),
-                smallint_: rng.gen(),
-                int_: rng.gen(),
-                bigint_: rng.gen(),
+                boolean_: rng.r#gen(),
+                tinyint_: rng.r#gen(),
+                smallint_: rng.r#gen(),
+                int_: rng.r#gen(),
+                bigint_: rng.r#gen(),
                 decimal_: SqlDecimal::<38, 10>::new(rng.gen_range::<i128, _>(-100..100), 3)
                     .unwrap(),
-                float_: F32::new((rng.gen::<f32>() * 1000.0).trunc() / 1000.0),
-                double_: F64::new((rng.gen::<f64>() * 1000.0).trunc() / 1000.0),
-                varchar_: rng.gen::<u32>().to_string().into(),
+                float_: F32::new((rng.r#gen::<f32>() * 1000.0).trunc() / 1000.0),
+                double_: F64::new((rng.r#gen::<f64>() * 1000.0).trunc() / 1000.0),
+                varchar_: rng.r#gen::<u32>().to_string().into(),
                 time_: feldera_sqllib::Time::from_time(
                     chrono::Utc::now().naive_utc().time().round_subsecs(5),
                 ),
@@ -418,15 +418,15 @@ CREATE TABLE {name} (
                 timestamp_: feldera_sqllib::Timestamp::from_naiveDateTime(
                     chrono::Utc::now().naive_utc(),
                 ),
-                variant_: feldera_sqllib::Variant::String(rng.gen::<u32>().to_string().into()),
+                variant_: feldera_sqllib::Variant::String(rng.r#gen::<u32>().to_string().into()),
                 uuid_: uuid::Uuid::new_v4().into(),
                 varbinary_: feldera_sqllib::ByteArray::from_vec(vec![rng.gen_range(0..127)]),
-                struct_: rng.gen(),
+                struct_: rng.r#gen(),
                 string_array_: vec![],
-                struct_array_: vec![rng.gen()],
+                struct_array_: vec![rng.r#gen()],
                 map_: {
                     let mut map = BTreeMap::new();
-                    map.insert(rng.gen::<u32>().to_string().into(), rng.gen());
+                    map.insert(rng.r#gen::<u32>().to_string().into(), rng.r#gen());
                     map
                 },
             }

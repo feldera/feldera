@@ -1,15 +1,15 @@
 #![allow(unused_imports)]
 use anyhow::Context;
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
     Arc, LazyLock, Mutex, Weak,
+    atomic::{AtomicU64, Ordering},
 };
 
-use dbsp::circuit::{checkpointer::Checkpointer, CircuitStorageConfig};
+use dbsp::circuit::{CircuitStorageConfig, checkpointer::Checkpointer};
 use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_storage::{
-    checkpoint_synchronizer::CheckpointSynchronizer, histogram::ExponentialHistogram,
-    StorageBackend, StoragePath,
+    StorageBackend, StoragePath, checkpoint_synchronizer::CheckpointSynchronizer,
+    histogram::ExponentialHistogram,
 };
 use feldera_types::{
     checkpoint::CheckpointMetadata,

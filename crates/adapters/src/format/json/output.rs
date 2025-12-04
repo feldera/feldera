@@ -2,17 +2,17 @@ use crate::catalog::SerBatchReader;
 use crate::format::json::schema::{build_key_schema, build_value_schema};
 use crate::format::{MAX_DUPLICATES, MAX_RECORD_LEN_IN_ERRMSG};
 use crate::{
+    ControllerError, Encoder, OutputConsumer, OutputFormat,
     catalog::{CursorWithPolarity, RecordFormat, SerCursor},
     util::truncate_ellipse,
-    ControllerError, Encoder, OutputConsumer, OutputFormat,
 };
 use actix_web::HttpRequest;
-use anyhow::{bail, Result as AnyResult};
+use anyhow::{Result as AnyResult, bail};
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
-use feldera_types::program_schema::{canonical_identifier, Relation};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use feldera_types::program_schema::{Relation, canonical_identifier};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 use serde::Deserialize;
 use serde_json::json;
 use serde_urlencoded::Deserializer as UrlDeserializer;
@@ -259,9 +259,9 @@ impl Encoder for JsonEncoder {
                 let mut key_str = String::new();
                 let _ = cursor.serialize_key(unsafe { key_str.as_mut_vec() });
                 bail!(
-                        "Unable to output record '{}' with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.",
-                        &key_str
-                    );
+                    "Unable to output record '{}' with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.",
+                    &key_str
+                );
             }
 
             while w != 0 {
@@ -430,10 +430,12 @@ impl Encoder for JsonEncoder {
                         let record = std::str::from_utf8(&buffer[prev_len..buffer.len()])
                             .unwrap_or_default();
                         // We should be able to fit at least one record in the buffer.
-                        bail!("JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the following record requires {} bytes: '{}'.",
-                                  self.max_buffer_size,
-                                  buffer.len() - prev_len,
-                                  truncate_ellipse(record, MAX_RECORD_LEN_IN_ERRMSG, "..."));
+                        bail!(
+                            "JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the following record requires {} bytes: '{}'.",
+                            self.max_buffer_size,
+                            buffer.len() - prev_len,
+                            truncate_ellipse(record, MAX_RECORD_LEN_IN_ERRMSG, "...")
+                        );
                     }
                     buffer.truncate(prev_len);
                 } else {
@@ -510,11 +512,11 @@ mod test {
     use crate::format::json::{DebeziumOp, DebeziumPayload, DebeziumUpdate};
     use crate::{
         catalog::SerBatch,
-        format::{json::InsDelUpdate, Encoder},
+        format::{Encoder, json::InsDelUpdate},
         static_compile::seroutput::SerBatchImpl,
-        test::{generate_test_batches_with_weights, MockOutputConsumer, TestStruct},
+        test::{MockOutputConsumer, TestStruct, generate_test_batches_with_weights},
     };
-    use dbsp::{utils::Tup2, OrdZSet};
+    use dbsp::{OrdZSet, utils::Tup2};
     use feldera_types::format::json::JsonUpdateFormat;
     use feldera_types::program_schema::Relation;
     use proptest::prelude::*;
@@ -860,7 +862,10 @@ mod test {
         let err = encoder
             .encode(&SerBatchImpl::<_, TestStruct, ()>::new(zset) as &dyn SerBatchReader)
             .unwrap_err();
-        assert_eq!(format!("{err}"), "JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is 32 bytes, but the following record requires 46 bytes: '{\"delete\":{\"id\":1,\"b\":false,\"i\":10,\"s\":\"bar\"}}'.");
+        assert_eq!(
+            format!("{err}"),
+            "JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is 32 bytes, but the following record requires 46 bytes: '{\"delete\":{\"id\":1,\"b\":false,\"i\":10,\"s\":\"bar\"}}'."
+        );
     }
 
     /// Test the `key_fields` option.

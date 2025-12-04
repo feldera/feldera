@@ -2,7 +2,7 @@ use crate::transport::{
     InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint, NonFtInputReaderCommand,
 };
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState, RecordFormat};
-use anyhow::{anyhow, Result as AnyResult};
+use anyhow::{Result as AnyResult, anyhow};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::catalog::{DeCollectionStream, InputCollectionHandle};
 use feldera_adapterlib::format::ParseError;
@@ -13,12 +13,12 @@ use feldera_types::transport::postgres::PostgresReaderConfig;
 
 use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use std::thread;
 use tokio::select;
 use tokio::sync::mpsc;
-use tokio::sync::watch::{channel, Receiver, Sender};
+use tokio::sync::watch::{Receiver, Sender, channel};
 use tokio_postgres::tls::NoTlsStream;
 use tokio_postgres::types::Type;
 use tokio_postgres::{Client, Connection, NoTls, Socket};

@@ -4,7 +4,10 @@ use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
 };
 use crate::util::{RateLimitCheckResult, TokenBucketRateLimiter};
+use crate::{Catalog, dyn_event};
 use crate::{
+    CircuitCatalog, Controller, ControllerError, FormatConfig, InputEndpointConfig, OutputEndpoint,
+    OutputEndpointConfig, PipelineConfig, TransportInputEndpoint,
     adhoc::{adhoc_websocket, stream_adhoc_result},
     controller::ConnectorConfig,
     ensure_default_crypto_provider,
@@ -12,27 +15,24 @@ use crate::{
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
-    CircuitCatalog, Controller, ControllerError, FormatConfig, InputEndpointConfig, OutputEndpoint,
-    OutputEndpointConfig, PipelineConfig, TransportInputEndpoint,
 };
-use crate::{dyn_event, Catalog};
 use actix_web::body::MessageBody;
 use actix_web::dev::Service;
 use actix_web::http::KeepAlive;
 use actix_web::{
+    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder, ResponseError,
     dev::{ServiceFactory, ServiceRequest},
     get,
-    http::header,
     http::StatusCode,
+    http::header,
     post, rt,
     web::{self, Data as WebData, Payload, Query},
-    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder, ResponseError,
 };
 use async_stream;
 use chrono::Utc;
 use clap::Parser;
 use colored::Colorize;
-use dbsp::{circuit::CircuitConfig, DBSPHandle};
+use dbsp::{DBSPHandle, circuit::CircuitConfig};
 use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
 use feldera_adapterlib::PipelineState;
@@ -64,7 +64,7 @@ use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
 use feldera_types::{
     checkpoint::CheckpointMetadata,
-    config::{default_max_batch_size, TransportConfig},
+    config::{TransportConfig, default_max_batch_size},
     transport::http::HttpInputConfig,
 };
 use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
@@ -84,15 +84,15 @@ use std::time::Duration;
 use std::{
     borrow::Cow,
     net::TcpListener,
-    sync::{atomic::Ordering, Arc, Mutex, Weak},
+    sync::{Arc, Mutex, Weak, atomic::Ordering},
     thread,
 };
 use tokio::spawn;
 use tokio::sync::Notify;
 use tokio::task::spawn_blocking;
 use tokio::time::sleep;
-use tokio_stream::{wrappers::BroadcastStream, StreamExt};
-use tracing::{debug, error, info, info_span, warn, Instrument, Level};
+use tokio_stream::{StreamExt, wrappers::BroadcastStream};
+use tracing::{Instrument, Level, debug, error, info, info_span, warn};
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
@@ -102,7 +102,7 @@ pub mod metrics;
 #[cfg(target_family = "unix")]
 mod stack_overflow_backtrace;
 
-pub use self::error::{ErrorResponse, PipelineError, MAX_REPORTED_PARSE_ERRORS};
+pub use self::error::{ErrorResponse, MAX_REPORTED_PARSE_ERRORS, PipelineError};
 
 #[derive(Debug, Clone, Default)]
 pub enum InitializationState {
@@ -323,10 +323,9 @@ impl ServerState {
     /// This function checks for this situation  and returns a missing controller error
     /// instead of `e`.
     fn maybe_missing_controller_error(&self, e: ControllerError) -> PipelineError {
-        if let Err(missing_controller_error) = self.controller() {
-            missing_controller_error
-        } else {
-            e.into()
+        match self.controller() {
+            Err(missing_controller_error) => missing_controller_error,
+            _ => e.into(),
         }
     }
 
@@ -528,7 +527,11 @@ pub fn run_server(
         eprintln!("{e}");
     })?;
 
-    let _guard = observability::init("https://f0ec61ff0f8483e9ec8117645ad0c0e1@o4510219052253184.ingest.us.sentry.io/4510299519844352", "pipeline", env!("CARGO_PKG_VERSION"));
+    let _guard = observability::init(
+        "https://f0ec61ff0f8483e9ec8117645ad0c0e1@o4510219052253184.ingest.us.sentry.io/4510299519844352",
+        "pipeline",
+        env!("CARGO_PKG_VERSION"),
+    );
     let config_cln = config.clone();
     sentry::configure_scope(|scope| {
         if let Some(id) = config_cln.name.as_ref() {
@@ -558,7 +561,9 @@ pub fn run_server(
             eprintln!("Failed to initialize logging: {e}.")
         });
     if config.global.tracing {
-        warn!("Pipeline tracing was enabled but the 'tracing' option was deprecated, use `FELDERA_SENTRY_ENABLED` for tracing.");
+        warn!(
+            "Pipeline tracing was enabled but the 'tracing' option was deprecated, use `FELDERA_SENTRY_ENABLED` for tracing."
+        );
     }
 
     // Install stack overflow handler early, before creating the controller and parsing DevTweaks.
@@ -1020,7 +1025,9 @@ fn do_bootstrap(
 
             let mut desired_status = state.desired_status.lock().unwrap();
             if *desired_status == RuntimeDesiredStatus::Standby {
-                warn!("Exited standby mode without specifying a new desired state, defaulting to paused");
+                warn!(
+                    "Exited standby mode without specifying a new desired state, defaulting to paused"
+                );
                 *desired_status = RuntimeDesiredStatus::Paused;
                 state.desired_status_change.notify_waiters();
             }
@@ -1172,7 +1179,7 @@ async fn activate(
         _ => {
             return Err(PipelineError::InvalidActivateStatusString(
                 args.initial.clone(),
-            ))
+            ));
         }
     };
 
@@ -1310,7 +1317,10 @@ async fn status(
             } else {
                 let mut status_code = e.status_code();
                 if status_code == StatusCode::SERVICE_UNAVAILABLE {
-                    error!("Endpoint /status: unexpected status code {status_code} has been converted into {} for error {e}", StatusCode::SERVICE_UNAVAILABLE);
+                    error!(
+                        "Endpoint /status: unexpected status code {status_code} has been converted into {} for error {e}",
+                        StatusCode::SERVICE_UNAVAILABLE
+                    );
                     status_code = StatusCode::INTERNAL_SERVER_ERROR;
                 }
                 let e = PipelineError::ControllerError { error: e };
@@ -1714,7 +1724,7 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
     match *desired_status {
         RuntimeDesiredStatus::Unavailable => unreachable!(),
         RuntimeDesiredStatus::Standby => {
-            return Err(PipelineError::InvalidTransition("suspend", *desired_status))
+            return Err(PipelineError::InvalidTransition("suspend", *desired_status));
         }
         RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
             info!("suspend: Transitioning from {desired_status:?} to Suspended");
@@ -2130,20 +2140,20 @@ impl StoredStatus {
 #[cfg(test)]
 #[cfg(feature = "with-kafka")]
 mod test_with_kafka {
-    use super::{bootstrap, build_app, parse_config, ServerArgs, ServerState};
+    use super::{ServerArgs, ServerState, bootstrap, build_app, parse_config};
     use crate::{
         controller::{ControllerBuilder, MAX_API_CONNECTIONS},
         ensure_default_crypto_provider,
         server::{InitializationState, PipelinePhase},
         test::{
-            async_wait, generate_test_batches,
+            TestStruct, async_wait, generate_test_batches,
             http::{TestHttpReceiver, TestHttpSender},
             kafka::{BufferConsumer, KafkaResources, TestProducer},
-            test_circuit, TestStruct,
+            test_circuit,
         },
     };
     use actix_test::TestServer;
-    use actix_web::{http::StatusCode, middleware::Logger, web::Data as WebData, App};
+    use actix_web::{App, http::StatusCode, middleware::Logger, web::Data as WebData};
     use feldera_types::runtime_status::RuntimeDesiredStatus;
     use feldera_types::{
         completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
@@ -2153,7 +2163,7 @@ mod test_with_kafka {
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
     };
-    use serde_json::{self, json, Value as JsonValue};
+    use serde_json::{self, Value as JsonValue, json};
     use std::{
         io::Write,
         thread,
@@ -2392,13 +2402,15 @@ outputs:
         // 6 seconds.  If everything works as intended, this should _not_
         // trigger the API connection limit error.
         for _ in 0..2 * MAX_API_CONNECTIONS {
-            assert!(server
-                .post("/egress/test_output1")
-                .send()
-                .await
-                .unwrap()
-                .status()
-                .is_success());
+            assert!(
+                server
+                    .post("/egress/test_output1")
+                    .send()
+                    .await
+                    .unwrap()
+                    .status()
+                    .is_success()
+            );
             sleep(Duration::from_millis(150));
         }
 

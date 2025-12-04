@@ -25,26 +25,26 @@ use crate::controller::journal::Journal;
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, TransactionStatus};
 use crate::controller::sync::{
     CHECKPOINT_SYNC_PULL_DURATION_SECONDS, CHECKPOINT_SYNC_PULL_FAILURES,
-    CHECKPOINT_SYNC_PULL_SUCCESS, CHECKPOINT_SYNC_PULL_TRANSFERRED_BYTES,
-    CHECKPOINT_SYNC_PULL_TRANSFER_SPEED, CHECKPOINT_SYNC_PUSH_DURATION_SECONDS,
+    CHECKPOINT_SYNC_PULL_SUCCESS, CHECKPOINT_SYNC_PULL_TRANSFER_SPEED,
+    CHECKPOINT_SYNC_PULL_TRANSFERRED_BYTES, CHECKPOINT_SYNC_PUSH_DURATION_SECONDS,
     CHECKPOINT_SYNC_PUSH_FAILURES, CHECKPOINT_SYNC_PUSH_SUCCESS,
-    CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES, CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED, SYNCHRONIZER,
+    CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED, CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES, SYNCHRONIZER,
 };
 use crate::samply::SamplySpan;
 use crate::server::metrics::{
     HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value, ValueType,
 };
 use crate::server::{InitializationState, ServerState};
-use crate::transport::clock::now_endpoint_config;
 use crate::transport::Step;
+use crate::transport::clock::now_endpoint_config;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
-use crate::util::{run_on_thread_pool, LongOperationWarning};
-use crate::{create_integrated_output_endpoint, PipelinePhase};
+use crate::util::{LongOperationWarning, run_on_thread_pool};
 use crate::{
     CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
     PipelineState, TransportInputEndpoint,
 };
-use anyhow::{anyhow, Context, Error as AnyError};
+use crate::{PipelinePhase, create_integrated_output_endpoint};
+use anyhow::{Context, Error as AnyError, anyhow};
 use arrow::datatypes::Schema;
 use atomic::Atomic;
 use checkpoint::Checkpoint;
@@ -63,9 +63,9 @@ use dbsp::circuit::tokio::TOKIO;
 use dbsp::circuit::{CheckpointCommitter, CircuitStorageConfig, DevTweaks, Mode};
 use dbsp::storage::backend::{StorageBackend, StoragePath};
 use dbsp::{
+    DBSPHandle,
     circuit::{CircuitConfig, Layout},
     profile::{DbspProfile, GraphProfile},
-    DBSPHandle,
 };
 use dbsp::{Runtime, WeakRuntime};
 use enum_map::EnumMap;
@@ -97,33 +97,35 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use stats::StepResults;
 use std::borrow::Cow;
-use std::collections::btree_map::Entry;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::btree_map::Entry;
 use std::io::ErrorKind;
 use std::mem::replace;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender};
+use std::sync::mpsc::{Receiver, SendError, Sender, SyncSender, channel, sync_channel};
 use std::sync::{LazyLock, Mutex};
 use std::thread::{self, sleep};
 use std::{
     collections::{BTreeMap, BTreeSet},
     mem,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread::JoinHandle,
     time::{Duration, Instant},
 };
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
-use tokio::io::BufReader;
-use tokio::sync::oneshot;
-use tokio::sync::oneshot::error::TryRecvError;
-use tokio::sync::Mutex as TokioMutex;
-use tokio::task::spawn_blocking;
+use tokio::{
+    fs::File,
+    io::{AsyncReadExt, BufReader},
+    sync::{
+        Mutex as TokioMutex,
+        oneshot::{self, error::TryRecvError},
+    },
+    task::spawn_blocking,
+};
 use tracing::{debug, debug_span, error, info, trace, warn};
 use validate::validate_config;
 
@@ -149,7 +151,7 @@ pub use feldera_types::config::{
 use feldera_types::config::{FileBackendConfig, FtConfig, FtModel, OutputBufferConfig, SyncConfig};
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
-use feldera_types::program_schema::{canonical_identifier, SqlIdentifier};
+use feldera_types::program_schema::{SqlIdentifier, canonical_identifier};
 pub use pipeline_diff::compute_pipeline_diff;
 pub use stats::{CompletionToken, ControllerStatus, InputEndpointStatus};
 
@@ -223,7 +225,9 @@ impl ControllerBuilder {
                     config_error: Box::new(ConfigError::FtRequiresStorage),
                 });
             }
-            info!("storage not configured, so suspend-and-resume and fault tolerance will not be available");
+            info!(
+                "storage not configured, so suspend-and-resume and fault tolerance will not be available"
+            );
         }
         Ok(Self {
             config: config.clone(),
@@ -1751,7 +1755,11 @@ impl CircuitThread {
                         return Err(ControllerError::BootstrapNotAllowed {
                             error: format!(
                                 "- The following tables are not materialized, but some of the views that depend on these tables require bootstrapping: {}. We recommend materializing all tables in the program to avoid such errors in the future",
-                                non_materialized_tables.iter().map(|t| format!("'{t}'")).collect::<Vec<_>>().join(", ")
+                                non_materialized_tables
+                                    .iter()
+                                    .map(|t| format!("'{t}'"))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
                             ),
                         });
                     }
@@ -1771,7 +1779,9 @@ impl CircuitThread {
                     loop {
                         match state.bootstrap_policy() {
                             BootstrapPolicy::Allow => {
-                                info!("User approved pipeline changes. Proceeding with initialization.");
+                                info!(
+                                    "User approved pipeline changes. Proceeding with initialization."
+                                );
 
                                 // Next, we are going to call ControllerInner::new(), which will initialize connectors.
                                 // Go back to `InitializationState::Starting` in the meantime.
@@ -1812,14 +1822,18 @@ impl CircuitThread {
 
                 if let Some(replay_info) = circuit.bootstrap_info() {
                     if replay_info.need_backfill.contains_key(&node_id) {
-                        info!("Found checkpointed state for input connector '{endpoint_name}', but the table that the connector is attached to has been modified and its state has been cleared; the connector will restart from scratch");
+                        info!(
+                            "Found checkpointed state for input connector '{endpoint_name}', but the table that the connector is attached to has been modified and its state has been cleared; the connector will restart from scratch"
+                        );
                         continue;
                     }
                 }
 
                 if let Some(pipeline_diff) = &pipeline_diff {
                     if pipeline_diff.is_affected_connector(endpoint_name.as_str()) {
-                        info!("Found checkpointed state for input connector '{endpoint_name}', but connector configuration has changed; the connector will restart from scratch");
+                        info!(
+                            "Found checkpointed state for input connector '{endpoint_name}', but connector configuration has changed; the connector will restart from scratch"
+                        );
                         continue;
                     }
                 }
@@ -1878,7 +1892,9 @@ impl CircuitThread {
                 let mut ft = if input_metadata.is_some() && can_replay {
                     FtState::open(backend, step, controller.clone())
                 } else if input_metadata.is_some() {
-                    warn!("Pipeline has been modified since the checkpoint was taken; replay journal will be discarded");
+                    warn!(
+                        "Pipeline has been modified since the checkpoint was taken; replay journal will be discarded"
+                    );
                     FtState::open_and_truncate(backend, controller.clone())
                 } else {
                     FtState::create(backend, controller.clone())
@@ -2987,7 +3003,9 @@ impl FtState {
                 }
 
                 if replayed != logged {
-                    let error = format!("Logged and replayed step {step} contained different numbers of records or hashes:\nLogged: {logged:?}\nReplayed: {replayed:?}");
+                    let error = format!(
+                        "Logged and replayed step {step} contained different numbers of records or hashes:\nLogged: {logged:?}\nReplayed: {replayed:?}"
+                    );
                     error!("{error}");
                     return Err(ControllerError::ReplayFailure { error });
                 }
@@ -3301,7 +3319,9 @@ impl ControllerInit {
         let modified = !pipeline_diff.is_empty();
 
         if modified {
-            info!("Pipeline has been modified since the last checkpoint. Summary of changes:\n{pipeline_diff}")
+            info!(
+                "Pipeline has been modified since the last checkpoint. Summary of changes:\n{pipeline_diff}"
+            )
         }
 
         // Merge `config` (the configuration provided by the pipeline manager)
@@ -4493,13 +4513,16 @@ impl ControllerInner {
                         })
                         .unwrap(),
                     },
-                    (TransportConfig::Datagen(_), Some(_)) =>
+                    (TransportConfig::Datagen(_), Some(_)) => {
                         return Err(ControllerError::input_format_not_supported(
                             endpoint_name,
                             "datagen endpoints do not support custom formats: remove the 'format' section from connector specification",
-                        )),
+                        ));
+                    }
                     (_, Some(format)) => format.clone(),
-                    (_, None) => return Err(ControllerError::input_format_not_specified(endpoint_name)),
+                    (_, None) => {
+                        return Err(ControllerError::input_format_not_specified(endpoint_name));
+                    }
                 };
 
                 let format = get_input_format(&format_config.name).ok_or_else(|| {
@@ -4587,10 +4610,12 @@ impl ControllerInner {
             return Err(ControllerError::input_transport_error(
                 endpoint_name,
                 true,
-                anyhow!("pipeline requires {} fault tolerance but endpoint only supplies {} fault tolerance",
-                        FtModel::option_as_str(self.fault_tolerance),
-                        FtModel::option_as_str(fault_tolerance)
-                )));
+                anyhow!(
+                    "pipeline requires {} fault tolerance but endpoint only supplies {} fault tolerance",
+                    FtModel::option_as_str(self.fault_tolerance),
+                    FtModel::option_as_str(fault_tolerance)
+                ),
+            ));
         }
 
         self.unpark_backpressure();
@@ -4971,7 +4996,9 @@ impl ControllerInner {
                     );
                 }
             } else {
-                trace!("Queue is empty -- wait for the circuit thread to wake us up when more data is available");
+                trace!(
+                    "Queue is empty -- wait for the circuit thread to wake us up when more data is available"
+                );
                 if let Some(buffer_since) = output_buffer.buffer_since() {
                     // Buffering is enabled: wake us up when the buffer timeout has expired.
                     let timeout = output_buffer_config.max_output_buffer_time_millis as i128
@@ -5618,7 +5645,11 @@ impl InputConsumer for InputProbe {
         {
             let resume_ft = resume.as_ref().map(Resume::fault_tolerance);
             let pipeline_ft = self.controller.fault_tolerance;
-            debug_assert!(resume_ft >= self.controller.fault_tolerance, "endpoint {} produced input at fault tolerance level {resume_ft:?} in pipeline with fault tolerance level {pipeline_ft:?}", &self.endpoint_name);
+            debug_assert!(
+                resume_ft >= self.controller.fault_tolerance,
+                "endpoint {} produced input at fault tolerance level {resume_ft:?} in pipeline with fault tolerance level {pipeline_ft:?}",
+                &self.endpoint_name
+            );
         }
         self.controller.status.extended(
             self.endpoint_id,
@@ -5638,21 +5669,24 @@ impl InputConsumer for InputProbe {
     }
 
     fn start_transaction(&self, label: Option<&str>) {
-        if let Err(error) = self
+        match self
             .controller
             .start_transaction_from_connector(&self.endpoint_name, label)
         {
-            self.controller.input_transport_error(
-                self.endpoint_id,
-                &self.endpoint_name,
-                false,
-                anyhow!(format!(
-                    "connector attempted to initiate a transaction, but failed: {error}"
-                )),
-                Some("connector_start_transaction"),
-            );
-        } else {
-            self.transaction_in_progress.store(true, Ordering::Release);
+            Err(error) => {
+                self.controller.input_transport_error(
+                    self.endpoint_id,
+                    &self.endpoint_name,
+                    false,
+                    anyhow!(format!(
+                        "connector attempted to initiate a transaction, but failed: {error}"
+                    )),
+                    Some("connector_start_transaction"),
+                );
+            }
+            _ => {
+                self.transaction_in_progress.store(true, Ordering::Release);
+            }
         }
     }
 
@@ -5965,14 +5999,18 @@ impl RunningCheckpoint {
             Self::Waiting(join_handle, mut receiver) => match receiver.try_recv() {
                 Ok(result) => {
                     join_handle.join().unwrap();
-                    Some(result.and_then(|checkpoint| SamplySpan::new(debug_span!("end-checkpoint")).in_scope(||
-Self::finish(checkpoint, circuit))))
-                },
+                    Some(result.and_then(|checkpoint| {
+                        SamplySpan::new(debug_span!("end-checkpoint"))
+                            .in_scope(|| Self::finish(checkpoint, circuit))
+                    }))
+                }
                 Err(TryRecvError::Empty) => {
                     *self = Self::Waiting(join_handle, receiver);
                     None
-                },
-                Err(TryRecvError::Closed) => unreachable!("RunningCheckpoint::Waiting should have been replaced by RunningCheckpoint::Done"),
+                }
+                Err(TryRecvError::Closed) => unreachable!(
+                    "RunningCheckpoint::Waiting should have been replaced by RunningCheckpoint::Done"
+                ),
             },
             Self::Done => unreachable!("already reported final status"),
         }

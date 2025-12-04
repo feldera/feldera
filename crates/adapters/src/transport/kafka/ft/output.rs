@@ -1,24 +1,24 @@
 use crate::transport::kafka::{
-    build_headers, generate_oauthbearer_token, kafka_send, validate_aws_msk_region,
-    MemoryUseReporter,
+    MemoryUseReporter, build_headers, generate_oauthbearer_token, kafka_send,
+    validate_aws_msk_region,
 };
 use crate::{
-    transport::{kafka::DeferredLogging, Step},
     AsyncErrorCallback, OutputEndpoint,
+    transport::{Step, kafka::DeferredLogging},
 };
-use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
+use anyhow::{Context, Error as AnyError, Result as AnyResult, anyhow, bail};
 use feldera_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::client::OAuthToken;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::ConsumerContext;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::{
+    ClientConfig, ClientContext, Message,
     config::FromClientConfigAndContext,
     consumer::BaseConsumer,
     error::KafkaError,
     producer::{BaseRecord, DeliveryResult, Producer, ProducerContext, ThreadedProducer},
     types::RDKafkaErrorCode,
-    ClientConfig, ClientContext, Message,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -28,7 +28,7 @@ use std::{cmp::max, sync::RwLock, time::Duration};
 use tracing::span::EnteredSpan;
 use tracing::{debug, info, info_span, warn};
 
-use super::{count_partitions_in_topic, CommonConfig, Ctp};
+use super::{CommonConfig, Ctp, count_partitions_in_topic};
 
 const DEFAULT_MAX_MESSAGE_SIZE: usize = 1_000_000;
 
@@ -117,11 +117,15 @@ impl KafkaOutputEndpoint {
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_MAX_MESSAGE_SIZE);
         if message_max_bytes <= MAX_MESSAGE_OVERHEAD {
-            bail!("Invalid setting 'message.max.bytes={message_max_bytes}'. 'message.max.bytes' must be greater than {MAX_MESSAGE_OVERHEAD}");
+            bail!(
+                "Invalid setting 'message.max.bytes={message_max_bytes}'. 'message.max.bytes' must be greater than {MAX_MESSAGE_OVERHEAD}"
+            );
         }
 
         let max_message_size = message_max_bytes - MAX_MESSAGE_OVERHEAD;
-        debug!("Configured max message size: {max_message_size} ('message.max.bytes={message_max_bytes}')");
+        debug!(
+            "Configured max message size: {max_message_size} ('message.max.bytes={message_max_bytes}')"
+        );
 
         // Initialize our producer.
         //

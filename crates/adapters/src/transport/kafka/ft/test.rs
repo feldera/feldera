@@ -8,38 +8,39 @@ use crate::test::{
 use crate::transport::kafka::ft::input::Metadata;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::{
-    test::{
-        kafka::{KafkaResources, TestProducer},
-        test_circuit, TestStruct,
-    },
     Controller, InputConsumer, ParseError,
+    test::{
+        TestStruct,
+        kafka::{KafkaResources, TestProducer},
+        test_circuit,
+    },
 };
 use crate::{InputBuffer, InputReader, Parser, TransportInputEndpoint};
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
 use csv::ReaderBuilder as CsvReaderBuilder;
 use dbsp::operator::StagedBuffers;
+use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
-use feldera_adapterlib::ConnectorMetadata;
 use feldera_sqllib::{ByteArray, SqlString, Variant};
 use feldera_types::config::{
-    default_max_batch_size, default_max_queued_records, ConnectorConfig, FormatConfig, FtModel,
-    InputEndpointConfig, OutputBufferConfig, TransportConfig,
+    ConnectorConfig, FormatConfig, FtModel, InputEndpointConfig, OutputBufferConfig,
+    TransportConfig, default_max_batch_size, default_max_queued_records,
 };
 use feldera_types::deserialize_table_record;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::secret_resolver::default_secrets_directory;
 use feldera_types::transport::kafka::{
-    default_group_join_timeout_secs, default_redpanda_server, KafkaInputConfig, KafkaLogLevel,
-    KafkaStartFromConfig,
+    KafkaInputConfig, KafkaLogLevel, KafkaStartFromConfig, default_group_join_timeout_secs,
+    default_redpanda_server,
 };
 use parquet::data_type::AsBytes;
 use proptest::prelude::*;
 use rdkafka::message::{BorrowedMessage, Header, Headers};
 use rdkafka::{Message, Timestamp};
 use rmpv::Value as RmpValue;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use size_of::SizeOf;
 use std::any::Any;
 use std::borrow::Cow;
@@ -52,16 +53,16 @@ use std::thread::sleep;
 use std::{
     mem,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
 };
 use tempfile::TempDir;
 use tracing::info;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 fn init_test_logger() {
     let _ = tracing_subscriber::registry()

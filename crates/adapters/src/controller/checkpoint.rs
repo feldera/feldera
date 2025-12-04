@@ -6,15 +6,15 @@ use serde_json::Value as JsonValue;
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
 use crate::{
+    ControllerError,
     controller::stats::{InputEndpointMetrics, OutputEndpointMetrics},
     transport::Step,
-    ControllerError,
 };
 
 /// Initial offsets for the input endpoints in a [Checkpoint].

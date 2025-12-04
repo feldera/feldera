@@ -1,4 +1,4 @@
-use feldera_sqllib::{ByteArray, Date, SqlDecimal, SqlString, Timestamp, Uuid, Variant, F32, F64};
+use feldera_sqllib::{ByteArray, Date, F32, F64, SqlDecimal, SqlString, Timestamp, Uuid, Variant};
 use feldera_types::{
     format::json::JsonFlavor,
     serde_with_context::{SerializeWithContext, SqlSerdeConfig},
@@ -14,8 +14,8 @@ use std::{
 use tempfile::NamedTempFile;
 
 use crate::{
-    test::{data::TestStruct, test_circuit, wait, DeltaTestStruct},
     Controller,
+    test::{DeltaTestStruct, data::TestStruct, test_circuit, wait},
 };
 
 fn redis_url() -> String {
