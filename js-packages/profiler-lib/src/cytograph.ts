@@ -84,7 +84,9 @@ class GraphNode {
         readonly expanded: boolean,
         readonly parent: Option<string>,
         // Source position information
-        readonly sources: string) {
+        readonly sources: string,
+        // True if the node has source position information
+        readonly hasSourcePosition: boolean) {
     }
 
     asString(): string {
@@ -97,11 +99,16 @@ class GraphNode {
 
     /** Returns a data structure understood by cytoscape for a node. */
     getDefinition(): NodeDefinition {
+        // Add a small SQL prefix for nodes with source positions
+        const prefix = this.hasSourcePosition ? "◆ " : "";
+        const label = prefix + this.id + " " + this.label;
+
         let result = {
             "data": {
                 "id": this.id,
-                "label": this.id + " " + this.label,
-                "sources": this.sources
+                "label": label,
+                "sources": this.sources,
+                "has_source": this.hasSourcePosition
             }
         };
         let data = result["data"] as any;
@@ -263,13 +270,14 @@ export class Cytograph {
                 visibleParents.add(p);
             }
             let src = sources.toString(node.sourcePositions);
+            let hasSource = src.length > 0;
             node.getMeasurements("operation");
 
             let operation = node.operation;
             if (operation === CircuitProfile.Z1_TRACE_OUTPUT)
                 // These nodes were modified in the profile.fixZ1Nodes() function.
                 operation = CircuitProfile.Z1_TRACE;
-            let visibleNode = new GraphNode(nodeId, node.persistentId, operation, hasChildren, expand && hasChildren, parent, src);
+            let visibleNode = new GraphNode(nodeId, node.persistentId, operation, hasChildren, expand && hasChildren, parent, src, hasSource);
             result.addNode(visibleNode);
             inserted.set(nodeId, visibleNode);
         }
@@ -280,7 +288,8 @@ export class Cytograph {
             if (!profile.isTop(nodeId) && visibleParents.has(nodeId)) {
                 let positions = complex.sourcePositions;
                 let src = sources.toString(positions);
-                let node = new GraphNode(nodeId, complex.persistentId, "region", true, true, parent, src);
+                let hasSource = src.length > 0;
+                let node = new GraphNode(nodeId, complex.persistentId, "region", true, true, parent, src, hasSource);
                 result.addNode(node);
             }
         }
@@ -367,6 +376,17 @@ export class CytographRendering {
                 'border-style': 'solid',
                 'padding': '2px',
                 'width': 'label',
+            }
+        },
+        {
+            // SQL source indicator - thicker blue border for nodes with source positions available
+            // TODO: To improve the design we can use https://github.com/kaluginserg/cytoscape-node-html-label
+            // to implement the badge that indicates that a node has the source position available
+            selector: 'node[?has_source]',
+            css: {
+                'border-width': '3px',
+                'border-color': '#4a90e2',
+                'border-style': 'solid',
             }
         },
         {
@@ -728,7 +748,10 @@ export class CytographRendering {
         this.stickyInformation = sticky;
     }
 
-    setEvents(onDoubleClick: (node: NodeId) => void) {
+    setEvents(callbacks: {
+        onParentNodeDoubleClick?: ((node: NodeId) => void) | undefined,
+        onLeafNodeDoubleClick?: ((node: NodeId) => void) | undefined
+    }) {
         document.addEventListener('keyup', (e) => this.keyup(e));
         this.cy
             //.on('render', () => console.log("rendering"))
@@ -748,15 +771,18 @@ export class CytographRendering {
             })
             .on('dblclick', 'node', (e) => {
                 let node = e.target as NodeSingular;
-                if (node === null || !node.data("has_children")) {
-                    // Do not dispatch double click to nodes without children
-                    return;
-                }
-                this.hideNodeInformation();
-                this.setStickyNodeInformation(false);
                 let id = e.target.id();
-                this.lastNode = Option.some(id);
-                onDoubleClick(id);
+
+                if (node !== null && node.data("has_children")) {
+                    // Parent node - toggle expand/collapse
+                    this.hideNodeInformation();
+                    this.setStickyNodeInformation(false);
+                    this.lastNode = Option.some(id);
+                    callbacks.onParentNodeDoubleClick?.(id);
+                } else if (callbacks.onLeafNodeDoubleClick) {
+                    // Leaf node - navigate to source position
+                    callbacks.onLeafNodeDoubleClick(id);
+                }
             });
     }
 

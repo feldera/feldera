@@ -22,14 +22,25 @@
     class?: string
   }
 
-  let { profileData, dataflowData, programCode, callbacks, class: className }: Props = $props()
+  let {
+    profileData,
+    dataflowData,
+    programCode,
+    callbacks,
+    class: className
+  }: Props = $props()
 
   // DOM element references
   let graphContainer: HTMLDivElement | undefined = $state()
   let navigatorContainer: HTMLDivElement | undefined = $state()
 
-  // Profiler instance
-  let profiler: Profiler | null = $state(null)
+  // Profiler instance and profile data (combined as their lifecycle is connected)
+  let instance = $state<{ profiler: Profiler; profile: CircuitProfile } | null>(null)
+
+  // Public getter for profile (used by parent component)
+  export function getProfile(): CircuitProfile | null {
+    return instance?.profile ?? null
+  }
 
   // Initialize profiler when all containers are mounted and data is available
   $effect(() => {
@@ -44,10 +55,10 @@
     }
 
     $effect.root(() => {
-      // Clean up previous profiler instance if exists
-      if (profiler) {
-        profiler.dispose()
-        profiler = null
+      // Clean up previous instance if exists
+      if (instance) {
+        instance.profiler.dispose()
+        instance = null
       }
 
       try {
@@ -63,8 +74,10 @@
         }
 
         // Create and render profiler
-        profiler = new Profiler(config)
+        const profiler = new Profiler(config)
         profiler.render(profile)
+
+        instance = { profiler, profile }
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : String(e)
         callbacks.onError(`Failed to initialize profiler: ${errorMsg}`)
@@ -75,26 +88,26 @@
 
   // Public methods that proxy to profiler-lib
   export function selectMetric(metricId: string): void {
-    profiler?.selectMetric(metricId)
+    instance?.profiler.selectMetric(metricId)
   }
 
   export function toggleWorker(workerId: string): void {
-    profiler?.toggleWorker(workerId)
+    instance?.profiler.toggleWorker(workerId)
   }
 
   export function toggleAllWorkers(): void {
-    profiler?.toggleAllWorkers()
+    instance?.profiler.toggleAllWorkers()
   }
 
   export function search(query: string): void {
-    profiler?.search(query)
+    instance?.profiler.search(query)
   }
 
   // Cleanup on component destruction
   onDestroy(() => {
-    if (profiler) {
-      profiler.dispose()
-      profiler = null
+    if (instance) {
+      instance.profiler.dispose()
+      instance = null
     }
   })
 </script>

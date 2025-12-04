@@ -60,6 +60,11 @@ export interface ProfilerCallbacks {
 
     /** Called when an error should be displayed */
     onError: (error: string) => void;
+
+    /**
+     * Called when a leaf node is double-clicked.
+     */
+    onLeafNodeDoubleClick?: (nodeId: string) => void;
 }
 
 export interface ProfilerConfig {
@@ -131,7 +136,10 @@ export class Profiler {
                 this.message.bind(this),
                 this.clearMessage.bind(this)
             );
-            this.rendering.setEvents(n => this.circuitSelector!.toggleExpand(n));
+            this.rendering.setEvents({
+                onParentNodeDoubleClick: n => this.circuitSelector!.toggleExpand(n),
+                onLeafNodeDoubleClick: this.config.callbacks.onLeafNodeDoubleClick
+            });
 
             // Wire up event handlers
             this.circuitSelector.setOnChange(() => {
