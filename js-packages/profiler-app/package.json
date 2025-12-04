@@ -8,7 +8,8 @@
   "description": "Standalone single-page application for profiling Feldera pipelines",
   "scripts": {
     "dev": "vite dev --host",
-    "build": "vite build"
+    "prebuild": "cd ../profiler-lib && bun run build",
+    "build": "tsc --noEmit && vite build"
   },
   "dependencies": {
     "but-unzip": "^0.1.7",
