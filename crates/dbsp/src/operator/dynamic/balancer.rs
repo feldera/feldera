@@ -8,7 +8,7 @@ use crate::{
         splitter_output_chunk_size, GlobalNodeId, NodeId, OwnershipPreference, WithClock,
     },
     circuit_cache_key,
-    dynamic::Data as _,
+    dynamic::{ClonableTrait, Data as _, Erase},
     operator::{
         async_stream_operators::{StreamingTernarySinkOperator, StreamingTernarySinkWrapper},
         communication::{Exchange, ExchangeReceiver},
@@ -16,20 +16,20 @@ use crate::{
             accumulate_trace::{
                 AccumulateBoundsId, AccumulateTraceAppend, AccumulateTraceId, AccumulateZ1Trace,
             },
-            communication::shard::{balance_batch, shard_batch},
             trace::{DelayedTraceId, TimedSpine, TraceBounds},
         },
         require_persistent_id, Z1,
     },
     trace::{
         deserialize_indexed_wset, merge_batches, serialize_indexed_wset, spine_async::SpineCursor,
-        Batch, BatchReader, Builder, Cursor, MergeCursor, SpineSnapshot, WithSnapshot,
+        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, MergeCursor, SpineSnapshot,
+        TupleBuilder, WithSnapshot,
     },
     utils::{
         components,
         maxsat::{Cost, HardConstraint, MaxSat, Variable, VariableIndex},
     },
-    Circuit, Position, Runtime, Scope, Stream, Timestamp,
+    Circuit, Position, Runtime, Scope, Stream, Timestamp, ZWeight,
 };
 use async_stream::stream;
 use feldera_storage::{fbuf::FBuf, FileCommitter, StoragePath};
@@ -485,8 +485,7 @@ where
                             false,
                             circuit.root_scope(),
                             bounds.clone(),
-                        )
-                        .with_metadata_exchange(circuit.metadata_exchange()),
+                        ),
                     );
 
                     let replay_stream = z1feedback
@@ -588,6 +587,28 @@ struct RetractionState<B: Batch<Time = ()>, C: WithClock> {
     trace: SpineSnapshot<<C::Time as Timestamp>::TimedBatch<B>>,
 }
 
+struct KeyDistribution {
+    sizes: Vec<ZWeight>,
+}
+
+impl KeyDistribution {
+    fn new(shards: usize) -> Self {
+        Self {
+            sizes: vec![0; shards],
+        }
+    }
+
+    fn update(&mut self, shard: usize, weight: ZWeight) {
+        self.sizes[shard] += weight;
+    }
+
+    fn merge(&mut self, other: &Self) {
+        for (i, size) in self.sizes.iter_mut().enumerate() {
+            *size += other.sizes[i];
+        }
+    }
+}
+
 pub struct RebalancingExchangeSender<B, C>
 where
     B: Batch<Time = ()>,
@@ -612,6 +633,8 @@ where
     current_policy: RefCell<Policy>,
 
     retractions: RefCell<Option<RetractionState<B, C>>>,
+
+    key_distribution: RefCell<KeyDistribution>,
 
     phantom: PhantomData<C>,
 }
@@ -642,6 +665,7 @@ where
             flush_state: RefCell::new(FlushState::TransactionStarted),
             current_policy: RefCell::new(Policy::Shard),
             retractions: RefCell::new(None),
+            key_distribution: RefCell::new(KeyDistribution::new(Runtime::num_workers())),
             phantom: PhantomData,
         }
     }
@@ -688,26 +712,9 @@ where
 
     fn partition_batch(&self, delta: B) -> Vec<B> {
         match *self.current_policy.borrow() {
-            Policy::Shard => {
-                let mut outputs = Vec::with_capacity(Runtime::num_workers());
-                shard_batch(
-                    delta,
-                    Runtime::num_workers(),
-                    &mut Vec::with_capacity(Runtime::num_workers()),
-                    &mut outputs,
-                    &self.batch_factories,
-                );
-                outputs
-            }
-            Policy::Balance => balance_batch(delta, Runtime::num_workers(), &self.batch_factories),
-            Policy::Broadcast => {
-                let mut outputs = Vec::with_capacity(Runtime::num_workers());
-                for _i in 0..Runtime::num_workers() - 1 {
-                    outputs.push(delta.clone());
-                }
-                outputs.push(delta);
-                outputs
-            }
+            Policy::Shard => self.shard_batch(delta),
+            Policy::Balance => self.balance_batch(delta),
+            Policy::Broadcast => self.broadcast_batch(delta),
         }
     }
 
@@ -860,6 +867,143 @@ where
 
     fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
         base.child(format!("rebalancing-exchange-{}.dat", persistent_id))
+    }
+
+    // Partitions the batch into `nshards` partitions based on the hash of the key.
+    pub fn shard_batch(&self, mut batch: B) -> Vec<B> {
+        let shards = Runtime::num_workers();
+
+        let mut builders = Vec::with_capacity(shards);
+
+        for _ in 0..shards {
+            // We iterate over tuples in the batch in order; hence tuples added
+            // to each shard are also ordered, so we can use the more efficient
+            // `Builder` API (instead of `Batcher`) to construct output batches.
+            builders.push(B::Builder::with_capacity(
+                &self.batch_factories,
+                batch.key_count() / shards,
+                batch.len() / shards,
+            ));
+        }
+
+        let mut cursor = batch.consuming_cursor(None, None);
+        let mut key_distribution = KeyDistribution::new(shards);
+
+        if cursor.has_mut() {
+            while cursor.key_valid() {
+                let shard = cursor.key().default_hash() as usize % shards;
+                let b = &mut builders[shard];
+                while cursor.val_valid() {
+                    let weight = **cursor.weight();
+                    key_distribution.update(shard, weight);
+
+                    b.push_diff(weight.erase());
+                    b.push_val_mut(cursor.val_mut());
+                    cursor.step_val();
+                }
+                b.push_key_mut(cursor.key_mut());
+                cursor.step_key();
+            }
+        } else {
+            while cursor.key_valid() {
+                let shard = cursor.key().default_hash() as usize % shards;
+                let b = &mut builders[shard];
+                while cursor.val_valid() {
+                    let weight = **cursor.weight();
+                    key_distribution.update(shard, weight);
+
+                    b.push_diff(weight.erase());
+                    b.push_val(cursor.val());
+                    cursor.step_val();
+                }
+                b.push_key(cursor.key());
+                cursor.step_key();
+            }
+        }
+
+        self.key_distribution.borrow_mut().merge(&key_distribution);
+
+        builders.into_iter().map(|builder| builder.done()).collect()
+    }
+
+    // Partitions the batch into `nshards` partitions based on the hash of the value.
+    fn balance_batch(&self, mut batch: B) -> Vec<B> {
+        let shards = Runtime::num_workers();
+        let mut key_distribution = KeyDistribution::new(shards);
+
+        let mut builders = Vec::with_capacity(shards);
+        let mut key = self.batch_factories.key_factory().default_box();
+
+        for _ in 0..shards {
+            builders.push(TupleBuilder::new(
+                &self.batch_factories,
+                B::Builder::with_capacity(
+                    &self.batch_factories,
+                    batch.key_count() / shards,
+                    batch.len() / shards,
+                ),
+            ));
+        }
+
+        let mut cursor = batch.consuming_cursor(None, None);
+        if cursor.has_mut() {
+            while cursor.key_valid() {
+                let key_shard = cursor.key().default_hash() as usize % shards;
+
+                while cursor.val_valid() {
+                    let b = &mut builders[cursor.val().default_hash() as usize % shards];
+                    cursor.key().clone_to(&mut key);
+
+                    let mut w = **cursor.weight();
+                    key_distribution.update(key_shard, w);
+                    b.push_vals(&mut key, cursor.val_mut(), &mut (), w.erase_mut());
+                    cursor.step_val();
+                }
+                cursor.step_key();
+            }
+        } else {
+            while cursor.key_valid() {
+                let key_shard = cursor.key().default_hash() as usize % shards;
+                while cursor.val_valid() {
+                    let b = &mut builders[cursor.key().default_hash() as usize % shards];
+                    let w = **cursor.weight();
+                    key_distribution.update(key_shard, w);
+                    b.push_refs(cursor.key(), cursor.val(), &(), &w);
+                    cursor.step_val();
+                }
+                cursor.step_key();
+            }
+        }
+
+        self.key_distribution.borrow_mut().merge(&key_distribution);
+        builders.into_iter().map(|builder| builder.done()).collect()
+    }
+
+    // Partitions the batch into `nshards` partitions based on the hash of the value.
+    fn broadcast_batch(&self, batch: B) -> Vec<B> {
+        let shards = Runtime::num_workers();
+        let mut key_distribution = KeyDistribution::new(shards);
+
+        let mut cursor = batch.cursor();
+        while cursor.key_valid() {
+            let key_shard = cursor.key().default_hash() as usize % shards;
+            while cursor.val_valid() {
+                let w = **cursor.weight();
+                key_distribution.update(key_shard, w);
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+        drop(cursor);
+
+        self.key_distribution.borrow_mut().merge(&key_distribution);
+
+        let mut outputs = Vec::with_capacity(Runtime::num_workers());
+        for _i in 0..Runtime::num_workers() - 1 {
+            outputs.push(batch.clone());
+        }
+        outputs.push(batch);
+        outputs
     }
 }
 

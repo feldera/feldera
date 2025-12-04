@@ -7,11 +7,11 @@
 use crate::{
     circuit::circuit_builder::StreamId,
     circuit_cache_key,
-    dynamic::{ClonableTrait, Data},
+    dynamic::Data,
     operator::communication::new_exchange_operators,
     trace::{
         deserialize_indexed_wset, merge_batches, serialize_indexed_wset, Batch, BatchReader,
-        BatchReaderFactories, Builder, TupleBuilder,
+        Builder,
     },
     Circuit, Runtime, Stream,
 };
@@ -174,51 +174,6 @@ pub fn shard_batch<IB, OB>(
     for builder in builders.drain(..) {
         outputs.push(builder.done());
     }
-}
-
-// Partitions the batch into `nshards` partitions based on the hash of the value.
-pub fn balance_batch<IB, OB>(mut batch: IB, shards: usize, factories: &OB::Factories) -> Vec<OB>
-where
-    IB: BatchReader<Time = ()>,
-    OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R>,
-{
-    let mut builders = Vec::with_capacity(shards);
-    let mut key = batch.factories().key_factory().default_box();
-    let mut w = batch.factories().weight_factory().default_box();
-
-    for _ in 0..shards {
-        builders.push(TupleBuilder::new(
-            factories,
-            OB::Builder::with_capacity(factories, batch.key_count() / shards, batch.len() / shards),
-        ));
-    }
-
-    let mut cursor = batch.consuming_cursor(None, None);
-    if cursor.has_mut() {
-        while cursor.key_valid() {
-            while cursor.val_valid() {
-                let b = &mut builders[cursor.val().default_hash() as usize % shards];
-                cursor.key().clone_to(&mut key);
-
-                cursor.weight().clone_to(&mut w);
-                b.push_vals(&mut key, cursor.val_mut(), &mut (), &mut w);
-                cursor.step_val();
-            }
-            cursor.step_key();
-        }
-    } else {
-        while cursor.key_valid() {
-            while cursor.val_valid() {
-                let b = &mut builders[cursor.key().default_hash() as usize % shards];
-                cursor.weight().clone_to(&mut w);
-                b.push_refs(cursor.key(), cursor.val(), &(), &w);
-                cursor.step_val();
-            }
-            cursor.step_key();
-        }
-    }
-
-    builders.into_iter().map(|builder| builder.done()).collect()
 }
 
 impl<C, T> Stream<C, T>

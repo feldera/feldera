@@ -1,4 +1,4 @@
-use crate::circuit::circuit_builder::{register_replay_stream, MetadataExchange, StreamId};
+use crate::circuit::circuit_builder::{register_replay_stream, StreamId};
 use crate::circuit::metadata::NUM_INPUTS_LABEL;
 use crate::dynamic::{Weight, WeightTrait};
 use crate::operator::dynamic::trace::{DelayedTraceId, TraceBounds};
@@ -24,7 +24,6 @@ use crate::{
 use feldera_storage::{FileCommitter, StoragePath};
 use ouroboros::self_referencing;
 use size_of::SizeOf;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::{borrow::Cow, marker::PhantomData, ops::Deref};
 
@@ -653,7 +652,6 @@ pub struct AccumulateZ1Trace<C: Circuit, B: Batch, T: Trace> {
     replay_state: Option<ReplayState<T>>,
     replay_mode: bool,
     trace_factories: T::Factories,
-    metadata_exchange: Option<MetadataExchange>,
     // `dirty[scope]` is `true` iff at least one non-empty update was added to the trace
     // since the previous clock cycle at level `scope`.
     dirty: Vec<bool>,
@@ -693,7 +691,6 @@ where
             bounds,
             delta_stream: None,
             flush: false,
-            metadata_exchange: None,
         }
     }
 
@@ -731,11 +728,6 @@ where
 
         self.delta_stream = Some(replay_stream.clone());
         replay_stream
-    }
-
-    pub fn with_metadata_exchange(mut self, metadata_exchange: &MetadataExchange) -> Self {
-        self.metadata_exchange = Some(metadata_exchange.clone());
-        self
     }
 }
 
@@ -981,10 +973,6 @@ where
         self.dirty[0] = dirty;
         if dirty {
             self.dirty.fill(true);
-        }
-
-        if let Some(metadata_exchange) = self.metadata_exchange.as_ref() {
-            todo!()
         }
     }
 

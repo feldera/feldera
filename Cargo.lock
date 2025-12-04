@@ -3794,6 +3794,7 @@ dependencies = [
  "rand_xoshiro",
  "reqwest 0.12.20",
  "rkyv",
+ "rmp-serde",
  "serde",
  "serde_json",
  "smallvec",

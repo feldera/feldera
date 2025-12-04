@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
     panic::Location,
-    rc::Rc,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -14,7 +13,7 @@ use typedmap::TypedMapKey;
 use crate::{
     circuit::{
         checkpointer::EmptyCheckpoint,
-        circuit_builder::{MetadataExchange, RefStreamValue, StreamId},
+        circuit_builder::{RefStreamValue, StreamId},
         metadata::{
             BatchSizeStats, MetaItem, OperatorLocation, OperatorMeta, ALLOCATED_BYTES_LABEL,
             INPUT_BATCHES_LABEL, NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, SHARED_BYTES_LABEL,
@@ -53,7 +52,7 @@ where
 {
     /// See [`Stream::accumulate`].
     pub fn dyn_accumulate(&self, factories: &B::Factories) -> Stream<C, Option<Spine<B>>> {
-        let (stream, enable_count, _) = self.dyn_accumulate_with_enable_count(factories, false);
+        let (stream, enable_count, _) = self.dyn_accumulate_with_enable_count(factories);
         enable_count.fetch_add(1, Ordering::AcqRel);
 
         stream
@@ -67,7 +66,7 @@ where
         RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>,
     ) {
         let (stream, enable_count, accumulator_snapshot_stream_val) =
-            self.dyn_accumulate_with_enable_count(factories, true);
+            self.dyn_accumulate_with_enable_count(factories);
         enable_count.fetch_add(1, Ordering::AcqRel);
 
         (stream, accumulator_snapshot_stream_val)
@@ -77,7 +76,6 @@ where
     pub fn dyn_accumulate_with_enable_count(
         &self,
         factories: &B::Factories,
-        report_metadata: bool,
     ) -> (
         Stream<C, Option<Spine<B>>>,
         Arc<AtomicUsize>,
@@ -85,15 +83,7 @@ where
     ) {
         self.circuit()
             .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {
-                let accumulator = Accumulator::<C, B>::new(
-                    factories,
-                    Location::caller(),
-                    if report_metadata {
-                        Some(self.circuit().metadata_exchange().clone())
-                    } else {
-                        None
-                    },
-                );
+                let accumulator = Accumulator::<C, B>::new(factories, Location::caller());
                 let enable_count = accumulator.enable_count.clone();
                 let accumulator_snapshot_stream_val = RefStreamValue::empty();
 
@@ -147,7 +137,6 @@ where
     enabled_during_current_transaction: Option<bool>,
 
     feedback_stream: Option<Stream<C, SpineSnapshot<B>>>,
-    metadata_exchange: Option<MetadataExchange>,
 }
 
 impl<C, B> Accumulator<C, B>
@@ -155,11 +144,7 @@ where
     B: Batch,
     C: Circuit,
 {
-    pub fn new(
-        factories: &B::Factories,
-        location: &'static Location<'static>,
-        metadata_exchange: Option<MetadataExchange>,
-    ) -> Self {
+    pub fn new(factories: &B::Factories, location: &'static Location<'static>) -> Self {
         let enable_count = match Runtime::runtime() {
             None => Arc::new(AtomicUsize::new(0)),
             Some(runtime) => {
@@ -183,7 +168,6 @@ where
             enable_count,
             enabled_during_current_transaction: None,
             feedback_stream: None,
-            metadata_exchange,
         }
     }
 
@@ -294,10 +278,6 @@ where
         } else {
             None
         };
-
-        if let Some(metadata_exchange) = &self.metadata_exchange {
-            todo!()
-        }
 
         result
     }
