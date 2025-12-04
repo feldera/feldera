@@ -5,6 +5,10 @@ fn default_max_concurrent_fetches() -> u32 {
     8
 }
 
+fn default_max_retries() -> u32 {
+    3
+}
+
 /// Configuration for reading data from AWS S3.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct S3InputConfig {
@@ -42,4 +46,10 @@ pub struct S3InputConfig {
     /// Recommended range: 1–10. Default: 8.
     #[serde(default = "default_max_concurrent_fetches")]
     pub max_concurrent_fetches: u32,
+
+    /// Maximum number of retries for failed requests.
+    /// This is used for both, the AWS SDK and by Feldera to handle transient connection errors.
+    /// Recommended range: 2-5. Default: 3.
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
 }
