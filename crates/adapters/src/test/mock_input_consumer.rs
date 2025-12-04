@@ -1,11 +1,11 @@
 use crate::catalog::InputCollectionHandle;
-use crate::format::{get_input_format, InputBuffer, Splitter};
-use crate::{controller::FormatConfig, InputConsumer, ParseError, Parser};
-use anyhow::{anyhow, Error as AnyError};
+use crate::format::{InputBuffer, Splitter, get_input_format};
+use crate::{InputConsumer, ParseError, Parser, controller::FormatConfig};
+use anyhow::{Error as AnyError, anyhow};
 use dbsp::operator::StagedBuffers;
+use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
-use feldera_adapterlib::ConnectorMetadata;
 use feldera_types::config::FtModel;
 use std::sync::{Arc, Mutex, MutexGuard};
 

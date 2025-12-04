@@ -1,24 +1,24 @@
-use crate::transport::kafka::ft::count_partitions_in_topic;
-use crate::transport::kafka::MemoryUseReporter;
-use crate::transport::kafka::{generate_oauthbearer_token, validate_aws_msk_region};
 use crate::transport::InputCommandReceiver;
-use crate::{
-    transport::{
-        kafka::{rdkafka_loglevel_from, refine_kafka_error, DeferredLogging},
-        InputReader,
-    },
-    InputConsumer, TransportInputEndpoint,
-};
+use crate::transport::kafka::MemoryUseReporter;
+use crate::transport::kafka::ft::count_partitions_in_topic;
+use crate::transport::kafka::{generate_oauthbearer_token, validate_aws_msk_region};
 use crate::{InputBuffer, Parser};
-use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use crate::{
+    InputConsumer, TransportInputEndpoint,
+    transport::{
+        InputReader,
+        kafka::{DeferredLogging, rdkafka_loglevel_from, refine_kafka_error},
+    },
+};
+use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use chrono::Utc;
 use crossbeam::queue::ArrayQueue;
 use crossbeam::sync::{Parker, Unparker};
+use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{
-    parse_resume_info, InputEndpoint, InputReaderCommand, Resume, Watermark,
+    InputEndpoint, InputReaderCommand, Resume, Watermark, parse_resume_info,
 };
-use feldera_adapterlib::ConnectorMetadata;
 use feldera_sqllib::{ByteArray, SqlString, Timestamp, Variant};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
@@ -29,10 +29,10 @@ use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::base_consumer::PartitionQueue;
 use rdkafka::message::{BorrowedMessage, Headers};
 use rdkafka::{
+    ClientConfig, ClientContext, Message,
     config::FromClientConfigAndContext,
     consumer::{BaseConsumer, Consumer, ConsumerContext},
     error::{KafkaError, KafkaResult},
-    ClientConfig, ClientContext, Message,
 };
 use rdkafka::{Offset, TopicPartitionList};
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,7 @@ use std::{
     thread::spawn,
     time::Duration,
 };
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tracing::span::EnteredSpan;
 use tracing::{debug, info_span, warn};
 use xxhash_rust::xxh3::Xxh3Default;
@@ -226,7 +226,9 @@ impl KafkaFtInputReaderInner {
 
             // Return an error if the specified offset doesn't exist.
             if !(low..=high).contains(&offset) {
-                return Err(OffsetError::MissingOffset(anyhow!("configuration error: provided offset '{offset}' not currently in partition '{partition}'")));
+                return Err(OffsetError::MissingOffset(anyhow!(
+                    "configuration error: provided offset '{offset}' not currently in partition '{partition}'"
+                )));
             }
         }
         Ok(offsets.iter().copied().map(Offset::Offset).collect())
@@ -260,7 +262,9 @@ impl KafkaFtInputReaderInner {
                         Ok(offsets) => offsets,
                         Err(OffsetError::FetchError(error)) => return Err(error),
                         Err(OffsetError::MissingOffset(_error)) => {
-                            warn!("Checkpoint for topic {topic} refers to offsets that no longer exist in the topic; as configured, the connector will resume from the earliest offsets now in the topic (checkpointed offsets were {offsets:?})");
+                            warn!(
+                                "Checkpoint for topic {topic} refers to offsets that no longer exist in the topic; as configured, the connector will resume from the earliest offsets now in the topic (checkpointed offsets were {offsets:?})"
+                            );
                             iter::repeat_n(Offset::Beginning, n_partitions).collect()
                         }
                     }
@@ -275,7 +279,10 @@ impl KafkaFtInputReaderInner {
                 KafkaStartFromConfig::Latest => iter::repeat_n(Offset::End, n_partitions).collect(),
                 KafkaStartFromConfig::Offsets(offsets) => {
                     if n_partitions != offsets.len() {
-                        bail!("Topic {topic} has {n_partitions} partitions but configuration specifies {} offsets.", offsets.len());
+                        bail!(
+                            "Topic {topic} has {n_partitions} partitions but configuration specifies {} offsets.",
+                            offsets.len()
+                        );
                     }
 
                     self.check_offsets(&config, offsets)
@@ -476,7 +483,9 @@ impl KafkaFtInputReaderInner {
                         }
                     }
                     Some(Ok(message)) => {
-                        bail!("All partitions are split but the main consumer received a message anyway: {message:?}");
+                        bail!(
+                            "All partitions are split but the main consumer received a message anyway: {message:?}"
+                        );
                     }
                     None => (),
                 }
@@ -634,7 +643,9 @@ impl KafkaFtInputReaderInner {
                     }
                 }
                 Some(Ok(message)) => {
-                    bail!("All partitions are split but the main consumer received a message anyway: {message:?}");
+                    bail!(
+                        "All partitions are split but the main consumer received a message anyway: {message:?}"
+                    );
                 }
             }
 
@@ -850,7 +861,9 @@ impl Metadata {
         let mut offsets = self.offsets;
         let n_offsets = offsets.len();
         if n_offsets > n_partitions {
-            bail!("metadata for replay has offsets for {n_offsets} partitions but topic has only {n_partitions} partitions; because Kafka does not allow partitions to be deleted, this implies that the topic has been deleted and recreated, which makes data loss likely");
+            bail!(
+                "metadata for replay has offsets for {n_offsets} partitions but topic has only {n_partitions} partitions; because Kafka does not allow partitions to be deleted, this implies that the topic has been deleted and recreated, which makes data loss likely"
+            );
         }
 
         if let Some(persisted_partitions) = *persisted_partitions {
@@ -1040,7 +1053,8 @@ impl PartitionReceiver {
                 } else {
                     tracing::error!(
                         "Received message in partition {} at out-of-order offset {offset} (expected offset {next_offset} or greater; initial offset for this partition was {})",
-                        self.partition, self.initial_next_offset
+                        self.partition,
+                        self.initial_next_offset
                     );
                 }
             }

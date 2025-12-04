@@ -746,7 +746,7 @@ mod tests {
 
     use bstr::BString;
     use csv::StringRecord;
-    use serde::{de::DeserializeOwned, Deserialize};
+    use serde::{Deserialize, de::DeserializeOwned};
 
     use super::byte_record_deserializer;
     use super::string_record_deserializer;

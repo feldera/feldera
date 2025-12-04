@@ -1,12 +1,12 @@
 //! See crates/iceberg/srd/tests/README.md for a description of the Iceberg test harness.
 
 use crate::{
-    test::{file_to_zset, wait},
     Controller,
+    test::{file_to_zset, wait},
 };
 use crossbeam::channel::Receiver;
 use dbsp::DBData;
-use feldera_sqllib::{ByteArray, Variant, F32, F64};
+use feldera_sqllib::{ByteArray, F32, F64, Variant};
 use feldera_types::{
     program_schema::Field,
     serde_with_context::{DeserializeWithContext, SerializeWithContext, SqlSerdeConfig},
@@ -16,12 +16,12 @@ use serde_json::json;
 use std::{collections::HashMap, time::Instant};
 use tempfile::NamedTempFile;
 use tracing::info;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg(feature = "iceberg-tests-fs")]
 use std::io::Write;
 
-use super::{test_circuit, IcebergTestStruct};
+use super::{IcebergTestStruct, test_circuit};
 
 fn init_logging() {
     let _ = tracing_subscriber::registry()

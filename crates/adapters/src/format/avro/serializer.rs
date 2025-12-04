@@ -1,6 +1,6 @@
-use apache_avro::schema::{Name, NamesRef, RecordSchema};
 use apache_avro::Decimal;
-use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
+use apache_avro::schema::{Name, NamesRef, RecordSchema};
+use apache_avro::{Schema as AvroSchema, types::Value as AvroValue};
 use feldera_types::serde_with_context::serde_config::{BinaryFormat, DecimalFormat, UuidFormat};
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use serde::ser::{
@@ -13,7 +13,7 @@ use std::fmt::{Display, Formatter};
 use std::iter::once;
 use std::mem::take;
 
-use super::schema::{schema_unwrap_optional, OptionalField};
+use super::schema::{OptionalField, schema_unwrap_optional};
 
 /// Serde configuration expected by [`AvroSchemaSerializer`].
 pub fn avro_ser_config() -> SqlSerdeConfig {
@@ -597,7 +597,11 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
                     Ok(AvroValue::Fixed(fixed_schema.size, v.to_vec()))
                 } else {
                     Err(AvroSerializerError::Custom {
-                        error: format!("Error serializing byte array to Avro: Avro schema specifies size {}, but byte array has length {}", fixed_schema.size, v.len()),
+                        error: format!(
+                            "Error serializing byte array to Avro: Avro schema specifies size {}, but byte array has length {}",
+                            fixed_schema.size,
+                            v.len()
+                        ),
                     })
                 }
             }
@@ -687,7 +691,9 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
     where
         T: Serialize + ?Sized,
     {
-        Err(AvroSerializerError::custom(format!("unable to serialize newtype variant '{name}::{variant}': newtype variant serialization is not implemented")))
+        Err(AvroSerializerError::custom(format!(
+            "unable to serialize newtype variant '{name}::{variant}': newtype variant serialization is not implemented"
+        )))
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
@@ -714,7 +720,9 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
         name: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleStruct, Self::Error> {
-        Err(AvroSerializerError::custom(format!("unable to serialize a tuple struct {name}: tuple struct serialization is not implemented")))
+        Err(AvroSerializerError::custom(format!(
+            "unable to serialize a tuple struct {name}: tuple struct serialization is not implemented"
+        )))
     }
 
     fn serialize_tuple_variant(
@@ -724,7 +732,9 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
         variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleVariant, Self::Error> {
-        Err(AvroSerializerError::custom(format!("unable to serialize tuple variant '{name}::{variant}': tuple variant serialization is not implemented")))
+        Err(AvroSerializerError::custom(format!(
+            "unable to serialize tuple variant '{name}::{variant}': tuple variant serialization is not implemented"
+        )))
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
@@ -779,7 +789,9 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
         variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
-        Err(AvroSerializerError::custom(format!("unable to serialize struct variant '{name}::{variant}': struct variant serialization is not implemented")))
+        Err(AvroSerializerError::custom(format!(
+            "unable to serialize struct variant '{name}::{variant}': struct variant serialization is not implemented"
+        )))
     }
 
     fn is_human_readable(&self) -> bool {
@@ -789,11 +801,11 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::format::avro::serializer::{avro_ser_config, AvroSchemaSerializer};
+    use crate::format::avro::serializer::{AvroSchemaSerializer, avro_ser_config};
     use crate::test::{EmbeddedStruct, TestStruct2};
     use apache_avro::schema::ResolvedSchema;
     use apache_avro::{
-        from_avro_datum, to_avro_datum, types::Value as AvroValue, Decimal, Schema as AvroSchema,
+        Decimal, Schema as AvroSchema, from_avro_datum, to_avro_datum, types::Value as AvroValue,
     };
     use dbsp::algebra::{F32, F64};
     use feldera_sqllib::{Date, SqlDecimal, Timestamp};
@@ -869,7 +881,7 @@ mod test {
   }"#;
 
     macro_rules! serializer_test {
-        ($schema: expr, $record: ident, $avro: ident) => {
+        ($schema: expr_2021, $record: ident, $avro: ident) => {
             let schema = serde_json::Value::from_str($schema).unwrap();
             let schema = AvroSchema::parse(&schema).unwrap();
             let resolved =

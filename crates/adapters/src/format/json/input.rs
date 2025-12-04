@@ -4,15 +4,15 @@ use super::{DebeziumUpdate, InsDelUpdate, WeightedUpdate};
 use crate::catalog::InputCollectionHandle;
 use crate::format::{InputBuffer, LineSplitter};
 use crate::{
+    ControllerError,
     catalog::{DeCollectionStream, RecordFormat},
     format::{InputFormat, ParseError, Parser},
-    ControllerError,
 };
 use actix_web::HttpRequest;
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
-use feldera_adapterlib::format::Splitter;
 use feldera_adapterlib::ConnectorMetadata;
+use feldera_adapterlib::format::Splitter;
 use feldera_sqllib::Variant;
 use feldera_types::format::json::{JsonLines, JsonParserConfig, JsonUpdateFormat};
 use serde::Deserialize;
@@ -89,11 +89,15 @@ impl UpdateFormat for DebeziumUpdate<&'_ RawValue> {
     }
 
     fn example() -> Option<&'static str> {
-        Some("Example valid JSON: '{{\"payload\": {{\"op\": \"u\", \"before\": {{...}}, \"after\": {{...}} }} }}'")
+        Some(
+            "Example valid JSON: '{{\"payload\": {{\"op\": \"u\", \"before\": {{...}}, \"after\": {{...}} }} }}'",
+        )
     }
 
     fn array_example() -> Option<&'static str> {
-        Some("Example valid JSON: '[{{\"payload\": {{\"op\": \"u\", \"before\": {{...}}, \"after\": {{...}} }} }}]'")
+        Some(
+            "Example valid JSON: '[{{\"payload\": {{\"op\": \"u\", \"before\": {{...}}, \"after\": {{...}} }} }}]'",
+        )
     }
 
     fn apply(
@@ -151,7 +155,9 @@ impl UpdateFormat for WeightedUpdate<&'_ RawValue> {
     }
 
     fn array_example() -> Option<&'static str> {
-        Some("Example valid JSON: '[{{\"weight\": 1, \"data\": {{...}} }}, {{\"weight\": -1, \"data\": {{...}} }}]'")
+        Some(
+            "Example valid JSON: '[{{\"weight\": 1, \"data\": {{...}} }}, {{\"weight\": -1, \"data\": {{...}} }}]'",
+        )
     }
 
     fn apply(
@@ -543,12 +549,12 @@ impl JsonSplitter {
 #[cfg(test)]
 mod test {
     use crate::{
-        format::{InputBuffer, Parser},
-        test::{data::TestStructMetadata, init_test_logger, mock_parser_pipeline, MockUpdate},
-        transport::InputConsumer,
         FormatConfig, ParseError,
+        format::{InputBuffer, Parser},
+        test::{MockUpdate, data::TestStructMetadata, init_test_logger, mock_parser_pipeline},
+        transport::InputConsumer,
     };
-    use feldera_adapterlib::{format::Splitter, ConnectorMetadata};
+    use feldera_adapterlib::{ConnectorMetadata, format::Splitter};
     use feldera_sqllib::{SqlString, Timestamp, Variant};
     use feldera_types::{
         deserialize_table_record,
@@ -1196,27 +1202,29 @@ mod test {
         metadata.insert("kafka_partition", Variant::Int(10));
         metadata.insert("kafka_offset", Variant::Int(1_000_000));
 
-        let test_cases: Vec<TestCase<TestStructMetadata, ()>> = vec![TestCase::new(
-            JsonParserConfig {
-                update_format: JsonUpdateFormat::Raw,
-                json_flavor: JsonFlavor::Default,
-                array: false,
-                lines: JsonLines::Single,
-            },
-            vec![(r#"{"i": 0}"#.to_string(), Vec::new())],
-            vec![MockUpdate::with_polarity(
-                TestStructMetadata::new(
-                    0,
-                    Variant::Map(Arc::new(BTreeMap::new())),
-                    SqlString::from("my_topic"),
-                    Timestamp::new(1763626606441),
-                    10,
-                    1_000_000,
-                ),
-                true,
-            )],
-        )
-        .with_metadata(metadata)];
+        let test_cases: Vec<TestCase<TestStructMetadata, ()>> = vec![
+            TestCase::new(
+                JsonParserConfig {
+                    update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
+                    array: false,
+                    lines: JsonLines::Single,
+                },
+                vec![(r#"{"i": 0}"#.to_string(), Vec::new())],
+                vec![MockUpdate::with_polarity(
+                    TestStructMetadata::new(
+                        0,
+                        Variant::Map(Arc::new(BTreeMap::new())),
+                        SqlString::from("my_topic"),
+                        Timestamp::new(1763626606441),
+                        10,
+                        1_000_000,
+                    ),
+                    true,
+                )],
+            )
+            .with_metadata(metadata),
+        ];
 
         run_test_cases(test_cases);
     }

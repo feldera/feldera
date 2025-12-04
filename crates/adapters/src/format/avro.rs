@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use apache_avro::{schema::Name as AvroName, Schema as AvroSchema};
+use apache_avro::{Schema as AvroSchema, schema::Name as AvroName};
 use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_types::format::avro::AvroSchemaRegistryConfig;
 use schema_registry_converter::blocking::schema_registry::SrSettings;

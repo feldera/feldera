@@ -1,7 +1,7 @@
 use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_types::{
     config::PipelineConfig,
-    pipeline_diff::{program_diff, PipelineDiff, ProgramDiff},
+    pipeline_diff::{PipelineDiff, ProgramDiff, program_diff},
 };
 use std::collections::BTreeMap;
 use std::fmt::Display;

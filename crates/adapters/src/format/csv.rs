@@ -1,11 +1,11 @@
 use crate::{
+    ControllerError, OutputConsumer,
     catalog::{CursorWithPolarity, DeCollectionStream, RecordFormat, SerCursor},
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
     util::truncate_ellipse,
-    ControllerError, OutputConsumer,
 };
 use actix_web::HttpRequest;
-use anyhow::{bail, Result as AnyResult};
+use anyhow::{Result as AnyResult, bail};
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::ConnectorMetadata;
@@ -347,10 +347,12 @@ impl Encoder for CsvEncoder {
                     let record =
                         std::str::from_utf8(&buffer[prev_len..new_len]).unwrap_or_default();
                     // We should be able to fit at least one record in the buffer.
-                    bail!("CSV record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the following record requires {} bytes: '{}'.",
-                              self.max_buffer_size,
-                              new_len - prev_len,
-                              truncate_ellipse(record, MAX_RECORD_LEN_IN_ERRMSG, "..."));
+                    bail!(
+                        "CSV record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the following record requires {} bytes: '{}'.",
+                        self.max_buffer_size,
+                        new_len - prev_len,
+                        truncate_ellipse(record, MAX_RECORD_LEN_IN_ERRMSG, "...")
+                    );
                 }
                 true
             } else {

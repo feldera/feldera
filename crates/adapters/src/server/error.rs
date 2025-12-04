@@ -39,9 +39,9 @@
 //! [`PipelineError`], which allows [`PipelineError`] to be returned as an error
 //! type by HTTP endpoints.
 
-use crate::{dyn_event, ControllerError, ParseError};
+use crate::{ControllerError, ParseError, dyn_event};
 use actix_web::{
-    body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
+    HttpResponse, HttpResponseBuilder, ResponseError, body::BoxBody, http::StatusCode,
 };
 use anyhow::Error as AnyError;
 use datafusion::error::DataFusionError;
@@ -49,14 +49,14 @@ use dbsp::DetailedError;
 use feldera_types::runtime_status::RuntimeDesiredStatus;
 use parquet::errors::ParquetError;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use std::{
     borrow::Cow,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
     sync::Arc,
 };
-use tracing::{error, warn, Level};
+use tracing::{Level, error, warn};
 use utoipa::ToSchema;
 
 pub const MAX_REPORTED_PARSE_ERRORS: usize = 1_000;

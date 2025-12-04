@@ -3,7 +3,7 @@ use std::mem::take;
 use std::{borrow::Cow, sync::Arc};
 
 use actix_web::HttpRequest;
-use anyhow::{bail, Result as AnyResult};
+use anyhow::{Result as AnyResult, bail};
 use arrow::datatypes::{
     DataType, Field as ArrowField, FieldRef, Fields, IntervalUnit as ArrowIntervalUnit, Schema,
     TimeUnit,
@@ -11,29 +11,29 @@ use arrow::datatypes::{
 use bytes::Bytes;
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
-use feldera_adapterlib::catalog::ArrowStream;
 use feldera_adapterlib::ConnectorMetadata;
+use feldera_adapterlib::catalog::ArrowStream;
 use feldera_sqllib::Variant;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::serde_with_context::serde_config::{
     BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
 };
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
-use parquet::arrow::arrow_reader::ParquetRecordBatchReader;
 use parquet::arrow::ArrowWriter;
+use parquet::arrow::arrow_reader::ParquetRecordBatchReader;
 use parquet::file::properties::WriterProperties;
 use serde::Deserialize;
-use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
+use serde_arrow::schema::SerdeArrowSchema;
 use serde_json::json;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 
 use crate::catalog::{CursorWithPolarity, SerBatchReader};
 use crate::format::MAX_DUPLICATES;
 use crate::{
+    ControllerError, OutputConsumer, SerCursor,
     catalog::{InputCollectionHandle, RecordFormat},
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
-    ControllerError, OutputConsumer, SerCursor,
 };
 use feldera_types::format::parquet::{ParquetEncoderConfig, ParquetParserConfig};
 use feldera_types::program_schema::{ColumnType, Field, IntervalUnit, Relation, SqlType};
@@ -423,7 +423,9 @@ impl Encoder for ParquetEncoder {
             }
             let mut w = cursor.weight();
             if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
-                bail!("Unable to output record with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.");
+                bail!(
+                    "Unable to output record with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'."
+                );
             }
             if w < 0 {
                 panic!("Deletes for the parquet format are not yet supported.");
@@ -438,9 +440,11 @@ impl Encoder for ParquetEncoder {
                 if buffer_full {
                     if num_records == 0 {
                         // We should be able to fit at least one record in the buffer.
-                        bail!("Parquet record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the record requires {} bytes.",
-                                  self.max_buffer_size,
-                                  buffer.len() - prev_len);
+                        bail!(
+                            "Parquet record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the record requires {} bytes.",
+                            self.max_buffer_size,
+                            buffer.len() - prev_len
+                        );
                     }
                     buffer.truncate(prev_len);
                 } else {

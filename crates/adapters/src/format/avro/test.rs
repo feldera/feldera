@@ -1,22 +1,22 @@
 use super::{
     output::AvroEncoder,
     schema::schema_json,
-    serializer::{avro_ser_config, AvroSchemaSerializer},
+    serializer::{AvroSchemaSerializer, avro_ser_config},
 };
 use crate::{
-    format::{avro::from_avro_value, InputBuffer, Parser},
+    Encoder, FormatConfig, ParseError, SerBatch,
+    format::{InputBuffer, Parser, avro::from_avro_value},
     static_compile::seroutput::SerBatchImpl,
     test::{
-        generate_test_batches, generate_test_batches_with_weights, mock_parser_pipeline, KeyStruct,
-        MockOutputConsumer, MockUpdate, TestStruct, TestStruct2,
+        KeyStruct, MockOutputConsumer, MockUpdate, TestStruct, TestStruct2, generate_test_batches,
+        generate_test_batches_with_weights, mock_parser_pipeline,
     },
-    Encoder, FormatConfig, ParseError, SerBatch,
 };
 use apache_avro::{
-    from_avro_datum, schema::ResolvedSchema, to_avro_datum, types::Value, Schema as AvroSchema,
+    Schema as AvroSchema, from_avro_datum, schema::ResolvedSchema, to_avro_datum, types::Value,
 };
-use dbsp::{utils::Tup2, OrdIndexedZSet};
 use dbsp::{DBData, OrdZSet};
+use dbsp::{OrdIndexedZSet, utils::Tup2};
 use feldera_sqllib::{ByteArray, Uuid, Variant};
 use feldera_types::{
     deserialize_table_record,
@@ -1655,9 +1655,10 @@ fn test_non_unique_keys() {
     encoder.consumer().batch_start(0);
     let err = encoder.encode(zset.as_batch_reader()).unwrap_err();
     println!("{err}");
-    assert!(err
-        .to_string()
-        .contains(r#"Error description: Multiple new values for the same key."#));
+    assert!(
+        err.to_string()
+            .contains(r#"Error description: Multiple new values for the same key."#)
+    );
     encoder.consumer().batch_end();
 
     let zset = OrdIndexedZSet::from_tuples(
@@ -1672,9 +1673,10 @@ fn test_non_unique_keys() {
     encoder.consumer().batch_start(0);
     let err = encoder.encode(zset.as_batch_reader()).unwrap_err();
     println!("{err}");
-    assert!(err
-        .to_string()
-        .contains(r#"Error description: Multiple deleted values for the same key."#));
+    assert!(
+        err.to_string()
+            .contains(r#"Error description: Multiple deleted values for the same key."#)
+    );
     encoder.consumer().batch_end();
 }
 

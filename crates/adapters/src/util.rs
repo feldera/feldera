@@ -1,15 +1,15 @@
 use std::borrow::Cow;
 use std::fmt::Display;
 use std::hash::Hash;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::RecvTimeoutError;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "with-deltalake")]
 use std::{error::Error, future::Future, pin::Pin};
 
-use anyhow::{bail, Result as AnyResult};
+use anyhow::{Result as AnyResult, bail};
 use dashmap::DashMap;
 use feldera_adapterlib::catalog::SerCursor;
 use feldera_types::program_schema::SqlIdentifier;
@@ -188,7 +188,7 @@ pub(crate) fn truncate_ellipse<'a>(s: &'a str, len: usize, ellipse: &str) -> Cow
 /// <https://github.com/tokio-rs/tracing/issues/2730>
 #[macro_export]
 macro_rules! dyn_event {
-    ($lvl:expr, $($arg:tt)+) => {
+    ($lvl:expr_2021, $($arg:tt)+) => {
         match $lvl {
             ::tracing::Level::TRACE => ::tracing::trace!($($arg)+),
             ::tracing::Level::DEBUG => ::tracing::debug!($($arg)+),
@@ -518,11 +518,7 @@ impl TokenBucket {
         if self
             .available_tokens
             .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |old| {
-                if old > 0 {
-                    Some(old - 1)
-                } else {
-                    None
-                }
+                if old > 0 { Some(old - 1) } else { None }
             })
             .is_ok()
         {

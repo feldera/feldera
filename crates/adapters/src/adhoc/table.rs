@@ -12,13 +12,13 @@ use arrow::datatypes::{Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use datafusion::catalog::{Session, TableProvider};
-use datafusion::common::{exec_err, not_impl_err, plan_err, SchemaExt};
-use datafusion::datasource::sink::{DataSink, DataSinkExec};
+use datafusion::common::{SchemaExt, exec_err, not_impl_err, plan_err};
 use datafusion::datasource::TableType;
+use datafusion::datasource::sink::{DataSink, DataSinkExec};
 use datafusion::error::DataFusionError;
 use datafusion::execution::{SendableRecordBatchStream, TaskContext};
-use datafusion::logical_expr::dml::InsertOp;
 use datafusion::logical_expr::Expr;
+use datafusion::logical_expr::dml::InsertOp;
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::metrics::MetricsSet;
@@ -29,8 +29,8 @@ use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
 };
 use feldera_types::config::{
-    default_max_batch_size, default_max_queued_records, ConnectorConfig, FormatConfig,
-    InputEndpointConfig, TransportConfig,
+    ConnectorConfig, FormatConfig, InputEndpointConfig, TransportConfig, default_max_batch_size,
+    default_max_queued_records,
 };
 use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::serde_with_context::serde_config::{
@@ -38,10 +38,10 @@ use feldera_types::serde_with_context::serde_config::{
 };
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use feldera_types::transport::adhoc::AdHocInputConfig;
-use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
+use serde_arrow::schema::SerdeArrowSchema;
 use tokio::sync::mpsc::Sender;
-use tracing::{info_span, Instrument};
+use tracing::{Instrument, info_span};
 use uuid::Uuid;
 
 pub const fn input_adhoc_arrow_serde_config() -> &'static SqlSerdeConfig {
@@ -198,14 +198,13 @@ impl TableProvider for AdHocTable {
                     self.controller.clone(),
                     self.name.clone(),
                     self.schema.clone(),
-                    ih.fork()));
-                Ok(Arc::new(DataSinkExec::new(
-                    input,
-                    sink,
-                    None,
-                )))
+                    ih.fork(),
+                ));
+                Ok(Arc::new(DataSinkExec::new(input, sink, None)))
             }
-            None => exec_err!("Called insert_into on a view, this is a bug in the feldera ad-hoc query implementation."),
+            None => exec_err!(
+                "Called insert_into on a view, this is a bug in the feldera ad-hoc query implementation."
+            ),
         }
     }
 }
@@ -444,10 +443,11 @@ impl ExecutionPlan for AdHocQueryExecution {
         _context: Arc<TaskContext>,
     ) -> datafusion::common::Result<SendableRecordBatchStream> {
         if !self.materialized {
-            return Err(DataFusionError::Execution(
-                format!("Tried to SELECT from a non-materialized source. Make sure `{}` is configured as materialized: \
-use `with ('materialized' = 'true')` for tables, or `create materialized view` for views", self.name),
-            ));
+            return Err(DataFusionError::Execution(format!(
+                "Tried to SELECT from a non-materialized source. Make sure `{}` is configured as materialized: \
+use `with ('materialized' = 'true')` for tables, or `create materialized view` for views",
+                self.name
+            )));
         }
 
         async fn send_batch(

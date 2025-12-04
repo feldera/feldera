@@ -8,9 +8,10 @@
 mod input;
 mod output;
 
-use anyhow::{bail, Context, Result as AnyResult};
-use feldera_types::transport::kafka::{default_redpanda_server, KafkaLogLevel};
+use anyhow::{Context, Result as AnyResult, bail};
+use feldera_types::transport::kafka::{KafkaLogLevel, default_redpanda_server};
 use rdkafka::{
+    ClientConfig, ClientContext, Offset, TopicPartitionList,
     client::Client as KafkaClient,
     consumer::{BaseConsumer, Consumer, ConsumerContext},
     error::{KafkaError, KafkaResult},
@@ -18,7 +19,6 @@ use rdkafka::{
     producer::{Producer, ProducerContext, ThreadedProducer},
     types::RDKafkaErrorCode,
     util::Timeout,
-    ClientConfig, ClientContext, Offset, TopicPartitionList,
 };
 use std::{
     collections::BTreeMap,
@@ -47,7 +47,9 @@ fn enforce_option<'a>(
     val: &'a str,
 ) -> AnyResult<()> {
     if *settings.entry(option).or_insert(val) != val {
-        bail!("cannot override '{option}' option: the Kafka transport adapter sets this option to '{val}'");
+        bail!(
+            "cannot override '{option}' option: the Kafka transport adapter sets this option to '{val}'"
+        );
     }
     Ok(())
 }
@@ -319,7 +321,9 @@ impl<'a, C: ClientContext + ConsumerContext> Ctp<'a, BaseConsumer<C>, C> {
             }
 
             if self.position().is_err() {
-                warn!("Can't get current position for {self}, starting over from offset {start_offset}");
+                warn!(
+                    "Can't get current position for {self}, starting over from offset {start_offset}"
+                );
                 self.assign(start_offset)?;
             }
         }

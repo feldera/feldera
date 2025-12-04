@@ -1,6 +1,6 @@
 //! Tests for datagen input adapter that generates random data based on a schema and config.
-use crate::test::{mock_input_pipeline, MockDeZSet, MockInputConsumer, TestStruct2};
 use crate::InputReader;
+use crate::test::{MockDeZSet, MockInputConsumer, TestStruct2, mock_input_pipeline};
 use anyhow::Result as AnyResult;
 use dbsp::algebra::F64;
 use feldera_sqllib::binary::ByteArray;

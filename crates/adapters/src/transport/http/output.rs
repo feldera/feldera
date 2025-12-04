@@ -1,14 +1,14 @@
 use crate::{AsyncErrorCallback, OutputEndpoint, TransportConfig};
-use actix_web::{http::header::ContentType, web::Bytes, HttpResponse};
-use anyhow::{anyhow, bail, Result as AnyResult};
+use actix_web::{HttpResponse, http::header::ContentType, web::Bytes};
+use anyhow::{Result as AnyResult, anyhow, bail};
 use async_stream::stream;
 use crossbeam::sync::ShardedLock;
-use serde::{ser::SerializeStruct, Serializer};
+use serde::{Serializer, ser::SerializeStruct};
 use serde_json::value::RawValue;
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };

@@ -1,12 +1,12 @@
+use crate::Controller;
 use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::parquet::test::load_parquet_file;
 use crate::integrated::delta_table::delta_input_serde_config;
 use crate::test::data::DeltaTestKey;
 use crate::test::{
-    file_to_zset, list_files_recursive, test_circuit, test_circuit_with_index, wait,
-    DeltaTestStruct,
+    DeltaTestStruct, file_to_zset, list_files_recursive, test_circuit, test_circuit_with_index,
+    wait,
 };
-use crate::Controller;
 use arrow::datatypes::Schema as ArrowSchema;
 use chrono::NaiveDate;
 #[cfg(feature = "delta-s3-test")]
@@ -34,7 +34,7 @@ use proptest::prelude::{Arbitrary, ProptestConfig, Strategy};
 use proptest::proptest;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 #[cfg(feature = "delta-s3-test")]
 use serial_test::{parallel, serial};
 use std::cmp::min;
@@ -51,9 +51,9 @@ use tempfile::{NamedTempFile, TempDir};
 use tokio::sync::mpsc;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, info};
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 fn delta_output_serde_config() -> SqlSerdeConfig {
     SqlSerdeConfig::default()
@@ -976,17 +976,19 @@ async fn test_follow(
 
         let status = pipeline.input_endpoint_status("test_input1").unwrap();
 
-        assert!(status
-            .as_object()
-            .unwrap()
-            .get("metrics")
-            .unwrap()
-            .as_object()
-            .unwrap()
-            .get("end_of_input")
-            .unwrap()
-            .as_bool()
-            .unwrap());
+        assert!(
+            status
+                .as_object()
+                .unwrap()
+                .get("metrics")
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .get("end_of_input")
+                .unwrap()
+                .as_bool()
+                .unwrap()
+        );
     }
 
     // TODO: this does not currently work because our output delta connector doesn't support

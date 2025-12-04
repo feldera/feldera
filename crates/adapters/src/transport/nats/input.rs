@@ -34,10 +34,10 @@ mod config_utils;
 mod test;
 
 use crate::{
-    transport::{InputQueue, InputReaderCommand},
     InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint,
+    transport::{InputQueue, InputReaderCommand},
 };
-use anyhow::{anyhow, Context, Error as AnyError, Result as AnyResult};
+use anyhow::{Context, Error as AnyError, Result as AnyResult, anyhow};
 use async_nats::{
     self,
     jetstream::{self, consumer as nats_consumer},
@@ -58,15 +58,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::cmp;
 use std::hash::Hasher;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::{
     select,
-    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{info, info_span, Instrument};
+use tracing::{Instrument, info, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
 
 type NatsConsumerConfig = nats_consumer::pull::OrderedConfig;
@@ -373,7 +373,10 @@ async fn consume_nats_messages_until(
                     cmp::Ordering::Less => (),     // Still more messages to consume
                     cmp::Ordering::Equal => break, // This was the final message we wanted
                     cmp::Ordering::Greater => {
-                        return Err(anyhow!("Received unexpected message with offset {}; maybe the requested messages have been deleted?", info.stream_sequence));
+                        return Err(anyhow!(
+                            "Received unexpected message with offset {}; maybe the requested messages have been deleted?",
+                            info.stream_sequence
+                        ));
                     }
                 }
             }

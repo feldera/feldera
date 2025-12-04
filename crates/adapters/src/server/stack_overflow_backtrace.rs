@@ -74,9 +74,10 @@ use tracing::error;
 ///
 /// PRs to make this more robust are welcome
 pub unsafe fn enable_stack_overflow_backtrace() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
+    unsafe {
+        static ONCE: std::sync::Once = std::sync::Once::new();
 
-    ONCE.call_once(|| {
+        ONCE.call_once(|| {
         // Use u128 for alignment.
         let buf = Vec::leak(vec![0u128; 4096]);
         let stack = libc::stack_t {
@@ -103,14 +104,17 @@ pub unsafe fn enable_stack_overflow_backtrace() {
         signal::sigaction(signal::SIGSEGV, &sig_action).unwrap();
         signal::sigaction(signal::SIGABRT, &sig_action).unwrap();
     })
+    }
 }
 
 static mut COUNT: usize = 10;
 
 /// Like [`enable`], but only print the first `count` frames of the backtrace.
 pub unsafe fn enable_stack_overflow_backtrace_with_limit(count: usize) {
-    COUNT = count;
-    enable_stack_overflow_backtrace();
+    unsafe {
+        COUNT = count;
+        enable_stack_overflow_backtrace();
+    }
 }
 
 extern "C" fn handle_sigsegv(sig: i32) {

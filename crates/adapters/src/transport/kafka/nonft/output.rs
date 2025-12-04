@@ -1,18 +1,18 @@
 use crate::transport::kafka::{
-    build_headers, generate_oauthbearer_token, kafka_send, rdkafka_loglevel_from,
-    validate_aws_msk_region, DeferredLogging, MemoryUseReporter, PemToLocation,
+    DeferredLogging, MemoryUseReporter, PemToLocation, build_headers, generate_oauthbearer_token,
+    kafka_send, rdkafka_loglevel_from, validate_aws_msk_region,
 };
 use crate::{AsyncErrorCallback, OutputEndpoint};
-use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use feldera_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::client::OAuthToken;
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::{
+    ClientConfig, ClientContext,
     config::FromClientConfigAndContext,
     error::KafkaError,
     producer::{BaseRecord, DeliveryResult, Producer, ProducerContext, ThreadedProducer},
     types::RDKafkaErrorCode,
-    ClientConfig, ClientContext,
 };
 use std::collections::HashMap;
 use std::error::Error;
@@ -156,11 +156,15 @@ impl KafkaOutputEndpoint {
             .map(|s| s.parse::<usize>().unwrap_or(DEFAULT_MAX_MESSAGE_SIZE))
             .unwrap_or(DEFAULT_MAX_MESSAGE_SIZE);
         if message_max_bytes <= MAX_MESSAGE_OVERHEAD {
-            bail!("Invalid setting 'message.max.bytes={message_max_bytes}'. 'message.max.bytes' must be greated than {MAX_MESSAGE_OVERHEAD}");
+            bail!(
+                "Invalid setting 'message.max.bytes={message_max_bytes}'. 'message.max.bytes' must be greated than {MAX_MESSAGE_OVERHEAD}"
+            );
         }
 
         let max_message_size = message_max_bytes - MAX_MESSAGE_OVERHEAD;
-        debug!("Configured max message size: {max_message_size} ('message.max.bytes={message_max_bytes}')");
+        debug!(
+            "Configured max message size: {max_message_size} ('message.max.bytes={message_max_bytes}')"
+        );
 
         // Create Kafka producer.
         let kafka_producer = ThreadedProducer::from_config_and_context(&client_config, context)
@@ -264,8 +268,8 @@ impl OutputEndpoint for KafkaOutputEndpoint {
 #[cfg(test)]
 mod test {
     use crate::{
-        test::{init_test_logger, test_circuit, TestStruct},
         Controller,
+        test::{TestStruct, init_test_logger, test_circuit},
     };
     use serde_json::json;
     use tracing::info;

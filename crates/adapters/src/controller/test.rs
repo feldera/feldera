@@ -1,9 +1,9 @@
 use crate::{
+    Controller, PipelineConfig,
     test::{
-        generate_test_batch, init_test_logger, test_circuit, wait, TestStruct, DEFAULT_TIMEOUT_MS,
+        DEFAULT_TIMEOUT_MS, TestStruct, generate_test_batch, init_test_logger, test_circuit, wait,
     },
     transport::set_barrier,
-    Controller, PipelineConfig,
 };
 use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
 use feldera_types::{
@@ -15,7 +15,7 @@ use std::{
     borrow::Cow,
     cmp::min,
     collections::BTreeMap,
-    fs::{create_dir, remove_file, File},
+    fs::{File, create_dir, remove_file},
     io::Write,
     iter::repeat_n,
     ops::Range,
@@ -95,7 +95,10 @@ fn test_start_after_cyclic() {
         panic!("expected to fail")
     };
 
-    assert_eq!(&err.to_string(), "invalid controller configuration: cyclic 'start_after' dependency detected: endpoint 'test_input1.endpoint1' with label 'label1' waits for endpoint 'test_input1.endpoint2' with label 'label2', which waits for endpoint 'test_input1.endpoint1' with label 'label1'");
+    assert_eq!(
+        &err.to_string(),
+        "invalid controller configuration: cyclic 'start_after' dependency detected: endpoint 'test_input1.endpoint1' with label 'label1' waits for endpoint 'test_input1.endpoint2' with label 'label2', which waits for endpoint 'test_input1.endpoint1' with label 'label1'"
+    );
 }
 
 #[test]

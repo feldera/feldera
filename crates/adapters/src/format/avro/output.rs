@@ -1,22 +1,22 @@
 use crate::catalog::{CursorWithPolarity, SerBatchReader};
-use crate::format::avro::schema::{schema_json, AvroSchemaBuilder};
-use crate::format::avro::schema_registry_settings;
 use crate::format::MAX_DUPLICATES;
-use crate::util::{indexed_operation_type, IndexedOperationType};
+use crate::format::avro::schema::{AvroSchemaBuilder, schema_json};
+use crate::format::avro::schema_registry_settings;
+use crate::util::{IndexedOperationType, indexed_operation_type};
 use crate::{ControllerError, Encoder, OutputConsumer, OutputFormat, RecordFormat, SerCursor};
 use actix_web::HttpRequest;
-use anyhow::{anyhow, bail, Result as AnyResult};
-use apache_avro::schema::RecordField;
+use anyhow::{Result as AnyResult, anyhow, bail};
 use apache_avro::Schema;
-use apache_avro::{to_avro_datum, types::Value as AvroValue, Schema as AvroSchema};
+use apache_avro::schema::RecordField;
+use apache_avro::{Schema as AvroSchema, to_avro_datum, types::Value as AvroValue};
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::format::avro::{
     AvroEncoderConfig, AvroEncoderKeyMode, AvroUpdateFormat, SubjectNameStrategy,
 };
 use feldera_types::program_schema::{Relation, SqlIdentifier};
-use schema_registry_converter::blocking::schema_registry::post_schema;
 use schema_registry_converter::blocking::schema_registry::SrSettings;
+use schema_registry_converter::blocking::schema_registry::post_schema;
 use schema_registry_converter::schema_registry_common::{SchemaType, SuppliedSchema};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
@@ -258,11 +258,11 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                     .any(|f| f.name.eq_ignore_ascii_case(field))
                 {
                     return Err(ControllerError::invalid_encoder_configuration(
-                            endpoint_name,
-                            &format!(
-                                "the avro schema already contains a field named '{field}', which conflicts with the value specified in the 'cdc_field' property. Please choose a different 'cdc_field' value to avoid this naming conflict.",
-                            ),
-                        ));
+                        endpoint_name,
+                        &format!(
+                            "the avro schema already contains a field named '{field}', which conflicts with the value specified in the 'cdc_field' property. Please choose a different 'cdc_field' value to avoid this naming conflict.",
+                        ),
+                    ));
                 }
 
                 record_schema.fields.push(
@@ -307,7 +307,9 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
 
                 Some(key_avro_schema)
             } else {
-                debug!("Avro encoder {endpoint_name}: using the same schema for the key as for the value");
+                debug!(
+                    "Avro encoder {endpoint_name}: using the same schema for the key as for the value"
+                );
                 Some(value_avro_schema.clone())
             }
         } else {
@@ -340,7 +342,10 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                         if let Some(topic) = &topic {
                             Some(format!("{topic}-key"))
                         } else {
-                            return Err(ControllerError::invalid_encoder_configuration(endpoint_name, "'topic_name' subject strategy is only valid for connectors with Kafka transport"));
+                            return Err(ControllerError::invalid_encoder_configuration(
+                                endpoint_name,
+                                "'topic_name' subject strategy is only valid for connectors with Kafka transport",
+                            ));
                         }
                     }
                     SubjectNameStrategy::TopicRecordName => {
@@ -351,7 +356,10 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                                 value_avro_schema.name().unwrap().fullname(None)
                             ))
                         } else {
-                            return Err(ControllerError::invalid_encoder_configuration(endpoint_name, "'topic_record_name' subject strategy is only valid for connectors with Kafka transport"));
+                            return Err(ControllerError::invalid_encoder_configuration(
+                                endpoint_name,
+                                "'topic_record_name' subject strategy is only valid for connectors with Kafka transport",
+                            ));
                         }
                     }
                 }
@@ -369,7 +377,10 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                             topic.to_string()
                         }
                     } else {
-                        return Err(ControllerError::invalid_encoder_configuration(endpoint_name, "'topic_name' subject strategy is only valid for connectors with Kafka transport"));
+                        return Err(ControllerError::invalid_encoder_configuration(
+                            endpoint_name,
+                            "'topic_name' subject strategy is only valid for connectors with Kafka transport",
+                        ));
                     }
                 }
                 SubjectNameStrategy::TopicRecordName => {
@@ -386,7 +397,10 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                             )
                         }
                     } else {
-                        return Err(ControllerError::invalid_encoder_configuration(endpoint_name, "'topic_record_name' subject strategy is only valid for connectors with Kafka transport"));
+                        return Err(ControllerError::invalid_encoder_configuration(
+                            endpoint_name,
+                            "'topic_record_name' subject strategy is only valid for connectors with Kafka transport",
+                        ));
                     }
                 }
             };
@@ -577,7 +591,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                             .val_to_avro(&self.value_avro_schema, &HashMap::new())
                             .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
 
-                        let AvroValue::Record(ref mut items) = &mut avro_value else {
+                        let AvroValue::Record(items) = &mut avro_value else {
                             bail!("expected avro value of type record, found: {avro_value:?}")
                         };
 
@@ -608,7 +622,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                             .val_to_avro(&self.value_avro_schema, &HashMap::new())
                             .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
 
-                        let AvroValue::Record(ref mut items) = &mut avro_value else {
+                        let AvroValue::Record(items) = &mut avro_value else {
                             bail!("expected avro value of type record, found: {avro_value:?}")
                         };
 
@@ -747,8 +761,7 @@ fn publish_schema(
         })?;
     debug!(
         "avro encoder {endpoint_name}: registered new avro schema '{subject}' with id {}, schema: {:?}",
-        registered_schema.id,
-        registered_schema
+        registered_schema.id, registered_schema
     );
     Ok(registered_schema.id)
 }

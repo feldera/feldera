@@ -1,13 +1,13 @@
 use crate::format::StreamSplitter;
 use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand};
 use crate::{
-    server::{PipelineError, MAX_REPORTED_PARSE_ERRORS},
-    transport::InputReader,
     ControllerError, InputConsumer, PipelineState, TransportInputEndpoint,
+    server::{MAX_REPORTED_PARSE_ERRORS, PipelineError},
+    transport::InputReader,
 };
 use crate::{InputBuffer, ParseError, Parser};
 use actix_web::web::Payload;
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use anyhow::{Error as AnyError, Result as AnyResult, anyhow};
 use atomic::Atomic;
 use chrono::{DateTime, Utc};
 use circular_queue::CircularQueue;
@@ -22,10 +22,10 @@ use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{
     hash::Hasher,
-    sync::{atomic::Ordering, Arc, Mutex},
+    sync::{Arc, Mutex, atomic::Ordering},
     time::Duration,
 };
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::{sync::watch, time::timeout};
 use tracing::{debug, info_span};
 use xxhash_rust::xxh3::Xxh3Default;

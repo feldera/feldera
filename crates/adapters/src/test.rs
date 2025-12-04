@@ -3,7 +3,7 @@
 #![allow(clippy::type_complexity)]
 
 use crate::{
-    controller::InputEndpointConfig, transport::InputReader, Catalog, CircuitCatalog, FormatConfig,
+    Catalog, CircuitCatalog, FormatConfig, controller::InputEndpointConfig, transport::InputReader,
 };
 use anyhow::Result as AnyResult;
 use dbsp::{DBData, DBSPHandle, OrdZSet, Runtime};
@@ -17,7 +17,7 @@ use serde_json::json;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
-use std::fs::{read_dir, File};
+use std::fs::{File, read_dir};
 use std::future::Future;
 use std::hash::Hash;
 use std::io::Read;
@@ -27,9 +27,9 @@ use std::{
     thread::sleep,
     time::{Duration, Instant},
 };
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 pub mod data;
 
@@ -58,17 +58,16 @@ use crate::catalog::InputCollectionHandle;
 use crate::format::get_input_format;
 use crate::transport::input_transport_config_to_endpoint;
 pub use data::{
-    generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
     DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergTestStruct, KeyStruct, TestStruct,
-    TestStruct2,
+    TestStruct2, generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
 };
 use dbsp::circuit::{CircuitConfig, NodeId};
 use dbsp::utils::Tup2;
 use feldera_types::format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{Field, Relation, SqlIdentifier};
 pub use mock_dezset::{
-    wait_for_output_count, wait_for_output_ordered, wait_for_output_unordered, MockDeZSet,
-    MockUpdate,
+    MockDeZSet, MockUpdate, wait_for_output_count, wait_for_output_ordered,
+    wait_for_output_unordered,
 };
 pub use mock_input_consumer::{MockInputConsumer, MockInputParser};
 pub use mock_output_consumer::MockOutputConsumer;
