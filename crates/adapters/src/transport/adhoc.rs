@@ -277,7 +277,7 @@ impl InputReader for AdHocInputEndpoint {
                 let mut total = BufferSize::empty();
                 let mut hasher = Xxh3Default::new();
                 for chunk in chunks {
-                    let (mut buffer, errors) = details.parser.parse(&chunk, &None);
+                    let (mut buffer, errors) = details.parser.parse(&chunk, None);
                     details.consumer.buffered(buffer.len());
                     details.consumer.parse_errors(errors);
                     total += buffer.len();

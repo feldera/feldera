@@ -350,7 +350,7 @@ where
             mock_parser_pipeline(&test.relation_schema, &format_config).unwrap();
         consumer.on_error(Some(Box::new(|_, _| {})));
         for (avro, expected_errors) in test.input_batches {
-            let (mut buffer, errors) = parser.parse(&avro, &None);
+            let (mut buffer, errors) = parser.parse(&avro, None);
             assert_eq!(&errors, &expected_errors);
             buffer.flush();
         }

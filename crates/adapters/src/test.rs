@@ -420,7 +420,7 @@ where
 
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes).unwrap();
-    let (mut parsed_buffers, errors) = parser.parse(&bytes, &None);
+    let (mut parsed_buffers, errors) = parser.parse(&bytes, None);
     parsed_buffers.flush();
 
     // Use assert_eq, so errors are printed in case of a failure.

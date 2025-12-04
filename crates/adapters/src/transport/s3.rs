@@ -593,7 +593,7 @@ impl S3InputReader {
                                     let Some(chunk) = splitter.next(eoi) else {
                                         break;
                                     };
-                                    let (buffer, errors) = parser.parse(chunk, &None);
+                                    let (buffer, errors) = parser.parse(chunk, None);
                                     let errors = errors
                                         .into_iter()
                                         .map(|e| {

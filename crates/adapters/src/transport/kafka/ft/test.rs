@@ -21,6 +21,7 @@ use csv::ReaderBuilder as CsvReaderBuilder;
 use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
+use feldera_adapterlib::ConnectorMetadata;
 use feldera_sqllib::{ByteArray, SqlString, Variant};
 use feldera_types::config::{
     default_max_batch_size, default_max_queued_records, ConnectorConfig, FormatConfig, FtModel,
@@ -326,7 +327,7 @@ impl Parser for DummyParser {
     fn parse(
         &mut self,
         data: &[u8],
-        _metadata: &Option<Variant>,
+        _metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         (
             Some(Box::new(DummyInputBuffer {

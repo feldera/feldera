@@ -355,7 +355,7 @@ impl BufferConsumer {
                             };
 
                             if let Some(payload) = message.payload() {
-                                parser.parse(payload, &None).0.flush();
+                                parser.parse(payload, None).0.flush();
                             }
                         }
                     }

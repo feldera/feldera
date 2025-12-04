@@ -8,7 +8,6 @@ use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
 use dbsp::operator::input::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
-use feldera_sqllib::Variant;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::program_schema::Relation;
 use feldera_types::serde_with_context::FieldParseError;
@@ -18,6 +17,7 @@ use serde::Serialize;
 use crate::catalog::{InputCollectionHandle, SerBatchReader};
 use crate::errors::controller::ControllerError;
 use crate::transport::Step;
+use crate::ConnectorMetadata;
 
 /// Trait that represents a specific data format.
 ///
@@ -208,7 +208,7 @@ pub trait Parser: Send + Sync {
     fn parse(
         &mut self,
         data: &[u8],
-        metadata: &Option<Variant>,
+        metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>);
 
     /// Stages all of the `buffers`, which must have been obtained from this

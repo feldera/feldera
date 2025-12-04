@@ -199,7 +199,7 @@ impl ClockReader {
                             continue;
                         };
                         consumer.buffered(RECORD_SIZE);
-                        let mut buffer = parser.parse(Self::timestamp_to_record(ts_millis).as_bytes(), &None).0.unwrap();
+                        let mut buffer = parser.parse(Self::timestamp_to_record(ts_millis).as_bytes(), None).0.unwrap();
                         buffer.flush();
                         consumer.replayed(RECORD_SIZE, 0);
                     }
@@ -217,7 +217,7 @@ impl ClockReader {
                         // Push current time;
                         consumer.buffered(RECORD_SIZE);
                         let now = Self::current_time(&config);
-                        let mut buffer = parser.parse(Self::timestamp_to_record(now).as_bytes(), &None).0.unwrap();
+                        let mut buffer = parser.parse(Self::timestamp_to_record(now).as_bytes(), None).0.unwrap();
                         buffer.flush();
                         consumer.extended(RECORD_SIZE, Some(Resume::Replay {
                              seek: serde_json::Value::Null,
