@@ -99,7 +99,7 @@ impl CsvParser {
         errors: &mut Vec<ParseError>,
     ) {
         if !self.headers || self.last_event_number > 0 {
-            if let Err(e) = self.input_stream.insert(record, &metadata) {
+            if let Err(e) = self.input_stream.insert(record, metadata) {
                 errors.push(ParseError::text_event_error(
                     "failed to deserialize CSV record",
                     e,
@@ -158,8 +158,8 @@ impl Parser for CsvParser {
         mut data: &[u8],
         metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-        let metadata = metadata.map(|metadata| Variant::from(metadata));
-        
+        let metadata = metadata.map(Variant::from);
+
         let mut errors = Vec::new();
         while let Some((record, rest)) = self.split_record(data) {
             self.parse_record(record, &metadata, &mut errors);

@@ -168,7 +168,7 @@ impl Parser for RawParser {
         metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let mut errors = Vec::new();
-        let metadata = metadata.map(|metadata| Variant::from(metadata));
+        let metadata = metadata.map(Variant::from);
 
         match self.config.mode {
             RawParserMode::Blob => {

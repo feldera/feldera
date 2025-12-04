@@ -323,10 +323,9 @@ impl AvroParser {
         metadata: Option<ConnectorMetadata>,
     ) -> Result<(), ParseError> {
         self.last_event_number += 1;
-        let metadata = metadata.map(|metadata| Variant::from(metadata));
 
         let n_bytes = data.len();
-        let mut record = if !self.config.skip_schema_id {
+        let (mut record, metadata) = if !self.config.skip_schema_id {
             if data.len() < 5 {
                 return Err(ParseError::bin_event_error(
                         "Avro record is less than 5 bytes long (valid Avro records must include a 5-byte header)".to_string(),
@@ -370,9 +369,13 @@ impl AvroParser {
                 }
             }
 
-            &data[5..]
+            let mut metadata = metadata.unwrap_or_default();
+            metadata.insert("avro_schema_id", Variant::UInt(self.schema_id.unwrap_or(0)));
+            let metadata = Some(Variant::from(metadata));
+
+            (&data[5..], metadata)
         } else {
-            data
+            (data, metadata.map(Variant::from))
         };
 
         // At this point we should either have a statically configured schema or a successfully installed schema from

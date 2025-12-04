@@ -888,6 +888,100 @@ fn test_enums() {
     run_parser_test(vec![test]);
 }
 
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+struct TestMetadata {
+    id: i64,
+    schema_id: Option<u32>,
+}
+
+impl TestMetadata {
+    pub fn avro_schema() -> &'static str {
+        r#"{
+            "type": "record",
+            "name": "TestMetadata",
+            "connect.name": "test_namespace.TestMetadata",
+            "fields": [
+                { "name": "id", "type": "long" }
+            ]
+        }"#
+    }
+
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("id".into(), ColumnType::bigint(false)),
+            Field::new("schema_id".into(), ColumnType::uint(true)),
+        ]
+    }
+
+    pub fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("TestMetadata", false),
+            fields: Self::schema(),
+            materialized: false,
+            properties: BTreeMap::new(),
+        }
+    }
+}
+
+serialize_table_record!(TestMetadata[2]{
+    r#id["id"]: i64,
+    r#schema_id["schema_id"]: Option<u32>
+});
+
+deserialize_table_record!(TestMetadata["TestMetadata", Variant, 2] {
+    (r#id, "id", false, i64, |_| None),
+    (r#schema_id, "schema_id", true, Option<u32>,  |metadata: &Option<Variant>| metadata.as_ref().map(|metadata| u32::try_from(metadata.index_string("avro_schema_id")).ok()))
+});
+
+#[test]
+fn test_metadata() {
+    let schema = AvroSchema::parse_str(TestMetadata::avro_schema()).unwrap();
+    let vals = [TestMetadata {
+        id: 5,
+        schema_id: Some(0),
+    }];
+
+    let input_batches = vec![(
+        serialize_value(
+            Value::Record(vec![("id".to_string(), Value::Long(5))]),
+            &schema,
+        ),
+        vec![],
+    )];
+    let expected_output = vals
+        .iter()
+        .map(|v| MockUpdate::Insert(v.clone()))
+        .collect::<Vec<_>>();
+
+    let test = TestCase {
+        relation_schema: TestMetadata::relation_schema(),
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Raw,
+            schema: Some(TestMetadata::avro_schema().to_string()),
+            skip_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches,
+        expected_output,
+    };
+
+    run_parser_test(vec![test]);
+}
+
 /// Deserialize timestamp encoded as timestamp-millis instead of micros.
 #[test]
 fn test_ms_time() {
