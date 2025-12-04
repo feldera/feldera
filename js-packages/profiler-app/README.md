@@ -4,7 +4,7 @@ Standalone application for visualizing Feldera DBSP circuit profiles.
 
 ## Overview
 
-This is a SPA web app for loading and visualizing circuit profiles using `profiler-lib`. Supports loading profiles from support bundle `.zip` files.
+This is a Single-Page Application (SPA) web app for loading and visualizing circuit profiles using `profiler-lib`. Supports loading profiles from support bundle `.zip` files.
 
 Provides the same functionality as the Web Console's integrated profiler.
 

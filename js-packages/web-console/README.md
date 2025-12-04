@@ -53,6 +53,7 @@ bun run lint
 ```
 
 Check that there are no type or syntax errors:
+
 ```bash
 bun run check
 ```

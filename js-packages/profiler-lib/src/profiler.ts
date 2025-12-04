@@ -64,7 +64,7 @@ export interface ProfilerCallbacks {
     /**
      * Called when a leaf node is double-clicked.
      */
-    onLeafNodeDoubleClick?: (nodeId: string) => void;
+    onNodeDoubleClick?: (nodeId: string, type: 'group' | 'leaf') => void;
 }
 
 export interface ProfilerConfig {
@@ -137,8 +137,12 @@ export class Profiler {
                 this.clearMessage.bind(this)
             );
             this.rendering.setEvents({
-                onParentNodeDoubleClick: n => this.circuitSelector!.toggleExpand(n),
-                onLeafNodeDoubleClick: this.config.callbacks.onLeafNodeDoubleClick
+                onNodeDoubleClick: (node, type) => {
+                    if (type === 'group') {
+                        this.circuitSelector!.toggleExpand(node)
+                    }
+                    this.config.callbacks.onNodeDoubleClick?.(node, type)
+                }
             });
 
             // Wire up event handlers

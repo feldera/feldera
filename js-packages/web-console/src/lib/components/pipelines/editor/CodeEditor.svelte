@@ -253,55 +253,116 @@
     if (!editorRef) {
       return
     }
-    // Basic format: #filename:line:column
-    // When detected, just scroll to code position
-    // Extended format: #filename:startLine:startColumn[:endLine:endColumn]
-    // When detected, highlight the code range and scroll to code position
-    const match = page.url.hash.match(
-      new RegExp(`#(${pipelineFileNameRegex}):(\\d+)(?::(\\d+))?(?::(\\d+))?(?::(\\d+))?`)
-    )
-    if (!match) {
+
+    // This effect detects when the code editor should scroll to reveal a source position or multiple source ranges
+    // Supported formats:
+    // 1. Simple: #filename:line:column (scroll only)
+    // 2. Range(s): #filename:startLine:startColumn-endLine:endColumn,startLine2:startColumn2-endLine2:endColumn2 (multiple selections)
+
+    const selection = parseSourcePosition(page.url)
+    if (!selection) {
       return
     }
 
-    const [, fileName, startLine, startColumn, endLine, endColumn] = match
-    if (!startLine) {
-      return
-    }
-
-    if (currentFileName !== fileName) {
-      currentFileName = fileName
+    if (currentFileName !== selection.fileName) {
+      currentFileName = selection.fileName
     }
 
     setTimeout(() => {
-      const startLineNum = parseInt(startLine)
-      const startColNum = parseInt(startColumn) ?? 1
-
-      if (endLine && endColumn) {
-        // Both start and end positions provided - highlight the range
-        const endLineNum = parseInt(endLine)
-        const endColNum = parseInt(endColumn)
-
-        editorRef.setSelection({
-          startLineNumber: startLineNum,
-          startColumn: startColNum,
-          endLineNumber: endLineNum,
-          endColumn: endColNum
-        })
+      if ('ranges' in selection) {
+        const { ranges } = selection
+        // Range format found - create selections for multiple source positions
+        editorRef.setSelections(
+          ranges.map((range) => ({
+            selectionStartLineNumber: range.startLine,
+            selectionStartColumn: range.startColumn,
+            positionLineNumber: range.endLine,
+            positionColumn: range.endColumn
+          }))
+        )
+        // Reveal the first selection in center
         editorRef.revealRangeInCenter({
-          startLineNumber: startLineNum,
-          startColumn: startColNum,
-          endLineNumber: endLineNum,
-          endColumn: endColNum
+          startLineNumber: ranges[0].startLine,
+          startColumn: ranges[0].startColumn,
+          endLineNumber: ranges[0].endLine,
+          endColumn: ranges[0].endColumn
         })
       } else {
-        // Only start position - just scroll to it
-        editorRef.revealPosition({ lineNumber: startLineNum, column: startColNum })
+        // Simple format, single position: `line:column` (scroll only)
+        editorRef.revealPosition({ lineNumber: selection.line, column: selection.column })
       }
 
       window.location.hash = ''
     }, 50)
   })
+
+  /**
+   * Parse source position(s) from URL anchor.
+   *
+   * Supported formats:
+   * 1. Simple: "line:column"
+   * 2. Range(s): "startLine:startColumn-endLine:endColumn,startLine2:startColumn2-endLine2:endColumn2"
+   */
+  function parseSourcePosition(url: URL):
+    | {
+        fileName: string,
+        ranges: {
+          startLine: number
+          startColumn: number
+          endLine: number
+          endColumn: number
+        }[]
+      }
+    | {
+        fileName: string,
+        line: number
+        column: number
+      }
+    | null {
+
+    const hashMatch = url.hash.match(new RegExp(`#(${pipelineFileNameRegex}):(.+)`))
+    if (!hashMatch) {
+      return null
+    }
+
+    const [, fileName, positionString] = hashMatch
+
+    if (!positionString) {
+      return null
+    }
+
+    // Try to match all ranges pattern: startLine:startColumn-endLine:endColumn
+    const rangeMatches = [...positionString.matchAll(/(\d+):(\d+)-(\d+):(\d+)/g)]
+
+    if (rangeMatches.length > 0) {
+      return {
+        fileName,
+        ranges: rangeMatches.map((match) => {
+          const [, startLine, startColumn, endLine, endColumn] = match
+          return {
+            startLine: parseInt(startLine),
+            startColumn: parseInt(startColumn),
+            endLine: parseInt(endLine),
+            endColumn: parseInt(endColumn)
+          }
+        })
+      }
+    }
+
+    // Simple format, single position: `line:column` (scroll only)
+    const parts = positionString.split(':')
+    const position = {
+      fileName,
+      line: parseInt(parts[0]),
+      column: parseInt(parts[1]) || 1
+    }
+
+    if (isNaN(position.line)) {
+      return null
+    }
+
+    return position
+  }
 
   let placeholderContent = $derived(file.placeholder)
   $effect(() => {

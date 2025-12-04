@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { goto } from '$app/navigation'
+  import { goto } from '$app/navigation'
   import ProfilerDiagram from './ProfilerDiagram.svelte'
   import type {
     ProfilerCallbacks,
@@ -8,7 +8,8 @@
     JsonProfiles,
     Dataflow,
     TooltipData,
-    CircuitProfile
+    CircuitProfile,
+    SourcePositionRange
   } from 'profiler-lib'
 
   interface Props {
@@ -49,7 +50,7 @@
   // Callbacks for profiler-lib
   const callbacks: ProfilerCallbacks = {
     displayNodeAttributes: (data, visible) => {
-      tooltipData = data.match({ some: v => v, none: () => null})
+      tooltipData = data.match({ some: (v) => v, none: () => null })
       tooltipVisible = visible
     },
     onMetricsChanged: (newMetrics: MetricOption[], newSelectedMetricId: string) => {
@@ -65,7 +66,7 @@
     onError: (err: string) => {
       error = err
     },
-    onLeafNodeDoubleClick: handleLeafNodeDoubleClick
+    onNodeDoubleClick: handleNodeDoubleClick
   }
 
   // Handle metric selection change
@@ -95,26 +96,37 @@
   }
 
   // Handle leaf node double-click to navigate to SQL source position
-  function handleLeafNodeDoubleClick(nodeId: string) {
+  function handleNodeDoubleClick(nodeId: string, type: 'leaf' | string) {
+    if (type !== 'leaf') {
+      return
+    }
+
     const profile = profilerDiagram?.getProfile()
     if (!profile) {
       return
     }
 
-    const sourceRange = profile.getFirstSourceRange(nodeId)
-    if (sourceRange.isNone()) {
+    const sourceRanges = profile.getSourceRanges(nodeId)
+    if (sourceRanges.length === 0) {
       return
     }
 
-    const range = sourceRange.unwrap()
-    const startLine = range.start.line
-    const startColumn = range.start.column
-    const endLine = range.end.line
-    const endColumn = range.end.column
+    highlightSourceRanges(sourceRanges)
+  }
 
-    // Navigate to the source position using URL hash with range for highlighting
-    // Format: #program.sql:startLine:startColumn:endLine:endColumn
-    goto(`#program.sql:${startLine}:${startColumn}:${endLine}:${endColumn}`)
+  function highlightSourceRanges(sourceRanges: SourcePositionRange[]) {
+    // Build URL hash with multiple ranges
+    // Format: #program.sql:startLine:startColumn-endLine:endColumn,startLine2:startColumn2-endLine2:endColumn2
+    const rangeStrings = sourceRanges.map((range) => {
+      const startLine = range.start.line
+      const startColumn = range.start.column
+      const endLine = range.end.line
+      const endColumn = range.end.column
+      return `${startLine}:${startColumn}-${endLine}:${endColumn}`
+    })
+
+    const hash = `#program.sql:${rangeStrings.join(',')}`
+    goto(hash)
   }
 
   // Public method for search (called by parent)
