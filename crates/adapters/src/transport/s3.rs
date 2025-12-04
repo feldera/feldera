@@ -20,6 +20,7 @@ use futures::future::join_all;
 #[cfg(test)]
 use mockall::automock;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use std::{
     collections::{BTreeMap, VecDeque},
     hash::Hasher,
@@ -298,7 +299,7 @@ impl S3Api for S3Client {
                 (0, None) => None,
                 (0, Some(end)) => Some(format!("bytes=-{end}")),
                 (start, Some(end)) => Some(format!("bytes={start}-{end}")),
-                (start, None) => Some(format!("bytes={start}")),
+                (start, None) => Some(format!("bytes={start}-")),
             })
             .send()
             .await?)
@@ -496,6 +497,7 @@ impl S3InputReader {
         let mut join_handles = Vec::new();
 
         let bucket_name = config.bucket_name.clone();
+        let max_retries = config.max_retries;
 
         // Spawn reader tasks that dequeue object names from the channel, fetch and parse them.
         for _i in 0..config.max_concurrent_fetches {
@@ -511,7 +513,7 @@ impl S3InputReader {
             let handle = tokio::task::spawn(async move {
                 let mut splitter = StreamSplitter::new(parser.splitter());
 
-                loop {
+                'outer: loop {
                     let msg = { rx.recv().await };
 
                     match msg {
@@ -538,30 +540,50 @@ impl S3InputReader {
                                 continue;
                             };
 
-                            let result = client
-                                .get_object(
-                                    &bucket_name,
-                                    &partially_processed_key.key,
-                                    start_offset,
-                                    None,
-                                )
-                                .await;
-                            let mut object = match result {
-                                Ok(ret) => ret,
-                                Err(e) => {
-                                    consumer.error(
-                                        false,
-                                        anyhow!(
-                                            "could not fetch object '{}': {e:?}",
-                                            &partially_processed_key.key
-                                        ),
-                                        Some("s3-obj-fetch"),
-                                    );
-                                    // Mark key as fully processed.
-                                    partially_processed_keys.update(key_index, None).await;
-                                    continue;
+                            // Retry fetching the object for `max_retries`, with exponential
+                            // backoff.
+                            // If we still fail after that, return the error.
+                            async fn retry_fetching_object(
+                                client: Arc<dyn S3Api>,
+                                bucket_name: &str,
+                                key: &str,
+                                start_offset: u64,
+                                end: Option<u64>,
+                                max_retries: u32,
+                            ) -> Result<GetObjectOutput, anyhow::Error>
+                            {
+                                let mut retry_counter = 0;
+                                let backoff =
+                                    |count: u32| Duration::from_millis(100 * 2_u64.pow(count));
+
+                                loop {
+                                    match client
+                                        .get_object(bucket_name, key, start_offset, end)
+                                        .await
+                                    {
+                                        Ok(object) => return Ok(object),
+                                        Err(e) => {
+                                            if retry_counter < max_retries {
+                                                tokio::time::sleep(backoff(retry_counter)).await;
+                                                retry_counter += 1;
+                                                continue;
+                                            }
+
+                                            return Err(e);
+                                        }
+                                    }
                                 }
-                            };
+                            }
+
+                            let mut object = None;
+
+                            // Initially, set the restarting offset, the offset used when
+                            // re-fetching the object, to the start_offset.
+                            // On subsequent retries, we might have already made progress, and
+                            // shouldn't start from scratch.
+                            let mut latest_start_offset = start_offset;
+                            let mut latest_buf = Vec::new();
+                            let mut reading_errors = 0;
 
                             splitter.seek(start_offset);
                             let mut eoi = false;
@@ -575,18 +597,131 @@ impl S3InputReader {
                                 // for all buffers derived from this chunk.
                                 let timestamp = Utc::now();
 
-                                match object.body.next().await {
-                                    Some(Err(e)) => consumer.error(
-                                        false,
-                                        anyhow!(
-                                            "error reading object '{}': {e:?}",
-                                            &partially_processed_key.key
-                                        ),
-                                        Some("s3-obj-read"),
-                                    ),
-                                    Some(Ok(bytes)) => splitter.append(&bytes),
-                                    None => eoi = true,
-                                };
+                                // Flag to indicate if we had a connection failure and reconnected when reading the object.
+                                let mut reconnected = false;
+                                let mut recovery_buffer = None;
+
+                                'object_read: loop {
+                                    if object.is_none() {
+                                        match retry_fetching_object(
+                                            client.clone(),
+                                            &bucket_name,
+                                            &partially_processed_key.key,
+                                            latest_start_offset,
+                                            None,
+                                            max_retries,
+                                        )
+                                        .await
+                                        {
+                                            Ok(obj) => object = Some(obj),
+                                            Err(e) => {
+                                                consumer.error(
+                                                    false,
+                                                    anyhow!(
+                                                        "could not fetch object '{}': {e:?}",
+                                                        &partially_processed_key.key
+                                                    ),
+                                                    Some("s3-obj-fetch"),
+                                                );
+
+                                                // Mark key as fully processed.
+                                                partially_processed_keys
+                                                    .update(key_index, None)
+                                                    .await;
+
+                                                continue 'outer;
+                                            }
+                                        };
+
+                                        reconnected = true;
+                                    }
+
+                                    match object.as_mut().unwrap().body.next().await {
+                                        Some(Err(e)) => {
+                                            reading_errors += 1;
+
+                                            let error_offset =
+                                                latest_start_offset + latest_buf.len() as u64;
+                                            tracing::error!("error reading object '{}' at offset '{error_offset}': {e:?}; retrying: ({reading_errors}/{max_retries})", &partially_processed_key.key);
+
+                                            if reading_errors > max_retries {
+                                                consumer.error(
+                                                    false,
+                                                    anyhow!(
+                                                        "error reading object '{}' at offset '{error_offset}': {e:?}; max retries '{max_retries}' exceeded, this object is partially processed",
+                                                        &partially_processed_key.key,
+                                                    ),
+                                                    Some("s3-obj-read"),
+                                                );
+
+                                                // Mark key as fully processed.
+                                                partially_processed_keys
+                                                    .update(key_index, None)
+                                                    .await;
+                                                continue 'outer;
+                                            }
+
+                                            // This object has failed, we need to re-establish the
+                                            // connection.
+                                            object = None;
+
+                                            continue 'object_read;
+                                        }
+                                        Some(Ok(bytes)) => {
+                                            let latest_len = latest_buf.len();
+
+                                            // This is a bit of a sanity check.
+                                            // We want to ensure that the next chunk we read after reconnecting, is the
+                                            // same as the previous "good" chunk before the error.
+                                            //
+                                            // WARN: This (`latest_buf`) increases the memory consumption as we will be holding this previous chunk in memory.
+                                            // Typically, this seems to be around 8 KB.
+                                            if reconnected {
+                                                let min = latest_len.min(bytes.len());
+                                                if latest_buf[..min] != bytes[..min] {
+                                                    consumer.error(
+                                                            false,
+                                                            anyhow!(
+                                                                "error when reading object after prior failure; object '{}': bytes at offset `{latest_start_offset}..{}` do not match after reconnection; did the object change?",
+                                                                &partially_processed_key.key,
+                                                                latest_start_offset + min as u64
+                                                            ),
+                                                            Some("s3-obj-read"),
+                                                        );
+
+                                                    continue 'outer;
+                                                }
+
+                                                reconnected = false;
+                                                recovery_buffer =
+                                                    Some(Vec::with_capacity(2 * latest_len));
+                                            }
+
+                                            // Buffer bytes until we have new data.
+                                            if let Some(mut buf) = recovery_buffer.take() {
+                                                buf.extend_from_slice(&bytes);
+                                                if buf.len() > latest_len {
+                                                    splitter.append(&buf[latest_len..]);
+
+                                                    latest_start_offset += latest_len as u64;
+                                                    latest_buf = buf.split_off(latest_len);
+                                                } else {
+                                                    // Put the buffer back.
+                                                    recovery_buffer = Some(buf);
+                                                }
+
+                                                continue 'object_read;
+                                            }
+
+                                            latest_start_offset += latest_len as u64;
+                                            latest_buf = bytes.to_vec();
+
+                                            splitter.append(&latest_buf);
+                                        }
+                                        None => eoi = true,
+                                    };
+                                    break 'object_read;
+                                }
 
                                 loop {
                                     start_offset = splitter.position();
