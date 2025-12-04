@@ -37,6 +37,9 @@ pub const NUM_INPUTS_LABEL: &str = "inputs";
 /// Input batch sizes.
 pub const INPUT_BATCHES_LABEL: &str = "input batches";
 
+/// A collection of input batch sizes, one for each input
+pub const INPUT_BATCHES_COLLECTION: &str = "collection of input batches";
+
 /// Output batch sizes.
 pub const OUTPUT_BATCHES_LABEL: &str = "output batches";
 
