@@ -2,7 +2,7 @@ use crate::{
     algebra::{IndexedZSet, ZBatch},
     circuit::{
         metadata::{
-            BatchSizeStats, MetaItem, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL,
+            BatchSizeStats, INPUT_BATCHES_COLLECTION, MetaItem, OperatorMeta, OUTPUT_BATCHES_LABEL,
         },
         operator_traits::Operator,
         splitter_output_chunk_size,
@@ -136,7 +136,7 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            INPUT_BATCHES_LABEL => MetaItem::Array(self.input_batch_stats.borrow().iter().map(|stats| stats.metadata()).collect()),
+            INPUT_BATCHES_COLLECTION => MetaItem::Array(self.input_batch_stats.borrow().iter().map(|stats| stats.metadata()).collect()),
             OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
         });
     }
