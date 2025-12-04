@@ -18,6 +18,7 @@ use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{
     parse_resume_info, InputEndpoint, InputReaderCommand, Resume, Watermark,
 };
+use feldera_adapterlib::ConnectorMetadata;
 use feldera_sqllib::{ByteArray, SqlString, Timestamp, Variant};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
@@ -955,16 +956,16 @@ impl PartitionReceiver {
     }
 
     /// Create record metadata from Kafka message containing only properties specified in the connector config.
-    fn create_metadata(&self, message: &BorrowedMessage<'_>) -> Option<Variant> {
+    fn create_metadata(&self, message: &BorrowedMessage<'_>) -> Option<ConnectorMetadata> {
         if !self.metadata_requested {
             return None;
         }
 
-        let mut metadata = BTreeMap::new();
+        let mut metadata = ConnectorMetadata::new();
 
         if self.config.include_topic == Some(true) {
             metadata.insert(
-                Variant::String(SqlString::from("kafka_topic")),
+                "kafka_topic",
                 Variant::String(SqlString::from(message.topic())),
             );
         };
@@ -973,24 +974,18 @@ impl PartitionReceiver {
             let timestamp = message.timestamp().to_millis();
             if let Some(timestamp) = timestamp {
                 metadata.insert(
-                    Variant::String(SqlString::from("kafka_timestamp")),
+                    "kafka_timestamp",
                     Variant::Timestamp(Timestamp::from(timestamp)),
                 );
             }
         }
 
         if self.config.include_partition == Some(true) {
-            metadata.insert(
-                Variant::String(SqlString::from("kafka_partition")),
-                Variant::Int(message.partition()),
-            );
+            metadata.insert("kafka_partition", Variant::Int(message.partition()));
         }
 
         if self.config.include_offset == Some(true) {
-            metadata.insert(
-                Variant::String(SqlString::from("kafka_offset")),
-                Variant::BigInt(message.offset()),
-            );
+            metadata.insert("kafka_offset", Variant::BigInt(message.offset()));
         }
 
         if self.config.include_headers == Some(true) {
@@ -1008,13 +1003,10 @@ impl PartitionReceiver {
                 }
             }
 
-            metadata.insert(
-                Variant::String(SqlString::from("kafka_headers")),
-                Variant::Map(Arc::new(kafka_headers)),
-            );
+            metadata.insert("kafka_headers", Variant::Map(Arc::new(kafka_headers)));
         }
 
-        Some(Variant::Map(Arc::new(metadata)))
+        Some(metadata)
     }
 
     fn handle_kafka_message(
@@ -1042,7 +1034,7 @@ impl PartitionReceiver {
                     self.next_offset.store(offset + 1, Ordering::Relaxed);
                     let payload = message.payload().unwrap_or(&[]);
                     let metadata = self.create_metadata(&message);
-                    let (buffer, errors) = parser.parse(payload, &metadata);
+                    let (buffer, errors) = parser.parse(payload, metadata);
                     self.messages.lock().unwrap().insert(offset, buffer);
                     consumer.parse_errors(errors);
                 } else {

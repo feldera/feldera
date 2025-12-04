@@ -244,7 +244,7 @@ impl FileInputReader {
                             }
                             remainder -= n;
                             while let Some(chunk) = splitter.next(remainder == 0) {
-                                let (mut buffer, errors) = parser.parse(chunk, &None);
+                                let (mut buffer, errors) = parser.parse(chunk, None);
                                 consumer.parse_errors(errors);
                                 consumer.buffered(buffer.len());
                                 total += buffer.len();
@@ -278,7 +278,7 @@ impl FileInputReader {
                 let Some(chunk) = splitter.next(eof) else {
                     break;
                 };
-                let (buffer, errors) = parser.parse(chunk, &None);
+                let (buffer, errors) = parser.parse(chunk, None);
                 consumer.parse_errors(errors);
 
                 if let Some(buffer) = buffer {

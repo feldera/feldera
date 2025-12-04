@@ -15,7 +15,7 @@ use apache_avro::{
 };
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
-use feldera_adapterlib::catalog::AvroSchemaRefs;
+use feldera_adapterlib::{catalog::AvroSchemaRefs, ConnectorMetadata};
 use feldera_sqllib::Variant;
 use feldera_types::{
     format::avro::{AvroParserConfig, AvroUpdateFormat},
@@ -317,8 +317,13 @@ impl AvroParser {
         Ok((schema, refs, value_schema))
     }
 
-    fn input(&mut self, data: &[u8], metadata: &Option<Variant>) -> Result<(), ParseError> {
+    fn input(
+        &mut self,
+        data: &[u8],
+        metadata: Option<ConnectorMetadata>,
+    ) -> Result<(), ParseError> {
         self.last_event_number += 1;
+        let metadata = metadata.map(|metadata| Variant::from(metadata));
 
         let n_bytes = data.len();
         let mut record = if !self.config.skip_schema_id {
@@ -383,7 +388,7 @@ impl AvroParser {
         match self.config.update_format {
             AvroUpdateFormat::Raw => self
                 .input_stream
-                .insert(&avro_value, schema, &self.refs, n_bytes, metadata)
+                .insert(&avro_value, schema, &self.refs, n_bytes, &metadata)
                 .map_err(|e| {
                     ParseError::bin_event_error(
                         format!(
@@ -405,7 +410,7 @@ impl AvroParser {
                     (false, true) => (0, n_bytes),
                 };
                 if let Some(before) = before {
-                    self.input_stream.delete(before, value_schema, &self.refs, before_bytes, metadata).map_err(|e| {
+                    self.input_stream.delete(before, value_schema, &self.refs, before_bytes, &metadata).map_err(|e| {
                         ParseError::bin_event_error(
                             format!(
                                 "error converting 'before' record to table row (record: {before:?}): {e}"
@@ -417,7 +422,7 @@ impl AvroParser {
                     })?;
                 }
                 if let Some(after) = after {
-                    self.input_stream.insert(after, value_schema, &self.refs, after_bytes, metadata).map_err(|e| {
+                    self.input_stream.insert(after, value_schema, &self.refs, after_bytes, &metadata).map_err(|e| {
                             ParseError::bin_event_error(
                                 format!(
                                     "error converting 'after' record to table row (record: {after:?}): {e}"
@@ -499,7 +504,7 @@ impl Parser for AvroParser {
     fn parse(
         &mut self,
         data: &[u8],
-        metadata: &Option<Variant>,
+        metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let errors = self
             .input(data, metadata)

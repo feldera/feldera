@@ -460,7 +460,7 @@ fn generate_thread(
             .map(|(table, writer)| {
                 let data = writer.into_inner().unwrap().into_inner();
                 let parser = &mut parsers[table];
-                let (buffer, _errors) = parser.parse(data.as_slice(), &None);
+                let (buffer, _errors) = parser.parse(data.as_slice(), None);
                 consumer.buffered(buffer.len());
                 buffer
             })

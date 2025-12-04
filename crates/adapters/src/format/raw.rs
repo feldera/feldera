@@ -7,6 +7,7 @@ use actix_web::HttpRequest;
 use core::str;
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_adapterlib::ConnectorMetadata;
 use feldera_sqllib::Variant;
 use feldera_types::{
     format::raw::{RawParserConfig, RawParserMode},
@@ -164,19 +165,20 @@ impl Parser for RawParser {
     fn parse(
         &mut self,
         data: &[u8],
-        metadata: &Option<Variant>,
+        metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let mut errors = Vec::new();
+        let metadata = metadata.map(|metadata| Variant::from(metadata));
 
         match self.config.mode {
             RawParserMode::Blob => {
-                self.parse_record(data, metadata, &mut errors);
+                self.parse_record(data, &metadata, &mut errors);
                 self.last_event_number += 1;
             }
             RawParserMode::Lines => {
                 for line in data.split(|b| b == &b'\n') {
                     if !line.is_empty() {
-                        self.parse_record(line, metadata, &mut errors);
+                        self.parse_record(line, &metadata, &mut errors);
                         self.last_event_number += 1;
                     }
                 }
@@ -337,6 +339,7 @@ impl<'de> Deserializer<'de> for RawDeserializer<'de> {
 mod test {
     use crate::test::{mock_parser_pipeline, MockUpdate};
     use crate::FormatConfig;
+    use feldera_adapterlib::ConnectorMetadata;
     use feldera_adapterlib::{
         format::{InputBuffer, ParseError, Parser},
         transport::InputConsumer,
@@ -348,7 +351,6 @@ mod test {
         program_schema::{ColumnType, Field, Relation, SqlIdentifier},
         serde_with_context::{DeserializeWithContext, SqlSerdeConfig},
     };
-    use std::sync::Arc;
     use std::{borrow::Cow, collections::BTreeMap, fmt::Debug, hash::Hash};
 
     #[derive(Eq, PartialEq, Debug, Hash, Clone)]
@@ -530,7 +532,7 @@ mod test {
         /// Expected contents at the end of the test.
         expected_output: Vec<MockUpdate<T, ()>>,
         schema: Relation,
-        metadata: Option<Variant>,
+        metadata: Option<ConnectorMetadata>,
     }
 
     impl<T> TestCase<T> {
@@ -540,7 +542,7 @@ mod test {
             input_batches: Vec<(Vec<u8>, Vec<ParseError>)>,
             expected_output: Vec<MockUpdate<T, ()>>,
             schema: Relation,
-            metadata: Option<Variant>,
+            metadata: Option<ConnectorMetadata>,
         ) -> Self {
             Self {
                 config,
@@ -576,7 +578,7 @@ mod test {
             consumer.on_error(Some(Box::new(|_, _| {})));
             parser.on_error(Some(Box::new(|_, _| {})));
             for (data, expected_errors) in test.input_batches {
-                let (mut buffer, errors) = parser.parse(&data, &test.metadata);
+                let (mut buffer, errors) = parser.parse(&data, test.metadata.clone());
                 assert_eq!(&errors, &expected_errors);
                 buffer.flush();
             }
@@ -630,10 +632,10 @@ mod test {
                 ),
             ],
             varchar_with_metadata_schema(),
-            Some(Variant::Map(Arc::new(BTreeMap::from([(
+            Some(ConnectorMetadata::from(BTreeMap::from([(
                 Variant::String(SqlString::from("kafka_topic")),
                 Variant::String(SqlString::from("my_topic")),
-            )])))),
+            )]))),
         );
 
         let test_cases = vec![test1];
@@ -730,10 +732,10 @@ mod test {
                 true,
             )],
             opt_binary_with_metadata_schema(),
-            Some(Variant::Map(Arc::new(BTreeMap::from([(
+            Some(ConnectorMetadata::from(BTreeMap::from([(
                 Variant::String(SqlString::from("kafka_topic")),
                 Variant::String(SqlString::from("my_topic")),
-            )])))),
+            )]))),
         );
 
         let test_cases = vec![test1];

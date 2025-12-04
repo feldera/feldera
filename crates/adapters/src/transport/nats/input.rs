@@ -355,7 +355,7 @@ async fn consume_nats_messages_until(
                     }
                 };
                 let data = &message.payload;
-                let (buffer, errors) = parser.parse(data, &None);
+                let (buffer, errors) = parser.parse(data, None);
                 consumer.parse_errors(errors);
                 if let Some(mut buffer) = buffer {
                     buffer.hash(&mut hasher);
@@ -427,7 +427,7 @@ async fn spawn_nats_reader(
                                 // This is the checkpoint position if we need to restart.
                                 next_sequence.store(info.stream_sequence + 1, Ordering::Release);
                                 let data = &message.payload;
-                                queue.push_with_aux(parser.parse(data, &None), Utc::now(), info.stream_sequence);
+                                queue.push_with_aux(parser.parse(data, None), Utc::now(), info.stream_sequence);
                             }
                             Err(error) => {
                                 consumer.error(false, anyhow!("NATS error: {error}"), Some("nats-input"));

@@ -8,6 +8,7 @@ use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_adapterlib::ConnectorMetadata;
 use feldera_sqllib::Variant;
 use feldera_types::{
     config::ConnectorConfig,
@@ -98,7 +99,7 @@ impl CsvParser {
         errors: &mut Vec<ParseError>,
     ) {
         if !self.headers || self.last_event_number > 0 {
-            if let Err(e) = self.input_stream.insert(record, metadata) {
+            if let Err(e) = self.input_stream.insert(record, &metadata) {
                 errors.push(ParseError::text_event_error(
                     "failed to deserialize CSV record",
                     e,
@@ -155,16 +156,18 @@ impl Parser for CsvParser {
     fn parse(
         &mut self,
         mut data: &[u8],
-        metadata: &Option<Variant>,
+        metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+        let metadata = metadata.map(|metadata| Variant::from(metadata));
+        
         let mut errors = Vec::new();
         while let Some((record, rest)) = self.split_record(data) {
-            self.parse_record(record, metadata, &mut errors);
+            self.parse_record(record, &metadata, &mut errors);
             self.last_event_number += 1;
             data = rest;
         }
         if !data.is_empty() {
-            self.parse_record(data, metadata, &mut errors);
+            self.parse_record(data, &metadata, &mut errors);
         }
         (self.input_stream.take_all(), errors)
     }

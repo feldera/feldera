@@ -12,6 +12,7 @@ use bytes::Bytes;
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::catalog::ArrowStream;
+use feldera_adapterlib::ConnectorMetadata;
 use feldera_sqllib::Variant;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::serde_with_context::serde_config::{
@@ -107,8 +108,10 @@ impl Parser for ParquetParser {
     fn parse(
         &mut self,
         data: &[u8],
-        metadata: &Option<Variant>,
+        metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+        let metadata = metadata.map(|metadata| Variant::from(metadata));
+
         let bytes = Bytes::copy_from_slice(data);
 
         let parquet_reader = match ParquetRecordBatchReader::try_new(bytes, 1_000_000) {
@@ -129,7 +132,7 @@ impl Parser for ParquetParser {
         for batch in parquet_reader {
             match batch {
                 Ok(batch) => {
-                    if let Err(e) = self.input_stream.insert(&batch, metadata) {
+                    if let Err(e) = self.input_stream.insert(&batch, &metadata) {
                         errors.push(ParseError::bin_envelope_error(
                             format!(
                                 "error parsing parquet data (chunk {}): {e}",
