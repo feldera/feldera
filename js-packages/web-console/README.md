@@ -50,6 +50,10 @@ Format the code & linting:
 ```bash
 bun run format
 bun run lint
+```
+
+Check that there are no type or syntax errors:
+```bash
 bun run check
 ```
 
@@ -65,7 +69,7 @@ bun run build-openapi # If you need to generate a new openapi.json
 bun run generate-openapi
 ```
 
-### API errors
+#### Generation errors
 
 If you get an error like this:
 
@@ -77,19 +81,6 @@ then add the new type to `crates/pipeline-manager/src/api/main.rs`,
 and then rerun both commands above. If there is more than one new
 type, you may want to add all of them at once, because this will only
 report one each time.
-
-On the other hand, an error like this:
-
-```
-error: failed to run custom build command for `feldera-rest-api v0.172.0 (/__w/feldera/feldera/crates/rest-api)`
-
-Caused by:
-...
-  $ref #/components/schemas/<SomeType> is missing
-  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-```
-
-means that a new type needs to be added to `crates/rest-api/build.rs`.
 
 ## File Organization
 

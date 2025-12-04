@@ -6,12 +6,31 @@ Reusable TypeScript library for visualizing Feldera DBSP circuit profiles.
 
 `profiler-lib` provides interactive graph-based visualization of pipeline performance data.
 
-## Installation
+## Usage within the workspace
+
+`profiler-app` and `web-console` use this library within an NPM Workspace.
+To see the latest changes to `profiler-lib` reflected in their syntax highlight, you need to re-compile it:
 
 ```bash
-bun install profiler-lib
-# Also install peer dependencies:
-bun install cytoscape cytoscape-dblclick cytoscape-elk elkjs
+bun run build
+```
+
+When the above applications are built their `prebuild` script automatically builds `profiler-lib`.
+When they are run in development watch mode with `bun run dev` you need to manually run
+
+```bash
+cd ../profiler-lib && bun run build
+```
+
+to reflect the changes to the library in the running app.
+There is no need to stop the process and re-run `bun run dev`, but you may need to reload the page or the support bundle.
+
+## Add this library to another project
+
+```bash
+bun install -D profiler-lib
+# Optional: install peer dependencies:
+bun install -D cytoscape cytoscape-dblclick cytoscape-elk elkjs
 ```
 
 ## Usage

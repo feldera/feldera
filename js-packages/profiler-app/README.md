@@ -15,13 +15,15 @@ bun install
 bun run dev
 ```
 
-Web app is available at `http://localhost:5174`.
+The web app is available at `http://localhost:5174`.
 
-To apply the changes in the `profiler-lib` project to `profiler-app`, run `cd js-packages/profiler-lib && bun run build`. If you have a dev build running, the app will update on the fly.
+If you have a dev build running, run
 
-## Loading Profiles
+```bash
+cd js-packages/profiler-lib && bun run build
+```
 
-Click the **"Load Bundle"** button and select a support bundle `.zip` file to load.
+to update the app on the fly with the latest `profiler-lib` changes.
 
 ## Build Production App
 
@@ -30,6 +32,11 @@ bun run build
 ```
 
 The app is compiled into a single dist/index.html. It can be served by a server or opened directly in the browser.
+`profiler-lib` is re-built automatically.
+
+## Loading Profiles
+
+Click the **"Load Bundle"** button and select a support bundle `.zip` file to load.
 
 ## Sample Data
 
