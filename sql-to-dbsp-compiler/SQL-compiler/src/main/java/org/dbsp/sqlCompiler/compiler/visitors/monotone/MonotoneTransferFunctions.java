@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTimeAddSub;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
@@ -573,6 +574,39 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     }
 
     @Override
+    public void postorder(DBSPTimeAddSub expression) {
+        MonotoneExpression left = this.get(expression.left);
+        MonotoneExpression right = this.get(expression.right);
+        DBSPExpression reduced = null;
+        if (this.constantExpressions.contains(expression.left) &&
+                this.constantExpressions.contains(expression.right))
+            this.constantExpressions.add(expression);
+
+        boolean lm = left.mayBeMonotone();
+        boolean rm = right.mayBeMonotone();
+
+        // Assume type is not monotone
+        IMaybeMonotoneType resultType = new NonMonotoneType(expression.type);
+        if ((expression.opcode == DBSPOpcode.ADD) && lm && rm) {
+            // The addition of two monotone expressions is monotone
+            resultType = new MonotoneType(expression.type);
+            reduced = new DBSPTimeAddSub(expression.getNode(), expression.getType(),
+                    expression.opcode, left.getReducedExpression(), right.getReducedExpression());
+        }
+        // Some expressions are monotone if some of their operands are constant
+        if (left.mayBeMonotone() && expression.opcode == DBSPOpcode.SUB) {
+            // Subtracting a constant from a monotone expression produces a monotone result
+            if (this.constantExpressions.contains(expression.right)) {
+                resultType = left.copyMonotonicity(expression.type);
+                reduced = new DBSPTimeAddSub(expression.getNode(), expression.getType(),
+                        expression.opcode, left.getReducedExpression(), right.getReducedExpression());
+            }
+        }
+        MonotoneExpression result = new MonotoneExpression(expression, resultType, reduced);
+        this.set(expression, result);
+    }
+
+    @Override
     public void postorder(DBSPBinaryExpression expression) {
         MonotoneExpression left = this.get(expression.left);
         MonotoneExpression right = this.get(expression.right);
@@ -586,8 +620,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
         // Assume type is not monotone
         IMaybeMonotoneType resultType = new NonMonotoneType(expression.type);
-        if ((expression.opcode == DBSPOpcode.ADD || expression.opcode == DBSPOpcode.TS_ADD)
-                && lm && rm) {
+        if ((expression.opcode == DBSPOpcode.ADD) && lm && rm) {
             // The addition of two monotone expressions is monotone
             resultType = new MonotoneType(expression.type);
             reduced = expression.replaceSources(
@@ -616,9 +649,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     right.getReducedExpression());
         }
         // Some expressions are monotone if some of their operands are constant
-        if (left.mayBeMonotone() &&
-                (expression.opcode == DBSPOpcode.SUB ||
-                        expression.opcode == DBSPOpcode.TS_SUB)) {
+        if (left.mayBeMonotone() && expression.opcode == DBSPOpcode.SUB) {
             // Subtracting a constant from a monotone expression produces a monotone result
             if (this.constantExpressions.contains(expression.right)) {
                 resultType = left.copyMonotonicity(expression.type);

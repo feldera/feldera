@@ -124,6 +124,17 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     }
 
     @Override
+    public void postorder(DBSPTimeAddSub node) {
+        DBSPExpression left = this.getE(node.left);
+        DBSPExpression right = this.getE(node.right);
+        this.map(node, new DBSPTimeAddSub(node.getNode(),
+                node.getType(),
+                node.opcode,
+                left,
+                right));
+    }
+
+    @Override
     public void postorder(DBSPBlockExpression node) {
         List<DBSPStatement> statements =
                 Linq.map(node.contents, c -> this.get(c).to(DBSPStatement.class));

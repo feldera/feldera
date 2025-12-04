@@ -98,11 +98,14 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -1485,7 +1488,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
                 expression.getNode(),
-                expression.opcode, expression.getType(), expression.left.getType(), expression.right.getType());
+                expression.opcode, expression.left.getType(), expression.right.getType());
         this.builder.append(function);
         if (expression.condition != null)
             this.builder.append("_conditional");
@@ -1497,6 +1500,41 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(", ");
             expression.condition.accept(this);
         }
+        this.builder.append(")");
+        this.pop(expression);
+        return VisitDecision.STOP;
+    }
+
+    /** Translate an opcode fragment to a function name fragment for time-related arithmetic */
+    static private String typeCode(DBSPType type) {
+        if (type.is(DBSPTypeTimestamp.class))
+            return "Timestamp";
+        else if (type.is(DBSPTypeTime.class))
+            return "Time";
+        else if (type.is(DBSPTypeDate.class))
+            return "Date";
+        else if (type.is(DBSPTypeMonthsInterval.class))
+            return "LongInterval";
+        else if (type.is(DBSPTypeMillisInterval.class))
+            return "ShortInterval";
+        throw new InternalCompilerError("Unexpected fragment: " + type);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTimeAddSub expression) {
+        this.push(expression);
+        this.visitingChild = 0;
+        String functionName = expression.opcode == DBSPOpcode.ADD ? "plus" : "minus";
+        functionName += "_" + typeCode(expression.type) +
+                        "_" + typeCode(expression.left.getType()) +
+                        "_" + typeCode(expression.right.getType()) +
+                        expression.left.getType().nullableUnderlineSuffix() +
+                        expression.right.getType().nullableUnderlineSuffix();
+        builder.append(functionName).append("(");
+        expression.left.accept(this);
+        this.builder.append(", ");
+        this.visitingChild = 1;
+        expression.right.accept(this);
         this.builder.append(")");
         this.pop(expression);
         return VisitDecision.STOP;
@@ -1658,7 +1696,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
                         expression.getNode(),
                         expression.opcode,
-                        expression.getType(),
                         expression.left.getType(),
                         expression.right.getType());
                 this.builder.append(function).append("(").increase();
@@ -1685,7 +1722,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
                             expression.getNode(),
                             expression.opcode,
-                            expression.getType(),
                             expression.left.getType(),
                             expression.right.getType());
                     this.builder.append(function);

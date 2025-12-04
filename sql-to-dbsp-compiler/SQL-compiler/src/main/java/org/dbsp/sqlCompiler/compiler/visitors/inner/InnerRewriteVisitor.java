@@ -870,6 +870,19 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(DBSPTimeAddSub expression) {
+        this.push(expression);
+        DBSPExpression left = this.transform(expression.left);
+        DBSPExpression right = this.transform(expression.right);
+        DBSPType type = this.transform(expression.getType());
+        this.pop(expression);
+        DBSPExpression result = new DBSPTimeAddSub(expression.getNode(), type,
+                expression.opcode, left, right);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPBlockExpression expression) {
         this.push(expression);
         List<DBSPStatement> body = Linq.map(expression.contents, this::transform);

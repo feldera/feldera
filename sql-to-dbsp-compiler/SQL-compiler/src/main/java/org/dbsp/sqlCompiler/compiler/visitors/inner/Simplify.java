@@ -648,7 +648,7 @@ public class Simplify extends ExpressionTranslator {
                         }
                     }
                 }
-            } else if (opcode == DBSPOpcode.ADD || opcode == DBSPOpcode.TS_ADD) {
+            } else if (opcode == DBSPOpcode.ADD) {
                 if (left.is(DBSPLiteral.class)) {
                     DBSPLiteral leftLit = left.to(DBSPLiteral.class);
                     IHasZero iLeftType = leftType.as(IHasZero.class);
@@ -676,7 +676,7 @@ public class Simplify extends ExpressionTranslator {
                         }
                     }
                 }
-            } else if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.TS_SUB) {
+            } else if (opcode == DBSPOpcode.SUB) {
                 if (left.is(DBSPLiteral.class)) {
                     DBSPLiteral leftLit = left.to(DBSPLiteral.class);
                     if (leftLit.isNull()) {

@@ -55,9 +55,6 @@ public enum DBSPOpcode {
     DECIMAL_TO_INTEGER("decimal_to_integer", false),
     INTEGER_TO_DECIMAL("integer_to_decimal", false),
 
-    // Timestamp-based operations
-    TS_ADD("+", false),
-    TS_SUB("-", false),
     // Interval-based operations
     INTERVAL_MUL("*", false),
     INTERVAL_DIV("/", false),
@@ -120,7 +117,7 @@ public enum DBSPOpcode {
             case WRAP_BOOL, MAP_CONVERT, ARRAY_CONVERT, CONTROLLED_FILTER_GTE, AGG_LTE, AGG_GTE, AGG_ADD, AGG_MIN,
                  AGG_MAX, AGG_XOR, AGG_OR, AGG_AND, IS_DISTINCT, CONCAT, MIN, MAX, OR, AND, IS_NOT_FALSE, IS_NOT_TRUE,
                  AGG_MAX1, AGG_MIN1, INDICATOR -> false;
-            case NEG, INTERVAL_DIV, INTERVAL_MUL, TS_SUB, TS_ADD, DECIMAL_TO_INTEGER, INTEGER_TO_DECIMAL,
+            case NEG, INTERVAL_DIV, INTERVAL_MUL, DECIMAL_TO_INTEGER, INTEGER_TO_DECIMAL,
                  RUST_INDEX, VARIANT_INDEX, MAP_INDEX,
                  SQL_INDEX, XOR, BW_OR, MUL_WEIGHT, BW_AND, GTE, LTE, GT, LT, NEQ, EQ, MOD, DIV_NULL, DIV, MUL, SUB,
                  ADD, TYPEDBOX, IS_TRUE, IS_FALSE, NOT, UNARY_PLUS -> true;

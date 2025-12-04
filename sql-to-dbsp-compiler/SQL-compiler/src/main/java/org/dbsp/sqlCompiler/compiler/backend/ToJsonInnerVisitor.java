@@ -610,6 +610,21 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public void postorder(DBSPTimeAddSub node) {
+        this.property("opcode");
+        this.stream.append(node.opcode.name());
+        if (node.longUnits != null) {
+            this.property("longUnits");
+            this.stream.append(node.longUnits.name());
+        }
+        if (node.shortUnits != null) {
+            this.property("shortUnits");
+            this.stream.append(node.shortUnits.name());
+        }
+        super.postorder(node);
+    }
+
+    @Override
     public void postorder(DBSPUnsignedUnwrapExpression node) {
         this.property("nullsLast");
         this.stream.append(node.nullsLast);
