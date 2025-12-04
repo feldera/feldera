@@ -110,7 +110,7 @@ impl Parser for ParquetParser {
         data: &[u8],
         metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-        let metadata = metadata.map(|metadata| Variant::from(metadata));
+        let metadata = metadata.map(Variant::from);
 
         let bytes = Bytes::copy_from_slice(data);
 

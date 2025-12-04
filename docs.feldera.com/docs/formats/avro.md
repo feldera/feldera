@@ -168,6 +168,47 @@ CREATE TABLE my_table (
 }]');
 ```
 
+### <a name="metadata"></a>Accessing Avro metadata
+
+The Avro connector exposes the following metadata with every ingested record:
+
+| Metadata attribute | SQL type                 | `CONNECTOR_METADATA()` field |
+|--------------------|--------------------------|------------------------------|
+| Avro schema ID     | `INT UNSIGNED`           | `avro_schema_id`             |
+
+This metadata can be stored in table columns using the [`CONNECTOR_METADATA()`](/sql/grammar#connector_metadata)
+SQL function.  In the following example we extract the `avro_schema_id` attribute along with
+[Kafka message metadata](/connectors/sources/kafka#accessing-kafka-metadata) from the Kafka connector:
+
+```sql
+create table my_table(
+    x int,
+    avro_schema_id INT UNSIGNED DEFAULT CAST(CONNECTOR_METADATA()['avro_schema_id'] as INT UNSIGNED),
+    kafka_offset BIGINT DEFAULT CAST(CONNECTOR_METADATA()['kafka_offset'] AS BIGINT),
+    kafka_partition INT DEFAULT CAST(CONNECTOR_METADATA()['kafka_partition'] AS INT)
+) with (
+    'materialized' = 'true',
+    'connectors' = '[{
+      "transport": {
+          "name": "kafka_input",
+          "config": {
+              "topic": "meta_topic",
+              "start_from": "earliest",
+              "bootstrap.servers": "localhost:19092",
+              "include_offset": true,
+              "include_partition": true
+          }
+      },
+      "format": {
+        "name": "avro",
+        "config": {
+          "update_format": "raw",
+          "registry_urls": ["http://localhost:18081"]
+        }
+      }
+    }]');
+```
+
 ## Avro output
 
 ### Schema management
