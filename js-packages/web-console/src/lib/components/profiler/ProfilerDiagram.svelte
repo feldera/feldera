@@ -22,13 +22,7 @@
     class?: string
   }
 
-  let {
-    profileData,
-    dataflowData,
-    programCode,
-    callbacks,
-    class: className
-  }: Props = $props()
+  let { profileData, dataflowData, programCode, callbacks, class: className }: Props = $props()
 
   // DOM element references
   let graphContainer: HTMLDivElement | undefined = $state()

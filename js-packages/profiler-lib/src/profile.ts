@@ -700,32 +700,43 @@ export class CircuitProfile {
     }
 
     /**
-     * Get the first source code position range for a given node ID.
+     * Get all source code position ranges for a given node ID.
      *
      * A node can have multiple source position ranges when a single DBSP operator
      * corresponds to multiple SQL fragments (e.g., a join referencing tables defined
-     * in different parts of the SQL). This method returns the first (primary) range,
-     * typically used for navigation purposes.
+     * in different parts of the SQL).
      *
      * @param id - The node ID to look up
-     * @returns Option containing the first SourcePositionRange with both start and end positions, or none if:
+     * @returns Array of SourcePositionRange objects, or empty array if:
      *          - Node doesn't exist
      *          - Node has no source position information
      */
     // This method is in CircuitProfile rather than Profiler because CircuitProfile
     // owns both the node data (simpleNodes/complexNodes) and the source data (sources).
-    getFirstSourceRange(id: NodeId): Option<SourcePositionRange> {
+    getSourceRanges(id: NodeId): Array<SourcePositionRange> {
         const node = this.getNode(id);
         if (node.isNone()) {
-            return Option.none();
+            return [];
         }
 
-        const positions = node.unwrap().sourcePositions;
-        if (positions.positions.length === 0) {
+        return node.unwrap().sourcePositions.positions;
+    }
+
+    /**
+     * Get the first source code position range for a given node ID.
+     *
+     * Convenience method that returns the first (primary) range from getSourceRanges(),
+     * typically used for simple navigation purposes.
+     *
+     * @param id - The node ID to look up
+     * @returns Option containing the first SourcePositionRange, or none if no ranges exist
+     */
+    getFirstSourceRange(id: NodeId): Option<SourcePositionRange> {
+        const ranges = this.getSourceRanges(id);
+        if (ranges.length === 0) {
             return Option.none();
         }
-
-        return Option.some(positions.positions[0]!);
+        return Option.some(ranges[0]!);
     }
 
     constructor(readonly worker_count: number) { }
