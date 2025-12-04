@@ -31,6 +31,11 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -45,6 +50,15 @@ public final class DBSPBinaryExpression extends DBSPExpression {
         this.opcode = opcode;
         this.left = left;
         this.right = right;
+        if (opcode == DBSPOpcode.ADD || opcode == DBSPOpcode.SUB) {
+            // These should use DBSPTimeAddSub
+            Utilities.enforce(!type.is(DBSPTypeMillisInterval.class));
+            Utilities.enforce(!type.is(DBSPTypeMonthsInterval.class));
+            Utilities.enforce(!type.is(DBSPTypeTime.class));
+            Utilities.enforce(!type.is(DBSPTypeDate.class));
+            Utilities.enforce(!type.is(DBSPTypeTimestamp.class));
+        }
+
     }
 
     public DBSPBinaryExpression replaceSources(DBSPExpression left, DBSPExpression right) {
@@ -102,9 +116,6 @@ public final class DBSPBinaryExpression extends DBSPExpression {
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
         DBSPBinaryExpression otherExpression = other.as(DBSPBinaryExpression.class);
         if (otherExpression == null)
-            return false;
-        if (this.opcode == DBSPOpcode.TS_SUB || this.opcode == DBSPOpcode.TS_ADD &&
-            !this.hasSameType(other))
             return false;
         return this.opcode == otherExpression.opcode &&
                 context.equivalent(this.left, otherExpression.left) &&

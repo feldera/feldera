@@ -29,8 +29,8 @@ use std::{
 
 use crate::{
     operators::{eq, gt, gte, lt, lte, neq},
-    polymorphic_return_function2, some_existing_operator, some_function2, some_operator,
-    some_polymorphic_function1, some_polymorphic_function2, some_polymorphic_function3,
+    some_existing_operator, some_function2, some_operator, some_polymorphic_function1,
+    some_polymorphic_function2, some_polymorphic_function3,
 };
 
 /// Represents a date and a time without timezone information.
@@ -310,22 +310,22 @@ impl Add<i64> for Timestamp {
 }
 
 #[doc(hidden)]
-pub fn plus_Timestamp_ShortInterval_Timestamp(left: Timestamp, right: ShortInterval) -> Timestamp {
+pub fn plus_Timestamp_Timestamp_ShortInterval__(
+    left: Timestamp,
+    right: ShortInterval,
+) -> Timestamp {
     left.add(right.milliseconds())
 }
 
-polymorphic_return_function2!(
-    plus,
-    Timestamp,
+some_function2!(
+    plus_Timestamp_Timestamp_ShortInterval,
     Timestamp,
     ShortInterval,
-    ShortInterval,
-    Timestamp,
     Timestamp
 );
 
 #[doc(hidden)]
-pub fn plus_Timestamp_LongInterval_Timestamp(left: Timestamp, right: LongInterval) -> Timestamp {
+pub fn plus_Timestamp_Timestamp_LongInterval__(left: Timestamp, right: LongInterval) -> Timestamp {
     let dt = left.to_naiveDateTime();
     let months = right.months();
     let ndt = if months < 0 {
@@ -336,18 +336,15 @@ pub fn plus_Timestamp_LongInterval_Timestamp(left: Timestamp, right: LongInterva
     Timestamp::from_naiveDateTime(ndt.unwrap())
 }
 
-polymorphic_return_function2!(
-    plus,
-    Timestamp,
+some_function2!(
+    plus_Timestamp_Timestamp_LongInterval,
     Timestamp,
     LongInterval,
-    LongInterval,
-    Timestamp,
     Timestamp
 );
 
 #[doc(hidden)]
-pub fn minus_Timestamp_LongInterval_Timestamp(left: Timestamp, right: LongInterval) -> Timestamp {
+pub fn minus_Timestamp_Timestamp_LongInterval__(left: Timestamp, right: LongInterval) -> Timestamp {
     let dt = left.to_naiveDateTime();
     let months = right.months();
     let ndt = if months < 0 {
@@ -358,103 +355,94 @@ pub fn minus_Timestamp_LongInterval_Timestamp(left: Timestamp, right: LongInterv
     Timestamp::from_naiveDateTime(ndt.unwrap())
 }
 
-polymorphic_return_function2!(
-    minus,
-    Timestamp,
+some_function2!(
+    minus_Timestamp_Timestamp_LongInterval,
     Timestamp,
     LongInterval,
-    LongInterval,
-    Timestamp,
     Timestamp
 );
 
 #[doc(hidden)]
-pub fn plus_Date_ShortInterval_Timestamp(left: Date, right: ShortInterval) -> Timestamp {
-    plus_Timestamp_ShortInterval_Timestamp(cast_to_Timestamp_Date(left).unwrap(), right)
+pub fn plus_Timestamp_Date_ShortInterval__(left: Date, right: ShortInterval) -> Timestamp {
+    plus_Timestamp_Timestamp_ShortInterval__(cast_to_Timestamp_Date(left).unwrap(), right)
 }
 
-polymorphic_return_function2!(
-    plus,
-    Date,
+some_function2!(
+    plus_Timestamp_Date_ShortInterval,
     Date,
     ShortInterval,
-    ShortInterval,
-    Timestamp,
     Timestamp
 );
 
 #[doc(hidden)]
-pub fn minus_Timestamp_Timestamp_ShortInterval(left: Timestamp, right: Timestamp) -> ShortInterval {
+pub fn minus_ShortInterval_Timestamp_Timestamp__(
+    left: Timestamp,
+    right: Timestamp,
+) -> ShortInterval {
     ShortInterval::from(left.milliseconds() - right.milliseconds())
 }
 
-polymorphic_return_function2!(
-    minus,
+some_function2!(
+    minus_ShortInterval_Timestamp_Timestamp,
     Timestamp,
     Timestamp,
-    Timestamp,
-    Timestamp,
-    ShortInterval,
     ShortInterval
 );
 
 #[doc(hidden)]
-pub fn minus_Time_Time_ShortInterval(left: Time, right: Time) -> ShortInterval {
+pub fn minus_ShortInterval_Time_Time__(left: Time, right: Time) -> ShortInterval {
     ShortInterval::from((left.nanoseconds() as i64 - right.nanoseconds() as i64) / 1000000)
 }
 
-polymorphic_return_function2!(minus, Time, Time, Time, Time, ShortInterval, ShortInterval);
+some_function2!(minus_ShortInterval_Time_Time, Time, Time, ShortInterval);
 
 #[doc(hidden)]
-pub fn minus_Timestamp_ShortInterval_Timestamp(left: Timestamp, right: ShortInterval) -> Timestamp {
+pub fn minus_Timestamp_Timestamp_ShortInterval__(
+    left: Timestamp,
+    right: ShortInterval,
+) -> Timestamp {
     Timestamp::new(left.milliseconds() - right.milliseconds())
 }
 
-polymorphic_return_function2!(
-    minus,
-    Timestamp,
+some_function2!(
+    minus_Timestamp_Timestamp_ShortInterval,
     Timestamp,
     ShortInterval,
-    ShortInterval,
-    Timestamp,
     Timestamp
 );
 
 #[doc(hidden)]
-pub fn minus_Date_ShortInterval_Timestamp(left: Date, right: ShortInterval) -> Timestamp {
-    minus_Timestamp_ShortInterval_Timestamp(cast_to_Timestamp_Date(left).unwrap(), right)
+pub fn minus_Timestamp_Date_ShortInterval__(left: Date, right: ShortInterval) -> Timestamp {
+    minus_Timestamp_Timestamp_ShortInterval__(cast_to_Timestamp_Date(left).unwrap(), right)
 }
 
-polymorphic_return_function2!(
-    minus,
-    Date,
+some_function2!(
+    minus_Timestamp_Date_ShortInterval,
     Date,
     ShortInterval,
-    ShortInterval,
-    Timestamp,
     Timestamp
 );
 
 #[doc(hidden)]
-pub fn plus_Date_ShortInterval_Date(left: Date, right: ShortInterval) -> Date {
+pub fn plus_Date_Date_ShortInterval__(left: Date, right: ShortInterval) -> Date {
     let days = (right.milliseconds() / (86400 * 1000)) as i32;
     let diff = left.days() + days;
     Date::new(diff)
 }
 
-polymorphic_return_function2!(plus, Date, Date, ShortInterval, ShortInterval, Date, Date);
+some_function2!(plus_Date_Date_ShortInterval, Date, ShortInterval, Date);
 
 #[doc(hidden)]
-pub fn minus_Date_ShortInterval_Date(left: Date, right: ShortInterval) -> Date {
+pub fn minus_Date_Date_ShortInterval__(left: Date, right: ShortInterval) -> Date {
     let days = (right.milliseconds() / (86400 * 1000)) as i32;
     let diff = left.days() - days;
     Date::new(diff)
 }
 
-polymorphic_return_function2!(minus, Date, Date, ShortInterval, ShortInterval, Date, Date);
+some_function2!(minus_Date_Date_ShortInterval, Date, ShortInterval, Date);
 
 #[doc(hidden)]
-pub fn plus_Date_LongInterval_Date(left: Date, right: LongInterval) -> Date {
+pub fn plus_Date_Date_LongInterval__(left: Date, right: LongInterval) -> Date {
     let date = left.to_date();
     if right.months() < 0 {
         let result = date
@@ -469,10 +457,10 @@ pub fn plus_Date_LongInterval_Date(left: Date, right: LongInterval) -> Date {
     }
 }
 
-polymorphic_return_function2!(plus, Date, Date, LongInterval, LongInterval, Date, Date);
+some_function2!(plus_Date_Date_LongInterval, Date, LongInterval, Date);
 
 #[doc(hidden)]
-pub fn minus_Date_LongInterval_Date(left: Date, right: LongInterval) -> Date {
+pub fn minus_Date_Date_LongInterval__(left: Date, right: LongInterval) -> Date {
     let date = left.to_date();
     if right.months() < 0 {
         let result = date
@@ -497,10 +485,10 @@ pub fn minus_Date_LongInterval_Date(left: Date, right: LongInterval) -> Date {
     }
 }
 
-polymorphic_return_function2!(minus, Date, Date, LongInterval, LongInterval, Date, Date);
+some_function2!(minus_Date_Date_LongInterval, Date, LongInterval, Date);
 
 #[doc(hidden)]
-pub fn minus_Timestamp_Timestamp_LongInterval(left: Timestamp, right: Timestamp) -> LongInterval {
+pub fn minus_LongInterval_Timestamp_Timestamp__(left: Timestamp, right: Timestamp) -> LongInterval {
     let swap = left < right;
     let ldate;
     let rdate;
@@ -528,13 +516,10 @@ pub fn minus_Timestamp_Timestamp_LongInterval(left: Timestamp, right: Timestamp)
     LongInterval::from(if swap { -months } else { months })
 }
 
-polymorphic_return_function2!(
-    minus,
+some_function2!(
+    minus_LongInterval_Timestamp_Timestamp,
     Timestamp,
     Timestamp,
-    Timestamp,
-    Timestamp,
-    LongInterval,
     LongInterval
 );
 
@@ -737,7 +722,7 @@ pub fn floor_week_Timestamp(value: Timestamp) -> Timestamp {
     let wd = extract_dow_Timestamp(value) - Date::first_day_of_week();
     let notimeTs = floor_day_Timestamp(value);
     let interval = ShortInterval::from_seconds(wd * 86400);
-    minus_Timestamp_ShortInterval_Timestamp(notimeTs, interval)
+    minus_Timestamp_Timestamp_ShortInterval__(notimeTs, interval)
 }
 
 some_polymorphic_function1!(floor_week, Timestamp, Timestamp, Timestamp);
@@ -911,7 +896,7 @@ pub fn ceil_week_Timestamp(value: Timestamp) -> Timestamp {
     }
     let notimeTs = floor_day_Timestamp(value);
     let interval = ShortInterval::from_seconds((7 - wd) * 86400);
-    plus_Timestamp_ShortInterval_Timestamp(notimeTs, interval)
+    plus_Timestamp_Timestamp_ShortInterval__(notimeTs, interval)
 }
 
 some_polymorphic_function1!(ceil_week, Timestamp, Timestamp, Timestamp);
@@ -924,7 +909,7 @@ pub fn ceil_day_Timestamp(value: Timestamp) -> Timestamp {
     }
     let notimeTs = floor_day_Timestamp(value);
     let day = ShortInterval::from_seconds(86400);
-    plus_Timestamp_ShortInterval_Timestamp(notimeTs, day)
+    plus_Timestamp_Timestamp_ShortInterval__(notimeTs, day)
 }
 
 some_polymorphic_function1!(ceil_day, Timestamp, Timestamp, Timestamp);
@@ -937,7 +922,7 @@ pub fn ceil_hour_Timestamp(value: Timestamp) -> Timestamp {
     }
     let floored = floor_hour_Timestamp(value);
     let hour = ShortInterval::from_seconds(3600);
-    plus_Timestamp_ShortInterval_Timestamp(floored, hour)
+    plus_Timestamp_Timestamp_ShortInterval__(floored, hour)
 }
 
 some_polymorphic_function1!(ceil_hour, Timestamp, Timestamp, Timestamp);
@@ -950,7 +935,7 @@ pub fn ceil_minute_Timestamp(value: Timestamp) -> Timestamp {
     }
     let floored = floor_minute_Timestamp(value);
     let minute = ShortInterval::from_seconds(60);
-    plus_Timestamp_ShortInterval_Timestamp(floored, minute)
+    plus_Timestamp_Timestamp_ShortInterval__(floored, minute)
 }
 
 some_polymorphic_function1!(ceil_minute, Timestamp, Timestamp, Timestamp);
@@ -963,7 +948,7 @@ pub fn ceil_second_Timestamp(value: Timestamp) -> Timestamp {
     }
     let floored = floor_second_Timestamp(value);
     let second = ShortInterval::from_seconds(1);
-    plus_Timestamp_ShortInterval_Timestamp(floored, second)
+    plus_Timestamp_Timestamp_ShortInterval__(floored, second)
 }
 
 some_polymorphic_function1!(ceil_second, Timestamp, Timestamp, Timestamp);
@@ -1400,7 +1385,7 @@ some_polymorphic_function1!(floor_month, Date, Date, Date);
 pub fn floor_week_Date(value: Date) -> Date {
     let wd = extract_dow_Date(value) - Date::first_day_of_week();
     let interval = ShortInterval::from_seconds(wd * 86400);
-    minus_Date_ShortInterval_Date(value, interval)
+    minus_Date_Date_ShortInterval__(value, interval)
 }
 
 some_polymorphic_function1!(floor_week, Date, Date, Date);
@@ -1551,7 +1536,7 @@ pub fn ceil_week_Date(value: Date) -> Date {
         return value;
     }
     let interval = ShortInterval::from_seconds((7 - wd) * 86400);
-    plus_Date_ShortInterval_Date(value, interval)
+    plus_Date_Date_ShortInterval__(value, interval)
 }
 
 some_polymorphic_function1!(ceil_week, Date, Date, Date);
@@ -1607,7 +1592,7 @@ some_polymorphic_function1!(ceil_nanosecond, Date, Date, Date);
 
 // right - left
 #[doc(hidden)]
-pub fn minus_Date_Date_LongInterval(left: Date, right: Date) -> LongInterval {
+pub fn minus_LongInterval_Date_Date__(left: Date, right: Date) -> LongInterval {
     // Logic adapted from https://github.com/mysql/mysql-server/blob/ea1efa9822d81044b726aab20c857d5e1b7e046a/sql/item_timefunc.cc
     let ld = left.to_dateTime();
     let rd = right.to_dateTime();
@@ -1641,16 +1626,16 @@ pub fn minus_Date_Date_LongInterval(left: Date, right: Date) -> LongInterval {
     LongInterval::from(months * neg)
 }
 
-polymorphic_return_function2!(minus, Date, Date, Date, Date, LongInterval, LongInterval);
+some_function2!(minus_LongInterval_Date_Date, Date, Date, LongInterval);
 
 #[doc(hidden)]
-pub fn minus_Date_Date_ShortInterval(left: Date, right: Date) -> ShortInterval {
+pub fn minus_ShortInterval_Date_Date__(left: Date, right: Date) -> ShortInterval {
     let ld = left.days() as i64;
     let rd = right.days() as i64;
     ShortInterval::from_seconds((ld - rd) * 86400)
 }
 
-polymorphic_return_function2!(minus, Date, Date, Date, Date, ShortInterval, ShortInterval);
+some_function2!(minus_ShortInterval_Date_Date, Date, Date, ShortInterval);
 
 #[doc(hidden)]
 pub fn extract_year_Date(value: Date) -> i64 {
@@ -2783,32 +2768,32 @@ some_polymorphic_function1!(time_trunc_nanosecond, Time, Time, Time);
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn plus_Time_ShortInterval_Time(left: Time, right: ShortInterval) -> Time {
+pub fn plus_Time_Time_ShortInterval__(left: Time, right: ShortInterval) -> Time {
     left + right
 }
 
-polymorphic_return_function2!(plus, Time, Time, ShortInterval, ShortInterval, Time, Time);
+some_function2!(plus_Time_Time_ShortInterval, Time, ShortInterval, Time);
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn minus_Time_ShortInterval_Time(left: Time, right: ShortInterval) -> Time {
+pub fn minus_Time_Time_ShortInterval__(left: Time, right: ShortInterval) -> Time {
     left - right
 }
 
-polymorphic_return_function2!(minus, Time, Time, ShortInterval, ShortInterval, Time, Time);
+some_function2!(minus_Time_Time_ShortInterval, Time, ShortInterval, Time);
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn plus_Time_LongInterval_Time(left: Time, _: LongInterval) -> Time {
+pub fn plus_Time_Time_LongInterval__(left: Time, _: LongInterval) -> Time {
     left
 }
 
-polymorphic_return_function2!(plus, Time, Time, LongInterval, LongInterval, Time, Time);
+some_function2!(plus_Time_Time_LongInterval, Time, LongInterval, Time);
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn minus_Time_LongInterval_Time(left: Time, _: LongInterval) -> Time {
+pub fn minus_Time_Time_LongInterval__(left: Time, _: LongInterval) -> Time {
     left
 }
 
-polymorphic_return_function2!(minus, Time, Time, LongInterval, LongInterval, Time, Time);
+some_function2!(minus_Time_Time_LongInterval, Time, LongInterval, Time);

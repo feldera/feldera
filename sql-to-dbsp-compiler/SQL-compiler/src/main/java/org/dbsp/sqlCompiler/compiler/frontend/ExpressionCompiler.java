@@ -66,6 +66,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTimeAddSub;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -152,20 +153,21 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     protected final RelNode context;
 
     public ExpressionCompiler(@Nullable RelNode context,
-            @Nullable DBSPVariablePath inputRow, DBSPCompiler compiler) {
+                              @Nullable DBSPVariablePath inputRow, DBSPCompiler compiler) {
         this(context, inputRow, Linq.list(), compiler);
     }
 
     /**
      * Create a compiler that will translate expressions pertaining to a row.
-     * @param context          Rel to which the RexNodes belong.
-     * @param inputRow         Variable representing the row being compiled.
-     * @param constants        Additional constants.  Expressions compiled
-     *                         may use RexInputRef, which are field references
-     *                         within the row.  Calcite seems to number constants
-     *                         as additional fields within the row, after the end of
-     *                         the input row.
-     * @param compiler         Handle to the compiler.
+     *
+     * @param context   Rel to which the RexNodes belong.
+     * @param inputRow  Variable representing the row being compiled.
+     * @param constants Additional constants.  Expressions compiled
+     *                  may use RexInputRef, which are field references
+     *                  within the row.  Calcite seems to number constants
+     *                  as additional fields within the row, after the end of
+     *                  the input row.
+     * @param compiler  Handle to the compiler.
      */
     public ExpressionCompiler(@Nullable RelNode context, @Nullable DBSPVariablePath inputRow,
                               List<RexLiteral> constants,
@@ -187,7 +189,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (destinationType.is(DBSPTypeBaseType.class)) {
             return source.cast(node, destinationType, false).applyCloneIfNeeded();
         } else switch (destinationType.code) {
-            case ARRAY, MAP: return source.cast(node, destinationType, false).applyCloneIfNeeded();
+            case ARRAY, MAP:
+                return source.cast(node, destinationType, false).applyCloneIfNeeded();
             case TUPLE, RAW_TUPLE: {
                 Utilities.enforce(source.getType().code == destinationType.code);
                 DBSPTypeTupleBase tuple = destinationType.to(DBSPTypeTupleBase.class);
@@ -408,16 +411,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         }
     }
 
-    static DBSPOpcode timestampOperation(DBSPOpcode opcode) {
-        return switch (opcode) {
-            case ADD -> DBSPOpcode.TS_ADD;
-            case SUB -> DBSPOpcode.TS_SUB;
-            case MUL -> DBSPOpcode.INTERVAL_MUL;
-            case DIV -> DBSPOpcode.INTERVAL_DIV;
-            default -> throw new InternalCompilerError("Unexpected opcode " + opcode);
-        };
-    }
-
     public static DBSPExpression makeBinaryExpression(
             CalciteObject node, DBSPType type, DBSPOpcode opcode,
             DBSPExpression left, DBSPExpression right) {
@@ -448,7 +441,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 expressionResultType = DBSPTypeDecimal.getDefault().withMayBeNull(anyNull);  // no limits
             if (commonBase.is(IsDateType.class) && opcode == DBSPOpcode.SUB) {
                 expressionResultType = type;
-                opcode = timestampOperation(opcode);
             } else if (opcode == DBSPOpcode.BW_AND ||
                     opcode == DBSPOpcode.BW_OR || opcode == DBSPOpcode.XOR ||
                     opcode == DBSPOpcode.MAX || opcode == DBSPOpcode.MIN ||
@@ -471,6 +463,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 left = left.cast(node, commonBase.withMayBeNull(leftType.mayBeNull), false);
             if (rightType.code == NULL || !rightType.withMayBeNull(false).sameType(commonBase))
                 right = right.cast(node, commonBase.withMayBeNull(rightType.mayBeNull), false);
+            if (expressionResultType.is(IsTimeRelatedType.class)) {
+                return new DBSPTimeAddSub(node, expressionResultType, opcode, left, right);
+            }
         } else {
             // no common base.  Cases:
             // - one operand is a date/time/timestamp
@@ -484,34 +479,32 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             if (opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.DIV) {
                 // Multiplication between an interval and a numeric value.
                 if (leftType.is(IsIntervalType.class) || rightType.is(IsIntervalType.class)) {
-                    opcode = timestampOperation(opcode);
                     // swap operands so that the numeric operand is always right
-                    if (opcode == DBSPOpcode.INTERVAL_MUL || opcode == DBSPOpcode.INTERVAL_DIV) {
-                        if (rightType.is(IsIntervalType.class)) {
-                            if (leftType.is(IsIntervalType.class)) {
-                                throw new CompilationError("Operation " + opcode + " between intervals not supported", node);
-                            }
-                            DBSPExpression tmp = left;
-                            left = right;
-                            right = tmp;
-
-                            leftType = left.getType();
-                            rightType = right.getType();
+                    opcode = opcode == DBSPOpcode.MUL ? DBSPOpcode.INTERVAL_MUL : DBSPOpcode.INTERVAL_DIV;
+                    if (rightType.is(IsIntervalType.class)) {
+                        if (leftType.is(IsIntervalType.class)) {
+                            throw new CompilationError("Operation " + opcode + " between intervals not supported", node);
                         }
+                        DBSPExpression tmp = left;
+                        left = right;
+                        right = tmp;
 
-                        Utilities.enforce(rightType.is(IsNumericType.class));
-                        // Canonicalize the type on the right without information loss
-                        if (rightType.is(DBSPTypeInteger.class)) {
-                            if (leftType.is(DBSPTypeMillisInterval.class)) {
-                                right = right.cast(node, DBSPTypeInteger.getType(rightType.getNode(), INT64, rightType.mayBeNull), false);
-                            } else {
-                                right = right.cast(node, DBSPTypeInteger.getType(rightType.getNode(), INT32, rightType.mayBeNull), false);
-                            }
-                        } else if (rightType.is(DBSPTypeReal.class)) {
-                            right = right.cast(node, new DBSPTypeDouble(rightType.getNode(), rightType.mayBeNull), false);
-                        }
+                        leftType = left.getType();
                         rightType = right.getType();
                     }
+
+                    Utilities.enforce(rightType.is(IsNumericType.class));
+                    // Canonicalize the type on the right without information loss
+                    if (rightType.is(DBSPTypeInteger.class)) {
+                        if (leftType.is(DBSPTypeMillisInterval.class)) {
+                            right = right.cast(node, DBSPTypeInteger.getType(rightType.getNode(), INT64, rightType.mayBeNull), false);
+                        } else {
+                            right = right.cast(node, DBSPTypeInteger.getType(rightType.getNode(), INT32, rightType.mayBeNull), false);
+                        }
+                    } else if (rightType.is(DBSPTypeReal.class)) {
+                        right = right.cast(node, new DBSPTypeDouble(rightType.getNode(), rightType.mayBeNull), false);
+                    }
+                    return new DBSPBinaryExpression(node, type, opcode, left, right);
                 }
             }
             if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.ADD) {
@@ -520,15 +513,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     if (rightType.is(IsNumericType.class))
                         throw new CompilationError("Cannot apply operation " + Utilities.singleQuote(opcode.toString()) +
                                 " to arguments of type " + leftType.asSqlString() + " and " + rightType.asSqlString(), node);
-                    opcode = timestampOperation(opcode);
                     if (leftType.is(IsIntervalType.class) && !rightType.is(IsIntervalType.class)) {
                         // Move the interval to the right when computing a date +/- interval
                         DBSPExpression tmp = left;
                         left = right;
                         right = tmp;
-                        leftType = left.getType();
-                        rightType = right.getType();
+                        type = typeWithNull;
                     }
+                    return new DBSPTimeAddSub(node, type, opcode, left, right);
                 }
             }
             if (leftType.is(IsTimeRelatedType.class) || rightType.is(IsTimeRelatedType.class))
