@@ -102,9 +102,10 @@
   "private": true,
   "scripts": {
     "clean-install": "bun ci",
-    "dev": "vite dev --host",
+    "check-bun-version": "bun run scripts/check-bun-version.ts",
+    "dev": "bun run check-bun-version && vite dev --host",
     "prebuild": "cd ../profiler-lib && bun run build",
-    "build": "svelte-kit sync && svelte-check --threshold error && vite build",
+    "build": "bun run check-bun-version && svelte-kit sync && svelte-check --threshold error && vite build",
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check",
     "check:watch": "svelte-kit sync && svelte-check --watch",

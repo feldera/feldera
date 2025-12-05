@@ -104,7 +104,7 @@ export const usePipelineManager = (options?: FetchOptions) => {
     //   ...(await getAuthorizationHeaders()),
     //   Accept: 'application/zip'
     // }
-    const fileName = `fda-bundle-${pipelineName}-${new Date().toISOString().replace(/\.\d{3}/, '')}.zip`
+    const fileName = `feldera-support-bundle-${pipelineName}-${new Date().toISOString().replace(/\.\d{3}/, '')}.zip`
     // // Use simple fetch approach (loads into memory) instead of streaming
     triggerFileDownload(fileName, blob)
   }
