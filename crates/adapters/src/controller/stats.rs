@@ -1530,8 +1530,14 @@ struct WatermarkTrackerInner {
     /// The last `total_processed_records` value reported by the controller.
     total_processed_records: u64,
 
-    /// Not-yet-completed watermarks, in the order they were added.
+    /// Not-yet-completed watermarks with metadata=None, in the order they were added.
     watermark_list: VecDeque<WatermarkListEntry>,
+
+    /// Not-yet-completed watermarks with metadata, in the order they were added.
+    /// We keep these watermarks separate so that a large number of watermarks without
+    /// metadata doesn't cause us to lose all watermarks with metadata, which are necessary
+    /// to implement frontier tracking.
+    watermark_with_metadata_list: VecDeque<WatermarkListEntry>,
 
     /// The latest completed watermark with non-empty metadata, if any.
     completed_watermark: Option<CompletedWatermark>,
@@ -1543,23 +1549,37 @@ impl WatermarkTrackerInner {
             total_completed_records: 0,
             total_processed_records: 0,
             watermark_list: VecDeque::new(),
+            watermark_with_metadata_list: VecDeque::new(),
             completed_watermark: None,
         }
     }
 
     fn append(&mut self, watermarks: Vec<Watermark>, global_offset: u64) {
         for watermark in watermarks {
-            // Keep the queue bounded. This gives older watermarks
-            // a chance to complete; otherwise we risk always evicting all watermarks before the complete
-            // and never reporting any completed watermarks.
-            if self.watermark_list.len() >= MAX_TRACKED_WATERMARKS {
-                break;
+            if watermark.metadata.is_some() {
+                // Keep the queue bounded. This gives older watermarks
+                // a chance to complete; otherwise we risk always evicting all watermarks before the complete
+                // and never reporting any completed watermarks.
+                if self.watermark_with_metadata_list.len() >= MAX_TRACKED_WATERMARKS {
+                    break;
+                }
+
+                self.watermark_with_metadata_list
+                    .push_back(WatermarkListEntry {
+                        watermark,
+                        global_offset,
+                        processed_at: None,
+                    });
+            } else {
+                if self.watermark_list.len() >= MAX_TRACKED_WATERMARKS {
+                    break;
+                }
+                self.watermark_list.push_back(WatermarkListEntry {
+                    watermark,
+                    global_offset,
+                    processed_at: None,
+                });
             }
-            self.watermark_list.push_back(WatermarkListEntry {
-                watermark,
-                global_offset,
-                processed_at: None,
-            });
         }
     }
 
@@ -1567,6 +1587,13 @@ impl WatermarkTrackerInner {
         self.total_processed_records = processed_records;
 
         for entry in self.watermark_list.iter_mut() {
+            if entry.global_offset <= processed_records && entry.processed_at.is_none() {
+                entry.processed_at = Some(ts);
+            } else {
+                break;
+            }
+        }
+        for entry in self.watermark_with_metadata_list.iter_mut() {
             if entry.global_offset <= processed_records && entry.processed_at.is_none() {
                 entry.processed_at = Some(ts);
             } else {
@@ -1586,6 +1613,29 @@ impl WatermarkTrackerInner {
         while let Some(entry) = self.watermark_list.front() {
             if entry.global_offset <= completed_records {
                 let entry = self.watermark_list.pop_front().unwrap();
+
+                let processed_at = entry.processed_at.unwrap_or(ts);
+
+                if let Ok(mut histogram) = metrics.processing_latency_micros_histogram.lock() {
+                    histogram.record(
+                        processed_at.timestamp_micros()
+                            - entry.watermark.timestamp.timestamp_micros(),
+                    )
+                };
+
+                if let Ok(mut histogram) = metrics.completion_latency_micros_histogram.lock() {
+                    histogram.record(
+                        ts.timestamp_micros() - entry.watermark.timestamp.timestamp_micros(),
+                    )
+                };
+            } else {
+                break;
+            }
+        }
+
+        while let Some(entry) = self.watermark_with_metadata_list.front() {
+            if entry.global_offset <= completed_records {
+                let entry = self.watermark_with_metadata_list.pop_front().unwrap();
 
                 let processed_at = entry.processed_at.unwrap_or(ts);
 
