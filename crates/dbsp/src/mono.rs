@@ -154,6 +154,29 @@ where
             .typed()
     }
 
+    #[track_caller]
+    pub fn balanced_join<F, V2, OV>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdZSet<OV>>
+    where
+        V2: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &V2) -> OV + Clone + 'static,
+    {
+        let join_funcs =
+            mk_trace_join_funcs::<OrdIndexedZSet<K, V>, OrdIndexedZSet<K, V2>, OrdZSet<OV>, _>(
+                join,
+            );
+
+        let join_factories = JoinFactories::new::<K, V, V2, OV, ()>();
+
+        self.inner()
+            .dyn_balanced_join_mono(&join_factories, &other.inner(), join_funcs)
+            .typed()
+    }
+
     /// Left-join `self` with `other`.
     ///
     /// # Important
@@ -213,6 +236,33 @@ where
             .typed()
     }
 
+    #[track_caller]
+    pub fn balanced_join_flatmap<F, V2, OV, It>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdZSet<OV>>
+    where
+        V2: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &V2) -> It + Clone + 'static,
+        It: IntoIterator<Item = OV> + 'static,
+    {
+        let join_funcs = mk_trace_join_flatmap_funcs::<
+            OrdIndexedZSet<K, V>,
+            OrdIndexedZSet<K, V2>,
+            OrdZSet<OV>,
+            _,
+            It,
+        >(join);
+
+        let join_factories = JoinFactories::new::<K, V, V2, OV, ()>();
+
+        self.inner()
+            .dyn_balanced_join_mono(&join_factories, &other.inner(), join_funcs)
+            .typed()
+    }
+
     /// Like `left_join`, but can produce multiple output values for each (k, v1, v2) tuple.
     #[track_caller]
     pub fn left_join_flatmap<F, V2, OV, It>(
@@ -266,6 +316,34 @@ where
 
         self.inner()
             .dyn_join_index_mono(&join_factories, &other.inner(), join_funcs)
+            .typed()
+    }
+
+    #[track_caller]
+    pub fn balanced_join_index<F, V2, OK, OV, It>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<OK, OV>>
+    where
+        V2: DBData,
+        OK: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &V2) -> It + Clone + 'static,
+        It: IntoIterator<Item = (OK, OV)> + 'static,
+    {
+        let join_funcs = mk_trace_join_generic_funcs::<
+            OrdIndexedZSet<K, V>,
+            OrdIndexedZSet<K, V2>,
+            OrdIndexedZSet<OK, OV>,
+            _,
+            _,
+        >(join);
+
+        let join_factories = JoinFactories::new::<K, V, V2, OK, OV>();
+
+        self.inner()
+            .dyn_balanced_join_index_mono(&join_factories, &other.inner(), join_funcs)
             .typed()
     }
 

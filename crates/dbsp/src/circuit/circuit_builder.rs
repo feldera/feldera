@@ -1730,7 +1730,7 @@ pub trait CircuitBase: 'static {
     fn check_fixedpoint(&self, scope: Scope) -> bool;
 
     fn notify_start_transaction(&self) {
-        self.map_local_nodes_mut(&mut |node| {
+        let _ = self.map_local_nodes_mut(&mut |node| {
             node.start_transaction();
             Ok(())
         });

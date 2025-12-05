@@ -1,5 +1,5 @@
 use crate::algebra::{ZBatch, ZBatchReader, ZCursor};
-use crate::circuit::circuit_builder::StreamId;
+use crate::circuit::circuit_builder::{CircuitBase, StreamId};
 use crate::circuit::metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL};
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::DynData;
@@ -533,6 +533,26 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
         self.dyn_join_generic(factories, other, join_funcs)
     }
 
+    #[track_caller]
+    pub fn dyn_balanced_join_mono(
+        &self,
+        factories: &JoinFactories<MonoIndexedZSet, MonoIndexedZSet, (), OrdZSet<DynData>>,
+        other: &Stream<RootCircuit, MonoIndexedZSet>,
+        join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynUnit>,
+    ) -> Stream<RootCircuit, MonoZSet> {
+        self.dyn_balanced_join_generic(factories, other, join_funcs)
+    }
+
+    #[track_caller]
+    pub fn dyn_balanced_join_index_mono(
+        &self,
+        factories: &JoinFactories<MonoIndexedZSet, MonoIndexedZSet, (), MonoIndexedZSet>,
+        other: &Stream<RootCircuit, MonoIndexedZSet>,
+        join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynData>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_balanced_join_generic(factories, other, join_funcs)
+    }
+
     pub fn dyn_antijoin_mono(
         &self,
         factories: &AntijoinFactories<MonoIndexedZSet, MonoZSet, ()>,
@@ -806,6 +826,74 @@ where
                 },
             )
             .clone()
+    }
+}
+
+impl<I1> Stream<RootCircuit, I1>
+where
+    I1: IndexedZSet,
+{
+    #[track_caller]
+    pub fn dyn_balanced_join_generic<I2, Z>(
+        &self,
+        factories: &JoinFactories<I1, I2, (), Z>,
+        other: &Stream<RootCircuit, I2>,
+        join_funcs: TraceJoinFuncs<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
+    ) -> Stream<RootCircuit, Z>
+    where
+        I2: IndexedZSet<Key = I1::Key>,
+        Z: IndexedZSet,
+    {
+        self.circuit().region("balanced_join", || {
+            let (_left, left_accumulator, left_trace) = self.dyn_accumulate_trace_with_balancer(
+                &factories.left_trace_factories,
+                &factories.left_factories,
+            );
+
+            let (_right, right_accumulator, right_trace) = other
+                .dyn_accumulate_trace_with_balancer(
+                    &factories.right_trace_factories,
+                    &factories.right_factories,
+                );
+
+            let left = self.circuit().add_binary_operator(
+                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
+                    &factories.right_trace_factories,
+                    &factories.output_factories,
+                    factories.timed_item_factory,
+                    factories.timed_items_factory,
+                    join_funcs.left,
+                    Location::caller(),
+                    self.circuit().clone(),
+                )),
+                &left_accumulator,
+                &right_trace,
+            );
+
+            let right = self.circuit().add_binary_operator(
+                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
+                    &factories.left_trace_factories,
+                    &factories.output_factories,
+                    factories.timed_item_factory,
+                    factories.timed_items_factory,
+                    join_funcs.right,
+                    Location::caller(),
+                    self.circuit().clone(),
+                )),
+                &right_accumulator,
+                &left_trace.accumulate_delay_trace(),
+            );
+
+            let result = left.plus(&right);
+
+            self.circuit().balancer().register_join(
+                self.local_node_id(),
+                left.local_node_id(),
+                right.local_node_id(),
+            );
+
+            result
+        })
     }
 }
 

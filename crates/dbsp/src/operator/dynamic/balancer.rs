@@ -22,8 +22,8 @@ use crate::{
     },
     trace::{
         deserialize_indexed_wset, merge_batches, serialize_indexed_wset, spine_async::SpineCursor,
-        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, MergeCursor, SpineSnapshot,
-        TupleBuilder, WithSnapshot,
+        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, MergeCursor, Spine,
+        SpineSnapshot, TupleBuilder, WithSnapshot,
     },
     utils::{
         components,
@@ -46,7 +46,7 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
 };
 
-circuit_cache_key!(BalancedTraceId<C: Circuit, B: IndexedZSet>(StreamId => (Stream<C, B>, Stream<C, TimedSpine<B, C>>)));
+circuit_cache_key!(BalancedTraceId<C: Circuit, B: IndexedZSet>(StreamId => (Stream<C, B>, Stream<C, Option<Spine<B>>>, Stream<C, TimedSpine<B, C>>)));
 
 #[derive(Debug)]
 pub struct JoinConstraint {
@@ -408,10 +408,14 @@ where
         &self,
         trace_factories: &<TimedSpine<B, C> as BatchReader>::Factories,
         batch_factories: &B::Factories,
-    ) -> (Stream<C, B>, Stream<C, TimedSpine<B, C>>) {
+    ) -> (
+        Stream<C, B>,
+        Stream<C, Option<Spine<B>>>,
+        Stream<C, TimedSpine<B, C>>,
+    ) {
         if Runtime::num_workers() == 1 {
             let trace = self.dyn_accumulate_trace(trace_factories, batch_factories);
-            return (self.clone(), trace);
+            return (self.clone(), self.dyn_accumulate(&batch_factories), trace);
         }
 
         let location = Location::caller();
@@ -546,7 +550,7 @@ where
                             worker_index,
                             Some(location),
                             exchange,
-                            circuit.balancer().clone(),
+                            balancer.clone(),
                             circuit.metadata_exchange().clone(),
                         )),
                         self,
@@ -565,7 +569,7 @@ where
                         trace.local_node_id(),
                     );
 
-                    (sharded_stream, trace)
+                    (sharded_stream, accumulator_stream, trace)
                 })
             })
             .clone()

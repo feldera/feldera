@@ -23,7 +23,7 @@ use crate::{
         LocalStoreMarker,
     },
     circuit_cache_key,
-    trace::{Batch, BatchReader, Spine, Trace, WithSnapshot},
+    trace::{Batch, BatchReader, Spine, Trace},
     Circuit, Error, NumEntries, Runtime, Scope, Stream,
 };
 

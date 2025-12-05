@@ -9,7 +9,7 @@ use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::to_bytes;
 use crate::storage::file::writer::Parameters;
-use crate::trace::{unaligned_deserialize, Deserializable, Serializer};
+use crate::trace::unaligned_deserialize;
 use crate::SchedulerError;
 use crate::{
     storage::{backend::StorageError, buffer_cache::BufferCache, dirlock::LockedDirectory},
@@ -1337,7 +1337,8 @@ mod tests {
                 root.transaction().unwrap();
             }
 
-            assert_eq!(&*data.borrow(), &(1..101).collect::<Vec<usize>>());
+            // The scheduler allocates the first value for metadata exchange.
+            assert_eq!(&*data.borrow(), &(2..102).collect::<Vec<usize>>());
         })
         .expect("failed to start runtime");
 
