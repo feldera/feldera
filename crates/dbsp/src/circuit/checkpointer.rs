@@ -417,8 +417,8 @@ where
 }
 
 impl<T: Default> EmptyCheckpoint<T> {
-    pub fn new() -> Self {
-        Self { val: T::default() }
+    pub fn new(val: T) -> Self {
+        Self { val }
     }
 }
 

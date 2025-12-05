@@ -23,11 +23,11 @@ use crate::{
         LocalStoreMarker,
     },
     circuit_cache_key,
-    trace::{Batch, BatchReader, Spine, SpineSnapshot, Trace, WithSnapshot},
+    trace::{Batch, BatchReader, Spine, Trace, WithSnapshot},
     Circuit, Error, NumEntries, Runtime, Scope, Stream,
 };
 
-circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>, RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>)));
+circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>)));
 
 /// `TypedMapKey` entry used to share `enable_count` across instances of the same accumulator in multiple workers.
 #[derive(Hash, PartialEq, Eq)]
@@ -52,10 +52,29 @@ where
 {
     /// See [`Stream::accumulate`].
     pub fn dyn_accumulate(&self, factories: &B::Factories) -> Stream<C, Option<Spine<B>>> {
-        let (stream, enable_count, _) = self.dyn_accumulate_with_enable_count(factories);
+        let (stream, enable_count) = self.dyn_accumulate_with_enable_count(factories);
         enable_count.fetch_add(1, Ordering::AcqRel);
 
         stream
+    }
+
+    /// See [`Stream::accumulate_with_enable_count`].
+    pub fn dyn_accumulate_with_enable_count(
+        &self,
+        factories: &B::Factories,
+    ) -> (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>) {
+        self.circuit()
+            .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {
+                let accumulator = Accumulator::<B>::new(factories, Location::caller());
+                let enable_count = accumulator.enable_count.clone();
+
+                let stream = self
+                    .circuit()
+                    .add_unary_operator(accumulator, &self.try_sharded_version());
+                stream.mark_sharded_if(self);
+                (stream, enable_count)
+            })
+            .clone()
     }
 
     pub fn dyn_accumulate_with_feedback_stream(
@@ -65,42 +84,22 @@ where
         Stream<C, Option<Spine<B>>>,
         RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>,
     ) {
-        let (stream, enable_count, accumulator_snapshot_stream_val) =
-            self.dyn_accumulate_with_enable_count(factories);
-        enable_count.fetch_add(1, Ordering::AcqRel);
+        let mut accumulator = Accumulator::<B>::new(factories, Location::caller());
+        accumulator.enable_count.fetch_add(1, Ordering::AcqRel);
+        let accumulator_snapshot_stream_val = RefStreamValue::empty();
+        accumulator.set_feedback_stream(accumulator_snapshot_stream_val.clone());
 
+        let stream = self
+            .circuit()
+            .add_unary_operator(accumulator, &self.try_sharded_version());
+        stream.mark_sharded_if(self);
         (stream, accumulator_snapshot_stream_val)
-    }
-
-    /// See [`Stream::accumulate_with_enable_count`].
-    pub fn dyn_accumulate_with_enable_count(
-        &self,
-        factories: &B::Factories,
-    ) -> (
-        Stream<C, Option<Spine<B>>>,
-        Arc<AtomicUsize>,
-        RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>,
-    ) {
-        self.circuit()
-            .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {
-                let accumulator = Accumulator::<C, B>::new(factories, Location::caller());
-                let enable_count = accumulator.enable_count.clone();
-                let accumulator_snapshot_stream_val = RefStreamValue::empty();
-
-                let stream = self
-                    .circuit()
-                    .add_unary_operator(accumulator, &self.try_sharded_version());
-                stream.mark_sharded_if(self);
-                (stream, enable_count, accumulator_snapshot_stream_val)
-            })
-            .clone()
     }
 }
 
-pub struct Accumulator<C, B>
+pub struct Accumulator<B>
 where
     B: Batch,
-    C: Circuit,
 {
     factories: B::Factories,
     state: Spine<B>,
@@ -136,13 +135,12 @@ where
     /// transaction.
     enabled_during_current_transaction: Option<bool>,
 
-    feedback_stream: Option<Stream<C, SpineSnapshot<B>>>,
+    feedback_stream: Option<RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>>,
 }
 
-impl<C, B> Accumulator<C, B>
+impl<B> Accumulator<B>
 where
     B: Batch,
-    C: Circuit,
 {
     pub fn new(factories: &B::Factories, location: &'static Location<'static>) -> Self {
         let enable_count = match Runtime::runtime() {
@@ -171,16 +169,17 @@ where
         }
     }
 
-    pub fn with_feedback_stream(mut self, feedback_stream: &Stream<C, SpineSnapshot<B>>) -> Self {
+    pub fn set_feedback_stream(
+        &mut self,
+        feedback_stream: RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>,
+    ) {
         self.feedback_stream = Some(feedback_stream.clone());
-        self
     }
 }
 
-impl<C, B> Operator for Accumulator<C, B>
+impl<B> Operator for Accumulator<B>
 where
     B: Batch,
-    C: Circuit,
 {
     fn name(&self) -> std::borrow::Cow<'static, str> {
         Cow::Borrowed("Accumulator")
@@ -237,10 +236,9 @@ where
     }
 }
 
-impl<C, B> UnaryOperator<B, Option<Spine<B>>> for Accumulator<C, B>
+impl<B> UnaryOperator<B, Option<Spine<B>>> for Accumulator<B>
 where
     B: Batch,
-    C: Circuit,
 {
     async fn eval(&mut self, batch: &B) -> Option<Spine<B>> {
         // We don't have a start-of-transaction signal, so we sample enable_count when
@@ -263,7 +261,7 @@ where
         }
 
         if let Some(feedback_stream) = &self.feedback_stream {
-            feedback_stream.value().put(self.state.ro_snapshot());
+            feedback_stream.put(EmptyCheckpoint::new(self.state.get_batches()));
         }
 
         let result = if self.flush {
@@ -298,7 +296,7 @@ where
         }
 
         if let Some(feedback_stream) = &self.feedback_stream {
-            feedback_stream.value().put(self.state.ro_snapshot());
+            feedback_stream.put(EmptyCheckpoint::new(self.state.get_batches()));
         }
 
         if self.flush {

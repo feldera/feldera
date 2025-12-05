@@ -49,7 +49,7 @@ where
     pub fn accumulate_with_enable_count(&self) -> (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>) {
         let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
 
-        let (result, enable_count, _) = self.inner().dyn_accumulate_with_enable_count(&factories);
+        let (result, enable_count) = self.inner().dyn_accumulate_with_enable_count(&factories);
 
         (unsafe { result.transmute_payload() }, enable_count)
     }

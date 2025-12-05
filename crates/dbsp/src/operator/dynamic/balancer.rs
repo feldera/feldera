@@ -527,7 +527,7 @@ where
                         persistent_id
                             .map(|name| format!("{name}.balanced.acc_snapshot"))
                             .as_deref(),
-                        Z1::new(EmptyCheckpoint::<Vec<Arc<B>>>::new()),
+                        Z1::new(EmptyCheckpoint::<Vec<Arc<B>>>::new(Vec::new())),
                     );
 
                     let accumulator_feedback_stream = Stream::with_value(

@@ -897,6 +897,15 @@ where
     merger: AsyncMerger<B>,
 }
 
+impl<B> Spine<B>
+where
+    B: Batch,
+{
+    pub fn get_batches(&self) -> Vec<Arc<B>> {
+        self.merger.get_batches()
+    }
+}
+
 impl<B> SizeOf for Spine<B>
 where
     B: Batch,
