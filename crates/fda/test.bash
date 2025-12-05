@@ -207,3 +207,9 @@ rm udf.toml
 rm udf.rs
 rm -f test-support-bundle-full.zip
 rm -f test-support-bundle-none.zip
+
+# Cluster events
+fda cluster events
+fda cluster event latest
+fda cluster event latest status
+fda cluster event latest all

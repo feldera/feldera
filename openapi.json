@@ -237,14 +237,141 @@
         ]
       }
     },
+    "/v0/cluster/events": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "List of retained cluster monitor events ordered from most recent to least recent.",
+        "description": "The returned events only have limited details, the full details can be retrieved using\nthe `GET /v0/cluster/events/<event-id>` endpoint.\n\nCluster monitor events are collected at a periodic interval (every 10s), however only\nevery 10 minutes or if the overall health changes, does it get inserted into the database\n(and thus, served by this endpoint). At most 1000 events are retained (newest first),\nand events older than 72h are deleted. The latest event, if it already exists, is never\ncleaned up.",
+        "operationId": "list_cluster_events",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ClusterMonitorEventSelectedInfo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/cluster/events/{event_id}": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Get specific cluster monitor event.",
+        "description": "The identifiers of the events can be retrieved via `GET /v0/cluster/events`.\nAt most 1000 events are retained (newest first), and events older than 72h are deleted.\nThe latest event, if it already exists, is never cleaned up.\nThis endpoint can return a 404 for an event that no longer exists due to clean-up.",
+        "operationId": "get_cluster_event",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "Cluster monitor event identifier or `latest`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "selector",
+            "in": "query",
+            "description": "The `selector` parameter limits which fields are returned.\nLimiting which fields is particularly handy for instance when frequently\nmonitoring over low bandwidth connections while being only interested\nin status.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ClusterMonitorEventFieldSelector"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterMonitorEventSelectedInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/cluster_healthz": {
       "get": {
         "tags": [
           "Platform"
         ],
         "summary": "Check Cluster Health",
-        "description": "Retrieve the health status of the Feldera control-plane.",
-        "operationId": "get_health",
+        "description": "Determine the latest cluster health via the latest cluster monitor event.",
+        "operationId": "get_cluster_health",
         "responses": {
           "200": {
             "description": "All services healthy",
@@ -6096,6 +6223,105 @@
           }
         }
       },
+      "ClusterMonitorEvent": {
+        "type": "object",
+        "description": "Brief cluster monitoring event with only the identifier, timestamp and health conclusions.",
+        "required": [
+          "id",
+          "recorded_at",
+          "api_status",
+          "compiler_status",
+          "runner_status"
+        ],
+        "properties": {
+          "api_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "compiler_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ClusterMonitorEventId"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp at which the event was recorded in the database. Because collecting the data for\nthe health checks can take time, this timestamp is approximate."
+          },
+          "runner_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          }
+        }
+      },
+      "ClusterMonitorEventFieldSelector": {
+        "type": "string",
+        "enum": [
+          "all",
+          "status"
+        ]
+      },
+      "ClusterMonitorEventId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Cluster monitor event identifier."
+      },
+      "ClusterMonitorEventSelectedInfo": {
+        "type": "object",
+        "description": "Cluster monitor event information which has a selected subset of optional fields.\nIf an optional field is not selected (i.e., is `None`), it will not be serialized.",
+        "required": [
+          "id",
+          "recorded_at",
+          "all_healthy",
+          "api_status",
+          "compiler_status",
+          "runner_status"
+        ],
+        "properties": {
+          "all_healthy": {
+            "type": "boolean"
+          },
+          "api_resources_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "api_self_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "api_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "compiler_resources_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "compiler_self_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "compiler_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ClusterMonitorEventId"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "runner_resources_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "runner_self_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "runner_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          }
+        }
+      },
       "ColumnType": {
         "type": "object",
         "description": "A SQL column type description.\n\nMatches the Calcite JSON format.",
@@ -6948,6 +7174,66 @@
           }
         }
       },
+      "ExtendedClusterMonitorEvent": {
+        "type": "object",
+        "description": "Extended cluster monitoring event with full details.",
+        "required": [
+          "id",
+          "recorded_at",
+          "api_status",
+          "api_self_info",
+          "api_resources_info",
+          "compiler_status",
+          "compiler_self_info",
+          "compiler_resources_info",
+          "runner_status",
+          "runner_self_info",
+          "runner_resources_info"
+        ],
+        "properties": {
+          "api_resources_info": {
+            "type": "string",
+            "description": "Human-readable API server(s) status report of the resources backing the API server(s)\n-- in particular, the Kubernetes objects."
+          },
+          "api_self_info": {
+            "type": "string",
+            "description": "Human-readable API server(s) status report."
+          },
+          "api_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "compiler_resources_info": {
+            "type": "string",
+            "description": "Human-readable API server(s) status report of the resources backing the compiler server(s)\n-- in particular, the Kubernetes objects."
+          },
+          "compiler_self_info": {
+            "type": "string",
+            "description": "Human-readable compiler server(s) status report."
+          },
+          "compiler_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ClusterMonitorEventId"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp at which the event was recorded in the database. Because collecting the data for\nthe health checks can take time, this timestamp is approximate."
+          },
+          "runner_resources_info": {
+            "type": "string",
+            "description": "Human-readable API server(s) status report of the resources backing the runner\n-- in particular, the Kubernetes objects."
+          },
+          "runner_self_info": {
+            "type": "string",
+            "description": "Human-readable runner status report."
+          },
+          "runner_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          }
+        }
+      },
       "Field": {
         "allOf": [
           {
@@ -7137,6 +7423,15 @@
         },
         "additionalProperties": false
       },
+      "GetClusterEventParameters": {
+        "type": "object",
+        "description": "Query parameters to GET a cluster monitor event.",
+        "properties": {
+          "selector": {
+            "$ref": "#/components/schemas/ClusterMonitorEventFieldSelector"
+          }
+        }
+      },
       "GetPipelineParameters": {
         "type": "object",
         "description": "Query parameters to GET a pipeline or a list of pipelines.",
@@ -7194,10 +7489,18 @@
       "HealthStatus": {
         "type": "object",
         "required": [
-          "runner",
-          "compiler"
+          "all_healthy",
+          "api",
+          "compiler",
+          "runner"
         ],
         "properties": {
+          "all_healthy": {
+            "type": "boolean"
+          },
+          "api": {
+            "$ref": "#/components/schemas/ServiceStatus"
+          },
           "compiler": {
             "$ref": "#/components/schemas/ServiceStatus"
           },
@@ -7768,6 +8071,14 @@
           }
         },
         "additionalProperties": {}
+      },
+      "MonitorStatus": {
+        "type": "string",
+        "enum": [
+          "InitialUnhealthy",
+          "Unhealthy",
+          "Healthy"
+        ]
       },
       "NatsInputConfig": {
         "type": "object",

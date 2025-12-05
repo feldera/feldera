@@ -1261,3 +1261,27 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             )
 
         return token
+
+    def get_cluster_events(self) -> list[dict]:
+        """
+        Retrieves all cluster events (status fields only).
+
+        :returns: List of cluster events.
+        """
+        return self.http.get(path="/cluster/events")
+
+    def get_cluster_event(self, event_id: str, selector: str = "status") -> dict:
+        """
+        Retrieves a specific cluster event.
+
+        :param event_id: Identifier (UUID) of the event to retrieve, or `latest` for the latest event.
+        :param selector: (Optional) Limit the returned fields. Valid values: "all", "status" (default).
+
+        :returns: Event (fields limited based on selector).
+        """
+        # Selector of fields
+        if selector not in ["all", "status"]:
+            raise ValueError(f"invalid selector: {selector}")
+
+        # Issue request and return response
+        return self.http.get(path=f"/cluster/events/{event_id}?selector={selector}")

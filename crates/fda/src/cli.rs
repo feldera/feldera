@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::path::PathBuf;
 
 use crate::make_client;
-use feldera_rest_api::types::CompilationProfile;
+use feldera_rest_api::types::{ClusterMonitorEventFieldSelector, CompilationProfile};
 
 /// Autocompletion for pipeline names by trying to fetch them from the server.
 fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
@@ -162,6 +162,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: ApiKeyActions,
     },
+    /// Cluster information and status.
+    Cluster {
+        #[command(subcommand)]
+        action: ClusterAction,
+    },
     /// Debugging tools.
     Debug {
         #[command(subcommand)]
@@ -183,6 +188,21 @@ pub enum ApiKeyActions {
     Delete {
         /// The name of the API key to delete
         name: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ClusterAction {
+    /// Retrieves all cluster events (status only) and prints them.
+    Events,
+
+    /// Retrieve specific cluster event.
+    Event {
+        /// Identifier (UUID) of the event or `latest`.
+        id: String,
+        /// Either `all` or `status` (default).
+        #[arg(default_value = "status")]
+        selector: ClusterMonitorEventFieldSelector,
     },
 }
 

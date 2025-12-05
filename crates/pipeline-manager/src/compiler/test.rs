@@ -35,6 +35,7 @@ impl CompilerTest {
         let platform_version = "v0";
         let common_config = CommonConfig {
             bind_address: "127.0.0.1".to_string(),
+            api_host: "127.0.0.1".to_string(),
             api_port: 8080,
             compiler_host: "127.0.0.1".to_string(),
             compiler_port: 8085,

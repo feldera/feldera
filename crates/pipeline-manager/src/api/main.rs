@@ -2,7 +2,6 @@ use crate::api::demo::{read_demos_from_directories, Demo};
 use crate::api::endpoints;
 use crate::api::support_data_collector::SupportDataCollector;
 use crate::auth::JwkCache;
-use crate::cluster_health::HealthStatus;
 use crate::config::{ApiServerConfig, CommonConfig};
 use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
@@ -242,8 +241,10 @@ It contains the following fields:
         // Metrics
         endpoints::metrics::get_metrics,
 
-        // Cluster Health
-        endpoints::cluster_healthz::get_health
+        // Cluster
+        endpoints::cluster::list_cluster_events,
+        endpoints::cluster::get_cluster_event,
+        endpoints::cluster::get_cluster_health
     ),
     components(schemas(
         // Authentication
@@ -315,6 +316,17 @@ It contains the following fields:
         crate::db::types::api_key::ApiKeyDescr,
         crate::api::endpoints::api_key::NewApiKeyRequest,
         crate::api::endpoints::api_key::NewApiKeyResponse,
+
+        // Monitor
+        crate::db::types::monitor::MonitorStatus,
+        crate::db::types::monitor::ClusterMonitorEventId,
+        crate::db::types::monitor::ClusterMonitorEvent,
+        crate::db::types::monitor::ExtendedClusterMonitorEvent,
+        crate::api::endpoints::cluster::ClusterMonitorEventSelectedInfo,
+        crate::api::endpoints::cluster::GetClusterEventParameters,
+        crate::api::endpoints::cluster::ClusterMonitorEventFieldSelector,
+        crate::api::endpoints::cluster::HealthStatus,
+        crate::api::endpoints::cluster::ServiceStatus,
 
         // From the feldera-types crate
         feldera_types::config::PipelineConfig,
@@ -412,10 +424,6 @@ It contains the following fields:
         // Telemetry & License
         feldera_cloud1_client::license::DisplaySchedule,
         feldera_cloud1_client::license::LicenseInformation,
-
-        // Cluster health check
-        crate::cluster_health::HealthStatus,
-        crate::cluster_health::ServiceStatus,
     ),),
     tags(
         (name = "Pipeline management", description = "Create, retrieve, update, delete and deploy pipelines."),
@@ -547,7 +555,9 @@ fn api_scope() -> Scope {
         // Metrics of all pipelines belonging to this tenant
         .service(endpoints::metrics::get_metrics)
         // Cluster health check
-        .service(endpoints::cluster_healthz::get_health)
+        .service(endpoints::cluster::list_cluster_events)
+        .service(endpoints::cluster::get_cluster_event)
+        .service(endpoints::cluster::get_cluster_health)
 }
 
 struct SecurityAddon;
@@ -586,7 +596,6 @@ pub(crate) struct ServerState {
     probe: Arc<Mutex<DbProbe>>,
     pub demos: Vec<Demo>,
     pub license_check: Arc<RwLock<Option<LicenseCheck>>>,
-    pub health_check: Arc<RwLock<Option<HealthStatus>>>,
 }
 
 impl ServerState {
@@ -595,7 +604,6 @@ impl ServerState {
         config: ApiServerConfig,
         db: Arc<Mutex<StoragePostgres>>,
         license_check: Arc<RwLock<Option<LicenseCheck>>>,
-        health_check: Arc<RwLock<Option<HealthStatus>>>,
     ) -> AnyResult<Self> {
         let runner = RunnerInteraction::new(common_config.clone(), db.clone());
         let db_copy = db.clone();
@@ -609,7 +617,6 @@ impl ServerState {
             probe: DbProbe::new(db_copy).await,
             demos,
             license_check,
-            health_check,
         })
     }
 
@@ -618,16 +625,9 @@ impl ServerState {
         let common_config = CommonConfig::test_config();
         let api_config = ApiServerConfig::test_config();
         let license_check = Arc::new(RwLock::new(None::<LicenseCheck>));
-        let health_check = Arc::new(RwLock::new(None));
-        Self::new(
-            common_config,
-            api_config,
-            db.clone(),
-            license_check,
-            health_check,
-        )
-        .await
-        .unwrap()
+        Self::new(common_config, api_config, db.clone(), license_check)
+            .await
+            .unwrap()
     }
 }
 
@@ -675,7 +675,6 @@ pub async fn run(
     common_config: CommonConfig,
     api_config: ApiServerConfig,
     license_check: Arc<RwLock<Option<LicenseCheck>>>,
-    health_check: Arc<RwLock<Option<HealthStatus>>>,
 ) -> AnyResult<()> {
     let listener = TcpListener::bind((common_config.bind_address.clone(), common_config.api_port))
         .unwrap_or_else(|_| {
@@ -685,14 +684,7 @@ pub async fn run(
             )
         });
     let state = WebData::new(
-        ServerState::new(
-            common_config.clone(),
-            api_config.clone(),
-            db,
-            license_check,
-            health_check,
-        )
-        .await?,
+        ServerState::new(common_config.clone(), api_config.clone(), db, license_check).await?,
     );
     let auth_configuration = match api_config.auth_provider {
         crate::config::AuthProviderType::None => None,

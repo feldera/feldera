@@ -12,6 +12,7 @@
 //   - Panic if the operation is invalid in any database state (for example, trying
 //     to provide an program error message when transitioning to Success state).
 pub mod api_key;
+pub mod cluster_monitor;
 pub mod connectivity;
 pub mod pipeline;
 pub mod tenant;

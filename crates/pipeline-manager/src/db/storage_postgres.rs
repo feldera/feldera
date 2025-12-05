@@ -7,6 +7,9 @@ use crate::db::operations;
 use crate::db::pg_setup;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
+use crate::db::types::monitor::{
+    ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent, NewClusterMonitorEvent,
+};
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
 };
@@ -1179,6 +1182,88 @@ impl Storage for StoragePostgres {
             operations::pipeline::get_support_bundle_data(&txn, pipeline.id, how_many).await?;
         txn.commit().await?;
         Ok((pipeline, bundle_data))
+    }
+
+    async fn list_cluster_monitor_events(&self) -> Result<Vec<ClusterMonitorEvent>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let events = operations::cluster_monitor::list_cluster_monitor_events_short(&txn).await?;
+        txn.commit().await?;
+        Ok(events)
+    }
+
+    async fn get_cluster_monitor_event_short(
+        &self,
+        event_id: ClusterMonitorEventId,
+    ) -> Result<ClusterMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event =
+            operations::cluster_monitor::get_cluster_monitor_event_short(&txn, event_id).await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn get_cluster_monitor_event_extended(
+        &self,
+        event_id: ClusterMonitorEventId,
+    ) -> Result<ExtendedClusterMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event =
+            operations::cluster_monitor::get_cluster_monitor_event_extended(&txn, event_id).await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn get_latest_cluster_monitor_event_short(&self) -> Result<ClusterMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event =
+            operations::cluster_monitor::get_latest_cluster_monitor_event_short(&txn).await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn get_latest_cluster_monitor_event_extended(
+        &self,
+    ) -> Result<ExtendedClusterMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event =
+            operations::cluster_monitor::get_latest_cluster_monitor_event_extended(&txn).await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn new_cluster_monitor_event(
+        &self,
+        new_id: Uuid,
+        event_descr: NewClusterMonitorEvent,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::cluster_monitor::new_cluster_monitor_event(&txn, new_id, event_descr).await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn delete_cluster_monitor_events_beyond_retention(
+        &self,
+        retention_hours: u16,
+        retention_num: u16,
+    ) -> Result<(u64, u64), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let (num_deleted_due_to_timestamp, num_deleted_due_to_limit) =
+            operations::cluster_monitor::delete_cluster_monitor_events_beyond_retention(
+                &txn,
+                retention_hours,
+                retention_num,
+            )
+            .await?;
+        txn.commit().await?;
+        Ok((num_deleted_due_to_timestamp, num_deleted_due_to_limit))
     }
 }
 

@@ -111,6 +111,8 @@ uv run python -m pytest tests/platform/
 
 # Specific test file
 uv run python -m pytest tests/platform/test_pipeline_crud.py
+
+# Tip: add argument -x at the end for it to fail fast
 ```
 
 For further information about the tests, please see `tests/README.md`.

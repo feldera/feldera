@@ -1,5 +1,5 @@
 pub mod api_key;
-pub mod cluster_healthz;
+pub mod cluster;
 pub mod config;
 pub mod metrics;
 pub mod pipeline_interaction;
