@@ -30,6 +30,7 @@
     "@fontsource-variable/dm-sans": "5.1.1",
     "@fontsource/dm-mono": "5.1.1",
     "@fortawesome/fontawesome-free": "6.7.2",
+    "@githubnext/tiny-svelte-fsm": "^1.0.0",
     "@hey-api/client-fetch": "0.1.10",
     "@hey-api/openapi-ts": "0.47.2",
     "@monaco-editor/loader": "1.6.1",

@@ -16,8 +16,6 @@
   import {
     programStatusOf,
     type ExtendedPipeline,
-    type Pipeline,
-    type PipelineAction,
     type PipelineThumb
   } from '$lib/services/pipelineManager'
   import {
@@ -95,17 +93,11 @@
   const pipelineAction = usePipelineAction()
 
   const api = usePipelineManager()
-  const pipelineActionCallbacks = usePipelineActionCallbacks()
-  const handleActionSuccess = async (pipelineName: string, action: PipelineAction) => {
-    const cbs = pipelineActionCallbacks.getAll(pipelineName, action)
-    await Promise.allSettled(cbs.map((x) => x(pipelineName)))
-  }
+  // Initialize the callback system to start reactive monitoring
+  usePipelineActionCallbacks(preloaded)
+
   const handleDeletePipeline = async (pipelineName: string) => {
     updatePipelines((pipelines) => pipelines.filter((p) => p.name !== pipelineName))
-    const cbs = pipelineActionCallbacks
-      .getAll('', 'delete')
-      .concat(pipelineActionCallbacks.getAll(pipelineName, 'delete'))
-    cbs.map((x) => x(pipelineName))
   }
 
   const programErrors = $derived(
@@ -298,11 +290,7 @@ example = "1.0"`
       {changes}
       onCancel={() => (contextDrawer.content = null)}
       onApprove={async () => {
-        const { waitFor } = await pipelineAction.postPipelineAction(
-          pipeline.current.name,
-          'approve_changes'
-        )
-        await waitFor()
+        await pipelineAction.postPipelineAction(pipeline.current.name, 'approve_changes')
       }}
     >
       {#snippet titleEnd()}
@@ -323,7 +311,6 @@ example = "1.0"`
     onDeletePipeline={handleDeletePipeline}
     {editConfigDisabled}
     unsavedChanges={downstreamChanged}
-    onActionSuccess={handleActionSuccess}
     {saveFile}
   ></PipelineActions>
 {/snippet}

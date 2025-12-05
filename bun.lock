@@ -52,6 +52,7 @@
         "@fontsource-variable/dm-sans": "5.1.1",
         "@fontsource/dm-mono": "5.1.1",
         "@fortawesome/fontawesome-free": "6.7.2",
+        "@githubnext/tiny-svelte-fsm": "^1.0.0",
         "@hey-api/client-fetch": "0.1.10",
         "@hey-api/openapi-ts": "0.47.2",
         "@monaco-editor/loader": "1.6.1",
@@ -253,6 +254,8 @@
     "@gar/promisify": ["@gar/promisify@1.1.3", "", {}, "sha512-k2Ty1JcVojjJFwrg/ThKi2ujJ7XNLYaFGNB/bWT9wGR+oSMJHMa5w+CUq6p/pVrKeNNgA7pCqEcjSnHVoqJQFw=="],
 
     "@gcornut/valibot-json-schema": ["@gcornut/valibot-json-schema@0.31.0", "", { "dependencies": { "valibot": "~0.31.0" }, "optionalDependencies": { "@types/json-schema": ">= 7.0.14", "esbuild": ">= 0.18.20", "esbuild-runner": ">= 2.2.2" }, "bin": { "valibot-json-schema": "bin/index.js" } }, "sha512-3xGptCurm23e7nuPQkdrE5rEs1FeTPHhAUsBuwwqG4/YeZLwJOoYZv+fmsppUEfo5y9lzUwNQrNqLS/q7HMc7g=="],
+
+    "@githubnext/tiny-svelte-fsm": ["@githubnext/tiny-svelte-fsm@1.0.0", "", { "peerDependencies": { "svelte": "^5.0.0-next.1" } }, "sha512-taFbtAsZHSCKgl3pEcRmBE4XsydJnZUTvwUMqb5VPVSAyzmT51tD8opSubbW2M84sA7hN1tfq3zHgcXrF06c+Q=="],
 
     "@hapi/hoek": ["@hapi/hoek@9.3.0", "", {}, "sha512-/c6rf4UJlmHlC9b5BaNvzAcFv7HZ2QHaV0D4/HNlBdvFnvQq8RI4kYdhyPCl7Xj+oWvTWQ8ujhqS53LIgAe6KQ=="],
 

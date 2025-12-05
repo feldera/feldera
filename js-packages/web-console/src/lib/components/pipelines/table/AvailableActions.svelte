@@ -15,12 +15,27 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
+  import { getPipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import type { PipelineAction as Action } from '$lib/services/pipelineManager'
+
   let {
     pipelines,
     selectedPipelines = $bindable()
   }: { pipelines: PipelineThumb[]; selectedPipelines: string[] } = $props()
   const { updatePipelines, updatePipeline } = useUpdatePipelineList()
+  const pipelineActionCallbacks = getPipelineActionCallbacks()
   const sortedSelectedPipelines = $derived([...selectedPipelines].sort())
+
+  // Helper to wait for a pipeline action to complete
+  const waitForAction = (pipelineName: string, action: Action): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const callback = async () => {
+        pipelineActionCallbacks.remove(pipelineName, action, callback)
+        resolve()
+      }
+      pipelineActionCallbacks.add(pipelineName, action, callback)
+    })
+  }
   const availableActions = [
     'start' as const,
     'resume' as const,
@@ -120,23 +135,25 @@
   const { postPipelineAction } = usePipelineAction()
   let deletePipelines = () => {
     selected.forEach(async (pipeline) => {
-      if (!isPipelineCodeEditable(pipeline.status)) {
-        const { waitFor } = await postPipelineAction(
-          pipeline.name,
-          isPremium.value ? 'stop' : 'kill'
-        )
-        updatePipeline(pipeline.name, (p) => ({
-          ...p,
-          status: isPremium.value ? 'Stopping' : 'Stopping'
-        }))
-        await waitFor().catch(toastError)
+      try {
+        // Step 1: Stop the pipeline if it's running
+        if (!isPipelineCodeEditable(pipeline.status)) {
+          const stopAction = isPremium.value ? 'stop' : 'kill'
+          await postPipelineAction(pipeline.name, stopAction)
+          await waitForAction(pipeline.name, stopAction)
+        }
+
+        // Step 2: Clear storage if in use
+        if (pipeline.storageStatus !== 'Cleared') {
+          await postPipelineAction(pipeline.name, 'clear')
+          await waitForAction(pipeline.name, 'clear')
+        }
+
+        // Step 3: Delete the pipeline
+        await api.deletePipeline(pipeline.name)
+      } catch (error) {
+        toastError(error instanceof Error ? error : new Error(String(error)))
       }
-      if (pipeline.storageStatus !== 'Cleared') {
-        const { waitFor } = await postPipelineAction(pipeline.name, 'clear')
-        updatePipeline(pipeline.name, (p) => ({ ...p, storageStatus: 'Clearing' }))
-        await waitFor().catch(toastError)
-      }
-      return api.deletePipeline(pipeline.name)
     })
     selectedPipelines = []
   }

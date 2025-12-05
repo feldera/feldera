@@ -62,7 +62,6 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import { slide } from 'svelte/transition'
   import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
 
   let {
@@ -70,7 +69,6 @@ groups related actions into multi-action dropdowns when multiple options are ava
     onDeletePipeline,
     editConfigDisabled,
     unsavedChanges,
-    onActionSuccess,
     saveFile,
     class: _class = ''
   }: {
@@ -78,7 +76,6 @@ groups related actions into multi-action dropdowns when multiple options are ava
     onDeletePipeline?: (pipelineName: string) => void
     editConfigDisabled: boolean
     unsavedChanges: boolean
-    onActionSuccess?: (pipelineName: string, action: PipelineAction) => void
     saveFile: () => void
     class?: string
   } = $props()
@@ -330,28 +327,13 @@ groups related actions into multi-action dropdowns when multiple options are ava
   const importantBtnColor = 'preset-filled-primary-500'
 
   const { postPipelineAction } = usePipelineAction()
-  const pipelineActionCallbacks = usePipelineActionCallbacks()
 
-  const performStartAction = async (
-    action: PipelineAction,
-    pipelineName: string
-    // nextStatus: PipelineStatus
-  ) => {
-    const callbacks =
-      action === 'start'
-        ? {
-            onPausedReady: async (pipelineName: string) => {
-              const cbs = pipelineActionCallbacks.getAll(pipelineName, 'start_paused')
-              await Promise.allSettled(cbs.map((x) => x(pipelineName)))
-            }
-          }
-        : undefined
-
-    const { waitFor } = await postPipelineAction(pipeline.current.name, action, callbacks)
-    waitFor().then(
-      (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, action),
-      toastError
-    )
+  const performStartAction = async (action: PipelineAction) => {
+    try {
+      await postPipelineAction(pipeline.current.name, action)
+    } catch (error) {
+      toastError(error instanceof Error ? error : new Error(String(error)))
+    }
   }
 
   // Static multi-action dropdown configurations
@@ -372,8 +354,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       label: 'Start',
       description: 'Start the pipeline normally',
       onclick: () => {
-        const pipelineName = pipeline.current.name
-        performStartAction('start', pipelineName)
+        performStartAction('start')
       },
       disabled: () => unsavedChanges,
       disabledText: 'Save First',
@@ -383,8 +364,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       label: 'Start as Paused',
       description: 'Start the pipeline in a paused state',
       onclick: () => {
-        const pipelineName = pipeline.current.name
-        performStartAction('start_paused', pipelineName)
+        performStartAction('start_paused')
       },
       disabled: () => unsavedChanges,
       disabledText: 'Save First',
@@ -394,8 +374,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       label: 'Resume',
       description: 'Resume the paused pipeline',
       onclick: () => {
-        const pipelineName = pipeline.current.name
-        performStartAction('resume', pipelineName)
+        performStartAction('resume')
       },
       disabled: () => unsavedChanges,
       disabledText: 'Save First',
@@ -420,9 +399,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
       label: 'Pause',
       description: 'Pause the running pipeline',
       onclick: async () => {
-        const pipelineName = pipeline.current.name
-        const { waitFor } = await postPipelineAction(pipelineName, 'pause')
-        waitFor().then(() => onActionSuccess?.(pipelineName, 'pause'), toastError)
+        try {
+          await postPipelineAction(pipeline.current.name, 'pause')
+        } catch (error) {
+          toastError(error instanceof Error ? error : new Error(String(error)))
+        }
       },
       disabled: () => false,
       standaloneButton: _pause
@@ -431,9 +412,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
       label: 'Start in Standby',
       description: 'Put the pipeline in standby mode',
       onclick: async () => {
-        const pipelineName = pipeline.current.name
-        const { waitFor } = await postPipelineAction(pipelineName, 'standby')
-        waitFor().then(() => onActionSuccess?.(pipelineName, 'standby'), toastError)
+        try {
+          await postPipelineAction(pipeline.current.name, 'standby')
+        } catch (error) {
+          toastError(error instanceof Error ? error : new Error(String(error)))
+        }
       },
       disabled: () => false,
       standaloneButton: _standby
@@ -442,9 +425,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
       label: 'Activate',
       description: 'Activate the pipeline to start data ingress and processing',
       onclick: async () => {
-        const pipelineName = pipeline.current.name
-        const { waitFor } = await postPipelineAction(pipelineName, 'activate')
-        waitFor().then(() => onActionSuccess?.(pipelineName, 'activate'), toastError)
+        try {
+          await postPipelineAction(pipeline.current.name, 'activate')
+        } catch (error) {
+          toastError(error instanceof Error ? error : new Error(String(error)))
+        }
       },
       disabled: () => false,
       standaloneButton: _activate
@@ -458,8 +443,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
       'Clear',
       (name) => `Clear ${name} pipeline storage?`,
       async (pipelineName: string) => {
-        const { waitFor } = await postPipelineAction(pipelineName, 'clear')
-        waitFor().then(() => {}, toastError)
+        try {
+          await postPipelineAction(pipelineName, 'clear')
+        } catch (error) {
+          toastError(error instanceof Error ? error : new Error(String(error)))
+        }
       },
       'This will delete all checkpoints.'
     )(pipeline.current.name)}
@@ -486,8 +474,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
       'Force stop',
       (name) => `Force stop ${name} pipeline?`,
       async (pipelineName: string) => {
-        const { waitFor } = await postPipelineAction(pipelineName, 'kill')
-        waitFor().then(() => onActionSuccess?.(pipelineName, 'kill'), toastError)
+        try {
+          await postPipelineAction(pipelineName, 'kill')
+        } catch (error) {
+          toastError(error instanceof Error ? error : new Error(String(error)))
+        }
       },
       'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
     )(pipeline.current.name)}
@@ -501,8 +492,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
       'Stop',
       (name) => `Stop ${name} pipeline?`,
       async (pipelineName: string) => {
-        const { waitFor } = await postPipelineAction(pipelineName, 'stop')
-        waitFor().then(() => onActionSuccess?.(pipelineName, 'stop'), toastError)
+        try {
+          await postPipelineAction(pipelineName, 'stop')
+        } catch (error) {
+          toastError(error instanceof Error ? error : new Error(String(error)))
+        }
       },
       'The pipeline will stop processing inputs and make a checkpoint of its state.'
     )(pipeline.current.name)}
@@ -661,8 +655,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
           return
         }
         const action = getAction(e.ctrlKey || e.shiftKey || e.metaKey)
-        const pipelineName = pipeline.current.name
-        performStartAction(action, pipelineName)
+        performStartAction(action)
       }}
     >
       <span class="fd fd-play {iconClass}"></span>
@@ -748,9 +741,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
   <button
     class="hidden sm:flex {buttonClass} {longClass} {basicBtnColor}"
     onclick={async () => {
-      const pipelineName = pipeline.current.name
-      const { waitFor } = await postPipelineAction(pipelineName, 'pause')
-      waitFor().then(() => onActionSuccess?.(pipelineName, 'pause'), toastError)
+      try {
+        await postPipelineAction(pipeline.current.name, 'pause')
+      } catch (error) {
+        toastError(error instanceof Error ? error : new Error(String(error)))
+      }
     }}
   >
     <span class="fd fd-pause {iconClass}"></span>
@@ -760,9 +755,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
   <button
     class="flex sm:hidden {buttonClass} {shortClass} {basicBtnColor} {iconClass}"
     onclick={async () => {
-      const pipelineName = pipeline.current.name
-      const { waitFor } = await postPipelineAction(pipelineName, 'pause')
-      waitFor().then(() => onActionSuccess?.(pipelineName, 'pause'), toastError)
+      try {
+        await postPipelineAction(pipeline.current.name, 'pause')
+      } catch (error) {
+        toastError(error instanceof Error ? error : new Error(String(error)))
+      }
     }}
   >
     <span class="fd fd-pause {iconClass}"></span>

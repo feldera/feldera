@@ -44,7 +44,7 @@
   let pipelinesRelations = $state<
     Record<string, Record<string, Record<string, ExtraType & { type: 'tables' | 'views' }>>>
   >({})
-  const pipelineActionCallbacks = usePipelineActionCallbacks()
+  const pipelineActionCallbacks = getPipelineActionCallbacks()
   let changeStream: Record<string, Record<string, ChangeStreamData>> = {} // Initialize row array nested by tenant and pipeline
   // Separate getRows as a $state avoids burdening rows array itself with reactivity overhead
   let getChangeStream = $state(() => changeStream)
@@ -220,7 +220,7 @@
 </script>
 
 <script lang="ts">
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import { getPipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
 
   import {
     getCaseIndependentName,
