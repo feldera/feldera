@@ -156,7 +156,7 @@ struct Cluster {
 
 #[derive(Default, Debug)]
 struct BalancerInner {
-    integrals: BTreeMap<NodeId, (NodeId, NodeId, NodeId)>,
+    integrals: BTreeMap<NodeId, NodeId>,
     joins: BTreeMap<NodeId, (NodeId, NodeId)>,
     clusters: Vec<Cluster>,
     stream_to_cluster: BTreeMap<NodeId, usize>,
@@ -229,7 +229,7 @@ impl BalancerInner {
     }
 
     fn compute_domain(&mut self, stream: NodeId) -> BTreeMap<Policy, Cost> {
-        let (exchange_sender, _accumulator, _integral) = self.integrals.get(&stream).unwrap();
+        let exchange_sender = self.integrals.get(&stream).unwrap();
 
         let exchange_sender_metadata: Vec<Option<RebalancingExchangeSenderExchangeMetadata>> = self
             .metadata_exchange
@@ -300,17 +300,11 @@ impl Balancer {
         }
     }
 
-    pub fn register_integral(
-        &self,
-        stream: NodeId,
-        exchange_sender: NodeId,
-        accumulator: NodeId,
-        integral: NodeId,
-    ) {
+    pub fn register_integral(&self, stream: NodeId, exchange_sender: NodeId) {
         self.inner
             .borrow_mut()
             .integrals
-            .insert(stream, (exchange_sender, accumulator, integral));
+            .insert(stream, exchange_sender);
     }
 
     pub fn register_join(&self, join: NodeId, left: NodeId, right: NodeId) {
@@ -562,12 +556,7 @@ where
                     circuit.add_dependency(sender_node_id, sharded_stream.local_node_id());
 
                     // Register accumulator and integral with the balancer, so it knows their IDs.
-                    balancer.register_integral(
-                        self.local_node_id(),
-                        sender_node_id,
-                        accumulator_stream.local_node_id(),
-                        trace.local_node_id(),
-                    );
+                    balancer.register_integral(self.local_node_id(), sender_node_id);
 
                     (sharded_stream, accumulator_stream, trace)
                 })
@@ -1289,4 +1278,9 @@ where
     //         OwnershipPreference::INDIFFERENT,
     //     )
     // }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
 }
