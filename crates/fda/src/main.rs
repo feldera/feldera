@@ -1,11 +1,6 @@
 //! A CLI App for the Feldera REST API.
 
-use std::collections::BTreeMap;
-use std::convert::Infallible;
-use std::fs::File;
-use std::io::{stdout, ErrorKind, Read, Write};
-use std::path::PathBuf;
-
+use chrono::Utc;
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
 use feldera_observability as observability;
@@ -19,6 +14,11 @@ use log::{debug, error, info, trace, warn};
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use reqwest::StatusCode;
 use serde_json::json;
+use std::collections::BTreeMap;
+use std::convert::Infallible;
+use std::fs::File;
+use std::io::{stdout, ErrorKind, Read, Write};
+use std::path::PathBuf;
 use tabled::builder::Builder;
 use tabled::settings::Style;
 use tempfile::tempfile;
@@ -2207,6 +2207,137 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
     }
 }
 
+async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
+    match action {
+        ClusterAction::Events => {
+            let response = client
+                .list_cluster_events()
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Unable to retrieve cluster events",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    let mut rows = vec![];
+                    rows.push([
+                        "id".to_string(),
+                        "recorded_at".to_string(),
+                        "all_healthy".to_string(),
+                        "api_status".to_string(),
+                        "compiler_status".to_string(),
+                        "runner_status".to_string(),
+                    ]);
+                    for event in response.iter() {
+                        rows.push([
+                            event.id.to_string(),
+                            format!(
+                                "{} ({:.0}s ago)",
+                                event.recorded_at,
+                                (Utc::now() - event.recorded_at).as_seconds_f64()
+                            ),
+                            event.all_healthy.to_string(),
+                            event.api_status.to_string(),
+                            event.compiler_status.to_string(),
+                            event.runner_status.to_string(),
+                        ]);
+                    }
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize cluster events")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        ClusterAction::Event { id, selector } => {
+            let response = client
+                .get_cluster_event()
+                .event_id(id)
+                .selector(selector)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Unable to retrieve cluster event",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    let mut rows = vec![];
+                    rows.push(["Field".to_string(), "Value".to_string()]);
+                    rows.push(["id".to_string(), response.id.to_string()]);
+                    rows.push([
+                        "recorded_at".to_string(),
+                        format!(
+                            "{} ({:.0}s ago)",
+                            response.recorded_at,
+                            (Utc::now() - response.recorded_at).as_seconds_f64()
+                        ),
+                    ]);
+                    rows.push(["all_healthy".to_string(), response.all_healthy.to_string()]);
+                    rows.push(["api_status".to_string(), response.api_status.to_string()]);
+                    if let Some(value) = &response.api_self_info {
+                        rows.push(["api_self_info".to_string(), value.to_string()]);
+                    }
+                    if let Some(value) = &response.api_resources_info {
+                        rows.push(["api_resources_info".to_string(), value.to_string()]);
+                    }
+                    rows.push([
+                        "compiler_status".to_string(),
+                        response.compiler_status.to_string(),
+                    ]);
+                    if let Some(value) = &response.compiler_self_info {
+                        rows.push(["compiler_self_info".to_string(), value.to_string()]);
+                    }
+                    if let Some(value) = &response.compiler_resources_info {
+                        rows.push(["compiler_resources_info".to_string(), value.to_string()]);
+                    }
+                    rows.push([
+                        "runner_status".to_string(),
+                        response.runner_status.to_string(),
+                    ]);
+                    if let Some(value) = &response.runner_self_info {
+                        rows.push(["runner_self_info".to_string(), value.to_string()]);
+                    }
+                    if let Some(value) = &response.runner_resources_info {
+                        rows.push(["runner_resources_info".to_string(), value.to_string()]);
+                    }
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize cluster events")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+}
+
 fn main() {
     let _guard = observability::init("https://18aa37ae23e7130b57b91aaad432bc18@o4510219052253184.ingest.us.sentry.io/4510298809827328", "fda", env!("CARGO_PKG_VERSION"));
     init_logging("warn");
@@ -2240,6 +2371,7 @@ fn main() {
                 Commands::Apikey { action } => api_key_commands(cli.format, action, client()).await,
                 Commands::Pipelines => pipelines(cli.format, client()).await,
                 Commands::Pipeline(action) => pipeline(cli.format, action, client()).await,
+                Commands::Cluster { action } => cluster(cli.format, action, client()).await,
                 Commands::Debug { action } => debug::debug(action),
             }
         })

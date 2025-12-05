@@ -6,7 +6,7 @@ use tracing::{debug, warn};
 mod auth;
 
 pub mod api;
-pub mod cluster_health;
+pub mod cluster_monitor;
 pub mod common_error;
 pub mod compiler;
 pub mod config;
@@ -22,8 +22,11 @@ static UNSTABLE_FEATURES: OnceLock<HashSet<&'static str>> = OnceLock::new();
 
 /// Initialization function to set the platform's unstable feature gate.
 pub fn platform_enable_unstable(requested_features: &str) {
-    let all_features: HashSet<&'static str> =
-        HashSet::from_iter(vec!["runtime_version", "testing"]);
+    let all_features: HashSet<&'static str> = HashSet::from_iter(vec![
+        "runtime_version",
+        "testing",
+        "cluster_monitor_resources",
+    ]);
     let mut enabled = HashSet::new();
     for requested_feature in requested_features.split(',') {
         if let Some(supported_feature) = all_features.get(requested_feature) {

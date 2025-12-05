@@ -1,3 +1,5 @@
+use crate::cluster_monitor::{MONITOR_RETENTION_HOURS, MONITOR_RETENTION_NUM};
+use crate::db::types::monitor::ClusterMonitorEventId;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::ProgramStatus;
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
@@ -194,6 +196,11 @@ pub enum DBError {
     PreconditionViolation(String),
     InitialImmutableUnlessStopped,
     InitialStandbyNotAllowed,
+    InvalidMonitorStatus(String),
+    UnknownClusterMonitorEvent {
+        event_id: ClusterMonitorEventId,
+    },
+    NoClusterMonitorEventsAvailable,
 }
 
 impl DBError {
@@ -644,6 +651,15 @@ impl Display for DBError {
                     (2) `runtime_config.storage.backend.config.sync` is configured."
                 )
             }
+            DBError::InvalidMonitorStatus(s) => {
+                write!(f, "Invalid monitor status: '{s}'")
+            }
+            DBError::UnknownClusterMonitorEvent { event_id } => {
+                write!(f, "Cluster monitor event with identifier '{event_id}' does not exist -- it might have been deleted as monitor events are only retained for {}h and at most {}", MONITOR_RETENTION_HOURS, MONITOR_RETENTION_NUM)
+            }
+            DBError::NoClusterMonitorEventsAvailable => {
+                write!(f, "There are not yet any cluster monitor events recorded")
+            }
         }
     }
 }
@@ -736,6 +752,9 @@ impl DetailedError for DBError {
             Self::ResumeWhileNotProvisioned => Cow::from("ResumeWhileNotProvisioned"),
             Self::InitialImmutableUnlessStopped => Cow::from("InitialImmutableUnlessStopped"),
             Self::InitialStandbyNotAllowed => Cow::from("InitialStandbyNotAllowed"),
+            Self::InvalidMonitorStatus(..) => Cow::from("InvalidMonitorStatus"),
+            Self::UnknownClusterMonitorEvent { .. } => Cow::from("UnknownClusterMonitorEvent"),
+            Self::NoClusterMonitorEventsAvailable => Cow::from("NoClusterMonitorEventsAvailable"),
         }
     }
 }
@@ -802,6 +821,9 @@ impl ResponseError for DBError {
             Self::PreconditionViolation(..) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InitialImmutableUnlessStopped => StatusCode::BAD_REQUEST,
             Self::InitialStandbyNotAllowed => StatusCode::BAD_REQUEST,
+            Self::InvalidMonitorStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnknownClusterMonitorEvent { .. } => StatusCode::NOT_FOUND,
+            Self::NoClusterMonitorEventsAvailable => StatusCode::NOT_FOUND,
         }
     }
 

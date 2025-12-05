@@ -5,7 +5,7 @@ use clap::{Args, Command, FromArgMatches};
 use colored::Colorize;
 use feldera_observability as observability;
 use pipeline_manager::api::main::ApiDoc;
-use pipeline_manager::cluster_health::regular_health_check;
+use pipeline_manager::cluster_monitor::{cluster_monitor, LocalResourcesPoller};
 use pipeline_manager::compiler::main::{compiler_main, compiler_precompile};
 #[cfg(feature = "postgresql_embedded")]
 use pipeline_manager::config::PgEmbedConfig;
@@ -114,6 +114,7 @@ fn main() -> anyhow::Result<()> {
                 .expect("Compiler server main failed");
             });
 
+            // Spawn local runner
             let db_clone = db.clone();
             let common_config_clone = common_config.clone();
             let _local_runner = tokio::spawn(async move {
@@ -125,11 +126,11 @@ fn main() -> anyhow::Result<()> {
                 .await;
             });
 
-            let health_check = Arc::new(RwLock::new(None));
-            let health_check_handle = health_check.clone();
+            // Spawn cluster monitor
             let common_config_clone = common_config.clone();
+            let db_clone = db.clone();
             tokio::spawn(async move {
-                regular_health_check(health_check_handle, common_config_clone, None).await;
+                cluster_monitor(db_clone, common_config_clone, LocalResourcesPoller {}).await;
             });
 
             // The api-server blocks forever
@@ -138,7 +139,6 @@ fn main() -> anyhow::Result<()> {
                 common_config,
                 api_config,
                 Arc::new(RwLock::new(None)),
-                health_check,
             )
             .await
             .expect("API server main failed");

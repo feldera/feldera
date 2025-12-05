@@ -1000,6 +1000,7 @@ mod test {
 
         let common_config = CommonConfig {
             bind_address: "127.0.0.1".to_string(),
+            api_host: "127.0.0.1".to_string(),
             api_port: 0,
             compiler_host: "127.0.0.1".to_string(),
             compiler_port: 8085,
@@ -1029,7 +1030,7 @@ mod test {
         };
 
         let (conn, _temp) = crate::db::test::setup_pg().await;
-        if api_key.is_some() {
+        if let Some(api_key) = api_key {
             let tenant_id = conn
                 .get_or_create_tenant_id(
                     Uuid::now_v7(),
@@ -1042,7 +1043,7 @@ mod test {
                 tenant_id,
                 Uuid::now_v7(),
                 "foo",
-                &api_key.unwrap(),
+                &api_key,
                 vec![ApiPermission::Read, ApiPermission::Write],
             )
             .await
@@ -1055,18 +1056,17 @@ mod test {
                 manager_config,
                 db,
                 Arc::new(RwLock::new(None)),
-                Arc::new(RwLock::new(None)),
             )
             .await
             .unwrap(),
         );
-        if decoding_key.is_some() {
+        if let Some(decoding_key) = decoding_key {
             state
                 .jwk_cache
                 .lock()
                 .await
                 .cache
-                .cache_set("rsa01".to_owned(), decoding_key.unwrap());
+                .cache_set("rsa01".to_owned(), decoding_key);
         }
         let app = App::new()
             .app_data(state)
