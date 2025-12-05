@@ -15,6 +15,25 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        CLUSTER MONITORING
+        - There is now regular polling at both (HTTP) application-level as well as
+          Kubernetes-level for the status of the three main components (API, compiler,
+          runner). Poll events are stored in the database (72h or max. 1000 events,
+          whichever comes first).
+        - The Kubernetes-level polling is gated by the unstable feature
+          `cluster_monitor_resources`, which can be enabled in the Helm chart
+          under `controlPlane.env`.
+        - API server: no longer does polling of the runner and compiler, instead
+          uses the latest poll stored in the database for `/v0/cluster_healthz`.
+          Other endpoint changes:
+          - New: `/v0/cluster/events`
+          - New: `/v0/cluster/events/<id>` and `/v0/cluster/events/latest`
+        - Kubernetes runner: performs the polling now. It has an additional
+          RBAC permission to poll the Deployment of the API server and of itself
+          (additional permission is not gated by the unstable feature).
+        - Python client and `fda` support retrieving the cluster events,
+          Web Console support is not yet released
+
         Prometheus metrics output now also contains pipeline names with a
         "pipeline_name" label, in addition to the exist "pipeline" label,
         which still contains the pipeline UUID.
