@@ -114,10 +114,11 @@
   "private": true,
   "scripts": {
     "clean-install": "bun ci",
-    "dev": "vite dev --host",
+    "check-bun-version": "bun run scripts/check-bun-version.ts",
+    "dev": "bun run check-bun-version && vite dev --host",
     "prebuild": "bun --cwd=../.. run build:deps:web-console",
     "build": "bun run build:self",
-    "build:self": "svelte-kit sync && vite build",
+    "build:self": "bun run check-bun-version && svelte-kit sync && vite build",
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check --threshold error",
     "check:watch": "svelte-kit sync && svelte-check --threshold error --watch",
