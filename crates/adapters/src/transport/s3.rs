@@ -553,8 +553,10 @@ impl S3InputReader {
                             ) -> Result<GetObjectOutput, anyhow::Error>
                             {
                                 let mut retry_counter = 0;
-                                let backoff =
-                                    |count: u32| Duration::from_millis(100 * 2_u64.pow(count));
+                                // Max backoff duration is 20 seconds.
+                                let backoff = |count: u32| {
+                                    Duration::from_millis((100 * 2_u64.pow(count)).max(20000))
+                                };
 
                                 loop {
                                     match client
@@ -564,7 +566,11 @@ impl S3InputReader {
                                         Ok(object) => return Ok(object),
                                         Err(e) => {
                                             if retry_counter < max_retries {
-                                                tokio::time::sleep(backoff(retry_counter)).await;
+                                                let backoff_duration = backoff(retry_counter);
+                                                tracing::warn!(
+                                                    "could not fetch object '{key}': {e:?}; retrying ({retry_counter}/{max_retries}) in {backoff_duration:?}",
+                                                );
+                                                tokio::time::sleep(backoff_duration).await;
                                                 retry_counter += 1;
                                                 continue;
                                             }
@@ -642,7 +648,7 @@ impl S3InputReader {
 
                                             let error_offset =
                                                 latest_start_offset + latest_buf.len() as u64;
-                                            tracing::error!("error reading object '{}' at offset '{error_offset}': {e:?}; retrying: ({reading_errors}/{max_retries})", &partially_processed_key.key);
+                                            tracing::warn!("error reading object '{}' at offset '{error_offset}': {e:?}; retrying: ({reading_errors}/{max_retries})", &partially_processed_key.key);
 
                                             if reading_errors > max_retries {
                                                 consumer.error(
@@ -689,6 +695,10 @@ impl S3InputReader {
                                                             Some("s3-obj-read"),
                                                         );
 
+                                                    // As the object may have changed, mark it as fully processed and skip it.
+                                                    partially_processed_keys
+                                                        .update(key_index, None)
+                                                        .await;
                                                     continue 'outer;
                                                 }
 
