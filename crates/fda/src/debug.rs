@@ -255,7 +255,7 @@ async fn unbundle_support_bundle(
         debug!("Processing {}...", config_file);
 
         // Extract the config file from the zip
-        let mut file = archive.by_name(&config_file)?;
+        let mut file = archive.by_name(config_file)?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
 
@@ -291,7 +291,7 @@ async fn unbundle_support_bundle(
             Some(udf_toml.clone())
         };
 
-        if prev_code.as_ref().map(|c| c.as_str()) == Some(program_code)
+        if prev_code.as_deref() == Some(program_code)
             && prev_udf == udf_rust
             && prev_toml == udf_toml
         {
@@ -300,7 +300,7 @@ async fn unbundle_support_bundle(
         }
 
         // Get the corresponding platform version for this pipeline config
-        let config_timestamp = extract_timestamp_prefix(&config_file).unwrap_or_default();
+        let config_timestamp = extract_timestamp_prefix(config_file).unwrap_or_default();
         let corresponding_platform_version = platform_versions.get(&config_timestamp).cloned();
 
         // Determine if we should use runtime_version based on instance capabilities
