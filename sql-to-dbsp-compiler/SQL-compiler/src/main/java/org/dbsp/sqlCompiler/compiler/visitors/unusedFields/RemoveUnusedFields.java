@@ -291,7 +291,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         // Search for unused fields in the DBSPFlatmap expression
         DBSPTypeTuple inputTuple = operator.input().getOutputZSetElementType().to(DBSPTypeTuple.class);
         FindUnusedFields find = new FindUnusedFields(this.compiler);
-        find.apply(flatmap.collectionExpression);
+        find.findUnusedFields(flatmap.collectionExpression);
         FieldUseMap map = find.parameterFieldMap.get(flatmap.collectionExpression.parameters[0]).deref();
         for (int index: flatmap.leftInputIndexes) {
             map.setUsed(index);
