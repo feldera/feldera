@@ -1485,7 +1485,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
                 expression.getNode(),
-                expression.opcode, expression.getType(), expression.left.getType(), expression.right.getType());
+                expression.opcode, expression.left.getType(), expression.right.getType());
         this.builder.append(function);
         if (expression.condition != null)
             this.builder.append("_conditional");
@@ -1658,7 +1658,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
                         expression.getNode(),
                         expression.opcode,
-                        expression.getType(),
                         expression.left.getType(),
                         expression.right.getType());
                 this.builder.append(function).append("(").increase();
@@ -1685,7 +1684,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
                             expression.getNode(),
                             expression.opcode,
-                            expression.getType(),
                             expression.left.getType(),
                             expression.right.getType());
                     this.builder.append(function);

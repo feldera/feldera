@@ -3,7 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql.mysql;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
 
-public class TimestampdiffTests extends SqlIoTest {
+public class TimestampDiffTests extends SqlIoTest {
     @Test
     public void issue3021() {
         this.compileRustTestCase("""

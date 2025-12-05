@@ -101,6 +101,9 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.IHasPrecision;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -408,10 +411,30 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         }
     }
 
-    static DBSPOpcode timestampOperation(DBSPOpcode opcode) {
+    static private String getTypeEncoding(DBSPType type) {
+        if (type.is(DBSPTypeMonthsInterval.class))
+            return "LONG";
+        else if (type.is(DBSPTypeMillisInterval.class))
+            return "SHORT";
+        else if (type.is(DBSPTypeDate.class))
+            return "DATE";
+        else if (type.is(DBSPTypeTimestamp.class))
+            return "TS";
+        else if (type.is(DBSPTypeTime.class))
+            return "TIME";
+        else
+            throw new InternalCompilerError("Unexpected time type " + type);
+    }
+
+    static DBSPOpcode timestampOperation(DBSPOpcode opcode, DBSPType left, DBSPType right, DBSPType result) {
         return switch (opcode) {
-            case ADD -> DBSPOpcode.TS_ADD;
-            case SUB -> DBSPOpcode.TS_SUB;
+            case ADD, SUB -> {
+                String l = getTypeEncoding(left);
+                String r = getTypeEncoding(right);
+                String res = getTypeEncoding(result);
+                String name = l + "_" + opcode.name() + "_" + r + "_" + res;
+                yield DBSPOpcode.valueOf(name);
+            }
             case MUL -> DBSPOpcode.INTERVAL_MUL;
             case DIV -> DBSPOpcode.INTERVAL_DIV;
             default -> throw new InternalCompilerError("Unexpected opcode " + opcode);
@@ -448,7 +471,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 expressionResultType = DBSPTypeDecimal.getDefault().withMayBeNull(anyNull);  // no limits
             if (commonBase.is(IsDateType.class) && opcode == DBSPOpcode.SUB) {
                 expressionResultType = type;
-                opcode = timestampOperation(opcode);
+                opcode = timestampOperation(opcode,
+                        commonBase.withMayBeNull(leftType.mayBeNull),
+                        commonBase.withMayBeNull(rightType.mayBeNull),
+                        expressionResultType);
             } else if (opcode == DBSPOpcode.BW_AND ||
                     opcode == DBSPOpcode.BW_OR || opcode == DBSPOpcode.XOR ||
                     opcode == DBSPOpcode.MAX || opcode == DBSPOpcode.MIN ||
@@ -484,7 +510,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             if (opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.DIV) {
                 // Multiplication between an interval and a numeric value.
                 if (leftType.is(IsIntervalType.class) || rightType.is(IsIntervalType.class)) {
-                    opcode = timestampOperation(opcode);
+                    opcode = timestampOperation(opcode, leftType, rightType, type);
                     // swap operands so that the numeric operand is always right
                     if (opcode == DBSPOpcode.INTERVAL_MUL || opcode == DBSPOpcode.INTERVAL_DIV) {
                         if (rightType.is(IsIntervalType.class)) {
@@ -520,7 +546,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     if (rightType.is(IsNumericType.class))
                         throw new CompilationError("Cannot apply operation " + Utilities.singleQuote(opcode.toString()) +
                                 " to arguments of type " + leftType.asSqlString() + " and " + rightType.asSqlString(), node);
-                    opcode = timestampOperation(opcode);
                     if (leftType.is(IsIntervalType.class) && !rightType.is(IsIntervalType.class)) {
                         // Move the interval to the right when computing a date +/- interval
                         DBSPExpression tmp = left;
@@ -529,6 +554,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         leftType = left.getType();
                         rightType = right.getType();
                     }
+                    opcode = timestampOperation(opcode, leftType, rightType, type);
                 }
             }
             if (leftType.is(IsTimeRelatedType.class) || rightType.is(IsTimeRelatedType.class))
