@@ -35,3 +35,14 @@ pub struct ActivateParams {
     #[serde(default = "default_pipeline_activate_initial")]
     pub initial: String,
 }
+
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct SamplyProfileParams {
+    #[serde(default = "default_samply_profile_duration")]
+    pub duration_secs: u64,
+}
+
+/// Default for the `duration_secs` query parameter when POST a pipeline samply profile.
+fn default_samply_profile_duration() -> u64 {
+    30
+}
