@@ -3896,7 +3896,7 @@ impl TransactionInfo {
                     phase: TransactionPhase::Started,
                     label: label.map(String::from),
                 });
-                info!(
+                debug!(
                     "Connector {endpoint_name} {} transaction {}{} ({} participants)",
                     if initiated { "initiated" } else { "joined" },
                     self.last_transaction_id,
@@ -3937,7 +3937,7 @@ impl TransactionInfo {
                     return Err(ControllerError::NoTransactionInProgress);
                 }
                 entry.get_mut().phase = TransactionPhase::Committed;
-                info!(
+                debug!(
                     "Connector {endpoint_name} committed transaction {}{} ({} participants remaining)",
                     self.initiators.transaction_id.unwrap(),
                     if let Some(label) = &entry.get().label {
