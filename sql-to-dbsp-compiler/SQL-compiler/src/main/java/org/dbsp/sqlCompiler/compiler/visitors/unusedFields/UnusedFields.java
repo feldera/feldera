@@ -95,7 +95,7 @@ public class UnusedFields extends Passes {
                 FindUnusedFields unused = new FindUnusedFields(this.compiler);
                 DBSPClosureExpression function = operator.getClosureFunction();
                 Utilities.enforce(function.parameters.length == 1);
-                unused.apply(function.ensureTree(this.compiler));
+                unused.findUnusedFields(function);
 
                 if (unused.foundUnusedFields(1)) {
                     FieldUseMap map = unused.parameterFieldMap.get(function.parameters[0]).deref();
