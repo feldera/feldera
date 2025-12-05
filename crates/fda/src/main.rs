@@ -34,8 +34,7 @@ mod cli;
 mod debug;
 mod shell;
 
-pub(crate) const UPGRADE_NOTICE: &str =
-    "Try upgrading to the latest CLI version to resolve this issue. Also make sure the pipeline is recompiled with the latest version of feldera. Report it on github.com/feldera/feldera if the issue persists.";
+pub(crate) const UPGRADE_NOTICE: &str = "Try upgrading to the latest CLI version to resolve this issue. Also make sure the pipeline is recompiled with the latest version of feldera. Report it on github.com/feldera/feldera if the issue persists.";
 
 use crate::adhoc::handle_adhoc_query;
 use crate::cli::*;
@@ -859,7 +858,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         .deployment_runtime_status_details
                         .clone();
 
-                    println!("Pipeline definition has changed since the last checkpoint. The pipeline is awaiting approval to proceed with bootstrapping the modified components. Run 'fda approve' to approve the changes or 'fda stop' to terminate the pipeline. Summary of changes:");
+                    println!(
+                        "Pipeline definition has changed since the last checkpoint. The pipeline is awaiting approval to proceed with bootstrapping the modified components. Run 'fda approve' to approve the changes or 'fda stop' to terminate the pipeline. Summary of changes:"
+                    );
 
                     let diff_str = match diff {
                         // Normally shouldn't happen.
@@ -1133,7 +1134,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 OutputFormat::Json => MetricsFormat::Json,
                 OutputFormat::Prometheus => MetricsFormat::Prometheus,
                 _ => {
-                    eprintln!("`{format}` is not supported as a metrics format (use `--format json` or `--format prometheus`)");
+                    eprintln!(
+                        "`{format}` is not supported as a metrics format (use `--format json` or `--format prometheus`)"
+                    );
                     std::process::exit(1);
                 }
             };
@@ -1450,7 +1453,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     command.stdin(tempfile);
                     match command.status().await {
                         Err(e) => {
-                            eprintln!("ERROR: Failed to execute `{command_name}` ({e}). `pprof` is probably not installed. Install it from <https://github.com/google/pprof>.");
+                            eprintln!(
+                                "ERROR: Failed to execute `{command_name}` ({e}). `pprof` is probably not installed. Install it from <https://github.com/google/pprof>."
+                            );
                             std::process::exit(1);
                         }
                         Ok(exit_status) if !exit_status.success() => {
@@ -1886,7 +1891,9 @@ async fn connector(
     match action {
         ConnectorAction::Start => {
             if !relation_is_table {
-                eprintln!("Can not start the output connector '{connector}'. Only input connectors (connectors attached to a table) can be started.");
+                eprintln!(
+                    "Can not start the output connector '{connector}'. Only input connectors (connectors attached to a table) can be started."
+                );
                 std::process::exit(1);
             }
             client
@@ -1907,7 +1914,9 @@ async fn connector(
         }
         ConnectorAction::Pause => {
             if !relation_is_table {
-                eprintln!("Can not pause the output connector '{connector}'. Only input connectors (connectors attached to a table) can be paused.");
+                eprintln!(
+                    "Can not pause the output connector '{connector}'. Only input connectors (connectors attached to a table) can be paused."
+                );
                 std::process::exit(1);
             }
             client
@@ -2331,7 +2340,11 @@ async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
 }
 
 fn main() {
-    let _guard = observability::init("https://18aa37ae23e7130b57b91aaad432bc18@o4510219052253184.ingest.us.sentry.io/4510298809827328", "fda", env!("CARGO_PKG_VERSION"));
+    let _guard = observability::init(
+        "https://18aa37ae23e7130b57b91aaad432bc18@o4510219052253184.ingest.us.sentry.io/4510298809827328",
+        "fda",
+        env!("CARGO_PKG_VERSION"),
+    );
     init_logging("warn");
 
     tokio::runtime::Builder::new_multi_thread()
@@ -2364,7 +2377,7 @@ fn main() {
                 Commands::Pipelines => pipelines(cli.format, client()).await,
                 Commands::Pipeline(action) => pipeline(cli.format, action, client()).await,
                 Commands::Cluster { action } => cluster(cli.format, action, client()).await,
-                Commands::Debug { action } => debug::debug(action),
+                Commands::Debug { action } => debug::debug(cli.format, action, client()).await,
             }
         })
 }

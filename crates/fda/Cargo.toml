@@ -46,6 +46,7 @@ anyhow = { workspace = true }
 ordered-float.workspace = true
 itertools.workspace = true
 rustversion.workspace = true
+zip.workspace = true
 
 [build-dependencies]
 prettyplease = { workspace = true }
