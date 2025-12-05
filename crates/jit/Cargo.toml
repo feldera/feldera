@@ -12,6 +12,8 @@ anyhow = { workspace = true }
 
 [dev-dependencies]
 dbsp = { path = "../dbsp" }
+gandiva-rs-bindings = { git = "https://github.com/gz/gandiva-rs.git" }
+arrow = { version = "55.1.0" }
 
 [[example]]
 name = "jit"

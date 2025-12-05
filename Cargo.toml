@@ -52,7 +52,7 @@ anyhow = "1.0.91"
 apache-avro = "0.18.0"
 arc-swap = "1.5.1"
 arcstr = "1.2.0"
-arrow = "55"
+arrow = "55.1"
 arrow-json = "55"
 arrow-digest = "55"
 ascii_table = "=4.0.2"
@@ -96,9 +96,10 @@ datafusion = "47"
 dbsp = { path = "crates/dbsp", version = "0.197.0" }
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.10.5"
-#deltalake = "0.26.2"
-deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "77ef46e" }
-deltalake-catalog-unity = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "77ef46e" }
+deltalake = "0.29.4"
+deltalake-catalog-unity = "0.13.0"
+#deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "77ef46e" }
+#deltalake-catalog-unity = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "77ef46e" }
 directories = "6.0"
 dirs = "5.0"
 dyn-clone = "1.0.17"
