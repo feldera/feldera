@@ -33,6 +33,7 @@ use crate::{
 };
 use async_stream::stream;
 use feldera_storage::{fbuf::FBuf, FileCommitter, StoragePath};
+use num::abs;
 use petgraph::graph::UnGraph;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -228,14 +229,7 @@ impl BalancerInner {
     }
 
     fn compute_domain(&mut self, stream: NodeId) -> BTreeMap<Policy, Cost> {
-        let (exchange_sender, accumulator, integral) = self.integrals.get(&stream).unwrap();
-
-        let accumulator_metadata = self
-            .metadata_exchange
-            .get_global_operator_metadata_typed::<AccumulatorMeta>(*accumulator);
-        let integral_metadata = self
-            .metadata_exchange
-            .get_global_operator_metadata_typed::<IntegralMeta>(*integral);
+        let (exchange_sender, _accumulator, _integral) = self.integrals.get(&stream).unwrap();
 
         let exchange_sender_metadata: Vec<Option<RebalancingExchangeSenderExchangeMetadata>> = self
             .metadata_exchange
@@ -253,27 +247,34 @@ impl BalancerInner {
             assert!(exchange_sender_metadata
                 .iter()
                 .all(|metadata| metadata.is_some()));
-            assert!(exchange_sender_metadata
-                .iter()
-                .all(|metadata| metadata == &exchange_sender_metadata[0]));
+            // TODO: assert: current policy is the same for all exchange senders.
+            // assert!(exchange_sender_metadata
+            //     .iter()
+            //     .all(|metadata| metadata == &exchange_sender_metadata[0]));
             let policy = exchange_sender_metadata[0].as_ref().unwrap().current_policy;
             self.fix_policy_for_transaction(*exchange_sender, policy);
         }
 
-        let worker_sizes: Vec<u64> = std::iter::zip(accumulator_metadata, integral_metadata)
-            .map(|(accumulator_metadata, integral_metadata)| {
-                accumulator_metadata.unwrap().num_entries + integral_metadata.unwrap().num_entries
-            })
-            .collect();
+        let key_distribution = exchange_sender_metadata.iter().fold(
+            KeyDistribution::new(Runtime::num_workers()),
+            |mut key_distribution, metadata| {
+                if let Some(metadata) = metadata {
+                    key_distribution.merge(&metadata.key_distribution);
+                };
+                key_distribution
+            },
+        );
 
-        let total_size: u64 = worker_sizes.iter().cloned().sum();
-        let max_size = worker_sizes.iter().cloned().max().unwrap();
-        let num_workers = worker_sizes.len() as u64;
+        let total_size: i64 = key_distribution.total_records();
+        let max_size = key_distribution.sizes.iter().cloned().max().unwrap();
 
         BTreeMap::from([
-            (Policy::Shard, Cost(max_size)),
-            (Policy::Broadcast, Cost(total_size)),
-            (Policy::Balance, Cost((total_size / num_workers) * 2)),
+            (Policy::Shard, Cost(abs(max_size) as u64)),
+            (Policy::Broadcast, Cost(abs(total_size) as u64)),
+            (
+                Policy::Balance,
+                Cost((abs(total_size) as u64 / Runtime::num_workers() as u64) * 2),
+            ),
         ])
     }
 
@@ -587,6 +588,8 @@ struct RetractionState<B: Batch<Time = ()>, C: WithClock> {
     trace: SpineSnapshot<<C::Time as Timestamp>::TimedBatch<B>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(transparent)]
 struct KeyDistribution {
     sizes: Vec<ZWeight>,
 }
@@ -606,6 +609,10 @@ impl KeyDistribution {
         for (i, size) in self.sizes.iter_mut().enumerate() {
             *size += other.sizes[i];
         }
+    }
+
+    fn total_records(&self) -> ZWeight {
+        self.sizes.iter().sum()
     }
 }
 
@@ -681,6 +688,7 @@ where
         let metadata = RebalancingExchangeSenderExchangeMetadata {
             flushed: *self.flush_state.borrow() == FlushState::FlushCompleted,
             current_policy: *self.current_policy.borrow(),
+            key_distribution: self.key_distribution.borrow().clone(),
         };
 
         self.metadata_exchange
@@ -1018,16 +1026,7 @@ enum FlushState {
 struct RebalancingExchangeSenderExchangeMetadata {
     flushed: bool,
     current_policy: Policy,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct AccumulatorMeta {
-    num_entries: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct IntegralMeta {
-    num_entries: u64,
+    key_distribution: KeyDistribution,
 }
 
 impl<B, C> Operator for RebalancingExchangeSender<B, C>
