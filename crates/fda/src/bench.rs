@@ -471,10 +471,11 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
         .as_ref()
         .and_then(|cp| cp.profile)
         .unwrap_or(CompilationProfile::Optimized);
-    if compilation_profile != CompilationProfile::Optimized {
+    if compilation_profile != CompilationProfile::Optimized
+        && compilation_profile != CompilationProfile::OptimizedSymbols
+    {
         warn!(
-                "Compilation profile was set to `{:?}`. This is most likely not what you want to benchmark with. Set it to `optimized` for best performance.",
-                compilation_profile
+                "Compilation profile was set to `{compilation_profile:?}`. This is most likely not what you want to benchmark with. Set it to `optimized` or `optimized_symbols` for best performance.",
             );
     }
 
