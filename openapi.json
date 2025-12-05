@@ -10085,7 +10085,7 @@
           "max_retries": {
             "type": "integer",
             "format": "int32",
-            "description": "Maximum number of retries for failed requests.\nThis is used for both, the AWS SDK and by Feldera to handle transient connection errors.\nRecommended range: 2-5. Default: 3.",
+            "description": "Retry `max_retries` times with exponential backoff.\nIf the object changes during a retry attempt, the remaining part of the object will not be processed.\nRecommended range: 3-10. Default: 5.",
             "minimum": 0
           },
           "no_sign_request": {
