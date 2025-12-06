@@ -36,7 +36,7 @@ use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
 use feldera_adapterlib::PipelineState;
 use feldera_observability as observability;
-use feldera_observability::json_logging::init_pipeline_logging;
+use feldera_observability::json_logging::init_pipeline_logging_with_id;
 use feldera_storage::{StorageBackend, StoragePath};
 use feldera_types::adapter_stats::{
     EndpointErrorStats, InputEndpointErrorMetrics, OutputEndpointErrorMetrics,
@@ -529,10 +529,16 @@ pub fn run_server(
             .unwrap_or_default()
     )
     .cyan();
-    init_pipeline_logging(pipeline_name, get_env_filter(&config)).unwrap_or_else(|e| {
-        // This happens in unit tests when another test has initialized logging.
-        eprintln!("Failed to initialize logging: {e}.")
-    });
+    let pipeline_id = config
+        .name
+        .as_ref()
+        .and_then(|name| name.strip_prefix("pipeline-"))
+        .map(|id| id.to_string());
+    init_pipeline_logging_with_id(pipeline_name, pipeline_id, get_env_filter(&config))
+        .unwrap_or_else(|e| {
+            // This happens in unit tests when another test has initialized logging.
+            eprintln!("Failed to initialize logging: {e}.")
+        });
     if config.global.tracing {
         warn!("Pipeline tracing was enabled but the 'tracing' option was deprecated, use `FELDERA_SENTRY_ENABLED` for tracing.");
     }

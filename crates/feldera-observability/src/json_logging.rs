@@ -9,18 +9,50 @@ use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
+#[derive(Clone, Copy, Debug)]
+pub enum ServiceName {
+    Manager,
+    Runner,
+    CompilerServer,
+    ControlPlane,
+}
+
+impl ServiceName {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ServiceName::Manager => "manager",
+            ServiceName::Runner => "runner",
+            ServiceName::CompilerServer => "compiler-server",
+            ServiceName::ControlPlane => "control-plane",
+        }
+    }
+}
+
+impl From<ServiceName> for String {
+    fn from(value: ServiceName) -> Self {
+        value.as_str().to_string()
+    }
+}
+
+#[derive(Clone)]
+pub enum LogIdentity {
+    /// Control-plane component (manager | runner | compiler-server | control-plane).
+    Service { service_name: Option<ServiceName> },
+    /// Pipeline log source.
+    Pipeline {
+        pipeline_name: Option<String>,
+        pipeline_id: Option<String>,
+    },
+}
+
 /// Shared JSON formatter that injects pipeline/service name and structured fields.
 pub struct JsonPipelineFormat {
-    pipeline: String,
-    pipeline_id: Option<String>,
+    identity: LogIdentity,
 }
 
 impl JsonPipelineFormat {
-    pub fn new(pipeline: String, pipeline_id: Option<String>) -> Self {
-        Self {
-            pipeline,
-            pipeline_id,
-        }
+    pub fn new(identity: LogIdentity) -> Self {
+        Self { identity }
     }
 }
 
@@ -38,7 +70,51 @@ where
         let mut visitor = SerdeVisitor::default();
         event.record(&mut visitor);
 
+        // Defaults from the configured identity.
+        let mut pipeline_name = match &self.identity {
+            LogIdentity::Service { .. } => None,
+            LogIdentity::Pipeline {
+                pipeline_name,
+                pipeline_id: _,
+            } => pipeline_name.clone(),
+        };
+        let mut pipeline_id = match &self.identity {
+            LogIdentity::Service { .. } => None,
+            LogIdentity::Pipeline { pipeline_id, .. } => pipeline_id.clone(),
+        };
+        let mut feldera_service = match &self.identity {
+            LogIdentity::Service { service_name } => {
+                service_name.map(|service| service.as_str().to_string())
+            }
+            LogIdentity::Pipeline { .. } => None,
+        };
+
+        // Allow structured fields to override the defaults.
+        if let Some(value) = visitor.fields.remove("pipeline-name") {
+            pipeline_name = value_to_string(value);
+        } else if let Some(value) = visitor.fields.remove("pipeline") {
+            pipeline_name = value_to_string(value);
+        }
+        if let Some(value) = visitor.fields.remove("pipeline-id") {
+            pipeline_id = value_to_string(value);
+        } else if let Some(value) = visitor.fields.remove("pipeline_id") {
+            pipeline_id = value_to_string(value);
+        }
+        if let Some(value) = visitor.fields.remove("feldera-service") {
+            feldera_service = value_to_string(value);
+        }
+
         let metadata = event.metadata();
+        // Default service tagging based on module path when logs come from shared binaries.
+        if metadata.target().starts_with("pipeline_manager::runner")
+            && feldera_service.as_deref() != Some("runner")
+        {
+            feldera_service = Some("runner".to_string());
+        } else if metadata.target().starts_with("pipeline_manager::compiler")
+            && feldera_service.as_deref() != Some("compiler-server")
+        {
+            feldera_service = Some("compiler-server".to_string());
+        }
         let mut obj = Map::new();
         obj.insert("timestamp".to_string(), Value::String(now_timestamp()));
         obj.insert(
@@ -49,14 +125,15 @@ where
             "target".to_string(),
             Value::String(metadata.target().to_string()),
         );
-        obj.insert("pipeline".to_string(), Value::String(self.pipeline.clone()));
-        obj.insert(
-            "pipeline-id".to_string(),
-            self.pipeline_id
-                .as_ref()
-                .map(|v| Value::String(v.clone()))
-                .unwrap_or(Value::Null),
-        );
+        if let Some(service_name) = feldera_service {
+            obj.insert("feldera-service".to_string(), Value::String(service_name));
+        }
+        if let Some(pipeline_name) = pipeline_name {
+            obj.insert("pipeline-name".to_string(), Value::String(pipeline_name));
+        }
+        if let Some(pipeline_id) = pipeline_id {
+            obj.insert("pipeline-id".to_string(), Value::String(pipeline_id));
+        }
         obj.insert("fields".to_string(), Value::Object(visitor.fields));
 
         if let Some(span) = ctx.lookup_current() {
@@ -160,12 +237,57 @@ pub fn init_pipeline_logging_with_id(
     pipeline_id: Option<String>,
     env_filter: EnvFilter,
 ) -> Result<(), tracing_subscriber::util::TryInitError> {
+    init_logging(
+        pipeline_name,
+        LogIdentity::Pipeline {
+            pipeline_name: None,
+            pipeline_id,
+        },
+        env_filter,
+    )
+}
+
+/// Initialize logging for a control-plane service (manager | runner | compiler-server | control-plane).
+pub fn init_service_logging(
+    service_name: ColoredString,
+    feldera_service: ServiceName,
+    env_filter: EnvFilter,
+) -> Result<(), tracing_subscriber::util::TryInitError> {
+    init_logging(
+        service_name,
+        LogIdentity::Service {
+            service_name: Some(feldera_service),
+        },
+        env_filter,
+    )
+}
+
+fn init_logging(
+    prefix: ColoredString,
+    identity: LogIdentity,
+    env_filter: EnvFilter,
+) -> Result<(), tracing_subscriber::util::TryInitError> {
+    let identity = match identity {
+        LogIdentity::Service { service_name } => LogIdentity::Service {
+            service_name: service_name.or(Some(ServiceName::ControlPlane)),
+        },
+        LogIdentity::Pipeline {
+            pipeline_name,
+            pipeline_id,
+        } => LogIdentity::Pipeline {
+            pipeline_name: Some(
+                pipeline_name
+                    .unwrap_or_else(|| sanitize_pipeline_name(prefix.clone().clear().to_string())),
+            ),
+            pipeline_id,
+        },
+    };
+
     if use_json_log_format() {
-        let pipeline_name_json = sanitize_pipeline_name(pipeline_name.clone().clear().to_string());
         tracing_subscriber::registry()
             .with(
                 tracing_subscriber::fmt::layer()
-                    .event_format(JsonPipelineFormat::new(pipeline_name_json, pipeline_id))
+                    .event_format(JsonPipelineFormat::new(identity))
                     .with_ansi(false),
             )
             .with(env_filter)
@@ -173,9 +295,7 @@ pub fn init_pipeline_logging_with_id(
             .try_init()
     } else {
         tracing_subscriber::registry()
-            .with(
-                tracing_subscriber::fmt::layer().event_format(FormatWithPrefix::new(pipeline_name)),
-            )
+            .with(tracing_subscriber::fmt::layer().event_format(FormatWithPrefix::new(prefix)))
             .with(env_filter)
             .with(sentry::integrations::tracing::layer())
             .try_init()
@@ -210,5 +330,15 @@ where
     ) -> std::fmt::Result {
         write!(writer, "{} ", self.pipeline_name)?;
         self.inner.format_event(ctx, writer, event)
+    }
+}
+
+fn value_to_string(value: Value) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s),
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        Value::Null => None,
+        other => Some(other.to_string()),
     }
 }

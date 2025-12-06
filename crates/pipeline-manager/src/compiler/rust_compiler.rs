@@ -111,7 +111,10 @@ pub async fn rust_compiler_task(
         if let Err(e) = &result {
             match e {
                 DBError::UnknownPipeline { pipeline_id } => {
-                    debug!("Rust worker {worker_id}: compilation canceled: pipeline {pipeline_id} no longer exists");
+                    debug!(
+                        pipeline_id = %pipeline_id,
+                        "Rust worker {worker_id}: compilation canceled: pipeline {pipeline_id} no longer exists"
+                    );
                 }
                 DBError::OutdatedProgramVersion {
                     outdated_version,
@@ -210,6 +213,7 @@ async fn attempt_end_to_end_rust_compilation(
         Some(db.clone()),
         tenant_id,
         pipeline.id,
+        Some(pipeline.name.clone()),
         &pipeline.platform_version,
         pipeline.program_version,
         &pipeline.program_config,
@@ -231,6 +235,8 @@ async fn attempt_end_to_end_rust_compilation(
             rustc_result,
         }) => {
             info!(
+                pipeline_id = %pipeline.id,
+                pipeline = %pipeline.name,
                 "Rust compilation success: pipeline {} (program version: {}) (took {:.2}s; source checksum: {}; binary integrity checksum: {}, size: {} bytes, program info integrity checksum: {}, profile: {})",
                 pipeline.id,
                 pipeline.program_version,
@@ -257,18 +263,24 @@ async fn attempt_end_to_end_rust_compilation(
         Err(e) => match e {
             RustCompilationError::NoLongerExists => {
                 info!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
                     "Rust compilation canceled: pipeline {} no longer exists",
                     pipeline.id,
                 );
             }
             RustCompilationError::Outdated => {
                 info!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
                     "Rust compilation canceled: pipeline {} (program version: {}) is outdated",
                     pipeline.id, pipeline.program_version,
                 );
             }
             RustCompilationError::TerminatedBySignal => {
                 error!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
                     "Rust compilation interrupted: pipeline {} (program version: {}) compilation process was terminated by a signal",
                     pipeline.id, pipeline.program_version,
                 );
@@ -284,6 +296,8 @@ async fn attempt_end_to_end_rust_compilation(
                     )
                     .await?;
                 info!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
                     "Rust compilation failed: pipeline {} (program version: {}) due to Rust error",
                     pipeline.id, pipeline.program_version
                 );
@@ -298,7 +312,14 @@ async fn attempt_end_to_end_rust_compilation(
                         &internal_system_error,
                     )
                     .await?;
-                error!("Rust compilation failed: pipeline {} (program version: {}) due to system error:\n{}", pipeline.id, pipeline.program_version, internal_system_error);
+                error!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "Rust compilation failed: pipeline {} (program version: {}) due to system error:\n{}",
+                    pipeline.id,
+                    pipeline.program_version,
+                    internal_system_error
+                );
             }
             RustCompilationError::FileUploadError(upload_error) => {
                 db.lock()
@@ -310,7 +331,14 @@ async fn attempt_end_to_end_rust_compilation(
                         &upload_error,
                     )
                     .await?;
-                error!("Rust compilation failed: pipeline {} (program version: {}) due to binary upload error:\n{}", pipeline.id, pipeline.program_version, upload_error);
+                error!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "Rust compilation failed: pipeline {} (program version: {}) due to binary upload error:\n{}",
+                    pipeline.id,
+                    pipeline.program_version,
+                    upload_error
+                );
             }
         },
     }
@@ -834,6 +862,7 @@ pub async fn perform_rust_compilation(
     db: Option<Arc<Mutex<StoragePostgres>>>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
+    pipeline_name: Option<String>,
     platform_version: &str,
     program_version: Version,
     program_config: &serde_json::Value,
@@ -866,7 +895,10 @@ pub async fn perform_rust_compilation(
     })?;
     let runtime_selector = program_config.runtime_version();
     assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
+    let pipeline_name_for_log = pipeline_name.clone().unwrap_or_default();
     info!(
+        pipeline_id = %pipeline_id,
+        pipeline = pipeline_name_for_log.as_str(),
         "Rust compilation started: pipeline {} (program version: {}{})",
         pipeline_id,
         program_version,
@@ -937,6 +969,7 @@ pub async fn perform_rust_compilation(
             db,
             tenant_id,
             pipeline_id,
+            pipeline_name.clone(),
             program_version,
             config,
             &source_checksum,
@@ -1486,6 +1519,7 @@ async fn call_compiler(
     db: Option<Arc<Mutex<StoragePostgres>>>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
+    pipeline_name: Option<String>,
     program_version: Version,
     config: &CompilerConfig,
     source_checksum: &str,
@@ -1516,6 +1550,7 @@ async fn call_compiler(
     // Create pipeline-binaries directory if it does not yet exist
     let pipeline_binaries_dir = workspace_dir.join("pipeline-binaries");
     create_dir_if_not_exists(&pipeline_binaries_dir).await?;
+    let pipeline_name_for_log = pipeline_name.unwrap_or_default();
 
     // Create file where stdout will be written to
     let stdout_file_path = pipeline_main_crate_dir.join("stdout.log");
@@ -1635,7 +1670,11 @@ async fn call_compiler(
                                 return Err(RustCompilationError::NoLongerExists);
                             }
                             Err(e) => {
-                                error!("Rust compilation outdated check failed due to database error: {e}")
+                                error!(
+                                    pipeline_id = %pipeline_id,
+                                    pipeline = pipeline_name_for_log.as_str(),
+                                    "Rust compilation outdated check failed due to database error: {e}"
+                                )
                                 // As preemption check failing is not fatal, compilation will continue
                             }
                         }

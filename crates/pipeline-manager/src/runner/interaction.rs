@@ -253,7 +253,10 @@ impl RunnerInteraction {
         let status = original_response.status();
 
         if !status.is_success() {
-            info!("HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}");
+            info!(
+                pipeline = pipeline_name,
+                "HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}"
+            );
         }
 
         // Build the HTTP response with the original status
@@ -532,7 +535,10 @@ impl RunnerInteraction {
         let status = response.status();
 
         if !status.is_success() {
-            info!("HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}");
+            info!(
+                pipeline = pipeline_name,
+                "HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}"
+            );
         }
 
         // Build the new HTTP response with the same status, headers and streaming body
