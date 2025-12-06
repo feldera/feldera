@@ -29,7 +29,7 @@ use crate::{
         components,
         maxsat::{Cost, HardConstraint, MaxSat, Variable, VariableIndex},
     },
-    Circuit, Position, Runtime, Scope, Stream, Timestamp, ZWeight,
+    Circuit, Error, Position, Runtime, Scope, Stream, Timestamp, ZWeight,
 };
 use async_stream::stream;
 use feldera_storage::{fbuf::FBuf, FileCommitter, StoragePath};
@@ -43,7 +43,7 @@ use std::{
     marker::PhantomData,
     panic::Location,
     rc::Rc,
-    sync::{atomic::AtomicU64, Arc},
+    sync::{atomic::AtomicU64, Arc, RwLock},
 };
 
 circuit_cache_key!(BalancedTraceId<C: Circuit, B: IndexedZSet>(StreamId => (Stream<C, B>, Stream<C, Option<Spine<B>>>, Stream<C, TimedSpine<B, C>>)));
@@ -154,9 +154,46 @@ struct Cluster {
     solution: Option<BTreeMap<NodeId, Policy>>,
 }
 
+#[derive(Debug, Default)]
+struct BalancerHintsInner {
+    policy_hint: Option<Policy>,
+    size_hint: Option<usize>,
+    skew_hint: Option<f64>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct BalancerHints {
+    inner: Arc<RwLock<BalancerHintsInner>>,
+}
+
+impl BalancerHints {
+    pub fn set_policy_hint(&self, policy: Option<Policy>) {
+        self.inner.write().unwrap().policy_hint = policy;
+    }
+
+    pub fn set_size_hint(&self, size: Option<usize>) {
+        self.inner.write().unwrap().size_hint = size;
+    }
+
+    pub fn set_skew_hint(&self, skew: Option<f64>) {
+        self.inner.write().unwrap().skew_hint = skew;
+    }
+}
+
+impl<C, B> Stream<C, B>
+where
+    C: Circuit,
+    B: IndexedZSet,
+{
+    pub fn get_balancer_hints(&self) -> Option<BalancerHints> {
+        let balancer = self.circuit().balancer();
+        balancer.get_hints(self.local_node_id())
+    }
+}
+
 #[derive(Default, Debug)]
 struct BalancerInner {
-    integrals: BTreeMap<NodeId, NodeId>,
+    integrals: BTreeMap<NodeId, (NodeId, BalancerHints)>,
     joins: BTreeMap<NodeId, (NodeId, NodeId)>,
     clusters: Vec<Cluster>,
     stream_to_cluster: BTreeMap<NodeId, usize>,
@@ -229,7 +266,7 @@ impl BalancerInner {
     }
 
     fn compute_domain(&mut self, stream: NodeId) -> BTreeMap<Policy, Cost> {
-        let exchange_sender = self.integrals.get(&stream).unwrap();
+        let (exchange_sender, _hints) = self.integrals.get(&stream).unwrap();
 
         let exchange_sender_metadata: Vec<Option<RebalancingExchangeSenderExchangeMetadata>> = self
             .metadata_exchange
@@ -286,6 +323,11 @@ impl BalancerInner {
             .get(&node_id)
             .cloned()
     }
+
+    fn get_hints(&self, node_id: NodeId) -> Option<BalancerHints> {
+        let (_exchange_sender, hints) = self.integrals.get(&node_id)?;
+        Some(hints.clone())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -301,10 +343,11 @@ impl Balancer {
     }
 
     pub fn register_integral(&self, stream: NodeId, exchange_sender: NodeId) {
+        let hints = BalancerHints::default();
         self.inner
             .borrow_mut()
             .integrals
-            .insert(stream, exchange_sender);
+            .insert(stream, (exchange_sender, hints));
     }
 
     pub fn register_join(&self, join: NodeId, left: NodeId, right: NodeId) {
@@ -389,6 +432,10 @@ impl Balancer {
         // - Each join is in exactly one cluster.
         // - Each cluster has at least one stream.
         // - Each cluster has at least one join.
+    }
+
+    fn get_hints(&self, node_id: NodeId) -> Option<BalancerHints> {
+        self.inner.borrow().get_hints(node_id)
     }
 }
 
