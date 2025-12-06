@@ -49,7 +49,7 @@ fn emits_sample_log() {
     let parsed: Value = serde_json::from_str(json_line)
         .unwrap_or_else(|e| panic!("failed to parse JSON log: {e}: {json_line}"));
 
-    assert_eq!(parsed["pipeline"], "logging-demo");
+    assert_eq!(parsed["pipeline-name"], "logging-demo");
     assert_eq!(parsed["fields"]["demo_int"], 42);
     assert_eq!(parsed["fields"]["demo_u64"], Value::from(u64::MAX));
     assert_eq!(parsed["fields"]["demo_float"], 1.23456);

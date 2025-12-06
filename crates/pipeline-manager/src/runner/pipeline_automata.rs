@@ -98,6 +98,8 @@ where
 
     /// Identifier of the pipeline this runner manages.
     pipeline_id: PipelineId,
+    /// Optional human-friendly pipeline name.
+    pipeline_name: Option<String>,
 
     /// Identifier of the tenant that owns the pipeline.
     tenant_id: TenantId,
@@ -172,6 +174,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     pub fn new(
         common_config: CommonConfig,
         pipeline_id: PipelineId,
+        pipeline_name: Option<String>,
         tenant_id: TenantId,
         db: Arc<Mutex<StoragePostgres>>,
         notifier: Arc<Notify>,
@@ -182,9 +185,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         logs_sender: LogsSender,
         logs_receiver: mpsc::Receiver<LogMessage>,
     ) -> Self {
+        let pipeline_name_for_logs = pipeline_name.clone();
         // Start the thread which composes the pipeline logs and serves them
         let logs_thread_terminate_sender_and_join_handle = start_thread_pipeline_logs(
             pipeline_id.to_string(),
+            pipeline_name_for_logs.unwrap_or_else(|| "N/A".to_string()),
             follow_request_receiver,
             logs_receiver,
         );
@@ -193,6 +198,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             platform_version: common_config.platform_version.clone(),
             common_config,
             pipeline_id,
+            pipeline_name,
             tenant_id,
             pipeline_handle,
             db,
@@ -212,7 +218,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// Runs until the pipeline is deleted or an unexpected error occurs.
     pub async fn run(mut self) {
         let pipeline_id = self.pipeline_id;
-        debug!("Automaton started: pipeline {pipeline_id}");
+        debug!(
+            pipeline = self.pipeline_name.as_deref().unwrap_or(""),
+            pipeline_id = %pipeline_id,
+            "Automaton started: pipeline {pipeline_id}"
+        );
         let mut poll_timeout = Duration::from_secs(0);
         loop {
             // Wait until the timeout expires, or we get notified that the
@@ -241,7 +251,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     match &e {
                         // Pipeline deletions should not lead to errors in the logs.
                         DBError::UnknownPipeline { pipeline_id } => {
-                            info!("Automaton ended: pipeline {pipeline_id}");
+                            info!(
+                                pipeline = self.pipeline_name.as_deref().unwrap_or(""),
+                                pipeline_id = %pipeline_id,
+                                "Automaton ended: pipeline {pipeline_id}"
+                            );
 
                             // By leaving the run loop, the automaton will consume itself.
                             // As such, the pipeline_handle it owns will be dropped,
@@ -437,12 +451,21 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 // For all other transitions, the version guard should always match,
                                 // and as such will cause a database error to bubble up if it does not.
                                 info!(
-                                "Pipeline automaton {}: version initially intended to be started ({}) is outdated by latest ({})",
-                                self.pipeline_id, outdated_version, latest_version
-                            );
+                                    pipeline_id = %self.pipeline_id,
+                                    pipeline = self.pipeline_name.as_deref().unwrap_or(""),
+                                    "Pipeline automaton {}: version initially intended to be started ({}) is outdated by latest ({})",
+                                    self.pipeline_id,
+                                    outdated_version,
+                                    latest_version
+                                );
                                 if pipeline.deployment_resources_status != ResourcesStatus::Stopped
                                 {
-                                    error!("Outdated pipeline version occurred when transitioning from {} to Provisioning (not Stopped)", pipeline.deployment_resources_status);
+                                    error!(
+                                        pipeline_id = %self.pipeline_id,
+                                        pipeline = self.pipeline_name.as_deref().unwrap_or(""),
+                                        "Outdated pipeline version occurred when transitioning from {} to Provisioning (not Stopped)",
+                                        pipeline.deployment_resources_status
+                                    );
                                 }
                                 (ResourcesStatus::Stopped, None, None)
                             }
@@ -534,6 +557,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         if transition != State::Unchanged {
             if transition == State::StorageTransitionToCleared {
                 info!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
                     "Storage transition: {} -> {} for pipeline {}",
                     pipeline.storage_status,
                     StorageStatus::Cleared,
@@ -542,6 +567,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 self.logs_sender
                     .send(LogMessage::new_from_control_plane(
                         module_path!(),
+                        "runner",
                         pipeline.name.clone(),
                         pipeline.id.to_string(),
                         Level::INFO,
@@ -556,10 +582,16 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         new_resources_status,
                         pipeline.deployment_resources_desired_status,
                     );
-                    info!("{message} for pipeline {}", pipeline.id);
+                    info!(
+                        pipeline_id = %pipeline.id,
+                        pipeline = %pipeline.name,
+                        "{message} for pipeline {}",
+                        pipeline.id
+                    );
                     self.logs_sender
                         .send(LogMessage::new_from_control_plane(
                             module_path!(),
+                            "runner",
                             pipeline.name.clone(),
                             pipeline.id.to_string(),
                             Level::INFO,
@@ -583,10 +615,16 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             .map(runtime_desired_status_to_string)
                             .unwrap_or("(none)".to_string())
                     );
-                    info!("{message} for pipeline {}", pipeline.id);
+                    info!(
+                        pipeline_id = %pipeline.id,
+                        pipeline = %pipeline.name,
+                        "{message} for pipeline {}",
+                        pipeline.id
+                    );
                     self.logs_sender
                         .send(LogMessage::new_from_control_plane(
                             module_path!(),
+                            "runner",
                             pipeline.name.clone(),
                             pipeline.id.to_string(),
                             Level::INFO,
@@ -746,7 +784,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         if !is_supported_runtime(&self.platform_version, &pipeline.platform_version)
             && pipeline.program_status == ProgramStatus::Success
         {
-            info!("Runner cannot start pipeline {} because its runtime version ({}) is incompatible with current ({})", pipeline.id, pipeline.platform_version, self.platform_version);
+            info!(
+                pipeline_id = %pipeline.id,
+                pipeline = %pipeline.name,
+                "Runner cannot start pipeline {} because its runtime version ({}) is incompatible with current ({})",
+                pipeline.id,
+                pipeline.platform_version,
+                self.platform_version
+            );
 
             return Ok(State::TransitionToStopping {
                 error: Some(ErrorResponse::from_error_nolog(
@@ -1230,6 +1275,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 }),
                                 _ => {
                                     warn!(
+                                        pipeline_id = %pipeline_id,
+                                        pipeline = self.pipeline_name.as_deref().unwrap_or(""),
                                         "Pipeline {pipeline_id} status is unavailable because the endpoint responded with 503 Service Unavailable:\n{error_response:?}"
                                     );
                                     Ok(ExtendedRuntimeStatus {
@@ -1255,7 +1302,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             error: format!("Error response cannot be deserialized due to: {e}. Response was:\n{body:#}"),
                         })
                     });
-                    error!("Pipeline {pipeline_id} has fatal runtime error and will be stopped. Error:\n{error_response:?}");
+                    error!(
+                        pipeline_id = %pipeline_id,
+                        pipeline = self.pipeline_name.as_deref().unwrap_or(""),
+                        "Pipeline {pipeline_id} has fatal runtime error and will be stopped. Error:\n{error_response:?}"
+                    );
                     Err(error_response)
                 }
             }
@@ -1271,6 +1322,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     })
                 } else {
                     warn!(
+                        pipeline_id = %pipeline_id,
+                        pipeline = self.pipeline_name.as_deref().unwrap_or(""),
                         "Pipeline {pipeline_id} status is unavailable because the endpoint could not be reached due to: {e}"
                     );
                     Ok(ExtendedRuntimeStatus {
@@ -1684,6 +1737,7 @@ mod test {
                 https_tls_key_path: None,
             },
             pipeline_id,
+            Some("test-pipeline".to_string()),
             tenant_id,
             db.clone(),
             notifier.clone(),

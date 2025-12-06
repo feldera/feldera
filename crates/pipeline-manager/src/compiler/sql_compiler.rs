@@ -103,7 +103,10 @@ pub async fn sql_compiler_task(
         if let Err(e) = &result {
             match e {
                 DBError::UnknownPipeline { pipeline_id } => {
-                    debug!("SQL worker {worker_id}: compilation canceled: pipeline {pipeline_id} no longer exists");
+                    debug!(
+                        pipeline_id = %pipeline_id,
+                        "SQL worker {worker_id}: compilation canceled: pipeline {pipeline_id} no longer exists"
+                    );
                 }
                 DBError::OutdatedProgramVersion {
                     outdated_version,
@@ -200,6 +203,7 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
         Some(db.clone()),
         tenant_id,
         pipeline.id,
+        Some(pipeline.name.clone()),
         &pipeline.platform_version,
         pipeline.program_version,
         &pipeline.program_config,
@@ -211,6 +215,8 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
     match compilation_result {
         Ok((program_info, duration, compilation_info)) => {
             info!(
+                pipeline_id = %pipeline.id,
+                pipeline = %pipeline.name,
                 "SQL compilation success: pipeline {} (program version: {}) (took {:.2}s)",
                 pipeline.id,
                 pipeline.program_version,
@@ -230,18 +236,24 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
         Err(e) => match e {
             SqlCompilationError::NoLongerExists => {
                 debug!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
                     "SQL compilation canceled: pipeline {} no longer exists",
                     pipeline.id,
                 );
             }
             SqlCompilationError::Outdated => {
                 debug!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
                     "SQL compilation canceled: pipeline {} (program version: {}) is outdated",
                     pipeline.id, pipeline.program_version,
                 );
             }
             SqlCompilationError::TerminatedBySignal => {
                 error!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
                     "SQL compilation interrupted: pipeline {} (program version: {}) compilation process was terminated by a signal",
                     pipeline.id, pipeline.program_version,
                 );
@@ -257,6 +269,8 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                     )
                     .await?;
                 info!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
                     "SQL compilation failed: pipeline {} (program version: {}) due to SQL errors",
                     pipeline.id, pipeline.program_version
                 );
@@ -271,7 +285,14 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                         &internal_system_error,
                     )
                     .await?;
-                error!("SQL compilation failed: pipeline {} (program version: {}) due to system error:\n{}", pipeline.id, pipeline.program_version, internal_system_error);
+                error!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "SQL compilation failed: pipeline {} (program version: {}) due to system error:\n{}",
+                    pipeline.id,
+                    pipeline.program_version,
+                    internal_system_error
+                );
             }
         },
     }
@@ -449,6 +470,7 @@ pub(crate) async fn perform_sql_compilation(
     db: Option<Arc<Mutex<StoragePostgres>>>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
+    pipeline_name: Option<String>,
     platform_version: &str,
     program_version: Version,
     program_config: &serde_json::Value,
@@ -481,7 +503,10 @@ pub(crate) async fn perform_sql_compilation(
 
     let runtime_selector = program_config.runtime_version();
     assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
+    let pipeline_name = pipeline_name.as_deref();
     info!(
+        pipeline_id = %pipeline_id,
+        pipeline = pipeline_name.unwrap_or(""),
         "SQL compilation started: pipeline {} (program version: {}{})",
         pipeline_id,
         program_version,
@@ -610,7 +635,11 @@ pub(crate) async fn perform_sql_compilation(
                                 return Err(SqlCompilationError::NoLongerExists);
                             }
                             Err(e) => {
-                                error!("SQL compilation outdated check failed due to database error: {e}")
+                                error!(
+                                    pipeline_id = %pipeline_id,
+                                    pipeline = pipeline_name.unwrap_or(""),
+                                    "SQL compilation outdated check failed due to database error: {e}"
+                                )
                                 // As preemption check failing is not fatal, compilation will continue
                             }
                         }
@@ -667,6 +696,8 @@ pub(crate) async fn perform_sql_compilation(
                     ));
                 } else {
                     error!(
+                        pipeline_id = %pipeline_id,
+                        pipeline = pipeline_name.unwrap_or(""),
                         "Unable to parse SQL compiler response after successful compilation, warnings were not passed to client: {}",
                         stderr_str
                     );

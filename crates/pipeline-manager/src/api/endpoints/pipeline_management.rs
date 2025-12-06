@@ -969,8 +969,12 @@ pub(crate) async fn post_pipeline(
     let returned_pipeline = PipelineInfoInternal::new(pipeline);
 
     info!(
+        pipeline = %returned_pipeline.name,
+        pipeline_id = %returned_pipeline.id,
+        tenant_id = %tenant_id.0,
         "Created pipeline {name:?} ({}) (tenant: {})",
-        returned_pipeline.id, *tenant_id
+        returned_pipeline.id,
+        *tenant_id
     );
     Ok(HttpResponse::Created()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1039,16 +1043,25 @@ pub(crate) async fn put_pipeline(
 
     if is_new {
         info!(
+            pipeline = %returned_pipeline.name,
+            pipeline_id = %returned_pipeline.id,
+            tenant_id = %tenant_id.0,
             "Created pipeline {pipeline_name:?} ({}) (tenant: {})",
-            returned_pipeline.id, *tenant_id
+            returned_pipeline.id,
+            *tenant_id
         );
         Ok(HttpResponse::Created()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
             .json(returned_pipeline))
     } else {
         info!(
+            pipeline = %returned_pipeline.name,
+            pipeline_id = %returned_pipeline.id,
+            tenant_id = %tenant_id.0,
             "Fully updated pipeline {pipeline_name:?} ({}) to version {} (tenant: {})",
-            returned_pipeline.id, returned_pipeline.version, *tenant_id
+            returned_pipeline.id,
+            returned_pipeline.version,
+            *tenant_id
         );
         Ok(HttpResponse::Ok()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1253,8 +1266,12 @@ pub(crate) async fn delete_pipeline(
         .await?;
 
     info!(
+        pipeline = %pipeline_name,
+        pipeline_id = %pipeline_id,
+        tenant_id = %tenant_id.0,
         "Deleted pipeline {pipeline_name:?} ({}) (tenant: {})",
-        pipeline_id, *tenant_id
+        pipeline_id,
+        *tenant_id
     );
     Ok(HttpResponse::Ok().finish())
 }
