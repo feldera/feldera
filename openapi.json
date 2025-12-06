@@ -10082,6 +10082,12 @@
             "description": "Controls the number of S3 objects fetched in parallel.\n\nIncreasing this value can improve throughput by enabling greater concurrency.\nHowever, higher concurrency may lead to timeouts or increased memory usage due to in-memory buffering.\n\nRecommended range: 1–10. Default: 8.",
             "minimum": 0
           },
+          "max_retries": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Retry `max_retries` times with exponential backoff.\nIf the object changes during a retry attempt, the remaining part of the object will not be processed.\nRecommended range: 3-10. Default: 5.",
+            "minimum": 0
+          },
           "no_sign_request": {
             "type": "boolean",
             "description": "Do not sign requests. This is equivalent to the `--no-sign-request` flag in the AWS CLI."

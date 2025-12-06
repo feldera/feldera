@@ -5,6 +5,10 @@ fn default_max_concurrent_fetches() -> u32 {
     8
 }
 
+fn default_max_retries() -> u32 {
+    5
+}
+
 /// Configuration for reading data from AWS S3.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct S3InputConfig {
@@ -42,4 +46,10 @@ pub struct S3InputConfig {
     /// Recommended range: 1–10. Default: 8.
     #[serde(default = "default_max_concurrent_fetches")]
     pub max_concurrent_fetches: u32,
+
+    /// Retry `max_retries` times with exponential backoff.
+    /// If the object changes during a retry attempt, the remaining part of the object will not be processed.
+    /// Recommended range: 3-10. Default: 5.
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
 }
