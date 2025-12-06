@@ -2,7 +2,7 @@ use crate::{
     algebra::{IndexedZSet, ZBatch},
     circuit::{
         metadata::{
-            BatchSizeStats, INPUT_BATCHES_COLLECTION, MetaItem, OperatorMeta, OUTPUT_BATCHES_LABEL,
+            BatchSizeStats, MetaItem, OperatorMeta, INPUT_BATCHES_COLLECTION, OUTPUT_BATCHES_LABEL,
         },
         operator_traits::Operator,
         splitter_output_chunk_size,
