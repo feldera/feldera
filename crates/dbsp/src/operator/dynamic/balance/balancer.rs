@@ -288,6 +288,7 @@ impl BalancerInner {
 
         for i in 0..num_clusters {
             self.clusters[i].solution = Some(self.solve_cluster(i)?);
+            println!("cluster {i}; solution: {:?}", self.clusters[i].solution);
         }
 
         Ok(())
@@ -326,6 +327,7 @@ impl BalancerInner {
     }
 
     fn get_policy(&self, node_id: NodeId) -> Option<Policy> {
+        //println!("stream_to_cluster({node_id}): {:?}", self.stream_to_cluster);
         let cluster_index = *self.stream_to_cluster.get(&node_id).unwrap();
         self.clusters[cluster_index]
             .solution

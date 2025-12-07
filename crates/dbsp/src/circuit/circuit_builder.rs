@@ -5241,9 +5241,9 @@ where
 
             self.operator
                 .eval(
-                    val1.unwrap_or(Cow::Borrowed(StreamValue::peek(&r1))),
-                    val2.unwrap_or(Cow::Borrowed(StreamValue::peek(&r2))),
-                    val3.unwrap_or(Cow::Borrowed(StreamValue::peek(&r3))),
+                    val1.unwrap_or_else(|| Cow::Borrowed(StreamValue::peek(&r1))),
+                    val2.unwrap_or_else(|| Cow::Borrowed(StreamValue::peek(&r2))),
+                    val3.unwrap_or_else(|| Cow::Borrowed(StreamValue::peek(&r3))),
                 )
                 .await;
 

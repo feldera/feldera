@@ -74,6 +74,8 @@ fn test_accumulate_trace_with_balancer(workers: usize, transaction: bool, policy
 
     let mut all_tuples = vec![];
     for step in 0..10 {
+        println!("step: {}", step);
+
         let mut tuples = vec![];
         for key in 0..10 {
             input_handle.push(key, (step, 1));
