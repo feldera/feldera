@@ -494,7 +494,7 @@ mod test {
         dynamic::{DowncastTrait, DynData, Erase},
         indexed_zset,
         operator::dynamic::trace::TraceBound,
-        typed_batch::{OrdIndexedZSet, SpineSnapshot, TypedBox},
+        typed_batch::{IndexedZSetReader, OrdIndexedZSet, SpineSnapshot, TypedBox},
         utils::{Tup2, Tup3},
         Circuit, IndexedZSet, IndexedZSetHandle, InputHandle, OrdZSet, OutputHandle, RootCircuit,
         Runtime, Stream,

@@ -210,8 +210,11 @@ mod test {
     use std::cmp::{max, min};
 
     use crate::{
-        circuit::CircuitConfig, operator::Min, typed_batch::SpineSnapshot, utils::Tup2, zset,
-        OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
+        circuit::CircuitConfig,
+        operator::Min,
+        typed_batch::{IndexedZSetReader, SpineSnapshot},
+        utils::Tup2,
+        zset, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
     };
     use proptest::{collection, prelude::*};
 

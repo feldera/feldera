@@ -845,16 +845,15 @@ where
         Z: IndexedZSet,
     {
         self.circuit().region("balanced_join", || {
-            let (_left, left_accumulator, left_trace) = self.dyn_accumulate_trace_with_balancer(
+            let (_left, left_accumulator, left_trace) = self.dyn_accumulate_trace_balanced(
                 &factories.left_trace_factories,
                 &factories.left_factories,
             );
 
-            let (_right, right_accumulator, right_trace) = other
-                .dyn_accumulate_trace_with_balancer(
-                    &factories.right_trace_factories,
-                    &factories.right_factories,
-                );
+            let (_right, right_accumulator, right_trace) = other.dyn_accumulate_trace_balanced(
+                &factories.right_trace_factories,
+                &factories.right_factories,
+            );
 
             let left = self.circuit().add_binary_operator(
                 StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(

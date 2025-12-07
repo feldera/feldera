@@ -270,7 +270,11 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{typed_batch::OrdIndexedZSet, utils::Tup2, ZWeight};
+    use crate::{
+        typed_batch::{IndexedZSetReader, OrdIndexedZSet},
+        utils::Tup2,
+        ZWeight,
+    };
 
     #[test]
     fn test_indexed_zset_iterator() {

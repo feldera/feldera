@@ -1204,7 +1204,7 @@ mod test {
         circuit::CircuitConfig,
         indexed_zset,
         operator::{GeneratorNested, OutputHandle},
-        typed_batch::{OrdIndexedZSet, OrdZSet, SpineSnapshot},
+        typed_batch::{IndexedZSetReader, OrdIndexedZSet, OrdZSet, SpineSnapshot},
         utils::Tup2,
         zset, Circuit, IndexedZSetHandle, RootCircuit, Runtime, ZSetHandle,
     };

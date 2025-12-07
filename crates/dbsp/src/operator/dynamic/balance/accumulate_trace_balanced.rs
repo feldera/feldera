@@ -5,7 +5,7 @@ use crate::{
         circuit_builder::{register_replay_stream, MetadataExchange, StreamId},
         metadata::{BatchSizeStats, OperatorLocation, OperatorMeta, INPUT_BATCHES_LABEL},
         operator_traits::Operator,
-        splitter_output_chunk_size, GlobalNodeId, NodeId, OwnershipPreference, WithClock,
+        splitter_output_chunk_size, GlobalNodeId, OwnershipPreference, WithClock,
     },
     circuit_cache_key,
     dynamic::{ClonableTrait, Data as _, Erase},
@@ -16,6 +16,7 @@ use crate::{
             accumulate_trace::{
                 AccumulateBoundsId, AccumulateTraceAppend, AccumulateTraceId, AccumulateZ1Trace,
             },
+            balance::{Balancer, Policy},
             trace::{DelayedTraceId, TimedSpine, TraceBounds},
         },
         require_persistent_id, Z1,
@@ -25,419 +26,21 @@ use crate::{
         Batch, BatchReader, BatchReaderFactories, Builder, Cursor, MergeCursor, Spine,
         SpineSnapshot, TupleBuilder, WithSnapshot,
     },
-    utils::{
-        components,
-        maxsat::{Cost, HardConstraint, MaxSat, Variable, VariableIndex},
-    },
-    Circuit, Error, Position, Runtime, Scope, Stream, Timestamp, ZWeight,
+    Circuit, Position, Runtime, Scope, Stream, Timestamp, ZWeight,
 };
 use async_stream::stream;
 use feldera_storage::{fbuf::FBuf, FileCommitter, StoragePath};
-use num::abs;
-use petgraph::graph::UnGraph;
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
     cell::RefCell,
-    collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
     panic::Location,
     rc::Rc,
-    sync::{atomic::AtomicU64, Arc, RwLock},
+    sync::{atomic::AtomicU64, Arc},
 };
 
 circuit_cache_key!(BalancedTraceId<C: Circuit, B: IndexedZSet>(StreamId => (Stream<C, B>, Stream<C, Option<Spine<B>>>, Stream<C, TimedSpine<B, C>>)));
-
-#[derive(Debug)]
-pub struct JoinConstraint {
-    v1: VariableIndex,
-    v2: VariableIndex,
-}
-
-impl JoinConstraint {
-    pub fn create_join_constraint(maxsat: &mut MaxSat, v1: VariableIndex, v2: VariableIndex) {
-        let constraint = Self::new(v1, v2);
-        maxsat.add_constraint(Box::new(constraint));
-    }
-
-    fn new(v1: VariableIndex, v2: VariableIndex) -> Self {
-        Self { v1, v2 }
-    }
-
-    fn propagate_inner(
-        &self,
-        all_variables: &mut [Variable],
-        i1: VariableIndex,
-        i2: VariableIndex,
-        affected_variables: &mut BTreeSet<VariableIndex>,
-    ) {
-        let v1 = &all_variables[i1.0].domain;
-        //println!("{} = {:?}", all_variables[i1.0].name, v1);
-
-        let remove_shard =
-            !v1.contains_key(&Policy::Shard.into()) && !v1.contains_key(&Policy::Broadcast.into());
-        let remove_broadcast = !v1.contains_key(&Policy::Broadcast.into())
-            && !v1.contains_key(&Policy::Balance.into());
-        let remove_balance = !v1.contains_key(&Policy::Balance.into());
-
-        let v2 = &mut all_variables[i2.0].domain;
-
-        let mut v2_modified = false;
-
-        if remove_shard {
-            //println!("removing SHARD from {}", all_variables[i2.0].name);
-            v2_modified |= v2.remove(&Policy::Shard.into()).is_some();
-        }
-        if remove_broadcast {
-            //println!("removing BROADCAST from {}", all_variables[i2.0].name);
-            v2_modified |= v2.remove(&Policy::Broadcast.into()).is_some();
-        }
-        if remove_balance {
-            //println!("removing BALANCE from {}", all_variables[i2.0].name);
-            v2_modified |= v2.remove(&Policy::Balance.into()).is_some();
-        }
-
-        if v2_modified {
-            affected_variables.insert(i2);
-        }
-    }
-}
-
-impl HardConstraint for JoinConstraint {
-    fn propagate(
-        &self,
-        all_variables: &mut [Variable],
-        affected_variables: &mut BTreeSet<VariableIndex>,
-    ) {
-        self.propagate_inner(all_variables, self.v1, self.v2, affected_variables);
-        self.propagate_inner(all_variables, self.v2, self.v1, affected_variables);
-    }
-
-    fn variables(&self) -> Vec<VariableIndex> {
-        vec![self.v1, self.v2, self.v2]
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[repr(u8)]
-pub enum Policy {
-    Shard = 0,
-    Broadcast = 1,
-    Balance = 2,
-}
-
-impl TryFrom<u8> for Policy {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Policy::Shard),
-            1 => Ok(Policy::Broadcast),
-            2 => Ok(Policy::Balance),
-            _ => Err(()),
-        }
-    }
-}
-impl From<Policy> for u8 {
-    fn from(value: Policy) -> Self {
-        value as u8
-    }
-}
-
-#[derive(Default, Debug)]
-struct Cluster {
-    streams: BTreeSet<NodeId>,
-    joins: BTreeMap<NodeId, (NodeId, NodeId)>,
-
-    fixed_policy: BTreeMap<NodeId, Policy>,
-
-    solution: Option<BTreeMap<NodeId, Policy>>,
-}
-
-#[derive(Debug, Default)]
-struct BalancerHintsInner {
-    policy_hint: Option<Policy>,
-    size_hint: Option<usize>,
-    skew_hint: Option<f64>,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct BalancerHints {
-    inner: Arc<RwLock<BalancerHintsInner>>,
-}
-
-impl BalancerHints {
-    pub fn set_policy_hint(&self, policy: Option<Policy>) {
-        self.inner.write().unwrap().policy_hint = policy;
-    }
-
-    pub fn set_size_hint(&self, size: Option<usize>) {
-        self.inner.write().unwrap().size_hint = size;
-    }
-
-    pub fn set_skew_hint(&self, skew: Option<f64>) {
-        self.inner.write().unwrap().skew_hint = skew;
-    }
-}
-
-impl<C, B> Stream<C, B>
-where
-    C: Circuit,
-    B: IndexedZSet,
-{
-    pub fn get_balancer_hints(&self) -> Option<BalancerHints> {
-        let balancer = self.circuit().balancer();
-        balancer.get_hints(self.local_node_id())
-    }
-}
-
-#[derive(Default, Debug)]
-struct BalancerInner {
-    integrals: BTreeMap<NodeId, (NodeId, BalancerHints)>,
-    joins: BTreeMap<NodeId, (NodeId, NodeId)>,
-    clusters: Vec<Cluster>,
-    stream_to_cluster: BTreeMap<NodeId, usize>,
-    metadata_exchange: MetadataExchange,
-}
-
-impl BalancerInner {
-    fn new(metadata_exchange: &MetadataExchange) -> Self {
-        Self {
-            integrals: BTreeMap::new(),
-            joins: BTreeMap::new(),
-            clusters: Vec::new(),
-            stream_to_cluster: BTreeMap::new(),
-            metadata_exchange: metadata_exchange.clone(),
-        }
-    }
-
-    fn solve_cluster(&mut self, cluster_index: usize) {
-        //let cluster = &mut self.clusters[cluster_index];
-
-        let mut maxsat = MaxSat::new();
-        let mut variable_indexes = BTreeMap::new();
-
-        for stream in self.clusters[cluster_index].streams.clone().iter() {
-            let mut domain = self.compute_domain(*stream);
-            if let Some(fixed_policy) = self.clusters[cluster_index].fixed_policy.get(stream) {
-                domain.retain(|policy, _| *policy == *fixed_policy);
-            }
-
-            let variable_index = maxsat.add_variable(&stream.to_string(), domain);
-            variable_indexes.insert(*stream, variable_index);
-        }
-
-        for (_join, (left, right)) in self.clusters[cluster_index].joins.iter() {
-            maxsat.add_constraint(Box::new(JoinConstraint::new(
-                variable_indexes[left],
-                variable_indexes[right],
-            )));
-        }
-
-        let solution = maxsat.solve().unwrap();
-        let solution: BTreeMap<NodeId, Policy> = variable_indexes
-            .iter()
-            .map(|(stream, variable_index)| {
-                (
-                    *stream,
-                    Policy::try_from(*solution.get(variable_index).unwrap()).unwrap(),
-                )
-            })
-            .collect();
-
-        self.clusters[cluster_index].solution = Some(solution);
-    }
-
-    fn solve_all_clusters(&mut self) {
-        let num_clusters = self.clusters.len();
-
-        for i in 0..num_clusters {
-            self.solve_cluster(i);
-        }
-    }
-
-    // Called when an exchange operator is flushed. At this point
-    // it can no longer change its policy until the next transaction.
-    pub fn fix_policy_for_transaction(&mut self, node_id: NodeId, policy: Policy) {
-        let cluster_index = *self.stream_to_cluster.get(&node_id).unwrap();
-        self.clusters[cluster_index]
-            .fixed_policy
-            .insert(node_id, policy);
-    }
-
-    fn compute_domain(&mut self, stream: NodeId) -> BTreeMap<Policy, Cost> {
-        let (exchange_sender, _hints) = self.integrals.get(&stream).unwrap();
-
-        let exchange_sender_metadata: Vec<Option<RebalancingExchangeSenderExchangeMetadata>> = self
-            .metadata_exchange
-            .get_global_operator_metadata_typed::<RebalancingExchangeSenderExchangeMetadata>(
-                *exchange_sender,
-            );
-
-        if exchange_sender_metadata.iter().any(|metadata| {
-            if let Some(metadata) = metadata {
-                metadata.flushed
-            } else {
-                false
-            }
-        }) {
-            assert!(exchange_sender_metadata
-                .iter()
-                .all(|metadata| metadata.is_some()));
-            // TODO: assert: current policy is the same for all exchange senders.
-            // assert!(exchange_sender_metadata
-            //     .iter()
-            //     .all(|metadata| metadata == &exchange_sender_metadata[0]));
-            let policy = exchange_sender_metadata[0].as_ref().unwrap().current_policy;
-            self.fix_policy_for_transaction(*exchange_sender, policy);
-        }
-
-        let key_distribution = exchange_sender_metadata.iter().fold(
-            KeyDistribution::new(Runtime::num_workers()),
-            |mut key_distribution, metadata| {
-                if let Some(metadata) = metadata {
-                    key_distribution.merge(&metadata.key_distribution);
-                };
-                key_distribution
-            },
-        );
-
-        let total_size: i64 = key_distribution.total_records();
-        let max_size = key_distribution.sizes.iter().cloned().max().unwrap();
-
-        BTreeMap::from([
-            (Policy::Shard, Cost(abs(max_size) as u64)),
-            (Policy::Broadcast, Cost(abs(total_size) as u64)),
-            (
-                Policy::Balance,
-                Cost((abs(total_size) as u64 / Runtime::num_workers() as u64) * 2),
-            ),
-        ])
-    }
-
-    fn get_policy(&self, node_id: NodeId) -> Option<Policy> {
-        let cluster_index = *self.stream_to_cluster.get(&node_id).unwrap();
-        self.clusters[cluster_index]
-            .solution
-            .as_ref()?
-            .get(&node_id)
-            .cloned()
-    }
-
-    fn get_hints(&self, node_id: NodeId) -> Option<BalancerHints> {
-        let (_exchange_sender, hints) = self.integrals.get(&node_id)?;
-        Some(hints.clone())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Balancer {
-    inner: Rc<RefCell<BalancerInner>>,
-}
-
-impl Balancer {
-    pub fn new(metadata_exchange: &MetadataExchange) -> Self {
-        Self {
-            inner: Rc::new(RefCell::new(BalancerInner::new(metadata_exchange))),
-        }
-    }
-
-    pub fn register_integral(&self, stream: NodeId, exchange_sender: NodeId) {
-        let hints = BalancerHints::default();
-        self.inner
-            .borrow_mut()
-            .integrals
-            .insert(stream, (exchange_sender, hints));
-    }
-
-    pub fn register_join(&self, join: NodeId, left: NodeId, right: NodeId) {
-        self.inner.borrow_mut().joins.insert(join, (left, right));
-    }
-
-    // Invoked before the circuit starts running.
-    pub fn prepare(&self) {
-        self.compute_clusters();
-    }
-
-    // Invoked at the start of each transaction. Resets variable domains.
-    pub fn start_transaction(&self) {
-        for cluster in self.inner.borrow_mut().clusters.iter_mut() {
-            cluster.fixed_policy.clear();
-        }
-    }
-
-    // Invoked at the start of each step. Updates costs and solves the optimization problem.
-    pub fn start_step(&self) {
-        self.inner.borrow_mut().solve_all_clusters();
-    }
-
-    // Called when an exchange operator is flushed. At this point
-    // it can no longer change its policy until the next transaction.
-    pub fn fix_policy_for_transaction(&self, node_id: NodeId, policy: Policy) {
-        self.inner
-            .borrow_mut()
-            .fix_policy_for_transaction(node_id, policy);
-    }
-
-    /// Optimal policy computed at the start of the step.
-    pub fn get_optimal_policy(&self, node_id: NodeId) -> Option<Policy> {
-        self.inner.borrow().get_policy(node_id)
-    }
-
-    fn compute_clusters(&self) {
-        let mut inner = self.inner.borrow_mut();
-
-        let mut join_graph = UnGraph::<NodeId, NodeId>::new_undirected();
-        for (join, (left, right)) in inner.joins.iter() {
-            let left_index = join_graph.add_node(*left);
-            let right_index = join_graph.add_node(*right);
-            join_graph.add_edge(left_index, right_index, *join);
-        }
-
-        let clusters = components(&join_graph);
-
-        let clusters: Vec<Cluster> = clusters
-            .into_iter()
-            .map(|cluster| Cluster {
-                streams: cluster
-                    .0
-                    .into_iter()
-                    .map(|node| *join_graph.node_weight(node).unwrap())
-                    .collect(),
-                joins: cluster
-                    .1
-                    .into_iter()
-                    .map(|edge| {
-                        let join_id = *join_graph.edge_weight(edge).unwrap();
-                        let (left, right) = inner.joins.get(&join_id).unwrap();
-                        (join_id, (*left, *right))
-                    })
-                    .collect(),
-                fixed_policy: BTreeMap::new(),
-                solution: None,
-            })
-            .collect();
-
-        for (index, cluster) in clusters.iter().enumerate() {
-            for stream in cluster.streams.iter() {
-                inner.stream_to_cluster.insert(*stream, index);
-            }
-        }
-
-        inner.clusters = clusters;
-
-        // TODO:
-        // Validation:
-        // - Each stream is in exactly one cluster.
-        // - Each join is in exactly one cluster.
-        // - Each cluster has at least one stream.
-        // - Each cluster has at least one join.
-    }
-
-    fn get_hints(&self, node_id: NodeId) -> Option<BalancerHints> {
-        self.inner.borrow().get_hints(node_id)
-    }
-}
 
 impl<C, B> Stream<C, B>
 where
@@ -445,7 +48,7 @@ where
     B: IndexedZSet,
 {
     #[track_caller]
-    pub fn dyn_accumulate_trace_with_balancer(
+    pub fn dyn_accumulate_trace_balanced(
         &self,
         trace_factories: &<TimedSpine<B, C> as BatchReader>::Factories,
         batch_factories: &B::Factories,
@@ -584,16 +187,18 @@ where
                     // Connect the stream
                     acc_feedback.connect(&accumulator_feedback_stream);
 
+                    let exchange_sender = RebalancingExchangeSender::<B, C>::new(
+                        batch_factories,
+                        worker_index,
+                        Some(location),
+                        exchange,
+                        balancer.clone(),
+                        circuit.metadata_exchange().clone(),
+                    );
+
                     // Exchange sender.
                     let sender_node_id = circuit.add_ternary_sink(
-                        StreamingTernarySinkWrapper::new(RebalancingExchangeSender::<B, C>::new(
-                            batch_factories,
-                            worker_index,
-                            Some(location),
-                            exchange,
-                            balancer.clone(),
-                            circuit.metadata_exchange().clone(),
-                        )),
+                        StreamingTernarySinkWrapper::new(exchange_sender),
                         self,
                         &delayed_acc,
                         &delayed_trace,
@@ -612,17 +217,6 @@ where
     }
 }
 
-// impl<C, B> Stream<C, Spine<B>>
-// where
-//     C: Circuit,
-//     B: Batch,
-// {
-//     /// Returns the trace of `self` delayed by one clock cycle.
-//     pub fn accumulate_delay_trace_with_balancer(&self) -> Stream<C, SpineSnapshot<B>> {
-//         todo!()
-//     }
-// }
-
 struct RetractionState<B: Batch<Time = ()>, C: WithClock> {
     accumulator: SpineSnapshot<B>,
     trace: SpineSnapshot<<C::Time as Timestamp>::TimedBatch<B>>,
@@ -630,28 +224,28 @@ struct RetractionState<B: Batch<Time = ()>, C: WithClock> {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
-struct KeyDistribution {
-    sizes: Vec<ZWeight>,
+pub struct KeyDistribution {
+    pub sizes: Vec<ZWeight>,
 }
 
 impl KeyDistribution {
-    fn new(shards: usize) -> Self {
+    pub fn new(shards: usize) -> Self {
         Self {
             sizes: vec![0; shards],
         }
     }
 
-    fn update(&mut self, shard: usize, weight: ZWeight) {
+    pub fn update(&mut self, shard: usize, weight: ZWeight) {
         self.sizes[shard] += weight;
     }
 
-    fn merge(&mut self, other: &Self) {
+    pub fn merge(&mut self, other: &Self) {
         for (i, size) in self.sizes.iter_mut().enumerate() {
             *size += other.sizes[i];
         }
     }
 
-    fn total_records(&self) -> ZWeight {
+    pub fn total_records(&self) -> ZWeight {
         self.sizes.iter().sum()
     }
 }
@@ -716,13 +310,6 @@ where
             phantom: PhantomData,
         }
     }
-
-    // fn exchange_metadata(&self) -> RebalancingExchangeSenderExchangeMetadata {
-    //     RebalancingExchangeSenderExchangeMetadata {
-    //         flushed: *self.flush_state.borrow() == FlushState::FlushCompleted,
-    //         current_policy: *self.current_policy.borrow(),
-    //     }
-    // }
 
     fn update_exchange_metadata(&self) {
         let metadata = RebalancingExchangeSenderExchangeMetadata {
@@ -1063,10 +650,10 @@ enum FlushState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-struct RebalancingExchangeSenderExchangeMetadata {
-    flushed: bool,
-    current_policy: Policy,
-    key_distribution: KeyDistribution,
+pub struct RebalancingExchangeSenderExchangeMetadata {
+    pub flushed: bool,
+    pub current_policy: Policy,
+    pub key_distribution: KeyDistribution,
 }
 
 impl<B, C> Operator for RebalancingExchangeSender<B, C>
@@ -1325,9 +912,4 @@ where
     //         OwnershipPreference::INDIFFERENT,
     //     )
     // }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
 }

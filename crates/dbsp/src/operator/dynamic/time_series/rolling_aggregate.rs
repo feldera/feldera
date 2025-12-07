@@ -1051,7 +1051,9 @@ mod test {
             Fold,
         },
         trace::{BatchReaderFactories, Cursor},
-        typed_batch::{DynBatchReader, DynOrdIndexedZSet, SpineSnapshot, TypedBatch},
+        typed_batch::{
+            DynBatchReader, DynOrdIndexedZSet, IndexedZSetReader, SpineSnapshot, TypedBatch,
+        },
         utils::Tup2,
         DBData, DBSPHandle, IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime,
         Stream, TypedBox, ZWeight,

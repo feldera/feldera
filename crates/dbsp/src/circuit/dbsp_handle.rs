@@ -2,7 +2,9 @@ use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::runtime::ThreadType;
 use crate::circuit::schedule::{CommitProgress, CommitProgressSummary};
+use crate::circuit::GlobalNodeId;
 use crate::monitor::visual_graph::Graph;
+use crate::operator::dynamic::balance::BalancerHint;
 use crate::storage::backend::StorageError;
 use crate::storage::file::BLOOM_FILTER_FALSE_POSITIVE_RATE;
 use crate::trace::MergerType;
@@ -684,6 +686,20 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::SetBalancerHints(hints)) => {
+                        let results = hints
+                            .into_iter()
+                            .map(|(global_node_id, hint)| {
+                                circuit.set_balancer_hint(&global_node_id, hint)
+                            })
+                            .collect::<Vec<Result<(), DbspError>>>();
+                        if status_sender
+                            .send(Ok(Response::SetBalancerHints(results)))
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
                     Err(TryRecvError::Empty) => parker.park(),
@@ -770,6 +786,7 @@ enum Command {
     GetLir,
     Checkpoint(StoragePath),
     Restore(StoragePath),
+    SetBalancerHints(Vec<(GlobalNodeId, BalancerHint)>),
 }
 
 impl Debug for Command {
@@ -795,6 +812,9 @@ impl Debug for Command {
             Command::GetLir => write!(f, "GetLir"),
             Command::Checkpoint(path) => f.debug_tuple("Checkpoint").field(path).finish(),
             Command::Restore(path) => f.debug_tuple("Restore").field(path).finish(),
+            Command::SetBalancerHints(hints) => {
+                f.debug_tuple("SetBalancerHints").field(hints).finish()
+            }
         }
     }
 }
@@ -810,6 +830,7 @@ enum Response {
     CheckpointCreated(Vec<Arc<dyn FileCommitter>>),
     CheckpointRestored(Option<BootstrapInfo>),
     Lir(LirCircuit),
+    SetBalancerHints(Vec<Result<(), DbspError>>),
 }
 
 /// A handle to control the execution of a circuit in a multithreaded runtime.
@@ -1361,6 +1382,31 @@ impl DBSPHandle {
         }
 
         self.kill_inner()
+    }
+
+    pub fn set_balancer_hint(
+        &mut self,
+        global_node_id: &GlobalNodeId,
+        hint: BalancerHint,
+    ) -> Result<(), DbspError> {
+        let mut result = self.set_balancer_hints(vec![(global_node_id.clone(), hint)])?;
+        result.pop().unwrap()
+    }
+
+    pub fn set_balancer_hints(
+        &mut self,
+        hints: Vec<(GlobalNodeId, BalancerHint)>,
+    ) -> Result<Vec<Result<(), DbspError>>, DbspError> {
+        let mut results = Vec::new();
+
+        self.broadcast_command(Command::SetBalancerHints(hints), |_, resp| {
+            let Response::SetBalancerHints(worker_results) = resp else {
+                panic!("Expected set balancer hints response, got {resp:?}");
+            };
+            results = worker_results;
+        })?;
+
+        Ok(results)
     }
 }
 

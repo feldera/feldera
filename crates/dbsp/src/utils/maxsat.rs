@@ -187,7 +187,7 @@ impl MaxSat {
 
 #[cfg(test)]
 mod tests {
-    use crate::operator::dynamic::balancer::{JoinConstraint, Policy};
+    use crate::operator::dynamic::balance::{JoinConstraint, Policy};
 
     use super::*;
 

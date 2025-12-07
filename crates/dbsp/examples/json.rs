@@ -1,6 +1,7 @@
 use anyhow::Result;
 use dbsp::{
     circuit::CircuitConfig,
+    typed_batch::IndexedZSetReader,
     utils::{Tup2, Tup3, Tup4},
     Runtime,
 };

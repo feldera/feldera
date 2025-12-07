@@ -49,7 +49,7 @@ use crate::{
     },
     circuit_cache_key,
     ir::LABEL_MIR_NODE_ID,
-    operator::dynamic::balancer::Balancer,
+    operator::dynamic::balance::{Balancer, BalancerError, BalancerHint},
     time::{Timestamp, UnitTimestamp},
     Error as DbspError, Position, Runtime,
 };
@@ -1739,6 +1739,12 @@ pub trait CircuitBase: 'static {
     fn metadata_exchange(&self) -> &MetadataExchange;
 
     fn balancer(&self) -> &Balancer;
+
+    fn set_balancer_hint(
+        &self,
+        global_node_id: &GlobalNodeId,
+        hint: BalancerHint,
+    ) -> Result<(), DbspError>;
 }
 
 /// The circuit interface.  All DBSP computation takes place within a circuit.
@@ -3299,6 +3305,22 @@ where
 
     fn balancer(&self) -> &Balancer {
         &self.inner().balancer
+    }
+
+    fn set_balancer_hint(
+        &self,
+        global_node_id: &GlobalNodeId,
+        hint: BalancerHint,
+    ) -> Result<(), DbspError> {
+        if global_node_id.parent_id() != Some(GlobalNodeId::root()) {
+            return Err(DbspError::Balancer(BalancerError::NonTopLevelNode(
+                global_node_id.clone(),
+            )));
+        }
+
+        self.inner()
+            .balancer
+            .set_hint(global_node_id.local_node_id().unwrap(), hint)
     }
 }
 
@@ -7233,6 +7255,14 @@ impl CircuitHandle {
     /// Export circuit in LIR format.
     pub fn lir(&self) -> LirCircuit {
         (&self.circuit as &dyn CircuitBase).to_lir()
+    }
+
+    pub fn set_balancer_hint(
+        &self,
+        global_node_id: &GlobalNodeId,
+        hint: BalancerHint,
+    ) -> Result<(), DbspError> {
+        self.circuit.set_balancer_hint(global_node_id, hint)
     }
 }
 

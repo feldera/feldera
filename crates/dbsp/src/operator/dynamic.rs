@@ -7,7 +7,7 @@ mod accumulate_trace;
 pub mod accumulator;
 pub mod aggregate;
 pub mod asof_join;
-pub mod balancer;
+pub mod balance;
 mod communication;
 pub mod concat;
 mod consolidate;

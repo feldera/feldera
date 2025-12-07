@@ -195,7 +195,7 @@ where
 mod test {
     use crate::{
         indexed_zset,
-        typed_batch::{OrdIndexedZSet, SpineSnapshot},
+        typed_batch::{IndexedZSetReader, OrdIndexedZSet, SpineSnapshot},
         utils::Tup2,
         Runtime,
     };

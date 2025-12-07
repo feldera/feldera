@@ -483,8 +483,6 @@ impl Inner {
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
-        circuit.balancer().start_step();
-        let result = self.do_step(circuit).await;
 
         let metadata = circuit.metadata_exchange().local_metadata().clone();
 
@@ -492,6 +490,9 @@ impl Inner {
         circuit
             .metadata_exchange()
             .set_global_metadata(global_metadata);
+
+        circuit.balancer().start_step();
+        let result = self.do_step(circuit).await;
 
         if let TransactionPhase::Committing(unflushed_operators) = &self.transaction_phase {
             let commit_complete = self
