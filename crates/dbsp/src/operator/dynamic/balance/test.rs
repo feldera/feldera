@@ -42,26 +42,28 @@ fn accumulate_trace_with_balancer_test_circuit(
     IndexedZSetHandle<u64, u64>,
     GlobalNodeId,
     OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, u64>>>,
-    //OutputHandle<OrdIndexedZSet<u64, u64>>,
+    OutputHandle<OrdIndexedZSet<u64, u64>>,
 )> {
     let (input, input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
     let input_node_id = input.origin_node_id().clone();
 
     let (balanced_stream, balanced_trace) = input.accumulate_trace_balanced();
     let balanced_stream_output = balanced_stream.accumulate_output();
-    let balanced_trace_output = balanced_trace.consolidate()/*.output()*/;
+    let balanced_trace_output = balanced_trace
+        .apply(|trace| trace.ro_snapshot().consolidate())
+        .output();
 
     Ok((
         input_handle,
         input_node_id,
         balanced_stream_output,
-        //balanced_trace_output,
+        balanced_trace_output,
     ))
 }
 
 /// Test Policy::Shard
 fn test_accumulate_trace_with_balancer(workers: usize, transaction: bool, policy: Policy) {
-    let (mut circuit, (input_handle, input_node_id, output_delta /*output_trace*/)) =
+    let (mut circuit, (input_handle, input_node_id, output_delta, output_trace)) =
         Runtime::init_circuit(
             CircuitConfig::from(workers).with_splitter_chunk_size_records(2),
             accumulate_trace_with_balancer_test_circuit,
@@ -94,16 +96,27 @@ fn test_accumulate_trace_with_balancer(workers: usize, transaction: bool, policy
         let output_delta: Vec<_> = (0..workers)
             .map(|worker| output_delta.take_from_worker(worker).unwrap().consolidate())
             .collect();
-        // let output_trace: Vec<_> = (0..workers)
-        //     .map(|worker| output_trace.take_from_worker(worker).unwrap())
-        //     .collect();
+
+        let output_trace: Vec<_> = (0..workers)
+            .map(|worker| output_trace.take_from_worker(worker).unwrap())
+            .collect();
 
         assert_eq!(output_delta, expected_output_delta);
-        // assert_eq!(output_trace, expected_output_trace);
+        assert_eq!(output_trace, expected_output_trace);
     }
 }
 
 #[test]
 fn test_accumulate_trace_with_balancer_shard_small_step() {
     test_accumulate_trace_with_balancer(4, false, Policy::Shard);
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_bcast_small_step() {
+    test_accumulate_trace_with_balancer(4, false, Policy::Broadcast);
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_balance_small_step() {
+    test_accumulate_trace_with_balancer(4, false, Policy::Balance);
 }
