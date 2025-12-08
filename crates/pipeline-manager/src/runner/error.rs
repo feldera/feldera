@@ -53,6 +53,7 @@ pub enum RunnerError {
         current_status: ResourcesStatus,
         desired_status: ResourcesDesiredStatus,
     },
+    AutomatonProgramBinaryMissing,
 
     // The pipeline runner implementation encounters an error
     RunnerProvisionError {
@@ -146,6 +147,9 @@ impl DetailedError for RunnerError {
             }
             RunnerError::AutomatonImpossibleDesiredStatus { .. } => {
                 Cow::from("AutomatonImpossibleDesiredStatus")
+            }
+            RunnerError::AutomatonProgramBinaryMissing => {
+                Cow::from("AutomatonProgramBinaryMissing")
             }
             RunnerError::RunnerProvisionError { .. } => Cow::from("RunnerProvisionError"),
             RunnerError::RunnerCheckError { .. } => Cow::from("RunnerCheckError"),
@@ -365,6 +369,12 @@ impl Display for RunnerError {
                     pipeline_suffix(pipeline_name)
                 )
             }
+            Self::AutomatonProgramBinaryMissing => {
+                write!(
+                    f,
+                    "Program binary missing in compiler storage; requested recompilation"
+                )
+            }
         }
     }
 }
@@ -406,6 +416,7 @@ impl ResponseError for RunnerError {
             Self::AutomatonSuspendingComputeTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonAfterInitializationBecameRunning => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonImpossibleDesiredStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonProgramBinaryMissing => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerProvisionError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerCheckError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerStopError { .. } => StatusCode::INTERNAL_SERVER_ERROR,

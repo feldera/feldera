@@ -889,6 +889,71 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
         };
 
+        // Before moving to provisioning, ensure the program binary exists in the compiler.
+        // If it does not, request recompilation by transitioning the program status to
+        // `Pending` such that compiler workers will pick it up and avoid attempting to
+        // provision a pipeline with no binary (early-start mechanism).
+        if let Some(source_checksum) = pipeline.program_binary_source_checksum.as_ref() {
+            if let Some(integrity_checksum) = pipeline.program_binary_integrity_checksum.as_ref() {
+                let binary_check_url = format!(
+                    "{}://{}:{}/binary/{}/{}/{}/{}",
+                    if self.common_config.enable_https {
+                        "https"
+                    } else {
+                        "http"
+                    },
+                    self.common_config.compiler_host,
+                    self.common_config.compiler_port,
+                    self.pipeline_id,
+                    pipeline.program_version,
+                    source_checksum,
+                    integrity_checksum,
+                );
+
+                match self
+                    .client
+                    .head(&binary_check_url)
+                    .timeout(Self::PIPELINE_STATUS_HTTP_REQUEST_TIMEOUT)
+                    .with_sentry_tracing()
+                    .send()
+                    .await
+                {
+                    Ok(resp) => {
+                        if resp.status() == StatusCode::NOT_FOUND {
+                            let tenant_id = self.tenant_id;
+                            let pipeline_id = pipeline.id;
+                            let program_version_guard = pipeline.program_version;
+                            match self
+                                .db
+                                .lock()
+                                .await
+                                .transit_program_status_to_pending(
+                                    tenant_id,
+                                    pipeline_id,
+                                    program_version_guard,
+                                )
+                                .await
+                            {
+                                Ok(()) => info!("Program binary missing: set program status to Pending for pipeline {}", pipeline_id),
+                                Err(e) => error!("Failed to set program status to Pending for pipeline {}: {e}", pipeline_id),
+                            }
+
+                            // Return Unchanged so the automaton stays in Stopped and the
+                            // compiler can recompile the program.
+                            return Ok(State::Unchanged);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Binary existence check for pipeline {} failed: {e}; will retry later",
+                            self.pipeline_id
+                        );
+                        return Ok(State::Unchanged);
+                    }
+                }
+            }
+        }
+
         Ok(State::TransitionToProvisioning {
             deployment_id,
             deployment_config,
