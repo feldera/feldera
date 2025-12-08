@@ -750,7 +750,7 @@ impl ApiServerConfig {
             }
             actix_cors::Cors::permissive()
         } else {
-            let mut cors = actix_cors::Cors::default();
+            let mut cors = actix_cors::Cors::default().block_on_origin_mismatch(true); // Retain default behavior of actix-cors 0.6.x
             if let Some(ref origins) = self.allowed_origins {
                 for origin in origins {
                     cors = cors.allowed_origin(origin);

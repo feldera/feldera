@@ -40,7 +40,7 @@ resolver = "2"
 [workspace.dependencies]
 actix = "0.13.1"
 actix-codec = "0.5.0"
-actix-cors = "0.6.4"
+actix-cors = "0.7.1"
 actix-files = "0.6.2"
 actix-http = "3.11.2"
 actix-test = "0.1.1"
@@ -81,7 +81,7 @@ chrono = { version = "0.4.38", default-features = false }
 circular-queue = "0.2.6"
 clap = { version = "4.5", features = ["derive", "env"] }
 clap_complete = "4.5"
-colored = "2.0.0"
+colored = "3.0.0"
 comfy-table = "7.1.3"
 compare = "0.1.0"
 core_affinity = "0.8.1"
@@ -95,7 +95,7 @@ dashmap = "6.1.0"
 datafusion = "47"
 dbsp = { path = "crates/dbsp", version = "0.203.0" }
 dbsp_nexmark = { path = "crates/nexmark" }
-deadpool-postgres = "0.10.5"
+deadpool-postgres = "0.14.1"
 #deltalake = "0.26.2"
 deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "77ef46e" }
 deltalake-catalog-unity = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "77ef46e" }
@@ -174,7 +174,7 @@ petgraph = "0.6.0"
 pg-client-config = "0.1.2"
 postgres = "0.19.10"
 postgres-openssl = "0.5.1"
-postgresql_embedded = { version = "0.18.6", features = ["bundled"] }
+postgresql_embedded = { version = "0.20.0", features = ["bundled"] }
 pprof = "0.13.0"
 pretty_assertions = "1.4.0"
 prettyplease = "0.2.22"
@@ -193,9 +193,9 @@ rand_xoshiro = "0.6.0"
 range-set = "0.0.11"
 rdkafka = "0.37.0"
 redis = "0.28.2"
-refinery = "0.8.10"
+refinery = "0.9.0"
 regex = "1.10.2"
-reqwest = "0.12"
+reqwest = "0.12.24"
 reqwest-websocket = "0.5.0"
 rkyv = { version = "0.7.45", default-features = false }
 rmp-serde = "1.3.0"
@@ -258,9 +258,10 @@ urlencoding = "2.1.3"
 utoipa = { version = "4.2", features = ["uuid", "chrono"] }
 utoipa-swagger-ui = { version = "7.1", features = ["vendored"] }
 uuid = { version = "1.17.0", features = ["serde"] }
+vergen-gitcl = "1.0.0"
 wiremock = "0.6"
 xxhash-rust = "0.8.6"
-zip = "0.6.2"
+zip = "6.0.0"
 zstd = "0.12.0"
 backtrace = "0.3.75"
 parking_lot = "0.12.4"

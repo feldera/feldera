@@ -31,8 +31,8 @@ impl SupportBundleZip {
     ) -> Result<SupportBundleZip, ManagerError> {
         let mut zip_buffer = Vec::with_capacity(256 * 1024);
         let mut zip = ZipWriter::new(std::io::Cursor::new(&mut zip_buffer));
-        let options =
-            zip::write::FileOptions::default().compression_method(CompressionMethod::Deflated);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Deflated);
         let mut manifest = String::with_capacity(8 * 1024);
         let combined_status = CombinedStatus::new(
             pipeline.deployment_resources_status,
@@ -111,7 +111,6 @@ impl SupportBundleZip {
                 reason: format!("Failed to create support bundle: {}", e),
             })
         })?;
-        drop(zip);
 
         Ok(SupportBundleZip { buffer: zip_buffer })
     }

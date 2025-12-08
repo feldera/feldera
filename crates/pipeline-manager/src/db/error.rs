@@ -107,8 +107,8 @@ pub enum DBError {
     },
     // General errors
     MissingMigrations {
-        expected: u32,
-        actual: u32,
+        expected: i32,
+        actual: i32,
     },
     DuplicateName, // When a database unique name constraint is violated
     EmptyName,

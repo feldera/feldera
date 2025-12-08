@@ -21,7 +21,8 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
-use zip::{write::FileOptions, ZipWriter};
+use zip::write::SimpleFileOptions;
+use zip::ZipWriter;
 
 mod cpu;
 use crate::circuit::metadata::{
@@ -233,15 +234,16 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
     pub fn as_zip(&self) -> Vec<u8> {
         let mut zip = ZipWriter::new(IoCursor::new(Vec::with_capacity(65536)));
         for (worker, graph) in self.worker_graphs.iter().enumerate() {
-            zip.start_file(format!("{worker}.dot"), FileOptions::default())
+            zip.start_file(format!("{worker}.dot"), SimpleFileOptions::default())
                 .unwrap();
             zip.write_all(graph.to_dot().as_bytes()).unwrap();
 
-            zip.start_file(format!("{worker}.txt"), FileOptions::default())
+            zip.start_file(format!("{worker}.txt"), SimpleFileOptions::default())
                 .unwrap();
             zip.write_all(graph.to_string().as_bytes()).unwrap();
         }
-        zip.start_file("Makefile", FileOptions::default()).unwrap();
+        zip.start_file("Makefile", SimpleFileOptions::default())
+            .unwrap();
         zip.write_all(Self::MAKEFILE.as_bytes()).unwrap();
         zip.finish().unwrap().into_inner()
     }
@@ -274,7 +276,7 @@ impl DbspProfile {
         let json = json.as_bytes();
 
         let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::with_capacity(65536)));
-        zip.start_file("profile.json", FileOptions::default())
+        zip.start_file("profile.json", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(json).unwrap();
         zip.finish().unwrap().into_inner()
