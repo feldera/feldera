@@ -228,7 +228,6 @@ pub(crate) trait Storage {
     ) -> Result<PipelineId, DBError>;
 
     /// Transitions program status to `Pending`.
-    #[cfg(test)]
     async fn transit_program_status_to_pending(
         &self,
         tenant_id: TenantId,
