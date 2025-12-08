@@ -5,7 +5,7 @@ use crate::{
         circuit_builder::{register_replay_stream, MetadataExchange, StreamId},
         metadata::{BatchSizeStats, OperatorLocation, OperatorMeta, INPUT_BATCHES_LABEL},
         operator_traits::Operator,
-        splitter_output_chunk_size, GlobalNodeId, OwnershipPreference, WithClock,
+        splitter_output_chunk_size, GlobalNodeId, NodeId, OwnershipPreference, WithClock,
     },
     circuit_cache_key,
     dynamic::{ClonableTrait, Data as _, Erase},
@@ -121,7 +121,7 @@ where
                         sharded_stream.dyn_accumulate_with_feedback_stream(batch_factories);
 
                     // Integral.
-                    let bounds = TraceBounds::new();
+                    let bounds = TraceBounds::unbounded();
 
                     let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
                         persistent_id
@@ -194,6 +194,7 @@ where
                         exchange,
                         balancer.clone(),
                         circuit.metadata_exchange().clone(),
+                        self.local_node_id(),
                     );
 
                     // Exchange sender.
@@ -258,6 +259,7 @@ where
     batch_factories: B::Factories,
 
     global_id: GlobalNodeId,
+    input_node_id: NodeId,
     worker_index: usize,
     location: OperatorLocation,
 
@@ -292,11 +294,13 @@ where
         exchange: Arc<Exchange<(B, bool)>>,
         balancer: Balancer,
         metadata_exchange: MetadataExchange,
+        input_node_id: NodeId,
     ) -> Self {
         debug_assert!(worker_index < Runtime::num_workers());
         Self {
             batch_factories: batch_factories.clone(),
             global_id: GlobalNodeId::root(),
+            input_node_id,
             worker_index,
             location,
             exchange,
@@ -785,7 +789,7 @@ where
             // Policy change?
             // - Clean old rebalancing state
             // - Set new rebalancing state
-            let new_policy = self.balancer.get_optimal_policy(self.global_id.local_node_id().unwrap()).unwrap();
+            let new_policy = self.balancer.get_optimal_policy(self.input_node_id).unwrap();
             self.update_policy(new_policy, delayed_accumulator, delayed_trace);
 
             // Partition `delta` based on the current policy.

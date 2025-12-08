@@ -5247,6 +5247,10 @@ where
                 )
                 .await;
 
+            drop(r1);
+            drop(r2);
+            drop(r3);
+
             StreamValue::consume_token(self.input_stream1.val());
             StreamValue::consume_token(self.input_stream2.val());
             StreamValue::consume_token(self.input_stream3.val());
