@@ -1568,7 +1568,7 @@ async fn lir(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError>
 async fn checkpoint_sync(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     let controller = state.controller()?;
 
-    let Some(last_checkpoint) = state.checkpoint_state.lock().unwrap().last_checkpoint else {
+    let Some(last_checkpoint) = controller.last_checkpoint().id else {
         return Ok(HttpResponse::BadRequest().json(ErrorResponse {
                     message: "no checkpoints found; make a POST request to `/checkpoint` to make a new checkpoint".to_string(),
                     error_code: "400".into(),

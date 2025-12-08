@@ -511,6 +511,10 @@ impl Controller {
         })
     }
 
+    pub(crate) fn last_checkpoint(&self) -> LastCheckpoint {
+        self.inner.last_checkpoint()
+    }
+
     pub fn lir(&self) -> &LirCircuit {
         &self.inner.lir
     }
@@ -1457,6 +1461,21 @@ impl SyncCheckpointRequest {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct LastCheckpoint {
+    pub(crate) timestamp: Instant,
+    pub(crate) id: Option<uuid::Uuid>,
+}
+
+impl Default for LastCheckpoint {
+    fn default() -> Self {
+        Self {
+            timestamp: Instant::now(),
+            id: None,
+        }
+    }
+}
+
 struct CircuitThread {
     controller: Arc<ControllerInner>,
     circuit: DBSPHandle,
@@ -1465,7 +1484,6 @@ struct CircuitThread {
     _statistics_thread: StatisticsThread,
     ft: Option<FtState>,
     parker: Parker,
-    last_checkpoint: Instant,
 
     checkpoint_delay_warning: Option<LongOperationWarning>,
     checkpoint_requests: Vec<CheckpointRequest>,
@@ -1758,7 +1776,6 @@ impl CircuitThread {
             backpressure_thread,
             storage,
             parker,
-            last_checkpoint: Instant::now(),
             checkpoint_delay_warning: None,
             checkpoint_requests: Vec::new(),
             running_checkpoint: None,
@@ -1843,7 +1860,7 @@ impl CircuitThread {
             output_backpressure_warning = None;
 
             match trigger.trigger(
-                self.last_checkpoint,
+                self.last_checkpoint().timestamp,
                 self.replaying(),
                 self.circuit.bootstrap_in_progress(),
                 self.checkpoint_requested(),
@@ -2044,6 +2061,21 @@ impl CircuitThread {
         !self.checkpoint_requests.is_empty()
     }
 
+    fn last_checkpoint(&self) -> LastCheckpoint {
+        self.controller.last_checkpoint()
+    }
+
+    fn update_last_checkpoint(&self, result: &Result<Checkpoint, ControllerError>) {
+        *self.controller.last_checkpoint.lock().unwrap() = LastCheckpoint {
+            timestamp: Instant::now(),
+            id: result
+                .as_ref()
+                .ok()
+                .and_then(|c| c.circuit.as_ref())
+                .map(|c| c.uuid),
+        };
+    }
+
     fn checkpoint(&mut self) {
         let mut running_checkpoint = self
             .running_checkpoint
@@ -2081,7 +2113,7 @@ impl CircuitThread {
         // We always update `last_checkpoint`, even if there was an error,
         // because we do not want to spend all our time checkpointing if there's
         // a problem and a short checkpoint interval.
-        self.last_checkpoint = Instant::now();
+        self.update_last_checkpoint(&result);
 
         let result = result.map_err(Arc::new);
         for request in self.checkpoint_requests.drain(..) {
@@ -3975,6 +4007,7 @@ impl TransactionInfo {
 /// controller threads.
 pub struct ControllerInner {
     pub status: Arc<ControllerStatus>,
+    last_checkpoint: Arc<Mutex<LastCheckpoint>>,
     secrets_dir: PathBuf,
     num_api_connections: AtomicU64,
     command_sender: Sender<Command>,
@@ -4044,6 +4077,7 @@ impl ControllerInner {
             num_api_connections: AtomicU64::new(0),
             command_sender,
             catalog: Arc::new(catalog),
+            last_checkpoint: Default::default(),
             lir,
             trace_snapshot: Arc::new(TokioMutex::new(BTreeMap::new())),
             next_input_id: Atomic::new(0),
@@ -4131,6 +4165,10 @@ impl ControllerInner {
             command_receiver,
             controller,
         ))
+    }
+
+    fn last_checkpoint(&self) -> LastCheckpoint {
+        self.last_checkpoint.lock().unwrap().clone()
     }
 
     fn get_transaction_number(&self) -> u64 {
