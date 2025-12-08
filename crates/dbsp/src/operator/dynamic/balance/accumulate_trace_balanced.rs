@@ -811,6 +811,8 @@ where
                 self.update_exchange_metadata();
                 yield (true, None);
                 return;
+            } else {
+                yield (false, None);
             }
 
             // We have no more inputs to process, but there is rebalancing work to be done.
