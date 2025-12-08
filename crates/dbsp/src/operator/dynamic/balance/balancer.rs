@@ -288,7 +288,7 @@ impl BalancerInner {
 
         for i in 0..num_clusters {
             self.clusters[i].solution = Some(self.solve_cluster(i)?);
-            println!("cluster {i}; solution: {:?}", self.clusters[i].solution);
+            // println!("cluster {i}; solution: {:?}", self.clusters[i].solution);
         }
 
         Ok(())

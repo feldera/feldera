@@ -2,7 +2,7 @@ use crate::{
     circuit::{CircuitConfig, GlobalNodeId},
     dynamic::Data,
     operator::dynamic::balance::{BalancerHint, Policy},
-    typed_batch::{IndexedZSetReader, Spine, SpineSnapshot},
+    typed_batch::{IndexedZSetReader, SpineSnapshot},
     utils::Tup2,
     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime,
 };
@@ -75,11 +75,16 @@ fn test_accumulate_trace_with_balancer(workers: usize, transaction: bool, policy
         .unwrap();
 
     let mut all_tuples = vec![];
-    for step in 0..10 {
+
+    if transaction {
+        circuit.start_transaction().unwrap();
+    }
+
+    for step in 0..20 {
         println!("step: {}", step);
 
         let mut tuples = vec![];
-        for key in 0..10 {
+        for key in 0..20 {
             input_handle.push(key, (step, 1));
             tuples.push(Tup2(Tup2(key, step), 1));
             all_tuples.push(Tup2(Tup2(key, step), 1));
@@ -91,8 +96,28 @@ fn test_accumulate_trace_with_balancer(workers: usize, transaction: bool, policy
         let input_trace = OrdIndexedZSet::from_tuples((), all_tuples.clone().into_iter().collect());
         let expected_output_trace = balance_batch(&input_trace, policy, workers);
 
-        circuit.transaction().unwrap();
+        if transaction {
+            circuit.step().unwrap();
+        } else {
+            circuit.transaction().unwrap();
+        }
 
+        if !transaction {
+            let output_delta: Vec<_> = (0..workers)
+                .map(|worker| output_delta.take_from_worker(worker).unwrap().consolidate())
+                .collect();
+
+            let output_trace: Vec<_> = (0..workers)
+                .map(|worker| output_trace.take_from_worker(worker).unwrap())
+                .collect();
+
+            assert_eq!(output_delta, expected_output_delta);
+            assert_eq!(output_trace, expected_output_trace);
+        }
+    }
+
+    if transaction {
+        circuit.commit_transaction().unwrap();
         let output_delta: Vec<_> = (0..workers)
             .map(|worker| output_delta.take_from_worker(worker).unwrap().consolidate())
             .collect();
@@ -101,8 +126,11 @@ fn test_accumulate_trace_with_balancer(workers: usize, transaction: bool, policy
             .map(|worker| output_trace.take_from_worker(worker).unwrap())
             .collect();
 
-        assert_eq!(output_delta, expected_output_delta);
-        assert_eq!(output_trace, expected_output_trace);
+        let input = OrdIndexedZSet::from_tuples((), all_tuples.clone().into_iter().collect());
+        let expected_output = balance_batch(&input, policy, workers);
+
+        assert_eq!(output_delta, expected_output);
+        assert_eq!(output_trace, expected_output);
     }
 }
 
@@ -119,4 +147,19 @@ fn test_accumulate_trace_with_balancer_bcast_small_step() {
 #[test]
 fn test_accumulate_trace_with_balancer_balance_small_step() {
     test_accumulate_trace_with_balancer(4, false, Policy::Balance);
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_shard_big_step() {
+    test_accumulate_trace_with_balancer(4, true, Policy::Shard);
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_bcast_big_step() {
+    test_accumulate_trace_with_balancer(4, true, Policy::Broadcast);
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_balance_big_step() {
+    test_accumulate_trace_with_balancer(4, true, Policy::Balance);
 }
