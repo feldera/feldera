@@ -121,7 +121,7 @@ runtime-version = []
 [build-dependencies]
 change-detection = { workspace = true }
 static-files = { workspace = true }
-vergen-gitcl = { version = "1.0.0", features = ["build", "cargo", "rustc", "si"] }
+vergen-gitcl = { workspace = true, features = ["build", "cargo", "rustc", "si"] }
 
 [dev-dependencies]
 proptest = { workspace = true }

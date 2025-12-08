@@ -1442,7 +1442,7 @@ impl StoragePostgres {
             .get_migrations()
             .iter()
             .map(|m| m.version())
-            .fold(u32::MIN, |a, b| a.max(b));
+            .fold(0i32, |a, b| a.max(b));
         let migration = runner.get_last_applied_migration_async(&mut **client).await;
         if let Ok(Some(m)) = migration {
             let v = m.version();

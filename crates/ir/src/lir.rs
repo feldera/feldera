@@ -1,9 +1,8 @@
-use std::io::Write;
-
-use serde::{Deserialize, Serialize};
-use zip::{write::FileOptions, ZipWriter};
-
 use crate::MirNodeId;
+use serde::{Deserialize, Serialize};
+use std::io::Write;
+use zip::write::SimpleFileOptions;
+use zip::ZipWriter;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -63,7 +62,8 @@ impl LirCircuit {
         let json = json.as_bytes();
 
         let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::with_capacity(65536)));
-        zip.start_file("ir.json", FileOptions::default()).unwrap();
+        zip.start_file("ir.json", SimpleFileOptions::default())
+            .unwrap();
         zip.write_all(json).unwrap();
         zip.finish().unwrap().into_inner()
     }
