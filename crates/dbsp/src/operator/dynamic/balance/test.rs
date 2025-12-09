@@ -2,9 +2,9 @@ use crate::{
     circuit::{CircuitConfig, GlobalNodeId},
     dynamic::Data,
     operator::dynamic::balance::{BalancerHint, Policy},
-    typed_batch::{IndexedZSetReader, SpineSnapshot},
+    typed_batch::{IndexedZSetReader, SpineSnapshot, TypedBatch},
     utils::Tup2,
-    IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime,
+    IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZWeight,
 };
 use anyhow::Result as AnyResult;
 
@@ -61,8 +61,11 @@ fn accumulate_trace_with_balancer_test_circuit(
     ))
 }
 
-/// Test Policy::Shard
-fn test_accumulate_trace_with_balancer(workers: usize, transaction: bool, policy: Policy) {
+fn test_accumulate_trace_with_balancer(
+    workers: usize,
+    transaction: bool,
+    batches: Vec<(Policy, Vec<Tup2<u64, Tup2<u64, ZWeight>>>)>,
+) {
     let (mut circuit, (input_handle, input_node_id, output_delta, output_trace)) =
         Runtime::init_circuit(
             CircuitConfig::from(workers).with_splitter_chunk_size_records(2),
@@ -70,31 +73,61 @@ fn test_accumulate_trace_with_balancer(workers: usize, transaction: bool, policy
         )
         .unwrap();
 
-    circuit
-        .set_balancer_hint(&input_node_id, BalancerHint::Policy(Some(policy)))
-        .unwrap();
-
-    let mut all_tuples = vec![];
+    let mut all_tuples: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
 
     if transaction {
         circuit.start_transaction().unwrap();
     }
 
-    for step in 0..20 {
+    let mut previous_policy = Policy::Shard;
+
+    for (step, (policy, batch)) in batches.iter().enumerate() {
         println!("step: {}", step);
+        let new_policy = *policy;
+
+        circuit
+            .set_balancer_hint(&input_node_id, BalancerHint::Policy(Some(*policy)))
+            .unwrap();
+
+        let retractions = balance_batch(
+            &OrdIndexedZSet::from_tuples(
+                (),
+                all_tuples
+                    .iter()
+                    .map(|Tup2(Tup2(key, val), w)| Tup2(Tup2(*key, *val), -*w))
+                    .collect::<Vec<_>>(),
+            ),
+            previous_policy,
+            workers,
+        );
+
+        let insertions = balance_batch(
+            &OrdIndexedZSet::from_tuples((), all_tuples.clone()),
+            new_policy,
+            workers,
+        );
 
         let mut tuples = vec![];
-        for key in 0..20 {
-            input_handle.push(key, (step, 1));
-            tuples.push(Tup2(Tup2(key, step), 1));
-            all_tuples.push(Tup2(Tup2(key, step), 1));
+        for Tup2(key, Tup2(val, w)) in batch.iter() {
+            input_handle.push(*key, (*val, *w));
+            tuples.push(Tup2(Tup2(*key, *val), *w));
+            all_tuples.push(Tup2(Tup2(*key, *val), *w));
         }
 
         let input_delta = OrdIndexedZSet::from_tuples((), tuples);
-        let expected_output_delta = balance_batch(&input_delta, policy, workers);
+        let input_deltas = balance_batch(&input_delta, *policy, workers);
+
+        let expected_output_delta = retractions
+            .into_iter()
+            .zip(insertions.into_iter())
+            .zip(input_deltas.into_iter())
+            .map(|((retraction, insertion), input_delta)| {
+                TypedBatch::merge_batches([retraction, insertion, input_delta])
+            })
+            .collect::<Vec<_>>();
 
         let input_trace = OrdIndexedZSet::from_tuples((), all_tuples.clone().into_iter().collect());
-        let expected_output_trace = balance_batch(&input_trace, policy, workers);
+        let expected_output_trace = balance_batch(&input_trace, *policy, workers);
 
         if transaction {
             circuit.step().unwrap();
@@ -114,6 +147,8 @@ fn test_accumulate_trace_with_balancer(workers: usize, transaction: bool, policy
             assert_eq!(output_delta, expected_output_delta);
             assert_eq!(output_trace, expected_output_trace);
         }
+
+        previous_policy = new_policy;
     }
 
     if transaction {
@@ -127,39 +162,73 @@ fn test_accumulate_trace_with_balancer(workers: usize, transaction: bool, policy
             .collect();
 
         let input = OrdIndexedZSet::from_tuples((), all_tuples.clone().into_iter().collect());
-        let expected_output = balance_batch(&input, policy, workers);
+        let expected_output = balance_batch(&input, batches.last().unwrap().0, workers);
 
         assert_eq!(output_delta, expected_output);
         assert_eq!(output_trace, expected_output);
     }
 }
 
+fn simple_workload(policy: Policy) -> Vec<(Policy, Vec<Tup2<u64, Tup2<u64, ZWeight>>>)> {
+    let mut batches = vec![];
+    for step in 0..20 {
+        let mut tuples = vec![];
+        for key in 0..20 {
+            tuples.push(Tup2(key, Tup2(step, 1)));
+        }
+        batches.push((policy, tuples));
+    }
+    batches
+}
+
+fn round_robin_workload() -> Vec<(Policy, Vec<Tup2<u64, Tup2<u64, ZWeight>>>)> {
+    let mut batches = vec![];
+    for step in 0..20 {
+        let mut tuples = vec![];
+        for key in 0..20 {
+            tuples.push(Tup2(key, Tup2(step, 1)));
+        }
+        batches.push((Policy::try_from((step % 3) as u8).unwrap(), tuples));
+    }
+    batches
+}
+
 #[test]
 fn test_accumulate_trace_with_balancer_shard_small_step() {
-    test_accumulate_trace_with_balancer(4, false, Policy::Shard);
+    test_accumulate_trace_with_balancer(4, false, simple_workload(Policy::Shard));
 }
 
 #[test]
 fn test_accumulate_trace_with_balancer_bcast_small_step() {
-    test_accumulate_trace_with_balancer(4, false, Policy::Broadcast);
+    test_accumulate_trace_with_balancer(4, false, simple_workload(Policy::Broadcast));
 }
 
 #[test]
 fn test_accumulate_trace_with_balancer_balance_small_step() {
-    test_accumulate_trace_with_balancer(4, false, Policy::Balance);
+    test_accumulate_trace_with_balancer(4, false, simple_workload(Policy::Balance));
 }
 
 #[test]
 fn test_accumulate_trace_with_balancer_shard_big_step() {
-    test_accumulate_trace_with_balancer(4, true, Policy::Shard);
+    test_accumulate_trace_with_balancer(4, true, simple_workload(Policy::Shard));
 }
 
 #[test]
 fn test_accumulate_trace_with_balancer_bcast_big_step() {
-    test_accumulate_trace_with_balancer(4, true, Policy::Broadcast);
+    test_accumulate_trace_with_balancer(4, true, simple_workload(Policy::Broadcast));
 }
 
 #[test]
 fn test_accumulate_trace_with_balancer_balance_big_step() {
-    test_accumulate_trace_with_balancer(4, true, Policy::Balance);
+    test_accumulate_trace_with_balancer(4, true, simple_workload(Policy::Balance));
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_round_robin_small_step() {
+    test_accumulate_trace_with_balancer(4, false, round_robin_workload());
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_round_robin_big_step() {
+    test_accumulate_trace_with_balancer(4, true, round_robin_workload());
 }

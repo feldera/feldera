@@ -708,6 +708,7 @@ where
 
     fn start_transaction(&mut self) {
         *self.flush_state.borrow_mut() = FlushState::TransactionStarted;
+        self.update_exchange_metadata();
     }
 
     fn flush(&mut self) {
@@ -828,32 +829,28 @@ where
             while accumulator_cursor.key_valid() {
                 self.process_retractions(&mut accumulator_cursor, &mut builders, chunk_size);
 
-                if accumulator_cursor.key_valid() {
-                    let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
-                    assert!(self.exchange.try_send_all(
-                        self.worker_index,
-                        &mut batches.into_iter(),
-                    ));
-                    builders = self.create_builders(chunk_size);
-                    self.update_exchange_metadata();
-                    yield (false, None);
-                }
+                let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                assert!(self.exchange.try_send_all(
+                    self.worker_index,
+                    &mut batches.into_iter(),
+                ));
+                builders = self.create_builders(chunk_size);
+                self.update_exchange_metadata();
+                yield (false, None);
             }
 
             // Integral retractions
             while integral_cursor.key_valid() {
                 self.process_retractions(&mut integral_cursor, &mut builders, chunk_size);
 
-                if integral_cursor.key_valid() {
-                    let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
-                    assert!(self.exchange.try_send_all(
-                        self.worker_index,
-                        &mut batches.into_iter(),
-                    ));
-                    builders = self.create_builders(chunk_size);
-                    self.update_exchange_metadata();
-                    yield (false, None);
-                }
+                let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                assert!(self.exchange.try_send_all(
+                    self.worker_index,
+                    &mut batches.into_iter(),
+                ));
+                builders = self.create_builders(chunk_size);
+                self.update_exchange_metadata();
+                yield (false, None);
             }
 
             // Start new cursors.
@@ -864,44 +861,47 @@ where
             while accumulator_cursor.key_valid() {
                 self.process_insertions(&mut accumulator_cursor, &mut builders, chunk_size);
 
-                if accumulator_cursor.key_valid() {
-                    let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
-                    assert!(self.exchange.try_send_all(
-                        self.worker_index,
-                        &mut batches.into_iter(),
-                    ));
-                    builders = self.create_builders(chunk_size);
-                    self.update_exchange_metadata();
-                    yield (false, None);
-                }
+                let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                assert!(self.exchange.try_send_all(
+                    self.worker_index,
+                    &mut batches.into_iter(),
+                ));
+                builders = self.create_builders(chunk_size);
+                self.update_exchange_metadata();
+                yield (false, None);
             }
 
             // Repartition integral
             while integral_cursor.key_valid() {
                 self.process_insertions(&mut integral_cursor, &mut builders, chunk_size);
 
-                if integral_cursor.key_valid() {
-                    let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
-                    assert!(self.exchange.try_send_all(
-                        self.worker_index,
-                        &mut batches.into_iter(),
-                    ));
-                    builders = self.create_builders(chunk_size);
-                    self.update_exchange_metadata();
+                let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                assert!(self.exchange.try_send_all(
+                    self.worker_index,
+                    &mut batches.into_iter(),
+                ));
+                builders = self.create_builders(chunk_size);
+                self.update_exchange_metadata();
+
+                if integral_cursor.key_valid(){
                     yield (false, None);
+                } else {
+                    *self.flush_state.borrow_mut() = FlushState::FlushCompleted;
+                    self.update_exchange_metadata();
+                    yield (true, None);
+                    return;
                 }
             }
 
-            // Send final output batches.
-            let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), true)).collect();
-
+            let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
             assert!(self.exchange.try_send_all(
                 self.worker_index,
                 &mut batches.into_iter(),
             ));
+
+            *self.flush_state.borrow_mut() = FlushState::FlushCompleted;
             self.update_exchange_metadata();
             yield (true, None);
-            *self.flush_state.borrow_mut() = FlushState::FlushCompleted;
         }
     }
 

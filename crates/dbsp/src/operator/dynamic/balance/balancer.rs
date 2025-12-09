@@ -184,7 +184,7 @@ impl RebalancingExchangeSenderExchangeMetadata {
         if fixed_policy.is_some() && fixed_policy != hints.policy_hint {
             return Err(BalancerError::InvalidPolicyHint(
                 hints.policy_hint.unwrap(),
-                format!("the current policy {fixed_policy:?} cannot no longer be changed during the current transaction"),
+                format!("the current policy {fixed_policy:?} can no longer be changed during the current transaction"),
             ));
         }
 
