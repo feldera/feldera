@@ -79,7 +79,7 @@ where
                     let output = self.circuit().region("shard", || {
                         let (sender, receiver) = new_exchange_operators(
                             Some(location),
-                            move || Vec::new(),
+                            || Vec::new(),
                             move |batch: IB, batches: &mut Vec<OB>| {
                                 shard_batch(
                                     batch,
