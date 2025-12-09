@@ -1,6 +1,6 @@
 // Profiler lifecycle management for the standalone profiler app
 
-import { CircuitProfile, Visualizer, type VisualizerConfig } from 'profiler-lib';
+import { CircuitProfile, Visualizer, type VisualizerConfig, type NodeAndMetric } from 'profiler-lib';
 
 /** Utility class for managing profiler lifecycle and rendering */
 export class ProfileLoader {
@@ -21,7 +21,6 @@ export class ProfileLoader {
             // Dispose old profiler and create new one (ensures clean state)
             this.visualizer.dispose();
             this.visualizer = new Visualizer(this.config);
-
             this.visualizer.render(circuit);
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
@@ -57,5 +56,10 @@ export class ProfileLoader {
     /** Clean up resources */
     dispose(): void {
         this.visualizer.dispose();
+    }
+
+    /** Return the top nodes for a specified metric */
+    topNodes(metric: string): Array<NodeAndMetric> {
+        return this.visualizer.topNodes(metric);
     }
 }

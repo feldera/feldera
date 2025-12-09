@@ -2,14 +2,14 @@
 export class Option<T> {
     private constructor(private readonly value: T | null) { }
 
-    static some<T>(value: T): Option<T> {
+    public static some<T>(value: T): Option<T> {
         if (value === null || value === undefined) {
             throw new Error('Cannot create Option.some with null or undefined');
         }
         return new Option(value);
     }
 
-    static none<T>(): Option<T> {
+    public static none<T>(): Option<T> {
         return new Option<T>(null);
     }
 
@@ -54,6 +54,17 @@ export class Option<T> {
     toString(): string {
         return this.isSome() ? `Some(${this.value})` : 'None';
     }
+}
+
+/** Convert a number between 0 and 100 into a shade of red. */
+export function shadeOfRed(percent: number): string {
+    if (percent < 0) {
+        percent = 0;
+    }
+    if (percent > 100) {
+        percent = 100;
+    }
+    return `rgb(255, ${Math.round((255 * (100 - percent)) / 100)}, ${Math.round((255 * (100 - percent)) / 100)})`;
 }
 
 /** Make sure that the supplied value is a number. */
