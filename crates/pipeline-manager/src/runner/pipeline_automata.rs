@@ -13,7 +13,6 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
     validate_deployment_config, validate_program_info, validate_runtime_config,
 };
-use crate::db::types::version::Version as DbVersion;
 use crate::error::source_error;
 use crate::is_supported_runtime;
 use crate::runner::error::RunnerError;
@@ -731,8 +730,21 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     );
                 };
 
-                self.perform_checks_and_transit_towards_provisioned(pipeline)
-                    .await
+                // Before moving to provisioning, ensure the program binary exists in the compiler.
+                // If it does not, request recompilation by transitioning the program status to
+                // `Pending` such that compiler workers will pick it up and avoid attempting to
+                // provision a pipeline with no binary.
+                if !self
+                    .check_compiler_binary_and_request_recompile_if_missing(pipeline)
+                    .await?
+                {
+                    return Ok(State::Unchanged);
+                };
+
+                let state = self
+                    .perform_checks_and_transit_towards_provisioned(pipeline)
+                    .await;
+                Ok(state)
             }
             ProgramStatus::SqlError | ProgramStatus::RustError | ProgramStatus::SystemError => {
                 Ok(State::TransitionToStopping {
@@ -757,7 +769,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     async fn perform_checks_and_transit_towards_provisioned(
         &mut self,
         pipeline: &ExtendedPipelineDescr,
-    ) -> Result<State, DBError> {
+    ) -> State {
         assert_eq!(pipeline.program_status, ProgramStatus::Success);
         assert!(is_supported_runtime(
             &self.platform_version,
@@ -768,7 +780,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let runtime_config = match validate_runtime_config(&pipeline.runtime_config, true) {
             Ok(runtime_config) => runtime_config,
             Err(e) => {
-                return Ok(State::TransitionToStopping {
+                return State::TransitionToStopping {
                     error: Some(ErrorResponse::from_error_nolog(
                         &RunnerError::AutomatonInvalidRuntimeConfig {
                             value: pipeline.runtime_config.clone(),
@@ -776,24 +788,24 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         },
                     )),
                     suspend_info: None,
-                });
+                };
             }
         };
 
         // Input and output connectors from required program_info
         let program_info = match &pipeline.program_info {
             None => {
-                return Ok(State::TransitionToStopping {
+                return State::TransitionToStopping {
                     error: Some(ErrorResponse::from_error_nolog(
                         &RunnerError::AutomatonMissingProgramInfo,
                     )),
                     suspend_info: None,
-                });
+                };
             }
             Some(program_info) => match validate_program_info(program_info) {
                 Ok(program_info) => program_info,
                 Err(e) => {
-                    return Ok(State::TransitionToStopping {
+                    return State::TransitionToStopping {
                         error: Some(ErrorResponse::from_error_nolog(
                             &RunnerError::AutomatonInvalidProgramInfo {
                                 value: program_info.clone(),
@@ -801,7 +813,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             },
                         )),
                         suspend_info: None,
-                    });
+                    };
                 }
             },
         };
@@ -825,52 +837,50 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let deployment_config = match serde_json::to_value(&deployment_config) {
             Ok(deployment_config) => deployment_config,
             Err(error) => {
-                return Ok(State::TransitionToStopping {
+                return State::TransitionToStopping {
                     error: Some(ErrorResponse::from_error_nolog(
                         &RunnerError::AutomatonFailedToSerializeDeploymentConfig {
                             error: error.to_string(),
                         },
                     )),
                     suspend_info: None,
-                });
+                };
             }
         };
 
-        // Before moving to provisioning, ensure the program binary exists in the compiler.
-        // If it does not, request recompilation by transitioning the program status to
-        // `Pending` such that compiler workers will pick it up and avoid attempting to
-        // provision a pipeline with no binary.
-        if let Some(source_checksum) = pipeline.program_binary_source_checksum.as_ref() {
-            if let Some(integrity_checksum) = pipeline.program_binary_integrity_checksum.as_ref() {
-                if !self
-                    .check_compiler_binary_and_request_recompile_if_missing(
-                        source_checksum,
-                        integrity_checksum,
-                        pipeline.program_version,
-                    )
-                    .await?
-                {
-                    return Ok(State::Unchanged);
-                }
-            }
-        }
-
-        Ok(State::TransitionToProvisioning {
+        State::TransitionToProvisioning {
             deployment_id,
             deployment_config,
-        })
+        }
     }
 
     /// Check compiler for binary presence and request recompilation if missing.
     ///
-    /// Returns `true` when binary exists; `false` when
-    /// binary is missing or the check failed transiently (so caller should remain Stopped).
+    /// Returns `true` when binary exists;
+    /// `false` when binary is missing or the check failed transiently.
     async fn check_compiler_binary_and_request_recompile_if_missing(
         &mut self,
-        source_checksum: &str,
-        integrity_checksum: &str,
-        program_version: DbVersion,
+        pipeline: &ExtendedPipelineDescr,
     ) -> Result<bool, DBError> {
+        let program_version = pipeline.program_version;
+
+        // Cannot check for binary existence if source/integrity checksum is missing.
+        // Return Ok(false) to indicate binary is not present or cannot be verified.
+        let Some(source_checksum) = pipeline.program_binary_source_checksum.as_ref() else {
+            info!(
+                "Failed to perform binary existence check for pipeline {}: source checksum is missing. This may indicate that the program has not been compiled yet, will retry later.",
+                self.pipeline_id
+            );
+            return Ok(false);
+        };
+        let Some(integrity_checksum) = pipeline.program_binary_integrity_checksum.as_ref() else {
+            info!(
+                "Failed to perform binary existence check for pipeline {}: integrity checksum is missing. This may indicate that the program has not been compiled yet, will retry later.",
+                self.pipeline_id,
+            );
+            return Ok(false);
+        };
+
         let binary_check_url = format!(
             "{}://{}:{}/binary/{}/{}/{}/{}",
             if self.common_config.enable_https {
@@ -895,34 +905,52 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             .await
         {
             Ok(resp) => {
-                if resp.status() == StatusCode::NOT_FOUND {
-                    // Binary missing: set program status to Pending so compiler workers will recompile.
-                    match self
-                        .db
-                        .lock()
-                        .await
-                        .transit_program_status_to_pending(
-                            self.tenant_id,
-                            self.pipeline_id,
-                            program_version,
-                        )
-                        .await
-                    {
-                        Ok(()) => info!(
+                match resp.status() {
+                    StatusCode::OK => {
+                        // Binary exists
+                        Ok(true)
+                    }
+                    StatusCode::NOT_FOUND => {
+                        // Binary missing: set program status to Pending so compiler workers will recompile.
+                        // NOTE: Missing binaries with older platform versions would be recompiled with the
+                        // current platform version.
+                        // The runner only marks the program status as Pending; it does NOT modify the
+                        // pipeline's recorded platform version.
+                        // Compiler workers, when they see Pending (or CompilingSql) pipelines from
+                        // older platform versions, will automatically bump the pipeline's platform
+                        // version to the current platform and recompile.
+                        match self
+                            .db
+                            .lock()
+                            .await
+                            .transit_program_status_to_pending(
+                                self.tenant_id,
+                                self.pipeline_id,
+                                program_version,
+                            )
+                            .await
+                        {
+                            Ok(()) => info!(
                             "Program binary missing: set program status to Pending for pipeline {}",
                             self.pipeline_id
                         ),
-                        Err(e) => error!(
-                            "Failed to set program status to Pending for pipeline {}: {e}",
-                            self.pipeline_id
-                        ),
+                            Err(e) => error!(
+                                "Failed to set program status to Pending for pipeline {}: {e}",
+                                self.pipeline_id
+                            ),
+                        }
+
+                        Ok(false)
                     }
-
-                    return Ok(false);
+                    status => {
+                        // Other unexpected status code
+                        warn!(
+                            "Binary existence check for pipeline {} returned unexpected status code {}: will retry later",
+                            self.pipeline_id, status
+                        );
+                        Ok(false)
+                    }
                 }
-
-                // Binary exists or other non-404 status: continue with provisioning.
-                Ok(true)
             }
             Err(e) => {
                 warn!(

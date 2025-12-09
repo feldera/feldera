@@ -105,10 +105,7 @@ async fn check_binary(
     if binary_file_path.exists() {
         Ok(HttpResponse::Ok().finish())
     } else {
-        Ok(HttpResponse::NotFound().body(format!(
-            "Binary not found for pipeline id '{}' ( version: '{}' )",
-            pipeline_id, program_version
-        )))
+        Ok(HttpResponse::NotFound().finish())
     }
 }
 
