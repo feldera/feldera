@@ -217,7 +217,7 @@ fn parse_decimal(s: &str, scale: i32) -> Result<(i128, i32), ParseDecimalError> 
                             }
                             IntErrorKind::NegOverflow => Ok((0, 0)),
                             _ => Err(ParseDecimalError::SyntaxError),
-                        }
+                        };
                     }
                 };
                 exponent = match exponent.checked_add(e) {
@@ -350,11 +350,7 @@ const fn div_floor(x: i128, y: i128) -> i128 {
     // adding this mask (which corresponds to the signed value -1), we
     // get our correction.
     let correction = (x ^ y) >> (i128::BITS - 1);
-    if r != 0 {
-        d + correction
-    } else {
-        d
-    }
+    if r != 0 { d + correction } else { d }
 }
 
 /// Returns `ceil(x / y)`.  This is copied out of `i128::div_ceil` in the
@@ -366,11 +362,7 @@ const fn div_ceil(x: i128, y: i128) -> i128 {
     // When remainder is non-zero we have a.div_ceil(b) == 1 + a.div_floor(b),
     // so we can re-use the algorithm from div_floor, just adding 1.
     let correction = 1 + ((x ^ y) >> (i128::BITS - 1));
-    if r != 0 {
-        d + correction
-    } else {
-        d
-    }
+    if r != 0 { d + correction } else { d }
 }
 
 /// Returns `value * 10**exponent`, rounding to even if `exponent` is negative,
