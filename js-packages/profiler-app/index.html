@@ -6,7 +6,7 @@
     <link rel="icon" href="data:,">
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Feldera Profiler</title>
+    <title>Feldera Profile Visualizer</title>
     <script type="module" src="src/index.ts"></script>
     <style>
         * {
@@ -314,13 +314,17 @@
     <!-- Header with all controls -->
     <header id="header">
         <div id="header-title">
-            <span>Feldera Profiler</span>
+            <span>Feldera Profile Visualizer</span>
         </div>
 
         <div id="header-controls">
+            <div class="control-group">
+                <label id="toplevel-metrics">Toplevel metrics</label>
+            </div>
+
             <!-- Metric Selector -->
             <div class="control-group">
-                <label for="metric-selector">Metric:</label>
+                <button for="metric-selector" id="top-nodes">Metric:</button>
                 <select id="metric-selector"></select>
             </div>
 

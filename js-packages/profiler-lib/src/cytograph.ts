@@ -168,7 +168,7 @@ export class Cytograph {
     // Maps edges ids in the underlying graph to edges ids in the drawn graph
     readonly edgeMap: Map<string, string>;
 
-    constructor(readonly graph: Graph<NodeId>) {
+    constructor(readonly graph: Graph<NodeId>, readonly rootNodeId: NodeId) {
         this.nodes = [];
         this.edges = [];
         this.edgeMap = new Map();
@@ -242,7 +242,7 @@ export class Cytograph {
     // Create a Cytograph from a CircuitProfile filtered by the specified selection.
     static fromProfile(profile: CircuitProfile, selection: CircuitSelection): Cytograph {
         let g = this.createUnderlyingGraph(profile);
-        let result = new Cytograph(g);
+        let result = new Cytograph(g, profile.rootNodeId);
         let inserted = new OMap<NodeId, GraphNode>();
         let sources = profile.sources.unwrapOr(new Sources([]));
 
@@ -278,21 +278,20 @@ export class Cytograph {
                 visibleParents.add(p);
             }
             let src = sources.toString(node.sourcePositions);
-            node.getMeasurements("operation");
-
             let operation = node.operation;
             if (operation === CircuitProfile.Z1_TRACE_OUTPUT)
                 // These nodes were modified in the profile.fixZ1Nodes() function.
                 operation = CircuitProfile.Z1_TRACE;
-            let visibleNode = new GraphNode(nodeId, node.persistentId, operation, hasChildren, expand && hasChildren, parent, src);
-            result.addNode(visibleNode);
-            inserted.set(nodeId, visibleNode);
+            let graphNode = new GraphNode(nodeId, node.persistentId, operation, hasChildren, expand && hasChildren, parent, src);
+            result.addNode(graphNode);
+            inserted.set(nodeId, graphNode);
         }
 
         for (const nodeId of profile.complexNodes.keys()) {
             let complex = profile.complexNodes.get(nodeId).unwrap();
             let parent = profile.parents.get(nodeId);
-            if (!profile.isTop(nodeId) && visibleParents.has(nodeId)) {
+            if (profile.isTop(nodeId) || // always create a node for the toplevel graph
+                visibleParents.has(nodeId)) {
                 let positions = complex.sourcePositions;
                 let src = sources.toString(positions);
                 let node = new GraphNode(nodeId, complex.persistentId, "region", true, true, parent, src);
@@ -392,6 +391,13 @@ export class CytographRendering {
             }
         },
         {
+            // how to display "invisible" node, only used for the root node
+            selector: 'node[invisible]',
+            style: {
+                'display': 'none'
+            }
+        },
+        {
             // How to display "hidden" nodes; currently unused
             selector: 'node[hidden]',
             style: {
@@ -465,6 +471,7 @@ export class CytographRendering {
         navigatorContainer: HTMLElement,
         private readonly callbacks: ProfilerCallbacks,
         readonly graph: Graph<NodeId>,
+        readonly rootNodeId: NodeId,
         readonly selection: CircuitSelection,
         private metadataSelection: MetadataSelection,
         private message: (msg: string) => void,
@@ -590,10 +597,10 @@ export class CytographRendering {
 
     /** Compute the attributes for all cytograph nodes based on the circuit profile and current selection. */
     computeAttributes(profile: CircuitProfile, selection: MetadataSelection) {
+        let workers = selection.workersVisible.getSelectedElements(profile.getWorkerNames());
+        let columnNames = workers.map(w => w.toString());
         for (const node of this.currentGraph!.nodes) {
             let profileNode = profile.getNode(node.getId()).unwrap();
-            let workers = selection.workersVisible.getSelectedElements(profile.getWorkerNames());
-            let columnNames = workers.map(w => w.toString());
             let data = new Map<string, Array<SerializedMeasurement>>();
             // Select just the visible metrics
             // Compute per-worker attributes
@@ -626,6 +633,9 @@ export class CytographRendering {
             rendered.data("has_children", node.hasChildren);
             // attach the attributes to the node
             rendered.data("attributes", attributes);
+            if (node.getId() === this.rootNodeId) {
+                rendered.data("invisible", true);
+            }
         }
     }
 
@@ -743,6 +753,24 @@ export class CytographRendering {
         this.stickyInformation = sticky;
     }
 
+    // An event is dispatched to the node that represents the top-level graph
+    onToplevelEvent(e: Event) {
+        // Act as if the event was dispatched to the toplevel (invisible) graph node
+        if (e.type === 'click') {
+            // Hide previous node if any
+            this.setStickyNodeInformation(false);
+            this.hideNodeInformation();
+            // Display current node
+            let singular = this.cy.getElementById(this.rootNodeId) as NodeSingular;
+            this.displayNodeAttributes(singular);
+            // Keep the information after mouse out
+            this.setStickyNodeInformation(true);
+        } else if (e.type === 'mouseover') {
+            let singular = this.cy.getElementById(this.rootNodeId) as NodeSingular;
+            this.displayNodeAttributes(singular);
+        }
+    }
+
     setEvents(callbacks: {
         onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined
     }) {
@@ -751,7 +779,7 @@ export class CytographRendering {
             //.on('render', () => console.log("rendering"))
             //.on('layoutstart', () => console.log("start layout"))
             .on('layoutstop', () => this.layoutComplete())
-            .on('mouseover', 'node', event => this.displayNodeAttributes(event))
+            .on('mouseover', 'node', event => this.displayEventTargetAttributes(event))
             .on('mouseout', 'node', event => this.mouseOut(event))
             .on('zoom pan resize', () => this.updateNavigator(this.navigator))
             .on('click', 'node', (e) => {
@@ -759,7 +787,7 @@ export class CytographRendering {
                 this.setStickyNodeInformation(false);
                 this.hideNodeInformation();
                 // Display current node
-                this.displayNodeAttributes(e);
+                this.displayEventTargetAttributes(e);
                 // Keep the information after mouse out
                 this.setStickyNodeInformation(true);
             })
@@ -866,23 +894,29 @@ export class CytographRendering {
     // (1) the attributes of the node,
     // (2) it highlights the edges reaching the node,
     // (3) it displays the source position of the node.
-    displayNodeAttributes(event: EventObject) {
-        if (this.cy === null || this.stickyInformation) {
-            return;
-        }
-
+    displayEventTargetAttributes(event: EventObject) {
         let node: NodeSingular = event.target;
         if (node.data("expanded") === true)
             return;
 
+        this.displayNodeAttributes(node);
+    }
+
+    displayNodeAttributes(node: NodeSingular) {
+        const nodeId = node.id();
+        const attributes = node.data().attributes;
+        const sources = node.data("sources")
+        if (this.cy === null || this.stickyInformation) {
+            return;
+        }
+
         // highlight edges
-        let reachable = this.reachableFrom(node.id(), true);
+        let reachable = this.reachableFrom(nodeId, true);
         reachable.addClass('highlight-forward');
-        reachable = this.reachableFrom(node.id(), false);
+        reachable = this.reachableFrom(nodeId, false);
         reachable.addClass('highlight-backward');
 
         // Build structured tooltip data
-        let attributes: Attributes = node.data().attributes;
         let visible = false;
 
         const tooltipData: DisplayedAttributes = {
@@ -905,7 +939,7 @@ export class CytographRendering {
             const MAX_CELL_COUNT = 40;
             let matrix = attributes.matrix.getAttributes();
             let keys = [...matrix.keys()];
-            keys.sort();
+            keys.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
             for (const key of keys) {
                 let values = matrix.get(key)!;
@@ -931,7 +965,6 @@ export class CytographRendering {
         }
 
         // Add source position information
-        let sources = node.data("sources");
         if (sources.length > 0) {
             visible = true;
             tooltipData.sources = sources;
