@@ -5,7 +5,7 @@
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Serialize as SerdeSerialize, Serializer as SerdeSerializer};
 use size_of::SizeOf;
-use time::{format_description::well_known::Iso8601, OffsetDateTime};
+use time::{OffsetDateTime, format_description::well_known::Iso8601};
 
 /// The Nexmark Person model based on the [Nexmark Java Person class](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model/Person.java).
 ///

@@ -2,15 +2,15 @@ use std::{thread::sleep, time::Duration};
 
 use clap::Parser;
 use csv::WriterBuilder;
-use dbsp_nexmark::{config::GeneratorOptions, NexmarkSource};
+use dbsp_nexmark::{NexmarkSource, config::GeneratorOptions};
 use indicatif::ProgressBar;
 use rdkafka::{
+    ClientConfig,
     config::FromClientConfig,
     error::KafkaError,
-    producer::{base_producer::ThreadedProducer, BaseRecord, DefaultProducerContext, Producer},
+    producer::{BaseRecord, DefaultProducerContext, Producer, base_producer::ThreadedProducer},
     types::RDKafkaErrorCode,
     util::Timeout,
-    ClientConfig,
 };
 use serde::Serialize;
 

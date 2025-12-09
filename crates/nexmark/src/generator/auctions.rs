@@ -4,8 +4,8 @@
 
 use super::{
     super::model::Auction,
-    config::{FIRST_AUCTION_ID, FIRST_CATEGORY_ID, FIRST_PERSON_ID},
     GeneratorContext,
+    config::{FIRST_AUCTION_ID, FIRST_CATEGORY_ID, FIRST_PERSON_ID},
 };
 use rand::Rng;
 use std::{

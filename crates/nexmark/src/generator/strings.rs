@@ -3,7 +3,7 @@
 //! API based on the equivalent [Nexmark Flink StringsGenerator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/model/StringsGenerator.java).
 
 use super::GeneratorContext;
-use rand::{distributions::Alphanumeric, distributions::DistString, Rng};
+use rand::{Rng, distributions::Alphanumeric, distributions::DistString};
 
 const MIN_STRING_LENGTH: usize = 3;
 
