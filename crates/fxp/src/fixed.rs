@@ -5,11 +5,11 @@ use std::{
     str::FromStr,
 };
 
-use num_traits::{cast, CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, One, Zero};
+use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, One, Zero, cast};
 
 use crate::{
-    checked_pow10, debug_decimal, display_decimal, div_ceil, div_floor, i128_mul_pow10_round_even,
-    parse_decimal, pow10, round_inner, u256::I256, Halfway, OutOfRange, ParseDecimalError,
+    Halfway, OutOfRange, ParseDecimalError, checked_pow10, debug_decimal, display_decimal,
+    div_ceil, div_floor, i128_mul_pow10_round_even, parse_decimal, pow10, round_inner, u256::I256,
 };
 
 /// Decimal real number with fixed precision and scale.
@@ -1028,11 +1028,7 @@ macro_rules! min_max_int {
 impl<const P: usize, const S: usize> Fixed<P, S> {
     /// Returns the maximum `i128` that can be converted to this type.
     pub const fn max_i128() -> i128 {
-        if P > S {
-            pow10(P - S) - 1
-        } else {
-            0
-        }
+        if P > S { pow10(P - S) - 1 } else { 0 }
     }
 
     /// Returns the minimum `i128` that can be converted to this type.

@@ -1,6 +1,6 @@
 use dbsp::algebra::{HasOne, HasZero, MulByRef, OptionWeightType};
 use feldera_types::serde_with_context::{
-    serde_config::DecimalFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
+    DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, serde_config::DecimalFormat,
 };
 use serde::{Deserializer, Serialize, Serializer};
 use smallstr::SmallString;
@@ -124,8 +124,8 @@ mod test {
     use std::sync::{Arc, Mutex};
 
     use dbsp::{
-        algebra::DefaultSemigroup, indexed_zset, operator::Fold, typed_batch::OrdIndexedZSet,
-        utils::Tup2, Runtime, ZWeight,
+        Runtime, ZWeight, algebra::DefaultSemigroup, indexed_zset, operator::Fold,
+        typed_batch::OrdIndexedZSet, utils::Tup2,
     };
 
     use crate::Fixed;

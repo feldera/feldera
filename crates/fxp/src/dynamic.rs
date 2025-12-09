@@ -8,12 +8,12 @@ use std::{
 use smallstr::SmallString;
 
 use crate::{
-    checked_pow10, debug_decimal, display_decimal, parse_decimal, pow10, u256::I256, Fixed,
-    OutOfRange, ParseDecimalError,
+    Fixed, OutOfRange, ParseDecimalError, checked_pow10, debug_decimal, display_decimal,
+    parse_decimal, pow10, u256::I256,
 };
 
-use rand::distributions::uniform::{UniformInt, UniformSampler};
 use rand::Rng;
+use rand::distributions::uniform::{UniformInt, UniformSampler};
 
 /// Decimal real number with 38 digits of precision and dynamic scale.
 ///
@@ -276,11 +276,7 @@ impl Rem<DynamicDecimal> for DynamicDecimal {
         let trunc = div.trunc();
         let mul = right.mul(trunc);
         let rem = left.sub(mul);
-        if neg {
-            rem.neg()
-        } else {
-            rem
-        }
+        if neg { rem.neg() } else { rem }
     }
 }
 
@@ -645,7 +641,12 @@ mod test {
             (".136", Ok("0.136")),
             ("1e38", Ok("100000000000000000000000000000000000000")),
             ("1e39", Err(ParseDecimalError::OutOfRange)),
-            ("1e-255", Ok("0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001")),
+            (
+                "1e-255",
+                Ok(
+                    "0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+                ),
+            ),
             ("1e-256", Ok("0")),
         ] {
             println!("{s}: {:?}", s.parse::<DynamicDecimal>());

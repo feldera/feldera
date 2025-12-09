@@ -10,7 +10,7 @@ repository = { workspace = true }
 keywords = { workspace = true }
 readme = { workspace = true }
 rust-version = { workspace = true }
-edition = { workspace = true }
+edition = "2024"
 
 [features]
 dbsp = ["serde", "rkyv", "size_of", "dep:dbsp", "dep:feldera-types"]
