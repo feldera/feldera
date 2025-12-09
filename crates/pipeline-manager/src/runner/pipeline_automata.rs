@@ -219,7 +219,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     pub async fn run(mut self) {
         let pipeline_id = self.pipeline_id;
         debug!(
-            pipeline = self.pipeline_name.as_deref().unwrap_or(""),
+            pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
             pipeline_id = %pipeline_id,
             "Automaton started: pipeline {pipeline_id}"
         );
@@ -252,7 +252,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         // Pipeline deletions should not lead to errors in the logs.
                         DBError::UnknownPipeline { pipeline_id } => {
                             info!(
-                                pipeline = self.pipeline_name.as_deref().unwrap_or(""),
+                                pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
                                 pipeline_id = %pipeline_id,
                                 "Automaton ended: pipeline {pipeline_id}"
                             );
@@ -452,7 +452,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 // and as such will cause a database error to bubble up if it does not.
                                 info!(
                                     pipeline_id = %self.pipeline_id,
-                                    pipeline = self.pipeline_name.as_deref().unwrap_or(""),
+                                    pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
                                     "Pipeline automaton {}: version initially intended to be started ({}) is outdated by latest ({})",
                                     self.pipeline_id,
                                     outdated_version,
@@ -462,7 +462,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 {
                                     error!(
                                         pipeline_id = %self.pipeline_id,
-                                        pipeline = self.pipeline_name.as_deref().unwrap_or(""),
+                                        pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
                                         "Outdated pipeline version occurred when transitioning from {} to Provisioning (not Stopped)",
                                         pipeline.deployment_resources_status
                                     );
@@ -1276,7 +1276,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 _ => {
                                     warn!(
                                         pipeline_id = %pipeline_id,
-                                        pipeline = self.pipeline_name.as_deref().unwrap_or(""),
+                                        pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
                                         "Pipeline {pipeline_id} status is unavailable because the endpoint responded with 503 Service Unavailable:\n{error_response:?}"
                                     );
                                     Ok(ExtendedRuntimeStatus {
@@ -1304,7 +1304,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     });
                     error!(
                         pipeline_id = %pipeline_id,
-                        pipeline = self.pipeline_name.as_deref().unwrap_or(""),
+                        pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
                         "Pipeline {pipeline_id} has fatal runtime error and will be stopped. Error:\n{error_response:?}"
                     );
                     Err(error_response)
@@ -1323,7 +1323,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 } else {
                     warn!(
                         pipeline_id = %pipeline_id,
-                        pipeline = self.pipeline_name.as_deref().unwrap_or(""),
+                        pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
                         "Pipeline {pipeline_id} status is unavailable because the endpoint could not be reached due to: {e}"
                     );
                     Ok(ExtendedRuntimeStatus {

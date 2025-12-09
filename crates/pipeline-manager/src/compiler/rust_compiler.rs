@@ -895,7 +895,7 @@ pub async fn perform_rust_compilation(
     })?;
     let runtime_selector = program_config.runtime_version();
     assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
-    let pipeline_name_for_log = pipeline_name.clone().unwrap_or_default();
+    let pipeline_name_for_log = pipeline_name.clone().unwrap_or_else(|| "N/A".to_string());
     info!(
         pipeline_id = %pipeline_id,
         pipeline = pipeline_name_for_log.as_str(),
@@ -1550,7 +1550,7 @@ async fn call_compiler(
     // Create pipeline-binaries directory if it does not yet exist
     let pipeline_binaries_dir = workspace_dir.join("pipeline-binaries");
     create_dir_if_not_exists(&pipeline_binaries_dir).await?;
-    let pipeline_name_for_log = pipeline_name.unwrap_or_default();
+    let pipeline_name_for_log = pipeline_name.unwrap_or_else(|| "N/A".to_string());
 
     // Create file where stdout will be written to
     let stdout_file_path = pipeline_main_crate_dir.join("stdout.log");

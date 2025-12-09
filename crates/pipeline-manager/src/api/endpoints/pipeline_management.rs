@@ -971,7 +971,6 @@ pub(crate) async fn post_pipeline(
     info!(
         pipeline = %returned_pipeline.name,
         pipeline_id = %returned_pipeline.id,
-        tenant_id = %tenant_id.0,
         "Created pipeline {name:?} ({}) (tenant: {})",
         returned_pipeline.id,
         *tenant_id
@@ -1045,7 +1044,6 @@ pub(crate) async fn put_pipeline(
         info!(
             pipeline = %returned_pipeline.name,
             pipeline_id = %returned_pipeline.id,
-            tenant_id = %tenant_id.0,
             "Created pipeline {pipeline_name:?} ({}) (tenant: {})",
             returned_pipeline.id,
             *tenant_id
@@ -1057,7 +1055,6 @@ pub(crate) async fn put_pipeline(
         info!(
             pipeline = %returned_pipeline.name,
             pipeline_id = %returned_pipeline.id,
-            tenant_id = %tenant_id.0,
             "Fully updated pipeline {pipeline_name:?} ({}) to version {} (tenant: {})",
             returned_pipeline.id,
             returned_pipeline.version,
@@ -1268,7 +1265,6 @@ pub(crate) async fn delete_pipeline(
     info!(
         pipeline = %pipeline_name,
         pipeline_id = %pipeline_id,
-        tenant_id = %tenant_id.0,
         "Deleted pipeline {pipeline_name:?} ({}) (tenant: {})",
         pipeline_id,
         *tenant_id

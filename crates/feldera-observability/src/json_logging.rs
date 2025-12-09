@@ -15,6 +15,8 @@ pub enum ServiceName {
     Runner,
     CompilerServer,
     ControlPlane,
+    KubernetesRunner,
+    Pipeline,
 }
 
 impl ServiceName {
@@ -24,6 +26,8 @@ impl ServiceName {
             ServiceName::Runner => "runner",
             ServiceName::CompilerServer => "compiler-server",
             ServiceName::ControlPlane => "control-plane",
+            ServiceName::KubernetesRunner => "kubernetes-runner",
+            ServiceName::Pipeline => "pipeline",
         }
     }
 }
@@ -86,7 +90,7 @@ where
             LogIdentity::Service { service_name } => {
                 service_name.map(|service| service.as_str().to_string())
             }
-            LogIdentity::Pipeline { .. } => None,
+            LogIdentity::Pipeline { .. } => Some(ServiceName::Pipeline.as_str().to_string()),
         };
 
         // Allow structured fields to override the defaults.
@@ -114,6 +118,12 @@ where
             && feldera_service.as_deref() != Some("compiler-server")
         {
             feldera_service = Some("compiler-server".to_string());
+        } else if metadata
+            .target()
+            .starts_with("cluster_control_plane::kubernetes_runner")
+            && feldera_service.as_deref() != Some("kubernetes-runner")
+        {
+            feldera_service = Some("kubernetes-runner".to_string());
         }
         let mut obj = Map::new();
         obj.insert("timestamp".to_string(), Value::String(now_timestamp()));
