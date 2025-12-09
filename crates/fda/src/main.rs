@@ -11,22 +11,22 @@ use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
 use json_to_table::json_to_table;
 use log::{debug, error, info, trace, warn};
-use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use reqwest::StatusCode;
+use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fs::File;
-use std::io::{stdout, ErrorKind, Read, Write};
+use std::io::{ErrorKind, Read, Write, stdout};
 use std::path::PathBuf;
 use tabled::builder::Builder;
 use tabled::settings::Style;
 use tempfile::tempfile;
 use tokio::process::Command;
 use tokio::runtime::Handle;
-use tokio::time::{sleep, timeout, Duration, Instant};
+use tokio::time::{Duration, Instant, sleep, timeout};
 use tracing_log::LogTracer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod adhoc;
 mod bench;
@@ -230,14 +230,15 @@ fn handle_errors_fatal(
                     eprint!("{}", msg);
                     let h = Handle::current();
                     // This spawns a separate thread because it's very hard to make this function async, I tried.
-                    let st = std::thread::spawn(move || {
-                        if let Ok(body) = h.block_on(r.text()) {
+                    let st = std::thread::spawn(move || match h.block_on(r.text()) {
+                        Ok(body) => {
                             if let Ok(error) = serde_json::from_str::<ErrorResponse>(&body) {
                                 eprintln!(": {}", error.message);
                             } else {
                                 eprintln!(": {body}");
                             }
-                        } else {
+                        }
+                        _ => {
                             eprintln!();
                         }
                     });

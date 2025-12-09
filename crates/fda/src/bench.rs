@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
-use feldera_rest_api::types::{CompilationProfile, Configuration, ProgramConfig};
 use feldera_rest_api::Client;
+use feldera_rest_api::types::{CompilationProfile, Configuration, ProgramConfig};
 use feldera_types::error::ErrorResponse;
 use log::{error, info, warn};
 use progenitor_client::Error as ProgenitorError;
@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 use std::{cmp, collections::HashMap, error::Error};
 use tabled::builder::Builder;
 use tabled::settings::Style;
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{Duration, Instant, sleep};
 
 mod api;
 use crate::bench::api::types::JsonUpdateStartPoint;
@@ -310,7 +310,10 @@ impl Benchmark {
             | OutputFormat::Parquet
             | OutputFormat::Prometheus
             | OutputFormat::Hash => {
-                warn!("Format '{}' is not supported for benchmark results, falling back to text format", format);
+                warn!(
+                    "Format '{}' is not supported for benchmark results, falling back to text format",
+                    format
+                );
                 self.format_as_text()
             }
         }
@@ -423,7 +426,9 @@ async fn transform_to_bmf(
     if let Some(first) = raw_metrics.first() {
         for metric in &raw_metrics {
             if metric.incarnation_uuid != first.incarnation_uuid {
-                error!("Inconsistent incarnation_uuid detected during benchmark, did the program restart while measuring?");
+                error!(
+                    "Inconsistent incarnation_uuid detected during benchmark, did the program restart while measuring?"
+                );
                 std::process::exit(1);
             }
         }
@@ -475,8 +480,8 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
         && compilation_profile != CompilationProfile::OptimizedSymbols
     {
         warn!(
-                "Compilation profile was set to `{compilation_profile:?}`. This is most likely not what you want to benchmark with. Set it to `optimized` or `optimized_symbols` for best performance.",
-            );
+            "Compilation profile was set to `{compilation_profile:?}`. This is most likely not what you want to benchmark with. Set it to `optimized` or `optimized_symbols` for best performance.",
+        );
     }
 
     // Check storage configuration
@@ -526,7 +531,10 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
                 true
             }
             Err(e) => {
-                warn!("Failed to start transaction for pipeline '{}' due to {e}. This may affect benchmark results.", pipeline_name);
+                warn!(
+                    "Failed to start transaction for pipeline '{}' due to {e}. This may affect benchmark results.",
+                    pipeline_name
+                );
                 false
             }
         }
