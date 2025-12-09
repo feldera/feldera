@@ -33,8 +33,8 @@ use std::path::Path;
 use std::str::FromStr;
 use std::time::Duration;
 use std::{borrow::Cow, cmp::max, collections::BTreeMap};
-use utoipa::openapi::{ObjectBuilder, OneOfBuilder, Ref, RefOr, Schema, SchemaType};
 use utoipa::ToSchema;
+use utoipa::openapi::{ObjectBuilder, OneOfBuilder, Ref, RefOr, Schema, SchemaType};
 
 const DEFAULT_MAX_PARALLEL_CONNECTOR_INIT: u64 = 10;
 

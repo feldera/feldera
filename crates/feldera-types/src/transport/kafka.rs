@@ -202,7 +202,9 @@ impl KafkaInputConfig {
             .entry(option.to_string())
             .or_insert_with(|| val.to_string());
         if option_val != val {
-            Err(AnyError::msg("cannot override '{option}' option: the Kafka transport adapter sets this option to '{val}'"))?;
+            Err(AnyError::msg(
+                "cannot override '{option}' option: the Kafka transport adapter sets this option to '{val}'",
+            ))?;
         }
         Ok(())
     }
@@ -259,7 +261,9 @@ impl KafkaInputConfig {
             (&self.partitions, &self.start_from)
         {
             if partitions.len() != offsets.len() {
-                anyhow::bail!("the number of partitions ('{partitions:?}') should be equal to the number of offsets '{offsets:?}' specified")
+                anyhow::bail!(
+                    "the number of partitions ('{partitions:?}') should be equal to the number of offsets '{offsets:?}' specified"
+                )
             }
         }
 
@@ -557,7 +561,11 @@ mod compat {
                     match auto_offset_reset.as_str() {
                         "smallest" | "earliest" | "beginning" => KafkaStartFromConfig::Earliest,
                         "largest" | "latest" | "end" => KafkaStartFromConfig::Latest,
-                        _ => return Err(format!("Unrecognized value {auto_offset_reset:?} for `auto.offset.reset` in Kafka legacy input adapter configuration")),
+                        _ => {
+                            return Err(format!(
+                                "Unrecognized value {auto_offset_reset:?} for `auto.offset.reset` in Kafka legacy input adapter configuration"
+                            ));
+                        }
                     }
                 } else {
                     KafkaStartFromConfig::default()
@@ -582,7 +590,9 @@ mod compat {
                     && key != "enabled_events"
                     && key != "retries"
                 {
-                    return Err(format!("Invalid Kafka input connector configuration key {key:?}: it is not valid for the input connector, nor does it contain `.` as librdkafka configuration options generally do (nor is it one of the few special exceptions to that rule)."));
+                    return Err(format!(
+                        "Invalid Kafka input connector configuration key {key:?}: it is not valid for the input connector, nor does it contain `.` as librdkafka configuration options generally do (nor is it one of the few special exceptions to that rule)."
+                    ));
                 }
             }
 

@@ -25,8 +25,8 @@
 // [`SerializeWithContext`].
 
 use serde::{
-    ser::{SerializeMap, SerializeSeq, SerializeTuple},
     Serialize, Serializer,
+    ser::{SerializeMap, SerializeSeq, SerializeTuple},
 };
 use std::{
     collections::{BTreeMap, HashSet},
@@ -254,7 +254,7 @@ where
 }
 
 macro_rules! serialize_tuple {
-    ([$num_fields:expr]($(($arg_name:ident, $arg_type:tt)),*)) => {
+    ([$num_fields:expr_2021]($(($arg_name:ident, $arg_type:tt)),*)) => {
         #[allow(unused_variables)]
         #[allow(dead_code)]
         #[allow(unused_mut)]
@@ -389,7 +389,7 @@ where
 // from `serde_derive`.
 #[macro_export]
 macro_rules! serialize_struct {
-    ($struct:ident($($arg:tt $(: $bound:tt)?),*)[$num_fields:expr]{$($field_name:ident[$column_name:tt]: $type:ty),* }) => {
+    ($struct:ident($($arg:tt $(: $bound:tt)?),*)[$num_fields:expr_2021]{$($field_name:ident[$column_name:tt]: $type:ty),* }) => {
         #[allow(unused_variables)]
         #[allow(unused_mut)]
         impl<C, $($arg),*> $crate::serde_with_context::SerializeWithContext<C> for $struct<$($arg),*>
@@ -434,7 +434,7 @@ macro_rules! serialize_struct {
 
 #[macro_export]
 macro_rules! serialize_table_record {
-    ($struct:ident[$num_fields:expr]{$($field_name:ident[$column_name:tt]: $type:ty),* }) => {
+    ($struct:ident[$num_fields:expr_2021]{$($field_name:ident[$column_name:tt]: $type:ty),* }) => {
         #[allow(unused_variables)]
         #[allow(unused_mut)]
         impl $crate::serde_with_context::SerializeWithContext<$crate::serde_with_context::SqlSerdeConfig> for $struct {

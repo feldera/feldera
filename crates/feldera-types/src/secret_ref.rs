@@ -12,7 +12,9 @@ pub enum KubernetesSecretNameParseError {
     Empty,
     #[error("length ({name_len}) exceeds 63 characters")]
     TooLong { name_len: usize },
-    #[error("must only contain lowercase alphanumeric characters or hyphens (-), and start and end with a lowercase alphanumeric character")]
+    #[error(
+        "must only contain lowercase alphanumeric characters or hyphens (-), and start and end with a lowercase alphanumeric character"
+    )]
     InvalidFormat,
 }
 
@@ -40,7 +42,9 @@ pub enum KubernetesSecretDataKeyParseError {
     Empty,
     #[error("length ({data_key_len}) exceeds 255 characters")]
     TooLong { data_key_len: usize },
-    #[error("must only contain lowercase alphanumeric characters and hyphens (-), and start and end with a lowercase alphanumeric character")]
+    #[error(
+        "must only contain lowercase alphanumeric characters and hyphens (-), and start and end with a lowercase alphanumeric character"
+    )]
     InvalidFormat,
 }
 
@@ -106,9 +110,13 @@ pub enum MaybeSecretRef {
 
 #[derive(Debug, Clone, PartialEq, Eq, ThisError)]
 pub enum MaybeSecretRefParseError {
-    #[error("secret reference '{secret_ref_str}' does not specify a valid provider (for example: 'kubernetes:')")]
+    #[error(
+        "secret reference '{secret_ref_str}' does not specify a valid provider (for example: 'kubernetes:')"
+    )]
     InvalidProvider { secret_ref_str: String },
-    #[error("Kubernetes secret reference '{secret_ref_str}' is not valid: does not follow format `<name>/<data key>`")]
+    #[error(
+        "Kubernetes secret reference '{secret_ref_str}' is not valid: does not follow format `<name>/<data key>`"
+    )]
     InvalidKubernetesSecretFormat { secret_ref_str: String },
     #[error(
         "Kubernetes secret reference '{secret_ref_str}' has name '{name}' which is not valid: {e}"
@@ -205,8 +213,8 @@ impl Display for MaybeSecretRef {
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_kubernetes_secret_data_key, validate_kubernetes_secret_name,
         KubernetesSecretDataKeyParseError, KubernetesSecretNameParseError, MaybeSecretRef,
+        validate_kubernetes_secret_data_key, validate_kubernetes_secret_name,
     };
     use super::{MaybeSecretRefParseError, SecretRef};
 
