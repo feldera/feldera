@@ -1,6 +1,6 @@
 use std::ops::{Add, Div, Mul, Sub};
 
-use dbsp::algebra::{HasZero, F32, F64};
+use dbsp::algebra::{F32, F64, HasZero};
 use num::{PrimInt, Zero};
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
 use std::cmp::Ordering;
@@ -160,11 +160,7 @@ where
     T: PartialOrd<T>,
 {
     let result = left.partial_cmp(right).unwrap();
-    if ascending {
-        result
-    } else {
-        result.reverse()
-    }
+    if ascending { result } else { result.reverse() }
 }
 
 #[doc(hidden)]

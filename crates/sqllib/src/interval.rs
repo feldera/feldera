@@ -2,18 +2,18 @@
 //! Intervals are differences between dates and/or times
 
 use crate::{
-    operators::{eq, gt, gte, lt, lte, neq},
-    some_existing_operator, some_function2, some_operator, some_polymorphic_function1,
-    some_polymorphic_function2,
-    timestamp::{extract_epoch_Date, extract_quarter_Date, plus_Date_Date_LongInterval__},
     Date, SqlDecimal,
+    operators::{eq, gt, gte, lt, lte, neq},
+    plus_Date_Date_LongInterval__, some_existing_operator, some_function2, some_operator,
+    some_polymorphic_function1, some_polymorphic_function2,
+    timestamp::{extract_epoch_Date, extract_quarter_Date},
 };
 use dbsp::{algebra::F64, num_entries_scalar};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
 use num::PrimInt;
-use serde::{de::Error as _, ser::Error as _, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Error as _, ser::Error as _};
 use size_of::SizeOf;
 use std::{
     fmt::Debug,

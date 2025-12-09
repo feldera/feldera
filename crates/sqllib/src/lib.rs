@@ -62,6 +62,7 @@ pub use string_interner::{build_string_interner, intern_string, unintern_string}
 // Perhaps they should be defined in sqllib in the first place?
 pub use dbsp::algebra::{F32, F64};
 use dbsp::{
+    DBData, MapHandle, OrdIndexedZSet, OrdZSet, OutputHandle, ZSetHandle, ZWeight,
     algebra::{
         AddByRef, HasOne, HasZero, NegByRef, OrdIndexedZSetFactories, OrdZSetFactories, Semigroup,
         SemigroupValue, ZRingValue,
@@ -70,12 +71,11 @@ use dbsp::{
     dynamic::{DowncastTrait, DynData, Erase},
     operator::Update,
     trace::{
-        ord::{OrdIndexedWSetBuilder, OrdWSetBuilder},
         BatchReader, BatchReaderFactories, Builder, Cursor,
+        ord::{OrdIndexedWSetBuilder, OrdWSetBuilder},
     },
     typed_batch::{SpineSnapshot, TypedBatch},
     utils::*,
-    DBData, MapHandle, OrdIndexedZSet, OrdZSet, OutputHandle, ZSetHandle, ZWeight,
 };
 use num::PrimInt;
 use num_traits::Pow;

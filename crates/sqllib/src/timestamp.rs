@@ -1,11 +1,11 @@
 //! Support for SQL Timestamp and Date data types.
 
 use crate::{
+    FromInteger, SqlString, ToInteger,
     array::Array,
     casts::*,
     interval::{LongInterval, ShortInterval},
     rfc3339::parse_timestamp_from_rfc3339,
-    FromInteger, SqlString, ToInteger,
 };
 use chrono::format::ParseErrorKind;
 use chrono::{
@@ -19,7 +19,7 @@ use feldera_types::serde_with_context::{
     TimestampFormat,
 };
 use num::PrimInt;
-use serde::{de::Error as _, ser::Error as _, Deserialize, Deserializer, Serializer};
+use serde::{Deserialize, Deserializer, Serializer, de::Error as _, ser::Error as _};
 use size_of::SizeOf;
 use std::{
     borrow::Cow,

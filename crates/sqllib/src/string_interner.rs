@@ -7,20 +7,20 @@ use std::{
 };
 
 use dbsp::{
+    Circuit, DynZWeight, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
     circuit::LocalStoreMarker,
     dynamic::{DowncastTrait, DynData},
     operator::communication::new_exchange_operators,
     storage::file::to_bytes,
     trace::{
-        unaligned_deserialize, BatchReader, BatchReaderFactories, Cursor,
-        OrdIndexedWSet as DynOrdIndexedWSet, OrdIndexedWSetFactories, SpineSnapshot,
+        BatchReader, BatchReaderFactories, Cursor, OrdIndexedWSet as DynOrdIndexedWSet,
+        OrdIndexedWSetFactories, SpineSnapshot, unaligned_deserialize,
     },
     utils::Tup1,
-    Circuit, DynZWeight, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
 };
 use quick_cache::{
-    sync::{Cache, DefaultLifecycle, GuardResult},
     OptionsBuilder, Weighter,
+    sync::{Cache, DefaultLifecycle, GuardResult},
 };
 use typedmap::TypedMapKey;
 
@@ -366,13 +366,13 @@ pub fn build_string_interner(
 mod interned_string_test {
 
     use crate::string_interner::InterneStringCacheKey;
-    use crate::{build_string_interner, SqlString};
+    use crate::{SqlString, build_string_interner};
     use crate::{intern_string, unintern_string};
     use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, StorageConfig, StorageOptions};
     use dbsp::trace::{BatchReader, Cursor};
     use dbsp::utils::{Tup1, Tup2};
     use dbsp::{
-        typed_batch::SpineSnapshot, DBSPHandle, OrdZSet, OutputHandle, Runtime, ZSetHandle,
+        DBSPHandle, OrdZSet, OutputHandle, Runtime, ZSetHandle, typed_batch::SpineSnapshot,
     };
     use std::path::Path;
     use uuid::Uuid;

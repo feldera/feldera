@@ -2,8 +2,8 @@
 //! the values in a SQL program.
 
 use crate::{
-    array::Array, binary::ByteArray, casts::*, error::*, map::Map, tn, ttn, Date, GeoPoint,
-    LongInterval, ShortInterval, SqlDecimal, SqlString, Time, Timestamp, Uuid,
+    Date, GeoPoint, LongInterval, ShortInterval, SqlDecimal, SqlString, Time, Timestamp, Uuid,
+    array::Array, binary::ByteArray, casts::*, error::*, map::Map, tn, ttn,
 };
 use dbsp::algebra::{F32, F64};
 use feldera_fxp::DynamicDecimal;
@@ -917,14 +917,14 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{binary::ByteArray, Date, SqlString, Time, Timestamp};
+    use crate::{Date, SqlString, Time, Timestamp, binary::ByteArray};
     use std::sync::Arc;
 
     use super::Variant;
     use chrono::{DateTime, NaiveDate, NaiveTime};
     use dbsp::{
-        algebra::{F32, F64},
         RootCircuit,
+        algebra::{F32, F64},
     };
     use std::collections::BTreeMap;
 

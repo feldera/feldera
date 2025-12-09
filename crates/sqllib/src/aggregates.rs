@@ -4,7 +4,7 @@
 #![allow(clippy::unnecessary_cast)]
 
 use crate::{ByteArray, FromInteger, SqlDecimal, ToInteger, Weight};
-use dbsp::algebra::{FirstLargeValue, HasOne, HasZero, SignedPrimInt, UnsignedPrimInt, F32, F64};
+use dbsp::algebra::{F32, F64, FirstLargeValue, HasOne, HasZero, SignedPrimInt, UnsignedPrimInt};
 use num::PrimInt;
 use num_traits::CheckedAdd;
 use std::cmp::Ord;

@@ -2,9 +2,9 @@
 
 use dbsp::NumEntries;
 use feldera_types::serde_with_context::{
-    serde_config::UuidFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
+    DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, serde_config::UuidFormat,
 };
-use serde::{de, de::Error as _, Deserializer, Serializer};
+use serde::{Deserializer, Serializer, de, de::Error as _};
 use size_of::{Context, SizeOf};
 use std::fmt::{self, Debug, Display};
 
