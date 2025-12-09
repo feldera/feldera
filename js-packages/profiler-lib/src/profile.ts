@@ -270,6 +270,78 @@ class TimeValue extends PropertyValue {
     }
 }
 
+export type Category = "CPU" | "memory" | "cache" | "storage" | "";
+
+/** Which category does a measurement belong to */
+export function measurementCategory(prop: string): Category {
+    switch (prop) {
+        case "time%":
+        case "invocations":
+        case "left inputs":
+        case "right inputs":
+        case "computed outputs":
+        case "inputs":
+        case "steps":
+        case "wait_time":
+        case "exchange_wait_time":
+        case "merge backpressure wait":
+        case "time":
+        case "total_idle_time":
+        case "runtime_elapsed":
+        case "total_runtime":
+            return "CPU";
+        case "merge reduction":
+        case "output redundancy":
+        case "merging batches":
+        case "merging size":
+        case "input batches/batches":
+        case "input batches/min size":
+        case "input batches/max size":
+        case "input batches/avg size":
+        case "input batches/total records":
+        case "output batches/batches":
+        case "output batches/min size":
+        case "output batches/max size":
+        case "output batches/avg size":
+        case "output batches/total records":
+        case "slot 0 loose":
+        case "slot 1 loose":
+        case "slot 2 loose":
+        case "slot 3 loose":
+        case "slot 4 loose":
+        case "slot 0 completed":
+        case "slot 1 completed":
+        case "slot 2 completed":
+        case "slot 3 completed":
+        case "slot 4 completed":
+        case "slot 0 merging":
+        case "slot 1 merging":
+        case "slot 2 merging":
+        case "slot 3 merging":
+        case "slot 4 merging":
+        case "batch sizes":
+        case "bounds":
+        case "Bloom filter size":
+        case "Bloom filter bits/key":
+            return "storage";
+        case "background cache hit rate":
+        case "foreground cache hit rate":
+        case "foreground cache occupancy":
+        case "background cache occupancy":
+            return "cache";
+        case "total size":
+        case "allocated bytes":
+        case "used bytes":
+        case "shared bytes":
+        case "batches":
+        case "storage size":
+        case "allocations":
+            return "memory"
+        default:
+            return "";
+    }
+}
+
 // Decoded measurement value.
 export class Measurement {
     constructor(
