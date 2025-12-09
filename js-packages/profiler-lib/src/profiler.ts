@@ -1,11 +1,13 @@
 // Core profiler visualization library
 // This module provides the main API for rendering circuit profiles
 
-import { CircuitProfile } from "./profile.js";
+import { CircuitProfile, NodeAndMetric } from "./profile.js";
 import { Cytograph, CytographRendering } from "./cytograph.js";
 import { CircuitSelector } from "./selection.js";
 import { MetadataSelector } from './metadataSelection.js';
-import { Option } from "./util.js";
+import { Option, shadeOfRed } from "./util.js";
+
+export { NodeAndMetric, shadeOfRed };
 
 /** Represents a selectable metric option */
 export interface MetricOption {
@@ -80,12 +82,12 @@ export interface VisualizerConfig {
  * This is the primary API for embedding the profiler in other applications.
  */
 export class Visualizer {
-    private readonly config: VisualizerConfig;
     private circuitSelector: CircuitSelector | null = null;
     private metadataSelector: MetadataSelector | null = null;
     private rendering: CytographRendering | null = null;
+    private profile: CircuitProfile | null = null;
 
-    constructor(config: VisualizerConfig) {
+    constructor(private readonly config: VisualizerConfig) {
         this.config = config;
     }
 
@@ -105,15 +107,24 @@ export class Visualizer {
         this.config.callbacks.displayMessage(Option.none());
     }
 
+    /** Return the ids of the nodes that score highest according to the specified metric. */
+    public topNodes(metric: string): Array<NodeAndMetric> {
+        if (this.profile === null) {
+            return [];
+        }
+        return this.rendering?.topNodes(this.profile, metric) || [];
+    }
+
     /**
-     * Render a circuit profile with interactive visualization.
-     * This is the main entry point for displaying a profile.
+     * Display a circuit profile using interactive visualization.
+     * This is the main entry point for displaying the profile data.
      *
      * @param profile The circuit profile to visualize
      */
     render(profile: CircuitProfile): void {
         try {
             // Create selectors
+            this.profile = profile;
             this.circuitSelector = new CircuitSelector(profile);
             this.metadataSelector = new MetadataSelector(profile, this.config.callbacks);
 
@@ -176,8 +187,8 @@ export class Visualizer {
     /**
      * Select a metric by ID
      */
-    selectMetric(metricId: string): void {
-        this.metadataSelector?.selectMetric(metricId);
+    selectMetric(metric: string): void {
+        this.metadataSelector?.selectMetric(metric);
     }
 
     /**

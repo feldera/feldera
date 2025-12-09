@@ -423,6 +423,16 @@ export class Measurement {
     }
 }
 
+/** A node and the (maximum) value of a metric for that node.  The actual metric
+ * represented is not part of this data structure */
+export class NodeAndMetric {
+    constructor(
+        public readonly nodeId: string,
+        public readonly label: string,
+        /** Value between 0 and 100% */
+        public readonly normalizedValue: number) { }
+}
+
 /** A set of measurements for a single circuit graph node and many workers.
  * Only stores numeric values! */
 class Measurements {
