@@ -4007,7 +4007,7 @@ impl TransactionInfo {
 /// controller threads.
 pub struct ControllerInner {
     pub status: Arc<ControllerStatus>,
-    last_checkpoint: Arc<Mutex<LastCheckpoint>>,
+    last_checkpoint: Mutex<LastCheckpoint>,
     secrets_dir: PathBuf,
     num_api_connections: AtomicU64,
     command_sender: Sender<Command>,
