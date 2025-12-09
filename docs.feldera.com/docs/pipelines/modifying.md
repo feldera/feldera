@@ -210,7 +210,7 @@ state of the pipeline or rename the UDF to trigger the bootstrapping of any view
 In this section we describe the REST API elements related to bootstrapping.
 All of this functionality is also available via the Python SDK and the `fda` CLI tool.
 
-* The `bootstrap_policy` argument to the [`/start` endpoint](/api/stop-pipeline). This argument specifies how the pipeline should
+* The `bootstrap_policy` argument to the [`/start` endpoint](/api/start-pipeline). This argument specifies how the pipeline should
   behave when the checkpointed version of the program differs from the current version. The supported values are
   `await_approval`, `allow`, and `reject`. The default value is `await_approval`. See the
   [Restart the pipeline](#3-restart-the-pipeline) section above for details.
