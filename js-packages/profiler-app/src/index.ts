@@ -3,6 +3,10 @@
 import { ProfileLoader } from './fileLoader.js';
 import { setupBundleUpload } from './bundleUpload.js';
 import {
+    measurementCategory,
+    HierarchicalTable,
+    HierarchicalTableRow,
+    HierarchicalTableCellValue,
     type Option,
     type VisualizerConfig,
     type ProfilerCallbacks,
@@ -32,72 +36,49 @@ const callbacks: ProfilerCallbacks = {
             return;
         }
 
-        // Build tooltip HTML from structured data
-        const table = document.createElement('table');
         let data = odata.unwrap();
-
-        // Header row
-        const thead = table.createTHead();
-        const headerRow = thead.insertRow();
-        headerRow.insertCell(); // Empty corner cell
-        for (const column of data.columns) {
-            const th = headerRow.insertCell();
-            th.textContent = column;
-        }
+        // Build tooltip HTML from structured data
+        const table = HierarchicalTable.create(data.columns);
 
         // Metric rows
-        const tbody = document.createElement('tbody');
         for (const row of data.rows) {
-            const tr = tbody.insertRow();
-            const metricCell = tr.insertCell();
-            metricCell.textContent = row.metric;
-            if (row.isCurrentMetric) {
-                metricCell.style.backgroundColor = 'blue';
-            }
-
+            let values: Array<HierarchicalTableCellValue> = [];
             for (const cell of row.cells) {
-                const td = tr.insertCell();
-                const percent = cell.percentile;
-                const color = shadeOfRed(percent);
-                td.style.backgroundColor = color;
-                td.style.color = 'black';
-                td.style.textAlign = 'right';
-                td.textContent = cell.value;
+                let cv = new HierarchicalTableCellValue(cell.value, cell.value, cell.percentile, {});
+                values.push(cv);
             }
+            let r = new HierarchicalTableRow(row.metric, values, row.isCurrentMetric);
+            let section = measurementCategory(row.metric);
+            table.addRow(section, r);
         }
 
         // Sources row
         if (data.sources) {
-            const tr = tbody.insertRow();
-            const td = tr.insertCell();
-            td.textContent = 'sources';
-            const sourcesCell = tr.insertCell();
-            sourcesCell.colSpan = data.columns.length;
-            sourcesCell.style.fontFamily = 'monospace';
-            sourcesCell.style.whiteSpace = 'pre-wrap';
-            sourcesCell.style.textAlign = 'left';
-            sourcesCell.style.minWidth = '80ch';
-            sourcesCell.textContent = data.sources;
+            let cell = new HierarchicalTableCellValue(data.sources, "", 0, {
+                fontFamily: 'monospace',
+                whiteSpace: 'pre-wrap',
+                textAlign: 'left',
+                minWidth: '80ch'
+            });
+            let r = new HierarchicalTableRow("sources", [cell], false);
+            table.addRow("", r);
         }
-        table.appendChild(tbody);
 
         // Additional attributes
         if (data.attributes.size > 0) {
             for (const [key, value] of data.attributes.entries()) {
-                const tr = table.insertRow();
-                const keyCell = tr.insertCell();
-                keyCell.textContent = key;
-                keyCell.style.whiteSpace = 'nowrap';
-                const valueCell = tr.insertCell();
-                valueCell.colSpan = data.columns.length;
-                valueCell.style.whiteSpace = 'nowrap';
-                valueCell.textContent = value;
+                let cell = new HierarchicalTableCellValue(value, "", 0, {
+                    whiteSpace: 'nowrap',
+                    textAlign: 'left'
+                });
+                let r = new HierarchicalTableRow(key, [cell], false);
+                table.addRow("", r);
             }
         }
 
         // Wrap table in a div and display
         const wrapper = document.createElement('div');
-        wrapper.appendChild(table);
+        wrapper.appendChild(table.asHtml());
         tooltipContainer.innerHTML = '';
         tooltipContainer.appendChild(wrapper);
         tooltipContainer.style.position = 'fixed';
