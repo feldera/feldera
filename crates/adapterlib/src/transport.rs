@@ -3,22 +3,22 @@ use chrono::{DateTime, Utc};
 use dyn_clone::DynClone;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
-use rmpv::{ext::Error as RmpDecodeError, Value as RmpValue};
-use serde::de::DeserializeOwned;
+use rmpv::{Value as RmpValue, ext::Error as RmpDecodeError};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tokio::sync::mpsc::error::TryRecvError;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::error::TryRecvError;
 use xxhash_rust::xxh3::Xxh3Default;
 
+use crate::PipelineState;
 use crate::catalog::InputCollectionHandle;
 use crate::format::{BufferSize, InputBuffer, ParseError, Parser};
-use crate::PipelineState;
 
 /// Step number for fault-tolerant circuits.
 ///
