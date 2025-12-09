@@ -4,9 +4,9 @@
 
 use super::{
     super::{config as nexmark_config, model::Person},
-    config, GeneratorContext,
+    GeneratorContext, config,
 };
-use rand::{seq::SliceRandom, Rng};
+use rand::{Rng, seq::SliceRandom};
 use std::{
     cmp::min,
     mem::{size_of, size_of_val},
