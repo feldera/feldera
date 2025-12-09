@@ -4,8 +4,8 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 use std::io::{Cursor, ErrorKind};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
+use std::sync::atomic::AtomicI64;
 
 use feldera_types::checkpoint::{CheckpointMetadata, PSpineBatches};
 use feldera_types::config::{StorageBackendConfig, StorageConfig, StorageOptions};

@@ -273,7 +273,7 @@ impl SlidingHistogram {
 
 #[cfg(test)]
 mod test {
-    use crate::histogram::{bucket_to_range, number_to_bucket, N_BUCKETS};
+    use crate::histogram::{N_BUCKETS, bucket_to_range, number_to_bucket};
 
     #[test]
     fn buckets() {
