@@ -459,6 +459,7 @@ const operations = {
         'operations/guide',
         'operations/memory',
         'operations/metrics',
+        'operations/json-logging',
     ]
 };
 
