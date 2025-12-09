@@ -58,6 +58,8 @@ class TestCheckpointSync(SharedTestPipeline):
         strict: bool = False,
         expect_empty: bool = False,
         standby: bool = False,
+        ft_interval: int = 60,
+        automated_checkpoint: bool = False,
     ):
         """
         CREATE TABLE t0 (c0 INT, c1 VARCHAR);
@@ -69,7 +71,8 @@ class TestCheckpointSync(SharedTestPipeline):
 
         self.pipeline.set_runtime_config(
             RuntimeConfig(
-                fault_tolerance_model=ft, storage=Storage(config=storage_config)
+                fault_tolerance_model=ft, storage=Storage(config=storage_config),
+                checkpoint_interval_secs=ft_interval,
             )
         )
         self.pipeline.start()
@@ -103,7 +106,10 @@ class TestCheckpointSync(SharedTestPipeline):
                 f"adhoc query returned {len(got_before)} but {processed} records were processed: {got_before}"
             )
 
-        self.pipeline.checkpoint(wait=True)
+        if not automated_checkpoint:
+            self.pipeline.checkpoint(wait=True)
+        else:
+            time.sleep(ft_interval)
         uuid = self.pipeline.sync_checkpoint(wait=True)
 
         self.pipeline.stop(force=True)
@@ -124,7 +130,8 @@ class TestCheckpointSync(SharedTestPipeline):
         )
         self.pipeline.set_runtime_config(
             RuntimeConfig(
-                fault_tolerance_model=ft, storage=Storage(config=storage_config)
+                fault_tolerance_model=ft, storage=Storage(config=storage_config),
+                checkpoint_interval_secs=ft_interval,
             )
         )
 
@@ -178,8 +185,12 @@ class TestCheckpointSync(SharedTestPipeline):
         self.test_checkpoint_sync(clear_storage=False)
 
     @enterprise_only
+    def test_automated_checkpoint(self):
+        self.test_checkpoint_sync(ft_interval=5, automated_checkpoint=True)
+
+    @enterprise_only
     def test_autherr_fail(self):
-        with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch"):
+        with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch|Forbidden"):
             self.test_checkpoint_sync(auth_err=True, strict=True)
 
     @enterprise_only
