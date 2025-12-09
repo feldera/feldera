@@ -6,8 +6,8 @@
 
 #![allow(non_snake_case)]
 use crate::{
-    array::Array, some_function1, some_function2, some_function3, some_function4,
-    some_polymorphic_function1, some_polymorphic_function2, string_interner::*, Variant,
+    Variant, array::Array, some_function1, some_function2, some_function3, some_function4,
+    some_polymorphic_function1, some_polymorphic_function2, string_interner::*,
 };
 
 use core::fmt::Error;
@@ -17,15 +17,15 @@ use like::{Escape, Like};
 use md5::{Digest, Md5};
 use regex::Regex;
 use rkyv::{
-    string::{ArchivedString, StringResolver},
     DeserializeUnsized, Fallible, SerializeUnsized,
+    string::{ArchivedString, StringResolver},
 };
 use serde::{Deserialize, Serialize};
 use size_of::{Context, SizeOf};
 use std::{
     cmp::max,
     fmt::{Display, Formatter},
-    mem::{transmute, MaybeUninit},
+    mem::{MaybeUninit, transmute},
     sync::Arc,
 };
 
@@ -172,7 +172,9 @@ impl rkyv::Archive for SqlString {
 
     #[inline]
     unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-        ArchivedString::resolve_from_str(self.str(), pos, resolver, out);
+        unsafe {
+            ArchivedString::resolve_from_str(self.str(), pos, resolver, out);
+        }
     }
 }
 
@@ -863,8 +865,8 @@ mod tests {
     use std::sync::Arc;
 
     use crate::{
-        array_to_string2Nvec__, array_to_string2_vec__, array_to_string3Nvec___, byte_index,
-        byte_index_rev, left_s_i32, right_s_i32, substring2__, substring3___, SqlString,
+        SqlString, array_to_string2_vec__, array_to_string2Nvec__, array_to_string3Nvec___,
+        byte_index, byte_index_rev, left_s_i32, right_s_i32, substring2__, substring3___,
     };
 
     use dbsp::storage::file::to_bytes;

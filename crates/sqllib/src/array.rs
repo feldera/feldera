@@ -1,6 +1,6 @@
 // Array operations
 
-use crate::{some_function2, ConcatSemigroup, Semigroup, Weight};
+use crate::{ConcatSemigroup, Semigroup, Weight, some_function2};
 use dbsp::CmpFunc;
 use itertools::Itertools;
 use std::{collections::HashSet, fmt::Debug, hash::Hash, sync::Arc};
@@ -1078,11 +1078,7 @@ where
             Some(true) => return Some(true),
         }
     }
-    if found_null {
-        None
-    } else {
-        Some(false)
-    }
+    if found_null { None } else { Some(false) }
 }
 
 #[doc(hidden)]

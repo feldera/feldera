@@ -6,7 +6,7 @@
 //! the implementation to return a `String` error message instead. This gave us the ability to
 //! return more detailed error messages.
 
-use chrono::{format::Parsed, DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, format::Parsed};
 
 /// Parses an RFC 3339 date-and-time string into a `DateTime<FixedOffset>` value.
 ///
@@ -37,7 +37,7 @@ pub(crate) fn parse_rfc3339<'a>(
     mut s: &'a str,
 ) -> Result<(&'a str, ()), String> {
     macro_rules! try_consume {
-        ($e:expr) => {{
+        ($e:expr_2021) => {{
             let (s_, v) = $e.map_err(|e| e.to_string())?;
             s = s_;
             v
@@ -87,8 +87,17 @@ pub(crate) fn parse_rfc3339<'a>(
 
     s = match s.as_bytes().first() {
         Some(&b't' | &b'T' | &b' ') => &s[1..],
-        Some(c) => return Err(format!("invalid time designator '{}' in RFC3339 string; supported designators are 't', 'T', and ' '", *c as char)),
-        None => return Err("Expected time designator 't', 'T', or ' ', but found end of string".to_string()),
+        Some(c) => {
+            return Err(format!(
+                "invalid time designator '{}' in RFC3339 string; supported designators are 't', 'T', and ' '",
+                *c as char
+            ));
+        }
+        None => {
+            return Err(
+                "Expected time designator 't', 'T', or ' ', but found end of string".to_string(),
+            );
+        }
     };
 
     parsed
@@ -279,7 +288,7 @@ mod scan {
             Some(c) => {
                 return Err(format!(
                     "expected '+' or '-', but found '{c}' in timezone offset string"
-                ))
+                ));
             }
             None => return Err("expected '+' or '-', but found end of string".to_string()),
         };
@@ -291,7 +300,7 @@ mod scan {
                 return Err(format!(
                     "invalid timezone offset hours: '{}{}'",
                     h1 as char, h2 as char
-                ))
+                ));
             }
         };
         s = &s[2..];
@@ -308,13 +317,13 @@ mod scan {
                     return Err(format!(
                         "invalid timezone offset minutes: '{}{}' (expected 00-59)",
                         m1 as char, m2 as char
-                    ))
+                    ));
                 }
                 (m1, m2) => {
                     return Err(format!(
                         "invalid timezone offset minutes: '{}{}'",
                         m1 as char, m2 as char
-                    ))
+                    ));
                 }
             }
         } else {
@@ -327,7 +336,7 @@ mod scan {
                 return Err(format!(
                     "invalid timezone offset seconds: expected at least 2 digits for seconds, but found {}",
                     s.len()
-                ))
+                ));
             }
         };
 

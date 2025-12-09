@@ -1,27 +1,27 @@
 //! byte arrays (binary objects in SQL)
 
 use crate::{
-    some_function1, some_function2, some_function3, some_function4, some_polymorphic_function1,
-    some_polymorphic_function2, SqlString,
+    SqlString, some_function1, some_function2, some_function3, some_function4,
+    some_polymorphic_function1, some_polymorphic_function2,
 };
 use base58::{FromBase58, ToBase58};
 use base64::prelude::*;
 use dbsp::NumEntries;
 use feldera_types::serde_with_context::{
-    serde_config::BinaryFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
+    DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, serde_config::BinaryFormat,
 };
 use flate2::read::GzDecoder;
 use hex::ToHex;
 use md5::{Digest, Md5};
 use serde::{
-    de::{Error as _, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
+    de::{Error as _, Visitor},
 };
 use size_of::SizeOf;
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 use std::{
     borrow::Cow,
-    cmp::{min, Ordering},
+    cmp::{Ordering, min},
     fmt::Debug,
     io::Read,
 };

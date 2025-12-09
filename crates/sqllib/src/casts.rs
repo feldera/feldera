@@ -3,10 +3,11 @@
 #![allow(non_snake_case)]
 
 use crate::{
+    DynamicDecimal, SqlDecimal, SqlString, Weight,
     array::Array,
-    binary::{to_hex_, ByteArray},
+    binary::{ByteArray, to_hex_},
     byte_index,
-    error::{r2o, SqlResult, SqlRuntimeError},
+    error::{SqlResult, SqlRuntimeError, r2o},
     geopoint::*,
     interval::*,
     map::Map,
@@ -14,11 +15,10 @@ use crate::{
     timestamp::*,
     uuid::*,
     variant::*,
-    DynamicDecimal, SqlDecimal, SqlString, Weight,
 };
 
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use dbsp::algebra::{HasOne, HasZero, F32, F64};
+use dbsp::algebra::{F32, F64, HasOne, HasZero};
 use num::{One, Zero};
 use num_traits::cast::NumCast;
 use regex::{Captures, Regex};
@@ -475,8 +475,9 @@ pub fn cast_to_SqlDecimal_SqlDecimal<
 ) -> SqlResult<SqlDecimal<P0, S0>> {
     let result = value.convert();
     match result {
-        None => Err(SqlRuntimeError::from_string(
-            format!("Cannot represent {value} as DECIMAL({P0}, {S0}): precision of DECIMAL type too small to represent value"))),
+        None => Err(SqlRuntimeError::from_string(format!(
+            "Cannot represent {value} as DECIMAL({P0}, {S0}): precision of DECIMAL type too small to represent value"
+        ))),
         Some(value) => Ok(value),
     }
 }
@@ -1407,11 +1408,7 @@ pub fn cast_to_s_LongInterval_YEARS(
 
 #[doc(hidden)]
 const fn sign(negative: bool) -> &'static str {
-    if negative {
-        "-"
-    } else {
-        "+"
-    }
+    if negative { "-" } else { "+" }
 }
 
 #[doc(hidden)]
@@ -2224,7 +2221,7 @@ pub fn cast_to_ShortInterval_DAYS_u64(value: u64) -> SqlResult<ShortInterval> {
         None => {
             return Err(SqlRuntimeError::from_string(format!(
                 "Cannot convert {value} to INTERVAL DAYS"
-            )))
+            )));
         }
     };
     let val = value.checked_mul(86400 * 1000);
@@ -2262,7 +2259,7 @@ pub fn cast_to_ShortInterval_HOURS_u64(value: u64) -> SqlResult<ShortInterval> {
         None => {
             return Err(SqlRuntimeError::from_string(format!(
                 "Cannot convert {value} to INTERVAL HOURS"
-            )))
+            )));
         }
     };
     let val = value.checked_mul(3600 * 1000);
@@ -2300,7 +2297,7 @@ pub fn cast_to_ShortInterval_MINUTES_u64(value: u64) -> SqlResult<ShortInterval>
         None => {
             return Err(SqlRuntimeError::from_string(format!(
                 "Cannot convert {value} to INTERVAL MINUTES"
-            )))
+            )));
         }
     };
     let val = value.checked_mul(60 * 1000);
@@ -2338,7 +2335,7 @@ pub fn cast_to_ShortInterval_SECONDS_u64(value: u64) -> SqlResult<ShortInterval>
         None => {
             return Err(SqlRuntimeError::from_string(format!(
                 "Cannot convert {value} to INTERVAL SECONDS"
-            )))
+            )));
         }
     };
     let val = value.checked_mul(1000);
@@ -2426,7 +2423,7 @@ pub fn cast_to_LongInterval_YEARS_i64(value: i64) -> SqlResult<LongInterval> {
         None => {
             return Err(SqlRuntimeError::from_string(format!(
                 "Cannot convert {value} to INTERVAL YEARS"
-            )))
+            )));
         }
     };
     cast_to_LongInterval_YEARS_i32(value)
@@ -2458,7 +2455,7 @@ pub fn cast_to_LongInterval_MONTHS_i64(value: i64) -> SqlResult<LongInterval> {
         None => {
             return Err(SqlRuntimeError::from_string(format!(
                 "Cannot convert {value} to INTERVAL MONTHS"
-            )))
+            )));
         }
     };
     cast_to_LongInterval_MONTHS_i32(value)
@@ -2484,7 +2481,7 @@ pub fn cast_to_LongInterval_YEARS_u32(value: u32) -> SqlResult<LongInterval> {
         None => {
             return Err(SqlRuntimeError::from_string(format!(
                 "Cannot convert {value} to INTERVAL YEARS"
-            )))
+            )));
         }
     };
     cast_to_LongInterval_YEARS_i32(value)
@@ -2498,7 +2495,7 @@ pub fn cast_to_LongInterval_YEARS_u64(value: u64) -> SqlResult<LongInterval> {
         None => {
             return Err(SqlRuntimeError::from_string(format!(
                 "Cannot convert {value} to INTERVAL YEARS"
-            )))
+            )));
         }
     };
     cast_to_LongInterval_YEARS_i32(value)
@@ -2524,7 +2521,7 @@ pub fn cast_to_LongInterval_MONTHS_u32(value: u32) -> SqlResult<LongInterval> {
         None => {
             return Err(SqlRuntimeError::from_string(format!(
                 "Cannot convert {value} to INTERVAL MONTHS"
-            )))
+            )));
         }
     };
     Ok(LongInterval::from(value))
@@ -2538,7 +2535,7 @@ pub fn cast_to_LongInterval_MONTHS_u64(value: u64) -> SqlResult<LongInterval> {
         None => {
             return Err(SqlRuntimeError::from_string(format!(
                 "Cannot convert {value} to INTERVAL MONTHS"
-            )))
+            )));
         }
     };
     cast_to_LongInterval_MONTHS_i32(value)
@@ -2587,7 +2584,7 @@ pub fn cast_to_LongInterval_YEARS_TO_MONTHS_s(value: SqlString) -> SqlResult<Lon
                 return Err(SqlRuntimeError::from_string(format!(
                     "Error converting {value} to INTERVAL YEARS TO MONTHS: {}",
                     e
-                )))
+                )));
             }
             Ok(years) => years,
         };
@@ -2605,7 +2602,7 @@ pub fn cast_to_LongInterval_YEARS_TO_MONTHS_s(value: SqlString) -> SqlResult<Lon
                         return Err(SqlRuntimeError::from_string(format!(
                             "Error converting {value} to INTERVAL YEARS TO MONTHS: {}",
                             e
-                        )))
+                        )));
                     }
                 }
             }
@@ -2728,7 +2725,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_HOURS_s(value: SqlString) -> SqlResult<Shor
                 return Err(SqlRuntimeError::from_string(format!(
                     "Error converting {value} to INTERVAL DAYS TO HOURS: {}",
                     e
-                )))
+                )));
             }
             Ok(days) => days,
         };
@@ -2738,7 +2735,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_HOURS_s(value: SqlString) -> SqlResult<Shor
                 return Err(SqlRuntimeError::from_string(format!(
                     "Error converting {value} to INTERVAL DAYS TO HOURS: {}",
                     e
-                )))
+                )));
             }
             Ok(hours) => hours,
         };
@@ -2774,7 +2771,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(value: SqlString) -> SqlResult<Sh
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse DAYS: {}; {}",
                     daycap, e,
-                )))
+                )));
             }
             Ok(days) => days,
         };
@@ -2784,7 +2781,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(value: SqlString) -> SqlResult<Sh
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse HOURS: {}; {}",
                     hourcap, e,
-                )))
+                )));
             }
             Ok(hours) => hours,
         };
@@ -2795,7 +2792,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(value: SqlString) -> SqlResult<Sh
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse MINUTES: {}; {}",
                     mincap, e,
-                )))
+                )));
             }
             Ok(minutes) => minutes,
         };
@@ -2824,7 +2821,7 @@ pub fn cast_to_ShortInterval_HOURS_TO_MINUTES_s(value: SqlString) -> SqlResult<S
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse HOURS: {}; {}",
                     hourcap, e,
-                )))
+                )));
             }
             Ok(hours) => hours,
         };
@@ -2834,7 +2831,7 @@ pub fn cast_to_ShortInterval_HOURS_TO_MINUTES_s(value: SqlString) -> SqlResult<S
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse MINUTES: {}; {}",
                     mincap, e,
-                )))
+                )));
             }
             Ok(minutes) => minutes,
         };
@@ -2863,7 +2860,7 @@ pub fn cast_to_ShortInterval_SECONDS_s(value: SqlString) -> SqlResult<ShortInter
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse SECONDS: {}; {}",
                     seccap, e,
-                )))
+                )));
             }
             Ok(seconds) => seconds,
         };
@@ -2880,7 +2877,7 @@ pub fn cast_to_ShortInterval_SECONDS_s(value: SqlString) -> SqlResult<ShortInter
                     "Could not parse MILLISECONDS: {}; {}",
                     captures.get(4).unwrap().as_str(),
                     e,
-                )))
+                )));
             }
             Ok(ms) => ms,
         };
@@ -2908,7 +2905,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(value: SqlString) -> SqlResult<Sh
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse DAYS: {}; {}",
                     daycap, e,
-                )))
+                )));
             }
             Ok(days) => days,
         };
@@ -2918,7 +2915,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(value: SqlString) -> SqlResult<Sh
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse HOURS: {}; {}",
                     hourcap, e,
-                )))
+                )));
             }
             Ok(hours) => hours,
         };
@@ -2929,7 +2926,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(value: SqlString) -> SqlResult<Sh
                 return Err(SqlRuntimeError::from_string(format!(
                     "MINUTES is not a number: {}",
                     mincap
-                )))
+                )));
             }
             Ok(minutes) => minutes,
         };
@@ -2940,7 +2937,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(value: SqlString) -> SqlResult<Sh
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse SECONDS: {}; {}",
                     seccap, e,
-                )))
+                )));
             }
             Ok(seconds) => seconds,
         };
@@ -2958,7 +2955,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(value: SqlString) -> SqlResult<Sh
                     "Could not parse MILLISECONDS: {}; {}",
                     captures.get(7).unwrap().as_str(),
                     e,
-                )))
+                )));
             }
             Ok(ms) => ms,
         };
@@ -2986,7 +2983,7 @@ pub fn cast_to_ShortInterval_HOURS_TO_SECONDS_s(value: SqlString) -> SqlResult<S
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse HOURS: {}; {}",
                     hourcap, e,
-                )))
+                )));
             }
             Ok(hours) => hours,
         };
@@ -2996,7 +2993,7 @@ pub fn cast_to_ShortInterval_HOURS_TO_SECONDS_s(value: SqlString) -> SqlResult<S
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse MINUTES: {}; {}",
                     mincap, e,
-                )))
+                )));
             }
             Ok(minutes) => minutes,
         };
@@ -3007,7 +3004,7 @@ pub fn cast_to_ShortInterval_HOURS_TO_SECONDS_s(value: SqlString) -> SqlResult<S
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse SECONDS: {}; {}",
                     seccap, e,
-                )))
+                )));
             }
             Ok(seconds) => seconds,
         };
@@ -3025,7 +3022,7 @@ pub fn cast_to_ShortInterval_HOURS_TO_SECONDS_s(value: SqlString) -> SqlResult<S
                     "Could not parse MILLISECONDS: {}; {}",
                     captures.get(6).unwrap().as_str(),
                     e,
-                )))
+                )));
             }
             Ok(ms) => ms,
         };
@@ -3053,7 +3050,7 @@ pub fn cast_to_ShortInterval_MINUTES_TO_SECONDS_s(value: SqlString) -> SqlResult
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse MINUTES: {}; {}",
                     mincap, e,
-                )))
+                )));
             }
             Ok(minutes) => minutes,
         };
@@ -3063,7 +3060,7 @@ pub fn cast_to_ShortInterval_MINUTES_TO_SECONDS_s(value: SqlString) -> SqlResult
                 return Err(SqlRuntimeError::from_string(format!(
                     "Could not parse SECONDS: {}; {}",
                     seccap, e,
-                )))
+                )));
             }
             Ok(seconds) => seconds,
         };
@@ -3081,7 +3078,7 @@ pub fn cast_to_ShortInterval_MINUTES_TO_SECONDS_s(value: SqlString) -> SqlResult
                     "Could not parse MILLISECONDS: {}; {}",
                     captures.get(5).unwrap().as_str(),
                     e,
-                )))
+                )));
             }
             Ok(ms) => ms,
         };
@@ -3373,7 +3370,7 @@ pub fn cast_to_i_i64(value: i64) -> SqlResult<isize> {
         None => {
             return Err(SqlRuntimeError::from_string(format!(
                 "Cannot convert {value} to isize"
-            )))
+            )));
         }
     };
     Ok(value)
@@ -3425,7 +3422,7 @@ pub fn cast_to_i_u64(value: u64) -> SqlResult<isize> {
         None => {
             return Err(SqlRuntimeError::from_string(format!(
                 "Cannot convert {value} to INTERVAL MONTHS"
-            )))
+            )));
         }
     };
     Ok(value)
@@ -3954,19 +3951,19 @@ mod tests {
     use arcstr::ArcStr;
 
     use crate::{
-        cast_to_s_LongInterval_MONTHS, cast_to_s_LongInterval_YEARS,
+        SqlString, Uuid, cast_to_s_LongInterval_MONTHS, cast_to_s_LongInterval_YEARS,
         cast_to_s_LongInterval_YEARS_TO_MONTHS, cast_to_s_ShortInterval_DAYS,
         cast_to_s_ShortInterval_DAYS_TO_HOURS, cast_to_s_ShortInterval_DAYS_TO_MINUTES,
         cast_to_s_ShortInterval_DAYS_TO_SECONDS, cast_to_s_ShortInterval_HOURS,
         cast_to_s_ShortInterval_HOURS_TO_MINUTES, cast_to_s_ShortInterval_HOURS_TO_SECONDS,
         cast_to_s_ShortInterval_MINUTES, cast_to_s_ShortInterval_MINUTES_TO_SECONDS,
         cast_to_s_ShortInterval_SECONDS, cast_to_s_SqlDecimal, cast_to_s_Uuid, cast_to_s_b,
-        cast_to_s_i, cast_to_s_i16, cast_to_s_i32, cast_to_s_i64, cast_to_s_i8, cast_to_s_s,
-        cast_to_s_u, cast_to_s_u16, cast_to_s_u32, cast_to_s_u64, cast_to_s_u8,
+        cast_to_s_i, cast_to_s_i8, cast_to_s_i16, cast_to_s_i32, cast_to_s_i64, cast_to_s_s,
+        cast_to_s_u, cast_to_s_u8, cast_to_s_u16, cast_to_s_u32, cast_to_s_u64,
         casts::{CharacterCount, SizedStringSpec},
         decimal::SqlDecimal,
         interval::{LongInterval, ShortInterval},
-        limit_or_size_string, SqlString, Uuid,
+        limit_or_size_string,
     };
 
     #[test]

@@ -8,7 +8,9 @@ impl<const P: usize, const S: usize> rkyv::Archive for Fixed<P, S> {
 
     #[inline]
     unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, out: *mut Self::Archived) {
-        out.write(*self);
+        unsafe {
+            out.write(*self);
+        }
     }
 }
 
@@ -31,6 +33,6 @@ impl<D: Fallible + ?Sized, const P: usize, const S: usize> rkyv::Deserialize<Fix
 impl<C: Fallible, const P: usize, const S: usize> rkyv::CheckBytes<C> for Fixed<P, S> {
     type Error = core::convert::Infallible;
     unsafe fn check_bytes<'a>(value: *const Self, _ctx: &mut C) -> Result<&'a Self, Self::Error> {
-        Ok(&*value)
+        unsafe { Ok(&*value) }
     }
 }
