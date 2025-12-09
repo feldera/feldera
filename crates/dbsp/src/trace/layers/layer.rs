@@ -7,14 +7,14 @@ use rand::Rng;
 use rkyv::{Archive, Serialize};
 
 use crate::{
+    DBData, NumEntries,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
     dynamic::{DataTrait, DynVec, Erase, Factory, LeanVec, WithFactory},
     utils::{advance, assume},
-    DBData, NumEntries,
 };
 use size_of::SizeOf;
 use std::{
-    cmp::{min, Ordering},
+    cmp::{Ordering, min},
     fmt::{self, Debug, Display, Formatter},
     ops::Neg,
 };
@@ -165,7 +165,9 @@ where
     ///
     /// Requires that `offs` has a length of `keys + 1`
     unsafe fn assume_invariants(&self) {
-        assume(self.offs.len() == self.keys.len() + 1);
+        unsafe {
+            assume(self.offs.len() == self.keys.len() + 1);
+        }
     }
 
     /// Compute a random sample of size `sample_size` of keys in `self.keys`.

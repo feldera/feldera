@@ -1,6 +1,6 @@
 use crate::{
-    dynamic::{DowncastTrait, DynData, DynUnit, Erase},
     DBData, OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
+    dynamic::{DowncastTrait, DynData, DynUnit, Erase},
 };
 
 use super::dynamic::asof_join::AsofJoinFactories;

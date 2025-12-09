@@ -1,6 +1,7 @@
 //! Count operators.
 
 use crate::{
+    DBData, Timestamp, ZWeight,
     algebra::{IndexedZSet, OrdIndexedZSet},
     circuit::{Circuit, Stream},
     dynamic::{ClonableTrait, DataTrait, Erase},
@@ -11,7 +12,6 @@ use crate::{
         distinct::DistinctFactories,
     },
     trace::{BatchReaderFactories, Deserializable},
-    DBData, Timestamp, ZWeight,
 };
 
 pub struct DistinctCountFactories<Z, O, T>
@@ -194,13 +194,12 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        indexed_zset,
+        Runtime, indexed_zset,
         typed_batch::{OrdIndexedZSet, SpineSnapshot},
         utils::Tup2,
-        Runtime,
     };
     use core::ops::Range;
-    use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng, seq::SliceRandom};
 
     #[test]
     fn weighted_count_test() {

@@ -4,8 +4,8 @@ use crate::{
     storage::file::{Deserializer, Serializer},
 };
 use rkyv::{
-    archived_value, de::deserializers::SharedDeserializeMap, Archive, Archived, Deserialize,
-    Fallible, Serialize,
+    Archive, Archived, Deserialize, Fallible, Serialize, archived_value,
+    de::deserializers::SharedDeserializeMap,
 };
 use std::{cmp::Ordering, marker::PhantomData, mem::transmute};
 
@@ -61,11 +61,13 @@ where
     T: ArchivedDBData,
 {
     unsafe fn deserialize_from_bytes(&mut self, bytes: &[u8], pos: usize) {
-        let archived: &<Self as Archive>::Archived = archived_value::<Self>(bytes, pos);
+        unsafe {
+            let archived: &<Self as Archive>::Archived = archived_value::<Self>(bytes, pos);
 
-        *self = archived
-            .deserialize(&mut SharedDeserializeMap::new())
-            .unwrap();
+            *self = archived
+                .deserialize(&mut SharedDeserializeMap::new())
+                .unwrap();
+        }
     }
 }
 

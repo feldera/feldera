@@ -177,7 +177,7 @@ pub trait Lattice: PartialOrder {
 }
 
 macro_rules! implement_lattice {
-    ($index_type:ty, $minimum:expr) => {
+    ($index_type:ty, $minimum:expr_2021) => {
         impl Lattice for $index_type {
             #[inline]
             fn join(&self, other: &Self) -> Self {

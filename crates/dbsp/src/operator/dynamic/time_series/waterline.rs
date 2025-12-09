@@ -7,10 +7,10 @@ use crate::operator::dynamic::{MonoIndexedZSet, MonoZSet};
 use crate::storage::file::to_bytes;
 use crate::trace::unaligned_deserialize;
 use crate::{
+    Circuit, NumEntries, RootCircuit, Runtime, Stream,
     dynamic::DataTrait,
     operator::communication::new_exchange_operators,
     trace::{BatchReader, Cursor, Rkyv},
-    Circuit, NumEntries, RootCircuit, Runtime, Stream,
 };
 use std::{cmp::max, panic::Location};
 
@@ -184,10 +184,10 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
+        Runtime,
         dynamic::{DowncastTrait, DynData},
         typed_batch::TypedBox,
         utils::Tup2,
-        Runtime,
     };
     use std::cmp::max;
 

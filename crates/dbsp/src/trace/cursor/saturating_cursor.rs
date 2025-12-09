@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
 
 use crate::{
+    DynZWeight, Timestamp,
     dynamic::{DataTrait, Erase, Factory},
     trace::Cursor,
-    DynZWeight, Timestamp,
 };
 
 /// When `SATURATE` is `true`, behaves as if the underlying cursor contained exactly

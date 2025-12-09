@@ -78,7 +78,7 @@
 //! format starting with a [`BlockHeader`].
 use crate::storage::{buffer_cache::FBuf, file::BLOOM_FILTER_SEED};
 
-use binrw::{binrw, binwrite, BinRead, BinResult, BinWrite, Error as BinError};
+use binrw::{BinRead, BinResult, BinWrite, Error as BinError, binrw, binwrite};
 #[cfg(doc)]
 use crc32c;
 use fastbloom::BloomFilter;

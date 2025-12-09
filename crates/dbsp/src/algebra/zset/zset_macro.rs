@@ -23,13 +23,13 @@ use crate::zset_set;
 /// ```
 #[macro_export]
 macro_rules! indexed_zset {
-    ($key_type:ty => $val_type:ty: $($key:expr => { $($value:expr => $weight:expr),* }),* $(,)?) => {{
+    ($key_type:ty => $val_type:ty: $($key:expr_2021 => { $($value:expr_2021 => $weight:expr_2021),* }),* $(,)?) => {{
         let batch = ::std::vec![ $( $( $crate::utils::Tup2($crate::utils::Tup2($key, $value), $weight) ),* ),* ];
 
         $crate::typed_batch::OrdIndexedZSet::<$key_type, $val_type>::from_tuples((), batch)
     }};
 
-    ($($key:expr => { $($value:expr => $weight:expr),* }),* $(,)?) => {{
+    ($($key:expr_2021 => { $($value:expr_2021 => $weight:expr_2021),* }),* $(,)?) => {{
         let batch = ::std::vec![ $( $( $crate::utils::Tup2($crate::utils::Tup2($key, $value), $weight) ),* ),* ];
 
         $crate::typed_batch::OrdIndexedZSet::from_tuples((), batch)
@@ -59,7 +59,7 @@ macro_rules! indexed_zset {
 /// ```
 #[macro_export]
 macro_rules! zset {
-    ( $( $key:expr => $weight:expr ),* $(,)?) => {{
+    ( $( $key:expr_2021 => $weight:expr_2021 ),* $(,)?) => {{
         let batch = ::std::vec![ $( $crate::utils::Tup2($crate::utils::Tup2($key, ()), $weight) ),* ];
 
         $crate::typed_batch::OrdZSet::from_tuples((), batch)
@@ -88,7 +88,7 @@ macro_rules! zset {
 /// ```
 #[macro_export]
 macro_rules! zset_set {
-    ( $( $key:expr ),* $(,)?) => {{
+    ( $( $key:expr_2021 ),* $(,)?) => {{
         let batch = ::std::vec![ $( $crate::utils::Tup2($crate::utils::Tup2($key, ()), 1) ),* ];
 
         $crate::typed_batch::OrdZSet::from_tuples((), batch)

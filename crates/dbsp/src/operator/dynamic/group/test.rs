@@ -3,19 +3,19 @@
 use std::cmp::Ordering;
 
 use crate::{
+    DBData, DynZWeight, RootCircuit, Runtime, ZWeight,
     circuit::CircuitConfig,
     dynamic::{DowncastTrait, DynData, DynPair},
     indexed_zset,
     operator::{CmpFunc, IndexedZSetHandle, OutputHandle},
     trace::{
-        test::test_batch::{assert_batch_eq, assert_typed_batch_eq, TestBatch, TestBatchFactories},
         Cursor, SpineSnapshot as DynSpineSnapshot, Trace,
+        test::test_batch::{TestBatch, TestBatchFactories, assert_batch_eq, assert_typed_batch_eq},
     },
     typed_batch::{
         BatchReader, DynBatchReader, DynOrdIndexedZSet, OrdIndexedZSet, SpineSnapshot, TypedBatch,
     },
     utils::{Tup2, Tup3, Tup4},
-    DBData, DynZWeight, RootCircuit, Runtime, ZWeight,
 };
 use anyhow::Result as AnyResult;
 use proptest::{collection::vec, prelude::*};

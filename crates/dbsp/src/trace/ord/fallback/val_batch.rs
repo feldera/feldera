@@ -7,21 +7,21 @@ use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
 use crate::trace::{BatchLocation, MergeCursor};
 use crate::{
+    DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
         DataTrait, DynDataTyped, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait,
     },
     storage::file::reader::Error as ReaderError,
     trace::{
-        ord::merge_batcher::MergeBatcher, Batch, BatchFactories, BatchReader, BatchReaderFactories,
-        Builder, FileValBatch, FileValBatchFactories, Filter, VecValBatch, VecValBatchFactories,
-        WeightedItem,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, FileValBatch,
+        FileValBatchFactories, Filter, VecValBatch, VecValBatchFactories, WeightedItem,
+        ord::merge_batcher::MergeBatcher,
     },
-    DBData, DBWeight, NumEntries, Timestamp,
 };
 use derive_more::Debug;
 use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
-use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
 
 use super::utils::{copy_to_builder, pick_merge_destination};

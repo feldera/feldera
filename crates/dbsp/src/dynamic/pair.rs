@@ -1,8 +1,8 @@
 use std::mem::take;
 
 use crate::{
-    declare_trait_object_with_archived, derive_comparison_traits, dynamic::erase::Erase,
-    utils::Tup2, DBData,
+    DBData, declare_trait_object_with_archived, derive_comparison_traits, dynamic::erase::Erase,
+    utils::Tup2,
 };
 
 use super::{Data, DataTrait, DowncastTrait};

@@ -1,7 +1,7 @@
 //! Intermediate representation of a circuit graph suitable for
 //! conversion to a visual format like dot.
 
-use serde::{ser::SerializeStruct, Serialize};
+use serde::{Serialize, ser::SerializeStruct};
 use std::fmt::{self, Debug, Display, Write};
 
 type Id = String;

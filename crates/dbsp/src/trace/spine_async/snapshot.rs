@@ -4,17 +4,17 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::{StreamExt, stream::FuturesUnordered};
 use rand::Rng;
 use rkyv::ser::Serializer;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 
 use super::SpineCursor;
+use crate::NumEntries;
 use crate::dynamic::{DynVec, Factory};
 use crate::trace::cursor::{CursorFactory, CursorList};
-use crate::trace::{merge_batches, Batch, BatchReader, BatchReaderFactories, Cursor, Spine};
-use crate::NumEntries;
+use crate::trace::{Batch, BatchReader, BatchReaderFactories, Cursor, Spine, merge_batches};
 
 pub trait WithSnapshot: Sized {
     type Batch: Batch;

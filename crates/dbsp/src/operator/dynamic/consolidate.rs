@@ -4,9 +4,9 @@ use std::{borrow::Cow, marker::PhantomData};
 
 use crate::{
     circuit::{
+        Circuit, OwnershipPreference, Scope, Stream,
         circuit_builder::StreamId,
         operator_traits::{Operator, UnaryOperator},
-        Circuit, OwnershipPreference, Scope, Stream,
     },
     circuit_cache_key,
     trace::{Batch, BatchReader, Trace},

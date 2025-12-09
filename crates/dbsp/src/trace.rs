@@ -68,13 +68,13 @@ pub use ord::{
     VecWSetFactories,
 };
 
-use rkyv::{archived_root, de::deserializers::SharedDeserializeMap, Deserialize};
+use rkyv::{Deserialize, archived_root, de::deserializers::SharedDeserializeMap};
 
 use crate::{
+    Error, NumEntries, Timestamp,
     algebra::MonoidValue,
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
     storage::file::reader::Error as ReaderError,
-    Error, NumEntries, Timestamp,
 };
 pub use cursor::{Cursor, MergeCursor};
 pub use layers::Trie;
@@ -235,12 +235,12 @@ pub trait BatchFactories<K: DataTrait + ?Sized, V: DataTrait + ?Sized, T, R: Wei
 pub trait Trace: BatchReader {
     /// The type of an immutable collection of updates.
     type Batch: Batch<
-        Key = Self::Key,
-        Val = Self::Val,
-        Time = Self::Time,
-        R = Self::R,
-        Factories = Self::Factories,
-    >;
+            Key = Self::Key,
+            Val = Self::Val,
+            Time = Self::Time,
+            R = Self::R,
+            Factories = Self::Factories,
+        >;
 
     /// Allocates a new empty trace.
     fn new(factories: &Self::Factories) -> Self;
@@ -645,11 +645,11 @@ where
 {
     /// A batch type equivalent to `Self`, but with timestamp type `T` instead of `Self::Time`.
     type Timed<T: Timestamp>: Batch<
-        Key = <Self as BatchReader>::Key,
-        Val = <Self as BatchReader>::Val,
-        Time = T,
-        R = <Self as BatchReader>::R,
-    >;
+            Key = <Self as BatchReader>::Key,
+            Val = <Self as BatchReader>::Val,
+            Time = T,
+            R = <Self as BatchReader>::R,
+        >;
 
     /// A type used to assemble batches from disordered updates.
     type Batcher: Batcher<Self>;
@@ -1363,11 +1363,11 @@ where
 #[cfg(test)]
 mod serialize_test {
     use crate::{
+        DynZWeight, OrdIndexedZSet,
         algebra::OrdIndexedZSet as DynOrdIndexedZSet,
         dynamic::DynData,
         indexed_zset,
-        trace::{deserialize_indexed_wset, serialize_indexed_wset, BatchReader},
-        DynZWeight, OrdIndexedZSet,
+        trace::{BatchReader, deserialize_indexed_wset, serialize_indexed_wset},
     };
 
     #[test]

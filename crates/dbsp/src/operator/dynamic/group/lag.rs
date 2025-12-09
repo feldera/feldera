@@ -2,6 +2,7 @@ use super::{GroupTransformer, Monotonicity};
 use crate::algebra::{OrdIndexedZSetFactories, ZRingValue};
 use crate::operator::dynamic::filter_map::DynFilterMap;
 use crate::{
+    DBData, DynZWeight, RootCircuit, Stream, ZWeight,
     algebra::{HasZero, IndexedZSet, OrdIndexedZSet, ZCursor},
     dynamic::{
         ClonableTrait, DataTrait, DynData, DynPair, DynUnit, DynVec, Erase, Factory, LeanVec,
@@ -9,11 +10,10 @@ use crate::{
     },
     operator::dynamic::MonoIndexedZSet,
     trace::{
-        cursor::{CursorPair, ReverseKeyCursor},
         BatchReaderFactories,
+        cursor::{CursorPair, ReverseKeyCursor},
     },
     utils::Tup2,
-    DBData, DynZWeight, RootCircuit, Stream, ZWeight,
 };
 use std::{cmp::Ordering, marker::PhantomData, ops::Neg};
 

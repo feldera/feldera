@@ -2,8 +2,8 @@ use anyhow::Result;
 use chrono::{Datelike, NaiveDate};
 use csv::Reader;
 use dbsp::{
-    utils::{Tup2, Tup3},
     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+    utils::{Tup2, Tup3},
 };
 use rkyv::{Archive, Serialize};
 use size_of::SizeOf;

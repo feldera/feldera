@@ -1,13 +1,13 @@
+use crate::Timestamp;
 use crate::circuit::checkpointer::Checkpoint;
 use crate::circuit::circuit_builder::IterativeCircuit;
-use crate::Timestamp;
 use crate::{
+    ChildCircuit, Circuit, DBData, SchedulerError, Stream, ZWeight,
     dynamic::Erase,
     operator::dynamic::{
         distinct::DistinctFactories, recursive::RecursiveStreams as DynRecursiveStreams,
     },
     typed_batch::{DynIndexedZSet, TypedBatch},
-    ChildCircuit, Circuit, DBData, SchedulerError, Stream, ZWeight,
 };
 use impl_trait_for_tuples::impl_for_tuples;
 

@@ -1,9 +1,10 @@
 use std::{borrow::Cow, cell::RefCell, cmp::Ordering, marker::PhantomData, panic::Location};
 
 use crate::{
+    Circuit, DBData, DynZWeight, RootCircuit, Scope, Stream, ZWeight,
     algebra::{IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdZSet, ZBatchReader, ZCursor},
     circuit::{
-        metadata::{BatchSizeStats, OperatorLocation, OperatorMeta, OUTPUT_BATCHES_LABEL},
+        metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL, OperatorLocation, OperatorMeta},
         operator_traits::{Operator, QuaternaryOperator},
     },
     dynamic::{
@@ -11,11 +12,10 @@ use crate::{
         DynWeightedPairs, Erase, Factory, LeanVec, WeightTrait, WithFactory,
     },
     trace::{
+        BatchFactories, BatchReader, BatchReaderFactories, Cursor, Spine, SpineSnapshot,
         cursor::{CursorEmpty, CursorPair},
         spine_async::WithSnapshot,
-        BatchFactories, BatchReader, BatchReaderFactories, Cursor, Spine, SpineSnapshot,
     },
-    Circuit, DBData, DynZWeight, RootCircuit, Scope, Stream, ZWeight,
 };
 
 use super::{MonoIndexedZSet, MonoZSet};
@@ -718,11 +718,11 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
+        DBData, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime, ZSetHandle, ZWeight,
         algebra::F32,
         circuit::CircuitConfig,
         utils::{Tup2, Tup3, Tup4},
-        zset, DBData, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime, ZSetHandle,
-        ZWeight,
+        zset,
     };
     use proptest::{collection::vec, prelude::*};
 

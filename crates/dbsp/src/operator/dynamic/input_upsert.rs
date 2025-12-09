@@ -1,26 +1,26 @@
 use crate::{
+    Circuit, DBData, NumEntries, RootCircuit, Stream, ZWeight,
     algebra::{HasOne, HasZero, IndexedZSet, OrdZSet, ZTrace},
     circuit::{
-        checkpointer::Checkpoint,
-        circuit_builder::{register_replay_stream, CircuitBase, RefStreamValue},
-        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
-        operator_traits::{BinaryOperator, Operator, TernaryOperator},
         OwnershipPreference, Scope,
+        checkpointer::Checkpoint,
+        circuit_builder::{CircuitBase, RefStreamValue, register_replay_stream},
+        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
+        operator_traits::{BinaryOperator, Operator, TernaryOperator},
     },
     declare_trait_object,
     dynamic::{ClonableTrait, Data, DataTrait, DynOpt, DynPairs, Erase, Factory, WithFactory},
     operator::{
+        Z1,
         dynamic::{
             time_series::LeastUpperBoundFunc,
             trace::{DelayedTraceId, TraceBounds, TraceId, UntimedTraceAppend, Z1Trace},
         },
-        Z1,
     },
     trace::{
-        cursor::Cursor, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Rkyv,
-        Spine,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Rkyv, Spine,
+        cursor::Cursor,
     },
-    Circuit, DBData, NumEntries, RootCircuit, Stream, ZWeight,
 };
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
@@ -548,9 +548,11 @@ where
             })
             .collect::<Vec<_>>();
         let n_updates = updates.iter().map(|updates| updates.0.len()).sum();
-        debug_assert!(updates
-            .iter()
-            .all(|updates| updates.0.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst()))));
+        debug_assert!(
+            updates
+                .iter()
+                .all(|updates| updates.0.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst())))
+        );
 
         self.input_batch_stats.add_batch(n_updates);
 
@@ -790,9 +792,11 @@ where
             })
             .collect::<Vec<_>>();
         let n_updates = updates.iter().map(|updates| updates.0.len()).sum();
-        debug_assert!(updates
-            .iter()
-            .all(|updates| updates.0.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst()))));
+        debug_assert!(
+            updates
+                .iter()
+                .all(|updates| updates.0.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst())))
+        );
 
         self.input_batch_stats.add_batch(n_updates);
 

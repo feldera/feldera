@@ -1,18 +1,18 @@
 //! Compute random samples of data.
 
 use crate::{
+    Circuit, DBData, RootCircuit, Stream, ZWeight,
     algebra::{
-        zset::{VecZSet, VecZSetFactories},
         HasOne, IndexedZSetReader,
+        zset::{VecZSet, VecZSetFactories},
     },
     circuit::{
-        operator_traits::{BinaryOperator, Operator},
         Scope,
+        operator_traits::{BinaryOperator, Operator},
     },
     dynamic::{DynPair, Erase},
     trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
     utils::Tup2,
-    Circuit, DBData, RootCircuit, Stream, ZWeight,
 };
 use rand::thread_rng;
 use std::{borrow::Cow, cmp::min, marker::PhantomData};
@@ -334,17 +334,17 @@ where
 #[allow(clippy::type_complexity)]
 mod test {
     use crate::{
+        DynZWeight, RootCircuit, Runtime, ZWeight,
         dynamic::{DowncastTrait, DynData, DynPair},
         operator::{IndexedZSetHandle, InputHandle, MapHandle, OutputHandle, Update},
         trace::{
-            test::test_batch::{batch_to_tuples, TestBatch, TestBatchFactories},
             Cursor, Trace,
+            test::test_batch::{TestBatch, TestBatchFactories, batch_to_tuples},
         },
         typed_batch::{
             BatchReader, DynBatchReader, DynVecZSet, OrdIndexedZSet, TypedBatch, VecZSet,
         },
         utils::Tup2,
-        DynZWeight, RootCircuit, Runtime, ZWeight,
     };
     use anyhow::Result as AnyResult;
     use proptest::{collection::vec, prelude::*};

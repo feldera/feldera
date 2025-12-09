@@ -2,6 +2,7 @@ use dyn_clone::clone_box;
 
 use super::{DiffGroupTransformer, Monotonicity, NonIncrementalGroupTransformer};
 use crate::{
+    DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
     algebra::{
         AddAssignByRef, HasOne, HasZero, IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories,
         ZCursor, ZRingValue,
@@ -9,7 +10,6 @@ use crate::{
     dynamic::{DataTrait, DynData, DynUnit, Erase, Factory, WeightTrait},
     operator::dynamic::MonoIndexedZSet,
     trace::{BatchReaderFactories, OrdIndexedWSetFactories},
-    DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
 };
 use std::{marker::PhantomData, ops::Neg};
 

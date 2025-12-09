@@ -3,14 +3,14 @@ use std::{borrow::Cow, cmp::Ordering, marker::PhantomData};
 use dyn_clone::clone_box;
 
 use crate::{
+    Circuit, RootCircuit, Scope, Stream, ZWeight,
     algebra::{IndexedZSet, ZBatchReader},
     circuit::operator_traits::{BinaryOperator, Operator},
     dynamic::{ClonableTrait, DynData, Erase},
     operator::dynamic::{
-        accumulate_trace::AccumulateTraceFeedback, trace::TraceBounds, MonoIndexedZSet,
+        MonoIndexedZSet, accumulate_trace::AccumulateTraceFeedback, trace::TraceBounds,
     },
     trace::{BatchReader, BatchReaderFactories, Builder, Cursor, Spine},
-    Circuit, RootCircuit, Scope, Stream, ZWeight,
 };
 
 impl Stream<RootCircuit, MonoIndexedZSet> {
@@ -210,8 +210,8 @@ mod test {
     use std::cmp::{max, min};
 
     use crate::{
-        circuit::CircuitConfig, operator::Min, typed_batch::SpineSnapshot, utils::Tup2, zset,
         OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
+        circuit::CircuitConfig, operator::Min, typed_batch::SpineSnapshot, utils::Tup2, zset,
     };
     use proptest::{collection, prelude::*};
 

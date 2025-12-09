@@ -1,19 +1,19 @@
 use crate::{
+    DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
         DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
         LeanVec, WeightTrait, WithFactory,
     },
     trace::{
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
+        Serializer, WeightedItem,
         cursor::Position,
         layers::{
             Cursor as TrieCursor, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
             OrdOffset, Trie,
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Serializer, WeightedItem,
     },
     utils::{ConsolidatePairedSlices, Tup2},
-    DBData, DBWeight, NumEntries, Timestamp,
 };
 use feldera_storage::FileReader;
 use rand::Rng;

@@ -1,9 +1,12 @@
 use crate::{
+    DBWeight, Error, NumEntries,
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
     circuit::checkpointer::Checkpoint,
     dynamic::{DataTrait, DynVec, Erase, WeightTrait, WeightTraitTyped},
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
+        Batch, BatchLocation, BatchReader, Builder, FallbackValBatch, FileIndexedWSet,
+        FileIndexedWSetFactories, Filter, MergeCursor,
         cursor::{CursorFactory, DelegatingCursor, PushCursor},
         deserialize_indexed_wset, merge_batches_by_reference,
         ord::{
@@ -12,14 +15,12 @@ use crate::{
             merge_batcher::MergeBatcher,
             vec::indexed_wset_batch::{VecIndexedWSet, VecIndexedWSetBuilder},
         },
-        serialize_indexed_wset, Batch, BatchLocation, BatchReader, Builder, FallbackValBatch,
-        FileIndexedWSet, FileIndexedWSetFactories, Filter, MergeCursor,
+        serialize_indexed_wset,
     },
-    DBWeight, Error, NumEntries,
 };
 use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
-use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
 use std::ops::Neg;
 use std::{

@@ -1,8 +1,9 @@
 use crate::{
+    Circuit, Position, RootCircuit, Scope, Stream,
     algebra::{OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
         circuit_builder::StreamId,
-        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
+        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
         operator_traits::Operator,
         splitter_output_chunk_size,
     },
@@ -13,10 +14,9 @@ use crate::{
         async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper},
     },
     trace::{
-        spine_async::SpineCursor, Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Spine,
-        SpineSnapshot, WithSnapshot,
+        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Spine, SpineSnapshot,
+        WithSnapshot, spine_async::SpineCursor,
     },
-    Circuit, Position, RootCircuit, Scope, Stream,
 };
 use async_stream::stream;
 use futures::Stream as AsyncStream;

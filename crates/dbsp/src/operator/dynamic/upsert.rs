@@ -1,10 +1,11 @@
 use crate::{
+    Circuit, DBData, Stream, Timestamp, ZWeight,
     algebra::{AddAssignByRef, HasOne, HasZero, IndexedZSet, PartialOrder, ZSet, ZTrace},
     circuit::{
-        circuit_builder::register_replay_stream,
-        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
-        operator_traits::{BinaryOperator, Operator},
         OwnershipPreference, Scope, WithClock,
+        circuit_builder::register_replay_stream,
+        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
+        operator_traits::{BinaryOperator, Operator},
     },
     dynamic::{ClonableTrait, DataTrait, DynOpt, DynPairs, DynUnit, Erase},
     operator::dynamic::{
@@ -17,7 +18,6 @@ use crate::{
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, TupleBuilder,
     },
-    Circuit, DBData, Stream, Timestamp, ZWeight,
 };
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 

@@ -1,9 +1,10 @@
-use super::{radix_tree_update, DynTreeNode, Prefix, RadixTreeFactories};
+use super::{DynTreeNode, Prefix, RadixTreeFactories, radix_tree_update};
 use crate::{
+    Circuit, DBData, DynZWeight, Stream, ZWeight,
     algebra::{HasOne, IndexedZSet, IndexedZSetReader, OrdIndexedZSet},
     circuit::{
-        operator_traits::{Operator, TernaryOperator},
         Scope,
+        operator_traits::{Operator, TernaryOperator},
     },
     dynamic::{DataTrait, DynDataTyped, Erase},
     operator::dynamic::{
@@ -11,7 +12,6 @@ use crate::{
         time_series::radix_tree::treenode::TreeNode, trace::TraceBounds,
     },
     trace::{Batch, BatchReader, BatchReaderFactories, Builder, Spine, TupleBuilder},
-    Circuit, DBData, DynZWeight, Stream, ZWeight,
 };
 use dyn_clone::clone_box;
 use num::PrimInt;
@@ -329,29 +329,29 @@ where
 mod test {
     use super::super::RadixTreeCursor;
     use crate::{
+        DynZWeight, RootCircuit, Stream, ZWeight,
         algebra::{AddAssignByRef, DefaultSemigroup},
         dynamic::{DowncastTrait, DynData, DynDataTyped, DynPair, Erase},
         operator::{
+            Fold,
             dynamic::{
                 aggregate::DynAggregatorImpl,
                 input::{AddInputIndexedZSetFactories, CollectionHandle},
                 time_series::{
+                    TreeNode,
                     radix_tree::{
+                        Prefix,
                         test::test_aggregate_range,
                         tree_aggregate::{OrdRadixTree, TreeAggregateFactories},
-                        Prefix,
                     },
-                    TreeNode,
                 },
             },
-            Fold,
         },
         trace::{BatchReader, BatchReaderFactories},
         utils::Tup2,
-        DynZWeight, RootCircuit, Stream, ZWeight,
     };
     use std::{
-        collections::{btree_map::Entry, BTreeMap},
+        collections::{BTreeMap, btree_map::Entry},
         sync::{Arc, Mutex},
     };
 

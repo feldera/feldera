@@ -1,9 +1,9 @@
 use crate::{
+    DBData, DBWeight, Timestamp,
     algebra::{HasZero, MonoidValue, Semigroup},
     dynamic::{DataTrait, DynUnit, Erase, WeightTrait},
     operator::Aggregator,
     trace::Cursor,
-    DBData, DBWeight, Timestamp,
 };
 use std::{cmp::max, marker::PhantomData};
 

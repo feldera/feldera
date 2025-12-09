@@ -28,15 +28,19 @@ pub trait Clonable: DynClone {
 
 impl<T: Clone + Default> Clonable for T {
     unsafe fn raw_clone_to(&self, dst: *mut u8) {
-        Clone::clone_from(&mut *(dst as *mut Self), self)
+        unsafe { Clone::clone_from(&mut *(dst as *mut Self), self) }
     }
 
     unsafe fn raw_move_to(&mut self, dst: *mut u8) {
-        *(dst as *mut T) = take(self);
+        unsafe {
+            *(dst as *mut T) = take(self);
+        }
     }
 
     unsafe fn raw_clone_from(&mut self, src: *const u8) {
-        *self = (*(src as *const Self)).clone();
+        unsafe {
+            *self = (*(src as *const Self)).clone();
+        }
     }
 }
 

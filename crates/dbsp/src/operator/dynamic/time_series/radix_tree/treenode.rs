@@ -9,10 +9,9 @@ use size_of::SizeOf;
 
 use super::{Prefix, RADIX};
 use crate::{
-    declare_trait_object,
+    DBData, declare_trait_object,
     dynamic::{Data, DataTrait, DowncastTrait, DynOpt, Erase},
     operator::dynamic::aggregate::AggCombineFunc,
-    DBData,
 };
 
 /// Pointer to a child node.
@@ -416,14 +415,14 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
+        DBData,
         dynamic::{DowncastTrait, DynData, Erase},
         operator::dynamic::time_series::radix_tree::{
-            treenode::{ChildPtr, TreeNode, TreeNodeTrait},
             DynChildPtr, DynTreeNode, Prefix,
+            treenode::{ChildPtr, TreeNode, TreeNodeTrait},
         },
-        DBData,
     };
-    use rkyv::{archived_root, to_bytes, Deserialize, Infallible};
+    use rkyv::{Deserialize, Infallible, archived_root, to_bytes};
 
     fn aggregate_default(node: &mut DynTreeNode<u64, DynData /* <u64> */>) -> Option<u64> {
         let mut result: Option<u64> = None;

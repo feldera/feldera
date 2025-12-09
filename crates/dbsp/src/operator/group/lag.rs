@@ -1,11 +1,11 @@
 use crate::operator::dynamic::group::LagCustomOrdFactories;
 use crate::operator::group::custom_ord::WithCustomOrd;
 use crate::{
+    CmpFunc, DBData, OrdIndexedZSet, RootCircuit, Stream, ZWeight,
     dynamic::{DowncastTrait, DynData, DynPair},
     operator::dynamic::group::LagFactories,
     typed_batch::{DynOrdIndexedZSet, IndexedZSet, TypedBatch},
     utils::Tup2,
-    CmpFunc, DBData, OrdIndexedZSet, RootCircuit, Stream, ZWeight,
 };
 
 impl<B> Stream<RootCircuit, B>

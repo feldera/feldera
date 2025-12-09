@@ -7,6 +7,7 @@
 //! so it is beneficial to reduce the number by merging batches.
 
 use crate::{
+    Error, NumEntries, Runtime,
     circuit::{
         metadata::{MetaItem, OperatorMeta},
         metrics::COMPACTION_STALL_TIME_NANOSECONDS,
@@ -15,15 +16,14 @@ use crate::{
     storage::buffer_cache::CacheStats,
     time::Timestamp,
     trace::{
+        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Trace,
         cursor::{CursorList, Position},
         merge_batches,
         ord::fallback::pick_merge_destination,
         spine_async::{
             list_merger::ArcListMerger, push_merger::ArcPushMerger, snapshot::FetchList,
         },
-        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Trace,
     },
-    Error, NumEntries, Runtime,
 };
 
 use crate::storage::file::to_bytes;
@@ -34,8 +34,8 @@ use feldera_types::checkpoint::PSpineBatches;
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{
-    de::deserializers::SharedDeserializeMap, ser::Serializer, Archive, Archived, Deserialize,
-    Fallible, Serialize,
+    Archive, Archived, Deserialize, Fallible, Serialize, de::deserializers::SharedDeserializeMap,
+    ser::Serializer,
 };
 use size_of::{Context, SizeOf};
 use std::sync::{Arc, MutexGuard};
@@ -56,7 +56,7 @@ mod snapshot;
 use self::thread::{BackgroundThread, WorkerStatus};
 pub use snapshot::{BatchReaderWithSnapshot, SpineSnapshot, WithSnapshot};
 
-use super::{cursor::CursorFactory, BatchLocation};
+use super::{BatchLocation, cursor::CursorFactory};
 
 mod thread;
 

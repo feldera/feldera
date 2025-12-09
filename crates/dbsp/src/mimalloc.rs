@@ -65,39 +65,47 @@ impl MiMalloc {
 unsafe impl GlobalAlloc for MiMalloc {
     #[inline]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if use_unaligned_api(layout.size(), layout.align()) {
-            mi_malloc(layout.size())
-        } else {
-            mi_malloc_aligned(layout.size(), layout.align())
+        unsafe {
+            if use_unaligned_api(layout.size(), layout.align()) {
+                mi_malloc(layout.size())
+            } else {
+                mi_malloc_aligned(layout.size(), layout.align())
+            }
+            .cast()
         }
-        .cast()
     }
 
     #[inline]
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        if use_unaligned_api(layout.size(), layout.align()) {
-            mi_zalloc(layout.size())
-        } else {
-            mi_zalloc_aligned(layout.size(), layout.align())
+        unsafe {
+            if use_unaligned_api(layout.size(), layout.align()) {
+                mi_zalloc(layout.size())
+            } else {
+                mi_zalloc_aligned(layout.size(), layout.align())
+            }
+            .cast()
         }
-        .cast()
     }
 
     #[inline]
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let ptr = ptr.cast();
-        if use_unaligned_api(layout.size(), layout.align()) {
-            mi_realloc(ptr, new_size)
-        } else {
-            mi_realloc_aligned(ptr, new_size, layout.align())
+        unsafe {
+            let ptr = ptr.cast();
+            if use_unaligned_api(layout.size(), layout.align()) {
+                mi_realloc(ptr, new_size)
+            } else {
+                mi_realloc_aligned(ptr, new_size, layout.align())
+            }
+            .cast()
         }
-        .cast()
     }
 
     #[inline]
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        // Deallocation doesn't care about alignment which is nice
-        mi_free(ptr.cast());
+        unsafe {
+            // Deallocation doesn't care about alignment which is nice
+            mi_free(ptr.cast());
+        }
     }
 }
 

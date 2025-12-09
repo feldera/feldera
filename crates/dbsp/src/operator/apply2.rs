@@ -1,9 +1,9 @@
 //! Binary operator that applies an arbitrary binary function to its inputs.
 
 use crate::circuit::{
+    Circuit, OwnershipPreference, Scope, Stream,
     metadata::OperatorLocation,
     operator_traits::{BinaryOperator, Operator},
-    Circuit, OwnershipPreference, Scope, Stream,
 };
 use std::{borrow::Cow, panic::Location};
 
@@ -146,7 +146,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{operator::Generator, Circuit, RootCircuit};
+    use crate::{Circuit, RootCircuit, operator::Generator};
     use std::vec;
 
     #[test]

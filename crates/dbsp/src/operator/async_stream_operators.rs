@@ -19,14 +19,14 @@
 use std::{borrow::Cow, marker::PhantomData, pin::Pin, rc::Rc, sync::Arc};
 
 use crate::{
+    Error, Position, Scope,
     circuit::{
+        GlobalNodeId,
         metadata::{OperatorLocation, OperatorMeta},
         operator_traits::{
             BinaryOperator, NaryOperator, Operator, QuaternaryOperator, TernaryOperator,
         },
-        GlobalNodeId,
     },
-    Error, Position, Scope,
 };
 use feldera_storage::{FileCommitter, StoragePath};
 use futures::Stream as AsyncStream;

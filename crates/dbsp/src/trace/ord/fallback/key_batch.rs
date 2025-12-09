@@ -1,24 +1,24 @@
 use crate::{
+    DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
         DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
         WeightTrait,
     },
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
-        cursor::{DelegatingCursor, PushCursor},
-        ord::{
-            file::key_batch::FileKeyBuilder, merge_batcher::MergeBatcher,
-            vec::key_batch::VecKeyBuilder, FileKeyBatch,
-        },
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
         FileKeyBatchFactories, Filter, MergeCursor, VecKeyBatch, VecKeyBatchFactories,
         WeightedItem,
+        cursor::{DelegatingCursor, PushCursor},
+        ord::{
+            FileKeyBatch, file::key_batch::FileKeyBuilder, merge_batcher::MergeBatcher,
+            vec::key_batch::VecKeyBuilder,
+        },
     },
-    DBData, DBWeight, NumEntries, Timestamp,
 };
 use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
-use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
 use std::{
     fmt::{self, Debug},

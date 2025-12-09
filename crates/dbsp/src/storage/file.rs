@@ -74,13 +74,13 @@ use crate::{
 };
 use rkyv::de::deserializers::SharedDeserializeMap;
 use rkyv::{
+    Archive, Archived, Deserialize, Fallible, Serialize,
     ser::{
+        Serializer as _,
         serializers::{
             AllocScratch, CompositeSerializer, FallbackScratch, HeapScratch, SharedSerializeMap,
         },
-        Serializer as _,
     },
-    Archive, Archived, Deserialize, Fallible, Serialize,
 };
 use std::cell::RefCell;
 use std::fmt::Debug;
@@ -92,9 +92,9 @@ pub mod reader;
 pub mod writer;
 
 use crate::{
+    DBData,
     dynamic::{DataTrait, Erase, Factory, WithFactory},
     storage::file::item::RefTup2Factory,
-    DBData,
 };
 pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
 

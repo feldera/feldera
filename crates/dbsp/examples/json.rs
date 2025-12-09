@@ -1,8 +1,8 @@
 use anyhow::Result;
 use dbsp::{
+    Runtime,
     circuit::CircuitConfig,
     utils::{Tup2, Tup3, Tup4},
-    Runtime,
 };
 use itertools::Itertools;
 use serde_json::json;

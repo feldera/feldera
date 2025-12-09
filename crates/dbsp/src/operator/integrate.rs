@@ -4,18 +4,18 @@ use crate::circuit::checkpointer::Checkpoint;
 use crate::circuit::circuit_builder::StreamId;
 use crate::dynamic::Erase;
 use crate::typed_batch::TypedBatch;
+use crate::{ChildCircuit, DBData, DBWeight, Timestamp};
 use crate::{
+    NumEntries,
     algebra::{AddAssignByRef, AddByRef, HasZero, IndexedZSet as DynIndexedZSet},
     circuit::{Circuit, OwnershipPreference, Stream},
     circuit_cache_key,
     operator::{
+        Plus,
         differentiate::DifferentiateId,
         z1::{DelayedFeedback, DelayedNestedFeedback},
-        Plus,
     },
-    NumEntries,
 };
-use crate::{ChildCircuit, DBData, DBWeight, Timestamp};
 use size_of::SizeOf;
 
 circuit_cache_key!(IntegralId<C, D>(StreamId => Stream<C, D>));
@@ -196,12 +196,13 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
+        Circuit, RootCircuit, ZWeight,
         algebra::HasZero,
         monitor::TraceMonitor,
         operator::{DelayedFeedback, Generator},
         typed_batch::OrdZSet,
         utils::Tup2,
-        zset, Circuit, RootCircuit, ZWeight,
+        zset,
     };
 
     #[test]

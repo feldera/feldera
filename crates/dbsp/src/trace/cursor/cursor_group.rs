@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
 
 use crate::{
+    Timestamp,
     dynamic::{DataTrait, DynUnit, Erase, Factory, WeightTrait},
     trace::cursor::Position,
-    Timestamp,
 };
 
 use super::Cursor;

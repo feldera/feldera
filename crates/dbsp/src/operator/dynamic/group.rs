@@ -2,11 +2,13 @@
 //! into multiple output records.
 
 use crate::{
+    Circuit, DynZWeight, Position, RootCircuit, Stream,
     algebra::{HasZero, IndexedZSet, OrdIndexedZSet, ZCursor},
     circuit::{
-        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
+        Scope,
+        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
         operator_traits::Operator,
-        splitter_output_chunk_size, Scope,
+        splitter_output_chunk_size,
     },
     dynamic::{DataTrait, DynUnit, Factory},
     operator::{
@@ -14,12 +16,11 @@ use crate::{
         dynamic::{accumulate_trace::AccumulateTraceFeedback, trace::TraceBounds},
     },
     trace::{
-        cursor::{CursorEmpty, CursorGroup, CursorPair},
-        spine_async::WithSnapshot,
         BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor,
         OrdIndexedWSetFactories, Spine, TupleBuilder,
+        cursor::{CursorEmpty, CursorGroup, CursorPair},
+        spine_async::WithSnapshot,
     },
-    Circuit, DynZWeight, Position, RootCircuit, Stream,
 };
 use std::{borrow::Cow, cell::RefCell, marker::PhantomData, ops::Neg, rc::Rc};
 

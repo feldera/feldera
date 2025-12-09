@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use anyhow::{anyhow, Result as AnyResult};
+use anyhow::{Result as AnyResult, anyhow};
 use clap::Parser;
 use csv::Reader;
 use dbsp::circuit::Layout;

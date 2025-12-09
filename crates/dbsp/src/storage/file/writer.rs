@@ -8,25 +8,26 @@ use crate::storage::{
     backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
     buffer_cache::{BufferCache, CacheEntry, FBuf, FBufSerializer, LimitExceeded},
     file::{
+        BLOOM_FILTER_SEED,
         format::{
-            BlockHeader, DataBlockHeader, FileTrailer, FileTrailerColumn, FilterBlockRef, FixedLen,
-            IndexBlockHeader, NodeType, Varint, DATA_BLOCK_MAGIC, FILE_TRAILER_BLOCK_MAGIC,
-            INDEX_BLOCK_MAGIC, VERSION_NUMBER,
+            BlockHeader, DATA_BLOCK_MAGIC, DataBlockHeader, FILE_TRAILER_BLOCK_MAGIC, FileTrailer,
+            FileTrailerColumn, FilterBlockRef, FixedLen, INDEX_BLOCK_MAGIC, IndexBlockHeader,
+            NodeType, VERSION_NUMBER, Varint,
         },
         reader::TreeNode,
-        with_serializer, BLOOM_FILTER_SEED,
+        with_serializer,
     },
 };
 use binrw::{
-    io::{Cursor, NoSeek},
     BinWrite,
+    io::{Cursor, NoSeek},
 };
 use crc32c::crc32c;
 #[cfg(debug_assertions)]
 use dyn_clone::clone_box;
 use fastbloom::BloomFilter;
 use feldera_storage::StoragePath;
-use snap::raw::{max_compress_len, Encoder};
+use snap::raw::{Encoder, max_compress_len};
 use std::{
     cell::RefCell,
     sync::{Arc, Once},
@@ -39,13 +40,13 @@ use std::{
 use tracing::info;
 
 use crate::{
+    Runtime,
     dynamic::{DataTrait, DeserializeDyn, SerializeDyn},
     storage::file::ItemFactory,
-    Runtime,
 };
 
 use super::format::Compression;
-use super::{reader::Reader, AnyFactories, Factories};
+use super::{AnyFactories, Factories, reader::Reader};
 
 struct VarintWriter {
     varint: Varint,

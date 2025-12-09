@@ -22,14 +22,8 @@
 //! The API that this directly exposes runs the circuit in the context of the
 //! current thread.  To instead run the circuit in a collection of worker
 //! threads, use [`Runtime::init_circuit`].
-#[cfg(doc)]
 use crate::{
-    algebra::{IndexedZSet, ZSet},
-    operator::{time_series::RelRange, Aggregator, Fold, Generator, Max, Min},
-    trace::Batch,
-    InputHandle, OutputHandle,
-};
-use crate::{
+    Error as DbspError, Position, Runtime,
     circuit::{
         cache::{CircuitCache, CircuitStoreMarker},
         fingerprinter::Fingerprinter,
@@ -50,15 +44,21 @@ use crate::{
     circuit_cache_key,
     ir::LABEL_MIR_NODE_ID,
     time::{Timestamp, UnitTimestamp},
-    Error as DbspError, Position, Runtime,
+};
+#[cfg(doc)]
+use crate::{
+    InputHandle, OutputHandle,
+    algebra::{IndexedZSet, ZSet},
+    operator::{Aggregator, Fold, Generator, Max, Min, time_series::RelRange},
+    trace::Batch,
 };
 use anyhow::Error as AnyError;
-use dyn_clone::{clone_box, DynClone};
+use dyn_clone::{DynClone, clone_box};
 use feldera_ir::{LirCircuit, LirNodeId};
 use feldera_storage::{FileCommitter, StoragePath};
 use serde::{Deserialize, Serialize, Serializer};
 use std::{
-    any::{type_name_of_val, Any, TypeId},
+    any::{Any, TypeId, type_name_of_val},
     borrow::Cow,
     cell::{Ref, RefCell, RefMut},
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -204,10 +204,12 @@ impl<D> RefStreamValue<D> {
     }
 
     unsafe fn transmute<D2>(&self) -> RefStreamValue<D2> {
-        RefStreamValue(std::mem::transmute::<
-            Rc<RefCell<StreamValue<D>>>,
-            Rc<RefCell<StreamValue<D2>>>,
-        >(self.0.clone()))
+        unsafe {
+            RefStreamValue(std::mem::transmute::<
+                Rc<RefCell<StreamValue<D>>>,
+                Rc<RefCell<StreamValue<D2>>>,
+            >(self.0.clone()))
+        }
     }
 }
 
@@ -746,12 +748,14 @@ where
     ///
     /// Transmuting `D` into `D2` should be safe.
     pub(crate) unsafe fn transmute_payload<D2>(&self) -> Stream<C, D2> {
-        Stream {
-            stream_id: self.stream_id,
-            local_node_id: self.local_node_id,
-            origin_node_id: self.origin_node_id.clone(),
-            circuit: self.circuit.clone(),
-            val: self.val.transmute::<D2>(),
+        unsafe {
+            Stream {
+                stream_id: self.stream_id,
+                local_node_id: self.local_node_id,
+                origin_node_id: self.origin_node_id.clone(),
+                circuit: self.circuit.clone(),
+                val: self.val.transmute::<D2>(),
+            }
         }
     }
 }
@@ -6491,16 +6495,21 @@ impl CircuitHandle {
             need_backfill.len(),
             need_backfill.iter().cloned().collect::<Vec<NodeId>>(),
             participate_in_backfill.len(),
-            participate_in_backfill.iter().cloned().collect::<Vec<NodeId>>()
+            participate_in_backfill
+                .iter()
+                .cloned()
+                .collect::<Vec<NodeId>>()
         );
 
-        assert!(replay_sources
-            .keys()
-            .cloned()
-            .collect::<BTreeSet<_>>()
-            .intersection(&need_backfill)
-            .collect::<Vec<_>>()
-            .is_empty());
+        assert!(
+            replay_sources
+                .keys()
+                .cloned()
+                .collect::<BTreeSet<_>>()
+                .intersection(&need_backfill)
+                .collect::<Vec<_>>()
+                .is_empty()
+        );
 
         // Nodes that will be backfilled from upstream nodes, including need_backfill nodes
         // and their transitive ancestors.
@@ -6801,10 +6810,10 @@ impl CircuitHandle {
 #[cfg(test)]
 mod tests {
     use crate::{
+        Circuit, Error as DbspError, RootCircuit,
         circuit::schedule::{DynamicScheduler, Scheduler},
         monitor::TraceMonitor,
         operator::{Generator, Z1},
-        Circuit, Error as DbspError, RootCircuit,
     };
     use anyhow::anyhow;
     use std::{cell::RefCell, ops::Deref, rc::Rc, vec::Vec};
@@ -6953,11 +6962,7 @@ mod tests {
     }
 
     fn my_factorial(n: usize) -> usize {
-        if n == 1 {
-            1
-        } else {
-            n * my_factorial(n - 1)
-        }
+        if n == 1 { 1 } else { n * my_factorial(n - 1) }
     }
 
     #[test]

@@ -54,16 +54,16 @@ use std::{
 };
 
 use crate::{
+    Position,
     circuit::{
+        Circuit, GlobalNodeId, NodeId,
         runtime::{Consensus, Runtime},
         schedule::{
-            util::{circuit_graph, ownership_constraints},
             CommitProgress, Error, Scheduler,
+            util::{circuit_graph, ownership_constraints},
         },
         trace::SchedulerEvent,
-        Circuit, GlobalNodeId, NodeId,
     },
-    Position,
 };
 use petgraph::algo::toposort;
 use tokio::{select, sync::Notify, task::JoinSet};
@@ -199,8 +199,7 @@ impl Inner {
             debug_assert_ne!(successor.unsatisfied_dependencies, 0);
             successor.unsatisfied_dependencies -= 1;
             if flush_complete {
-                let FlushState::UnflushedDependencies(ref mut n) = &mut successor.flush_state
-                else {
+                let FlushState::UnflushedDependencies(n) = &mut successor.flush_state else {
                     panic!(
                         "Internal scheduler error: node {node_id} is in state {:?} while it still has unflushed dependencies",
                         successor.flush_state

@@ -1,14 +1,14 @@
 //! Built-in profiling capabilities.
 
 use crate::{
+    RootCircuit, Runtime,
     circuit::{
+        GlobalNodeId,
         circuit_builder::{CircuitBase, Node},
         metadata::{MetaItem, OperatorMeta},
         runtime::ThreadType,
-        GlobalNodeId,
     },
-    monitor::{visual_graph::Graph, TraceMonitor},
-    RootCircuit, Runtime,
+    monitor::{TraceMonitor, visual_graph::Graph},
 };
 use serde::Serialize;
 use size_of::HumanBytes;
@@ -21,8 +21,7 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
-use zip::write::SimpleFileOptions;
-use zip::ZipWriter;
+use zip::{ZipWriter, write::SimpleFileOptions};
 
 mod cpu;
 use crate::circuit::metadata::{

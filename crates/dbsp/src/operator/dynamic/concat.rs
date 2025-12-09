@@ -1,8 +1,9 @@
 use crate::{
+    Circuit, NestedCircuit, Position, RootCircuit, Stream,
     algebra::{IndexedZSet, ZBatch},
     circuit::{
         metadata::{
-            BatchSizeStats, MetaItem, OperatorMeta, INPUT_BATCHES_COLLECTION, OUTPUT_BATCHES_LABEL,
+            BatchSizeStats, INPUT_BATCHES_COLLECTION, MetaItem, OUTPUT_BATCHES_LABEL, OperatorMeta,
         },
         operator_traits::Operator,
         splitter_output_chunk_size,
@@ -13,10 +14,9 @@ use crate::{
         dynamic::{MonoIndexedZSet, MonoIndexedZSetFactories, MonoZSet, MonoZSetFactories},
     },
     trace::{
-        cursor::{CursorList, CursorWithPolarity},
         BatchReader, BatchReaderFactories, Builder, Cursor, Spine, SpineSnapshot, WithSnapshot,
+        cursor::{CursorList, CursorWithPolarity},
     },
-    Circuit, NestedCircuit, Position, RootCircuit, Stream,
 };
 use async_stream::stream;
 use std::{borrow::Cow, cell::RefCell, marker::PhantomData};
@@ -253,7 +253,7 @@ mod test {
 
     use proptest::{collection::vec, prelude::*};
 
-    use crate::{algebra::NegByRef, circuit::CircuitConfig, utils::Tup2, DBData, Runtime, ZWeight};
+    use crate::{DBData, Runtime, ZWeight, algebra::NegByRef, circuit::CircuitConfig, utils::Tup2};
 
     fn test_zset<K: DBData>(inputs: Vec<(Vec<Vec<Tup2<K, ZWeight>>>, bool)>, transaction: bool) {
         let (mut inputs, polarities): (Vec<_>, Vec<_>) = inputs.into_iter().unzip();

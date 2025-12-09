@@ -1,18 +1,18 @@
 //! N-ary plus operator.
 
 use crate::{
+    NumEntries,
     algebra::{AddAssignByRef, AddByRef},
     circuit::{
-        operator_traits::{NaryOperator, Operator},
         Circuit, OwnershipPreference, Scope, Stream,
+        operator_traits::{NaryOperator, Operator},
     },
-    NumEntries,
 };
 use std::{
     borrow::Cow,
     cmp::Reverse,
     iter::once,
-    mem::{take, ManuallyDrop},
+    mem::{ManuallyDrop, take},
 };
 
 impl<C, D> Stream<C, D>
@@ -144,11 +144,12 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
+        Circuit, RootCircuit,
         algebra::HasZero,
         circuit::OwnershipPreference,
         operator::{Generator, Inspect},
         typed_batch::OrdZSet,
-        zset, Circuit, RootCircuit,
+        zset,
     };
 
     #[test]

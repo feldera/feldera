@@ -4,23 +4,23 @@
 #![allow(clippy::type_complexity)]
 
 use crate::{
+    DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
-        pair::DynPair, DataTrait, DowncastTrait, DynDataTyped, DynVec, DynWeightedPairs, Erase,
-        Factory, Vector, WeightTrait,
+        DataTrait, DowncastTrait, DynDataTyped, DynVec, DynWeightedPairs, Erase, Factory, Vector,
+        WeightTrait, pair::DynPair,
     },
     trace::{
-        cursor::Position, Batch, BatchFactories, BatchReader, BatchReaderFactories, Batcher,
-        Builder, Cursor, Filter, Trace,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, Filter,
+        Trace, cursor::Position,
     },
-    DBData, DBWeight, NumEntries, Timestamp,
 };
 use dyn_clone::clone_box;
-use rand::{seq::IteratorRandom, thread_rng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, seq::IteratorRandom, thread_rng};
 use rand_chacha::ChaChaRng;
-use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
 use std::{
-    collections::{btree_map::Entry, BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, btree_map::Entry},
     fmt::{self, Debug},
     marker::PhantomData,
 };
@@ -337,12 +337,12 @@ pub fn assert_typed_batch_eq<B1, B2>(batch1: &B1, batch2: &B2)
 where
     B1: crate::typed_batch::BatchReader,
     B2: crate::typed_batch::BatchReader<
-        Time = B1::Time,
-        Key = B1::Key,
-        Val = B1::Val,
-        R = B1::R,
-        Inner = B1::Inner,
-    >,
+            Time = B1::Time,
+            Key = B1::Key,
+            Val = B1::Val,
+            R = B1::R,
+            Inner = B1::Inner,
+        >,
 {
     assert_batch_eq(batch1.inner(), batch2.inner())
 }
@@ -829,10 +829,11 @@ where
 
     fn push_val(&mut self, val: &V) {
         assert!(!self.time_diffs.is_empty());
-        assert!(self
-            .vals
-            .insert(clone_box(val), std::mem::take(&mut self.time_diffs))
-            .is_none());
+        assert!(
+            self.vals
+                .insert(clone_box(val), std::mem::take(&mut self.time_diffs))
+                .is_none()
+        );
     }
 
     fn push_key(&mut self, key: &K) {
@@ -963,24 +964,24 @@ where
     }
 
     fn key(&self) -> &K {
-        self.data[self.index].0 .0.as_ref()
+        self.data[self.index].0.0.as_ref()
     }
 
     fn val(&self) -> &V {
-        self.data[self.index].0 .1.as_ref()
+        self.data[self.index].0.1.as_ref()
     }
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
-        let current_key = clone_box(self.data[self.index].0 .0.as_ref());
-        let current_val = clone_box(self.data[self.index].0 .1.as_ref());
+        let current_key = clone_box(self.data[self.index].0.0.as_ref());
+        let current_val = clone_box(self.data[self.index].0.1.as_ref());
 
         let mut index = self.index;
 
         while index < self.data.len()
-            && self.data[index].0 .0 == current_key
-            && self.data[index].0 .1 == current_val
+            && self.data[index].0.0 == current_key
+            && self.data[index].0.1 == current_val
         {
-            logic(&self.data[index].0 .2, self.data[index].1.as_ref());
+            logic(&self.data[index].0.2, self.data[index].1.as_ref());
             index += 1;
         }
     }
@@ -1009,9 +1010,9 @@ where
     }
 
     fn step_key(&mut self) {
-        let current_key = clone_box(self.data[self.index].0 .0.as_ref());
+        let current_key = clone_box(self.data[self.index].0.0.as_ref());
 
-        while self.index < self.data.len() && self.data[self.index].0 .0 == current_key {
+        while self.index < self.data.len() && self.data[self.index].0.0 == current_key {
             self.index += 1;
         }
 
@@ -1023,7 +1024,7 @@ where
     }
 
     fn seek_key(&mut self, key: &K) {
-        while self.index < self.data.len() && self.data[self.index].0 .0.as_ref() < key {
+        while self.index < self.data.len() && self.data[self.index].0.0.as_ref() < key {
             self.index += 1;
         }
     }
@@ -1046,11 +1047,11 @@ where
     }
 
     fn step_val(&mut self) {
-        let current_key = clone_box(self.data[self.index].0 .0.as_ref());
-        let current_val = clone_box(self.data[self.index].0 .1.as_ref());
+        let current_key = clone_box(self.data[self.index].0.0.as_ref());
+        let current_val = clone_box(self.data[self.index].0.1.as_ref());
 
-        while self.index < self.data.len() && self.data[self.index].0 .1 == current_val {
-            if self.index + 1 < self.data.len() && self.data[self.index + 1].0 .0 == current_key {
+        while self.index < self.data.len() && self.data[self.index].0.1 == current_val {
+            if self.index + 1 < self.data.len() && self.data[self.index + 1].0.0 == current_key {
                 self.index += 1;
             } else {
                 self.val_valid = false;
@@ -1085,11 +1086,11 @@ where
     }
 
     fn step_val_reverse(&mut self) {
-        let current_key = clone_box(self.data[self.index].0 .0.as_ref());
-        let current_val = clone_box(self.data[self.index].0 .1.as_ref());
+        let current_key = clone_box(self.data[self.index].0.0.as_ref());
+        let current_val = clone_box(self.data[self.index].0.1.as_ref());
 
-        while self.data[self.index].0 .1 == current_val {
-            if self.index > 0 && self.data[self.index - 1].0 .0 == current_key {
+        while self.data[self.index].0.1 == current_val {
+            if self.index > 0 && self.data[self.index - 1].0.0 == current_key {
                 self.index -= 1;
             } else {
                 self.val_valid = false;
@@ -1097,11 +1098,11 @@ where
             }
         }
 
-        let current_val = clone_box(self.data[self.index].0 .1.as_ref());
+        let current_val = clone_box(self.data[self.index].0.1.as_ref());
 
         while self.index > 0
-            && self.data[self.index - 1].0 .0 == current_key
-            && self.data[self.index - 1].0 .1 == current_val
+            && self.data[self.index - 1].0.0 == current_key
+            && self.data[self.index - 1].0.1 == current_val
         {
             self.index -= 1;
         }
@@ -1121,17 +1122,17 @@ where
     }
 
     fn fast_forward_vals(&mut self) {
-        let current_key = clone_box(self.data[self.index].0 .0.as_ref());
+        let current_key = clone_box(self.data[self.index].0.0.as_ref());
 
-        while self.index + 1 < self.data.len() && self.data[self.index + 1].0 .0 == current_key {
+        while self.index + 1 < self.data.len() && self.data[self.index + 1].0.0 == current_key {
             self.index += 1;
         }
 
-        let current_val = clone_box(self.data[self.index].0 .1.as_ref());
+        let current_val = clone_box(self.data[self.index].0.1.as_ref());
 
         while self.index > 0
-            && self.data[self.index - 1].0 .0 == current_key
-            && self.data[self.index - 1].0 .1 == current_val
+            && self.data[self.index - 1].0.0 == current_key
+            && self.data[self.index - 1].0.1 == current_val
         {
             self.index -= 1;
         }

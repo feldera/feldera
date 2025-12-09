@@ -1,5 +1,5 @@
 use crate::trace::Deserializable;
-use rkyv::{de::deserializers::SharedDeserializeMap, Archive, Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize, de::deserializers::SharedDeserializeMap};
 use size_of::SizeOf;
 use std::{
     cmp::Ordering,

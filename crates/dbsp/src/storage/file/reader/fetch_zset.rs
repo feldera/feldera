@@ -1,7 +1,7 @@
 use super::super::Factories;
 use crate::dynamic::{DataTrait, DynVec, WeightTrait};
 use crate::storage::file::reader::{
-    decompress, DataBlock, Error, FilteredKeys, Reader, TreeBlock, TreeNode,
+    DataBlock, Error, FilteredKeys, Reader, TreeBlock, TreeNode, decompress,
 };
 use crate::storage::{
     backend::StorageError,

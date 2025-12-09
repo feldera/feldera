@@ -1,8 +1,8 @@
 use crate::{
+    DBData, DBWeight, NumEntries,
     algebra::{NegByRef, ZRingValue},
     dynamic::{DataTrait, DynPair, DynVec, Factory, WeightTrait, WeightTraitTyped, WithFactory},
-    utils::{cursor_position_oob, ConsolidatePairedSlices},
-    DBData, DBWeight, NumEntries,
+    utils::{ConsolidatePairedSlices, cursor_position_oob},
 };
 use rand::Rng;
 
@@ -13,7 +13,7 @@ use crate::{
 };
 use size_of::SizeOf;
 use std::{
-    cmp::{min, Ordering},
+    cmp::{Ordering, min},
     fmt::{self, Debug, Display},
     ops::{Deref, DerefMut, Neg},
 };

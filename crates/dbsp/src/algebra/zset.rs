@@ -19,9 +19,9 @@ use crate::{
     // algebra::CheckedInt,
     dynamic::{DataTrait, DynUnit, DynWeightTyped, Erase, WeightTrait},
     trace::{
-        ord::vec::{VecIndexedWSet, VecIndexedWSetFactories, VecWSet, VecWSetFactories},
         Batch, BatchReader, Builder, Cursor, OrdIndexedWSet, OrdIndexedWSetFactories, OrdWSet,
         OrdWSetFactories, Trace,
+        ord::vec::{VecIndexedWSet, VecIndexedWSetFactories, VecWSet, VecWSetFactories},
     },
 };
 use dyn_clone::clone_box;
@@ -270,7 +270,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{typed_batch::OrdIndexedZSet, utils::Tup2, ZWeight};
+    use crate::{ZWeight, typed_batch::OrdIndexedZSet, utils::Tup2};
 
     #[test]
     fn test_indexed_zset_iterator() {

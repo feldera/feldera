@@ -1,8 +1,8 @@
 use crate::{
+    Scope,
     algebra::{Lattice, PartialOrder},
     time::Timestamp,
     trace::Batch,
-    Scope,
 };
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;

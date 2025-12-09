@@ -6,7 +6,7 @@
 // - We currently do not measure the time spent in `clock_start`/`clock_end`
 //   events, which can in theory do non-trivial work.
 
-use crate::circuit::{trace::SchedulerEvent, GlobalNodeId, RootCircuit};
+use crate::circuit::{GlobalNodeId, RootCircuit, trace::SchedulerEvent};
 use hashbrown::HashMap;
 use std::{
     cell::RefCell,

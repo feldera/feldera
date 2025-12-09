@@ -1,6 +1,7 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
+    DBWeight,
     dynamic::{Data, DynWeight, Factory, LeanVec, Vector, WithFactory},
     storage::{
         backend::StorageBackend,
@@ -12,24 +13,23 @@ use crate::{
         test::init_test_logger,
     },
     trace::{
-        ord::vec::{indexed_wset_batch::VecIndexedWSetBuilder, wset_batch::VecWSetBuilder},
         BatchReaderFactories, Builder, VecIndexedWSetFactories, VecWSetFactories,
+        ord::vec::{indexed_wset_batch::VecIndexedWSetBuilder, wset_batch::VecWSetBuilder},
     },
-    DBWeight,
 };
 
 use super::{
+    Factories,
     reader::{ColumnSpec, RowGroup},
     writer::{Parameters, Writer1, Writer2},
-    Factories,
 };
 
 use crate::{
-    dynamic::{DynData, Erase},
     DBData,
+    dynamic::{DynData, Erase},
 };
 use feldera_types::config::{StorageConfig, StorageOptions};
-use rand::{seq::SliceRandom, thread_rng, Rng};
+use rand::{Rng, seq::SliceRandom, thread_rng};
 use tempfile::tempdir;
 
 fn test_buffer_cache() -> Arc<BufferCache> {
@@ -515,9 +515,13 @@ fn test_bloom<K, A, N>(
         // Note that, usually, `after` for row `i` is the same as `before`
         // for row `i + 1`, so the values in the data are not necessarily
         // *unique* values.
-        assert!(false_positives < n,
-                    "Out of {} values not in the data, {} appeared in the Bloom filter ({:.1}% false positive rate)",
-                    2 * n, false_positives, false_positives as f64 / (2 * n) as f64);
+        assert!(
+            false_positives < n,
+            "Out of {} values not in the data, {} appeared in the Bloom filter ({:.1}% false positive rate)",
+            2 * n,
+            false_positives,
+            false_positives as f64 / (2 * n) as f64
+        );
     }
 }
 

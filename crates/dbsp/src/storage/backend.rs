@@ -21,10 +21,10 @@ pub mod posixio_impl;
 mod tests;
 
 pub use feldera_storage::{
+    FileReader, FileRw, FileWriter, StorageBackend, StorageFileType, StoragePath, StoragePathPart,
     block::{BlockLocation, InvalidBlockLocation},
     error::StorageError,
     file::FileId,
-    FileReader, FileRw, FileWriter, StorageBackend, StorageFileType, StoragePath, StoragePathPart,
 };
 
 /// Extension added to files that are incomplete/being written to.

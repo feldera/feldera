@@ -1,19 +1,19 @@
 use crate::{
+    Circuit, DBData, Stream, ZWeight,
     algebra::{IndexedZSet, IndexedZSetReader, MulByRef, ZSet, ZSetReader},
     circuit::{
+        Scope,
         circuit_builder::StreamId,
         operator_traits::{BinaryOperator, Operator},
-        Scope,
     },
     circuit_cache_key,
     dynamic::{DynPair, DynUnit, Erase},
     trace::{Batch, BatchReaderFactories, Builder, Cursor},
     utils::Tup2,
-    Circuit, DBData, Stream, ZWeight,
 };
 use std::{
     borrow::Cow,
-    cmp::{min, Ordering},
+    cmp::{Ordering, min},
     marker::PhantomData,
     ops::Deref,
 };

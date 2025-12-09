@@ -1,4 +1,5 @@
 use crate::{
+    DBData, DBWeight, Error, NumEntries,
     algebra::{NegByRef, ZRingValue},
     circuit::checkpointer::Checkpoint,
     dynamic::{
@@ -6,16 +7,16 @@ use crate::{
         WeightTraitTyped, WithFactory,
     },
     trace::{
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
+        Filter, MergeCursor, Serializer, VecValBatch, WeightedItem,
         cursor::Position,
         deserialize_indexed_wset,
         layers::{
             Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
         },
-        serialize_indexed_wset, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder,
-        Cursor, Deserializer, Filter, MergeCursor, Serializer, VecValBatch, WeightedItem,
+        serialize_indexed_wset,
     },
     utils::Tup2,
-    DBData, DBWeight, Error, NumEntries,
 };
 use itertools::{EitherOrBoth, Itertools};
 use rand::Rng;

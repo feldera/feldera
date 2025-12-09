@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use crate::{
+    DBData, DBWeight,
     dynamic::{
         DataTrait, DynData, DynPair, DynWeight, DynWeightedPairs, Erase, LeanVec, WeightTrait,
         WithFactory,
@@ -8,7 +9,6 @@ use crate::{
     lean_vec,
     trace::{BatchReaderFactories, Batcher, OrdValBatch},
     utils::Tup2,
-    DBData, DBWeight,
 };
 use std::{marker::PhantomData, mem::size_of};
 
@@ -18,10 +18,10 @@ macro_rules! pairs_vec {
     () => (
         Box::new(lean_vec!()).erase_box()
     );
-    ($elem:expr; $n:expr) => (
+    ($elem:expr_2021; $n:expr_2021) => (
         Box::new(lean_vec!($elem; $n)).erase_box()
     );
-    ($($x:expr),+ $(,)?) => (
+    ($($x:expr_2021),+ $(,)?) => (
         Box::new(lean_vec![$($x),+]).erase_box()
     );
 }
@@ -290,13 +290,13 @@ fn count_tuples() {
 // These tests will utterly destroy miri's performance
 #[cfg_attr(miri, ignore)]
 mod proptests {
-    use super::{preallocated_stashes, MergeSorter};
+    use super::{MergeSorter, preallocated_stashes};
     use crate::{
         dynamic::{
             DowncastTrait, DynData, DynPair, DynWeight, DynWeightedPairs, Erase, LeanVec,
             WithFactory,
         },
-        utils::{consolidate, Tup2},
+        utils::{Tup2, consolidate},
     };
     use proptest::{collection::vec, prelude::*};
     use std::collections::BTreeMap;

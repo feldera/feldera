@@ -1,8 +1,9 @@
 use crate::{
+    Circuit, DBData, DynZWeight, RootCircuit, Runtime, Stream, TypedBox, ZWeight,
     circuit::{
+        LocalStoreMarker, Scope,
         metadata::OperatorLocation,
         operator_traits::{Operator, SourceOperator},
-        LocalStoreMarker, Scope,
     },
     dynamic::{DowncastTrait, DynBool, DynData, DynPair, DynPairs, DynUnit, Erase, LeanVec},
     operator::dynamic::{
@@ -14,7 +15,6 @@ use crate::{
     },
     typed_batch::{OrdIndexedZSet, OrdZSet},
     utils::Tup2,
-    Circuit, DBData, DynZWeight, RootCircuit, Runtime, Stream, TypedBox, ZWeight,
 };
 use itertools::Itertools;
 use std::{

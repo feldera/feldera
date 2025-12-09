@@ -16,7 +16,7 @@
 //! Event handlers are invoked synchronously and therefore must complete
 //! quickly, with any expensive processing completed asynchronously.
 
-use super::{circuit_builder::Node, GlobalNodeId, NodeId, OwnershipPreference};
+use super::{GlobalNodeId, NodeId, OwnershipPreference, circuit_builder::Node};
 use crate::circuit::metadata::OperatorLocation;
 use std::{borrow::Cow, fmt, fmt::Display, hash::Hash};
 

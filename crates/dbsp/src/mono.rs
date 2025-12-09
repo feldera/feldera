@@ -25,25 +25,25 @@
 use std::mem::take;
 
 use crate::{
+    DBData, DBWeight, DynZWeight, NestedCircuit, OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
+    TypedBox, ZWeight,
     algebra::MulByRef,
     circuit::WithClock,
     dynamic::{DowncastTrait, DynData, DynUnit, DynWeight, Erase},
     operator::{
+        Aggregator,
         dynamic::{
+            MonoIndexedZSet,
             aggregate::{DynAggregatorImpl, IncAggregateFactories, IncAggregateLinearFactories},
             controlled_filter::ControlledFilterFactories,
             distinct::{DistinctFactories, HashDistinctFactories},
             join::{AntijoinFactories, JoinFactories},
-            MonoIndexedZSet,
         },
         join::{mk_trace_join_flatmap_funcs, mk_trace_join_funcs, mk_trace_join_generic_funcs},
         time_series::OrdPartitionedOverStream,
-        Aggregator,
     },
     trace::BatchReaderFactories,
     utils::Tup2,
-    DBData, DBWeight, DynZWeight, NestedCircuit, OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
-    TypedBox, ZWeight,
 };
 
 impl<K, V> Stream<RootCircuit, OrdIndexedZSet<K, V>>

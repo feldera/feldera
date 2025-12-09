@@ -2,15 +2,15 @@ mod data;
 mod personal_network;
 
 use crate::data::{
-    build_gdelt_normalizations, get_gkg_file, get_master_file, parse_personal_network_gkg,
-    GDELT_URL, GKG_SUFFIX,
+    GDELT_URL, GKG_SUFFIX, build_gdelt_normalizations, get_gkg_file, get_master_file,
+    parse_personal_network_gkg,
 };
 use clap::Parser;
 use dbsp::dynamic::DowncastTrait;
 use dbsp::{
+    Runtime,
     trace::{BatchReader, Cursor},
     utils::Tup2,
-    Runtime,
 };
 use std::{
     cmp::Reverse,
@@ -74,7 +74,9 @@ fn main() {
 
     if let Some((start, end)) = args.date_start.zip(args.date_end) {
         if start > end {
-            eprintln!("error: `--date-start` must be less than than or equal to `--date-end` ({start} > {end})");
+            eprintln!(
+                "error: `--date-start` must be less than than or equal to `--date-end` ({start} > {end})"
+            );
             return;
         }
     }

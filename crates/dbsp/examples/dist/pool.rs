@@ -4,8 +4,8 @@ use clap::Parser;
 use dbsp::circuit::CircuitConfig;
 use dbsp::utils::Tup2;
 use dbsp::{
-    circuit::Layout, utils::Tup3, DBSPHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime,
-    ZSetHandle,
+    DBSPHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, circuit::Layout,
+    utils::Tup3,
 };
 use futures::{
     future::{self, Ready},
@@ -18,7 +18,7 @@ use std::{
 use tarpc::{
     context,
     serde_transport::tcp::listen,
-    server::{self, incoming::Incoming, Channel},
+    server::{self, Channel, incoming::Incoming},
     tokio_serde::formats::Bincode,
 };
 

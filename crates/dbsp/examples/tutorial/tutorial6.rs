@@ -2,9 +2,9 @@ use anyhow::Result;
 use chrono::{Datelike, NaiveDate};
 use csv::Reader;
 use dbsp::{
+    OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
     operator::time_series::{RelOffset, RelRange},
     utils::{Tup2, Tup3},
-    OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
 };
 use rkyv::{Archive, Serialize};
 use size_of::SizeOf;

@@ -6,10 +6,10 @@
 
 use std::{
     path::Path,
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
 };
 
-use rand::{thread_rng, Fill, Rng};
+use rand::{Fill, Rng, thread_rng};
 use tokio::sync::oneshot;
 
 use crate::storage::{backend::BlockLocation, buffer_cache::FBuf, test::init_test_logger};

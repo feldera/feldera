@@ -4,17 +4,17 @@
 use std::panic::Location;
 
 use crate::{
+    Circuit, RootCircuit, Stream,
     algebra::{IndexedZSet, OrdIndexedZSet},
     dynamic::{DataTrait, DynData, DynUnit},
     operator::{
         async_stream_operators::StreamingBinaryWrapper,
         dynamic::{
+            MonoIndexedZSet, MonoZSet,
             join::{JoinFactories, JoinTrace, TraceJoinFuncs},
             saturate::SaturateFactories,
-            MonoIndexedZSet, MonoZSet,
         },
     },
-    Circuit, RootCircuit, Stream,
 };
 
 impl Stream<RootCircuit, MonoIndexedZSet> {
@@ -119,11 +119,11 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
+        DBData, OrdIndexedZSet, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
         algebra::DefaultSemigroup,
         circuit::CircuitConfig,
-        operator::{dynamic::join::test::generate_join_test_data, Fold},
+        operator::{Fold, dynamic::join::test::generate_join_test_data},
         utils::Tup2,
-        DBData, OrdIndexedZSet, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
     };
     use proptest::prelude::*;
 

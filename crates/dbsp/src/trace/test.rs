@@ -1,8 +1,8 @@
 use std::{
     cmp::max,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
@@ -10,13 +10,16 @@ use proptest::{collection::vec, prelude::*, strategy::BoxedStrategy};
 use size_of::SizeOf;
 
 use crate::{
+    DynZWeight, Runtime, ZWeight,
     algebra::{
         IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories, ZBatch,
         ZSet,
     },
-    circuit::{mkconfig, CircuitConfig},
-    dynamic::{pair::DynPair, DowncastTrait, DynData, DynUnit, DynWeightedPairs, Erase, LeanVec},
+    circuit::{CircuitConfig, mkconfig},
+    dynamic::{DowncastTrait, DynData, DynUnit, DynWeightedPairs, Erase, LeanVec, pair::DynPair},
     trace::{
+        Batch, BatchReader, BatchReaderFactories, Builder, FileIndexedWSetFactories,
+        FileWSetFactories, Spine, Trace,
         cursor::CursorPair,
         ord::{
             FileIndexedWSet, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
@@ -24,14 +27,11 @@ use crate::{
             OrdValBatchFactories,
         },
         test::test_batch::{
-            assert_batch_cursors_eq, assert_batch_eq, assert_trace_eq, test_batch_sampling,
-            test_trace_sampling, TestBatch, TestBatchFactories,
+            TestBatch, TestBatchFactories, assert_batch_cursors_eq, assert_batch_eq,
+            assert_trace_eq, test_batch_sampling, test_trace_sampling,
         },
-        Batch, BatchReader, BatchReaderFactories, Builder, FileIndexedWSetFactories,
-        FileWSetFactories, Spine, Trace,
     },
     utils::{Tup2, Tup3, Tup4},
-    DynZWeight, Runtime, ZWeight,
 };
 
 use super::Filter;

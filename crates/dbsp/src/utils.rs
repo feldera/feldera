@@ -18,8 +18,8 @@ pub use advance_retreat::{
     advance, advance_erased, dyn_advance, dyn_retreat, retreat, retreat_erased,
 };
 pub use consolidation::{
-    consolidate, consolidate_from, consolidate_paired_slices, consolidate_payload_from,
-    consolidate_slice, ConsolidatePairedSlices,
+    ConsolidatePairedSlices, consolidate, consolidate_from, consolidate_paired_slices,
+    consolidate_payload_from, consolidate_slice,
 };
 
 #[allow(unused_imports)]
@@ -31,9 +31,9 @@ pub use consolidation::consolidate_pairs;
 pub use sample::sample_slice;
 pub use sort::{stable_sort, stable_sort_by};
 pub use tuple::{
-    ArchivedTup0, ArchivedTup1, ArchivedTup10, ArchivedTup2, ArchivedTup3, ArchivedTup4,
-    ArchivedTup5, ArchivedTup6, ArchivedTup7, ArchivedTup8, ArchivedTup9, Tup0, Tup1, Tup10, Tup2,
-    Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9,
+    ArchivedTup0, ArchivedTup1, ArchivedTup2, ArchivedTup3, ArchivedTup4, ArchivedTup5,
+    ArchivedTup6, ArchivedTup7, ArchivedTup8, ArchivedTup9, ArchivedTup10, Tup0, Tup1, Tup2, Tup3,
+    Tup4, Tup5, Tup6, Tup7, Tup8, Tup9, Tup10,
 };
 
 // mod unstable_sort;
@@ -74,7 +74,9 @@ pub(crate) unsafe fn assume(cond: bool) {
 #[cold]
 #[inline(never)]
 pub(crate) fn cursor_position_oob<P: Display>(position: P, length: usize) -> ! {
-    panic!("the cursor was at the invalid position {position} while the leaf was only {length} elements long")
+    panic!(
+        "the cursor was at the invalid position {position} while the leaf was only {length} elements long"
+    )
 }
 
 #[inline]

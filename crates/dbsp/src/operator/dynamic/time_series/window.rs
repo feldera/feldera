@@ -1,27 +1,28 @@
 //! Operators to organize time series data into windows.
 
 use crate::{
+    Error, Position, RootCircuit, Runtime,
     algebra::{IndexedZSet, NegByRef},
     circuit::{
-        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
+        Circuit, GlobalNodeId, Scope, Stream,
+        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
         operator_traits::Operator,
-        splitter_output_chunk_size, Circuit, GlobalNodeId, Scope, Stream,
+        splitter_output_chunk_size,
     },
     dynamic::{
-        rkyv::{DeserializableDyn, SerializeDyn},
         ClonableTrait, DataTrait, DynData, WeightTrait,
+        rkyv::{DeserializableDyn, SerializeDyn},
     },
     operator::{
         async_stream_operators::{StreamingTernaryOperator, StreamingTernaryWrapper},
-        dynamic::{trace::TraceBound, MonoIndexedZSet},
+        dynamic::{MonoIndexedZSet, trace::TraceBound},
         require_persistent_id,
     },
     storage::file::{to_bytes, with_serializer},
     trace::{
-        spine_async::WithSnapshot, BatchFactories, BatchReader, BatchReaderFactories, Cursor,
-        Spine, SpineSnapshot,
+        BatchFactories, BatchReader, BatchReaderFactories, Cursor, Spine, SpineSnapshot,
+        spine_async::WithSnapshot,
     },
-    Error, Position, RootCircuit, Runtime,
 };
 use async_stream::stream;
 use feldera_storage::{FileCommitter, StoragePath};
@@ -490,14 +491,14 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
+        Circuit, IndexedZSet, IndexedZSetHandle, InputHandle, OrdZSet, OutputHandle, RootCircuit,
+        Runtime, Stream,
         circuit::mkconfig,
         dynamic::{DowncastTrait, DynData, Erase},
         indexed_zset,
         operator::dynamic::trace::TraceBound,
         typed_batch::{OrdIndexedZSet, SpineSnapshot, TypedBox},
         utils::{Tup2, Tup3},
-        Circuit, IndexedZSet, IndexedZSetHandle, InputHandle, OrdZSet, OutputHandle, RootCircuit,
-        Runtime, Stream,
     };
     use anyhow::Error as AnyError;
     use size_of::SizeOf;

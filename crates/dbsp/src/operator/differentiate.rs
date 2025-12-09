@@ -6,15 +6,15 @@ use crate::circuit::checkpointer::Checkpoint;
 use crate::circuit::circuit_builder::StreamId;
 use crate::dynamic::Erase;
 use crate::typed_batch::TypedBatch;
+use crate::{ChildCircuit, DBData, Timestamp, ZWeight};
 use crate::{
+    NumEntries,
     algebra::IndexedZSet as DynIndexedZSet,
     algebra::{AddAssignByRef, AddByRef, GroupValue, NegByRef},
     circuit::{Circuit, Stream},
     circuit_cache_key,
-    operator::{integrate::IntegralId, Minus},
-    NumEntries,
+    operator::{Minus, integrate::IntegralId},
 };
-use crate::{ChildCircuit, DBData, Timestamp, ZWeight};
 use size_of::SizeOf;
 
 circuit_cache_key!(DifferentiateId<C, D>(StreamId => Stream<C, D>));

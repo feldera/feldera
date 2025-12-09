@@ -1,18 +1,18 @@
 use crate::{
+    Circuit, DBData, DynZWeight, NumEntries, RootCircuit, Stream, ZWeight,
     algebra::{IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet},
     circuit::{
-        operator_traits::{BinaryOperator, Operator},
         Scope,
+        operator_traits::{BinaryOperator, Operator},
     },
     declare_trait_object,
     dynamic::{Data, DataTrait, DynDataTyped, DynPair, Erase},
     trace::{
-        ord::fallback::indexed_wset::{FallbackIndexedWSet, FallbackIndexedWSetFactories},
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spine,
         TupleBuilder,
+        ord::fallback::indexed_wset::{FallbackIndexedWSet, FallbackIndexedWSetFactories},
     },
     utils::Tup2,
-    Circuit, DBData, DynZWeight, NumEntries, RootCircuit, Stream, ZWeight,
 };
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
@@ -578,20 +578,20 @@ where
 #[allow(clippy::type_complexity)]
 mod test {
     use crate::{
+        DBData, DynZWeight, RootCircuit, Runtime, Stream, ZWeight,
         dynamic::{DowncastTrait, DynData, Erase},
         operator::{
             IndexedZSetHandle, InputHandle, NeighborhoodDescr, NeighborhoodDescrBox, OutputHandle,
         },
         trace::{
-            test::test_batch::{
-                assert_batch_eq, batch_to_tuples, typed_batch_to_tuples, TestBatch,
-                TestBatchFactories,
-            },
             BatchReaderFactories, Trace,
+            test::test_batch::{
+                TestBatch, TestBatchFactories, assert_batch_eq, batch_to_tuples,
+                typed_batch_to_tuples,
+            },
         },
         typed_batch::{BatchReader, DynOrdIndexedZSet, OrdIndexedZSet, TypedBox},
         utils::Tup2,
-        DBData, DynZWeight, RootCircuit, Runtime, Stream, ZWeight,
     };
     use anyhow::Result as AnyResult;
     use proptest::{collection::vec, prelude::*};

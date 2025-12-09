@@ -9,23 +9,23 @@ use crate::operator::async_stream_operators::{StreamingBinaryOperator, Streaming
 use crate::trace::spine_async::{SpineCursor, WithSnapshot};
 use crate::trace::{Spine, TupleBuilder};
 use crate::{
+    DBData, Runtime, Timestamp, ZWeight,
     algebra::{
         AddByRef, HasOne, HasZero, IndexedZSet, Lattice, OrdIndexedZSet, OrdIndexedZSetFactories,
         PartialOrder, ZRingValue,
     },
     circuit::{
+        Circuit, Scope, Stream, WithClock,
         metadata::{
-            MetaItem, OperatorLocation, OperatorMeta, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL,
+            MetaItem, NUM_ENTRIES_LABEL, OperatorLocation, OperatorMeta, SHARED_BYTES_LABEL,
             USED_BYTES_LABEL,
         },
         operator_traits::{Operator, UnaryOperator},
-        Circuit, Scope, Stream, WithClock,
     },
     circuit_cache_key,
     dynamic::{DynPair, DynWeightedPairs, Erase},
     trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
     utils::Tup2,
-    DBData, Runtime, Timestamp, ZWeight,
 };
 use crate::{NestedCircuit, Position, RootCircuit};
 use async_stream::stream;
@@ -36,7 +36,7 @@ use std::panic::Location;
 use std::rc::Rc;
 use std::{
     borrow::Cow,
-    cmp::{min, Ordering},
+    cmp::{Ordering, min},
     collections::BTreeMap,
     marker::PhantomData,
     ops::Neg,
@@ -1201,12 +1201,13 @@ mod test {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
+        Circuit, IndexedZSetHandle, RootCircuit, Runtime, ZSetHandle,
         circuit::CircuitConfig,
         indexed_zset,
         operator::{GeneratorNested, OutputHandle},
         typed_batch::{OrdIndexedZSet, OrdZSet, SpineSnapshot},
         utils::Tup2,
-        zset, Circuit, IndexedZSetHandle, RootCircuit, Runtime, ZSetHandle,
+        zset,
     };
     use proptest::{collection, prelude::*};
 

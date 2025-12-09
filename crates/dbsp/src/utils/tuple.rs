@@ -7,7 +7,7 @@
 
 use feldera_types::deserialize_without_context;
 
-pub mod gen;
+pub mod r#gen;
 
 // Make sure to also call `dbsp_adapters::deserialize_without_context!`
 // and `sltsqlvalue::to_sql_row_impl!` for each new tuple type.

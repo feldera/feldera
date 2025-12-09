@@ -1,10 +1,10 @@
 use crate::{
+    Circuit, DBData, DBWeight, Stream,
     circuit::metadata::MetaItem,
     dynamic::{DowncastTrait, DynData, Erase},
     operator::TraceBound,
     trace::{BatchReaderFactories, Filter},
     typed_batch::{Batch, DynBatch, DynBatchReader, Spine, TypedBatch, TypedBox},
-    Circuit, DBData, DBWeight, Stream,
 };
 use dyn_clone::clone_box;
 use size_of::SizeOf;
