@@ -3,7 +3,7 @@
 import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular, type StylesheetJson } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
 import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
-import { CircuitProfile, type NodeId } from './profile.js';
+import { CircuitProfile, NodeAndMetric, PropertyValue, type NodeId } from './profile.js';
 import { CircuitSelection } from './selection.js';
 import elk from 'cytoscape-elk';
 import { Sources } from './dataflow.js';
@@ -237,6 +237,48 @@ export class Cytograph {
             g.addEdge(source, target, weight, edge.back);
         }
         return g;
+    }
+
+    /** Given a metric, return the displayed nodes that have the top values for the metric. */
+    topNodes(profile: CircuitProfile, metric: string): Array<NodeAndMetric> {
+        let result: Array<NodeAndMetric> = [];
+        let range = profile.propertyRange(metric);
+        if (range.isEmpty()) {
+            return result;
+        }
+        for (const node of this.nodes) {
+            if (node.expanded) { continue; }
+            let id = node.getId();
+            let profileNode = profile.getNode(id);
+            if (profileNode.isNone()) { continue; }
+            let values = profileNode.unwrap().getMeasurements(metric);
+            let maxValue: number | null = null;
+            let max: PropertyValue | null = null;
+            for (const pv of values) {
+                const num = pv.getNumericValue();
+                if (num.isNone()) { continue; }
+                if (maxValue === null) {
+                    maxValue = num.unwrap();
+                    max = pv;
+                } else if (num.unwrap() > maxValue) {
+                    maxValue = num.unwrap();
+                    max = pv;
+                }
+            }
+            if (maxValue === null) { continue; }
+            let normalized = range.percents(maxValue);
+            if (range.isPoint()) {
+                normalized = 0;
+            }
+            result.push(new NodeAndMetric(id, max!.toString(), normalized));
+        }
+        // Sort in decreasing order
+        result.sort((a, b) => b.normalizedValue - a.normalizedValue);
+        // Do not return more than 20 results
+        if (result.length > 20) {
+            result.length = 20;
+        }
+        return result;
     }
 
     // Create a Cytograph from a CircuitProfile filtered by the specified selection.
@@ -579,6 +621,10 @@ export class CytographRendering {
             });
         }
         this.cy.center(el);
+    }
+
+    topNodes(profile: CircuitProfile, metric: string): Array<NodeAndMetric> {
+        return this.currentGraph?.topNodes(profile, metric) || [];
     }
 
     /** Get a handle to the node in the rendering with the specified id. */

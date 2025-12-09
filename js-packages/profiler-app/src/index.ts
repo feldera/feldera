@@ -3,12 +3,13 @@
 import { ProfileLoader } from './fileLoader.js';
 import { setupBundleUpload } from './bundleUpload.js';
 import {
+    type Option,
     type VisualizerConfig,
     type ProfilerCallbacks,
     type TooltipData,
-    type Option,
     type MetricOption,
     type WorkerOption,
+    shadeOfRed
 } from 'profiler-lib';
 
 // UI element references
@@ -36,15 +37,13 @@ const callbacks: ProfilerCallbacks = {
         let data = odata.unwrap();
 
         // Header row
-        const thead = document.createElement('thead');
+        const thead = table.createTHead();
         const headerRow = thead.insertRow();
         headerRow.insertCell(); // Empty corner cell
         for (const column of data.columns) {
-            const th = document.createElement('th');
+            const th = headerRow.insertCell();
             th.textContent = column;
-            headerRow.appendChild(th);
         }
-        table.appendChild(thead);
 
         // Metric rows
         const tbody = document.createElement('tbody');
@@ -59,7 +58,7 @@ const callbacks: ProfilerCallbacks = {
             for (const cell of row.cells) {
                 const td = tr.insertCell();
                 const percent = cell.percentile;
-                const color = `rgb(255, ${Math.round((255 * (100 - percent)) / 100)}, ${Math.round((255 * (100 - percent)) / 100)})`;
+                const color = shadeOfRed(percent);
                 td.style.backgroundColor = color;
                 td.style.color = 'black';
                 td.style.textAlign = 'right';
@@ -186,6 +185,53 @@ async function main() {
         if (e.key === 'Enter') {
             loader.search(searchInput.value);
         }
+    });
+
+    metricButton?.addEventListener('click', () => {
+        const metric = metricSelector.value;
+        let nodes = loader.topNodes(metric);
+        if (nodes.length === 0) {
+            messageContainer.innerHTML = "No graph nodes found";
+            messageContainer.style.display = "block";
+            return;
+        }
+        const table = document.createElement("table");
+
+        const title = table.createTHead();
+        let row = title.insertRow();
+        const cell = row.insertCell();
+        cell.colSpan = 2;
+        cell.innerText = "Nodes with high values for " + metric;
+
+        row = title.insertRow();
+        row.insertCell().innerHTML = "Node";
+        row.insertCell().innerHTML = "Value";
+        const tBody = table.createTBody();
+        for (const m of nodes) {
+            const row = tBody.insertRow();
+            row.style.cursor = "pointer";
+            row.title = "Click to locate";
+            row.onclick = () => {
+                // Remove table
+                tooltipContainer.innerHTML = '';
+                loader.search(m.nodeId);
+            }
+            row.insertCell().innerText = m.nodeId;
+            const metric = row.insertCell();
+            metric.innerText = m.label;
+            metric.style.backgroundColor = shadeOfRed(m.normalizedValue);
+            metric.style.color = 'black';
+            metric.style.textAlign = 'right';
+        }
+
+        // Wrap table in a div and display
+        const wrapper = document.createElement('div');
+        wrapper.appendChild(table);
+        tooltipContainer.innerHTML = '';
+        tooltipContainer.appendChild(wrapper);
+        tooltipContainer.style.position = 'fixed';
+        tooltipContainer.style.top = '70px';
+        tooltipContainer.style.right = '10px';
     });
 
     // Show welcome message
