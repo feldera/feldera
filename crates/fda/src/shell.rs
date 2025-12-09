@@ -11,7 +11,7 @@ use tokio::signal;
 use tokio_util::sync::CancellationToken;
 
 use crate::cli::{Cli, Commands, OutputFormat};
-use crate::{handle_errors_fatal, pipeline, UPGRADE_NOTICE};
+use crate::{UPGRADE_NOTICE, handle_errors_fatal, pipeline};
 
 const NEWLINE: &str = if cfg!(windows) { "\r\n" } else { "\n" };
 
