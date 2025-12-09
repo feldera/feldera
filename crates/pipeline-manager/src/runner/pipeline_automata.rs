@@ -13,6 +13,7 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
     validate_deployment_config, validate_program_info, validate_runtime_config,
 };
+use crate::db::types::version::Version as DbVersion;
 use crate::error::source_error;
 use crate::is_supported_runtime;
 use crate::runner::error::RunnerError;
@@ -702,112 +703,58 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         pipeline_monitoring_or_complete: &ExtendedPipelineDescrRunner,
     ) -> Result<State, DBError> {
         let pipeline = pipeline_monitoring_or_complete.only_monitoring();
-        if pipeline.program_status == ProgramStatus::Success
-            && is_supported_runtime(&self.platform_version, &pipeline.platform_version)
-        {
-            if let ExtendedPipelineDescrRunner::Complete(pipeline) = pipeline_monitoring_or_complete
+
+        match pipeline.program_status {
+            ProgramStatus::Success
+                if !is_supported_runtime(&self.platform_version, &pipeline.platform_version) =>
             {
-                self.transit_stopped_towards_provisioned_phase_ready(pipeline)
-                    .await
-            } else {
-                panic!(
-                    "For the transit of Stopped towards Running/Paused \
+                info!("Runner cannot start pipeline {} because its runtime version ({}) is incompatible with current ({})", pipeline.id, pipeline.platform_version, self.platform_version);
+
+                Ok(State::TransitionToStopping {
+                    error: Some(ErrorResponse::from_error_nolog(
+                        &RunnerError::AutomatonCannotProvisionUnsupportedPlatformVersion {
+                            runner_platform_version: self.platform_version.clone(),
+                            pipeline_platform_version: pipeline.platform_version.clone(),
+                        },
+                    )),
+                    suspend_info: None,
+                })
+            }
+            ProgramStatus::Success => {
+                let ExtendedPipelineDescrRunner::Complete(pipeline) =
+                    pipeline_monitoring_or_complete
+                else {
+                    panic!(
+                        "For the transit of Stopped towards Running/Paused \
                     (program successfully compiled at a compatible platform version), \
                     the complete pipeline descriptor should have been retrieved"
-                );
+                    );
+                };
+
+                self.perform_checks_and_transit_towards_provisioned(pipeline)
+                    .await
             }
-        } else {
-            self.transit_stopped_towards_provisioned_early_start(&pipeline)
-                .await
-        }
-    }
-
-    /// Transits from `Stopped` towards `Provisioned` when it has not yet successfully compiled at
-    /// the current platform version.
-    async fn transit_stopped_towards_provisioned_early_start(
-        &mut self,
-        pipeline: &ExtendedPipelineDescrMonitoring,
-    ) -> Result<State, DBError> {
-        assert!(
-            pipeline.program_status != ProgramStatus::Success
-                || !is_supported_runtime(&self.platform_version, &pipeline.platform_version),
-            "Expected to be true: {:?} != {:?} || is_compatible_runtime({:?}, {:?})",
-            pipeline.program_status,
-            ProgramStatus::Success,
-            self.platform_version,
-            pipeline.platform_version
-        );
-
-        // If the pipeline program errored during compilation, immediately transition to `Failed`
-        match &pipeline.program_status {
-            ProgramStatus::SqlError => {
-                return Ok(State::TransitionToStopping {
+            ProgramStatus::SqlError | ProgramStatus::RustError | ProgramStatus::SystemError => {
+                Ok(State::TransitionToStopping {
                     error: Some(ErrorResponse::from_error_nolog(
                         &DBError::StartFailedDueToFailedCompilation {
-                            compiler_error:
-                                "SQL error occurred (see `program_error` for more information)"
-                                    .to_string(),
+                            compiler_error: format!(
+                                "{:?} occurred (see `program_error` for more information)",
+                                pipeline.program_status
+                            ),
                         },
                     )),
                     suspend_info: None,
-                });
+                })
             }
-            ProgramStatus::RustError => {
-                return Ok(State::TransitionToStopping {
-                    error: Some(ErrorResponse::from_error_nolog(
-                        &DBError::StartFailedDueToFailedCompilation {
-                            compiler_error:
-                                "Rust error occurred (see `program_error` for more information)"
-                                    .to_string(),
-                        },
-                    )),
-                    suspend_info: None,
-                });
-            }
-            ProgramStatus::SystemError => {
-                return Ok(State::TransitionToStopping {
-                    error: Some(ErrorResponse::from_error_nolog(
-                        &DBError::StartFailedDueToFailedCompilation {
-                            compiler_error:
-                                "System error occurred (see `program_error` for more information)"
-                                    .to_string(),
-                        },
-                    )),
-                    suspend_info: None,
-                });
-            }
-            _ => {}
+            _ => Ok(State::Unchanged),
         }
-
-        // The runner is unable to run a pipeline program compiled under an incompatible platform.
-        if !is_supported_runtime(&self.platform_version, &pipeline.platform_version)
-            && pipeline.program_status == ProgramStatus::Success
-        {
-            info!(
-                pipeline_id = %pipeline.id,
-                pipeline = %pipeline.name,
-                "Runner cannot start pipeline because its runtime version ({}) is incompatible with current ({})",
-                pipeline.platform_version,
-                self.platform_version
-            );
-
-            return Ok(State::TransitionToStopping {
-                error: Some(ErrorResponse::from_error_nolog(
-                    &RunnerError::AutomatonCannotProvisionUnsupportedPlatformVersion {
-                        runner_platform_version: self.platform_version.clone(),
-                        pipeline_platform_version: pipeline.platform_version.clone(),
-                    },
-                )),
-                suspend_info: None,
-            });
-        }
-
-        Ok(State::Unchanged)
     }
 
     /// Transits from `Stopped` towards `Provisioned` when it has successfully compiled at a
     /// compatible platform version.
-    async fn transit_stopped_towards_provisioned_phase_ready(
+    /// It performs all necessary checks and constructs the deployment configuration.
+    async fn perform_checks_and_transit_towards_provisioned(
         &mut self,
         pipeline: &ExtendedPipelineDescr,
     ) -> Result<State, DBError> {
@@ -892,64 +839,18 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // Before moving to provisioning, ensure the program binary exists in the compiler.
         // If it does not, request recompilation by transitioning the program status to
         // `Pending` such that compiler workers will pick it up and avoid attempting to
-        // provision a pipeline with no binary (early-start mechanism).
+        // provision a pipeline with no binary.
         if let Some(source_checksum) = pipeline.program_binary_source_checksum.as_ref() {
             if let Some(integrity_checksum) = pipeline.program_binary_integrity_checksum.as_ref() {
-                let binary_check_url = format!(
-                    "{}://{}:{}/binary/{}/{}/{}/{}",
-                    if self.common_config.enable_https {
-                        "https"
-                    } else {
-                        "http"
-                    },
-                    self.common_config.compiler_host,
-                    self.common_config.compiler_port,
-                    self.pipeline_id,
-                    pipeline.program_version,
-                    source_checksum,
-                    integrity_checksum,
-                );
-
-                match self
-                    .client
-                    .head(&binary_check_url)
-                    .timeout(Self::PIPELINE_STATUS_HTTP_REQUEST_TIMEOUT)
-                    .with_sentry_tracing()
-                    .send()
-                    .await
+                if !self
+                    .check_compiler_binary_and_request_recompile_if_missing(
+                        source_checksum,
+                        integrity_checksum,
+                        pipeline.program_version,
+                    )
+                    .await?
                 {
-                    Ok(resp) => {
-                        if resp.status() == StatusCode::NOT_FOUND {
-                            let tenant_id = self.tenant_id;
-                            let pipeline_id = pipeline.id;
-                            let program_version_guard = pipeline.program_version;
-                            match self
-                                .db
-                                .lock()
-                                .await
-                                .transit_program_status_to_pending(
-                                    tenant_id,
-                                    pipeline_id,
-                                    program_version_guard,
-                                )
-                                .await
-                            {
-                                Ok(()) => info!("Program binary missing: set program status to Pending for pipeline {}", pipeline_id),
-                                Err(e) => error!("Failed to set program status to Pending for pipeline {}: {e}", pipeline_id),
-                            }
-
-                            // Return Unchanged so the automaton stays in Stopped and the
-                            // compiler can recompile the program.
-                            return Ok(State::Unchanged);
-                        }
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Binary existence check for pipeline {} failed: {e}; will retry later",
-                            self.pipeline_id
-                        );
-                        return Ok(State::Unchanged);
-                    }
+                    return Ok(State::Unchanged);
                 }
             }
         }
@@ -958,6 +859,80 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             deployment_id,
             deployment_config,
         })
+    }
+
+    /// Check compiler for binary presence and request recompilation if missing.
+    ///
+    /// Returns `true` when binary exists; `false` when
+    /// binary is missing or the check failed transiently (so caller should remain Stopped).
+    async fn check_compiler_binary_and_request_recompile_if_missing(
+        &mut self,
+        source_checksum: &str,
+        integrity_checksum: &str,
+        program_version: DbVersion,
+    ) -> Result<bool, DBError> {
+        let binary_check_url = format!(
+            "{}://{}:{}/binary/{}/{}/{}/{}",
+            if self.common_config.enable_https {
+                "https"
+            } else {
+                "http"
+            },
+            self.common_config.compiler_host,
+            self.common_config.compiler_port,
+            self.pipeline_id,
+            program_version,
+            source_checksum,
+            integrity_checksum,
+        );
+
+        match self
+            .client
+            .head(&binary_check_url)
+            .timeout(Self::PIPELINE_STATUS_HTTP_REQUEST_TIMEOUT)
+            .with_sentry_tracing()
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                if resp.status() == StatusCode::NOT_FOUND {
+                    // Binary missing: set program status to Pending so compiler workers will recompile.
+                    match self
+                        .db
+                        .lock()
+                        .await
+                        .transit_program_status_to_pending(
+                            self.tenant_id,
+                            self.pipeline_id,
+                            program_version,
+                        )
+                        .await
+                    {
+                        Ok(()) => info!(
+                            "Program binary missing: set program status to Pending for pipeline {}",
+                            self.pipeline_id
+                        ),
+                        Err(e) => error!(
+                            "Failed to set program status to Pending for pipeline {}: {e}",
+                            self.pipeline_id
+                        ),
+                    }
+
+                    return Ok(false);
+                }
+
+                // Binary exists or other non-404 status: continue with provisioning.
+                Ok(true)
+            }
+            Err(e) => {
+                warn!(
+                    "Binary existence check for pipeline {} failed: {e}; will retry later",
+                    self.pipeline_id
+                );
+                // Treat network errors as transient; retry later.
+                Ok(false)
+            }
+        }
     }
 
     /// Transits from `Provisioning` towards `Provisioned`.
