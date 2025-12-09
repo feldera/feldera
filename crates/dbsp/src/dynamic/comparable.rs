@@ -37,17 +37,17 @@ where
 {
     #[inline]
     unsafe fn compare(&self, other: *const u8) -> Ordering {
-        self.cmp(&*(other as *const Self))
+        unsafe { self.cmp(&*(other as *const Self)) }
     }
 
     #[inline]
     unsafe fn equal(&self, other: *const u8) -> bool {
-        self.eq(&*(other as *const Self))
+        unsafe { self.eq(&*(other as *const Self)) }
     }
 
     #[inline]
     unsafe fn less_than(&self, other: *const u8) -> bool {
-        self.lt(&*(other as *const Self))
+        unsafe { self.lt(&*(other as *const Self)) }
     }
 }
 

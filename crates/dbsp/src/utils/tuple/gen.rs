@@ -17,8 +17,8 @@ macro_rules! count_items {
 #[macro_export]
 macro_rules! measure_items {
     () => { 0usize };
-    ($first:expr) => { $first.num_entries_deep() };
-    ($first:expr, $($rest:expr),*) => {
+    ($first:expr_2021) => { $first.num_entries_deep() };
+    ($first:expr_2021, $($rest:expr_2021),*) => {
         $first.num_entries_deep() + $crate::measure_items!($($rest),*)
     }
 }

@@ -1,9 +1,9 @@
 use std::mem;
 
 use crate::{
+    DBData, OrdIndexedZSet, RootCircuit, Stream, ZWeight,
     dynamic::{DowncastTrait, DynData},
     trace::BatchReaderFactories,
-    DBData, OrdIndexedZSet, RootCircuit, Stream, ZWeight,
 };
 
 impl<K, V> Stream<RootCircuit, OrdIndexedZSet<K, V>>

@@ -7,7 +7,7 @@
 
 use anyhow::Result;
 use clap::Parser;
-use dbsp::{utils::Tup2, OrdIndexedZSet, OutputHandle, Runtime};
+use dbsp::{OrdIndexedZSet, OutputHandle, Runtime, utils::Tup2};
 
 type Node = u64;
 

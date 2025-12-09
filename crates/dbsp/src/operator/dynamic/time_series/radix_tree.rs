@@ -76,10 +76,10 @@
 //! series operators like
 //! [`partitioned_rolling_aggregate`](`crate::Stream::partitioned_rolling_aggregate`).
 use crate::{
+    DBData, ZWeight,
     algebra::{HasOne, ZCursor},
     dynamic::{DataTrait, DynOpt},
     operator::dynamic::{aggregate::AggCombineFunc, time_series::Range},
-    DBData, ZWeight,
 };
 use dyn_clone::clone_box;
 use num::PrimInt;
@@ -336,7 +336,7 @@ where
                         let mut accumulator: Option<Box<A>> = None;
                         for (_, key_agg) in contents
                             .iter()
-                            .filter(|(&k, _)| child_ptr.child_prefix().contains(k))
+                            .filter(|&(&k, _)| child_ptr.child_prefix().contains(k))
                         {
                             match &mut accumulator {
                                 None => accumulator = Some(clone_box(key_agg)),
@@ -377,10 +377,10 @@ pub(in crate::operator) mod test {
 
     use super::RadixTreeCursor;
     use crate::{
+        DBData,
         algebra::Semigroup,
         dynamic::{DowncastTrait, DynData, Erase},
         operator::dynamic::time_series::Range,
-        DBData,
     };
     use num::PrimInt;
     use std::{collections::BTreeMap, iter::once};

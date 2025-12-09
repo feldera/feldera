@@ -6,13 +6,12 @@ use std::{
 };
 
 use crate::{
-    declare_trait_object, declare_typed_trait_object,
+    DBData, NumEntries, declare_trait_object, declare_typed_trait_object,
     dynamic::{
-        rkyv::SerializeDyn, ArchiveTrait, AsAny, Clonable, ClonableTrait, Comparable,
-        DeserializableDyn, DowncastTrait,
+        ArchiveTrait, AsAny, Clonable, ClonableTrait, Comparable, DeserializableDyn, DowncastTrait,
+        rkyv::SerializeDyn,
     },
     hash::default_hash,
-    DBData, NumEntries,
 };
 
 /// Defines the minimal set of operations that must be supported by

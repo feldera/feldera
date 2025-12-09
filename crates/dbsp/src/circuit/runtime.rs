@@ -1,8 +1,9 @@
 //! A multithreaded runtime for evaluating DBSP circuits in a data-parallel
 //! fashion.
 
-use crate::circuit::checkpointer::Checkpointer;
+use crate::SchedulerError;
 use crate::circuit::DevTweaks;
+use crate::circuit::checkpointer::Checkpointer;
 use crate::error::Error as DbspError;
 use crate::operator::communication::Exchange;
 use crate::storage::backend::StorageBackend;
@@ -10,14 +11,13 @@ use crate::storage::file::format::Compression;
 use crate::storage::file::to_bytes;
 use crate::storage::file::writer::Parameters;
 use crate::trace::unaligned_deserialize;
-use crate::SchedulerError;
 use crate::{
-    storage::{backend::StorageError, buffer_cache::BufferCache, dirlock::LockedDirectory},
     DetailedError,
+    storage::{backend::StorageError, buffer_cache::BufferCache, dirlock::LockedDirectory},
 };
-use core_affinity::{get_core_ids, CoreId};
+use core_affinity::{CoreId, get_core_ids};
 use crossbeam::sync::{Parker, Unparker};
-use enum_map::{enum_map, Enum, EnumMap};
+use enum_map::{Enum, EnumMap, enum_map};
 use feldera_types::config::{StorageCompression, StorageConfig, StorageOptions};
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
@@ -37,8 +37,8 @@ use std::{
     fmt::{Debug, Display, Error as FmtError, Formatter},
     panic::{self, Location, PanicHookInfo},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, RwLock, Weak,
+        atomic::{AtomicBool, Ordering},
     },
     thread::{Builder, JoinHandle, Result as ThreadResult},
 };
@@ -46,8 +46,8 @@ use tokio::sync::Notify;
 use tracing::{debug, error, info, warn};
 use typedmap::TypedDashMap;
 
-use super::dbsp_handle::{Layout, Mode};
 use super::CircuitConfig;
+use super::dbsp_handle::{Layout, Mode};
 
 /// The number of tuples a stateful operator outputs per step during replay.
 pub const DEFAULT_REPLAY_STEP_SIZE: usize = 10000;
@@ -313,22 +313,29 @@ fn map_pin_cpus(layout: &Layout, pin_cpus: &[usize]) -> Vec<EnumMap<ThreadType, 
         .collect::<IndexSet<_>>();
     if pin_cpus.len() < 2 * nworkers {
         if !pin_cpus.is_empty() {
-            warn!("ignoring CPU pinning request because {nworkers} workers require {} pinned CPUs but only {} were specified",
-                      2 * nworkers, pin_cpus.len())
+            warn!(
+                "ignoring CPU pinning request because {nworkers} workers require {} pinned CPUs but only {} were specified",
+                2 * nworkers,
+                pin_cpus.len()
+            )
         }
         return Vec::new();
     }
 
     let Some(core_ids) = get_core_ids() else {
-        warn!("ignoring CPU pinning request because this system's core ids list could not be obtained");
+        warn!(
+            "ignoring CPU pinning request because this system's core ids list could not be obtained"
+        );
         return Vec::new();
     };
     let core_ids = core_ids.iter().copied().collect::<IndexSet<_>>();
 
     let missing_cpus = pin_cpus.difference(&core_ids).copied().collect::<Vec<_>>();
     if !missing_cpus.is_empty() {
-        warn!("ignoring CPU pinning request because requested CPUs {missing_cpus:?} are not available (available CPUs are: {})",
-              display_core_ids(core_ids.iter()));
+        warn!(
+            "ignoring CPU pinning request because requested CPUs {missing_cpus:?} are not available (available CPUs are: {})",
+            display_core_ids(core_ids.iter())
+        );
         return Vec::new();
     }
 
@@ -1178,13 +1185,13 @@ impl RuntimeHandle {
 mod tests {
     use super::Runtime;
     use crate::{
+        Circuit, RootCircuit,
         circuit::{
+            CircuitConfig, Layout,
             dbsp_handle::{CircuitStorageConfig, DevTweaks, Mode},
             schedule::{DynamicScheduler, Scheduler},
-            CircuitConfig, Layout,
         },
         operator::Generator,
-        Circuit, RootCircuit,
     };
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
     use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};

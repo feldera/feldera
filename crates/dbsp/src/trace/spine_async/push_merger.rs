@@ -8,9 +8,9 @@ use crate::{
     dynamic::{DynDataTyped, DynWeightedPairs, WeightTrait},
     time::Timestamp,
     trace::{
+        Batch, BatchFactories, BatchReaderFactories, Builder, Filter, Weight,
         cursor::{Pending, PushCursor},
         spine_async::index_set::IndexSet,
-        Batch, BatchFactories, BatchReaderFactories, Builder, Filter, Weight,
     },
 };
 
@@ -273,7 +273,10 @@ where
                         return Ok(());
                     }
                 }
-                debug_assert!(time_map_func.is_some() || self.any_values, "This assertion should fail only if B::Cursor is a spine or a CursorList, but we shouldn't be merging those");
+                debug_assert!(
+                    time_map_func.is_some() || self.any_values,
+                    "This assertion should fail only if B::Cursor is a spine or a CursorList, but we shouldn't be merging those"
+                );
                 if self.any_values {
                     self.any_values = false;
                     builder.push_key(self.cursors[index].key().unwrap().unwrap());
@@ -325,10 +328,12 @@ where
     ) -> bool {
         // All of the cursors must have a valid value (hence the `unwrap()`),
         // and they must be equal.
-        debug_assert!(indexes
-            .into_iter()
-            .map(|index| self.cursors[index].val().unwrap())
-            .all_equal());
+        debug_assert!(
+            indexes
+                .into_iter()
+                .map(|index| self.cursors[index].val().unwrap())
+                .all_equal()
+        );
 
         // If this is a timed batch, we must consolidate the (time, weight) array; otherwise we
         // simply compute the total weight of the current value.
@@ -503,11 +508,11 @@ mod test {
     use crate::{
         dynamic::{DynData, DynWeight, Erase},
         trace::{
+            Batch, BatchReader, BatchReaderFactories, Builder, TupleBuilder, VecIndexedWSet,
+            VecIndexedWSetFactories,
             cursor::{Pending, PushCursor},
             ord::vec::indexed_wset_batch::VecIndexedWSetBuilder,
             spine_async::{index_set::IndexSet, push_merger::PushMerger},
-            Batch, BatchReader, BatchReaderFactories, Builder, TupleBuilder, VecIndexedWSet,
-            VecIndexedWSetFactories,
         },
     };
 

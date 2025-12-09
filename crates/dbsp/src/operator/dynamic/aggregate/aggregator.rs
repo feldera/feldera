@@ -3,12 +3,12 @@ use std::{marker::PhantomData, mem::take};
 use dyn_clone::DynClone;
 
 use crate::{
+    DBData, DBWeight,
     algebra::Semigroup,
     dynamic::{
         DataTrait, DowncastTrait, DynOpt, DynUnit, Erase, Factory, WeightTrait, WithFactory,
     },
     trace::Cursor,
-    DBData, DBWeight,
 };
 
 pub trait AggOutputFunc<A: ?Sized, O: ?Sized>: Fn(&mut A, &mut O) + DynClone {}

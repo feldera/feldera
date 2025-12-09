@@ -5,12 +5,12 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use csv::ReaderBuilder;
 use dbsp::{
+    Circuit, OrdZSet, RootCircuit, Runtime, Stream,
     mimalloc::MiMalloc,
     monitor::TraceMonitor,
     operator::CsvSource,
     typed_batch::DynBatchReader,
     utils::{Tup2, Tup3},
-    Circuit, OrdZSet, RootCircuit, Runtime, Stream,
 };
 use std::{
     fs::{self, File, OpenOptions},

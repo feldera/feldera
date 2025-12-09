@@ -22,7 +22,7 @@
 //! ```
 
 use crate::data::PersonalNetworkGkgEntry;
-use dbsp::{utils::Tup2, OrdZSet, RootCircuit, Stream};
+use dbsp::{OrdZSet, RootCircuit, Stream, utils::Tup2};
 
 pub fn personal_network(
     target: String,

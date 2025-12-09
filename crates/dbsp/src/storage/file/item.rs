@@ -1,9 +1,9 @@
 use crate::{
+    DBData,
     dynamic::{DataTrait, DowncastTrait, Erase, SerializeDyn},
     trace::Serializer,
-    DBData,
 };
-use rkyv::{archived_value, with::Inline, Archive, Fallible, Serialize};
+use rkyv::{Archive, Fallible, Serialize, archived_value, with::Inline};
 use std::{marker::PhantomData, mem::transmute};
 
 /// An object-safe interface to types that represent (key, auxiliary data) pair.
@@ -265,8 +265,11 @@ where
         bytes: &'a [u8],
         pos: usize,
     ) -> &'a dyn ArchivedItem<'a, KTrait, ATrait> {
-        let archived: &ArchivedRefTup2<'a, K, A> = archived_value::<RefTup2<'a, K, A>>(bytes, pos);
-        Tup2Deserialize::new(archived)
+        unsafe {
+            let archived: &ArchivedRefTup2<'a, K, A> =
+                archived_value::<RefTup2<'a, K, A>>(bytes, pos);
+            Tup2Deserialize::new(archived)
+        }
     }
 }
 

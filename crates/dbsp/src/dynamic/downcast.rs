@@ -54,13 +54,15 @@ pub trait DowncastTrait: AsAny {
     /// The inner value of `self` must be of type `T`.
     #[inline]
     unsafe fn downcast<T: AsAny>(&self) -> &T {
-        debug_assert_eq!(
-            self.as_any().type_id(),
-            TypeId::of::<T>(),
-            "downcast from incorrect type to {}",
-            std::any::type_name::<T>()
-        );
-        &*(self as *const _ as *const T)
+        unsafe {
+            debug_assert_eq!(
+                self.as_any().type_id(),
+                TypeId::of::<T>(),
+                "downcast from incorrect type to {}",
+                std::any::type_name::<T>()
+            );
+            &*(self as *const _ as *const T)
+        }
     }
 
     /// Cast trait object reference to a reference to a mutable reference to concrete type `T`,
@@ -71,13 +73,15 @@ pub trait DowncastTrait: AsAny {
     /// The inner value of `self` must be of type `T`.
     #[inline]
     unsafe fn downcast_mut<T: AsAny>(&mut self) -> &mut T {
-        debug_assert_eq!(
-            (self as &Self).as_any().type_id(),
-            TypeId::of::<T>(),
-            "downcast_mut from incorrect type {} to {}",
-            std::any::type_name::<Self>(),
-            std::any::type_name::<T>()
-        );
-        &mut *(self as *mut _ as *mut T)
+        unsafe {
+            debug_assert_eq!(
+                (self as &Self).as_any().type_id(),
+                TypeId::of::<T>(),
+                "downcast_mut from incorrect type {} to {}",
+                std::any::type_name::<Self>(),
+                std::any::type_name::<T>()
+            );
+            &mut *(self as *mut _ as *mut T)
+        }
     }
 }

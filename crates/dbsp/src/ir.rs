@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use feldera_ir::{LirCircuit, LirEdge, LirNode, LirStreamId, MirNodeId};
 
 use crate::{
-    circuit::{circuit_builder::CircuitBase, GlobalNodeId, NodeId},
     Circuit, Stream,
+    circuit::{GlobalNodeId, NodeId, circuit_builder::CircuitBase},
 };
 
 /// Node label indicating that this node implements the output of an

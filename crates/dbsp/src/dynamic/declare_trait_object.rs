@@ -127,9 +127,8 @@ mod test {
     use size_of::SizeOf;
 
     use crate::{
-        declare_trait_object,
+        DBData, DBWeight, declare_trait_object,
         dynamic::{Data, DataTrait, DataTraitTyped, Erase, WeightTrait, WeightTraitTyped},
-        DBData, DBWeight,
     };
 
     #[derive(

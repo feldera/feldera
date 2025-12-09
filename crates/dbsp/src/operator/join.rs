@@ -1,6 +1,7 @@
 use std::iter::once;
 
 use crate::{
+    Circuit, DBData, Stream,
     dynamic::{DowncastTrait, DynData, DynUnit, Erase},
     operator::dynamic::{
         filter_map::DynFilterMap,
@@ -10,7 +11,6 @@ use crate::{
         },
     },
     typed_batch::{IndexedZSet, OrdIndexedZSet, OrdZSet, ZSet},
-    Circuit, DBData, Stream,
 };
 
 pub(crate) fn mk_trace_join_funcs<I1, I2, Z, F>(

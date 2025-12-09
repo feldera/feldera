@@ -1,5 +1,5 @@
 use crate::storage::init;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 pub(crate) fn init_test_logger() {
     let env_filter = EnvFilter::try_from_default_env()

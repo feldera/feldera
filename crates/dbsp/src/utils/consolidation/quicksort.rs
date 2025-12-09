@@ -5,7 +5,7 @@
 use crate::utils::assume;
 use std::{
     cmp::min,
-    mem::{self, size_of, ManuallyDrop, MaybeUninit},
+    mem::{self, ManuallyDrop, MaybeUninit, size_of},
     ptr,
 };
 

@@ -1,22 +1,22 @@
 //! Filter and transform data record-by-record.
 
 use crate::circuit::metadata::{
-    BatchSizeStats, OperatorLocation, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL,
+    BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorLocation, OperatorMeta,
 };
 use crate::dynamic::DynData;
 use crate::trace::VecWSet;
+use crate::{NestedCircuit, RootCircuit};
 use crate::{
     circuit::{
-        operator_traits::{Operator, UnaryOperator},
         Circuit, OwnershipPreference, Scope, Stream,
+        operator_traits::{Operator, UnaryOperator},
     },
     dynamic::{ClonableTrait, DataTrait, DynPair, DynUnit, WeightTrait},
     trace::{
-        ord::vec::VecIndexedWSet, Batch, BatchFactories, BatchReader, BatchReaderFactories,
-        Builder, Cursor, OrdIndexedWSet, OrdIndexedWSetFactories, OrdWSet, OrdWSetFactories,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, OrdIndexedWSet,
+        OrdIndexedWSetFactories, OrdWSet, OrdWSetFactories, ord::vec::VecIndexedWSet,
     },
 };
-use crate::{NestedCircuit, RootCircuit};
 use std::panic::Location;
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -1184,11 +1184,11 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        indexed_zset,
+        Circuit, OrdIndexedZSet, RootCircuit, indexed_zset,
         operator::Generator,
         typed_batch::{OrdZSet, SpineSnapshot},
         utils::Tup2,
-        zset, Circuit, OrdIndexedZSet, RootCircuit,
+        zset,
     };
     use std::vec;
 

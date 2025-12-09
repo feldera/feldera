@@ -1,9 +1,9 @@
 use crate::circuit::checkpointer::Checkpoint;
 use crate::{
+    DBData, NumEntries, RootCircuit, Stream,
     dynamic::{DataTrait, DowncastTrait, Erase},
     trace::Rkyv,
     typed_batch::{BatchReader, TypedBox},
-    DBData, NumEntries, RootCircuit, Stream,
 };
 use size_of::SizeOf;
 

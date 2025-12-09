@@ -1,22 +1,22 @@
 //! z^-1 operator delays its input by one timestamp.
 
-use crate::circuit::circuit_builder::StreamId;
 use crate::Runtime;
+use crate::circuit::circuit_builder::StreamId;
 use crate::{
+    Error, NumEntries,
     algebra::HasZero,
     circuit::checkpointer::Checkpoint,
     circuit::{
+        Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
+        Scope, Stream,
         metadata::{
-            MetaItem, OperatorMeta, ALLOCATED_BYTES_LABEL, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL,
+            ALLOCATED_BYTES_LABEL, MetaItem, NUM_ENTRIES_LABEL, OperatorMeta, SHARED_BYTES_LABEL,
             USED_BYTES_LABEL,
         },
         operator_traits::{Operator, StrictOperator, StrictUnaryOperator, UnaryOperator},
-        Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
-        Scope, Stream,
     },
     circuit_cache_key,
     storage::file::to_bytes,
-    Error, NumEntries,
 };
 use feldera_storage::{FileCommitter, StoragePath};
 use size_of::{Context, SizeOf};
@@ -601,7 +601,7 @@ where
 mod test {
     use crate::{
         circuit::operator_traits::{Operator, StrictOperator, StrictUnaryOperator, UnaryOperator},
-        operator::{Z1Nested, Z1},
+        operator::{Z1, Z1Nested},
     };
 
     #[tokio::test]

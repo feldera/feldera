@@ -1,24 +1,24 @@
-use crate::circuit::circuit_builder::{register_replay_stream, StreamId};
+use crate::Runtime;
+use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
 use crate::circuit::metadata::NUM_INPUTS_LABEL;
 use crate::dynamic::{Weight, WeightTrait};
 use crate::operator::require_persistent_id;
 use crate::trace::spine_async::WithSnapshot;
 use crate::trace::{BatchReaderFactories, Builder, MergeCursor};
-use crate::Runtime;
 use crate::{
+    Error, Timestamp,
     circuit::{
+        Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
+        Scope, Stream, WithClock,
         metadata::{
-            MetaItem, OperatorMeta, ALLOCATED_BYTES_LABEL, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL,
+            ALLOCATED_BYTES_LABEL, MetaItem, NUM_ENTRIES_LABEL, OperatorMeta, SHARED_BYTES_LABEL,
             USED_BYTES_LABEL,
         },
         operator_traits::{BinaryOperator, Operator, StrictOperator, StrictUnaryOperator},
-        Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
-        Scope, Stream, WithClock,
     },
     circuit_cache_key,
     dynamic::DataTrait,
     trace::{Batch, BatchReader, Filter, Spine, SpineSnapshot, Trace},
-    Error, Timestamp,
 };
 use dyn_clone::clone_box;
 use feldera_storage::{FileCommitter, StoragePath};
@@ -1217,7 +1217,7 @@ where
 mod test {
     use std::cmp::max;
 
-    use crate::{dynamic::DynData, utils::Tup2, Runtime, Stream, TypedBox, ZWeight};
+    use crate::{Runtime, Stream, TypedBox, ZWeight, dynamic::DynData, utils::Tup2};
     use proptest::{collection::vec, prelude::*};
     use size_of::SizeOf;
 

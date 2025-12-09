@@ -2,8 +2,8 @@ use std::{
     borrow::Cow,
     panic::Location,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
@@ -11,19 +11,19 @@ use size_of::SizeOf;
 use typedmap::TypedMapKey;
 
 use crate::{
+    Circuit, Error, NumEntries, Runtime, Scope, Stream,
     circuit::{
+        LocalStoreMarker,
         circuit_builder::StreamId,
         metadata::{
-            BatchSizeStats, MetaItem, OperatorLocation, OperatorMeta, ALLOCATED_BYTES_LABEL,
-            INPUT_BATCHES_LABEL, NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, SHARED_BYTES_LABEL,
-            USED_BYTES_LABEL,
+            ALLOCATED_BYTES_LABEL, BatchSizeStats, INPUT_BATCHES_LABEL, MetaItem,
+            NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, OperatorLocation, OperatorMeta,
+            SHARED_BYTES_LABEL, USED_BYTES_LABEL,
         },
         operator_traits::{Operator, UnaryOperator},
-        LocalStoreMarker,
     },
     circuit_cache_key,
     trace::{Batch, BatchReader, Spine, Trace},
-    Circuit, Error, NumEntries, Runtime, Scope, Stream,
 };
 
 circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>)));

@@ -1,7 +1,7 @@
 use crate::{
+    Circuit, Stream,
     trace::BatchReaderFactories,
     typed_batch::{DynTrace, Trace, TypedBatch},
-    Circuit, Stream,
 };
 
 impl<C, T> Stream<C, T>

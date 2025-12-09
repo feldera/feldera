@@ -1,10 +1,10 @@
 use std::marker::PhantomData;
 
 use crate::{
+    DynZWeight, Position, ZWeight,
     algebra::ZCursor,
     dynamic::{DataTrait, Erase, Factory},
     trace::Cursor,
-    DynZWeight, Position, ZWeight,
 };
 
 /// Cursor that contains no data.

@@ -8,9 +8,9 @@ use std::{
 };
 
 use crate::{
-    dynamic::{DataTrait, DynDataTyped, Erase, Factory, WeightTrait},
-    trace::{cursor::Position, Cursor},
     DBData,
+    dynamic::{DataTrait, DynDataTyped, Erase, Factory, WeightTrait},
+    trace::{Cursor, cursor::Position},
 };
 
 /// Relative time offset.

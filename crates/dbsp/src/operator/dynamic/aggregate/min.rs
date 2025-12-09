@@ -1,10 +1,10 @@
 use crate::{
+    DBData, DBWeight, Timestamp,
     algebra::{HasZero, MonoidValue, Semigroup},
     dynamic::{DataTrait, DynUnit, Erase, WeightTrait},
     operator::Aggregator,
     trace::Cursor,
     utils::Tup1,
-    DBData, DBWeight, Timestamp,
 };
 use std::{cmp::min, marker::PhantomData};
 
@@ -162,7 +162,7 @@ where
     V: DBData,
 {
     fn combine(left: &Tup1<(Option<K>, V)>, right: &Tup1<(Option<K>, V)>) -> Tup1<(Option<K>, V)> {
-        match (&left.0 .0, &right.0 .0) {
+        match (&left.0.0, &right.0.0) {
             (None, None) => min(left, right).clone(),
             (Some(_), None) => left.clone(),
             (None, Some(_)) => right.clone(),
@@ -214,7 +214,7 @@ where
                             // skip to first non-None in the first field, if it exists
                             cursor.seek_key_with(&|key| {
                                 let typed = unsafe { key.downcast::<Tup1<(Option<K>, V)>>() };
-                                typed.0 .0.is_some()
+                                typed.0.0.is_some()
                             });
                         }
                     }
@@ -226,6 +226,6 @@ where
     }
 
     fn finalize(&self, accumulator: Self::Accumulator) -> Self::Output {
-        Tup1::new(accumulator.0 .1)
+        Tup1::new(accumulator.0.1)
     }
 }

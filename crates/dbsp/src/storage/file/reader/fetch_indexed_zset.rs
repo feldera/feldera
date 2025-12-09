@@ -10,10 +10,10 @@ use crate::{
     storage::{
         buffer_cache::BufferCache,
         file::{
-            reader::{
-                decompress, ColumnSpec, DataBlock, Error, FilteredKeys, Reader, TreeBlock, TreeNode,
-            },
             Factories,
+            reader::{
+                ColumnSpec, DataBlock, Error, FilteredKeys, Reader, TreeBlock, TreeNode, decompress,
+            },
         },
     },
     trace::{VecIndexedWSet, VecIndexedWSetFactories},

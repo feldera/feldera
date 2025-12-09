@@ -2,9 +2,9 @@
 
 use crate::{
     circuit::{
+        Circuit, OwnershipPreference, Scope, Stream,
         circuit_builder::StreamId,
         operator_traits::{Operator, UnaryOperator},
-        Circuit, OwnershipPreference, Scope, Stream,
     },
     circuit_cache_key,
     dynamic::{ClonableTrait, DataTrait, DynPair, DynUnit},
@@ -266,13 +266,13 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
+        Circuit, RootCircuit, ZWeight,
         dynamic::{ClonableTrait, DynData, DynPair, Erase, LeanVec},
         indexed_zset,
         operator::Generator,
         trace::{BatchReaderFactories, Batcher},
         typed_batch::{DynBatch, DynOrdZSet, OrdIndexedZSet},
         utils::Tup2,
-        Circuit, RootCircuit, ZWeight,
     };
 
     #[test]

@@ -1,17 +1,17 @@
 use crate::{
+    Batch, ChildCircuit, Circuit, SchedulerError, Scope, Stream, Timestamp,
     circuit::{
+        OwnershipPreference,
         circuit_builder::{CircuitBase, NonIterativeCircuit},
         operator_traits::{ImportOperator, Operator},
         runtime::Consensus,
         schedule::{CommitProgress, DynamicScheduler, Executor, Scheduler},
-        OwnershipPreference,
     },
     operator::Generator,
     trace::{
         Batch as DynBatch, BatchReader as _, BatchReaderFactories, Spine as DynSpine, Trace as _,
     },
     typed_batch::{Spine, TypedBatch},
-    Batch, ChildCircuit, Circuit, SchedulerError, Scope, Stream, Timestamp,
 };
 use impl_trait_for_tuples::impl_for_tuples;
 use std::{borrow::Cow, cell::RefCell, collections::BTreeSet, future::Future, pin::Pin, rc::Rc};
@@ -381,7 +381,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{typed_batch::SpineSnapshot, OrdZSet, Runtime};
+    use crate::{OrdZSet, Runtime, typed_batch::SpineSnapshot};
 
     #[test]
     fn test_non_incremental() {

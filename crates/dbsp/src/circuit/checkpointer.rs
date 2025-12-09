@@ -248,7 +248,9 @@ impl Checkpointer {
                 tracing::debug!("Removed file {file}");
             }
             Err(e) => {
-                tracing::warn!("Unable to remove old-checkpoint file {file}: {e} (the pipeline will try to delete the file again on a restart)");
+                tracing::warn!(
+                    "Unable to remove old-checkpoint file {file}: {e} (the pipeline will try to delete the file again on a restart)"
+                );
             }
         }
     }

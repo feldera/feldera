@@ -2,8 +2,8 @@
 //! seed value.
 
 use crate::circuit::{
-    operator_traits::{Data, Operator, SourceOperator},
     Runtime, Scope,
+    operator_traits::{Data, Operator, SourceOperator},
 };
 use std::{borrow::Cow, marker::PhantomData};
 

@@ -5,15 +5,14 @@ use std::{
     ops::{Deref, DerefMut, Index, IndexMut},
 };
 
-use rand::{thread_rng, RngCore};
+use rand::{RngCore, thread_rng};
 
 use crate::{
-    declare_trait_object,
+    DBData, declare_trait_object,
     dynamic::DataTraitTyped,
     utils::{
         dyn_advance, dyn_retreat, stable_sort, stable_sort_by, {self},
     },
-    DBData,
 };
 
 use super::{Data, DataTrait, DowncastTrait, Erase, LeanVec, RawIter};
@@ -376,11 +375,11 @@ where
     }
 
     unsafe fn index_unchecked(&self, index: usize) -> &Trait {
-        LeanVec::get_unchecked(self, index).erase()
+        unsafe { LeanVec::get_unchecked(self, index).erase() }
     }
 
     unsafe fn index_mut_unchecked(&mut self, index: usize) -> &mut Trait {
-        LeanVec::get_mut_unchecked(self, index).erase_mut()
+        unsafe { LeanVec::get_mut_unchecked(self, index).erase_mut() }
     }
 
     fn swap(&mut self, a: usize, b: usize) {
@@ -457,7 +456,7 @@ where
     }
 
     unsafe fn set_len(&mut self, len: usize) {
-        LeanVec::set_len(self, len)
+        unsafe { LeanVec::set_len(self, len) }
     }
 
     fn truncate(&mut self, len: usize) {

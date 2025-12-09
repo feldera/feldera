@@ -1,21 +1,21 @@
 use crate::trace::cursor::Position;
 use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
+    DBData, DBWeight, NumEntries, Timestamp,
     algebra::Lattice,
     dynamic::{
         DataTrait, DynDataTyped, DynPair, DynVec, DynWeightedPairs, Erase, Factory, LeanVec,
         WeightTrait, WithFactory,
     },
     trace::{
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
+        Serializer,
         layers::{
             Cursor as TrieCursor, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
             OrdOffset, Trie,
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Serializer,
     },
     utils::{ConsolidatePairedSlices, Tup2},
-    DBData, DBWeight, NumEntries, Timestamp,
 };
 use feldera_storage::FileReader;
 use rand::Rng;

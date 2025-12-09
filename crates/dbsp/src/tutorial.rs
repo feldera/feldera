@@ -2276,8 +2276,8 @@
 //! let (mut circuit, (/*handles*/)) = Runtime::init_circuit(4, build_circuit)?;
 //! ```
 use crate::{
-    operator::{Aggregator, Max},
-    utils::{Tup0, Tup1, Tup10},
     CircuitHandle, IndexedZSet, OrdPartitionedIndexedZSet, OutputHandle, RootCircuit, Runtime,
     Stream, ZSet, ZSetHandle,
+    operator::{Aggregator, Max},
+    utils::{Tup0, Tup1, Tup10},
 };

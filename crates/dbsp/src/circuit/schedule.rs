@@ -2,7 +2,7 @@
 
 #![allow(async_fn_in_trait)]
 
-use super::{trace::SchedulerEvent, Circuit, GlobalNodeId, NodeId};
+use super::{Circuit, GlobalNodeId, NodeId, trace::SchedulerEvent};
 use crate::{DetailedError, Position};
 use itertools::Itertools;
 use serde::Serialize;
@@ -70,11 +70,17 @@ impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
             Self::OwnershipConflict { origin, consumers } => {
-                write!(f, "ownership conflict: output of node '{origin}' is consumed by value by the following nodes: [{}]",
-                               consumers.iter().map(ToString::to_string).format(","))
+                write!(
+                    f,
+                    "ownership conflict: output of node '{origin}' is consumed by value by the following nodes: [{}]",
+                    consumers.iter().map(ToString::to_string).format(",")
+                )
             }
             Self::CyclicCircuit { node_id } => {
-                write!(f, "unschedulable circuit due to a cyclic topology: cycle through node '{node_id}'")
+                write!(
+                    f,
+                    "unschedulable circuit due to a cyclic topology: cycle through node '{node_id}'"
+                )
             }
             Error::CommitWithoutTransaction => {
                 f.write_str("commit invoked outside of a transaction")
@@ -214,7 +220,11 @@ impl Display for CommitProgressSummary {
         write!(
             f,
             "completed: {} operators, evaluating: {} operators [{}/{} changes processed], remaining: {} operators",
-            self.completed, self.in_progress, self.in_progress_processed_records, self.in_progress_total_records, self.remaining
+            self.completed,
+            self.in_progress,
+            self.in_progress_processed_records,
+            self.in_progress_total_records,
+            self.remaining
         )
     }
 }
@@ -501,8 +511,8 @@ where
 mod util {
 
     use crate::circuit::{
-        circuit_builder::StreamId, schedule::Error, Circuit, GlobalNodeId, NodeId,
-        OwnershipPreference,
+        Circuit, GlobalNodeId, NodeId, OwnershipPreference, circuit_builder::StreamId,
+        schedule::Error,
     };
     use petgraph::graphmap::DiGraphMap;
     use std::{collections::HashMap, ops::Deref};

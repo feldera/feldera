@@ -1,9 +1,9 @@
 use anyhow::Result;
 use dbsp::{
-    indexed_zset,
+    Circuit, NestedCircuit, OrdIndexedZSet, Runtime, Stream, indexed_zset,
     operator::{Generator, Min},
     utils::{Tup2, Tup3, Tup4},
-    zset_set, Circuit, NestedCircuit, OrdIndexedZSet, Runtime, Stream,
+    zset_set,
 };
 
 type Accumulator =

@@ -7,11 +7,11 @@ use crate::storage::backend::StorageError;
 use crate::storage::file::BLOOM_FILTER_FALSE_POSITIVE_RATE;
 use crate::trace::MergerType;
 use crate::{
-    circuit::runtime::RuntimeHandle, profile::Profiler, Error as DbspError, RootCircuit, Runtime,
-    RuntimeError,
+    Error as DbspError, RootCircuit, Runtime, RuntimeError, circuit::runtime::RuntimeHandle,
+    profile::Profiler,
 };
 use anyhow::Error as AnyError;
-use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
+use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
 use feldera_ir::LirCircuit;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
@@ -41,9 +41,9 @@ use uuid::Uuid;
 use crate::circuit::circuit_builder::Stream;
 use crate::profile::{DbspProfile, GraphProfile, WorkerProfile};
 
+use super::SchedulerError;
 use super::circuit_builder::BootstrapInfo;
 use super::runtime::WorkerPanicInfo;
-use super::SchedulerError;
 
 /// A host for some workers in the [`Layout`] for a multi-host DBSP circuit.
 #[allow(clippy::manual_non_exhaustive)]
@@ -1216,14 +1216,20 @@ impl DBSPHandle {
                     ));
                 }
                 let info = info.join("\n");
-                return Err(DbspError::Scheduler(SchedulerError::ReplayInfoConflict { error: format!("worker 0 and worker {i} returned different replay info after restarting from a checkpoint; this can be caused by a bug or data corruption; replay info\n{info}") }));
+                return Err(DbspError::Scheduler(SchedulerError::ReplayInfoConflict {
+                    error: format!(
+                        "worker 0 and worker {i} returned different replay info after restarting from a checkpoint; this can be caused by a bug or data corruption; replay info\n{info}"
+                    ),
+                }));
             }
         }
 
         self.bootstrap_info = worker_replay_info[&0].clone();
 
         if let Some(bootstrap_info) = &self.bootstrap_info {
-            info!("Circuit restored from checkpoint, bootstrapping new parts of the circuit: {bootstrap_info:?}");
+            info!(
+                "Circuit restored from checkpoint, bootstrapping new parts of the circuit: {bootstrap_info:?}"
+            );
         }
 
         Ok(())
@@ -1475,7 +1481,7 @@ impl CheckpointCommitter {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::fs::{create_dir_all, File};
+    use std::fs::{File, create_dir_all};
     use std::io;
     use std::path::Path;
     use std::time::Duration;
@@ -1497,7 +1503,7 @@ pub(crate) mod tests {
     };
     use anyhow::anyhow;
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
-    use tempfile::{tempdir, TempDir};
+    use tempfile::{TempDir, tempdir};
     use uuid::Uuid;
 
     // Panic during initialization in worker thread.

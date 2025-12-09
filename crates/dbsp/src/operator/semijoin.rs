@@ -1,8 +1,8 @@
 use crate::{
+    Circuit, Stream,
     dynamic::DynPair,
     operator::dynamic::semijoin::SemijoinStreamFactories,
     typed_batch::{IndexedZSet, ZSet},
-    Circuit, Stream,
 };
 
 impl<C, Pairs> Stream<C, Pairs>

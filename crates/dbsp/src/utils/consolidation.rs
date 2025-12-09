@@ -14,10 +14,10 @@ mod tests;
 pub mod utils;
 
 use crate::{
+    DBData, DBWeight,
     algebra::{AddAssignByRef, HasZero, MonoidValue},
     dynamic::{DataTrait, DowncastTrait, DynVec, Erase, LeanVec, WeightTrait},
-    utils::{assume, unstable_sort_by, Tup2},
-    DBData, DBWeight,
+    utils::{Tup2, assume, unstable_sort_by},
 };
 use std::{
     marker::PhantomData,

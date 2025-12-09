@@ -2,8 +2,8 @@
 
 use crossbeam::sync::{Parker, Unparker};
 
-use crate::trace::spine_async::WorkerState;
 use crate::Runtime;
+use crate::trace::spine_async::WorkerState;
 use std::cell::RefCell;
 use std::mem::replace;
 use std::sync::{Arc, Mutex, Weak};

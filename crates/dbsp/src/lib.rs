@@ -102,10 +102,10 @@ pub use circuit::{
 #[cfg(not(feature = "backend-mode"))]
 pub use operator::FilterMap;
 pub use operator::{
-    input::{IndexedZSetHandle, InputHandle, MapHandle, SetHandle, ZSetHandle},
     CmpFunc, OrdPartitionedIndexedZSet, OutputHandle,
+    input::{IndexedZSetHandle, InputHandle, MapHandle, SetHandle, ZSetHandle},
 };
-pub use trace::{cursor::Position, DBData, DBWeight};
+pub use trace::{DBData, DBWeight, cursor::Position};
 pub use typed_batch::{
     Batch, BatchReader, FallbackKeyBatch, FallbackValBatch, FallbackWSet, FallbackZSet,
     FileIndexedWSet, FileIndexedZSet, FileKeyBatch, FileValBatch, FileWSet, FileZSet, IndexedZSet,

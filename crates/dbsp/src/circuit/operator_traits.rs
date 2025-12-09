@@ -10,8 +10,8 @@ use feldera_storage::{FileCommitter, StoragePath};
 use crate::Error;
 use crate::{
     circuit::{
-        metadata::{OperatorLocation, OperatorMeta},
         OwnershipPreference, Scope,
+        metadata::{OperatorLocation, OperatorMeta},
     },
     trace::cursor::Position,
 };

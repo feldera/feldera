@@ -1,4 +1,4 @@
-use crate::{dynamic::rkyv::ArchiveTrait, DBData};
+use crate::{DBData, dynamic::rkyv::ArchiveTrait};
 
 /// Type erasure operations.
 ///

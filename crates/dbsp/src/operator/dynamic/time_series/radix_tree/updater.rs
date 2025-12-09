@@ -1,13 +1,13 @@
 use super::{
-    DynChildPtr, DynTreeNode, DynTreeNodeUpdate, Prefix, RadixTreeCursor, RadixTreeFactories,
-    RADIX_BITS,
+    DynChildPtr, DynTreeNode, DynTreeNodeUpdate, Prefix, RADIX_BITS, RadixTreeCursor,
+    RadixTreeFactories,
 };
 use crate::{
+    DBData, DynZWeight,
     algebra::ZCursor,
     dynamic::{ClonableTrait, DataTrait, DynDataTyped, DynOpt, DynVec},
     operator::dynamic::aggregate::{AggCombineFunc, DynAggregator},
     trace::cursor::CursorGroup,
-    DBData, DynZWeight,
 };
 use dyn_clone::clone_box;
 use num::PrimInt;

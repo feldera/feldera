@@ -6,9 +6,9 @@ mod circuit_graph;
 pub mod visual_graph;
 
 use crate::circuit::{
+    GlobalNodeId, NodeId, RootCircuit,
     metadata::OperatorLocation,
     trace::{CircuitEvent, SchedulerEvent},
-    GlobalNodeId, NodeId, RootCircuit,
 };
 use circuit_graph::{CircuitGraph, Node, NodeKind, Region, RegionId};
 use std::{
@@ -491,7 +491,10 @@ impl TraceMonitorInternal {
                             .unwrap()
                             .len();
                         if visited_nodes.len() != expected_len {
-                            return Err(TraceError::InvalidEvent(Cow::from(format!("received 'StepEnd' event after evaluating {} nodes instead of the expected {expected_len}", visited_nodes.len()))));
+                            return Err(TraceError::InvalidEvent(Cow::from(format!(
+                                "received 'StepEnd' event after evaluating {} nodes instead of the expected {expected_len}",
+                                visited_nodes.len()
+                            ))));
                         }
                     }
                     state => {
@@ -535,7 +538,9 @@ impl TraceMonitorInternal {
                         if cnode.is_strict_input() {
                             let output_id = cnode.output_id().unwrap();
                             if !visited_nodes.contains(&output_id) {
-                                return Err(TraceError::InvalidEvent(Cow::from(format!("input node {local_node_id} of a strict operator is evaluated before the output node {output_id}"))));
+                                return Err(TraceError::InvalidEvent(Cow::from(format!(
+                                    "input node {local_node_id} of a strict operator is evaluated before the output node {output_id}"
+                                ))));
                             }
                         };
 

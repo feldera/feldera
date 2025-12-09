@@ -4,8 +4,8 @@ use std::{
     marker::PhantomData,
     ops::Range,
     sync::{
-        mpsc::{channel, Receiver, Sender},
         Arc,
+        mpsc::{Receiver, Sender, channel},
     },
 };
 
@@ -16,11 +16,11 @@ use crate::{
     storage::{
         buffer_cache::BufferCache,
         file::{
+            Factories,
             format::NodeType,
             reader::{
-                decompress, ColumnSpec, DataBlock, Error, IndexBlock, Reader, TreeBlock, TreeNode,
+                ColumnSpec, DataBlock, Error, IndexBlock, Reader, TreeBlock, TreeNode, decompress,
             },
-            Factories,
         },
     },
 };
@@ -358,10 +358,12 @@ where
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn key<'b>(&self, key: &'b mut K) -> Option<&'b mut K> {
-        self.data_blocks.front().map(|block| {
-            block.key_for_row(&self.factories, self.row, key);
-            key
-        })
+        unsafe {
+            self.data_blocks.front().map(|block| {
+                block.key_for_row(&self.factories, self.row, key);
+                key
+            })
+        }
     }
 
     /// Returns the auxiliary data in the current row, or `None` if we're at EOF
@@ -371,10 +373,12 @@ where
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn aux<'b>(&self, aux: &'b mut A) -> Option<&'b mut A> {
-        self.data_blocks.front().map(|block| {
-            block.aux_for_row(&self.factories, self.row, aux);
-            aux
-        })
+        unsafe {
+            self.data_blocks.front().map(|block| {
+                block.aux_for_row(&self.factories, self.row, aux);
+                aux
+            })
+        }
     }
 
     /// Returns the key and auxiliary data in the current row, or `None` if
@@ -384,10 +388,12 @@ where
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn item<'b>(&self, item: (&'b mut K, &'b mut A)) -> Option<(&'b mut K, &'b mut A)> {
-        self.data_blocks.front().map(|block| {
-            block.item_for_row(&self.factories, self.row, (item.0, item.1));
-            item
-        })
+        unsafe {
+            self.data_blocks.front().map(|block| {
+                block.item_for_row(&self.factories, self.row, (item.0, item.1));
+                item
+            })
+        }
     }
 
     /// Returns the "row group', that is, the range of rows in the next column

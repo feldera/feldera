@@ -1,11 +1,11 @@
 use crate::{
+    Circuit, DBData, DBWeight, Stream,
     dynamic::{DataTrait, Erase, WeightTrait},
     trace::BatchReaderFactories,
     typed_batch::{
         Batch, BatchReader, DynOrdIndexedWSet, DynOrdWSet, DynVecIndexedWSet, DynVecWSet,
         OrdIndexedWSet, OrdWSet, TypedBatch,
     },
-    Circuit, DBData, DBWeight, Stream,
 };
 
 /// This trait abstracts away a stream of records that can be filtered

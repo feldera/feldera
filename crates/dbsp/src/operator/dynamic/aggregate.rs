@@ -1,24 +1,26 @@
 //! Aggregation operators.
 
 use async_stream::stream;
-use dyn_clone::{clone_box, DynClone};
+use dyn_clone::{DynClone, clone_box};
 use futures::Stream as AsyncStream;
 use std::{
     any::TypeId,
     borrow::Cow,
     cell::RefCell,
-    cmp::{min, Ordering},
+    cmp::{Ordering, min},
     collections::BTreeMap,
     marker::PhantomData,
     rc::Rc,
 };
 
 use crate::{
+    DBData, DBWeight, DynZWeight, NestedCircuit, Position, RootCircuit, ZWeight,
     algebra::{HasOne, IndexedZSet, IndexedZSetReader, Lattice, OrdIndexedZSet, PartialOrder},
     circuit::{
-        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
+        Circuit, Scope, Stream, WithClock,
+        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
         operator_traits::{Operator, UnaryOperator},
-        splitter_output_chunk_size, Circuit, Scope, Stream, WithClock,
+        splitter_output_chunk_size,
     },
     dynamic::{
         DataTrait, DynData, DynOpt, DynPair, DynPairs, DynSet, DynUnit, DynWeight, Erase, Factory,
@@ -30,12 +32,11 @@ use crate::{
     },
     time::Timestamp,
     trace::{
-        cursor::CursorGroup,
-        spine_async::{SpineCursor, WithSnapshot},
         Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, OrdWSet,
         OrdWSetFactories, Spine,
+        cursor::CursorGroup,
+        spine_async::{SpineCursor, WithSnapshot},
     },
-    DBData, DBWeight, DynZWeight, NestedCircuit, Position, RootCircuit, ZWeight,
 };
 
 mod aggregator;
@@ -292,13 +293,7 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
         &self,
         persistent_id: Option<&str>,
         factories: &IncAggregateFactories<MonoIndexedZSet, MonoIndexedZSet, ()>,
-        aggregator: &dyn DynAggregator<
-            DynData,
-            (),
-            DynZWeight,
-            Accumulator = DynData,
-            Output = DynData,
-        >,
+        aggregator: &dyn DynAggregator<DynData, (), DynZWeight, Accumulator = DynData, Output = DynData>,
     ) -> Stream<RootCircuit, MonoIndexedZSet> {
         self.dyn_aggregate(persistent_id, factories, aggregator)
     }
@@ -439,13 +434,7 @@ where
         &self,
         persistent_id: Option<&str>,
         factories: &IncAggregateFactories<Z, OrdIndexedZSet<Z::Key, Out>, C::Time>,
-        aggregator: &dyn DynAggregator<
-            Z::Val,
-            <C as WithClock>::Time,
-            Z::R,
-            Accumulator = Acc,
-            Output = Out,
-        >,
+        aggregator: &dyn DynAggregator<Z::Val, <C as WithClock>::Time, Z::R, Accumulator = Acc, Output = Out>,
     ) -> Stream<C, OrdIndexedZSet<Z::Key, Out>>
     where
         Acc: DataTrait + ?Sized,
@@ -464,13 +453,7 @@ where
         &self,
         persistent_id: Option<&str>,
         factories: &IncAggregateFactories<Z, O, C::Time>,
-        aggregator: &dyn DynAggregator<
-            Z::Val,
-            <C as WithClock>::Time,
-            Z::R,
-            Accumulator = Acc,
-            Output = Out,
-        >,
+        aggregator: &dyn DynAggregator<Z::Val, <C as WithClock>::Time, Z::R, Accumulator = Acc, Output = Out>,
     ) -> Stream<C, O>
     where
         Acc: DataTrait + ?Sized,
@@ -824,12 +807,12 @@ where
     clock: Clk,
     aggregator: Box<
         dyn DynAggregator<
-            Z::Val,
-            <IT::Batch as BatchReader>::Time,
-            Z::R,
-            Accumulator = Acc,
-            Output = Out,
-        >,
+                Z::Val,
+                <IT::Batch as BatchReader>::Time,
+                Z::R,
+                Accumulator = Acc,
+                Output = Out,
+            >,
     >,
     // The last input batch was empty - used in fixedpoint computation.
     empty_input: RefCell<bool>,
@@ -1227,17 +1210,18 @@ pub mod test {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
+        Circuit, RootCircuit, Runtime, Stream,
         algebra::DefaultSemigroup,
         circuit::CircuitConfig,
         indexed_zset,
         operator::{
-            dynamic::aggregate::{MinSome1, Postprocess},
             Fold, GeneratorNested, Min,
+            dynamic::aggregate::{MinSome1, Postprocess},
         },
         trace::{BatchReader, Cursor},
         typed_batch::{OrdIndexedZSet, OrdZSet, TypedBatch},
         utils::{Tup1, Tup3},
-        zset, Circuit, RootCircuit, Runtime, Stream,
+        zset,
     };
 
     type TestZSet = OrdZSet<Tup2<u64, i64>>;
@@ -1738,11 +1722,7 @@ pub mod test {
         // Postprocessing: sum of non-null elements or NULL if
         // all elements are NULL.
         fn postprocess_func(Tup3(_count, non_nulls, sum): Tup3<i32, i32, i32>) -> Option<i32> {
-            if non_nulls > 0 {
-                Some(sum)
-            } else {
-                None
-            }
+            if non_nulls > 0 { Some(sum) } else { None }
         }
 
         let (
@@ -1895,11 +1875,7 @@ pub mod test {
         // Postprocessing: sum of non-null elements or NULL if
         // all elements are NULL.
         fn postprocess_func(Tup3(_count, non_nulls, sum): Tup3<i8, i8, i8>) -> Option<i8> {
-            if non_nulls > 0 {
-                Some(sum)
-            } else {
-                None
-            }
+            if non_nulls > 0 { Some(sum) } else { None }
         }
 
         let (

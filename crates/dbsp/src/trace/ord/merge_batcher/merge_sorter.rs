@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::VecDeque, fmt, fmt::Debug, mem::swap};
 
 use size_of::SizeOf;
 
-use crate::dynamic::{pair::DynPair, DataTrait, DynWeightedPairs, Factory, WeightTrait};
+use crate::dynamic::{DataTrait, DynWeightedPairs, Factory, WeightTrait, pair::DynPair};
 
 #[derive(SizeOf)]
 pub struct MergeSorter<D, R>

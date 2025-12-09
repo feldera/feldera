@@ -7,8 +7,8 @@ use crate::{
     dynamic::{DynDataTyped, DynWeightedPairs, Weight, WeightTrait},
     time::Timestamp,
     trace::{
-        spine_async::index_set::IndexSet, Batch, BatchFactories, BatchReaderFactories, Builder,
-        Filter, MergeCursor,
+        Batch, BatchFactories, BatchReaderFactories, Builder, Filter, MergeCursor,
+        spine_async::index_set::IndexSet,
     },
 };
 
@@ -228,7 +228,10 @@ where
                         return;
                     }
                 }
-                debug_assert!(time_map_func.is_some() || self.any_values, "This assertion should fail only if B::Cursor is a spine or a CursorList, but we shouldn't be merging those");
+                debug_assert!(
+                    time_map_func.is_some() || self.any_values,
+                    "This assertion should fail only if B::Cursor is a spine or a CursorList, but we shouldn't be merging those"
+                );
                 if self.any_values {
                     self.any_values = false;
                     if self.has_mut[index] {
@@ -349,9 +352,9 @@ mod test {
     use crate::{
         dynamic::{DynData, DynWeight, Erase},
         trace::{
-            ord::vec::indexed_wset_batch::VecIndexedWSetBuilder, spine_async::index_set::IndexSet,
             Batch, BatchReader, BatchReaderFactories, Builder, ListMerger, MergeCursor,
             TupleBuilder, VecIndexedWSet, VecIndexedWSetFactories,
+            ord::vec::indexed_wset_batch::VecIndexedWSetBuilder, spine_async::index_set::IndexSet,
         },
     };
 

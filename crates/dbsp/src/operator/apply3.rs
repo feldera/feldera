@@ -1,9 +1,9 @@
 //! Ternary operator that applies an arbitrary ternary function to its inputs.
 
 use crate::circuit::{
+    Circuit, OwnershipPreference, Scope, Stream,
     metadata::OperatorLocation,
     operator_traits::{Operator, TernaryOperator},
-    Circuit, OwnershipPreference, Scope, Stream,
 };
 use std::{borrow::Cow, panic::Location};
 
@@ -111,7 +111,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{operator::Generator, Circuit, RootCircuit};
+    use crate::{Circuit, RootCircuit, operator::Generator};
     use std::vec;
 
     #[test]

@@ -1,42 +1,43 @@
 use crate::{
+    Circuit, DBData, DBWeight, DynZWeight, Position, RootCircuit, Stream, ZWeight,
     algebra::{HasZero, IndexedZSet, UnsignedPrimInt, ZRingValue},
     circuit::{
-        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
+        Scope,
+        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
         operator_traits::Operator,
-        splitter_output_chunk_size, Scope,
+        splitter_output_chunk_size,
     },
     dynamic::{
         ClonableTrait, Data, DataTrait, DowncastTrait, DynDataTyped, DynOpt, DynPair, DynUnit,
         Erase, Factory, WeightTrait, WithFactory,
     },
     operator::{
+        Avg,
         async_stream_operators::{StreamingQuaternaryOperator, StreamingQuaternaryWrapper},
         dynamic::{
             accumulate_trace::AccumulateTraceFeedback,
             aggregate::{AggCombineFunc, AggOutputFunc, DynAggregator, DynAverage},
             filter_map::DynFilterMap,
             time_series::{
+                OrdPartitionedIndexedZSet, PartitionCursor, PartitionedBatch,
+                PartitionedIndexedZSet, RelOffset,
                 radix_tree::{
                     OrdPartitionedTreeAggregateFactories, PartitionedRadixTreeBatch,
                     RadixTreeCursor, TreeNode,
                 },
                 range::{Range, RangeCursor, Ranges, RelRange},
-                OrdPartitionedIndexedZSet, PartitionCursor, PartitionedBatch,
-                PartitionedIndexedZSet, RelOffset,
             },
             trace::{TraceBound, TraceBounds},
         },
-        Avg,
     },
     trace::{
-        merge_batches, spine_async::WithSnapshot, Batch, BatchReader, BatchReaderFactories,
-        Builder, Cursor, Spine, SpineSnapshot,
+        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Spine, SpineSnapshot,
+        merge_batches, spine_async::WithSnapshot,
     },
     utils::Tup2,
-    Circuit, DBData, DBWeight, DynZWeight, Position, RootCircuit, Stream, ZWeight,
 };
 use async_stream::stream;
-use dyn_clone::{clone_box, DynClone};
+use dyn_clone::{DynClone, clone_box};
 use futures::Stream as AsyncStream;
 use num::Bounded;
 use std::{
@@ -1034,27 +1035,27 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
+        DBData, DBSPHandle, IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime,
+        Stream, TypedBox, ZWeight,
         algebra::{DefaultSemigroup, UnsignedPrimInt},
         circuit::CircuitConfig,
         dynamic::{DowncastTrait, DynData, DynDataTyped, DynOpt, DynPair, Erase},
         lean_vec,
         operator::{
+            Fold,
             dynamic::{
                 input::AddInputIndexedZSetFactories,
                 time_series::{
-                    range::{Range, RelOffset, RelRange},
                     PartitionCursor,
+                    range::{Range, RelOffset, RelRange},
                 },
                 trace::TraceBound,
             },
             time_series::OrdPartitionedIndexedZSet,
-            Fold,
         },
         trace::{BatchReaderFactories, Cursor},
         typed_batch::{DynBatchReader, DynOrdIndexedZSet, SpineSnapshot, TypedBatch},
         utils::Tup2,
-        DBData, DBSPHandle, IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime,
-        Stream, TypedBox, ZWeight,
     };
     use proptest::{collection, prelude::*};
     use size_of::SizeOf;

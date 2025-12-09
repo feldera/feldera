@@ -38,8 +38,9 @@ pub use circuit_builder::{
     NestedCircuit, NodeId, OwnershipPreference, RootCircuit, Scope, Stream, WithClock,
 };
 pub use dbsp_handle::{
-    splitter_output_chunk_size, CheckpointCommitter, CircuitConfig, CircuitStorageConfig,
-    DBSPHandle, DevTweaks, Host, Layout, Mode, StorageCacheConfig, StorageConfig, StorageOptions,
+    CheckpointCommitter, CircuitConfig, CircuitStorageConfig, DBSPHandle, DevTweaks, Host, Layout,
+    LayoutError, Mode, StorageCacheConfig, StorageConfig, StorageOptions,
+    splitter_output_chunk_size,
 };
 pub use runtime::{
     Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle, WeakRuntime,

@@ -6,16 +6,17 @@
 // communication, including 1-to-N and N-to-1.
 
 use crate::{
+    NumEntries,
     circuit::{
+        Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
         metadata::{
-            BatchSizeStats, MetaItem, OperatorLocation, OperatorMeta, EXCHANGE_WAIT_TIME,
-            INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL,
+            BatchSizeStats, EXCHANGE_WAIT_TIME, INPUT_BATCHES_LABEL, MetaItem,
+            OUTPUT_BATCHES_LABEL, OperatorLocation, OperatorMeta,
         },
         operator_traits::{Operator, SinkOperator, SourceOperator},
         tokio::TOKIO,
-        Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
     },
-    circuit_cache_key, NumEntries,
+    circuit_cache_key,
 };
 use crossbeam_utils::CachePadded;
 use futures::{future, prelude::*};
@@ -26,8 +27,8 @@ use std::{
     net::SocketAddr,
     ops::Range,
     sync::{
-        atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex, RwLock,
+        atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, SystemTime},
 };
@@ -1261,14 +1262,14 @@ where
 mod tests {
     use super::Exchange;
     use crate::{
+        Circuit, RootCircuit,
         circuit::{
-            schedule::{DynamicScheduler, Scheduler},
             Runtime,
+            schedule::{DynamicScheduler, Scheduler},
         },
-        operator::{communication::new_exchange_operators, Generator},
+        operator::{Generator, communication::new_exchange_operators},
         storage::file::{to_bytes, to_bytes_dyn},
         trace::unaligned_deserialize,
-        Circuit, RootCircuit,
     };
     use std::thread::yield_now;
 

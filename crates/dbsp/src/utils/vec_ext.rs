@@ -59,15 +59,17 @@ where
 
     #[inline(always)]
     unsafe fn push_unchecked(&mut self, elem: T) {
-        debug_assert_ne!(self.capacity(), 0, "cannot push to a vec of length zero");
-        debug_assert!(
-            self.len() < self.capacity(),
-            "cannot push to a vec without spare capacity",
-        );
+        unsafe {
+            debug_assert_ne!(self.capacity(), 0, "cannot push to a vec of length zero");
+            debug_assert!(
+                self.len() < self.capacity(),
+                "cannot push to a vec without spare capacity",
+            );
 
-        let len = self.len();
-        self.spare_capacity_mut().get_unchecked_mut(0).write(elem);
-        self.set_len(len + 1);
+            let len = self.len();
+            self.spare_capacity_mut().get_unchecked_mut(0).write(elem);
+            self.set_len(len + 1);
+        }
     }
 
     fn is_sorted_by<F>(&self, mut compare: F) -> bool

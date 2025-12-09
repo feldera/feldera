@@ -1,5 +1,5 @@
 use num_format::{Locale, ToFormattedString};
-use serde::{ser::SerializeSeq, Serialize, Serializer};
+use serde::{Serialize, Serializer, ser::SerializeSeq};
 use size_of::{HumanBytes, TotalSize};
 use std::{
     borrow::Cow,
@@ -153,7 +153,7 @@ impl OperatorMeta {
                     .iter_mut()
                     .position(|(label2, _item)| label == label2)
                 {
-                    let (_label, ref mut dst) = &mut self.entries[dst_index];
+                    let (_label, dst) = &mut self.entries[dst_index];
                     if let Some(merged) = src.merge(dst) {
                         *dst = merged;
                     } else {
@@ -407,7 +407,7 @@ impl From<usize> for MetaItem {
 
 #[macro_export]
 macro_rules! metadata {
-    ($($name:expr => $value:expr),* $(,)?) => {
+    ($($name:expr_2021 => $value:expr_2021),* $(,)?) => {
         [$((::std::borrow::Cow::from($name), $crate::circuit::metadata::MetaItem::from($value)),)*]
     };
 }

@@ -3,8 +3,9 @@ use std::mem::take;
 use dyn_clone::clone_box;
 
 use crate::{
+    Circuit, DBData, DBWeight, DynZWeight, RootCircuit, Stream, TypedBox, ZWeight,
     algebra::MulByRef,
-    circuit::{metadata::MetaItem, WithClock},
+    circuit::{WithClock, metadata::MetaItem},
     dynamic::{ClonableTrait, DowncastTrait, DynData, DynUnit, DynWeight, Erase},
     operator::dynamic::aggregate::{
         Aggregator, DynAggregatorImpl, IncAggregateFactories, IncAggregateLinearFactories,
@@ -13,7 +14,6 @@ use crate::{
     storage::file::Deserializable,
     trace::{BatchReaderFactories, Filter},
     typed_batch::{Batch, BatchReader, DynOrdIndexedZSet, IndexedZSet, OrdIndexedZSet, OrdWSet},
-    Circuit, DBData, DBWeight, DynZWeight, RootCircuit, Stream, TypedBox, ZWeight,
 };
 
 impl<C, K, V> Stream<C, OrdIndexedZSet<K, V>>
@@ -308,13 +308,13 @@ where
         Z: IndexedZSet,
         F: Fn(&Z::Key, &Z::Val) -> T + 'static,
         O: Batch<
-            Key = Z::Key,
-            DynK = Z::DynK,
-            Val = (),
-            DynV = DynUnit,
-            Time = (),
-            DynR = DynWeight,
-        >,
+                Key = Z::Key,
+                DynK = Z::DynK,
+                Val = (),
+                DynV = DynUnit,
+                Time = (),
+                DynR = DynWeight,
+            >,
         T: DBWeight + MulByRef<ZWeight, Output = T>,
     {
         self.inner()

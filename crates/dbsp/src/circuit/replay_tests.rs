@@ -1,18 +1,18 @@
 use feldera_types::config::StorageConfig;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
+    CmpFunc, DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
     operator::{
-        time_series::{RelOffset, RelRange},
         Max, Min,
+        time_series::{RelOffset, RelRange},
     },
     typed_batch::SpineSnapshot,
     utils::{Tup2, Tup3},
-    CmpFunc, DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
 };
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
-use super::{dbsp_handle::Mode, CircuitConfig, CircuitStorageConfig};
+use super::{CircuitConfig, CircuitStorageConfig, dbsp_handle::Mode};
 
 fn init_logging() {
     let _ = tracing_subscriber::registry()

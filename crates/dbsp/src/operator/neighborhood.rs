@@ -1,11 +1,11 @@
 use crate::{
+    RootCircuit, Stream, ZWeight,
     dynamic::{DynData, DynDataTyped, DynPair},
     operator::dynamic::neighborhood::{
         DynNeighborhoodDescr, NeighborhoodDescr, NeighborhoodFactories,
     },
     typed_batch::{BatchReader, DynBatchReader, DynOrdZSet, IndexedZSet, TypedBatch, TypedBox},
     utils::Tup2,
-    RootCircuit, Stream, ZWeight,
 };
 
 pub type NeighborhoodDescrBox<K, V> =
@@ -101,10 +101,7 @@ where
         let factories: NeighborhoodFactories<B::Inner> =
             NeighborhoodFactories::new::<B::Key, B::Val>();
 
-        self.inner()
-            .dyn_neighborhood(&factories, unsafe {
-                &neighborhood_descr.transmute_payload()
-            })
-            .typed()
+        let payload = unsafe { neighborhood_descr.transmute_payload() };
+        self.inner().dyn_neighborhood(&factories, &payload).typed()
     }
 }

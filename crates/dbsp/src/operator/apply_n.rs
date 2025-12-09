@@ -1,8 +1,8 @@
 use std::{borrow::Cow, marker::PhantomData};
 
 use crate::{
-    circuit::operator_traits::{NaryOperator, Operator},
     ChildCircuit, Circuit, Stream, Timestamp,
+    circuit::operator_traits::{NaryOperator, Operator},
 };
 
 impl<P, TS> ChildCircuit<P, TS>

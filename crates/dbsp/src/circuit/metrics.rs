@@ -4,7 +4,7 @@
 //! backends maintain via [`metrics`] crate interfaces.
 
 use std::{
-    sync::{atomic::AtomicU64, Mutex},
+    sync::{Mutex, atomic::AtomicU64},
     time::Duration,
 };
 

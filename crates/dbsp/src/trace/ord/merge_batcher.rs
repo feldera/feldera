@@ -1,7 +1,7 @@
 //! A general purpose `Batcher` implementation based on radix sort.
 
 use crate::{
-    dynamic::{pair::DynPair, DynWeightedPairs},
+    dynamic::{DynWeightedPairs, pair::DynPair},
     trace::{Batch, BatchFactories, Batcher, Builder, TupleBuilder},
 };
 use size_of::SizeOf;

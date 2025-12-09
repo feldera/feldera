@@ -5,15 +5,15 @@
 // - different sharding modes.
 
 use crate::{
+    Circuit, Runtime, Stream,
     circuit::circuit_builder::StreamId,
     circuit_cache_key,
     dynamic::Data,
     operator::communication::new_exchange_operators,
     trace::{
-        deserialize_indexed_wset, merge_batches, serialize_indexed_wset, Batch, BatchReader,
-        Builder,
+        Batch, BatchReader, Builder, deserialize_indexed_wset, merge_batches,
+        serialize_indexed_wset,
     },
-    Circuit, Runtime, Stream,
 };
 
 use std::{hash::Hash, panic::Location};
@@ -251,8 +251,8 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        operator::Generator, trace::BatchReader, typed_batch::OrdIndexedZSet, utils::Tup2, Circuit,
-        RootCircuit, Runtime,
+        Circuit, RootCircuit, Runtime, operator::Generator, trace::BatchReader,
+        typed_batch::OrdIndexedZSet, utils::Tup2,
     };
 
     #[test]

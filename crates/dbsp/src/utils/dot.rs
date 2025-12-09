@@ -3,8 +3,8 @@
 use std::fmt::Display;
 
 use crate::{
-    circuit::circuit_builder::{CircuitBase, Edge, Node, StreamId},
     ChildCircuit, Timestamp,
+    circuit::circuit_builder::{CircuitBase, Edge, Node, StreamId},
 };
 
 pub struct DotNodeAttributes {

@@ -1,13 +1,13 @@
 use crate::{
+    Circuit, Runtime, Stream,
     circuit::{
+        OwnershipPreference, Scope,
         circuit_builder::StreamId,
         metadata::OperatorLocation,
         operator_traits::{Operator, SinkOperator, SourceOperator},
-        OwnershipPreference, Scope,
     },
     circuit_cache_key,
-    trace::{merge_batches, Batch},
-    Circuit, Runtime, Stream,
+    trace::{Batch, merge_batches},
 };
 use arc_swap::ArcSwap;
 use crossbeam::atomic::AtomicConsume;
@@ -18,8 +18,8 @@ use std::{
     mem::MaybeUninit,
     panic::Location,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 

@@ -1,13 +1,15 @@
 use super::{
-    radix_tree_update, DynPrefix, DynTreeNode, Prefix, RadixTreeCursor, RadixTreeFactories,
-    TreeNode,
+    DynPrefix, DynTreeNode, Prefix, RadixTreeCursor, RadixTreeFactories, TreeNode,
+    radix_tree_update,
 };
 use crate::{
+    Circuit, DBData, DynZWeight, Position, RootCircuit, Stream, ZWeight,
     algebra::{HasOne, OrdIndexedZSet},
     circuit::{
-        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
+        Scope,
+        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
         operator_traits::Operator,
-        splitter_output_chunk_size, Scope,
+        splitter_output_chunk_size,
     },
     dynamic::{ClonableTrait, Data, DataTrait, DynDataTyped, DynPair, Erase},
     operator::{
@@ -22,11 +24,10 @@ use crate::{
         },
     },
     trace::{
-        cursor::CursorEmpty, ord::fallback::indexed_wset::FallbackIndexedWSet,
-        spine_async::WithSnapshot, BatchReader, BatchReaderFactories, Builder, Cursor, Spine,
+        BatchReader, BatchReaderFactories, Builder, Cursor, Spine, cursor::CursorEmpty,
+        ord::fallback::indexed_wset::FallbackIndexedWSet, spine_async::WithSnapshot,
     },
     utils::Tup2,
-    Circuit, DBData, DynZWeight, Position, RootCircuit, Stream, ZWeight,
 };
 use async_stream::stream;
 use dyn_clone::clone_box;
@@ -36,7 +37,7 @@ use size_of::SizeOf;
 use std::{
     borrow::Cow,
     cell::RefCell,
-    cmp::{min, Ordering},
+    cmp::{Ordering, min},
     collections::BTreeMap,
     fmt::{self, Write},
     marker::PhantomData,
@@ -570,28 +571,28 @@ where
 #[cfg(test)]
 mod test {
     use super::{
-        super::{test::test_aggregate_range, OrdPartitionedTreeAggregateFactories, Prefix},
+        super::{OrdPartitionedTreeAggregateFactories, Prefix, test::test_aggregate_range},
         OrdPartitionedRadixTree, PartitionCursor, PartitionedRadixTreeCursor,
     };
     use crate::{
+        DBData, DynZWeight, RootCircuit, Stream, ZWeight,
         algebra::{AddAssignByRef, DefaultSemigroup, OrdZSet, Semigroup},
         dynamic::{DowncastTrait, DynData, DynDataTyped, DynPair, Erase},
         operator::{
+            Fold,
             dynamic::{
                 aggregate::DynAggregatorImpl,
                 input::{AddInputIndexedZSetFactories, CollectionHandle},
                 time_series::TreeNode,
             },
-            Fold,
         },
         trace::BatchReader,
         typed_batch::TypedBatch,
         utils::Tup2,
-        DBData, DynZWeight, RootCircuit, Stream, ZWeight,
     };
     use num::PrimInt;
     use std::{
-        collections::{btree_map::Entry, BTreeMap},
+        collections::{BTreeMap, btree_map::Entry},
         sync::{Arc, Mutex},
     };
 

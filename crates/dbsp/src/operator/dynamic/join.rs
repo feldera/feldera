@@ -9,17 +9,18 @@ use crate::trace::cursor::SaturatingCursor;
 use crate::trace::spine_async::WithSnapshot;
 use crate::trace::{Spine, SpineSnapshot, Trace};
 use crate::{
+    DBData, ZWeight,
     algebra::{
         IndexedZSet, IndexedZSetReader, Lattice, MulByRef, OrdIndexedZSet, OrdZSet, PartialOrder,
         ZSet,
     },
     circuit::{
+        Circuit, RootCircuit, Scope, Stream, WithClock,
         metadata::{
-            MetaItem, OperatorLocation, OperatorMeta, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL,
+            MetaItem, NUM_ENTRIES_LABEL, OperatorLocation, OperatorMeta, SHARED_BYTES_LABEL,
             USED_BYTES_LABEL,
         },
         operator_traits::{BinaryOperator, Operator},
-        Circuit, RootCircuit, Scope, Stream, WithClock,
     },
     circuit_cache_key,
     dynamic::{
@@ -32,7 +33,6 @@ use crate::{
         BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, WeightedItem,
     },
     utils::Tup2,
-    DBData, ZWeight,
 };
 use crate::{DynZWeight, NestedCircuit, Position, Runtime};
 use async_stream::stream;
@@ -41,7 +41,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::{
     borrow::Cow,
-    cmp::{min, Ordering},
+    cmp::{Ordering, min},
     collections::HashMap,
     marker::PhantomData,
     ops::Deref,
@@ -1252,11 +1252,12 @@ where
     }
 
     fn clock_end(&mut self, _scope: Scope) {
-        debug_assert!(self
-            .future_outputs
-            .borrow()
-            .keys()
-            .all(|time| !time.less_equal(&self.clock.time())));
+        debug_assert!(
+            self.future_outputs
+                .borrow()
+                .keys()
+                .all(|time| !time.less_equal(&self.clock.time()))
+        );
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -1670,12 +1671,13 @@ where
 #[cfg(test)]
 pub(crate) mod test {
     use crate::{
+        Circuit, DBData, RootCircuit, Runtime, Stream, ZWeight,
         circuit::CircuitConfig,
         indexed_zset,
         operator::Generator,
         typed_batch::{OrdZSet, TypedBatch},
         utils::Tup2,
-        zset, Circuit, DBData, RootCircuit, Runtime, Stream, ZWeight,
+        zset,
     };
     use std::vec;
 
@@ -2274,10 +2276,11 @@ pub(crate) mod test {
 #[cfg(all(test, not(feature = "backend-mode")))]
 mod propagate_test {
     use crate::{
+        Circuit, FallbackZSet, RootCircuit, Stream, Timestamp,
         circuit::WithClock,
         operator::{DelayedFeedback, Generator},
         typed_batch::{OrdZSet, Spine},
-        zset, Circuit, FallbackZSet, RootCircuit, Stream, Timestamp,
+        zset,
     };
     use rkyv::{Archive, Deserialize, Serialize};
     use size_of::SizeOf;

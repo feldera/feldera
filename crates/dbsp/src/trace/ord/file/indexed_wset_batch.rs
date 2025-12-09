@@ -1,4 +1,5 @@
 use crate::{
+    DBData, DBWeight, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
     dynamic::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
@@ -7,23 +8,22 @@ use crate::{
     storage::{
         buffer_cache::CacheStats,
         file::{
+            Factories as FileFactories,
             reader::{BulkRows, Cursor as FileCursor, Error as ReaderError, Reader},
             writer::Writer2,
-            Factories as FileFactories,
         },
     },
     trace::{
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
+        FileValBatch, VecIndexedWSetFactories, WeightedItem,
         cursor::{CursorFactory, CursorFactoryWrapper, Pending, Position, PushCursor},
         merge_batches_by_reference,
         ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        FileValBatch, VecIndexedWSetFactories, WeightedItem,
     },
-    DBData, DBWeight, NumEntries, Runtime,
 };
 use feldera_storage::{FileReader, StoragePath};
-use rand::{seq::index::sample, Rng};
-use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
+use rand::{Rng, seq::index::sample};
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
 use std::{
     fmt::{self, Debug},

@@ -1,4 +1,4 @@
-use rand::{seq::index::sample, RngCore};
+use rand::{RngCore, seq::index::sample};
 
 /// Compute a random sample of size `sample_size` of values in `slice`.
 ///

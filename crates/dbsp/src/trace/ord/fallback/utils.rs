@@ -1,7 +1,7 @@
 use crate::{
+    Runtime,
     dynamic::WeightTrait,
     trace::{Batch, BatchLocation, BatchReader, Builder, Cursor},
-    Runtime,
 };
 
 /// Reads all of the data from `cursor` and writes it to `builder`.

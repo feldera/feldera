@@ -1,5 +1,6 @@
 use crate::trace::cursor::Position;
 use crate::{
+    DBData, DBWeight, NumEntries, Runtime, Timestamp,
     dynamic::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
         Factory, LeanVec, WeightTrait, WithFactory,
@@ -7,22 +8,21 @@ use crate::{
     storage::{
         buffer_cache::CacheStats,
         file::{
+            Factories as FileFactories,
             reader::{Cursor as FileCursor, Error as ReaderError, Reader},
             writer::Writer2,
-            Factories as FileFactories,
         },
     },
     trace::{
-        ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
         WeightedItem,
+        ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
     },
     utils::Tup2,
-    DBData, DBWeight, NumEntries, Runtime, Timestamp,
 };
 use feldera_storage::{FileReader, StoragePath};
-use rand::{seq::index::sample, Rng};
-use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
+use rand::{Rng, seq::index::sample};
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
 use std::{
     fmt::{self, Debug},

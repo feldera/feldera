@@ -1,6 +1,6 @@
-use crate::{storage::backend::StorageError, RuntimeError, SchedulerError};
+use crate::{RuntimeError, SchedulerError, storage::backend::StorageError};
 use anyhow::Error as AnyError;
-use serde::{ser::SerializeStruct, Serialize, Serializer};
+use serde::{Serialize, Serializer, ser::SerializeStruct};
 use std::{
     borrow::Cow,
     error::Error as StdError,

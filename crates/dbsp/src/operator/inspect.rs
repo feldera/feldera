@@ -2,8 +2,8 @@
 //! applying a user-provided callback to it.
 
 use crate::circuit::{
-    operator_traits::{Operator, UnaryOperator},
     Circuit, Scope, Stream,
+    operator_traits::{Operator, UnaryOperator},
 };
 use std::{borrow::Cow, marker::PhantomData};
 

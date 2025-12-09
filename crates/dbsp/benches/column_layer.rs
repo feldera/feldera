@@ -1,17 +1,17 @@
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use dbsp::dynamic::{DataTraitTyped, DynDataTyped, Erase, LeanVec, WeightTraitTyped};
 use dbsp::utils::Tup2;
 use dbsp::{
+    DBData, DBWeight, DynZWeight, ZWeight,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
     trace::{
-        layers::{Builder, Leaf, MergeBuilder, TupleBuilder},
         Trie,
+        layers::{Builder, Leaf, MergeBuilder, TupleBuilder},
     },
     utils::consolidate,
-    DBData, DBWeight, DynZWeight, ZWeight,
 };
 use pprof::criterion::{Output, PProfProfiler};
-use rand::{distributions::Standard, prelude::Distribution, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, distributions::Standard, prelude::Distribution};
 use rand_xoshiro::Xoshiro256StarStar;
 
 const SEED: [u8; 32] = [
@@ -33,7 +33,7 @@ where
     let mut data = LeanVec::with_capacity(length);
 
     for _ in 0..length {
-        let (k, w) = rng.gen();
+        let (k, w) = rng.r#gen();
         data.push(Tup2(k, w));
     }
     consolidate(&mut data);
@@ -64,10 +64,10 @@ where
     let mut right = LeanVec::with_capacity(length / 2);
 
     for _ in 0..length / 2 {
-        let (k, w) = rng.gen();
+        let (k, w) = rng.r#gen();
         left.push(Tup2(k, w));
 
-        let (k, w) = rng.gen();
+        let (k, w) = rng.r#gen();
         right.push(Tup2(k, w));
     }
 
