@@ -191,7 +191,7 @@ class StringValue extends PropertyValue {
     constructor(id: any) {
         super();
         if (typeof id !== "string") {
-            throw new TypeError(`Expected a valid string, got: ${id}`);
+            throw new TypeError(`Expected a valid string, got, ${id}`);
         }
         this.value = id;
     }
@@ -231,7 +231,9 @@ class StringValue extends PropertyValue {
 }
 
 /** No value has been provided for a property. */
-class MissingValue extends PropertyValue {
+export class MissingValue extends PropertyValue {
+    public static readonly INSTANCE: MissingValue = new MissingValue();
+
     constructor() {
         super();
     }
@@ -274,72 +276,79 @@ export type Category = "CPU" | "memory" | "cache" | "storage" | "";
 
 /** Which category does a measurement belong to */
 export function measurementCategory(prop: string): Category {
-    switch (prop) {
-        case "time%":
-        case "invocations":
-        case "left inputs":
-        case "right inputs":
-        case "computed outputs":
-        case "inputs":
-        case "steps":
-        case "wait_time":
-        case "exchange_wait_time":
-        case "merge backpressure wait":
-        case "time":
-        case "total_idle_time":
-        case "runtime_elapsed":
-        case "total_runtime":
-            return "CPU";
-        case "merge reduction":
-        case "output redundancy":
-        case "merging batches":
-        case "merging size":
-        case "input batches/batches":
-        case "input batches/min size":
-        case "input batches/max size":
-        case "input batches/avg size":
-        case "input batches/total records":
-        case "output batches/batches":
-        case "output batches/min size":
-        case "output batches/max size":
-        case "output batches/avg size":
-        case "output batches/total records":
-        case "slot 0 loose":
-        case "slot 1 loose":
-        case "slot 2 loose":
-        case "slot 3 loose":
-        case "slot 4 loose":
-        case "slot 0 completed":
-        case "slot 1 completed":
-        case "slot 2 completed":
-        case "slot 3 completed":
-        case "slot 4 completed":
-        case "slot 0 merging":
-        case "slot 1 merging":
-        case "slot 2 merging":
-        case "slot 3 merging":
-        case "slot 4 merging":
-        case "batch sizes":
-        case "bounds":
-        case "Bloom filter size":
-        case "Bloom filter bits/key":
-            return "storage";
-        case "background cache hit rate":
-        case "foreground cache hit rate":
-        case "foreground cache occupancy":
-        case "background cache occupancy":
-            return "cache";
-        case "total size":
-        case "allocated bytes":
-        case "used bytes":
-        case "shared bytes":
-        case "batches":
-        case "storage size":
-        case "allocations":
-            return "memory"
-        default:
-            return "";
+    const map: Map<Category, Array<string>> = new Map();
+    map.set("CPU", [
+        "time%",
+        "invocations",
+        "left inputs",
+        "right inputs",
+        "computed outputs",
+        "inputs",
+        "steps",
+        "wait_time",
+        "exchange_wait_time",
+        "merge backpressure wait",
+        "time",
+        "total_idle_time",
+        "runtime_elapsed",
+        "total_runtime"]);
+    map.set("storage", [
+        "merge reduction",
+        "output redundancy",
+        "merging batches",
+        "merging size",
+        "input batches/batches",
+        "input batches/min size",
+        "input batches/max size",
+        "input batches/avg size",
+        "input batches/total records",
+        "output batches/batches",
+        "output batches/min size",
+        "output batches/max size",
+        "output batches/avg size",
+        "output batches/total records",
+        "slot 0 loose",
+        "slot 1 loose",
+        "slot 2 loose",
+        "slot 3 loose",
+        "slot 4 loose",
+        "slot 0 completed",
+        "slot 1 completed",
+        "slot 2 completed",
+        "slot 3 completed",
+        "slot 4 completed",
+        "slot 0 merging",
+        "slot 1 merging",
+        "slot 2 merging",
+        "slot 3 merging",
+        "slot 4 merging",
+        "batch sizes",
+        "bounds",
+        "Bloom filter size",
+        "Bloom filter bits/key"]);
+    map.set("cache", [
+        "background cache hit",
+        "foreground cache hit",
+        "background cache miss",
+        "foreground cache miss",
+        "foreground cache occupancy",
+        "background cache occupancy"]);
+    map.set("memory", [
+        "total size",
+        "allocated bytes",
+        "used bytes",
+        "shared bytes",
+        "batches",
+        "storage size",
+        "allocations"]);
+    for (const [k, v] of map) {
+        for (const value of v) {
+            if (prop.startsWith(value)) {
+                return k;
+            }
+        }
     }
+    return "";
 }
 
 // Decoded measurement value.
@@ -360,7 +369,7 @@ export class Measurement {
     }
 
     toString(): string {
-        return this.property + ": " + this.value.toString();
+        return this.property + ", " + this.value.toString();
     }
 
     /** Parse a JSON object with the specified label into zero or more measurements. */
@@ -789,7 +798,7 @@ export class CircuitProfile {
      * in different parts of the SQL).
      *
      * @param id - The node ID to look up
-     * @returns Array of SourcePositionRange objects, or empty array if:
+     * @returns Array of SourcePositionRange objects, or empty array if,
      *          - Node doesn't exist
      *          - Node has no source position information
      */
