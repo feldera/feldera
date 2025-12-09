@@ -71,7 +71,8 @@ class TestCheckpointSync(SharedTestPipeline):
 
         self.pipeline.set_runtime_config(
             RuntimeConfig(
-                fault_tolerance_model=ft, storage=Storage(config=storage_config),
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
                 checkpoint_interval_secs=ft_interval,
             )
         )
@@ -130,7 +131,8 @@ class TestCheckpointSync(SharedTestPipeline):
         )
         self.pipeline.set_runtime_config(
             RuntimeConfig(
-                fault_tolerance_model=ft, storage=Storage(config=storage_config),
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
                 checkpoint_interval_secs=ft_interval,
             )
         )
