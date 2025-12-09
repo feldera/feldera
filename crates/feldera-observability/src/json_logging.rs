@@ -2,12 +2,12 @@ use chrono::Utc;
 use colored::{ColoredString, Colorize};
 use serde_json::{Map, Value};
 use tracing::Subscriber;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::format::{self, Format, Writer};
 use tracing_subscriber::fmt::{FormatEvent, FormatFields};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 #[derive(Clone, Copy, Debug)]
 pub enum ServiceName {
