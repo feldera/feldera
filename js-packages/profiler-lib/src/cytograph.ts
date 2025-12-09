@@ -3,7 +3,7 @@
 import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular, type StylesheetJson } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
 import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
-import { CircuitProfile, NodeAndMetric, PropertyValue, type NodeId } from './profile.js';
+import { CircuitProfile, NodeAndMetric, PropertyValue, MissingValue, type NodeId } from './profile.js';
 import { CircuitSelection } from './selection.js';
 import elk from 'cytoscape-elk';
 import { Sources } from './dataflow.js';
@@ -632,19 +632,26 @@ export class CytographRendering {
         return this.cy.getElementById(node) as NodeSingular;
     }
 
-    static percentile(m: Option<number>, range: NumericRange): number {
-        if (m.isNone())
-            return 0;
-        if (!range.isEmpty() && !range.isPoint()) {
-            return range.percents(m.unwrap());
+    static toMeasurement(m: PropertyValue, range: NumericRange): SerializedMeasurement {
+        let percentile;
+        let value = m.getNumericValue();
+        if (value.isNone())
+            percentile = 0;
+        else if (!range.isEmpty() && !range.isPoint()) {
+            percentile = range.percents(value.unwrap());
+        } else {
+            percentile = 0;
         }
-        return 0;
+
+        return new SerializedMeasurement(m.toString(), percentile);
     }
 
     /** Compute the attributes for all cytograph nodes based on the circuit profile and current selection. */
     computeAttributes(profile: CircuitProfile, selection: MetadataSelection) {
         let workers = selection.workersVisible.getSelectedElements(profile.getWorkerNames());
-        let columnNames = workers.map(w => w.toString());
+        let columnNames = [...workers.map(w => w.toString())];
+        columnNames.push("Min");
+        columnNames.push("Max");
         for (const node of this.currentGraph!.nodes) {
             let profileNode = profile.getNode(node.getId()).unwrap();
             let data = new Map<string, Array<SerializedMeasurement>>();
@@ -654,10 +661,27 @@ export class CytographRendering {
                 let range = profile.propertyRange(metric);
                 let metrics = profileNode.getMeasurements(metric);
                 let selected = selection.workersVisible.getSelectedElements(metrics);
-                data.set(metric, selected.map(
-                    m => new SerializedMeasurement(
-                        m.toString(),
-                        CytographRendering.percentile(m.getNumericValue(), range))));
+                let measurements: Array<SerializedMeasurement> = [];
+                let min: PropertyValue = MissingValue.INSTANCE;
+                let max: PropertyValue = MissingValue.INSTANCE;
+                for (const m of selected) {
+                    measurements.push(CytographRendering.toMeasurement(m, range));
+                }
+                // Compute min and max over all metrics, including the ones not selected
+                for (const m of metrics) {
+                    if (min instanceof MissingValue ||
+                        (m.getNumericValue().isSome() && min.getNumericValue().unwrap() > m.getNumericValue().unwrap())) {
+                        min = m;
+                    }
+                    if (max instanceof MissingValue ||
+                        (m.getNumericValue().isSome() && max.getNumericValue().unwrap() < m.getNumericValue().unwrap())) {
+                        max = m;
+                    }
+                }
+
+                measurements.push(CytographRendering.toMeasurement(min, range));
+                measurements.push(CytographRendering.toMeasurement(max, range));
+                data.set(metric, measurements);
             }
             // additional key-value per node attributes
             let kv = new Map();
@@ -696,7 +720,6 @@ export class CytographRendering {
                 let range = rangeO.unwrap();
                 if (!range.isEmpty() && !range.isPoint()) {
                     let m = profileNode.getMeasurements(selection.metric);
-                    m = selection.workersVisible.getSelectedElements(m);
                     let values = m.map(v => v.getNumericValue()).filter(v => v.isSome()).map(v => v.unwrap());
                     let max = Math.max(...values, 0);
                     percents = range.percents(max);
@@ -950,7 +973,7 @@ export class CytographRendering {
 
     displayNodeAttributes(node: NodeSingular) {
         const nodeId = node.id();
-        const attributes = node.data().attributes;
+        const attributes: Attributes = node.data().attributes;
         const sources = node.data("sources")
         if (this.cy === null || this.stickyInformation) {
             return;
@@ -978,7 +1001,7 @@ export class CytographRendering {
             // Set column headers (worker names)
             const colCount = attributes.matrix.getColumnCount();
             for (let i = 0; i < colCount; i++) {
-                tooltipData.columns.push(attributes.matrix.columnNames[i] || "");
+                tooltipData.columns.push(attributes.matrix.columnNames[i]!);
             }
 
             // Add rows (metrics)
