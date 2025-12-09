@@ -1,8 +1,8 @@
 // Public API for profiler-lib
 
 export {
-    Profiler,
-    type ProfilerConfig,
+    Visualizer,
+    type VisualizerConfig,
     type ProfilerCallbacks,
     type MetricOption,
     type WorkerOption,

@@ -649,7 +649,7 @@ export class CircuitProfile {
         for (const node of this.simpleNodes.values()) {
             const parent = this.parents.get(node.id);
             if (parent.isSome()) {
-                // If parent is toplevel graph, it's not in the
+                // If parent is toplevel graph, it's not in the graph
                 const complex = this.complexNodes.get(parent.unwrap()).unwrap();
                 complex.sourcePositions.append(node.sourcePositions);
             }
@@ -711,7 +711,7 @@ export class CircuitProfile {
      *          - Node doesn't exist
      *          - Node has no source position information
      */
-    // This method is in CircuitProfile rather than Profiler because CircuitProfile
+    // This method is in CircuitProfile rather than Visualizer because CircuitProfile
     // owns both the node data (simpleNodes/complexNodes) and the source data (sources).
     getSourceRanges(id: NodeId): Array<SourcePositionRange> {
         const node = this.getNode(id);
@@ -739,7 +739,7 @@ export class CircuitProfile {
         return Option.some(ranges[0]!);
     }
 
-    constructor(readonly worker_count: number) { }
+    constructor(readonly worker_count: number, readonly rootNodeId: NodeId) { }
 
     // Scan the nodes and compute the range of each property
     computePropertyRanges() {
@@ -779,11 +779,12 @@ export class CircuitProfile {
     /** Create a CircuitProfile from the JSON serialization */
     static fromJson(json: JsonProfiles): CircuitProfile {
         let worker_count = json.worker_profiles.length;
-        let result = new CircuitProfile(worker_count);
         // Decode the graph structure and create the nodes.
         // The graph itself is always a complex node.
-        result.complexNodes.set(json.graph.nodes.id,
-            new ComplexNode(json.graph.nodes.id, json.graph.nodes.label, worker_count));
+        let rootNodeId = json.graph.nodes.id;
+        let result = new CircuitProfile(worker_count, rootNodeId);
+        result.complexNodes.set(rootNodeId,
+            new ComplexNode(rootNodeId, json.graph.nodes.label, worker_count));
         for (const nodeWrapper of json.graph.nodes.nodes) {
             // Ignore top-level graph region
             result.addNode(nodeWrapper, Option.none());
@@ -808,7 +809,13 @@ export class CircuitProfile {
                         }
                     }
                 } else if (result.complexNodes.has(node)) {
-                    // Ignore measurements for complex nodes.
+                    // Ignore measurements for complex nodes, except the root node, which has some special attributes
+                    if (node === rootNodeId) {
+                        n = result.complexNodes.get(node).unwrap();
+                        for (const m of measurements) {
+                            n.addMeasurement(m, index);
+                        }
+                    }
                 } else {
                     fail("Node not found " + node);
                 }

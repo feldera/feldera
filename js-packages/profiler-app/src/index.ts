@@ -3,7 +3,7 @@
 import { ProfileLoader } from './fileLoader.js';
 import { setupBundleUpload } from './bundleUpload.js';
 import {
-    type ProfilerConfig,
+    type VisualizerConfig,
     type ProfilerCallbacks,
     type TooltipData,
     type Option,
@@ -12,6 +12,8 @@ import {
 } from 'profiler-lib';
 
 // UI element references
+const graphMetrics = document.getElementById('toplevel-metrics')!;
+const metricButton = document.getElementById('top-nodes');
 const metricSelector = document.getElementById('metric-selector') as HTMLSelectElement;
 const workerCheckboxesContainer = document.getElementById('worker-checkboxes')!;
 const toggleWorkersButton = document.getElementById('toggle-workers-btn') as HTMLButtonElement;
@@ -104,13 +106,13 @@ const callbacks: ProfilerCallbacks = {
         tooltipContainer.style.right = '10px';
     },
 
-    onMetricsChanged: (metrics: MetricOption[], selectedMetricId: string) => {
+    onMetricsChanged: (metrics: MetricOption[], selectedMetric: string) => {
         metricSelector.innerHTML = '';
         for (const metric of metrics) {
             const option = document.createElement('option');
             option.value = metric.id;
             option.textContent = metric.label;
-            if (metric.id === selectedMetricId) {
+            if (metric.id === selectedMetric) {
                 option.selected = true;
             }
             metricSelector.appendChild(option);
@@ -148,7 +150,7 @@ const callbacks: ProfilerCallbacks = {
 };
 
 // Set up the configuration with callbacks
-const config: ProfilerConfig = {
+const config: VisualizerConfig = {
     graphContainer: document.getElementById('visualizer')!,
     navigatorContainer: document.getElementById('navigator-parent')!,
     callbacks
@@ -177,6 +179,9 @@ async function main() {
         }
     });
 
+    graphMetrics.addEventListener('mouseover', (e) => loader.topLevelEvent(e));
+    graphMetrics.addEventListener('click', (e) => loader.topLevelEvent(e));
+
     searchInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             loader.search(searchInput.value);
@@ -185,7 +190,7 @@ async function main() {
 
     // Show welcome message
     messageContainer.innerHTML = `
-        <h2>Welcome to Feldera Profiler</h2>
+        <h2>Welcome to Feldera's Profile Visualizer</h2>
         <p>Click the "Load Bundle" button above to select a support bundle (.zip file)<br/> that contains the pipeline profile to visualize.</p>
     `;
     messageContainer.style.display = 'block';

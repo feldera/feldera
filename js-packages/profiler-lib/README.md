@@ -36,10 +36,10 @@ bun install -D cytoscape cytoscape-dblclick cytoscape-elk elkjs
 ## Usage
 
 ```typescript
-import { Profiler, CircuitProfile, type ProfilerConfig, type JsonProfiles, type Dataflow } from 'profiler-lib';
+import { Visualizer, CircuitProfile, type VisualizerConfig, type JsonProfiles, type Dataflow } from 'profiler-lib';
 
 // 1. Set up container elements in your HTML
-const config: ProfilerConfig = {
+const config: VisualizerConfig = {
     graphContainer: document.getElementById('graph')!,
     selectorContainer: document.getElementById('controls')!,
     navigatorContainer: document.getElementById('minimap')!,
@@ -54,21 +54,21 @@ const dataflowData: Dataflow = await fetchDataflowData();
 const profile = CircuitProfile.fromJson(profileData);
 profile.setDataflow(dataflowData);
 
-// 4. Create profiler and render
-const profiler = new Profiler(config);
-profiler.render(profile);
+// 4. Create visualizer and render
+const visualizer = new Visualizer(config);
+visualizer.render(profile);
 
 // 5. Clean up when done
-profiler.dispose();
+visualizer.dispose();
 ```
 
 ## API
 
-### `Profiler`
+### `Visualizer`
 
 Main class for rendering circuit profiles.
 
-**Constructor**: `new Profiler(config: ProfilerConfig)`
+**Constructor**: `new Visualizer(config: VisualizerConfig)`
 
 **Methods**:
 - `render(profile: CircuitProfile): void` - Render a circuit profile
@@ -76,12 +76,12 @@ Main class for rendering circuit profiles.
 - `getTooltip(): HTMLElement` - Get the tooltip element
 - `reportError(message: string): void` - Display an error
 
-### `ProfilerConfig`
+### `VisualizerConfig`
 
-Configuration for the profiler.
+Configuration for the visualizer.
 
 ```typescript
-interface ProfilerConfig {
+interface VisualizerConfig {
     graphContainer: HTMLElement;      // Main graph visualization
     selectorContainer: HTMLElement;    // Metric/worker selector controls
     navigatorContainer: HTMLElement;   // Minimap navigator
