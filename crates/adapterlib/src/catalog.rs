@@ -1,15 +1,15 @@
 use std::any::Any;
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 use anyhow::Result as AnyResult;
 #[cfg(feature = "with-avro")]
 use apache_avro::{
+    Schema as AvroSchema,
     schema::{Name as AvroName, NamesRef},
     types::Value as AvroValue,
-    Schema as AvroSchema,
 };
 use arrow::record_batch::RecordBatch;
 use dbsp::circuit::NodeId;

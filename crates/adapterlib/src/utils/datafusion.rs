@@ -1,5 +1,5 @@
 use crate::errors::journal::ControllerError;
-use anyhow::{anyhow, Error as AnyError};
+use anyhow::{Error as AnyError, anyhow};
 use arrow::util::pretty::pretty_format_batches;
 use datafusion::common::arrow::array::{AsArray, RecordBatch};
 use datafusion::logical_expr::sqlparser::parser::ParserError;
@@ -112,13 +112,13 @@ pub fn validate_timestamp_type(
         )
     {
         return Err(ControllerError::invalid_transport_configuration(
-                    endpoint_name,
-                    &format!(
-                        "timestamp column '{}' has unsupported type {}; supported types for 'timestamp_column' are integer types, DATE, and TIMESTAMP; {docs}",
-                        timestamp.name,
-                        serde_json::to_string(&timestamp.columntype).unwrap()
-                    ),
-                ));
+            endpoint_name,
+            &format!(
+                "timestamp column '{}' has unsupported type {}; supported types for 'timestamp_column' are integer types, DATE, and TIMESTAMP; {docs}",
+                timestamp.name,
+                serde_json::to_string(&timestamp.columntype).unwrap()
+            ),
+        ));
     }
 
     Ok(())
@@ -172,7 +172,12 @@ pub async fn validate_timestamp_column(
     .map_err(|e| ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string()))?;
 
     if &is_zero == "true" {
-        return Err(ControllerError::invalid_transport_configuration(endpoint_name, &format!("invalid LATENESS attribute '{lateness}' of the timestamp column '{timestamp_column}': LATENESS must be greater than zero; {docs}")));
+        return Err(ControllerError::invalid_transport_configuration(
+            endpoint_name,
+            &format!(
+                "invalid LATENESS attribute '{lateness}' of the timestamp column '{timestamp_column}': LATENESS must be greater than zero; {docs}"
+            ),
+        ));
     }
 
     Ok(())

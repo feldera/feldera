@@ -11,13 +11,13 @@ use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::program_schema::Relation;
 use feldera_types::serde_with_context::FieldParseError;
-use serde::de::StdError;
 use serde::Serialize;
+use serde::de::StdError;
 
+use crate::ConnectorMetadata;
 use crate::catalog::{InputCollectionHandle, SerBatchReader};
 use crate::errors::controller::ControllerError;
 use crate::transport::Step;
-use crate::ConnectorMetadata;
 
 /// Trait that represents a specific data format.
 ///
