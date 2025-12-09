@@ -20,9 +20,9 @@ pub mod transport;
 
 mod serde_via_value {
     use serde::{
+        Deserialize, Deserializer, Serialize, Serializer,
         de::{DeserializeOwned, Error},
         ser::Error as _,
-        Deserialize, Deserializer, Serialize, Serializer,
     };
 
     /// Use this as a serde deserialization function to work around

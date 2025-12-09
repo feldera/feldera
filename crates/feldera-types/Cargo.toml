@@ -4,7 +4,7 @@ description = "Public API types for Feldera"
 categories = ["database", "api-bindings", "network-programming"]
 readme = "README.md"
 keywords = { workspace = true }
-edition = { workspace = true }
+edition = "2024"
 version = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }

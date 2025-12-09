@@ -42,8 +42,8 @@
 use erased_serde::Deserializer as ErasedDeserializer;
 use serde::de::Error as SerdeError;
 use serde::{
-    de::{DeserializeSeed, MapAccess, SeqAccess, Visitor},
     Deserialize, Deserializer, Serialize,
+    de::{DeserializeSeed, MapAccess, SeqAccess, Visitor},
 };
 use std::{collections::BTreeMap, fmt, marker::PhantomData, sync::Arc};
 
@@ -283,7 +283,7 @@ where
 
 #[macro_export]
 macro_rules! deserialize_tuple {
-    ([$num_fields:expr]($($arg:tt),*)) => {
+    ([$num_fields:expr_2021]($($arg:tt),*)) => {
         #[allow(unused_variables)]
         #[allow(dead_code)]
         #[allow(unused_mut)]
@@ -433,7 +433,7 @@ pub struct FieldParseError {
 // from `serde_derive`.
 #[macro_export]
 macro_rules! deserialize_struct {
-    ($struct:ident($($arg:tt $(: $bound:tt)?),*)[$num_fields:expr]{$($field_name:ident: $type:ty = $default:expr),* }) => {
+    ($struct:ident($($arg:tt $(: $bound:tt)?),*)[$num_fields:expr_2021]{$($field_name:ident: $type:ty = $default:expr_2021),* }) => {
         #[allow(unused_variables)]
         #[allow(unused_mut)]
         impl<'de, C, $($arg),*> $crate::serde_with_context::DeserializeWithContext<'de, C> for $struct<$($arg),*>
@@ -620,11 +620,11 @@ pub fn invalid_length_error<E: serde::de::Error>(actual: usize, expected: usize)
 /// - On error, reports the name of the field that failed to parse.
 #[macro_export]
 macro_rules! deserialize_table_record {
-    ($table:ident[$sql_table:tt, $num_cols:expr]{$(($field_name:ident, $column_name:tt, $case_sensitive:tt, $type:ty, $init:expr $(, $postprocess:expr)*)),* }) => {
+    ($table:ident[$sql_table:tt, $num_cols:expr_2021]{$(($field_name:ident, $column_name:tt, $case_sensitive:tt, $type:ty, $init:expr_2021 $(, $postprocess:expr_2021)*)),* }) => {
         deserialize_table_record!($table[$sql_table, (), $num_cols]{$(($field_name, $column_name, $case_sensitive, $type, $init $(,$postprocess)*)),* });
     };
 
-    ($table:ident[$sql_table:tt, $aux_type:ty, $num_cols:expr]{$(($field_name:ident, $column_name:tt, $case_sensitive:tt, $type:ty, $init:expr $(, $postprocess:expr)*)),* }) => {
+    ($table:ident[$sql_table:tt, $aux_type:ty, $num_cols:expr_2021]{$(($field_name:ident, $column_name:tt, $case_sensitive:tt, $type:ty, $init:expr_2021 $(, $postprocess:expr_2021)*)),* }) => {
         #[allow(non_snake_case)]
         #[allow(unused_variables)]
         #[allow(unused_mut)]
