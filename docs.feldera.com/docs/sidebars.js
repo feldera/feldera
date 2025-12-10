@@ -465,6 +465,7 @@ const operations = {
         'operations/memory',
         'operations/metrics',
         'operations/json-logging',
+        'operations/visualizing-profiles',
     ]
 };
 
