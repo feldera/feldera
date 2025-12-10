@@ -260,10 +260,6 @@ where
             }
         }
 
-        if let Some(feedback_stream) = &self.feedback_stream {
-            feedback_stream.put(EmptyCheckpoint::new(self.state.get_batches()));
-        }
-
         let result = if self.flush {
             self.flush = false;
             self.enabled_during_current_transaction = None;
@@ -276,6 +272,12 @@ where
         } else {
             None
         };
+
+        // Write the current stat _after_ the flush, since the stream must reflect the
+        // state of the accumulator at the end of the step.
+        if let Some(feedback_stream) = &self.feedback_stream {
+            feedback_stream.put(EmptyCheckpoint::new(self.state.get_batches()));
+        }
 
         result
     }
@@ -295,11 +297,7 @@ where
             }
         }
 
-        if let Some(feedback_stream) = &self.feedback_stream {
-            feedback_stream.put(EmptyCheckpoint::new(self.state.get_batches()));
-        }
-
-        if self.flush {
+        let result = if self.flush {
             self.flush = false;
             self.enabled_during_current_transaction = None;
 
@@ -310,6 +308,12 @@ where
             Some(spine)
         } else {
             None
+        };
+
+        if let Some(feedback_stream) = &self.feedback_stream {
+            feedback_stream.put(EmptyCheckpoint::new(self.state.get_batches()));
         }
+
+        result
     }
 }

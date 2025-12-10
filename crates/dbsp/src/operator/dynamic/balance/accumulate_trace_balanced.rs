@@ -321,6 +321,11 @@ where
             current_policy: *self.current_policy.borrow(),
             key_distribution: self.key_distribution.borrow().clone(),
         };
+        // println!(
+        //     "{} update_exchange_metadata: {:?}",
+        //     Runtime::worker_index(),
+        //     metadata
+        // );
 
         self.metadata_exchange
             .set_local_operator_metadata_typed(self.global_id.local_node_id().unwrap(), metadata);
@@ -357,11 +362,32 @@ where
         }
     }
 
-    /// Partition delta based on the current policy.
+    fn process_insertions<TS>(
+        &self,
+        old_policy: Policy,
+        cursor: &mut dyn MergeCursor<B::Key, B::Val, TS, B::R>,
+        builders: &mut [B::Builder],
+        chunk_size: usize,
+    ) where
+        TS: Timestamp,
+    {
+        match old_policy {
+            Policy::Broadcast => self.process_insertions_broadcast(
+                cursor,
+                &mut builders[Runtime::worker_index()],
+                chunk_size,
+            ),
+            Policy::Shard | Policy::Balance => {
+                self.process_insertions_shard(cursor, builders, chunk_size)
+            }
+        }
+    }
+
+    /// Partition cursor based on the current policy.
     ///
     /// Returns after exhausting the cursor or when one of the builders reaches chunk_size entries,
     /// whichever comes first.
-    fn process_insertions<TS>(
+    fn process_insertions_shard<TS>(
         &self,
         cursor: &mut dyn MergeCursor<B::Key, B::Val, TS, B::R>,
         builders: &mut [B::Builder],
@@ -391,10 +417,10 @@ where
                     if has_values {
                         b.push_key(cursor.key());
                     }
-                    cursor.step_key();
                     if b.num_tuples() >= chunk_size {
                         break;
                     }
+                    cursor.step_key();
                 }
             }
             Policy::Balance => {
@@ -408,7 +434,7 @@ where
                             weight += **w;
                         });
                         if weight != 0 {
-                            shard = cursor.key().default_hash() as usize % shards;
+                            shard = cursor.val().default_hash() as usize % shards;
                             let b = &mut builders[shard];
 
                             has_values[shard] = true;
@@ -422,13 +448,11 @@ where
                             builder.push_key(cursor.key());
                         }
                     }
-
-                    cursor.step_key();
-                    has_values.fill(false);
-
                     if builders[shard].num_tuples() >= chunk_size {
                         break;
                     }
+                    cursor.step_key();
+                    has_values.fill(false);
                 }
             }
             Policy::Broadcast => {
@@ -453,12 +477,90 @@ where
                             b.push_key(cursor.key());
                         }
                     }
-                    cursor.step_key();
                     if builders[0].num_tuples() >= chunk_size {
                         break;
                     }
+                    cursor.step_key();
                 }
             }
+        }
+    }
+
+    fn process_insertions_broadcast<TS>(
+        &self,
+        cursor: &mut dyn MergeCursor<B::Key, B::Val, TS, B::R>,
+        builder: &mut B::Builder,
+        chunk_size: usize,
+    ) where
+        TS: Timestamp,
+    {
+        let worker_index = Runtime::worker_index();
+        let shards = Runtime::num_workers();
+
+        match *self.current_policy.borrow() {
+            Policy::Shard => {
+                while cursor.key_valid() {
+                    let shard = cursor.key().default_hash() as usize % shards;
+                    if shard != worker_index {
+                        cursor.step_key();
+                        continue;
+                    }
+
+                    let mut has_values = false;
+
+                    while cursor.val_valid() && builder.num_tuples() < chunk_size {
+                        let mut weight = 0;
+                        cursor.map_times(&mut |_t, w| {
+                            weight += **w;
+                        });
+                        if weight != 0 {
+                            has_values = true;
+                            builder.push_val_diff(cursor.val(), &weight);
+                        }
+                        cursor.step_val();
+                    }
+                    if has_values {
+                        builder.push_key(cursor.key());
+                    }
+                    if builder.num_tuples() >= chunk_size {
+                        break;
+                    }
+                    cursor.step_key();
+                }
+            }
+            Policy::Balance => {
+                let mut has_values = false;
+
+                while cursor.key_valid() {
+                    while cursor.val_valid() && builder.num_tuples() < chunk_size {
+                        let mut weight = 0;
+                        cursor.map_times(&mut |_t, w| {
+                            weight += **w;
+                        });
+                        if weight != 0 {
+                            let shard = cursor.val().default_hash() as usize % shards;
+                            if shard != worker_index {
+                                cursor.step_val();
+                                continue;
+                            }
+
+                            has_values = true;
+                            builder.push_val_diff(cursor.val(), &weight);
+                        }
+                        cursor.step_val();
+                    }
+
+                    if has_values {
+                        builder.push_key(cursor.key());
+                    }
+                    if builder.num_tuples() >= chunk_size {
+                        break;
+                    }
+                    cursor.step_key();
+                    has_values = false;
+                }
+            }
+            Policy::Broadcast => unreachable!(),
         }
     }
 
@@ -489,10 +591,10 @@ where
             if has_values {
                 builder.push_key(cursor.key());
             }
-            cursor.step_key();
             if builder.num_tuples() >= chunk_size {
                 break;
             }
+            cursor.step_key();
         }
     }
 
@@ -707,6 +809,7 @@ where
     }
 
     fn start_transaction(&mut self) {
+        // println!("{} start_transaction", Runtime::worker_index());
         *self.flush_state.borrow_mut() = FlushState::TransactionStarted;
         self.update_exchange_metadata();
     }
@@ -777,9 +880,10 @@ where
 
         stream! {
             if *self.flush_state.borrow() == FlushState::FlushCompleted {
+                // ExchangeReceiver expects precisely one flush per transaction.
                 assert!(self.exchange.try_send_all(
                     self.worker_index,
-                    &mut std::iter::repeat_with(move || (B::dyn_empty(&batch_factories), true)).take(Runtime::num_workers()),
+                    &mut std::iter::repeat_with(move || (B::dyn_empty(&batch_factories), false)).take(Runtime::num_workers()),
                 ));
 
                 self.update_exchange_metadata();
@@ -790,8 +894,17 @@ where
             // Policy change?
             // - Clean old rebalancing state
             // - Set new rebalancing state
+            let old_policy = *self.current_policy.borrow();
             let new_policy = self.balancer.get_optimal_policy(self.input_node_id).unwrap();
+            println!("{}: old_policy: {:?}, new_policy: {:?}", Runtime::worker_index(), old_policy, new_policy);
             self.update_policy(new_policy, delayed_accumulator, delayed_trace);
+
+            // println!(
+            //     "{} eval {:?} (current_policy: {:?})",
+            //     Runtime::worker_index(),
+            //     delta,
+            //     *self.current_policy.borrow()
+            // );
 
             // Partition `delta` based on the current policy.
 
@@ -799,6 +912,8 @@ where
             let flushed = *self.flush_state.borrow() == FlushState::TransactionStarted || self.retractions.borrow().is_none();
 
             let batches = self.partition_batch(delta);
+
+            // println!("{}: delta: {:?}", Runtime::worker_index(), batches);
 
             assert!(self.exchange.try_send_all(
                 self.worker_index,
@@ -830,6 +945,8 @@ where
                 self.process_retractions(&mut accumulator_cursor, &mut builders, chunk_size);
 
                 let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                // println!("{}: acc retractions: {:?}", Runtime::worker_index(), batches);
+
                 assert!(self.exchange.try_send_all(
                     self.worker_index,
                     &mut batches.into_iter(),
@@ -844,6 +961,7 @@ where
                 self.process_retractions(&mut integral_cursor, &mut builders, chunk_size);
 
                 let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                // println!("{}: integral retractions: {:?}", Runtime::worker_index(), batches);
                 assert!(self.exchange.try_send_all(
                     self.worker_index,
                     &mut batches.into_iter(),
@@ -859,9 +977,10 @@ where
 
             // Re-partition accumulator
             while accumulator_cursor.key_valid() {
-                self.process_insertions(&mut accumulator_cursor, &mut builders, chunk_size);
+                self.process_insertions(old_policy, &mut accumulator_cursor, &mut builders, chunk_size);
 
                 let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                // println!("{}: acc insertions: {:?}", Runtime::worker_index(), batches);
                 assert!(self.exchange.try_send_all(
                     self.worker_index,
                     &mut batches.into_iter(),
@@ -873,9 +992,10 @@ where
 
             // Repartition integral
             while integral_cursor.key_valid() {
-                self.process_insertions(&mut integral_cursor, &mut builders, chunk_size);
+                self.process_insertions(old_policy, &mut integral_cursor, &mut builders, chunk_size);
 
-                let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+                let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), !integral_cursor.key_valid())).collect();
+                // println!("{}: integral insertions: {:?}", Runtime::worker_index(), batches);
                 assert!(self.exchange.try_send_all(
                     self.worker_index,
                     &mut batches.into_iter(),
@@ -893,7 +1013,8 @@ where
                 }
             }
 
-            let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+            let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), true)).collect();
+            // println!("{}: final batches: {:?}", Runtime::worker_index(), batches);
             assert!(self.exchange.try_send_all(
                 self.worker_index,
                 &mut batches.into_iter(),

@@ -857,6 +857,11 @@ where
     }
 
     fn is_flush_complete(&self) -> bool {
+        // println!(
+        //     "{} is_flush_complete: {:?}",
+        //     Runtime::worker_index(),
+        //     self.stream.is_none()
+        // );
         self.stream.is_none()
     }
 

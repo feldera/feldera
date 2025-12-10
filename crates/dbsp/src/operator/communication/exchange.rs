@@ -1138,6 +1138,11 @@ where
                 (self.combine)(&mut combined, x)
             });
         if self.flush_count == Runtime::num_workers() {
+            // println!(
+            //     "{} exchange_receiver::eval received all inputs",
+            //     Runtime::worker_index()
+            // );
+
             self.flush_complete = true;
             self.flush_count = 0;
         }

@@ -83,7 +83,6 @@ fn test_accumulate_trace_with_balancer(
 
     for (step, (policy, batch)) in batches.iter().enumerate() {
         println!("step: {}", step);
-        let new_policy = *policy;
 
         circuit
             .set_balancer_hint(&input_node_id, BalancerHint::Policy(Some(*policy)))
@@ -101,11 +100,15 @@ fn test_accumulate_trace_with_balancer(
             workers,
         );
 
+        // println!("retractions: {:?}", retractions);
+
         let insertions = balance_batch(
             &OrdIndexedZSet::from_tuples((), all_tuples.clone()),
-            new_policy,
+            *policy,
             workers,
         );
+
+        // println!("insertions: {:?}", insertions);
 
         let mut tuples = vec![];
         for Tup2(key, Tup2(val, w)) in batch.iter() {
@@ -117,6 +120,8 @@ fn test_accumulate_trace_with_balancer(
         let input_delta = OrdIndexedZSet::from_tuples((), tuples);
         let input_deltas = balance_batch(&input_delta, *policy, workers);
 
+        // println!("input_deltas: {:?}", input_deltas);
+
         let expected_output_delta = retractions
             .into_iter()
             .zip(insertions.into_iter())
@@ -125,6 +130,8 @@ fn test_accumulate_trace_with_balancer(
                 TypedBatch::merge_batches([retraction, insertion, input_delta])
             })
             .collect::<Vec<_>>();
+
+        // println!("expected_output_delta: {:?}", expected_output_delta);
 
         let input_trace = OrdIndexedZSet::from_tuples((), all_tuples.clone().into_iter().collect());
         let expected_output_trace = balance_batch(&input_trace, *policy, workers);
@@ -148,7 +155,7 @@ fn test_accumulate_trace_with_balancer(
             assert_eq!(output_trace, expected_output_trace);
         }
 
-        previous_policy = new_policy;
+        previous_policy = *policy;
     }
 
     if transaction {
