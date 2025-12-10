@@ -71,6 +71,9 @@ Usage: sql-to-dbsp [options] Input file to compile
     --je, -je
       Emit error messages as a JSON array to the error output
       Default: false
+    --jit
+      Emit a JSON representation suitable for an interpreter
+      Default: false
     --jpg, -jpg
       Emit a jpg image of the circuit instead of Rust
       Default: false

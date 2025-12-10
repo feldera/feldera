@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
@@ -415,6 +416,22 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         String rust0 = Utilities.readFile(getTestFilePath());
         Assert.assertEquals(rust, rust0);
+    }
+
+    @Test
+    public void issue5229() throws IOException, SQLException {
+        String sql = """
+               CREATE TABLE T (COL1 INT);
+               CREATE VIEW V AS SELECT col1 + col1 FROM T WHERE col1 > 10;""";
+        File file = createInputScript(sql);
+        File json = this.createTempJsonFile();
+        CompilerMain.execute("--jit", "-o", json.getPath(), file.getPath());
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
+        JsonNode parsed = mapper.readTree(json);
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        JsonDecoder decoder = new JsonDecoder(compiler.sqlToRelCompiler.typeFactory);
+        DBSPCircuit result = decoder.decodeOuter(parsed, DBSPCircuit.class);
+        Assert.assertNotNull(result);
     }
 
     @Test
@@ -973,6 +990,9 @@ public class MetadataTests extends BaseSQLTests {
                       Default: <empty string>
                     --je, -je
                       Emit error messages as a JSON array to the error output
+                      Default: false
+                    --jit
+                      Emit a JSON representation suitable for an interpreter
                       Default: false
                     --jpg, -jpg
                       Emit a jpg image of the circuit instead of Rust

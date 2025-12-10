@@ -33,6 +33,7 @@ import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.StubsWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCratesWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
@@ -219,6 +220,24 @@ public class CompilerMain {
             }
             ToDot.dump(compiler, this.options.ioOptions.outputFile,
                     this.options.ioOptions.verbosity, dotFormat, circuit);
+            return compiler.messages;
+        }
+        if (this.options.ioOptions.interpreterJson) {
+            if (this.options.ioOptions.multiCrates()) {
+                compiler.reportError(SourcePositionRange.INVALID,
+                        "Incompatible options", "Option --crates is not compatible with --jit");
+                return compiler.messages;
+            } else {
+                ToJsonOuterVisitor visitor = ToJsonOuterVisitor.create(compiler, 1);
+                visitor.apply(circuit);
+                String str = visitor.getJsonString();
+                try (PrintStream stream = this.getOutputStream()) {
+                    stream.print(str);
+                } catch (IOException e) {
+                    compiler.reportError(SourcePositionRange.INVALID,
+                            "Error writing to output file", e.getMessage());
+                }
+            }
             return compiler.messages;
         }
         MultiCratesWriter multiWriter = null;

@@ -172,6 +172,8 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         public boolean emitJpeg = false;
         @Parameter(names = {"--png", "-png"}, description = "Emit a png image of the circuit instead of Rust")
         public boolean emitPng = false;
+        @Parameter(names="--jit", description = "Emit a JSON representation suitable for an interpreter")
+        public boolean interpreterJson = false;
         @Nullable @Parameter(names = "--plan", description = "Emit the Calcite plan of the program in the specified JSON file")
         public String emitPlan = null;
         @Nullable @Parameter(names = "--dataflow", description = "Emit the Dataflow graph of the program in the specified JSON file")
@@ -252,6 +254,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                     ",\n\terrorFile=" + Utilities.singleQuote(this.errorFile) +
                     ",\n\temitHandles=" + this.emitHandles +
                     ",\n\temitJpeg=" + this.emitJpeg +
+                    ",\n\tinterpreterJson=" + this.interpreterJson +
                     ",\n\temitPng=" + this.emitPng +
                     ",\n\temitPlan=" + this.emitPlan +
                     ",\n\temitJsonErrors=" + this.emitJsonErrors +
