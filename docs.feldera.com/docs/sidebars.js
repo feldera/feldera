@@ -154,7 +154,17 @@ const guides = {
                 'use_cases/otel/grafana'
             ]
         },
-        'tutorials/rest_api/index',
+        {
+            type: 'category',
+            label: 'Rest API',
+            link: {
+                type: 'doc',
+                id: 'tutorials/rest_api/index'
+            },
+            items: [
+                'tutorials/rest_api/cluster-monitoring'
+            ]
+        },
         'tutorials/monitoring/index'
     ]
 };
