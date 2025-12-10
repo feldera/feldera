@@ -105,7 +105,9 @@ pub struct GetClusterEventParameters {
     selector: ClusterMonitorEventFieldSelector,
 }
 
-/// List of retained cluster monitor events ordered from most recent to least recent.
+/// List Cluster Events
+///
+/// Retrieve a list of retained cluster monitor events ordered from most recent to least recent.
 ///
 /// The returned events only have limited details, the full details can be retrieved using
 /// the `GET /v0/cluster/events/<event-id>` endpoint.
@@ -143,6 +145,8 @@ pub(crate) async fn list_cluster_events(
         .json(events))
 }
 
+/// Get Cluster Event
+///
 /// Get specific cluster monitor event.
 ///
 /// The identifiers of the events can be retrieved via `GET /v0/cluster/events`.

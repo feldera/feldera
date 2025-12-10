@@ -242,8 +242,8 @@
         "tags": [
           "Platform"
         ],
-        "summary": "List of retained cluster monitor events ordered from most recent to least recent.",
-        "description": "The returned events only have limited details, the full details can be retrieved using\nthe `GET /v0/cluster/events/<event-id>` endpoint.\n\nCluster monitor events are collected at a periodic interval (every 10s), however only\nevery 10 minutes or if the overall health changes, does it get inserted into the database\n(and thus, served by this endpoint). At most 1000 events are retained (newest first),\nand events older than 72h are deleted. The latest event, if it already exists, is never\ncleaned up.",
+        "summary": "List Cluster Events",
+        "description": "Retrieve a list of retained cluster monitor events ordered from most recent to least recent.\n\nThe returned events only have limited details, the full details can be retrieved using\nthe `GET /v0/cluster/events/<event-id>` endpoint.\n\nCluster monitor events are collected at a periodic interval (every 10s), however only\nevery 10 minutes or if the overall health changes, does it get inserted into the database\n(and thus, served by this endpoint). At most 1000 events are retained (newest first),\nand events older than 72h are deleted. The latest event, if it already exists, is never\ncleaned up.",
         "operationId": "list_cluster_events",
         "responses": {
           "200": {
@@ -292,8 +292,8 @@
         "tags": [
           "Platform"
         ],
-        "summary": "Get specific cluster monitor event.",
-        "description": "The identifiers of the events can be retrieved via `GET /v0/cluster/events`.\nAt most 1000 events are retained (newest first), and events older than 72h are deleted.\nThe latest event, if it already exists, is never cleaned up.\nThis endpoint can return a 404 for an event that no longer exists due to clean-up.",
+        "summary": "Get Cluster Event",
+        "description": "Get specific cluster monitor event.\n\nThe identifiers of the events can be retrieved via `GET /v0/cluster/events`.\nAt most 1000 events are retained (newest first), and events older than 72h are deleted.\nThe latest event, if it already exists, is never cleaned up.\nThis endpoint can return a 404 for an event that no longer exists due to clean-up.",
         "operationId": "get_cluster_event",
         "parameters": [
           {
