@@ -29,10 +29,10 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 */
 
-import { tuple } from '$lib/functions/common/tuple'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 import * as va from 'valibot'
+import { tuple } from '$lib/functions/common/tuple'
 
 const deduceType = (row: string[]) =>
   row[5].includes('Type: integer')

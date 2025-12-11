@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from '$lib/types/svelte'
 
-  let { dialog, onClose }: { dialog: Snippet | null; onClose: () => void } = $props()
+  const { dialog, onClose }: { dialog: Snippet | null; onClose: () => void } = $props()
 
   let contentNode = $state<HTMLElement>()
   const onclick = (e: MouseEvent) => {
@@ -32,7 +32,7 @@
       To: "opacity-0"
   -->
     <div
-      class="fixed inset-0 cursor-pointer bg-gray-500 bg-opacity-75 transition-opacity"
+      class="fixed inset-0 cursor-pointer bg-gray-500/75 transition-opacity"
       role="presentation"
       aria-hidden="true"
     ></div>
@@ -54,7 +54,7 @@
           To: "opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
       -->
         <div
-          class="relative w-full transform rounded-container bg-white text-left shadow-xl transition-all scrollbar sm:my-8 sm:max-w-2xl dark:bg-dark"
+          class="relative scrollbar w-full transform rounded-container bg-white text-left shadow-xl transition-all sm:my-8 sm:max-w-2xl dark:bg-dark"
           role="presentation"
           onclick={(e) => {
             e.stopPropagation()

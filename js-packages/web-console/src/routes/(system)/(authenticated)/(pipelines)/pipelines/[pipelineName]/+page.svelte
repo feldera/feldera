@@ -1,32 +1,31 @@
 <script lang="ts">
-  import { page } from '$app/state'
-  import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
-  import {
-    writablePipeline,
-    useRefreshPipeline
-  } from '$lib/compositions/useWritablePipeline.svelte.js'
   import { goto } from '$app/navigation'
-  import { resolve } from '$lib/functions/svelte'
-  import type { ExtendedPipeline, PipelineThumb } from '$lib/services/pipelineManager.js'
+  import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte.js'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte.js'
+  import {
+    useRefreshPipeline,
+    writablePipeline
+  } from '$lib/compositions/useWritablePipeline.svelte.js'
+  import { resolve } from '$lib/functions/svelte'
+  import type { ExtendedPipeline, PipelineThumb } from '$lib/services/pipelineManager.js'
 
-  let { data } = $props()
+  const { data, params } = $props()
 
-  let pipelineName = $state(decodeURIComponent(page.params.pipelineName))
+  let pipelineName = $state(decodeURIComponent(params.pipelineName))
   $effect(() => {
-    pipelineName = decodeURIComponent(page.params.pipelineName)
+    pipelineName = decodeURIComponent(params.pipelineName)
   })
 
   let pipelineCache = $state({ current: data.preloadedPipeline })
-  let set = (pipeline: ExtendedPipeline) => {
+  const set = (pipeline: ExtendedPipeline) => {
     pipelineCache.current = pipeline
   }
-  let update = (pipeline: Partial<ExtendedPipeline>) => {
+  const update = (pipeline: Partial<ExtendedPipeline>) => {
     pipelineCache.current = { ...pipelineCache.current, ...pipeline }
   }
   const api = usePipelineManager()
-  let pipeline = $derived(writablePipeline({ api, pipeline: pipelineCache, set, update }))
+  const pipeline = $derived(writablePipeline({ api, pipeline: pipelineCache, set, update }))
   const pipelineList = usePipelineList(data.preloaded)
 
   useRefreshPipeline({

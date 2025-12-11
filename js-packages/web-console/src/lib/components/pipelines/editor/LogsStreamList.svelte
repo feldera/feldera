@@ -1,18 +1,17 @@
 <script lang="ts">
-  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
-  import { humanSize } from '$lib/functions/common/string'
-  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
-  import { scale } from 'svelte/transition'
-  import { useReverseScrollContainer } from '$lib/compositions/common/useReverseScrollContainer.svelte'
-  import { selectScope, virtualSelect } from '$lib/compositions/common/userSelect'
-  import { Virtualizer, type VirtualizerHandle } from 'virtua/svelte'
   import stripANSI from 'strip-ansi'
+  import { Virtualizer, type VirtualizerHandle } from 'virtua/svelte'
   import AnsiDecoratedText from '$lib/components/logs/ANSIDecoratedText.svelte'
   import ScrollDownFab from '$lib/components/other/ScrollDownFab.svelte'
+  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
+  import { useReverseScrollContainer } from '$lib/compositions/common/useReverseScrollContainer.svelte'
+  import { selectScope, virtualSelect } from '$lib/compositions/common/userSelect'
+  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
+  import { humanSize } from '$lib/functions/common/string'
 
   const theme = useSkeletonTheme()
 
-  let { logs }: { logs: { rows: string[]; totalSkippedBytes: number; firstRowIndex: number } } =
+  const { logs }: { logs: { rows: string[]; totalSkippedBytes: number; firstRowIndex: number } } =
     $props()
 
   const reverseScroll = useReverseScrollContainer({
@@ -39,7 +38,7 @@
   </ReverseScrollList> -->
 <div
   role="textbox"
-  class="bg-white-dark h-full w-full overflow-y-auto whitespace-pre-wrap rounded pl-2 scrollbar"
+  class="bg-white-dark scrollbar h-full w-full overflow-y-auto rounded pl-2 whitespace-pre-wrap"
   style="font-family: {theme.config.monospaceFontFamily}; user-select: contain;"
   tabindex={-1}
   use:reverseScroll.action

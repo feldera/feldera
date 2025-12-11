@@ -1,7 +1,8 @@
-import { type OidcConfig } from '$lib/compositions/auth'
-import type { UserProfile } from '$lib/types/auth'
-import { type OidcConfiguration, type OidcUserInfo } from '@axa-fr/oidc-client'
+import type { OidcConfiguration, OidcUserInfo } from '@axa-fr/oidc-client'
 import * as OidcClient from '@axa-fr/oidc-client'
+import type { OidcConfig } from '$lib/compositions/auth'
+import type { UserProfile } from '$lib/types/auth'
+
 const { TokenAutomaticRenewMode } = OidcClient
 
 export const toAxaOidcConfig = (c: OidcConfig): OidcConfiguration => ({

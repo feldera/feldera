@@ -1,69 +1,71 @@
 import {
-  getPipeline as _getPipeline,
-  getPipelineStats as _getPipelineStats,
-  listPipelines,
-  putPipeline as _putPipeline,
-  patchPipeline as _patchPipeline,
-  deletePipeline as _deletePipeline,
-  type CombinedStatus as _CombinedStatus,
   type CombinedDesiredStatus as _CombinedDesiredStatus,
-  type ProgramStatus as _ProgramStatus,
-  postPipelineStart,
-  postPipelinePause,
-  postPipelineStop,
-  postPipelineClear,
-  postUpdateRuntime as _postUpdateRuntime,
-  type ErrorResponse,
-  postPipeline as _postPipeline,
-  type PipelineInfo,
-  type PatchPipeline,
-  getConfigAuthentication,
-  type PipelineSelectedInfo,
-  listApiKeys,
-  postApiKey as _postApiKey,
+  type CombinedStatus as _CombinedStatus,
   deleteApiKey as _deleteApiKey,
-  httpOutput,
+  deletePipeline as _deletePipeline,
   getConfig as _getConfig,
-  getConfigDemos,
   getConfigSession as _getConfigSession,
-  httpInput,
+  getPipeline as _getPipeline,
+  getPipelineDataflowGraph as _getPipelineDataflowGraph,
+  getPipelineStats as _getPipelineStats,
+  type ProgramStatus as _ProgramStatus,
+  patchPipeline as _patchPipeline,
+  postApiKey as _postApiKey,
+  postPipeline as _postPipeline,
+  postUpdateRuntime as _postUpdateRuntime,
+  putPipeline as _putPipeline,
+  type ErrorResponse,
   type Field,
-  type SqlCompilerMessage,
+  type GetPipelineSupportBundleData,
+  getConfigAuthentication,
+  getConfigDemos,
+  getPipelineCircuitJsonProfile,
+  httpInput,
+  httpOutput,
+  listApiKeys,
+  listPipelines,
+  type PatchPipeline,
+  type PipelineInfo,
+  type PipelineSelectedInfo,
   type PostPutPipeline,
   type ProgramError,
-  type RuntimeDesiredStatus,
-  postPipelineResume,
+  type PutPipelineErrors,
   postPipelineActivate,
-  type GetPipelineSupportBundleData,
   postPipelineApprove,
-  getPipelineDataflowGraph as _getPipelineDataflowGraph,
-  getPipelineCircuitJsonProfile
+  postPipelineClear,
+  postPipelinePause,
+  postPipelineResume,
+  postPipelineStart,
+  postPipelineStop,
+  type RuntimeDesiredStatus,
+  type SqlCompilerMessage
 } from '$lib/services/manager'
+
 export type {
-  // PipelineDescr,
-  // ExtendedPipelineDescr,
-  SqlCompilerMessage,
   InputEndpointConfig,
   OutputEndpointConfig,
-  RuntimeConfig
+  RuntimeConfig,
+  // PipelineDescr,
+  // ExtendedPipelineDescr,
+  SqlCompilerMessage
 } from '$lib/services/manager'
-import { P, match } from 'ts-pattern'
+
+import { match, P } from 'ts-pattern'
 import type { ControllerStatus, XgressRecord } from '$lib/types/pipelineManager'
+
 export type { ProgramSchema } from '$lib/services/manager'
 export type ProgramStatus = _ProgramStatus
 
-import { createClient, type RequestResult } from '@hey-api/client-fetch'
 import JSONbig from 'true-json-bigint'
-import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
-import { tuple } from '$lib/functions/common/tuple'
-import { groupBy, singleton } from '$lib/functions/common/array'
-import type { JsonProfiles } from 'profiler-lib'
-import { applyAuthToRequest, handleAuthResponse } from '$lib/services/auth'
+import { singleton } from '$lib/functions/common/array'
 import { nonNull } from '$lib/functions/common/function'
+import { tuple } from '$lib/functions/common/tuple'
+import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
+import { applyAuthToRequest, handleAuthResponse } from '$lib/services/auth'
+import { createClient } from '$lib/services/manager/client'
 
 const unauthenticatedClient = createClient({
   bodySerializer: JSONbig.stringify,
-  responseTransformer: JSONbig.parse as any,
   baseUrl: felderaEndpoint
 })
 
@@ -318,13 +320,29 @@ export type PipelineThumb = ReturnType<typeof toPipelineThumb>
 export type Pipeline = ReturnType<typeof toPipeline>
 export type ExtendedPipeline = ReturnType<typeof toExtendedPipeline>
 
+type RequestResult<R, E> = Promise<
+  (
+    | {
+        data: R
+        error: undefined
+      }
+    | {
+        data: undefined
+        error: E
+      }
+  ) & {
+    request: Request
+    response: Response
+  }
+>
+
 const mapResponse = <R, T, E extends { message: string }>(
   request: RequestResult<R, E>,
   f: (v: R) => T,
   g?: (e: E) => T
 ) => {
   return request.then((response) => {
-    if (response.error) {
+    if ('error' in response && response.error) {
       if (g) {
         return g(response.error)
       }
@@ -338,7 +356,8 @@ const mapResponse = <R, T, E extends { message: string }>(
 
 export const getExtendedPipeline = async (
   pipeline_name: string,
-  options?: { fetch?: (request: Request) => ReturnType<typeof fetch>; onNotFound?: () => void }
+  callbacks?: { onNotFound: () => void },
+  options?: FetchOptions
 ) => {
   return mapResponse(
     _getPipeline({
@@ -348,7 +367,7 @@ export const getExtendedPipeline = async (
     toExtendedPipeline,
     (e) => {
       if (e.error_code === 'UnknownPipelineName') {
-        options?.onNotFound?.()
+        callbacks?.onNotFound?.()
       }
       throw new Error(e.message, { cause: e })
     }
@@ -579,7 +598,7 @@ export const getPipelineSupportBundle = async (
  * Uses the same middleware as the global @hey-api/client-fetch instance.
  */
 const getAuthenticatedFetch = (options?: FetchOptions): typeof globalThis.fetch => {
-  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const f = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     // Create a Request object and apply auth headers
     const request = applyAuthToRequest(new Request(input, init))
 
@@ -589,6 +608,7 @@ const getAuthenticatedFetch = (options?: FetchOptions): typeof globalThis.fetch 
     // Handle 401 responses with token refresh
     return handleAuthResponse(response, request, options?.fetch ?? globalThis.fetch)
   }
+  return Object.assign(f, { preconnect: globalThis.fetch.preconnect })
 }
 
 const streamingFetch = async <E1, E2>(
@@ -699,7 +719,7 @@ export const relationIngress = async (
 }
 
 const extractDemoType = (demo: { title: string }) => {
-  const match = /([\w \-_\/\\\(\)\[\]+]+):?(.*)?/.exec(demo.title)
+  const match = /([\w \-_/\\()[\]+]+):?(.*)?/.exec(demo.title)
   if (match && match[2]) {
     return tuple(match[2], match[1])
   }

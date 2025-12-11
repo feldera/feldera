@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { Snippet } from '$lib/types/svelte'
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import JsonForm from '$lib/components/dialogs/JSONForm.svelte'
+  import type { Snippet } from '$lib/types/svelte'
 
-  let {
+  const {
     value,
     filePath,
     onApply,

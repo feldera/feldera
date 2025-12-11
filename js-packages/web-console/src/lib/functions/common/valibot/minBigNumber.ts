@@ -1,5 +1,5 @@
+import type { BigNumber } from 'bignumber.js'
 import { rawCheck } from 'valibot'
-import { BigNumber } from 'bignumber.js'
 
 export const minBigNumber = (minValue: BigNumber) =>
   rawCheck<BigNumber>(({ dataset, config, addIssue }) => {

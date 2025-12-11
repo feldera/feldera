@@ -1,15 +1,14 @@
-import { resolve } from '$lib/functions/svelte'
+import JSONbig from 'true-json-bigint'
 import { groupBy } from '$lib/functions/common/array'
+import { resolve } from '$lib/functions/svelte'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
-import {
-  type CompilerOutput,
-  type ExtendedPipeline,
-  type Pipeline,
-  type SqlCompilerMessage
+import type {
+  CompilerOutput,
+  ExtendedPipeline,
+  Pipeline,
+  SqlCompilerMessage
 } from '$lib/services/pipelineManager'
 import type { ControllerStatus } from '$lib/types/pipelineManager'
-
-import JSONbig from 'true-json-bigint'
 
 export type SystemError<T = any, Report = ReportDetails> = Error & {
   message: string

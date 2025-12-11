@@ -19,7 +19,7 @@ export const randomNormalBigNumber: RandomNormalBigNumber = (function sourceRand
 ) {
   function randomNormalBigNumber(mu = new BigNumber(0), sigma = new BigNumber(1)): () => BigNumber {
     let x: number | null, r: number
-    return function () {
+    return () => {
       let y: number
 
       // If available, use the second previously-generated uniform random.

@@ -39,14 +39,14 @@
 </script>
 
 <div
-  class="bg-white-dark absolute m-0 max-h-[90%] w-max max-w-lg -translate-x-[4.5px] -translate-y-[2.5px] overflow-auto border border-surface-500 px-2 py-2 scrollbar"
+  class="bg-white-dark absolute m-0 scrollbar max-h-[90%] w-max max-w-lg -translate-x-[4.5px] -translate-y-[2.5px] overflow-auto border border-surface-500 px-2 py-2"
   popover="manual"
   bind:this={popupRef}
   style={tooltip.data
     ? `left: ${tooltip.data.x}px; top: ${tooltip.data.y}px; min-width: ${tooltip.data.targetWidth + 8}px`
     : ''}
 >
-  <div class="whitespace-break-spaces break-words text-surface-950-50">
+  <div class="break-words whitespace-break-spaces text-surface-950-50">
     {tooltip.data?.text}
   </div>
 </div>
@@ -67,7 +67,7 @@
         }
       }}
       <div
-        class="h-full overflow-auto scrollbar"
+        class="scrollbar h-full overflow-auto"
         use:reverseScroll.action
         {onscroll}
         bind:clientHeight={_.clientHeight}
@@ -100,20 +100,18 @@
         {@const data = 'insert' in row ? row.insert : row.delete}
         <tr
           style="{style} {padding}"
-          class="h-7 select-none whitespace-nowrap even:bg-surface-50-950"
+          class="h-7 whitespace-nowrap select-none even:bg-surface-50-950"
           oncopy={(e) => {
             e.clipboardData!.setData('text/plain', JSONbig.stringify(row))
             e.preventDefault()
           }}
         >
           {#if 'insert' in row}
-            <td class="block h-7 w-20 bg-opacity-30 pt-1 text-center font-mono bg-success-100-900">
+            <td class=" block h-7 w-20 bg-success-100-900/70 pt-1 text-center font-mono">
               Insert
             </td>
           {:else}
-            <td class="block h-7 w-20 bg-opacity-30 pt-1 text-center font-mono bg-error-100-900">
-              Delete
-            </td>
+            <td class=" block h-7 w-20 bg-error-100-900/70 pt-1 text-center font-mono"> Delete </td>
           {/if}
 
           {#each Object.values(data) as value}

@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { resolve } from '$lib/functions/svelte'
-  import { goto } from '$app/navigation'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import Popup from '$lib/components/common/Popup.svelte'
   import { fade } from 'svelte/transition'
+  import JSONbig from 'true-json-bigint'
+  import { goto } from '$app/navigation'
+  import Popup from '$lib/components/common/Popup.svelte'
+  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
   import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
-  import JSONbig from 'true-json-bigint'
-  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
+  import { resolve } from '$lib/functions/svelte'
 
-  let {
+  const {
     pipelineName,
     pipeline,
     saveFile,
@@ -39,7 +39,7 @@
 <Popup>
   {#snippet trigger(toggle)}
     <button
-      class="fd fd-more_horiz btn btn-icon text-[20px] preset-tonal-surface"
+      class="fd fd-more_horiz btn-icon preset-tonal-surface text-[20px]"
       onclick={toggle}
       aria-label="Pipeline actions"
     ></button>
@@ -69,7 +69,7 @@
           </button>
         </div>
         {#if pipelineBusy}
-          <Tooltip class="z-10 bg-white text-surface-950-50 dark:bg-black" placement="top">
+          <Tooltip placement="top">
             Stop the pipeline and clear storage to <br /> change compilation profile
           </Tooltip>
         {/if}
@@ -83,7 +83,7 @@
           </button>
         </div>
         {#if pipelineBusy}
-          <Tooltip class="z-10 bg-white text-surface-950-50 dark:bg-black" placement="top">
+          <Tooltip placement="top">
             Stop the pipeline and clear storage to <br /> allocate runtime resources
           </Tooltip>
         {/if}

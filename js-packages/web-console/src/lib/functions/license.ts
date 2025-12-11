@@ -1,7 +1,7 @@
+import Dayjs from 'dayjs'
+import { match, P } from 'ts-pattern'
 import type { SystemMessage } from '$lib/compositions/initSystemMessages'
 import type { Configuration, DisplaySchedule } from '$lib/services/manager'
-import { match, P } from 'ts-pattern'
-import Dayjs from 'dayjs'
 
 export const displayScheduleToDismissable = (schedule: DisplaySchedule) =>
   match(schedule)

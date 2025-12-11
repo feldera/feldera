@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { SystemError } from '$lib/compositions/health/systemErrors'
   import type { Loadable } from '@square/svelte-store'
+  import { slide } from 'svelte/transition'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   import ErrorTile from '$lib/components/health/ErrorTile.svelte'
-  import { slide } from 'svelte/transition'
+  import type { SystemError } from '$lib/compositions/health/systemErrors'
 
   const { systemErrors, close }: { systemErrors: Loadable<SystemError[]>; close?: () => void } =
     $props()
@@ -38,7 +38,7 @@
               </div>
               {#if !open}
                 <div
-                  class=" -mb-5 w-full overflow-x-hidden overflow-y-clip overflow-ellipsis whitespace-nowrap text-sm"
+                  class=" -mb-5 w-full overflow-x-hidden overflow-y-clip text-sm overflow-ellipsis whitespace-nowrap"
                 >
                   {systemError.message}
                 </div>

@@ -1,7 +1,7 @@
+import fs from 'node:fs/promises'
+import webfontsGenerator from '@vusion/webfonts-generator'
 import args from 'args'
 import { $ } from 'bun'
-import webfontsGenerator from '@vusion/webfonts-generator'
-import fs from 'node:fs/promises'
 
 args
   .option('src', 'Directory to read all SVGs from')
@@ -38,7 +38,7 @@ webfontsGenerator(
       }
     }
   },
-  function (error: any) {
+  (error) => {
     if (error) {
       console.log('Failed to build webfont!', error)
       process.exitCode = 1

@@ -1,5 +1,5 @@
 <script lang="ts">
-  let {
+  const {
     pipelineName,
     status,
     baseRuntimeVersion
@@ -8,31 +8,25 @@
     status: 'custom' | 'latest' | 'update_available'
     baseRuntimeVersion: string
   } = $props()
+
+  import { Popover } from '$lib/components/common/Popover.svelte'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
-  import { normalizeRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  let api = usePipelineManager()
+  import { normalizeRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
+
+  const api = usePipelineManager()
 </script>
 
 {#if status === 'update_available'}
-  <Tooltip
-    class="bg-white-dark z-20 rounded-container p-4 text-base text-surface-950-50"
-    placement="bottom-end"
-    strategy="fixed"
-    activeContent
-  >
+  <Popover placement="bottom-end" strategy="fixed">
     <div>A new runtime version {normalizeRuntimeVersion(baseRuntimeVersion)} is available.</div>
     <button
-      class="btn mt-2 h-6 preset-filled-primary-500"
+      class="mt-2 btn h-6 preset-filled-primary-500"
       onclick={() => api.postUpdateRuntime(pipelineName)}>Update</button
     >
-  </Tooltip>
+  </Popover>
 {:else if status === 'custom'}
-  <Tooltip
-    class="bg-white-dark z-20 rounded-container p-4 text-base text-surface-950-50"
-    placement="bottom-end"
-    strategy="fixed"
-  >
+  <Tooltip placement="bottom-end" strategy="fixed">
     <div>This custom runtime version is set in the compilation configuration.</div>
   </Tooltip>
 {/if}

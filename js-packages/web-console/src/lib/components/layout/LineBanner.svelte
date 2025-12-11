@@ -75,7 +75,7 @@
       <button
         onclick={dismiss}
         aria-label="Dismiss message"
-        class="fd fd-x px-1 text-2xl hover:brightness-90"
+        class="fd fd-x px-1 text-[24px] hover:brightness-90"
       ></button>
     {/if}
   </div>

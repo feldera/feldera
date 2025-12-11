@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
+  import { Switch } from '@skeletonlabs/skeleton-svelte'
+  import { selectScope } from '$lib/compositions/common/userSelect'
   import {
     extractPipelineStderr,
     extractPipelineXgressStderr,
@@ -7,14 +8,13 @@
     type SystemError
   } from '$lib/compositions/health/systemErrors'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
-  import { Switch } from '@skeletonlabs/skeleton-svelte'
-  import type { ExtendedPipeline } from '$lib/services/pipelineManager'
+  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-  import { selectScope } from '$lib/compositions/common/userSelect'
+  import type { ExtendedPipeline } from '$lib/services/pipelineManager'
 
-  let { hideWarnings, verbatimErrors } = useLayoutSettings()
+  const { hideWarnings, verbatimErrors } = useLayoutSettings()
 
-  let {
+  const {
     pipeline,
     errors,
     metrics
@@ -36,12 +36,22 @@
   </label>
   <label class="flex cursor-pointer items-center justify-end gap-2 rounded lg:justify-normal">
     Verbatim errors
-    <Switch name="verbatimErrors" bind:checked={verbatimErrors.value}></Switch>
+    <Switch
+      name="verbatimErrors"
+      checked={verbatimErrors.value}
+      onCheckedChange={(e) => (verbatimErrors.value = e.checked)}
+    >
+      <Switch.Control>
+        <Switch.Thumb />
+      </Switch.Control>
+      <Switch.Label />
+      <Switch.HiddenInput />
+    </Switch>
   </label>
 </div>
-<div class="flex h-full overflow-y-auto scrollbar">
+<div class="scrollbar h-full w-full overflow-y-auto">
   <div
-    class="flex min-h-full flex-1 flex-col gap-4 rounded"
+    class="flex min-h-full w-fit min-w-full flex-col gap-4 rounded"
     use:selectScope
     role="textbox"
     tabindex={-1}
@@ -57,7 +67,7 @@
       ].join('\n')}
       {#if stderr}
         <div
-          class="bg-white-dark flex flex-1 whitespace-pre-wrap rounded p-4"
+          class="bg-white-dark flex flex-1 rounded p-4 whitespace-pre-wrap"
           style="font-family: {theme.config.monospaceFontFamily}"
         >
           {stderr}
@@ -67,7 +77,7 @@
       {/if}
     {:else}
       {#each hideWarnings.value ? errors.filter((e) => !e.cause.warning) : errors as systemError}
-        <div class="bg-white-dark whitespace-nowrap rounded p-4">
+        <div class="bg-white-dark rounded p-4 break-all whitespace-nowrap">
           <a
             href={systemError.cause.source}
             aria-label={systemError.cause.warning ? 'Warning location' : 'Error location'}
@@ -80,7 +90,7 @@
             </span></a
           >
           <span
-            class="whitespace-pre-wrap break-words text-start align-text-top leading-none"
+            class="text-start align-text-top leading-none wrap-break-word whitespace-pre-wrap"
             style="font-family: {theme.config.monospaceFontFamily}"
           >
             {systemError.message}

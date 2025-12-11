@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import ApiKeyMenu from '$lib/components/other/ApiKeyMenu.svelte'
-  import type { SignInDetails, UserProfile } from '$lib/types/auth'
-  import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
-  import VersionDisplay from '$lib/components/version/VersionDisplay.svelte'
   import CurrentTenant from '$lib/components/auth/CurrentTenant.svelte'
+  import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
+  import ApiKeyMenu from '$lib/components/other/ApiKeyMenu.svelte'
+  import VersionDisplay from '$lib/components/version/VersionDisplay.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+  import type { SignInDetails, UserProfile } from '$lib/types/auth'
 
   const globalDialog = useGlobalDialog()
-  let { profile, logout }: SignInDetails = $props()
+  const { profile, logout }: SignInDetails = $props()
 </script>
 
 <div class="flex flex-col gap-4 p-4">
@@ -16,7 +16,7 @@
     onclick={() => (globalDialog.dialog = apiKeyDialog)}
   >
     Manage API keys
-    <span class=" fd fd-chevron-right rounded px-4 py-2 text-[20px] group-hover:bg-surface-50-950"
+    <span class="fd fd-chevron-right rounded px-4 py-2 text-[20px] group-hover:bg-surface-50-950"
     ></span>
   </button>
 
@@ -31,7 +31,7 @@
         <div class="fd fd-circle-user h-10 w-10 rounded-full text-[40px]"></div>
       {/if}
       <div class="">
-        <div class="h4 break-all font-normal" class:italic={!profile.name}>
+        <div class="h4 font-normal break-all" class:italic={!profile.name}>
           {profile.name || 'anonymous'}
         </div>
         <div class="">{profile.email}</div>
@@ -40,7 +40,7 @@
     <CurrentTenant></CurrentTenant>
     <div class="">
       <button
-        class=" btn px-8 text-surface-800-200 preset-filled-surface-50-950 hover:preset-filled-surface-50-950"
+        class="btn preset-filled-surface-50-950 px-8! text-surface-800-200 hover:preset-filled-surface-50-950"
         onclick={async () => {
           // Redirect to home page, otherwise the auth client inserts the current page
           // which is not whitelisted by the auth provider

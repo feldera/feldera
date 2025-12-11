@@ -53,7 +53,9 @@ export function unzip<T extends [...{ [K in keyof S]: S[K] }][], S extends any[]
   const maxLength = Math.max(...arr.map((x) => x.length))
 
   return arr.reduce((acc: any, val) => {
-    val.forEach((v, i) => acc[i].push(v))
+    val.forEach((v, i) => {
+      acc[i].push(v)
+    })
     return acc
   }, Array(maxLength).fill([]))
 }

@@ -62,6 +62,13 @@ RUN  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmo
     && apt-get update \
     && apt-get install -y docker-ce-cli
 
+## Install nodejs
+RUN mkdir -p /etc/apt/keyrings
+RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+ENV NODE_MAJOR=20
+RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+RUN apt-get update --fix-missing && apt-get install -y nodejs
+
 # Install helm cli tool
 RUN curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 && chmod +x get_helm.sh \
     && ./get_helm.sh --version v3.17.1 \

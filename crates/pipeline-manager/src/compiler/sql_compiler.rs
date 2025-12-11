@@ -503,10 +503,10 @@ pub(crate) async fn perform_sql_compilation(
 
     let runtime_selector = program_config.runtime_version();
     assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
-    let pipeline_name = pipeline_name.as_deref();
+    let pipeline_name = pipeline_name.as_deref().unwrap_or("N/A");
     info!(
         pipeline_id = %pipeline_id,
-        pipeline = pipeline_name.unwrap_or(""),
+        pipeline = pipeline_name,
         "SQL compilation started: pipeline {} (program version: {}{})",
         pipeline_id,
         program_version,
@@ -637,7 +637,7 @@ pub(crate) async fn perform_sql_compilation(
                             Err(e) => {
                                 error!(
                                     pipeline_id = %pipeline_id,
-                                    pipeline = pipeline_name.unwrap_or(""),
+                                    pipeline = pipeline_name,
                                     "SQL compilation outdated check failed due to database error: {e}"
                                 )
                                 // As preemption check failing is not fatal, compilation will continue
@@ -697,7 +697,7 @@ pub(crate) async fn perform_sql_compilation(
                 } else {
                     error!(
                         pipeline_id = %pipeline_id,
-                        pipeline = pipeline_name.unwrap_or(""),
+                        pipeline = pipeline_name,
                         "Unable to parse SQL compiler response after successful compilation, warnings were not passed to client: {}",
                         stderr_str
                     );

@@ -1,35 +1,35 @@
+import { useToast } from '$lib/compositions/useToastNotification'
+import { triggerFileDownload } from '$lib/services/browser'
 import {
   adHocQuery,
   deleteApiKey,
   deletePipeline,
+  type FetchOptions,
   getApiKeys,
   getAuthConfig,
   getConfig,
   getConfigSession,
   getDemos,
   getExtendedPipeline,
-  getPipelines,
+  getPipelineDataflowGraph,
   getPipelineStats,
   getPipelineStatus,
+  getPipelineSupportBundle,
   getPipelineSupportBundleUrl,
+  getPipelines,
   patchPipeline,
   pipelineLogsStream,
   pipelineTimeSeriesStream,
   postApiKey,
   postPipeline,
   postPipelineAction,
+  postUpdateRuntime,
   putPipeline,
   relationEgressStream,
   relationIngress,
-  type SupportBundleOptions,
-  postUpdateRuntime,
-  getPipelineDataflowGraph,
-  getPipelineSupportBundle,
-  type FetchOptions
+  type SupportBundleOptions
 } from '$lib/services/pipelineManager'
-import { useToast } from '$lib/compositions/useToastNotification'
 import type { FunctionType } from '$lib/types/common/function'
-import { triggerFileDownload } from '$lib/services/browser'
 
 const networkErrors = ['Failed to fetch', 'Network request failed', 'Timeout']
 const isNetworkError = (e: any): e is TypeError =>
@@ -88,7 +88,7 @@ export const usePipelineManager = (options?: FetchOptions) => {
   // try {
   //   toastError ??= useToast().toastError
   // } catch {}
-  let { toastError } = useToast()
+  const { toastError } = useToast()
 
   const reportError = _reportError(toastError, options)
   const trackHealth = _trackHealth(options)
@@ -151,7 +151,13 @@ export const usePipelineManager = (options?: FetchOptions) => {
     getConfig: getConfig,
     getConfigSession: reportError(getConfigSession, () => 'Failed to fetch session configuration'),
     getApiKeys: reportError(getApiKeys, () => 'Failed to fetch API keys'),
-    postApiKey: reportError(postApiKey, (keyName) => `Failed to create ${keyName} API key`),
+    postApiKey: async (name: string, options?: FetchOptions | undefined) => {
+      const x = await reportError(postApiKey, (keyName) => `Failed to create ${keyName} API key`)(
+        name,
+        options
+      )
+      return x
+    },
     deleteApiKey: reportError(deleteApiKey, (keyName) => `Failed to delete ${keyName} API key`),
     relationEgressStream: reportError(
       relationEgressStream,

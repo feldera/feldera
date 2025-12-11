@@ -4,7 +4,7 @@ type Cb = (pipelineName: string) => Promise<void>
 
 type Action = PipelineAction | 'delete'
 
-const callbacks: Record<string, Partial<Record<Action, Cb[]>>> = $state({})
+let callbacks: Record<string, Partial<Record<Action, Cb[]>>> = $state({})
 
 const pop = (pipelineName: string, action: Action) => {
   callbacks[pipelineName] ??= {}

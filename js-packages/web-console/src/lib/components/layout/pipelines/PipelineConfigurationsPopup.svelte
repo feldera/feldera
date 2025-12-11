@@ -1,13 +1,12 @@
 <script lang="ts">
-  import { type ExtendedPipeline, type Pipeline } from '$lib/services/pipelineManager'
-  import { deletePipeline as _deletePipeline } from '$lib/services/pipelineManager'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import JSONbig from 'true-json-bigint'
   import MultiJSONDialog from '$lib/components/dialogs/MultiJSONDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
+  import { deletePipeline as _deletePipeline, type Pipeline } from '$lib/services/pipelineManager'
 
-  let {
+  const {
     pipeline,
     pipelineBusy
   }: {
@@ -20,7 +19,7 @@
 </script>
 
 <button
-  class="fd fd-settings btn btn-icon text-[20px] preset-tonal-surface"
+  class="fd fd-settings btn-icon preset-tonal-surface text-[20px]"
   onclick={() => (globalDialog.dialog = pipelineConfigurationsDialog)}
   aria-label="Pipeline actions"
 ></button>
