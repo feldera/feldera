@@ -31,6 +31,7 @@
    */
 
   import type { ChangeStreamData, Row } from '$lib/components/pipelines/editor/ChangeStream.svelte'
+
   type RelationInfo = {
     pipelineName: string
     relationName: string
@@ -45,13 +46,13 @@
     Record<string, Record<string, Record<string, ExtraType & { type: 'tables' | 'views' }>>>
   >({})
   const pipelineActionCallbacks = usePipelineActionCallbacks()
-  let changeStream: Record<string, Record<string, ChangeStreamData>> = {} // Initialize row array nested by tenant and pipeline
+  const changeStream: Record<string, Record<string, ChangeStreamData>> = {} // Initialize row array nested by tenant and pipeline
   // Separate getRows as a $state avoids burdening rows array itself with reactivity overhead
-  let getChangeStream = $state(() => changeStream)
+  const getChangeStream = new Ref(changeStream)
 
   const bufferSize = 10000
   const filterOutRows = (rows: Row[], headers: number[], relationName: string) => {
-    let batchRelationName: string | undefined = undefined
+    let batchRelationName: string | undefined
     const newRows = rows.filter((row) => {
       if ('skippedBytes' in row && batchRelationName === undefined) {
         return true
@@ -136,8 +137,9 @@
             )([{ relationName, skippedBytes }])
             changeStream[tenantName][pipelineName].totalSkippedBytes += skippedBytes
           },
-          onParseEnded: () =>
-            (pipelinesRelations[tenantName][pipelineName][relationName].cancelStream = undefined)
+          onParseEnded: () => {
+            pipelinesRelations[tenantName][pipelineName][relationName].cancelStream = undefined
+          }
         },
         new CustomJSONParserTransformStream<XgressEntry>({
           paths: ['$.json_data.*'],
@@ -163,7 +165,7 @@
           changeStream[tenantName][pipelineName].headers,
           relationName
         ))
-        getChangeStream = () => changeStream
+        getChangeStream.current = changeStream
       })
     }
   }
@@ -187,7 +189,7 @@
         relationName
       )
     }
-    getChangeStream = () => changeStream
+    getChangeStream.current = changeStream
   }
   const registerPipelineName = (
     api: PipelineManagerApi,
@@ -254,7 +256,7 @@
   import { untrack } from 'svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
-  import { Segment } from '@skeletonlabs/skeleton-svelte'
+  import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
   import {
     usePipelineManager,
     type PipelineManagerApi
@@ -263,6 +265,7 @@
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import { getSelectedTenant } from '$lib/services/auth'
   import { isPipelineInteractive } from '$lib/functions/pipelines/status'
+  import { Ref } from '$lib/compositions/ref.svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
 
@@ -363,13 +366,16 @@
   const visualUpdateMs = 100
   // Update visible list of changes at a constant time period
   $effect(() => {
-    const update = () => (getChangeStream = () => changeStream)
+    const update = () => {
+      getChangeStream.current = changeStream
+    }
     const handle = setInterval(update, visualUpdateMs)
     update()
     return () => {
       clearInterval(handle)
     }
   })
+
   $effect(() => {
     const dropCallback = async (pName: string) => {
       await dropChangeStreamHistory(tenantName, pName)
@@ -413,13 +419,13 @@
     {@const isDisabled =
       protocol === 'http' && !relation.selected && selectedRelationsCount >= maxStreamsOnHttp}
     <label
-      class="flex-none overflow-hidden overflow-ellipsis {isDisabled
+      class="flex-none! overflow-hidden overflow-ellipsis {isDisabled
         ? 'cursor-not-allowed opacity-50'
         : 'cursor-pointer'}"
     >
       <input
         type="checkbox"
-        class="bg-white-dark checkbox m-1"
+        class="bg-white-dark m-1 checkbox translate-y-1"
         checked={relation.selected}
         disabled={isDisabled}
         onchange={(e) => {
@@ -440,7 +446,7 @@
             ) {
               changeStream[tenantName][pipelineName].rows = []
               changeStream[tenantName][pipelineName].headers = []
-              getChangeStream = () => changeStream
+              getChangeStream.current = changeStream
               return
             }
             ;({
@@ -451,7 +457,7 @@
               changeStream[tenantName][pipelineName].headers,
               relation.relationName
             ))
-            getChangeStream = () => changeStream
+            getChangeStream.current = changeStream
           }
         }}
         value={relation}
@@ -459,7 +465,7 @@
       {relation.relationName}
     </label>
     {#if isDisabled}
-      <Tooltip class="z-10 bg-white text-surface-950-50 dark:bg-black" placement="right">
+      <Tooltip class="" placement="right">
         Cannot follow more than {maxStreamsOnHttp} tables and views across all pipelines over HTTP. Consider
         using HTTPS (supported in Feldera Enterprise Edition).
       </Tooltip>
@@ -472,7 +478,7 @@
     {@render relationItem({ ...relation, pipelineName })}
   {/each}
   {#if outputs.length}
-    <div class="text-surface-600-400">Views:</div>
+    <div class="pt-2 text-surface-600-400">Views:</div>
   {/if}
   {#each outputs as relation}
     {@render relationItem({ ...relation, pipelineName })}
@@ -483,9 +489,9 @@
 {/snippet}
 
 {#snippet dataView()}
-  {#if getChangeStream()[tenantName]?.[pipelineName]?.rows?.length}
+  {#if getChangeStream.current[tenantName]?.[pipelineName]?.rows?.length}
     {#key `${tenantName}::${pipelineName}`}
-      <ChangeStream changeStream={getChangeStream()[tenantName][pipelineName]}></ChangeStream>
+      <ChangeStream changeStream={getChangeStream.current[tenantName][pipelineName]}></ChangeStream>
     {/key}
   {:else}
     <span class="p-2 text-surface-600-400">
@@ -501,26 +507,29 @@
 <div class="flex h-full flex-row">
   {#if isMobile.current}
     <div
-      class="bg-white-dark flex flex-1 flex-col gap-1 overflow-y-auto rounded pl-2 pt-2 scrollbar sm:gap-2 sm:p-2"
+      class="bg-white-dark scrollbar flex flex-1 flex-col gap-1 overflow-y-auto rounded pt-2 pl-2 sm:gap-2 sm:p-2"
     >
-      <Segment
-        bind:value={mobileDisplayMode}
-        background="preset-filled-surface-50-950 w-fit flex-none"
-        indicatorBg="bg-white-dark shadow"
-        indicatorText=""
-        border="p-1"
-        rounded="rounded"
+      <SegmentedControl
+        value={mobileDisplayMode}
+        onValueChange={(e) => (mobileDisplayMode = e.value as typeof mobileDisplayMode)}
       >
-        {#each mobileDisplayModes as mode}
-          <Segment.Item value={mode} base="btn cursor-pointer z-[1] px-5 h-6 text-sm">
-            {mode}
-          </Segment.Item>
-        {/each}
-      </Segment>
+        <SegmentedControl.Label />
+        <SegmentedControl.Control class="w-fit flex-none rounded preset-filled-surface-50-950 p-1">
+          <SegmentedControl.Indicator class="bg-white-dark shadow" />
+          {#each mobileDisplayModes as mode}
+            <SegmentedControl.Item value={mode} class="z-1 btn h-6 cursor-pointer px-5 text-sm">
+              <SegmentedControl.ItemText class="text-surface-950-50">
+                {mode}
+              </SegmentedControl.ItemText>
+              <SegmentedControl.ItemHiddenInput />
+            </SegmentedControl.Item>
+          {/each}
+        </SegmentedControl.Control>
+      </SegmentedControl>
       {#if mobileDisplayMode === mobileDisplayModes[0]}
         {@render relationView()}
       {:else}
-        <div class="flex h-full overflow-y-auto scrollbar">
+        <div class="scrollbar flex h-full overflow-y-auto">
           {@render dataView()}
         </div>
       {/if}
@@ -529,7 +538,7 @@
     <PaneGroup direction={isMobile.current ? 'vertical' : 'horizontal'} onpaste={ingestPasted}>
       <Pane defaultSize={20} minSize={10} class="flex h-full">
         <div
-          class="bg-white-dark flex w-full flex-col gap-1 overflow-y-auto text-nowrap rounded p-4 scrollbar"
+          class="bg-white-dark scrollbar flex w-full flex-col overflow-y-auto rounded p-4 text-nowrap"
         >
           {@render relationView()}
         </div>

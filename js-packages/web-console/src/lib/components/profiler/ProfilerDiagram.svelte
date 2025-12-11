@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
   import {
-    Profiler,
     CircuitProfile,
-    type ProfilerConfig,
-    type ProfilerCallbacks,
+    type Dataflow,
     type JsonProfiles,
-    type Dataflow
+    Profiler,
+    type ProfilerCallbacks,
+    type ProfilerConfig
   } from 'profiler-lib'
+  import { onDestroy } from 'svelte'
 
   interface Props {
     /** Profile data from the pipeline manager */
@@ -22,7 +22,7 @@
     class?: string
   }
 
-  let { profileData, dataflowData, programCode, callbacks, class: className }: Props = $props()
+  const { profileData, dataflowData, programCode, callbacks, class: className }: Props = $props()
 
   // DOM element references
   let graphContainer: HTMLDivElement | undefined = $state()

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from '$lib/types/svelte'
 
-  let {
+  const {
     class: _class,
     children,
     icon = defaultIcon
@@ -13,7 +13,7 @@
 {/snippet}
 
 <a
-  class="btn {_class}"
+  class={_class}
   href="https://calendly.com/d/cqnj-p63-mbq/feldera-demo"
   target="_blank"
   rel="noreferrer"

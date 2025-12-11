@@ -1,6 +1,7 @@
 <script lang="ts">
   // https://codesandbox.io/p/sandbox/drawer-with-tailwind-css-48z1k3
   import type { Snippet } from '$lib/types/svelte'
+
   const openClassNames = {
     right: 'translate-x-0',
     left: 'translate-x-0',
@@ -69,7 +70,7 @@
     }}
   >
     <div
-      class={'fixed inset-0 bg-gray-500 bg-opacity-75 transition-all duration-300 ease-in-out ' +
+      class={'fixed inset-0 bg-gray-500/75 transition-all duration-300 ease-in-out ' +
         (open ? 'visible opacity-100 ' : 'invisible opacity-0')}
     ></div>
     <div class={open ? 'fixed inset-0 overflow-hidden' : ''}>

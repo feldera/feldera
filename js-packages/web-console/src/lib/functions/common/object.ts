@@ -15,7 +15,7 @@ export const isEmptyObject = (obj: unknown): obj is Record<never, never> =>
  */
 export function pruneObj<T extends Record<string | number | symbol, unknown>>(obj: T) {
   for (const prop in obj) {
-    if (obj.hasOwnProperty(prop) && obj[prop] === undefined) {
+    if (Object.hasOwn(obj, prop) && obj[prop] === undefined) {
       delete obj[prop]
     }
   }

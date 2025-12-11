@@ -3,7 +3,8 @@ import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte.
 export const load = async ({ parent }) => {
   await parent()
   const api = usePipelineManager()
+  const demos = await api.getDemos()
   return {
-    demos: await api.getDemos()
+    demos
   }
 }

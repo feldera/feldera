@@ -18,7 +18,7 @@ export const compose =
  * The contents of the closure do not get picked up by Svelte 5's deep reactivity
  */
 export const enclosure = <T>(v: T) => {
-  let state = v
+  const state = v
   return () => state
 }
 

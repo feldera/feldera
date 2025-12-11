@@ -1,8 +1,8 @@
+import { untrack } from 'svelte'
+import { match, P } from 'ts-pattern'
+import { initSystemMessages, type SystemMessage } from '$lib/compositions/initSystemMessages'
 import { useLocalStorage } from '$lib/compositions/localStore.svelte'
 import { findSplice, nubLast, singleton } from '$lib/functions/common/array'
-import { P, match } from 'ts-pattern'
-import { initSystemMessages, type SystemMessage } from '$lib/compositions/initSystemMessages'
-import { untrack } from 'svelte'
 
 type ShownSystemMessage = {
   id: string
@@ -81,13 +81,11 @@ export const useSystemMessages = () => {
         }
         return
       }
-      {
-        if (!findSplice(shownMessages.value, matchesId)) {
-          return
-        }
-        // Trigger reactive update
-        shownMessages.value = shownMessages.value
+      if (!findSplice(shownMessages.value, matchesId)) {
+        return
       }
+      // Trigger reactive update
+      shownMessages.value = shownMessages.value
     }
   }
 }

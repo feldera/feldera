@@ -16,23 +16,11 @@
 
   import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
   import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
-  import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker'
-  import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker'
-  import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
 
   self.MonacoEnvironment = {
     getWorker(_: any, label: string) {
       if (label === 'json') {
         return new jsonWorker()
-      }
-      if (label === 'css' || label === 'scss' || label === 'less') {
-        return new cssWorker()
-      }
-      if (label === 'html' || label === 'handlebars' || label === 'razor') {
-        return new htmlWorker()
-      }
-      if (label === 'typescript' || label === 'javascript') {
-        return new tsWorker()
       }
       return new editorWorker()
     }
@@ -40,8 +28,9 @@
 </script>
 
 <script lang="ts">
-  import type Monaco from 'monaco-editor/esm/vs/editor/editor.api'
-  import * as monacoImport from 'monaco-editor/esm/vs/editor/editor.api'
+  import type Monaco from 'monaco-editor'
+  import * as monacoImport from 'monaco-editor/esm/vs/editor/editor.api.js'
+  import * as monacoJson from 'monaco-editor/esm/vs/language/json/monaco.contribution.js'
   import 'monaco-editor/esm/vs/language/json/jsonMode'
   import { onDestroy, onMount } from 'svelte'
   import loader from '@monaco-editor/loader'
@@ -106,8 +95,9 @@
   })
 
   onMount(async () => {
-    if (!monacoImport.languages.json.jsonDefaults.diagnosticsOptions.schemas?.length) {
-      monacoImport.languages.json.jsonDefaults.setDiagnosticsOptions({
+    const jsonDefaults: Monaco.json.LanguageServiceDefaults = (monacoJson as any).jsonDefaults
+    if (!jsonDefaults.diagnosticsOptions.schemas?.length) {
+      jsonDefaults.setDiagnosticsOptions({
         validate: true,
         schemas: felderaApiJsonSchemas
       })
@@ -136,12 +126,14 @@
 <style>
   .monaco-readonly {
     :global(.sticky-line-content, .sticky-widget-line-numbers, .margin, .monaco-editor-background) {
-      @apply bg-surface-50;
+      /* @apply bg-surface-50; */
+      background-color: var(--color-surface-50);
     }
   }
   .monaco-readonly-dark {
     :global(.sticky-line-content, .sticky-widget-line-numbers, .margin, .monaco-editor-background) {
-      @apply bg-surface-950;
+      /* @apply bg-surface-950; */
+      background-color: var(--color-surface-950);
     }
   }
 

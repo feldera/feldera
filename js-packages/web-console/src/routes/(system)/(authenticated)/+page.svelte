@@ -1,32 +1,32 @@
 <script lang="ts">
+  import { slide } from 'svelte/transition'
   import { preloadCode } from '$app/navigation'
-  import { resolve } from '$lib/functions/svelte'
-  import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
-  import FelderaLogomarkLight from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
-  import FelderaLogomarkDark from '$assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
   import IconBookOpen from '$assets/icons/feldera-material-icons/book-open.svg?component'
   import IconDiscord from '$assets/icons/vendors/discord-logomark-color.svg?component'
-  import ImageBox from '$assets/images/generic/package.svg?component'
   import IconSlack from '$assets/icons/vendors/slack-logomark-color.svg?component'
+  import FelderaLogomarkLight from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
+  import FelderaLogomarkDark from '$assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
+  import ImageBox from '$assets/images/generic/package.svg?component'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
-  import { slide } from 'svelte/transition'
-  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import type { PageData } from './$types'
-  import PipelineTable from '$lib/components/pipelines/Table.svelte'
+  import AppHeader from '$lib/components/layout/AppHeader.svelte'
+  import Footer from '$lib/components/layout/Footer.svelte'
+  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
+  import BookADemo from '$lib/components/other/BookADemo.svelte'
   import DemoTile from '$lib/components/other/DemoTile.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
-  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
+  import PipelineTable from '$lib/components/pipelines/Table.svelte'
   import AvailableActions from '$lib/components/pipelines/table/AvailableActions.svelte'
-  import AppHeader from '$lib/components/layout/AppHeader.svelte'
-  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
-  import BookADemo from '$lib/components/other/BookADemo.svelte'
-  import Footer from '$lib/components/layout/Footer.svelte'
+  import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
+  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
+  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
+  import { resolve } from '$lib/functions/svelte'
+  import type { PageData } from './$types'
 
   preloadCode(resolve(`/pipelines/*`)).then(() => preloadCode(resolve(`/demos/`)))
 
-  let { data }: { data: PageData } = $props()
+  const { data }: { data: PageData } = $props()
   const isTablet = useIsTablet()
 
   const featured = [
@@ -50,9 +50,9 @@
   const maxShownDemos = $derived(isTablet.current ? 5 : 9)
 
   const pipelines = usePipelineList(data.preloaded)
-  let welcomed = useLocalStorage('home/welcomed', false)
-  let showSuggestedDemos = useLocalStorage('home/hideSuggestedDemos', true)
-  let darkMode = useDarkMode()
+  const welcomed = useLocalStorage('home/welcomed', false)
+  const showSuggestedDemos = useLocalStorage('home/hideSuggestedDemos', true)
+  const darkMode = useDarkMode()
   let selectedPipelines = $state([]) as string[]
   const drawer = useAdaptiveDrawer('right')
 </script>
@@ -62,7 +62,7 @@
     {#if drawer.isMobileDrawer}
       <button
         onclick={() => (drawer.value = !drawer.value)}
-        class="fd fd-book-open btn-icon flex text-[20px] preset-tonal-surface"
+        class="fd fd-book-open btn-icon flex preset-tonal-surface text-[20px]"
         aria-label="Open extras drawer"
       >
       </button>
@@ -72,15 +72,15 @@
         <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
         ></CreatePipelineButton>
       </div>
-      <BookADemo class="preset-filled-primary-500">Book a demo</BookADemo>
+      <BookADemo class="btn preset-filled-primary-500">Book a demo</BookADemo>
     {/if}
   {/snippet}
 </AppHeader>
-<div class="flex h-full flex-col justify-between overflow-y-auto scrollbar">
+<div class="scrollbar flex h-full flex-col justify-between overflow-y-auto">
   <div class="flex flex-col gap-8 p-2 pt-0 md:p-8 md:pt-0">
     {#if !welcomed.value}
       <div class="relative flex min-h-40 w-full gap-4 p-6 sm:gap-12">
-        <div class="card absolute left-0 top-0 -z-10 flex h-full w-full overflow-clip">
+        <div class="absolute top-0 left-0 -z-10 flex h-full w-full overflow-clip card">
           <div
             class="w-1/2 bg-gradient-to-br from-fuchsia-300 via-amber-50 to-orange-300 dark:from-fuchsia-700 dark:via-amber-950 dark:to-orange-700"
           ></div>
@@ -97,7 +97,7 @@
           <div class="flex flex-nowrap justify-between">
             <div class="text-2xl font-semibold">Explore our communities and documentation</div>
             <button
-              class="fd fd-x btn-icon-lg"
+              class="fd fd-x w-7 text-[24px]"
               aria-label="Close"
               onclick={() => (welcomed.value = !welcomed.value)}
             ></button>
@@ -105,7 +105,11 @@
 
           <div class="flex flex-col gap-x-8 gap-y-4 lg:flex-row">
             {#each featured as link}
-              <a class="bg-white-dark btn !p-6" href={link.href} target="_blank" rel="noreferrer"
+              <a
+                class="bg-white-dark btn px-6! py-3!"
+                href={link.href}
+                target="_blank"
+                rel="noreferrer"
                 ><link.icon class="h-6 w-6 fill-surface-950-50"></link.icon>{link.title}</a
               >
             {/each}
@@ -176,8 +180,8 @@
                 {#each data.demos.slice(0, maxShownDemos) as demo}
                   <DemoTile {demo}></DemoTile>
                 {/each}
-                <div class="card flex flex-col p-4">
-                  <div class="text-sm text-surface-500">&nbsp;</div>
+                <div class="flex flex-col card p-4">
+                  <div class="text-sm text-surface-500"></div>
                   <a class="text-left text-primary-500" href={resolve('/demos/')}>
                     <span class="py-2">Discover More Examples and Tutorials</span>
                     <!-- <span class="fd fd-arrow-right inline-block w-2 text-[20px]"></span> -->

@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { goto } from '$app/navigation'
+  import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { resolve } from '$lib/functions/svelte'
   import type { Snippet } from '$lib/types/svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
-  let {
+  const {
     onShowInput,
     createButton,
     afterInput,

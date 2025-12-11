@@ -25,7 +25,8 @@
 				"svelte.svelte-vscode",
 				"bradlc.vscode-tailwindcss",
 				"esbenp.prettier-vscode",
-				"ms-python.python"
+				"ms-python.python",
+				"biomejs.biome"
 			],
 			"settings": {
 				"editor.formatOnSave": true,

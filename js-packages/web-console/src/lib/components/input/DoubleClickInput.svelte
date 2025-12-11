@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { Snippet } from '$lib/types/svelte'
   import type { Action } from 'svelte/action'
+  import type { Snippet } from '$lib/types/svelte'
 
   let {
     value = $bindable(),

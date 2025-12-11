@@ -1,8 +1,7 @@
 <script lang="ts" module>
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
-  import type { SQLValueJS } from '$lib/types/sql.ts'
   import type { Field } from '$lib/services/manager'
-  import { Progress } from '@skeletonlabs/skeleton-svelte'
+  import type { SQLValueJS } from '$lib/types/sql'
 
   export type Row = { cells: SQLValueJS[] } | { error: string } | { warning: string }
 
@@ -45,6 +44,7 @@
   import type { Snippet } from '$lib/types/svelte'
   import type { UIEventHandler } from 'svelte/elements'
   import { selectScope } from '$lib/compositions/common/userSelect'
+  import { Progress } from '@skeletonlabs/skeleton-svelte'
 
   let {
     query = $bindable(),
@@ -89,7 +89,7 @@
 </script>
 
 <div
-  class="bg-white-dark absolute m-0 w-max max-w-lg -translate-x-[4.5px] -translate-y-[2.5px] whitespace-break-spaces break-words border border-surface-500 px-2 py-1 text-surface-950-50"
+  class="bg-white-dark absolute m-0 w-max max-w-lg -translate-x-[4.5px] -translate-y-[2.5px] border border-surface-500 px-2 py-1 break-words whitespace-break-spaces text-surface-950-50"
   popover="manual"
   bind:this={popupRef}
   style={tooltip.data
@@ -109,12 +109,12 @@
   }}
 >
   <div class="w-full">
-    <div class="flex max-w-[1000px] flex-col rounded border p-2 border-surface-100-900">
+    <div class="flex max-w-[1000px] flex-col rounded border border-surface-100-900 p-2">
       <div class="flex w-full flex-col gap-2">
         <textarea
           bind:value={query}
           style="font-family: {theme.config.monospaceFontFamily}; field-sizing: content"
-          class="bg-white-dark w-full overflow-auto rounded border-0 !ring-0 !ring-primary-500 text-surface-950-50 scrollbar"
+          class="bg-white-dark scrollbar w-full overflow-auto rounded border-0 px-3 py-2 text-surface-950-50 outline-none"
           placeholder="SELECT * FROM ..."
           onkeydown={handleKeyDown(onSubmitQuery, disabled)}
         ></textarea>
@@ -150,7 +150,11 @@
               {len > 1 ? `${len} rows` : len === 0 ? 'No rows returned' : ''}
             {/if}
             {#if progress}
-              <Progress value={null} meterBg="bg-primary-500" base="h-1 max-w-[1000px]"></Progress>
+              <Progress class="h-1 max-w-[1000px]" value={null}>
+                <Progress.Track>
+                  <Progress.Range class="bg-primary-500" />
+                </Progress.Track>
+              </Progress>
             {/if}
           </div>
         </div>
@@ -160,7 +164,7 @@
     {#if result}
       {@const itemHeight = 'h-7'}
       {#key result.columns}
-        <div class="pr-4 pt-2">
+        <div class="pt-2 pr-4">
           <div class="relative h-full w-fit max-w-full">
             {#snippet listContainer(
               items: Snippet,
@@ -180,7 +184,7 @@
                 }
               }}
               <div
-                class="relative h-full max-h-64 w-fit max-w-full overflow-auto rounded scrollbar"
+                class="relative scrollbar h-full max-h-64 w-fit max-w-full overflow-auto rounded"
                 use:reverseScroll.action
                 {onscroll}
                 bind:clientHeight={_.clientHeight}
@@ -221,11 +225,11 @@
                 </tr>
               {:else if 'error' in row}
                 <tr {style} class={itemHeight} use:selectScope tabindex={-1}>
-                  <td colspan="99999999" class="px-2 preset-tonal-error">{row.error}</td>
+                  <td colspan="99999999" class="preset-tonal-error px-2">{row.error}</td>
                 </tr>
               {:else}
                 <tr {style} class={itemHeight} use:selectScope tabindex={-1}>
-                  <td colspan="99999999" class="px-2 preset-tonal-warning">{row.warning}</td>
+                  <td colspan="99999999" class="preset-tonal-warning px-2">{row.warning}</td>
                 </tr>
               {/if}
             {/snippet}

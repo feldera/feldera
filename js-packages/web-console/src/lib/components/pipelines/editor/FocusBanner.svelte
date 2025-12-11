@@ -2,7 +2,7 @@
   import { slide } from 'svelte/transition'
   import type { Snippet } from '$lib/types/svelte'
 
-  let {
+  const {
     show,
     isFocused,
     content
@@ -13,7 +13,7 @@
   } = $props()
 
   let isInteracting = $state(false)
-  let shouldShow = $derived(show && (isFocused || isInteracting))
+  const shouldShow = $derived(show && (isFocused || isInteracting))
 
   // Handle clicks outside to hide banner
   $effect(() => {

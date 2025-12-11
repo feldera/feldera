@@ -3,7 +3,7 @@
   import { clickedClass } from '$lib/compositions/actions/clickedClass'
   import type { Snippet } from '$lib/types/svelte'
 
-  let {
+  const {
     value,
     class: _class,
     children
@@ -11,7 +11,7 @@
 </script>
 
 <button
-  class="btn-icon flex h-9 flex-none before:w-4 before:transition-transform {_class}"
+  class="btn flex h-9 flex-none before:w-4 before:transition-transform {_class}"
   use:clipboard={value}
   use:clickedClass={{
     base: 'fd fd-copy',

@@ -11,7 +11,7 @@
       colorClass: 'preset-tonal-tertiary'
     }
   }
-  let {
+  const {
     children,
     class: classes = '',
     variant = 'warning'

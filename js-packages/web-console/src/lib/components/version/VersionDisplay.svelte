@@ -1,32 +1,32 @@
 <script lang="ts">
   import { page } from '$app/state'
+  import { Popover } from '$lib/components/common/Popover.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
 
-  let versionText = $derived(
+  const versionText = $derived(
     page.data.feldera
       ? `Feldera ${page.data.feldera.edition} v${page.data.feldera.version} `
       : undefined
   )
-  let revisionText = $derived(
+  const revisionText = $derived(
     page.data.feldera ? `(rev. ${page.data.feldera.revision})` : undefined
   )
 </script>
 
-<div class="hr flex justify-between pt-4 text-surface-500">
+<div class="relative hr flex justify-between pt-4 text-surface-500">
   <span>{versionText}</span>
   {#if revisionText}
-    <Tooltip
-      class="z-10 -ml-4 mt-16 w-full rounded-container bg-white p-4 text-base font-normal text-surface-950-50 dark:bg-black"
+    <Popover
+      class="bg-white-dark z-10 mt-16 -mr-20 -ml-4 w-full max-w-[400px] pt-2 pl-2"
       placement="top-start"
-      activeContent
     >
       {versionText}
-      <ClipboardCopyButton class="absolute right-0 top-0 m-2" value={versionText + revisionText}
+      <ClipboardCopyButton class="absolute top-0 right-0 m-2" value={versionText + revisionText}
       ></ClipboardCopyButton>
       <br class="select-none" />
       <span class="text-nowrap">{revisionText}</span>
-    </Tooltip>
+    </Popover>
   {/if}
   {#if page.data.feldera?.update?.version}
     <span>latest: {page.data.feldera.update.version}</span>

@@ -1,4 +1,4 @@
-import type { editor } from 'monaco-editor/esm/vs/editor/editor.api'
+import type { editor } from 'monaco-editor/esm/vs/editor/editor.api.js'
 import { MonacoPlaceholderContentWidget } from '$lib/components/monacoEditor/ContentPlaceholderWidget'
 
 export const effectMonacoContentPlaceholder = (
@@ -10,7 +10,7 @@ export const effectMonacoContentPlaceholder = (
   if (!editorRef || !placeholder) {
     return
   }
-  let placeholderWidget = new MonacoPlaceholderContentWidget(
+  const placeholderWidget = new MonacoPlaceholderContentWidget(
     placeholder,
     editorRef,
     placeholderStyle

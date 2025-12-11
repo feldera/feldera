@@ -101,12 +101,12 @@
   {@const errorCount = errors.length - warningCount}
   <span class="pr-1">Errors</span>
   {#if warningCount !== 0}
-    <span class="inline-block min-w-6 rounded px-1 font-medium preset-filled-warning-200-800">
+    <span class="inline-block min-w-6 rounded preset-filled-warning-200-800 px-1 font-medium">
       {warningCount}
     </span>
   {/if}
   {#if errorCount !== 0}
-    <span class="inline-block min-w-6 rounded px-1 font-medium preset-filled-error-50-950">
+    <span class="inline-block min-w-6 rounded preset-filled-error-50-950 px-1 font-medium">
       {errorCount}
     </span>
   {/if}
@@ -142,10 +142,7 @@
         <ClipboardCopyButton value={pipeline.current.id} class="h-8 w-auto preset-tonal-surface">
           <span class="text-base font-normal text-surface-950-50"> Pipeline ID </span>
         </ClipboardCopyButton>
-        <Tooltip
-          placement="top"
-          class="z-10 text-nowrap rounded bg-white text-base text-surface-950-50 dark:bg-black"
-        >
+        <Tooltip placement="top">
           {pipeline.current.id}
         </Tooltip>
         <DownloadSupportBundle {pipelineName} />

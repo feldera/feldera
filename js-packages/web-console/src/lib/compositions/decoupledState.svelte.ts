@@ -23,7 +23,7 @@ export class DecoupledStateProxy<T extends string | number | boolean> {
   protected _downstreamChanged = $state(false)
   protected wait: () => number | 'decoupled'
   protected debounceSet: () => void
-  // @ts-ignore:next-line
+  // @ts-expect-error:next-line
   protected timeout: Timer
 
   constructor(
@@ -121,7 +121,7 @@ export class DecoupledState<T extends string | number | boolean> {
   protected _downstreamChanged = $state(false)
   protected wait: () => number | 'decoupled'
   protected debounceSet: () => void
-  // @ts-ignore:next-line
+  // @ts-expect-error:next-line
   protected timeout: Timer
 
   handleUpstreamUpdate() {

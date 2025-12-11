@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from '$lib/types/svelte'
 
-  let { children, class: _class = '' }: { children: Snippet; class?: string } = $props()
+  const { children, class: _class = '' }: { children: Snippet; class?: string } = $props()
   // Example classes: text-surface-500 before:border-surface-500 after:border-surface-500
 </script>
 

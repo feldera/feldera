@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { superForm, setError } from 'sveltekit-superforms'
+  import { Control, Field, FieldErrors, Label } from 'formsnap'
+  import { setError, superForm } from 'sveltekit-superforms'
   import { valibot } from 'sveltekit-superforms/adapters'
-  import { Field, FieldErrors, Control, Label } from 'formsnap'
 
   import * as va from 'valibot'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
-  let { onSubmit, onSuccess }: { onSubmit?: () => void; onSuccess?: () => void } = $props()
+  const { onSubmit, onSuccess }: { onSubmit?: () => void; onSuccess?: () => void } = $props()
 
   const schema = va.object({
     name: va.pipe(va.string(), va.minLength(1, 'Specify API key name'))
@@ -84,7 +84,7 @@
   </form>
   <div>
     {#if lastGenerated.length}
-      <div class="flex flex-col rounded p-4 bg-surface-50-950">
+      <div class="flex flex-col rounded bg-surface-50-950 p-4">
         <div class="flex w-full flex-nowrap gap-2">
           <div class="fd fd-circle-alert w-6 text-[20px]"></div>
           <span>
@@ -97,7 +97,7 @@
             {/if}
           </span>
           <button
-            class="fd fd-x btn btn-icon ml-auto text-[20px]"
+            class="fd fd-x ml-auto btn-icon text-[24px]"
             onclick={() => {
               lastGenerated = []
             }}
@@ -105,15 +105,13 @@
           ></button>
         </div>
 
-        <div class="pl-8 pt-4">
+        <div class="pt-4 pl-8">
           {#each lastGenerated as { name, key }}
             <div class="flex w-full flex-nowrap items-center gap-2">
               <span>{name}:</span>
               <span class="w-full overflow-hidden overflow-ellipsis">{key}</span>
               <ClipboardCopyButton value={key}></ClipboardCopyButton>
-              <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="top">
-                Copy to clipboard
-              </Tooltip>
+              <Tooltip placement="top">Copy to clipboard</Tooltip>
             </div>
           {/each}
         </div>

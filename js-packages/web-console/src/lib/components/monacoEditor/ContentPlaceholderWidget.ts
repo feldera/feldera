@@ -1,4 +1,4 @@
-import { editor, type IDisposable } from 'monaco-editor'
+import { editor, type IDisposable } from 'monaco-editor/esm/vs/editor/editor.api.js'
 
 /**
  * Represents an placeholder renderer for monaco editor
@@ -21,7 +21,7 @@ export class MonacoPlaceholderContentWidget {
     this.editorRef = editorRef
     this.placeholderStyle = placeholderStyle
     // register a listener for editor code changes
-    let disposables: IDisposable[] = []
+    const disposables: IDisposable[] = []
     disposables.push(
       this.editorRef.onDidChangeModelContent(() => this.refreshPlaceholderVisibility())
     )
@@ -32,8 +32,8 @@ export class MonacoPlaceholderContentWidget {
     this.refreshPlaceholderVisibility()
     // ensure widget and event handler are properly disposed of
     this.dispose = () => {
-      for (const { dispose } of disposables) {
-        dispose()
+      for (const disposable of disposables) {
+        disposable.dispose()
       }
       this.editorRef.removeContentWidget(this)
     }

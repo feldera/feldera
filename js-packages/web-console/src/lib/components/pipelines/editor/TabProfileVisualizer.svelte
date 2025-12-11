@@ -231,10 +231,14 @@
   />
   <div class="{nonNull(downloadProgress.percent) ? '' : 'opacity-0'} transition-opacity">
     <Progress
+      class="-mt-1 h-1 sm:-mt-4"
       value={downloadProgress.percent ? downloadProgress.percent : null}
-      classes="-mt-1 sm:-mt-5 h-0"
-      trackClasses="!h-1"
-    />
+      max={100}
+    >
+      <Progress.Track>
+        <Progress.Range class="bg-primary-500" />
+      </Progress.Track>
+    </Progress>
   </div>
   {#if getProfileData}
     {@const { profile, dataflow, sources } = getProfileData()}
@@ -253,7 +257,7 @@
           {#snippet content(close)}
             <div
               transition:fade={{ duration: 100 }}
-              class="absolute left-0 top-10 z-30 w-max min-w-[200px]"
+              class="absolute top-10 left-0 z-30 w-max min-w-[200px]"
             >
               <div class="bg-white-dark flex flex-col rounded-container shadow-md">
                 <!-- Download Profile -->
@@ -313,7 +317,7 @@
   {:else}
     <div class="flex h-full flex-col items-center justify-center gap-4">
       {#if errorMessage}
-        <div class="rounded p-2 preset-outlined-error-600-400" transition:slide>
+        <div class="rounded preset-outlined-error-600-400 p-2" transition:slide>
           {errorMessage}
         </div>
       {/if}

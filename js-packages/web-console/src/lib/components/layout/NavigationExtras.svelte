@@ -1,10 +1,10 @@
 <script lang="ts">
-  import Popup from '$lib/components/common/Popup.svelte'
   import { fade } from 'svelte/transition'
   import IconDiscord from '$assets/icons/vendors/discord-logomark-color.svg?component'
   import IconSlack from '$assets/icons/vendors/slack-logomark-color.svg?component'
+  import Popup from '$lib/components/common/Popup.svelte'
 
-  let { inline }: { inline?: boolean } = $props()
+  const { inline }: { inline?: boolean } = $props()
 
   const communityResources = [
     {
@@ -45,7 +45,7 @@
 </script>
 
 {#snippet dropdownHeader(full: string, short: string, toggle?: () => void, isOpen?: boolean)}
-  <button onclick={toggle} class="btn px-1 {toggle ? '' : 'cursor-default'} ">
+  <button onclick={toggle} class="btn px-1! {toggle ? '' : 'cursor-default'} ">
     {#if inline}
       {full}
     {:else}

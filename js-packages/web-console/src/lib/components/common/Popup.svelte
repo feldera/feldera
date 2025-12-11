@@ -11,7 +11,7 @@
     wrapperClass?: string
   } = $props()
   let show = $state(false)
-  let onClose = () => {
+  const onClose = () => {
     setTimeout(() => {
       show = false
     })

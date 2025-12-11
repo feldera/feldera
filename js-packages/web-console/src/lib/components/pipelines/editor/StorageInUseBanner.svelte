@@ -2,7 +2,7 @@
   import { page } from '$app/state'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
-  let {
+  const {
     pipelineName,
     runtimeVersion
   }: {
@@ -17,14 +17,14 @@
   }
 </script>
 
-<div class="flex h-fit min-h-10 items-center gap-2 px-4 preset-tonal-tertiary">
+<div class="flex h-fit min-h-10 items-center gap-2 preset-tonal-tertiary px-4">
   <span class="fd fd-triangle-alert text-[20px]"></span>
   {#if runtimeVersion.status === 'update_available'}
     <span>
       A new runtime version {page.data.feldera!.version} is available. Update the runtime to edit the
       pipeline.
     </span>
-    <button class="btn h-7 border-0 py-0 text-sm preset-filled-primary-500" onclick={handleUpgrade}>
+    <button class="btn h-7 border-0 preset-filled-primary-500 py-0 text-sm" onclick={handleUpgrade}>
       Update
     </button>
   {:else}

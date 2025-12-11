@@ -30,9 +30,7 @@ export const randomIntBigNumber: RandomIntBigNumber = (function sourceRandomIntB
     if (arguments.length < 2) (max = min), (min = new BigNumber(0))
     min = min!.decimalPlaces(0, BigNumber.ROUND_FLOOR)
     max = max!.decimalPlaces(0, BigNumber.ROUND_FLOOR).minus(min)
-    return function () {
-      return max!.times(source()).plus(min!).decimalPlaces(0, BigNumber.ROUND_FLOOR)
-    }
+    return () => max!.times(source()).plus(min!).decimalPlaces(0, BigNumber.ROUND_FLOOR)
   }
 
   randomIntBigNumber.source = sourceRandomIntBigNumber
