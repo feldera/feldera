@@ -1519,10 +1519,22 @@ pub struct CircuitMetadata {
 
 #[derive(Default, Debug)]
 pub struct MetadataExchangeInner {
+    /// Metadata registered by operators running in the local circuit.
     local_metadata: RefCell<CircuitMetadata>,
+
+    /// Metadata received from peers. All workers have identical metadata snapshots during a step.
     global_metadata: RefCell<Vec<CircuitMetadata>>,
 }
 
+/// Metadata exchange.
+///
+/// Allows the circuit to exchange arbitrary semi-structured data with its peers.
+///
+/// Every operator in the circuit can update its local metadata.
+/// Before every step, the circuit broadcasts its metadata to all other workers
+/// and receives their metadata. As a result all workers have identical metadata
+/// snapshots during the step and can make deterministic decisions based on it, such
+/// as choosing a balancing policy for a stream.
 #[derive(Default, Debug, Clone)]
 pub struct MetadataExchange {
     inner: Rc<MetadataExchangeInner>,
@@ -1533,10 +1545,12 @@ impl MetadataExchange {
         Self::default()
     }
 
+    /// Get the current snapshot of the local metadata registered by operators running in the local circuit.
     pub fn local_metadata(&self) -> CircuitMetadata {
         self.inner.local_metadata.borrow().clone()
     }
 
+    /// Update the local metadata for the operator with the given id.
     pub fn set_local_operator_metadata(&self, id: NodeId, metadata: serde_json::Value) {
         self.inner
             .local_metadata
@@ -1545,6 +1559,7 @@ impl MetadataExchange {
             .insert(id, metadata.clone());
     }
 
+    /// Update the local metadata for the operator with the given id by serializing `metadata` to a JSON value.
     pub fn set_local_operator_metadata_typed<T>(&self, id: NodeId, metadata: T)
     where
         T: Serialize,
@@ -1556,6 +1571,7 @@ impl MetadataExchange {
             .insert(id, serde_json::to_value(metadata).unwrap());
     }
 
+    /// Get the current snapshot of the local metadata for the operator with the given id.
     pub fn get_local_operator_metadata(&self, id: NodeId) -> Option<serde_json::Value> {
         self.inner
             .local_metadata
@@ -1565,10 +1581,12 @@ impl MetadataExchange {
             .map(|metadata| metadata.clone())
     }
 
+    /// Set the global metadata received from peers (invoked by the scheduler).
     pub fn set_global_metadata(&self, global_metadata: Vec<CircuitMetadata>) {
         *self.inner.global_metadata.borrow_mut() = global_metadata;
     }
 
+    /// Get metadata for the operator with the given id received from all workers before the current step.
     pub fn get_global_operator_metadata(&self, id: NodeId) -> Vec<Option<serde_json::Value>> {
         self.inner
             .global_metadata
@@ -1578,6 +1596,12 @@ impl MetadataExchange {
             .collect()
     }
 
+    /// Get metadata for the operator with the given id received from all workers before the current step.
+    /// Deserialize it from a JSON value to a strongly typed representation `T`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the JSON value cannot be deserialized to a strongly typed representation `T`.
     pub fn get_global_operator_metadata_typed<T>(&self, id: NodeId) -> Vec<Option<T>>
     where
         T: DeserializeOwned,
@@ -1736,10 +1760,18 @@ pub trait CircuitBase: 'static {
         });
     }
 
+    /// Return the metadata exchange object associated with the circuit.
     fn metadata_exchange(&self) -> &MetadataExchange;
 
+    /// Return the balancer object associated with the circuit.
     fn balancer(&self) -> &Balancer;
 
+    /// Set the balancer hint for the operator with the given global node id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operator with the given global node id is not found
+    /// or if the hint contradicts the current balancer policy.
     fn set_balancer_hint(
         &self,
         global_node_id: &GlobalNodeId,

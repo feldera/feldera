@@ -13,10 +13,8 @@ use crate::{
         async_stream_operators::{StreamingTernarySinkOperator, StreamingTernarySinkWrapper},
         communication::{Exchange, ExchangeReceiver},
         dynamic::{
-            accumulate_trace::{
-                AccumulateBoundsId, AccumulateTraceAppend, AccumulateTraceId, AccumulateZ1Trace,
-            },
-            balance::{balancing_accumulator::BalancingAccumulatorInner, Balancer, Policy},
+            accumulate_trace::{AccumulateBoundsId, AccumulateTraceAppend, AccumulateZ1Trace},
+            balance::{rebalancing_accumulator::RebalancingAccumulatorInner, Balancer, Policy},
             trace::{DelayedTraceId, TimedSpine, TraceBounds},
         },
         require_persistent_id, Z1,
@@ -47,6 +45,52 @@ where
     C: Circuit,
     B: IndexedZSet,
 {
+    /// Shard and integrate `self` using dynamic sharding policy selected by the balancer.
+    ///
+    /// Combines exchange, accumulator, and integral into a single operator. In steady state,
+    /// applies the selected sharding policy to the input stream. When the sharding policy changes,
+    /// retracts the previous content of the integral and re-distributes it using the new policy.
+    ///
+    /// # Returns
+    ///
+    /// The output of the accumulator and the integral.
+    ///
+    /// # Circuit
+    ///
+    /// ```text
+    ///                                      │
+    ///                                      │self
+    ///                                      ▼
+    ///                         ┌─────────────────────────┐
+    ///              ┌─────────►│RebalancingExchangeSender│◄───┐
+    ///              │          └────────────┬────────────┘    │
+    ///              │                       │                 │delayed_acc
+    ///              │                       ▼                 │
+    ///              │               ┌────────────────┐      ┌──┐
+    ///              │               │ExchangeReceiver│      │Z1│
+    ///              │               └────────────────┘      └──┘
+    ///              │                       .                 ▲
+    ///              │                       .                 │
+    ///              │                       ▼                 │
+    ///              │             ┌──────────────────────┐    │
+    ///              │             │RebalancingAccumulator│────┘
+    /// delayed_trace│             └──────────────────────┘
+    ///              │                       │
+    ///              │                       │
+    ///              ├──────────────────┐    │
+    ///              │                  ▼    ▼
+    ///      ┌───────┴─────────┐    ┌─────────────────────┐
+    ///      │AccumulateZ1Trace│◄───┤AccumulateTraceAppend│
+    ///      └─────────────────┘    └────────┬────────────┘
+    ///                                      │
+    ///                                      │trace
+    ///                                      │
+    ///                                      ▼
+    /// ```
+    ///
+    /// The two feedback streams (delayed_acc and delayed_trace) are used by RebalancingExchangeSender to
+    /// retract previously accumulated content of the integral when the sharding policy changes. The accumulator
+    /// in particular is used to rebalance mid-transaction.
     #[track_caller]
     pub fn dyn_accumulate_trace_balanced(
         &self,
@@ -74,8 +118,10 @@ where
 
                     let persistent_id = self.get_persistent_id();
 
-                    // Exchange object
-                    let exchange = Exchange::with_runtime(
+                    // Exchange object. The Boolean flag signals that the sender won't produce more outputs
+                    // during the current transaction. It will be set to `true` exactly once per transaction.
+                    // Once all senders are flushed, the receiver can report itself as flushed too.
+                    let exchange: Arc<Exchange<(B, bool)>> = Exchange::with_runtime(
                         &runtime,
                         exchange_id,
                         Box::new(move |(batch, flush)| {
@@ -109,6 +155,8 @@ where
                             |batches: &mut Vec<B>, batch: B| batches.push(batch),
                         ))
                         .apply_owned_named("merge shards", move |batches| {
+                            // TODO: instead of merging the batches here, modify the BalancingAccumulator operator to accept a vector of batches
+                            // and have it to the merging in the background.
                             merge_batches(&batch_factories_clone, batches, &None, &None)
                         });
 
@@ -137,7 +185,6 @@ where
                         .operator_mut()
                         .prepare_replay_stream(&sharded_stream);
 
-                    // Integral with metadata exchange
                     let trace = circuit.add_binary_operator_with_preference(
                         <AccumulateTraceAppend<TimedSpine<B, C>, B, C>>::new(
                             &trace_factories,
@@ -158,10 +205,10 @@ where
                         DelayedTraceId::new(trace.stream_id()),
                         delayed_trace.clone(),
                     );
-                    circuit.cache_insert(
-                        AccumulateTraceId::new(sharded_stream.stream_id()),
-                        trace.clone(),
-                    );
+                    // circuit.cache_insert(
+                    //     AccumulateTraceId::new(sharded_stream.stream_id()),
+                    //     trace.clone(),
+                    // );
                     circuit.cache_insert(
                         AccumulateBoundsId::<B>::new(sharded_stream.stream_id()),
                         bounds,
@@ -180,9 +227,9 @@ where
                         accumulator_snapshot_stream_val.clone(),
                     );
 
-                    // Connect the stream
                     acc_feedback.connect(&accumulator_feedback_stream);
 
+                    // Exchange sender.
                     let exchange_sender = RebalancingExchangeSender::<B, C>::new(
                         batch_factories,
                         worker_index,
@@ -194,7 +241,6 @@ where
                         self.local_node_id(),
                     );
 
-                    // Exchange sender.
                     let sender_node_id = circuit.add_ternary_sink(
                         StreamingTernarySinkWrapper::new(exchange_sender),
                         self,
@@ -205,7 +251,7 @@ where
                     // Add ExchangeSender -> ExchangeReceiver dependency.
                     circuit.add_dependency(sender_node_id, sharded_stream.local_node_id());
 
-                    // Register accumulator and integral with the balancer, so it knows their IDs.
+                    // Register integral with the balancer.
                     balancer.register_integral(self.local_node_id(), sender_node_id);
 
                     (accumulator_stream, trace)
@@ -215,15 +261,28 @@ where
     }
 }
 
-struct RetractionState<B: Batch<Time = ()>, C: WithClock> {
+/// The old contents of the integral and accumulator that needs to be rebalanced.
+struct RebalanceState<B: Batch<Time = ()>, C: WithClock> {
+    /// Accumulator state doesn't need to be retracted, because it will be cleared when the rebalancing starts.
+    /// It only needs to be re-distributed using the new policy.
     accumulator: SpineSnapshot<B>,
+
+    /// Integral state must be retracted and re-distributed using the new policy.
     trace: SpineSnapshot<<C::Time as Timestamp>::TimedBatch<B>>,
+
+    /// The policy that was used to accumulate the integral before the rebalancing.
+    /// This is the policy used during the previous transaction.
     trace_policy: Policy,
 }
 
+/// Information about the key distribution of the input stream.
+// TODO: this can be refined in the future, e.g., it may be a useful to track heavy keys.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
 pub struct KeyDistribution {
+    /// Total weight of the data in each shard if we were using key-based sharding.
+    // Ideally we would track the number of distinct records in each shard, but that
+    // requires much more state.
     pub sizes: Vec<ZWeight>,
 }
 
@@ -234,21 +293,25 @@ impl KeyDistribution {
         }
     }
 
+    /// Add `weight` to `shard`.
     pub fn update(&mut self, shard: usize, weight: ZWeight) {
         self.sizes[shard] += weight;
     }
 
+    /// Combine two distributions.
     pub fn merge(&mut self, other: &Self) {
         for (i, size) in self.sizes.iter_mut().enumerate() {
             *size += other.sizes[i];
         }
     }
 
+    /// Total weight of records across all shards.
     pub fn total_records(&self) -> ZWeight {
         self.sizes.iter().sum()
     }
 }
 
+/// Exchange sender that rebalances the input stream based on the dynamically selected sharding policy.
 pub struct RebalancingExchangeSender<B, C>
 where
     B: Batch<Time = ()>,
@@ -257,14 +320,23 @@ where
     batch_factories: B::Factories,
 
     global_id: GlobalNodeId,
+
+    /// Origin node of the input to this operator.
     input_node_id: NodeId,
+
     worker_index: usize,
     location: OperatorLocation,
 
     exchange: Arc<Exchange<(B, bool)>>,
-    accumulator_inner: Rc<RefCell<BalancingAccumulatorInner<B>>>,
 
+    /// Reference to the accumulator inner state used to clear it when rebalancing.
+    accumulator_inner: Rc<RefCell<RebalancingAccumulatorInner<B>>>,
+
+    /// Balancer used to select the sharding policy.
     balancer: Balancer,
+
+    /// Metadata exchange used to exchange key distribution and status info
+    /// with balancer instances in all workers.
     metadata_exchange: MetadataExchange,
 
     // Input batch sizes.
@@ -272,10 +344,14 @@ where
 
     flush_state: RefCell<FlushState>,
 
+    /// Current sharding policy.
     current_policy: RefCell<Policy>,
 
-    retractions: RefCell<Option<RetractionState<B, C>>>,
+    /// When Some(), the policy has changed during the current transaction, and the operator must rebalance
+    /// accumulator and integral state before committing the transaction.
+    rebalance_state: RefCell<Option<RebalanceState<B, C>>>,
 
+    /// Local key distribution of the input stream computed by the current worker.
     key_distribution: RefCell<KeyDistribution>,
 
     phantom: PhantomData<C>,
@@ -291,7 +367,7 @@ where
         worker_index: usize,
         location: OperatorLocation,
         exchange: Arc<Exchange<(B, bool)>>,
-        accumulator_inner: Rc<RefCell<BalancingAccumulatorInner<B>>>,
+        accumulator_inner: Rc<RefCell<RebalancingAccumulatorInner<B>>>,
         balancer: Balancer,
         metadata_exchange: MetadataExchange,
         input_node_id: NodeId,
@@ -310,7 +386,7 @@ where
             input_batch_stats: BatchSizeStats::new(),
             flush_state: RefCell::new(FlushState::TransactionStarted),
             current_policy: RefCell::new(Policy::Shard),
-            retractions: RefCell::new(None),
+            rebalance_state: RefCell::new(None),
             key_distribution: RefCell::new(KeyDistribution::new(Runtime::num_workers())),
             phantom: PhantomData,
         }
@@ -343,21 +419,20 @@ where
 
         // If the accumulator was populated with broadcast policy, we want to re-balance only
         // one copy of the data.
-        let accumulator_batches = if old_policy != Policy::Broadcast || Runtime::worker_index() == 0
-        {
+        let accumulator_batches = if old_policy != Policy::Broadcast || self.worker_index == 0 {
             delayed_accumulator
         } else {
             vec![]
         };
 
-        match &mut *self.retractions.borrow_mut() {
+        match &mut *self.rebalance_state.borrow_mut() {
             Some(retractions) => {
                 retractions
                     .accumulator
                     .extend_with_batches(accumulator_batches);
             }
             retractions @ None => {
-                *retractions = Some(RetractionState {
+                *retractions = Some(RebalanceState {
                     accumulator: SpineSnapshot::with_batches(
                         &self.batch_factories,
                         accumulator_batches,
@@ -402,7 +477,7 @@ where
         match old_policy {
             Policy::Broadcast => self.process_insertions_broadcast(
                 cursor,
-                &mut builders[Runtime::worker_index()],
+                &mut builders[self.worker_index],
                 chunk_size,
             ),
             Policy::Shard | Policy::Balance => {
@@ -522,14 +597,13 @@ where
     ) where
         TS: Timestamp,
     {
-        let worker_index = Runtime::worker_index();
         let shards = Runtime::num_workers();
 
         match *self.current_policy.borrow() {
             Policy::Shard => {
                 while cursor.key_valid() {
                     let shard = cursor.key().default_hash() as usize % shards;
-                    if shard != worker_index {
+                    if shard != self.worker_index {
                         cursor.step_key();
                         continue;
                     }
@@ -567,7 +641,7 @@ where
                         });
                         if weight != 0 {
                             let shard = cursor.val().default_hash() as usize % shards;
-                            if shard != worker_index {
+                            if shard != self.worker_index {
                                 cursor.step_val();
                                 continue;
                             }
@@ -600,7 +674,7 @@ where
     ) where
         TB: Batch<Key = B::Key, Val = B::Val, R = B::R>,
     {
-        let builder = &mut builders[Runtime::worker_index()];
+        let builder = &mut builders[self.worker_index];
 
         while cursor.key_valid() {
             let mut has_values = false;
@@ -783,10 +857,16 @@ enum FlushState {
     FlushCompleted,
 }
 
+/// Metadata shared by the ExchangeSender operators with balancer instances in all workers.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RebalancingExchangeSenderExchangeMetadata {
+    /// The operator has flushed the current transaction - no more rebalancing is allowed in the current transaction.
     pub flushed: bool,
+
+    /// Currently selected sharding policy.
     pub current_policy: Policy,
+
+    /// Key distribution of the input stream computed based on the inputs received by the current worker.
     pub key_distribution: KeyDistribution,
 }
 
@@ -851,6 +931,7 @@ where
         *self.flush_state.borrow() == FlushState::FlushCompleted
     }
 
+    /// Checkpoint the current sharding policy only.
     fn checkpoint(
         &mut self,
         base: &StoragePath,
@@ -936,7 +1017,7 @@ where
             // Partition `delta` based on the current policy.
 
             // If this is not the last input or it is the last input and there is no rebalancing to be done, this will be the final output.
-            let flushed = *self.flush_state.borrow() == FlushState::TransactionStarted || self.retractions.borrow().is_none();
+            let flushed = *self.flush_state.borrow() == FlushState::TransactionStarted || self.rebalance_state.borrow().is_none();
 
             let batches = self.partition_batch(delta);
 
@@ -960,7 +1041,7 @@ where
 
             // We have no more inputs to process, but there is rebalancing work to be done.
 
-            let RetractionState { mut accumulator, mut trace, trace_policy } = self.retractions.borrow_mut().take().unwrap();
+            let RebalanceState { mut accumulator, mut trace, trace_policy } = self.rebalance_state.borrow_mut().take().unwrap();
 
             // let mut accumulator_cursor = accumulator.cursor();
             let mut integral_cursor = trace.cursor();

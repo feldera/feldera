@@ -1,6 +1,6 @@
 mod accumulate_trace_balanced;
 mod balancer;
-mod balancing_accumulator;
+mod rebalancing_accumulator;
 
 #[cfg(test)]
 mod test;

@@ -1050,8 +1050,8 @@ impl Consensus {
     }
 }
 
-/// A synchronization primitive that allows multiple threads within a runtime to agree
-/// when a condition is satisfied.
+/// A synchronization primitive that allows multiple threads within a runtime to broadcast
+/// a value to all other workers.
 pub(crate) enum Broadcast<T> {
     SingleThreaded,
     MultiThreaded {
@@ -1101,11 +1101,11 @@ where
         }
     }
 
-    /// Returns `true` if all workers vote `true`.
+    /// Returns values broadcast by all workers (including the current worker), indexed by worker id.
     ///
     /// # Arguments
     ///
-    /// * `local` - Local vote by the current worker.
+    /// * `local` - Value broadcast by the current worker.
     pub async fn collect(&self, local: T) -> Result<Vec<T>, SchedulerError> {
         match self {
             Self::SingleThreaded => Ok(vec![local]),

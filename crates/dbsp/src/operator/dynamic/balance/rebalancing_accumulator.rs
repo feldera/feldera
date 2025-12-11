@@ -27,10 +27,10 @@ where
         factories: &B::Factories,
     ) -> (
         Stream<C, Option<Spine<B>>>,
-        Rc<RefCell<BalancingAccumulatorInner<B>>>,
+        Rc<RefCell<RebalancingAccumulatorInner<B>>>,
         RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>,
     ) {
-        let accumulator = BalancingAccumulator::<B>::new(factories, Location::caller());
+        let accumulator = RebalancingAccumulator::<B>::new(factories, Location::caller());
         let inner = accumulator.0.clone();
         let accumulator_snapshot_stream_val = RefStreamValue::empty();
         accumulator
@@ -46,7 +46,7 @@ where
     }
 }
 
-pub struct BalancingAccumulatorInner<B>
+pub struct RebalancingAccumulatorInner<B>
 where
     B: Batch,
 {
@@ -64,7 +64,7 @@ where
     feedback_stream: Option<RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>>,
 }
 
-impl<B> BalancingAccumulatorInner<B>
+impl<B> RebalancingAccumulatorInner<B>
 where
     B: Batch,
 {
@@ -93,20 +93,20 @@ where
     }
 }
 
-pub struct BalancingAccumulator<B: Batch>(Rc<RefCell<BalancingAccumulatorInner<B>>>);
+pub struct RebalancingAccumulator<B: Batch>(Rc<RefCell<RebalancingAccumulatorInner<B>>>);
 
-impl<B> BalancingAccumulator<B>
+impl<B> RebalancingAccumulator<B>
 where
     B: Batch,
 {
     pub fn new(factories: &B::Factories, location: &'static Location<'static>) -> Self {
-        Self(Rc::new(RefCell::new(BalancingAccumulatorInner::new(
+        Self(Rc::new(RefCell::new(RebalancingAccumulatorInner::new(
             factories, location,
         ))))
     }
 }
 
-impl<B> Operator for BalancingAccumulator<B>
+impl<B> Operator for RebalancingAccumulator<B>
 where
     B: Batch,
 {
@@ -166,7 +166,7 @@ where
     }
 }
 
-impl<B> UnaryOperator<B, Option<Spine<B>>> for BalancingAccumulator<B>
+impl<B> UnaryOperator<B, Option<Spine<B>>> for RebalancingAccumulator<B>
 where
     B: Batch,
 {

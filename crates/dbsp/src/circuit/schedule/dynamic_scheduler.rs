@@ -184,6 +184,7 @@ struct Inner {
     /// Used to synchronize commit completion across all workers.
     global_commit_consensus: Consensus,
 
+    /// Broadcast object used to exchange metadata with peers.
     metadata_broadcast: Broadcast<CircuitMetadata>,
 }
 
@@ -484,6 +485,8 @@ impl Inner {
 
         circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
 
+        // Exchange metadata with peers. Do this before the step to make metadata registered before
+        // the first step, e.g., during start_transaction, available during the step.
         let metadata = circuit.metadata_exchange().local_metadata().clone();
 
         let global_metadata = self.metadata_broadcast.collect(metadata).await?;
