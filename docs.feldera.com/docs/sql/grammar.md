@@ -299,11 +299,15 @@ values
 
 select
   :   SELECT [ ALL | DISTINCT ]
-          { * | projectItem [, projectItem ]* }
+          { starExclude | projectItem [, projectItem ]* }
       FROM tableExpression
       [ WHERE booleanExpression ]
       [ GROUP BY [ ALL | DISTINCT ] { groupItem [, groupItem ]* } ]
       [ HAVING booleanExpression ]
+
+starExclude
+  : '*' [ 'EXCLUDE' parensColumnList ]
+
 ```
 
 <a id="lateral"></a>

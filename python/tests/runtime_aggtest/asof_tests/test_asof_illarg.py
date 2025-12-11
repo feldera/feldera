@@ -22,7 +22,7 @@ class asof_test_illarg2(TstView):
                         LEFT ASOF JOIN asof_tbl2 t2
                         MATCH_CONDITION (t1.intt <= t2.intt )
                         ON t1.id = t2.id;"""
-        self.expected_error = "Currently the only MATCH_CONDITION comparison supported by ASOF joins is '>='"
+        self.expected_error = "Currently the only MATCH_CONDITION comparison supported by ASOF joins is 'leftCol >= rightCol'"
 
 
 class asof_test_illarg3(TstView):

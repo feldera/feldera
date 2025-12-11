@@ -199,11 +199,9 @@ public class CalciteOptimizer implements IWritesLogs {
                 ReduceExpressionsRule.WINDOW_REDUCE_EXPRESSIONS,
                 ReduceExpressionsRule.CALC_REDUCE_EXPRESSIONS,
                 CoreRules.CALC_REDUCE_DECIMALS,
-                CoreRules.FILTER_VALUES_MERGE,
-                CoreRules.PROJECT_FILTER_VALUES_MERGE,
-                // Rule is buggy; disabled due to
-                // https://github.com/feldera/feldera/issues/217
-                // CoreRules.PROJECT_VALUES_MERGE
+                ValuesReduceRule.FILTER_VALUES_MERGE,
+                ValuesReduceRule.PROJECT_FILTER_VALUES_MERGE,
+                ValuesReduceRule.PROJECT_VALUES_MERGE,
                 CoreRules.AGGREGATE_VALUES));
         this.addStep(new SimpleOptimizerStep("Remove empty relations", 0,
                 PruneEmptyRules.UNION_INSTANCE,
@@ -233,7 +231,7 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.SORT_REMOVE_CONSTANT_KEYS));
         this.addStep(new SimpleOptimizerStep("Simplify correlates", 0,
                 CoreRules.PROJECT_CORRELATE_TRANSPOSE,
-                FilterCorrelateRule.FILTER_CORRELATE));
+                CoreRules.FILTER_CORRELATE));
         this.addStep(merge);
 
         var joinOrder = new BaseOptimizerStep("Join order", 2) {
@@ -249,11 +247,7 @@ public class CalciteOptimizer implements IWritesLogs {
                         CoreRules.JOIN_EXPAND_OR_TO_UNION_RULE,
                         CoreRules.JOIN_CONDITION_PUSH,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
-                        // Below rule crashes with test NaiveIncrementalTests.inTest
                         // CoreRules.JOIN_PUSH_TRANSITIVE_PREDICATES,
-                        // https://issues.apache.org/jira/browse/CALCITE-5387
-                        // TODO: Rule is unsound
-                        // https://github.com/feldera/feldera/issues/1702
                         CoreRules.FILTER_INTO_JOIN
                 );
                 OuterJoinFinder finder = new OuterJoinFinder();
@@ -336,7 +330,7 @@ public class CalciteOptimizer implements IWritesLogs {
         // this.addStep(merge); -- messes up the shape of uncollect
 
         this.addStep(new SimpleOptimizerStep("Move projections", 0,
-                // Rule is unsound: https://issues.apache.org/jira/browse/CALCITE-6681
+                // Tests that fail: IncrementalRegressionTests.issue5182, issue5182a, issue5182b
                 // CoreRules.PROJECT_CORRELATE_TRANSPOSE,
                 CoreRules.PROJECT_WINDOW_TRANSPOSE,
                 CoreRules.PROJECT_SET_OP_TRANSPOSE,
@@ -368,8 +362,6 @@ public class CalciteOptimizer implements IWritesLogs {
                         CoreRules.JOIN_EXPAND_OR_TO_UNION_RULE,
                         CoreRules.EXPAND_FILTER_DISJUNCTION_GLOBAL,
                         CoreRules.EXPAND_JOIN_DISJUNCTION_GLOBAL,
-                        // TODO: Rule is unsound
-                        // https://github.com/feldera/feldera/issues/1702
                         CoreRules.FILTER_INTO_JOIN
                 );
                 return this.builder.build();

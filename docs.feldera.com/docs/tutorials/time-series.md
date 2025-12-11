@@ -124,6 +124,9 @@ CREATE VIEW v AS SELECT t.col1, t.col2 FROM t;
 LATENESS v.col1 INTERVAL 1 HOUR;
 ```
 
+`LATENESS` can only be specified for toplevel view columns; i.e., the following
+is illegal: `LATENESS v.str.col INTERVAL 1 HOUR`.
+
 ### Guidelines for writing lateness annotations
 
 Keep in mind the following guidelines when choosing lateness annotations for
