@@ -125,6 +125,13 @@ where
         self.batches.extend(other.batches.iter().cloned())
     }
 
+    pub fn extend_with_batches<I>(&mut self, batches: I)
+    where
+        I: IntoIterator<Item = Arc<B>>,
+    {
+        self.batches.extend(batches);
+    }
+
     pub fn concat<'a, I>(factories: B::Factories, snapshots: I) -> Self
     where
         I: IntoIterator<Item = &'a Self>,

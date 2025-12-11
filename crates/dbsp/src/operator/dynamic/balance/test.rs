@@ -1,10 +1,13 @@
 use crate::{
     circuit::{CircuitConfig, GlobalNodeId},
     dynamic::Data,
-    operator::dynamic::balance::{BalancerHint, Policy},
+    operator::{
+        dynamic::balance::{BalancerHint, Policy},
+        output::AccumulateOutput,
+    },
     typed_batch::{IndexedZSetReader, SpineSnapshot, TypedBatch},
     utils::Tup2,
-    IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZWeight,
+    Circuit, IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZWeight,
 };
 use anyhow::Result as AnyResult;
 
@@ -47,8 +50,17 @@ fn accumulate_trace_with_balancer_test_circuit(
     let (input, input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
     let input_node_id = input.origin_node_id().clone();
 
-    let (balanced_stream, balanced_trace) = input.accumulate_trace_balanced();
-    let balanced_stream_output = balanced_stream.accumulate_output();
+    let (balanced_accumulator, balanced_trace) = input.accumulate_trace_balanced();
+
+    let (balanced_stream_output, output_handle) =
+        AccumulateOutput::<OrdIndexedZSet<u64, u64>>::new();
+
+    let _gid = circuit.add_sink(balanced_stream_output, &balanced_accumulator);
+    // circuit.set_persistent_node_id(&gid, persistent_id);
+
+    // (output_handle, enable_count, gid)
+
+    // let balanced_stream_output = balanced_stream.accumulate_output();
     let balanced_trace_output = balanced_trace
         .apply(|trace| trace.ro_snapshot().consolidate())
         .output();
@@ -56,7 +68,7 @@ fn accumulate_trace_with_balancer_test_circuit(
     Ok((
         input_handle,
         input_node_id,
-        balanced_stream_output,
+        output_handle,
         balanced_trace_output,
     ))
 }

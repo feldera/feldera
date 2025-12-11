@@ -12,8 +12,7 @@ use typedmap::TypedMapKey;
 
 use crate::{
     circuit::{
-        checkpointer::EmptyCheckpoint,
-        circuit_builder::{RefStreamValue, StreamId},
+        circuit_builder::StreamId,
         metadata::{
             BatchSizeStats, MetaItem, OperatorLocation, OperatorMeta, ALLOCATED_BYTES_LABEL,
             INPUT_BATCHES_LABEL, NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, SHARED_BYTES_LABEL,
@@ -76,25 +75,6 @@ where
             })
             .clone()
     }
-
-    pub fn dyn_accumulate_with_feedback_stream(
-        &self,
-        factories: &B::Factories,
-    ) -> (
-        Stream<C, Option<Spine<B>>>,
-        RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>,
-    ) {
-        let mut accumulator = Accumulator::<B>::new(factories, Location::caller());
-        accumulator.enable_count.fetch_add(1, Ordering::AcqRel);
-        let accumulator_snapshot_stream_val = RefStreamValue::empty();
-        accumulator.set_feedback_stream(accumulator_snapshot_stream_val.clone());
-
-        let stream = self
-            .circuit()
-            .add_unary_operator(accumulator, &self.try_sharded_version());
-        stream.mark_sharded_if(self);
-        (stream, accumulator_snapshot_stream_val)
-    }
 }
 
 pub struct Accumulator<B>
@@ -134,8 +114,6 @@ where
     /// partial outputs. This flag remembers the status of the accumulator at the start of the
     /// transaction.
     enabled_during_current_transaction: Option<bool>,
-
-    feedback_stream: Option<RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>>,
 }
 
 impl<B> Accumulator<B>
@@ -165,15 +143,7 @@ where
             output_batch_stats: BatchSizeStats::new(),
             enable_count,
             enabled_during_current_transaction: None,
-            feedback_stream: None,
         }
-    }
-
-    pub fn set_feedback_stream(
-        &mut self,
-        feedback_stream: RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>,
-    ) {
-        self.feedback_stream = Some(feedback_stream.clone());
     }
 }
 
@@ -272,13 +242,6 @@ where
         } else {
             None
         };
-
-        // Write the current stat _after_ the flush, since the stream must reflect the
-        // state of the accumulator at the end of the step.
-        if let Some(feedback_stream) = &self.feedback_stream {
-            feedback_stream.put(EmptyCheckpoint::new(self.state.get_batches()));
-        }
-
         result
     }
 
@@ -309,10 +272,6 @@ where
         } else {
             None
         };
-
-        if let Some(feedback_stream) = &self.feedback_stream {
-            feedback_stream.put(EmptyCheckpoint::new(self.state.get_batches()));
-        }
 
         result
     }

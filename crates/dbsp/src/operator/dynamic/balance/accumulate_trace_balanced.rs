@@ -16,7 +16,7 @@ use crate::{
             accumulate_trace::{
                 AccumulateBoundsId, AccumulateTraceAppend, AccumulateTraceId, AccumulateZ1Trace,
             },
-            balance::{Balancer, Policy},
+            balance::{balancing_accumulator::BalancingAccumulatorInner, Balancer, Policy},
             trace::{DelayedTraceId, TimedSpine, TraceBounds},
         },
         require_persistent_id, Z1,
@@ -40,7 +40,7 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
 };
 
-circuit_cache_key!(BalancedTraceId<C: Circuit, B: IndexedZSet>(StreamId => (Stream<C, B>, Stream<C, Option<Spine<B>>>, Stream<C, TimedSpine<B, C>>)));
+circuit_cache_key!(BalancedTraceId<C: Circuit, B: IndexedZSet>(StreamId => (Stream<C, Option<Spine<B>>>, Stream<C, TimedSpine<B, C>>)));
 
 impl<C, B> Stream<C, B>
 where
@@ -52,14 +52,10 @@ where
         &self,
         trace_factories: &<TimedSpine<B, C> as BatchReader>::Factories,
         batch_factories: &B::Factories,
-    ) -> (
-        Stream<C, B>,
-        Stream<C, Option<Spine<B>>>,
-        Stream<C, TimedSpine<B, C>>,
-    ) {
+    ) -> (Stream<C, Option<Spine<B>>>, Stream<C, TimedSpine<B, C>>) {
         if Runtime::num_workers() == 1 {
             let trace = self.dyn_accumulate_trace(trace_factories, batch_factories);
-            return (self.clone(), self.dyn_accumulate(&batch_factories), trace);
+            return (self.dyn_accumulate(&batch_factories), trace);
         }
 
         let location = Location::caller();
@@ -117,7 +113,7 @@ where
                         });
 
                     // Accumulator.
-                    let (accumulator_stream, accumulator_snapshot_stream_val) =
+                    let (accumulator_stream, accumulator_inner, accumulator_snapshot_stream_val) =
                         sharded_stream.dyn_accumulate_with_feedback_stream(batch_factories);
 
                     // Integral.
@@ -192,6 +188,7 @@ where
                         worker_index,
                         Some(location),
                         exchange,
+                        accumulator_inner,
                         balancer.clone(),
                         circuit.metadata_exchange().clone(),
                         self.local_node_id(),
@@ -211,7 +208,7 @@ where
                     // Register accumulator and integral with the balancer, so it knows their IDs.
                     balancer.register_integral(self.local_node_id(), sender_node_id);
 
-                    (sharded_stream, accumulator_stream, trace)
+                    (accumulator_stream, trace)
                 })
             })
             .clone()
@@ -221,6 +218,7 @@ where
 struct RetractionState<B: Batch<Time = ()>, C: WithClock> {
     accumulator: SpineSnapshot<B>,
     trace: SpineSnapshot<<C::Time as Timestamp>::TimedBatch<B>>,
+    trace_policy: Policy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -264,6 +262,7 @@ where
     location: OperatorLocation,
 
     exchange: Arc<Exchange<(B, bool)>>,
+    accumulator_inner: Rc<RefCell<BalancingAccumulatorInner<B>>>,
 
     balancer: Balancer,
     metadata_exchange: MetadataExchange,
@@ -292,6 +291,7 @@ where
         worker_index: usize,
         location: OperatorLocation,
         exchange: Arc<Exchange<(B, bool)>>,
+        accumulator_inner: Rc<RefCell<BalancingAccumulatorInner<B>>>,
         balancer: Balancer,
         metadata_exchange: MetadataExchange,
         input_node_id: NodeId,
@@ -304,6 +304,7 @@ where
             worker_index,
             location,
             exchange,
+            accumulator_inner,
             balancer,
             metadata_exchange,
             input_batch_stats: BatchSizeStats::new(),
@@ -333,13 +334,39 @@ where
 
     fn start_rebalancing(
         &self,
+        old_policy: Policy,
         delayed_accumulator: Vec<Arc<B>>,
         delayed_trace: SpineSnapshot<<C::Time as Timestamp>::TimedBatch<B>>,
     ) {
-        *self.retractions.borrow_mut() = Some(RetractionState {
-            accumulator: SpineSnapshot::with_batches(&self.batch_factories, delayed_accumulator),
-            trace: delayed_trace,
-        });
+        // Discard the accumulator state, so we don't need to retract it explicitly.
+        self.accumulator_inner.borrow_mut().clear_state();
+
+        // If the accumulator was populated with broadcast policy, we want to re-balance only
+        // one copy of the data.
+        let accumulator_batches = if old_policy != Policy::Broadcast || Runtime::worker_index() == 0
+        {
+            delayed_accumulator
+        } else {
+            vec![]
+        };
+
+        match &mut *self.retractions.borrow_mut() {
+            Some(retractions) => {
+                retractions
+                    .accumulator
+                    .extend_with_batches(accumulator_batches);
+            }
+            retractions @ None => {
+                *retractions = Some(RetractionState {
+                    accumulator: SpineSnapshot::with_batches(
+                        &self.batch_factories,
+                        accumulator_batches,
+                    ),
+                    trace: delayed_trace,
+                    trace_policy: old_policy,
+                });
+            }
+        }
     }
 
     fn update_policy(
@@ -348,9 +375,10 @@ where
         delayed_accumulator: Vec<Arc<B>>,
         delayed_trace: SpineSnapshot<<C::Time as Timestamp>::TimedBatch<B>>,
     ) {
-        if new_policy != *self.current_policy.borrow() {
+        let old_policy = *self.current_policy.borrow();
+        if new_policy != old_policy {
             *self.current_policy.borrow_mut() = new_policy;
-            self.start_rebalancing(delayed_accumulator, delayed_trace);
+            self.start_rebalancing(old_policy, delayed_accumulator, delayed_trace);
         }
     }
 
@@ -894,9 +922,8 @@ where
             // Policy change?
             // - Clean old rebalancing state
             // - Set new rebalancing state
-            let old_policy = *self.current_policy.borrow();
             let new_policy = self.balancer.get_optimal_policy(self.input_node_id).unwrap();
-            println!("{}: old_policy: {:?}, new_policy: {:?}", Runtime::worker_index(), old_policy, new_policy);
+            // println!("{}: old_policy: {:?}, new_policy: {:?}", Runtime::worker_index(), *self.current_policy.borrow(), new_policy);
             self.update_policy(new_policy, delayed_accumulator, delayed_trace);
 
             // println!(
@@ -933,28 +960,28 @@ where
 
             // We have no more inputs to process, but there is rebalancing work to be done.
 
-            let RetractionState { mut accumulator, mut trace } = self.retractions.borrow_mut().take().unwrap();
+            let RetractionState { mut accumulator, mut trace, trace_policy } = self.retractions.borrow_mut().take().unwrap();
 
-            let mut accumulator_cursor = accumulator.cursor();
+            // let mut accumulator_cursor = accumulator.cursor();
             let mut integral_cursor = trace.cursor();
 
             let mut builders = self.create_builders(chunk_size);
 
-            // Accumulator retractions
-            while accumulator_cursor.key_valid() {
-                self.process_retractions(&mut accumulator_cursor, &mut builders, chunk_size);
+            // // Accumulator retractions
+            // while accumulator_cursor.key_valid() {
+            //     self.process_retractions(&mut accumulator_cursor, &mut builders, chunk_size);
 
-                let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
-                // println!("{}: acc retractions: {:?}", Runtime::worker_index(), batches);
+            //     let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
+            //     // println!("{}: acc retractions: {:?}", Runtime::worker_index(), batches);
 
-                assert!(self.exchange.try_send_all(
-                    self.worker_index,
-                    &mut batches.into_iter(),
-                ));
-                builders = self.create_builders(chunk_size);
-                self.update_exchange_metadata();
-                yield (false, None);
-            }
+            //     assert!(self.exchange.try_send_all(
+            //         self.worker_index,
+            //         &mut batches.into_iter(),
+            //     ));
+            //     builders = self.create_builders(chunk_size);
+            //     self.update_exchange_metadata();
+            //     yield (false, None);
+            // }
 
             // Integral retractions
             while integral_cursor.key_valid() {
@@ -977,7 +1004,7 @@ where
 
             // Re-partition accumulator
             while accumulator_cursor.key_valid() {
-                self.process_insertions(old_policy, &mut accumulator_cursor, &mut builders, chunk_size);
+                self.process_insertions_shard(&mut accumulator_cursor, &mut builders, chunk_size);
 
                 let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), false)).collect();
                 // println!("{}: acc insertions: {:?}", Runtime::worker_index(), batches);
@@ -992,7 +1019,7 @@ where
 
             // Repartition integral
             while integral_cursor.key_valid() {
-                self.process_insertions(old_policy, &mut integral_cursor, &mut builders, chunk_size);
+                self.process_insertions(trace_policy, &mut integral_cursor, &mut builders, chunk_size);
 
                 let batches: Vec<(B, bool)> = builders.into_iter().map(|builder| (builder.done(), !integral_cursor.key_valid())).collect();
                 // println!("{}: integral insertions: {:?}", Runtime::worker_index(), batches);

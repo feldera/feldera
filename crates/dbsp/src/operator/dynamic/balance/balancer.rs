@@ -337,11 +337,11 @@ impl BalancerInner {
     }
 
     fn set_hint(&mut self, node_id: NodeId, hint: BalancerHint) -> Result<(), BalancerError> {
-        println!(
-            "{} set_hint({node_id}): {:?}",
-            Runtime::worker_index(),
-            hint
-        );
+        // println!(
+        //     "{} set_hint({node_id}): {:?}",
+        //     Runtime::worker_index(),
+        //     hint
+        // );
         let (_exchange_sender, hints) = self
             .integrals
             .get_mut(&node_id)
