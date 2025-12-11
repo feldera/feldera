@@ -114,7 +114,8 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
      * @see CoreRules#FILTER_REDUCE_EXPRESSIONS
      */
     public static class FilterReduceExpressionsRule
-            extends org.apache.calcite.rel.rules.ReduceExpressionsRule<org.apache.calcite.rel.rules.ReduceExpressionsRule.FilterReduceExpressionsRule.FilterReduceExpressionsRuleConfig> {
+            extends org.apache.calcite.rel.rules.ReduceExpressionsRule<
+            org.apache.calcite.rel.rules.ReduceExpressionsRule.FilterReduceExpressionsRule.FilterReduceExpressionsRuleConfig> {
         /** Creates a FilterReduceExpressionsRule. */
         protected FilterReduceExpressionsRule(FilterReduceExpressionsRule.FilterReduceExpressionsRuleConfig config) {
             super(config);

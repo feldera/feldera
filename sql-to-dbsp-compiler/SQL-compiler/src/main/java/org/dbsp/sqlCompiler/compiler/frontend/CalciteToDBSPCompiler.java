@@ -2001,6 +2001,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // This shares a lot of code with the LogicalJoin
         CalciteObject conditionNode = CalciteObject.create(join, join.getCondition());
         IntermediateRel node = CalciteObject.create(join, conditionNode.getPositionRange());
+
         JoinRelType joinType = join.getJoinType();
         boolean isLeft = joinType == JoinRelType.LEFT_ASOF;
         if (!isLeft)
@@ -2176,7 +2177,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (comparison != SqlKind.GREATER_THAN_OR_EQUAL) {
             // Not yet supported by DBSP
             throw new UnimplementedException(
-                    "Currently the only MATCH_CONDITION comparison supported by ASOF joins is '>='", 2212, node);
+                    "Currently the only MATCH_CONDITION comparison supported by ASOF joins is 'leftCol >= rightCol'",
+                    2212, matchNode);
         }
         comparator = new DBSPDirectComparatorExpression(matchNode, comparator, ascending);
 

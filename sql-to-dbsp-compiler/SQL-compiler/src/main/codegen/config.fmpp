@@ -976,6 +976,7 @@ data: {
     includeAdditionalDeclarations: false
     includeParsingStringLiteralAsArrayLiteral: true
     includeIntervalWithoutQualifier: false
+    includeStarExclude: true
 
     # Method for parsing "SET [OR RESET]" calls.
     setOptionParserMethod: "SqlSetOption"
