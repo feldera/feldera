@@ -1,2 +1,2 @@
 plumbum==1.8.3
-requests==2.32.3
+requests==2.32.4
