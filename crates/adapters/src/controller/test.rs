@@ -2049,3 +2049,358 @@ fn lir() {
     println!("{actual:#}");
     assert_eq!(actual, expected);
 }
+
+/// Schema compatibility tests.
+///
+/// These tests ensure that the runtime types in `adapters::controller::stats`
+/// (with atomics, mutexes, and other runtime implementation details) remain
+/// compatible with the schema-only types in `feldera_types::adapter_stats`
+/// that are used for OpenAPI generation.
+///
+/// ## What These Tests Catch
+///
+/// These tests will **FAIL** (good!) if:
+/// - A field is removed from the runtime type (schema deserialization will fail on missing field)
+/// - A field type is changed in one type but not the other (deserialization will fail)
+/// - A field is renamed in one type but not the other (deserialization will fail)
+/// - The JSON structure changes incompatibly
+///
+/// ## Limitations and Weak Points
+///
+/// These tests will **NOT CATCH** (bad!):
+/// - **Adding a new serialized field to runtime types without updating schema types**
+///   - Serde silently ignores unknown fields during deserialization by default
+///   - This means the OpenAPI schema would be incomplete and missing the new field
+///   - **ACTION REQUIRED**: When adding new fields to runtime types, ALWAYS add them
+///     to the corresponding schema types in `feldera_types::adapter_stats`
+///
+/// ## Best Practice When Modifying Types
+///
+/// When modifying any of these paired types:
+/// 1. Make changes to both the runtime type (in `adapters`) AND schema type (in `feldera-types`)
+/// 2. Run `cargo test -p dbsp_adapters schema_compatibility` to verify compatibility
+/// 3. Manually verify that new fields appear in the generated `openapi.json`
+/// 4. Update these tests if you add new top-level types
+///
+/// ## Coverage
+///
+/// Tested types:
+/// - `GlobalControllerMetrics` ✓
+/// - `InputEndpointMetrics` ✓
+/// - `OutputEndpointMetrics` ✓
+/// - `InputEndpointStatus` ✓
+/// - `OutputEndpointStatus` (structure only, private constructor) ✓
+/// - `ControllerStatus` ✓
+/// - `CompletedWatermark` ✓
+mod schema_compatibility {
+    use crate::controller::{
+        stats::{
+            CompletedWatermark as RuntimeCompletedWatermark,
+            ControllerStatus as RuntimeControllerStatus,
+            GlobalControllerMetrics as RuntimeGlobalControllerMetrics,
+            InputEndpointMetrics as RuntimeInputEndpointMetrics,
+            InputEndpointStatus as RuntimeInputEndpointStatus,
+            OutputEndpointMetrics as RuntimeOutputEndpointMetrics,
+        },
+        InputEndpointConfig,
+    };
+    use chrono::Utc;
+    use feldera_types::{
+        adapter_stats::{
+            CompletedWatermark as SchemaCompletedWatermark,
+            ControllerStatus as SchemaControllerStatus,
+            GlobalControllerMetrics as SchemaGlobalControllerMetrics,
+            InputEndpointMetrics as SchemaInputEndpointMetrics,
+            InputEndpointStatus as SchemaInputEndpointStatus,
+            OutputEndpointMetrics as SchemaOutputEndpointMetrics,
+            OutputEndpointStatus as SchemaOutputEndpointStatus,
+        },
+        config::{ConnectorConfig, PipelineConfig},
+    };
+    use serde_json::json;
+    use std::borrow::Cow;
+
+    /// Create a minimal ConnectorConfig for testing purposes.
+    fn test_connector_config() -> ConnectorConfig {
+        // Parse a minimal valid connector config from JSON
+        serde_json::from_value(json!({
+            "transport": {
+                "name": "url_input",
+                "config": {
+                    "path": "test.csv"
+                }
+            }
+        }))
+        .expect("Failed to create test connector config")
+    }
+
+    /// Create a minimal PipelineConfig for testing purposes.
+    fn test_pipeline_config() -> PipelineConfig {
+        // Parse a minimal valid pipeline config from JSON
+        serde_json::from_value(json!({
+            "name": "test_pipeline"
+        }))
+        .expect("Failed to create test pipeline config")
+    }
+
+    /// Test that GlobalControllerMetrics serializes to a format compatible with the schema type.
+    #[test]
+    fn test_global_controller_metrics_compatibility() {
+        let runtime_metrics = RuntimeGlobalControllerMetrics::default();
+
+        // Serialize the runtime type
+        let json = serde_json::to_value(&runtime_metrics).unwrap();
+
+        // Deserialize into the schema type - this will fail if fields don't match
+        let schema_metrics: SchemaGlobalControllerMetrics =
+            serde_json::from_value(json.clone()).unwrap();
+
+        // Verify that all expected fields exist by checking the schema type has them
+        // We don't need to compare values - just verify the structure is compatible
+        let _state = schema_metrics.state;
+        let _bootstrap = schema_metrics.bootstrap_in_progress;
+        let _rss = schema_metrics.rss_bytes;
+        let _cpu = schema_metrics.cpu_msecs;
+        let _total_input = schema_metrics.total_input_records;
+        let _total_processed = schema_metrics.total_processed_records;
+        let _buffered = schema_metrics.buffered_input_records;
+        let _start_time = schema_metrics.start_time;
+        let _uuid = schema_metrics.incarnation_uuid;
+    }
+
+    /// Test that InputEndpointMetrics serializes to a format compatible with the schema type.
+    #[test]
+    fn test_input_endpoint_metrics_compatibility() {
+        let runtime_metrics = RuntimeInputEndpointMetrics::default();
+
+        // Serialize the runtime type
+        let json = serde_json::to_value(&runtime_metrics).unwrap();
+
+        // Deserialize into the schema type - will fail if structure doesn't match
+        let schema_metrics: SchemaInputEndpointMetrics = serde_json::from_value(json).unwrap();
+
+        // Verify all expected fields exist
+        let _total_bytes = schema_metrics.total_bytes;
+        let _total_records = schema_metrics.total_records;
+        let _buffered_records = schema_metrics.buffered_records;
+        let _buffered_bytes = schema_metrics.buffered_bytes;
+        let _transport_errors = schema_metrics.num_transport_errors;
+        let _parse_errors = schema_metrics.num_parse_errors;
+        let _eoi = schema_metrics.end_of_input;
+    }
+
+    /// Test that OutputEndpointMetrics serializes to a format compatible with the schema type.
+    #[test]
+    fn test_output_endpoint_metrics_compatibility() {
+        let runtime_metrics = RuntimeOutputEndpointMetrics::default();
+
+        // Serialize the runtime type
+        let json = serde_json::to_value(&runtime_metrics).unwrap();
+
+        // Deserialize into the schema type - will fail if structure doesn't match
+        let schema_metrics: SchemaOutputEndpointMetrics = serde_json::from_value(json).unwrap();
+
+        // Verify all expected fields exist
+        let _transmitted_records = schema_metrics.transmitted_records;
+        let _transmitted_bytes = schema_metrics.transmitted_bytes;
+        let _queued_records = schema_metrics.queued_records;
+        let _queued_batches = schema_metrics.queued_batches;
+        let _buffered_records = schema_metrics.buffered_records;
+        let _buffered_batches = schema_metrics.buffered_batches;
+        let _encode_errors = schema_metrics.num_encode_errors;
+        let _transport_errors = schema_metrics.num_transport_errors;
+        let _processed_input = schema_metrics.total_processed_input_records;
+        let _memory = schema_metrics.memory;
+    }
+
+    /// Test that InputEndpointStatus serializes to a format compatible with the schema type.
+    #[test]
+    fn test_input_endpoint_status_compatibility() {
+        let config = InputEndpointConfig {
+            stream: Cow::Borrowed("test_stream"),
+            connector_config: test_connector_config(),
+        };
+
+        let runtime_status = RuntimeInputEndpointStatus::new("test_endpoint", config, None, None);
+
+        // Serialize the runtime type
+        let json = serde_json::to_value(&runtime_status).unwrap();
+
+        // Deserialize into the schema type - will fail if structure doesn't match
+        let schema_status: SchemaInputEndpointStatus = serde_json::from_value(json).unwrap();
+
+        // Verify all expected fields exist
+        assert_eq!(schema_status.endpoint_name, "test_endpoint");
+        assert_eq!(schema_status.config.stream, "test_stream");
+        let _paused = schema_status.paused;
+        let _barrier = schema_status.barrier;
+        let _fatal_error = schema_status.fatal_error;
+        let _metrics = schema_status.metrics;
+        let _completed_frontier = schema_status.completed_frontier;
+    }
+
+    /// Test that OutputEndpointStatus structure is compatible.
+    /// Note: We test this through ControllerStatus since OutputEndpointStatus::new is private.
+    #[test]
+    fn test_output_endpoint_status_structure() {
+        // Just verify we can deserialize the expected JSON structure
+        let json = json!({
+            "endpoint_name": "test_endpoint",
+            "config": {
+                "stream": "test_stream"
+            },
+            "metrics": {
+                "transmitted_records": 0,
+                "transmitted_bytes": 0,
+                "queued_records": 0,
+                "queued_batches": 0,
+                "buffered_records": 0,
+                "buffered_batches": 0,
+                "num_encode_errors": 0,
+                "num_transport_errors": 0,
+                "total_processed_input_records": 0,
+                "memory": 0
+            },
+            "fatal_error": null
+        });
+
+        let schema_status: SchemaOutputEndpointStatus = serde_json::from_value(json).unwrap();
+        assert_eq!(schema_status.endpoint_name, "test_endpoint");
+        assert_eq!(schema_status.config.stream, "test_stream");
+    }
+
+    /// Test that ControllerStatus serializes to a format compatible with the schema type.
+    #[test]
+    fn test_controller_status_compatibility() {
+        let config = test_pipeline_config();
+        let runtime_status = RuntimeControllerStatus::new(config, 0, None);
+
+        // Serialize the runtime type
+        let json = serde_json::to_value(&runtime_status).unwrap();
+
+        // Deserialize into the schema type - will fail if structure doesn't match
+        let schema_status: SchemaControllerStatus = serde_json::from_value(json).unwrap();
+
+        // Verify structure exists and has expected shape
+        assert!(schema_status.suspend_error.is_none());
+        assert_eq!(schema_status.inputs.len(), 0);
+        assert_eq!(schema_status.outputs.len(), 0);
+
+        // Verify global metrics are present
+        let _global_metrics = schema_status.global_metrics;
+    }
+
+    /// Test that CompletedWatermark serializes to a format compatible with the schema type.
+    #[test]
+    fn test_completed_watermark_compatibility() {
+        let now = Utc::now();
+        let runtime_watermark = RuntimeCompletedWatermark {
+            metadata: json!({"partition": 0, "offset": 12345}),
+            ingested_at: now,
+            processed_at: now,
+            completed_at: now,
+        };
+
+        // Serialize the runtime type
+        let json = serde_json::to_value(&runtime_watermark).unwrap();
+
+        // Deserialize into the schema type
+        let schema_watermark: SchemaCompletedWatermark = serde_json::from_value(json).unwrap();
+
+        // Verify fields match (timestamps are serialized as strings)
+        assert_eq!(schema_watermark.metadata, runtime_watermark.metadata);
+        // Note: timestamps are serialized to RFC3339 strings, so we verify the format
+        assert!(schema_watermark.ingested_at.contains('T'));
+        assert!(schema_watermark.processed_at.contains('T'));
+        assert!(schema_watermark.completed_at.contains('T'));
+    }
+
+    /// Test that ControllerStatus with endpoints can be deserialized correctly.
+    /// We test this with a constructed JSON since some fields/constructors are private.
+    #[test]
+    fn test_controller_status_with_endpoints_structure() {
+        // Create a full JSON structure matching what would be serialized
+        let json = json!({
+            "global_metrics": {
+                "state": "Paused",
+                "bootstrap_in_progress": false,
+                "transaction_status": "NoTransaction",
+                "transaction_id": 0,
+                "transaction_initiators": {
+                    "transaction_id": null,
+                    "initiated_by_api": null,
+                    "initiated_by_connectors": {}
+                },
+                "rss_bytes": 0,
+                "cpu_msecs": 0,
+                "uptime_msecs": 0,
+                "start_time": 0,
+                "incarnation_uuid": "00000000-0000-0000-0000-000000000000",
+                "initial_start_time": 0,
+                "storage_bytes": 0,
+                "storage_mb_secs": 0,
+                "runtime_elapsed_msecs": 0,
+                "buffered_input_records": 0,
+                "buffered_input_bytes": 0,
+                "total_input_records": 0,
+                "total_input_bytes": 0,
+                "total_processed_records": 0,
+                "total_processed_bytes": 0,
+                "total_completed_records": 0,
+                "pipeline_complete": false
+            },
+            "suspend_error": null,
+            "inputs": [
+                {
+                    "endpoint_name": "input_ep",
+                    "config": {"stream": "input_stream"},
+                    "metrics": {
+                        "total_bytes": 0,
+                        "total_records": 0,
+                        "buffered_records": 0,
+                        "buffered_bytes": 0,
+                        "num_transport_errors": 0,
+                        "num_parse_errors": 0,
+                        "end_of_input": false
+                    },
+                    "fatal_error": null,
+                    "paused": false,
+                    "barrier": false,
+                    "completed_frontier": null
+                }
+            ],
+            "outputs": [
+                {
+                    "endpoint_name": "output_ep",
+                    "config": {"stream": "output_stream"},
+                    "metrics": {
+                        "transmitted_records": 0,
+                        "transmitted_bytes": 0,
+                        "queued_records": 0,
+                        "queued_batches": 0,
+                        "buffered_records": 0,
+                        "buffered_batches": 0,
+                        "num_encode_errors": 0,
+                        "num_transport_errors": 0,
+                        "total_processed_input_records": 0,
+                        "memory": 0
+                    },
+                    "fatal_error": null
+                }
+            ]
+        });
+
+        // Deserialize into the schema type - will fail if structure doesn't match
+        let schema_status: SchemaControllerStatus = serde_json::from_value(json).unwrap();
+
+        // Verify endpoints are present and correctly structured
+        assert_eq!(schema_status.inputs.len(), 1);
+        assert_eq!(schema_status.outputs.len(), 1);
+
+        assert_eq!(schema_status.inputs[0].endpoint_name, "input_ep");
+        assert_eq!(schema_status.inputs[0].config.stream, "input_stream");
+
+        assert_eq!(schema_status.outputs[0].endpoint_name, "output_ep");
+        assert_eq!(schema_status.outputs[0].config.stream, "output_stream");
+    }
+}

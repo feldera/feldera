@@ -107,8 +107,7 @@
   } = $props()
 
   let editorRef: editor.IStandaloneCodeEditor = $state()!
-  const { editorFontSize, autoSavePipeline, showMinimap, showStickyScroll } =
-    useCodeEditorSettings()
+  const { editorFontSize, autoSaveFiles, showMinimap, showStickyScroll } = useCodeEditorSettings()
 
   $effect(() => {
     _editorRef = editorRef
@@ -137,7 +136,7 @@
     _isFocused = isFocused
   })
 
-  let wait = $derived(autoSavePipeline.value ? 2000 : ('decoupled' as const))
+  let wait = $derived(autoSaveFiles.value ? 2000 : ('decoupled' as const))
   let file = $derived(files.find((f) => f.name === currentFileName)!)
 
   function isReadonlyProperty<T>(obj: T, prop: keyof T) {
@@ -238,7 +237,7 @@
 
   $effect(() => {
     // Trigger save right away when autosave is turned on
-    if (!autoSavePipeline.value) {
+    if (!autoSaveFiles.value) {
       return
     }
     setTimeout(() => Object.values(openFiles).forEach((file) => file.sync.push()))

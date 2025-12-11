@@ -6,11 +6,9 @@ export const useDownloadProgress = () => {
   const percent = $derived(bytes.total ? (bytes.downloaded / bytes.total) * 100 : null)
   return {
     get percent() {
-      console.log('percent', percent)
       return percent
     },
     get bytes() {
-      console.log('bytes', bytes)
       return bytes
     },
     onProgress: (downloaded: number, total: number) => {
