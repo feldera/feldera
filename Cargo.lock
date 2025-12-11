@@ -3935,6 +3935,7 @@ dependencies = [
  "utoipa",
  "uuid",
  "xxhash-rust",
+ "zip 0.6.6",
 ]
 
 [[package]]
