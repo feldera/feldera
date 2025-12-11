@@ -389,12 +389,12 @@ async fn fetch_sql_compiler(
         base_url = config.sql_compiler_cache_url
     );
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
         .build()
         .map_err(|e| {
             SqlCompilationError::SystemError(format!(
-                "Unable to initiate download of SQL-to-DBSP compiler: {} for selected runtime version '{}'. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+                "Unable to initiate download of SQL-to-DBSP compiler: {}, source error: {}, for selected runtime version '{}'. If possible, fall-back to platform version or change `runtime_version` in the program config.",
                 e,
+                source_error(&e),
                 runtime_selector
             ))
         })?;
@@ -426,26 +426,43 @@ async fn fetch_sql_compiler(
 
     let response = response.error_for_status().map_err(|e| {
         SqlCompilationError::SystemError(format!(
-            "Unable to download SQL-to-DBSP compiler from: {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
-            e
+            "Unable to download SQL-to-DBSP compiler from: {}, source error: {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+            e,
+            source_error(&e)
         ))
     })?;
 
     let mut response_stream = response.bytes_stream();
-    while let Some(chunk) = response_stream.next().await {
-        let bytes = chunk.map_err(|e| SqlCompilationError::SystemError(format!(
-            "Unable to read JAR from HTTP stream '{}': {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
-            &jar_cache_url,
-            e
-        )))?;
-        async_tmp_jar_file.write_all(&bytes).await.map_err(|e| {
+
+    loop {
+        let chunk = tokio::time::timeout(Duration::from_secs(10), response_stream.next()).await.map_err(|_e| {
             SqlCompilationError::SystemError(format!(
-                "Unable to persist SQL-to-DBSP compiler at '{}': {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
-                path.display(),
-                e
+                "Timed out while waiting for the next HTTP response chunk when downloading the SQL-to-DBSP compiler from '{}'.
+                This might be due to slow network, please retry compilation; alternatively, fall back to the platform compiler by removing or changing `runtime_version` in the program config.",
+                &jar_cache_url,
             ))
         })?;
+
+        match chunk {
+            Some(chunk) => {
+                let bytes = chunk.map_err(|e| SqlCompilationError::SystemError(format!(
+                    "Unable to read JAR from HTTP stream '{}': {}, source error: {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+                    &jar_cache_url,
+                    e,
+                    source_error(&e)
+                )))?;
+                async_tmp_jar_file.write_all(&bytes).await.map_err(|e| {
+                    SqlCompilationError::SystemError(format!(
+                        "Unable to persist SQL-to-DBSP compiler at '{}': {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+                        path.display(),
+                        e
+                    ))
+                })?;
+            }
+            None => break,
+        }
     }
+
     let tmp_jar_file = NamedTempFile::from_parts(async_tmp_jar_file.into_std(), path);
 
     // Rename to the JAR file that we'll use for compilation
