@@ -4793,6 +4793,7 @@ dependencies = [
  "tracing-log",
  "tracing-subscriber",
  "uuid",
+ "zip 0.6.6",
 ]
 
 [[package]]
