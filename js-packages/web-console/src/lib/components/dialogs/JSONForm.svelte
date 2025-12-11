@@ -1,12 +1,11 @@
 <script lang="ts">
+  import * as MonacoImports from 'monaco-editor/esm/vs/editor/editor.api.js'
+  import { editor } from 'monaco-editor/esm/vs/editor/editor.api.js'
   import MonacoEditor from '$lib/components/MonacoEditorRunes.svelte'
-  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
-  import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
-  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
-
-  import * as MonacoImports from 'monaco-editor'
-  import { editor } from 'monaco-editor/esm/vs/editor/editor.api'
+  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
+  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
+  import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
 
   let {
     filePath,

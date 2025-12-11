@@ -1,6 +1,6 @@
-import { type WritableLoadable, asyncWritable } from '@square/svelte-store'
-import type { PipelineTab } from './useOpenPipelines'
+import { asyncWritable, type WritableLoadable } from '@square/svelte-store'
 import type { Pipeline } from '$lib/services/pipelineManager'
+import type { PipelineTab } from './useOpenPipelines'
 
 export const writablePipelineName = (
   pipeline: WritableLoadable<Pipeline>,

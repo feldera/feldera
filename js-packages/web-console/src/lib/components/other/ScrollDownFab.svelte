@@ -1,7 +1,7 @@
 <script lang="ts">
   import { scale } from 'svelte/transition'
 
-  let {
+  const {
     reverseScroll
   }: {
     reverseScroll: {
@@ -14,7 +14,7 @@
 {#if !reverseScroll.stickToBottom}
   <button
     transition:scale={{ duration: 200 }}
-    class="fd fd-arrow-down absolute bottom-4 right-4 z-20 rounded-full p-2 text-[20px] preset-filled-primary-500"
+    class="fd fd-arrow-down absolute right-4 bottom-4 z-20 rounded-full preset-filled-primary-500 p-2 text-[20px]"
     onclick={() => {
       reverseScroll.stickToBottom = true
       reverseScroll.scrollToBottom()

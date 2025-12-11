@@ -1,8 +1,14 @@
-import '$lib/compositions/setupHttpClient'
-import { loadAuthConfig } from '$lib/compositions/auth'
 import * as AxaOidc from '@axa-fr/oidc-client'
+import Dayjs from 'dayjs'
+import duration from 'dayjs/plugin/duration'
+import { jwtDecode } from 'jwt-decode'
+import posthog from 'posthog-js'
+import { goto } from '$app/navigation'
 import { fromAxaUserInfo, toAxaOidcConfig } from '$lib/compositions/@axa-fr/auth'
-import { client } from '@hey-api/client-fetch'
+import { loadAuthConfig } from '$lib/compositions/auth'
+import { initSystemMessages } from '$lib/compositions/initSystemMessages'
+import { newDate, setCurrentTime } from '$lib/compositions/serverTime'
+import { displayScheduleToDismissable, getLicenseMessage } from '$lib/functions/license'
 import { resolve } from '$lib/functions/svelte'
 import {
   authRequestMiddleware,
@@ -10,17 +16,10 @@ import {
   getSelectedTenant,
   setSelectedTenant
 } from '$lib/services/auth'
-import type { AuthDetails } from '$lib/types/auth'
-import { goto } from '$app/navigation'
-import posthog from 'posthog-js'
-import { getConfig, getConfigSession } from '$lib/services/pipelineManager'
 import type { Configuration } from '$lib/services/manager'
-import Dayjs from 'dayjs'
-import duration from 'dayjs/plugin/duration'
-import { initSystemMessages } from '$lib/compositions/initSystemMessages'
-import { newDate, setCurrentTime } from '$lib/compositions/serverTime'
-import { displayScheduleToDismissable, getLicenseMessage } from '$lib/functions/license'
-import { jwtDecode } from 'jwt-decode'
+import { client } from '$lib/services/manager/client.gen'
+import { getConfig, getConfigSession } from '$lib/services/pipelineManager'
+import type { AuthDetails } from '$lib/types/auth'
 
 Dayjs.extend(duration)
 
@@ -72,7 +71,7 @@ const emptyLayoutData: LayoutData = {
 }
 
 const processTenants = (auth: AuthDetails) => {
-  let authorizedTenants: string[] | undefined = undefined
+  let authorizedTenants: string[] | undefined
 
   if (typeof auth === 'object' && 'logout' in auth) {
     const tenantsString = auth.accessToken
@@ -142,7 +141,7 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
 
   const authorizedTenants = processTenants(auth)
 
-  let config: Configuration | undefined = undefined
+  let config: Configuration | undefined
 
   try {
     config = await getConfig()
@@ -174,7 +173,7 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
   }
 
   // Fetch session config for tenant information (only available if authenticated)
-  let sessionConfig = undefined
+  let sessionConfig: Awaited<ReturnType<typeof getConfigSession>> | undefined
   try {
     sessionConfig = await getConfigSession()
   } catch (e: any) {
@@ -256,7 +255,7 @@ const axaOidcAuth = async (params: {
         // loading...
       }
 
-      let tokens = oidcClient.tokens
+      const tokens = oidcClient.tokens
 
       if (!tokens) {
         return {

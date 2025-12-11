@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { page } from '$app/state'
   import { fade } from 'svelte/transition'
-  import Popup from '$lib/components/common/Popup.svelte'
-  import VersionDisplay from '$lib/components/version/VersionDisplay.svelte'
-  import ProfilePopupMenu from '$lib/components/auth/ProfilePopupMenu.svelte'
-  import type { AuthDetails } from '$lib/types/auth'
-  import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
+  import { page } from '$app/state'
   import CurrentTenant from '$lib/components/auth/CurrentTenant.svelte'
+  import ProfilePopupMenu from '$lib/components/auth/ProfilePopupMenu.svelte'
+  import Popup from '$lib/components/common/Popup.svelte'
+  import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
+  import VersionDisplay from '$lib/components/version/VersionDisplay.svelte'
+  import type { AuthDetails } from '$lib/types/auth'
 
   const { compactBreakpoint = '' }: { compactBreakpoint?: string } = $props()
   const auth = page.data.auth as AuthDetails | undefined
@@ -20,7 +20,7 @@
         <span class="hidden {compactBreakpoint}block">Logged in</span>
         <div class="hidden {compactBreakpoint}block w-1"></div>
 
-        <div class="fd fd-circle-user btn btn-icon text-[20px] preset-tonal-surface">
+        <div class="fd fd-circle-user btn-icon preset-tonal-surface text-[20px]">
           <div class="hidden {compactBreakpoint}block w-2"></div>
         </div>
       </button>
@@ -28,7 +28,7 @@
     {#snippet content(close)}
       <div
         transition:fade={{ duration: 100 }}
-        class="bg-white-dark absolute right-0 z-30 w-[calc(100vw-100px)] max-w-[400px] justify-end rounded-container shadow-md scrollbar"
+        class="bg-white-dark absolute right-0 z-30 scrollbar w-[calc(100vw-100px)] max-w-[400px] justify-end rounded-container shadow-md"
       >
         <ProfilePopupMenu {...auth}></ProfilePopupMenu>
       </div>
@@ -44,7 +44,7 @@
     {#snippet trigger(toggle)}
       <button
         onclick={toggle}
-        class="fd fd-lock-open btn btn-icon text-[20px] preset-tonal-surface"
+        class="fd fd-lock-open btn-icon preset-tonal-surface text-[20px]"
         aria-label="Open settings popup"
       >
       </button>
@@ -52,7 +52,7 @@
     {#snippet content(close)}
       <div
         transition:fade={{ duration: 100 }}
-        class="bg-white-dark absolute right-0 z-30 flex max-h-[400px] w-[calc(100vw-16px)] max-w-[360px] flex-col justify-end gap-4 rounded-container p-4 shadow-md scrollbar sm:max-w-[400px]"
+        class="bg-white-dark absolute right-0 z-30 scrollbar flex max-h-[400px] w-[calc(100vw-16px)] max-w-[360px] flex-col justify-end gap-4 rounded-container p-4 shadow-md sm:max-w-[400px]"
       >
         <div class="text-surface-700-300">Authentication is disabled</div>
 

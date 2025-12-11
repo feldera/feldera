@@ -1,10 +1,10 @@
 <script lang="ts">
   import { page } from '$app/state'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
-  import { getRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
   import PipelineVersionTooltip from '$lib/components/pipelines/table/PipelineVersionTooltip.svelte'
+  import { getRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
 
-  let {
+  const {
     pipelineName,
     runtimeVersion,
     baseRuntimeVersion,
@@ -16,7 +16,7 @@
     configuredRuntimeVersion: string | null | undefined
   } = $props()
 
-  let { version, status } = $derived(
+  const { version, status } = $derived(
     getRuntimeVersion(
       {
         runtime: runtimeVersion,
@@ -29,11 +29,11 @@
 </script>
 
 {#if status === 'update_available'}
-  <div class="fd fd-info pb-0.5 text-[16px] text-tertiary-500 !ring-tertiary-500"></div>
+  <div class="fd fd-info pb-0.5 text-[20px] text-tertiary-700-300"></div>
 {:else if status === 'custom'}
-  <div class="fd fd-info pb-0.5 text-[16px] text-warning-500 !ring-warning-500"></div>
+  <div class="fd fd-info pb-0.5 text-[20px] text-warning-500"></div>
 {:else}
-  <div class="w-4"></div>
+  <div class="w-5"></div>
 {/if}
 <PipelineVersionTooltip {pipelineName} {status} {baseRuntimeVersion} />
 
@@ -42,7 +42,7 @@
 {:else}
   <div class="flex flex-nowrap items-center">
     {version.slice(0, 7)}
-    <span class="select-none text-sm">...</span>
+    <span class="text-sm select-none">...</span>
     <ClipboardCopyButton value={version}></ClipboardCopyButton>
   </div>
 {/if}

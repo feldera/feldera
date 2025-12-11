@@ -1,13 +1,13 @@
 <script lang="ts">
-  import Popup from '$lib/components/common/Popup.svelte'
-  import { resolve } from '$lib/functions/svelte'
   import { fade } from 'svelte/transition'
-  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import type { Snippet } from '$lib/types/svelte'
+  import Popup from '$lib/components/common/Popup.svelte'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
+  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { resolve } from '$lib/functions/svelte'
   import type { PipelineThumb } from '$lib/services/pipelineManager'
+  import type { Snippet } from '$lib/types/svelte'
 
-  let {
+  const {
     preloaded,
     trigger
   }: {
@@ -27,13 +27,13 @@
       class="absolute left-0 z-10 -ml-16 flex max-h-[calc(100vh-150px)] w-[calc(100vw-50px)] max-w-[480px] sm:-ml-4"
     >
       <div
-        class="bg-white-dark w-full flex-col justify-end gap-0 overflow-y-auto rounded p-2 shadow-md scrollbar"
+        class="bg-white-dark scrollbar w-full flex-col justify-end gap-0 overflow-y-auto rounded p-2 shadow-md"
       >
         {#each pipelineList.pipelines as pipeline}
           <a
             onclick={close}
             href={resolve(`/pipelines/${pipeline.name}/`)}
-            class="flex justify-between whitespace-nowrap rounded p-2 hover:preset-tonal-surface"
+            class="flex justify-between rounded p-2 whitespace-nowrap hover:preset-tonal-surface"
           >
             <span class="min-w-0 overflow-hidden overflow-ellipsis">{pipeline.name}</span>
 

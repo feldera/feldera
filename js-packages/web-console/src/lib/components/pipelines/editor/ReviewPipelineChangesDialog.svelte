@@ -1,12 +1,12 @@
 <script lang="ts">
+  import { slide } from 'svelte/transition'
+  import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   // import type { PipelineDiff } from '$lib/services/manager'
   import type { PipelineDiff } from '$lib/types/pipelineManager'
   import type { Snippet } from '$lib/types/svelte'
-  import { slide } from 'svelte/transition'
-  import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
 
-  let {
+  const {
     changes,
     onCancel,
     onApprove,
@@ -18,16 +18,18 @@
     titleEnd?: Snippet
   } = $props()
 
-  let numRelationsToRemove = $derived(changes.tables.removed.length + changes.views.removed.length)
-  let numTablesToBackfill = $derived(changes.tables.modified.length + changes.tables.added.length)
-  let numViewsToRecompute = $derived(changes.views.modified.length + changes.views.added.length)
-  let numConnectorsToRemove = $derived(
+  const numRelationsToRemove = $derived(
+    changes.tables.removed.length + changes.views.removed.length
+  )
+  const numTablesToBackfill = $derived(changes.tables.modified.length + changes.tables.added.length)
+  const numViewsToRecompute = $derived(changes.views.modified.length + changes.views.added.length)
+  const numConnectorsToRemove = $derived(
     changes.inputConnectors.removed.length + changes.outputConnectors.removed.length
   )
-  let numConnectorsToBackfill = $derived(
+  const numConnectorsToBackfill = $derived(
     changes.inputConnectors.modified.length + changes.inputConnectors.added.length
   )
-  let numConnectorsToRecompute = $derived(
+  const numConnectorsToRecompute = $derived(
     changes.outputConnectors.modified.length + changes.outputConnectors.added.length
   )
   let showDeleted = $state(true)
@@ -323,7 +325,7 @@
 <div class="bg-white-dark sticky bottom-0">
   <div class="flex justify-start gap-4 py-4 md:gap-6 md:py-4">
     {#await approvingPromise}
-      <button class="btn pointer-events-none pr-8 preset-filled-primary-500">
+      <button class="pointer-events-none btn preset-filled-primary-500 pr-8">
         <IconLoader class="mr-4 h-5 flex-none animate-spin fill-surface-50"></IconLoader>
         Approving...
       </button>

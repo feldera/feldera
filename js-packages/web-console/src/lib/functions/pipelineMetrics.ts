@@ -1,7 +1,8 @@
+import invariant from 'tiny-invariant'
+import { groupBy } from '$lib/functions/common/array'
 import { nonNull } from '$lib/functions/common/function'
 import { tuple } from '$lib/functions/common/tuple'
 import { normalizeCaseIndependentName } from '$lib/functions/felderaRelation'
-import { groupBy } from '$lib/functions/common/array'
 import type {
   ControllerStatus,
   GlobalMetricsTimestamp,
@@ -11,7 +12,6 @@ import type {
   OutputEndpointStatus,
   TimeSeriesEntry
 } from '$lib/types/pipelineManager'
-import invariant from 'tiny-invariant'
 import { discreteDerivative } from './common/math'
 
 export const emptyPipelineMetrics = {
@@ -116,9 +116,7 @@ export const accumulatePipelineMetrics =
  * @returns Time series of throughput with smoothing window over 3 data intervals
  */
 export const calcPipelineThroughput = (metrics: TimeSeriesEntry[]) => {
-  const series = discreteDerivative(metrics, ({}, {}, i, arr) => {
-    const n1 = arr[i]
-    const n0 = arr[i - 1]
+  const series = discreteDerivative(metrics, (n1, n0) => {
     return {
       name: n1.t.toFixed(),
       value: tuple(n1.t.toNumber(), n1.r.minus(n0.r).toNumber())
@@ -133,7 +131,7 @@ export const calcPipelineThroughput = (metrics: TimeSeriesEntry[]) => {
         .slice(-avgN)
         .reduce((acc, cur) => acc + cur.value[1], 0) / avgN
     : 0
-  const yMaxStep = Math.pow(10, Math.ceil(Math.log10(valueMax))) / 5
+  const yMaxStep = 10 ** Math.ceil(Math.log10(valueMax)) / 5
   const yMax = valueMax !== 0 ? Math.ceil((valueMax * 1.25) / yMaxStep) * yMaxStep : 100
   const yMin = 0
   const current = series.at(-1)?.value?.[1] ?? 0

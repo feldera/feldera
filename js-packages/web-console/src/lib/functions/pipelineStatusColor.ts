@@ -1,5 +1,5 @@
-import type { PipelineStatus } from '$lib/services/pipelineManager'
 import { match, P } from 'ts-pattern'
+import type { PipelineStatus } from '$lib/services/pipelineManager'
 
 export interface StatusColors {
   chip: string

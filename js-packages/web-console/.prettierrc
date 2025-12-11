@@ -13,5 +13,6 @@
         "parser": "svelte"
       }
     }
-  ]
+  ],
+  "tailwindStylesheet": "./src/routes/layout.css"
 }

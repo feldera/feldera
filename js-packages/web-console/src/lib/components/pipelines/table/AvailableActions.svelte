@@ -1,20 +1,17 @@
 <script lang="ts">
-  import {
-    type PipelineAction,
-    type PipelineStatus,
-    type PipelineThumb
-  } from '$lib/services/pipelineManager'
   import { join } from 'array-join'
   import { match, P } from 'ts-pattern'
-  import { intersect2 } from '$lib/functions/common/array'
-  import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { isPipelineCodeEditable, isPipelineShutdown } from '$lib/functions/pipelines/status'
-  import { useToast } from '$lib/compositions/useToastNotification'
+  import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
-  import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
+  import { useToast } from '$lib/compositions/useToastNotification'
+  import { intersect2 } from '$lib/functions/common/array'
+  import { isPipelineCodeEditable, isPipelineShutdown } from '$lib/functions/pipelines/status'
+  import type { PipelineAction, PipelineStatus, PipelineThumb } from '$lib/services/pipelineManager'
+
   let {
     pipelines,
     selectedPipelines = $bindable()
@@ -30,9 +27,9 @@
     'delete' as const,
     'clear' as const
   ]
-  let isPremium = usePremiumFeatures()
-  let stop = isPremium.value ? ['stop' as const] : []
-  let statusActions = ({ status, storageStatus }: (typeof selected)[number]) => {
+  const isPremium = usePremiumFeatures()
+  const stop = isPremium.value ? ['stop' as const] : []
+  const statusActions = ({ status, storageStatus }: (typeof selected)[number]) => {
     const storageAction = storageStatus === 'InUse' ? ['clear' as const] : []
     return match(status)
       .returnType<(typeof availableActions)[number][]>()
@@ -64,7 +61,7 @@
       .with('SqlError', 'RustError', 'SystemError', () => [...storageAction, 'delete'])
       .exhaustive()
   }
-  let selected = $derived(
+  const selected = $derived(
     join(
       selectedPipelines,
       pipelines,
@@ -73,8 +70,8 @@
       (_, p) => p
     )
   )
-  let actions = $derived.by(() => {
-    let actions =
+  const actions = $derived.by(() => {
+    const actions =
       selected.length === 0
         ? []
         : selected.map(statusActions).reduce(
@@ -112,13 +109,15 @@
 
   const globalDialog = useGlobalDialog()
   const api = usePipelineManager()
-  let postPipelinesAction = (action: PipelineAction) => {
-    selectedPipelines.forEach((pipelineName) => api.postPipelineAction(pipelineName, action))
+  const postPipelinesAction = (action: PipelineAction) => {
+    selectedPipelines.forEach((pipelineName) => {
+      api.postPipelineAction(pipelineName, action)
+    })
     selectedPipelines = []
   }
   const { toastError } = useToast()
   const { postPipelineAction } = getPipelineAction()
-  let deletePipelines = () => {
+  const deletePipelines = () => {
     selected.forEach(async (pipeline) => {
       if (!isPipelineCodeEditable(pipeline.status)) {
         const { waitFor } = await postPipelineAction(
@@ -185,7 +184,7 @@
   </button>
 {/snippet}
 
-<div class="flex flex-wrap gap-2">
+<div class="flex h-9 flex-wrap gap-2">
   {#each actions as action}
     {@render action()}
   {/each}

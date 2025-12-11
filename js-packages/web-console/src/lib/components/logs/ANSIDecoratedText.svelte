@@ -1,6 +1,7 @@
 <!-- Render text decorated by ANSI escape sequences -->
 <script lang="ts" module>
   import { FancyAnsi } from 'fancy-ansi'
+
   const fancyAnsi = new FancyAnsi()
 </script>
 

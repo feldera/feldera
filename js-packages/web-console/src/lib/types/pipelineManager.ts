@@ -1,5 +1,5 @@
-import type { InputEndpointConfig, OutputEndpointConfig } from '$lib/services/pipelineManager'
 import type { BigNumber } from 'bignumber.js'
+import type { InputEndpointConfig, OutputEndpointConfig } from '$lib/services/pipelineManager'
 
 export type ControllerStatus = {
   global_metrics: GlobalMetrics

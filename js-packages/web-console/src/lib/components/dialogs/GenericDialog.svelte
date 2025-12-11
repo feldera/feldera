@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { Snippet } from '$lib/types/svelte'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
-  let {
+  import type { Snippet } from '$lib/types/svelte'
+
+  const {
     onApply,
     onClose,
     title,
@@ -23,7 +24,7 @@
     <span class="text-2xl font-semibold">{@render title()}</span>
     <button
       onclick={onClose}
-      class="preset-grayout-surface fd fd-x text-[20px]"
+      class="preset-grayout-surface fd fd-x text-[24px]"
       aria-label="Close dialog"
     ></button>
   </div>
@@ -36,9 +37,7 @@
       >
     </div>
     {#if disabled}
-      <Tooltip class="bg-white-dark z-20 w-64 rounded text-surface-950-50" placement="top">
-        Stop the pipeline to edit settings
-      </Tooltip>
+      <Tooltip class="z-20 w-64" placement="top">Stop the pipeline to edit settings</Tooltip>
     {/if}
   </div>
 </div>

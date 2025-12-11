@@ -1,17 +1,18 @@
 <script lang="ts" generics="Row">
-  import { VList } from 'virtua/svelte'
-  import { untrack, type Snippet } from 'svelte'
+  import { type Snippet, untrack } from 'svelte'
   import { scale } from 'svelte/transition'
-  let {
+  import { VList } from 'virtua/svelte'
+
+  const {
     items,
     item: renderItem,
     class: _class = '',
-    overscan
+    overscanPx
   }: {
     items: Row[]
     item: Snippet<[item: Row, index: number]>
     class?: string
-    overscan?: number
+    overscanPx?: number
   } = $props()
 
   let handle1: number = 0
@@ -61,7 +62,7 @@
 <VList
   bind:this={ref}
   data={items}
-  {overscan}
+  bufferSize={overscanPx}
   onscroll={(scrollTop) => {
     // TODO: re-enable only for vertical scroll when it can be disambiguated from horizontal scroll
     // cancelAnimationFrame(handle1)
@@ -76,7 +77,7 @@
 {#if !stickToBottom}
   <button
     transition:scale={{ duration: 200 }}
-    class="fd fd-arrow-down absolute bottom-4 right-4 rounded-full p-2 text-[20px] preset-filled-primary-500"
+    class="fd fd-arrow-down absolute right-4 bottom-4 rounded-full preset-filled-primary-500 p-2 text-[20px]"
     onclick={() => {
       stickToBottom = true
       scrollToBottom()

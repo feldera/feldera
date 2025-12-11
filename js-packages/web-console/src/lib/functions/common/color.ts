@@ -1,4 +1,12 @@
-export const rgbToHex = (rgb: string) => {
-  const [r, g, b] = Array.from(rgb.match(/\d+/g) ?? []).map((v) => parseInt(v))
-  return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)
+import Colorizr from 'colorizr'
+
+export const getThemeColor = (color: string) => {
+  try {
+    return new Colorizr(
+      getComputedStyle(document.body).getPropertyValue(color).trim().replace(/deg/, '')
+    )
+  } catch (e) {
+    console.error('getThemeColor error:', e)
+    return undefined!
+  }
 }

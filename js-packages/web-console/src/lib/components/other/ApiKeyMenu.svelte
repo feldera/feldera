@@ -1,15 +1,15 @@
 <script lang="ts">
   import { asyncReadable } from '@square/svelte-store'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
   import NewApiKeyForm from '$lib/components/apiKey/NewApiKeyForm.svelte'
+  import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
   const api = usePipelineManager()
   const apiKeys = asyncReadable([], api.getApiKeys, { reloadable: true })
 
   const globalDialog = useGlobalDialog()
-  let thisDialog = globalDialog.dialog
+  const thisDialog = globalDialog.dialog
 </script>
 
 <div class="flex h-fit max-h-[90vh] flex-col sm:p-4">
@@ -17,7 +17,7 @@
     <div class="flex flex-nowrap justify-between">
       <div class="h5 font-medium">Manage API keys</div>
       <button
-        class="fd fd-x btn btn-icon -m-4 text-[20px]"
+        class="fd fd-x -m-4 btn-icon text-[24px]"
         aria-label="Close"
         onclick={() => (globalDialog.dialog = null)}
       ></button>

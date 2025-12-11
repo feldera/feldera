@@ -1,12 +1,11 @@
 <!-- Inspired from 'sveltekit-top-loader' npm package -->
 
 <script lang="ts">
-  import { run } from 'svelte/legacy'
-
-  import { afterNavigate, beforeNavigate } from '$app/navigation'
+  import type { AfterNavigate, BeforeNavigate, Navigation, NavigationType } from '@sveltejs/kit'
   import nProgress from 'nprogress'
   import { onMount } from 'svelte'
-  import type { AfterNavigate, BeforeNavigate, Navigation, NavigationType } from '@sveltejs/kit'
+  import { run } from 'svelte/legacy'
+  import { afterNavigate, beforeNavigate } from '$app/navigation'
 
   interface Props {
     /**
@@ -77,7 +76,7 @@
     ignoreAfterNavigate?: (navigation: AfterNavigate) => boolean
   }
 
-  let {
+  const {
     color = '#29d',
     minimum = 0.08,
     trickleSpeed = 200,
@@ -102,7 +101,7 @@
 
   let styleElement: HTMLStyleElement = $state(undefined!)
 
-  let styles = $derived(
+  const styles = $derived(
     `#nprogress{pointer-events:none}#nprogress .bar{background:${color};position:fixed;z-index:${zIndex};top:0;left:0;width:100%;height:${height}px}#nprogress .peg{display:block;position:absolute;right:0;width:100px;height:100%;${boxShadow};opacity:1;-webkit-transform:rotate(3deg) translate(0px,-4px);-ms-transform:rotate(3deg) translate(0px,-4px);transform:rotate(3deg) translate(0px,-4px)}#nprogress .spinner{display:block;position:fixed;z-index:${zIndex};top:15px;right:15px}#nprogress .spinner-icon{width:18px;height:18px;box-sizing:border-box;border:2px solid transparent;border-top-color:${color};border-left-color:${color};border-radius:50%;-webkit-animation:nprogress-spinner 400ms linear infinite;animation:nprogress-spinner 400ms linear infinite}.nprogress-custom-parent{overflow:hidden;position:relative}.nprogress-custom-parent #nprogress .bar,.nprogress-custom-parent #nprogress .spinner{position:absolute}@-webkit-keyframes nprogress-spinner{0%{-webkit-transform:rotate(0deg)}100%{-webkit-transform:rotate(360deg)}}@keyframes nprogress-spinner{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}`
   )
 

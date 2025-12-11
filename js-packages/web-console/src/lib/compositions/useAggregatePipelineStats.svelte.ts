@@ -1,16 +1,16 @@
-import { type ExtendedPipeline } from '$lib/services/pipelineManager'
+import { untrack } from 'svelte'
+import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+import { closedIntervalAction } from '$lib/functions/common/promise'
 import {
   accumulatePipelineMetrics,
   emptyPipelineMetrics,
   type PipelineMetrics
 } from '$lib/functions/pipelineMetrics'
 import { isMetricsAvailable } from '$lib/functions/pipelines/status'
-import { untrack } from 'svelte'
+import type { ExtendedPipeline } from '$lib/services/pipelineManager'
 import { useToast } from './useToastNotification'
-import { closedIntervalAction } from '$lib/functions/common/promise'
-import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
-let metrics: Record<string, PipelineMetrics> = {} // Disable reactivity for metrics data for better performance
+const metrics: Record<string, PipelineMetrics> = {} // Disable reactivity for metrics data for better performance
 let getMetrics = $state<() => typeof metrics>(() => metrics)
 
 export const useAggregatePipelineStats = (
@@ -18,9 +18,9 @@ export const useAggregatePipelineStats = (
   refetchMs: number,
   keepMs?: number
 ) => {
-  let pipelineStatus = $derived(pipeline.current.status)
+  const pipelineStatus = $derived(pipeline.current.status)
 
-  let metricsAvailable = $derived(isMetricsAvailable(pipelineStatus))
+  const metricsAvailable = $derived(isMetricsAvailable(pipelineStatus))
   const api = usePipelineManager()
 
   const doFetch = (pipelineName: string) => {
@@ -43,9 +43,9 @@ export const useAggregatePipelineStats = (
       getMetrics = () => metrics
       return Promise.resolve()
     }
-    let requestTimestamp = Date.now()
+    const requestTimestamp = Date.now()
     return api.getPipelineStats(pipelineName).then((stats) => {
-      let responseTimestamp = Date.now()
+      const responseTimestamp = Date.now()
       metrics[pipelineName] = accumulatePipelineMetrics(
         (requestTimestamp + responseTimestamp) / 2,
         refetchMs,
@@ -55,7 +55,7 @@ export const useAggregatePipelineStats = (
     })
   }
 
-  let pipelineName = $derived(pipeline.current.name)
+  const pipelineName = $derived(pipeline.current.name)
   $effect(() => {
     pipelineName
     metricsAvailable

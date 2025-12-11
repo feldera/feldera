@@ -43,7 +43,7 @@ export const usePopoverTooltip = (popoverElement: () => HTMLElement | undefined)
       hoverCount = 0
     }
   })
-  let showTooltip = $derived(hoverCount > 0)
+  const showTooltip = $derived(hoverCount > 0)
   $effect(() => {
     const el = popoverElement()
     if (!el) {

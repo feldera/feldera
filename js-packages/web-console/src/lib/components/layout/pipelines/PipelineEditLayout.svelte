@@ -57,7 +57,7 @@
   import { parsePipelineDiff } from '$lib/functions/pipelines/pipelineDiff'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
-  import type { editor } from 'monaco-editor/esm/vs/editor/editor.api'
+  import type { editor } from 'monaco-editor/esm/vs/editor/editor.api.js'
   import FocusBanner from '$lib/components/pipelines/editor/FocusBanner.svelte'
   import StorageInUseBanner from '$lib/components/pipelines/editor/StorageInUseBanner.svelte'
   import { getRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
@@ -305,7 +305,7 @@ example = "1.0"`
     >
       {#snippet titleEnd()}
         <button
-          class="fd fd-x btn btn-icon text-[24px]"
+          class="fd fd-x btn-icon text-[24px]"
           aria-label="Close"
           onclick={() => (contextDrawer.content = null)}
         ></button>
@@ -365,9 +365,7 @@ example = "1.0"`
               </span>
             </DoubleClickInput>
             {#if editCodeDisabled}
-              <Tooltip class="z-10 rounded bg-white text-base text-surface-950-50 dark:bg-black">
-                Cannot edit the pipeline's name while it's running
-              </Tooltip>
+              <Tooltip class="">Cannot edit the pipeline's name while it's running</Tooltip>
             {/if}
           {/snippet}
         </PipelineBreadcrumbs>
@@ -378,7 +376,7 @@ example = "1.0"`
       {#if drawer.isMobileDrawer}
         <button
           onclick={() => (drawer.value = !drawer.value)}
-          class="fd fd-book-open btn-icon flex text-[20px] preset-tonal-surface"
+          class="fd fd-book-open btn-icon flex preset-tonal-surface text-[20px]"
           aria-label="Open extras drawer"
         >
         </button>
@@ -389,16 +387,16 @@ example = "1.0"`
           ></CreatePipelineButton>
         </div>
         <BookADemo class="btn-icon preset-filled-surface-50-950"></BookADemo>
-        <Tooltip class="bg-white-dark z-10 rounded text-surface-950-50">Book a demo</Tooltip>
+        <Tooltip class="">Book a demo</Tooltip>
       {/if}
     {/snippet}
   </AppHeader>
-  <PaneGroup direction="horizontal" class="!overflow-visible px-2 pb-4 md:pl-8 md:pr-8 xl:pl-4">
+  <PaneGroup direction="horizontal" class="!overflow-visible px-2 pb-4 md:pr-8 md:pl-8 xl:pl-4">
     <Pane
       defaultSize={15}
       minSize={10}
       class="relative h-full"
-      bind:pane={pipelineListPane}
+      bind:this={pipelineListPane}
       collapsible
       onCollapse={() => {
         if (showPipelinesPanel.value && !isTablet.current) {
@@ -426,7 +424,7 @@ example = "1.0"`
     </Pane>
     {#if !isTablet.current}
       <PaneResizer
-        class="pane-divider-vertical ml-1.5 mr-2"
+        class="pane-divider-vertical mr-2 ml-1.5"
         onDraggingChange={(isDragging: boolean) => {
           isDraggingPipelineListResizer = isDragging
         }}
@@ -464,10 +462,10 @@ example = "1.0"`
           {/snippet}
           {#snippet codeEditor(textEditor, statusBar)}
             {#snippet editor()}
-              <div class="flex h-full flex-col rounded-container px-4 py-2 bg-surface-50-950">
+              <div class="flex h-full flex-col rounded-container bg-surface-50-950 px-4 py-2">
                 {@render textEditor()}
                 <div
-                  class="bg-white-dark mb-2 flex flex-wrap items-center gap-x-8 rounded-b border-t p-2 pl-4 border-surface-50-950"
+                  class="bg-white-dark mb-2 flex flex-wrap items-center gap-x-8 rounded-b border-t border-surface-50-950 p-2 pl-4"
                 >
                   {@render statusBar()}
                 </div>
@@ -487,7 +485,7 @@ example = "1.0"`
                       <div class="flex h-8 items-start justify-between">
                         <span>Ad-Hoc Queries</span>
                         <button
-                          class="fd fd-x btn btn-icon btn-icon-lg !h-6"
+                          class="fd fd-x btn-icon text-lg !h-6"
                           onclick={() => (separateAdHocTab.value = false)}
                           aria-label="Close"
                         ></button>
@@ -526,7 +524,7 @@ example = "1.0"`
               {#each [{ icon: 'fd fd-panel-left', text: 'Pipelines', value: showPipelinesPanel }, { icon: 'fd fd-panel-bottom', text: 'Monitoring', value: showMonitoringPanel }, { icon: 'fd fd-panel-right', text: 'Interaction', value: showInteractionPanel, show: isScreenLg.current }] as { icon, text, value, show }}
                 {#if show !== false}
                   <button
-                    class="btn gap-2 p-2 !brightness-100 text-surface-700-300 hover:preset-tonal-surface"
+                    class="btn gap-2 p-2 text-surface-700-300 brightness-100! hover:preset-tonal-surface"
                     onclick={() => (value.value = !value.value)}
                   >
                     <span class="hidden sm:inline">
@@ -542,9 +540,9 @@ example = "1.0"`
           {/snippet}
           {#snippet fileTab(text, onClick, isCurrent, isSaved)}
             <button
-              class=" flex flex-nowrap py-2 pl-2 pr-5 font-medium sm:pl-3 {isCurrent
-                ? 'inset-y-2 border-b-2 pb-1.5 border-surface-950-50'
-                : ' rounded hover:!bg-opacity-50 hover:bg-surface-100-900'}"
+              class=" flex flex-nowrap py-2 pr-5 pl-2 font-medium sm:pl-3 {isCurrent
+                ? 'inset-y-2 border-b-2 border-surface-950-50 pb-1.5'
+                : ' rounded hover:bg-surface-100-900/50'}"
               onclick={onClick}
             >
               {text}

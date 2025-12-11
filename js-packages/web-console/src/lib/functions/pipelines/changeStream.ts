@@ -1,8 +1,8 @@
+import { type JSONParser, type JSONParserOptions, Tokenizer, TokenParser } from '@streamparser/json'
 import { BigNumber } from 'bignumber.js'
-import { JSONParser, Tokenizer, TokenParser, type JSONParserOptions } from '@streamparser/json'
+import invariant from 'tiny-invariant'
 import { findIndex } from '$lib/functions/common/array'
 import { tuple } from '$lib/functions/common/tuple'
-import invariant from 'tiny-invariant'
 
 class BigNumberTokenizer extends Tokenizer {
   parseNumber = BigNumber as any
@@ -42,7 +42,7 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
     )
     .pipeThrough(transformer)
     .getReader()
-  let resultBuffer = [] as T[]
+  const resultBuffer = [] as T[]
   setTimeout(async () => {
     while (true) {
       try {
@@ -158,9 +158,9 @@ const mkTransformerParser = <T>(
 }
 
 class JSONParserTransformer<T> implements Transformer<Uint8Array | string, T> {
-  // @ts-ignore Controller always defined during start
+  // @ts-expect-error Controller always defined during start
   private controller: TransformStreamDefaultController<T>
-  // @ts-ignore Controller always defined during start
+  // @ts-expect-error Controller always defined during start
   private parser: JSONParser
   private opts?: JSONParserOptions
 

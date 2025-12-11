@@ -1,20 +1,19 @@
 <script lang="ts">
-  import { calcPipelineThroughput, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
-
-  import { Chart } from 'svelte-echarts'
-  import { init, use, type EChartsType } from 'echarts/core'
+  import { format } from 'd3-format'
+  import type { EChartsOption } from 'echarts'
   import { LineChart } from 'echarts/charts'
   import { GridComponent, TitleComponent, TooltipComponent } from 'echarts/components'
+  import { type EChartsType, init, use } from 'echarts/core'
   import { CanvasRenderer } from 'echarts/renderers'
-  import { format } from 'd3-format'
+  import { Chart } from 'svelte-echarts'
+  import { getThemeColor } from '$lib/functions/common/color'
+  import { calcPipelineThroughput, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import type { Pipeline } from '$lib/services/pipelineManager'
-  import type { EChartsOption } from 'echarts'
-  import { rgbToHex } from '$lib/functions/common/color'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
 
   const formatQty = (v: number) => format(v >= 1000 ? '.3s' : '.0f')(v)
 
-  let {
+  const {
     pipeline,
     metrics,
     refetchMs,
@@ -27,12 +26,10 @@
   } = $props()
   use([LineChart, GridComponent, CanvasRenderer, TitleComponent, TooltipComponent])
 
-  let pipelineName = $derived(pipeline.current.name)
+  const pipelineName = $derived(pipeline.current.name)
   const throughput = $derived(calcPipelineThroughput(metrics))
 
-  let primaryColor = rgbToHex(
-    getComputedStyle(document.body).getPropertyValue('--color-primary-500').trim()
-  )
+  const primaryColor = getThemeColor('--color-primary-500').format('hex')
 
   let ref: EChartsType | undefined = $state()
 
@@ -128,7 +125,7 @@
 </script>
 
 <div class="absolute h-full w-full py-4">
-  <div class="whitespace-nowrap pl-16">
+  <div class="pl-16 whitespace-nowrap">
     Throughput: {formatQty(throughput.current)} records/s
   </div>
   {#key pipelineName}

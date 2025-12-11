@@ -1,6 +1,6 @@
 import { goto } from '$app/navigation'
-import { resolve } from '$lib/functions/svelte'
 import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+import { resolve } from '$lib/functions/svelte'
 import type { Demo } from '$lib/services/manager'
 import { usePipelineManager } from '../usePipelineManager.svelte'
 

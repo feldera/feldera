@@ -1,7 +1,7 @@
 <script lang="ts">
   import Tooltip from '$lib/components/common/Tooltip.svelte'
 
-  let {
+  const {
     downstreamChanged,
     saveCode,
     autoSavePipeline
@@ -21,7 +21,7 @@
   >
     {downstreamChanged ? 'Save' : 'Saved'}
   </button>
-  <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black">Ctrl + S</Tooltip>
+  <Tooltip class="">Ctrl + S</Tooltip>
   <button
     class="w-32 px-2 hover:preset-filled-primary-200-800"
     tabindex={10}

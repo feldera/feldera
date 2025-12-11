@@ -1,16 +1,16 @@
 <script lang="ts">
+  import type {
+    CircuitProfile,
+    Dataflow,
+    JsonProfiles,
+    MetricOption,
+    ProfilerCallbacks,
+    SourcePositionRange,
+    TooltipData,
+    WorkerOption
+  } from 'profiler-lib'
   import { goto } from '$app/navigation'
   import ProfilerDiagram from './ProfilerDiagram.svelte'
-  import type {
-    ProfilerCallbacks,
-    MetricOption,
-    WorkerOption,
-    JsonProfiles,
-    Dataflow,
-    TooltipData,
-    CircuitProfile,
-    SourcePositionRange
-  } from 'profiler-lib'
 
   interface Props {
     /** Profile data from the pipeline manager */
@@ -25,7 +25,7 @@
     toolbarStart?: import('svelte').Snippet
   }
 
-  let { profileData, dataflowData, programCode, class: className, toolbarStart }: Props = $props()
+  const { profileData, dataflowData, programCode, class: className, toolbarStart }: Props = $props()
 
   // UI state managed by this layout
   let tooltipData: TooltipData | null = $state(null)
@@ -161,7 +161,7 @@
     <!-- Workers Control -->
     <label class="flex items-center gap-2 text-sm">
       <span class="text-surface-600-400">Workers:</span>
-      <button onclick={handleToggleAllWorkers} class="btn btn-sm px-2 text-xs !bg-surface-100-900">
+      <button onclick={handleToggleAllWorkers} class="btn !bg-surface-100-900 btn-sm px-2 text-xs">
         Toggle All
       </button>
       <div class="flex gap-1">

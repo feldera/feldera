@@ -1,37 +1,41 @@
 <script lang="ts">
+  import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
 
-  import { Segment } from '@skeletonlabs/skeleton-svelte'
-  let darkMode = useDarkMode()
+  const darkMode = useDarkMode()
 </script>
 
 <div class="flex flex-col gap-2">
   Theme
-  <Segment
-    bind:value={darkMode.current}
-    base="flex items-stretch overflow-hidden"
-    background="preset-filled-surface-50-950 h-12 w-fit"
-    indicatorBg="bg-white-dark shadow "
-    indicatorText=""
-    border="p-1"
-    rounded="rounded"
-    gap="gap-2"
+  <SegmentedControl
+    value={darkMode.current}
+    onValueChange={(e) => (darkMode.current = e.value as typeof darkMode.current)}
+    class=""
   >
-    <Segment.Item
-      value="light"
-      base="btn cursor-pointer z-[1] px-10 sm:px-12 h-auto"
-      labelClasses="flex items-center flex-nowrap gap-3 transition-none"
+    <SegmentedControl.Label />
+    <SegmentedControl.Control
+      class="flex h-12 w-full items-stretch gap-2 overflow-hidden rounded preset-filled-surface-50-950 p-1"
     >
-      <span class="fd fd-sun text-[20px]"></span>
-      Light
-    </Segment.Item>
-    <Segment.Item
-      value="dark"
-      base="btn cursor-pointer z-[1] px-10 sm:px-12 h-auto"
-      labelClasses="flex items-center flex-nowrap gap-3 transition-none"
-    >
-      <span class="fd fd-moon text-[20px]"></span>
-      Dark
-    </Segment.Item>
-  </Segment>
+      <SegmentedControl.Indicator class="bg-white-dark shadow" />
+
+      <SegmentedControl.Item value="light" class="z-1 btn h-auto cursor-pointer px-10 sm:px-12">
+        <SegmentedControl.ItemText
+          class="flex flex-nowrap items-center gap-3 text-surface-950-50 transition-none"
+        >
+          <span class="fd fd-sun text-[20px]"></span>
+          Light</SegmentedControl.ItemText
+        >
+        <SegmentedControl.ItemHiddenInput />
+      </SegmentedControl.Item>
+      <SegmentedControl.Item value="dark" class="z-1 btn h-auto cursor-pointer px-10 sm:px-12">
+        <SegmentedControl.ItemText
+          class="flex flex-nowrap items-center gap-3 text-surface-950-50 transition-none"
+        >
+          <span class="fd fd-moon text-[20px]"></span>
+          Dark</SegmentedControl.ItemText
+        >
+        <SegmentedControl.ItemHiddenInput />
+      </SegmentedControl.Item>
+    </SegmentedControl.Control>
+  </SegmentedControl>
 </div>

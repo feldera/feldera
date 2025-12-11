@@ -1,45 +1,44 @@
-import type Monaco from 'svelte-monaco'
-import { MarkerSeverity, type editor, type Range } from 'monaco-editor/esm/vs/editor/editor.api'
+import { editor, MarkerSeverity, type Range } from 'monaco-editor/esm/vs/editor/editor.api.js'
 import invariant from 'tiny-invariant'
-import { showSqlCompilerMessage, type SystemError } from '$lib/compositions/health/systemErrors'
-import type { SqlCompilerMessage } from '$lib/services/pipelineManager'
+import { type SystemError, showSqlCompilerMessage } from '$lib/compositions/health/systemErrors'
 import { nonNull } from '$lib/functions/common/function'
+import type { SqlCompilerMessage } from '$lib/services/pipelineManager'
 
-const getDefaultErrorMarker = (monaco: Monaco, error: { message: string }) => ({
+const getDefaultErrorMarker = (error: { message: string }) => ({
   startLineNumber: 0,
   endLineNumber: 0,
   startColumn: 0,
   endColumn: 1,
   message: error.message,
-  severity: monaco.MarkerSeverity.Error
+  severity: MarkerSeverity.Error
 })
 
-const getRangeErrorMarker = (monaco: Monaco, error: { message: string }, range: Range) => ({
+const getRangeErrorMarker = (error: { message: string }, range: Range) => ({
   startLineNumber: range.startLineNumber,
   endLineNumber: range.endLineNumber,
   startColumn: range.startColumn,
   endColumn: range.endColumn,
   message: error.message,
-  severity: monaco.MarkerSeverity.Error
+  severity: MarkerSeverity.Error
 })
 
-const handleValueError = (editor: editor.IStandaloneCodeEditor, monaco: Monaco, e: unknown) => {
+const handleValueError = (editorRef: editor.IStandaloneCodeEditor, e: unknown) => {
   invariant(e instanceof Error)
   const errorMarkers = [e].map((error) => {
-    const defaultErr = getDefaultErrorMarker(monaco, error)
+    const defaultErr = getDefaultErrorMarker(error)
     if (!(e instanceof SyntaxError)) {
       return defaultErr
     }
     {
       const offender = error.message.match(/"(.*)(\r\n|\r|\n|.*)*"\.\.\. is not valid JSON/)?.[1]
       if (offender) {
-        const offenderPos = editor
+        const offenderPos = editorRef
           .getModel()!
           .findNextMatch(offender, { lineNumber: 0, column: 0 }, false, true, null, false)?.range
         if (!offenderPos) {
           return defaultErr
         }
-        return getRangeErrorMarker(monaco, error, offenderPos)
+        return getRangeErrorMarker(error, offenderPos)
       }
     }
     {
@@ -53,19 +52,18 @@ const handleValueError = (editor: editor.IStandaloneCodeEditor, monaco: Monaco, 
           startColumn: col,
           endColumn: col + 1,
           message: error.message,
-          severity: monaco.MarkerSeverity.Error
+          severity: MarkerSeverity.Error
         }
       }
     }
     return defaultErr
   })
-  monaco.editor.setModelMarkers(editor.getModel()!, 'parse-errors', errorMarkers)
+  editor.setModelMarkers(editorRef.getModel()!, 'parse-errors', errorMarkers)
 }
 
 export const getFormErrorsMarkers = (
   errors: Record<string, { message: string }>,
-  editor: editor.IStandaloneCodeEditor,
-  monaco: Monaco
+  editor: editor.IStandaloneCodeEditor
 ) => {
   return Object.entries(errors).map(([field, error]) => {
     const offenderPos = ((model) =>
@@ -79,11 +77,11 @@ export const getFormErrorsMarkers = (
         false
       ))(editor.getModel()!)?.range
 
-    const defaultErr = getDefaultErrorMarker(monaco, error)
+    const defaultErr = getDefaultErrorMarker(error)
     if (!offenderPos) {
       return defaultErr
     }
-    return getRangeErrorMarker(monaco, error, offenderPos)
+    return getRangeErrorMarker(error, offenderPos)
   })
 }
 

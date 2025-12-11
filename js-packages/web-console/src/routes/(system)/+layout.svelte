@@ -1,5 +1,6 @@
 <script lang="ts">
   import { useToast } from '$lib/compositions/useToastNotification'
+
   const { toastError } = useToast()
   window.addEventListener('error', (event) => {
     if (event.message === 'ResizeObserver loop completed with undelivered notifications.') {
@@ -16,7 +17,7 @@
       // toastError(new Error(event.reason, { cause: { name: 'Rejection handled' } }))
     }
   })
-  let { children } = $props()
+  const { children } = $props()
 </script>
 
 <svelte:boundary

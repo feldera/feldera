@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from '$lib/types/svelte'
-  let {
+
+  const {
     open,
     children,
     width

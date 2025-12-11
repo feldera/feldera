@@ -1,29 +1,29 @@
 <script lang="ts">
-  import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
-  import type { Snippet } from '$lib/types/svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import type { LayoutData } from './$types'
-  import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import SvelteKitTopLoader from '$lib/components/common/SvelteKitTopLoader.svelte'
-  import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
-  import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
-  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
-  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
-  import BookADemo from '$lib/components/other/BookADemo.svelte'
-  import LineBanner, { BannerButton } from '$lib/components/layout/LineBanner.svelte'
-  import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
-  import { useInterval } from '$lib/compositions/common/useInterval.svelte'
   import Dayjs from 'dayjs'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { useToast } from '$lib/compositions/useToastNotification'
-  import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
-  import { getConfig } from '$lib/services/pipelineManager'
   import { invalidateAll } from '$app/navigation'
+  import SvelteKitTopLoader from '$lib/components/common/SvelteKitTopLoader.svelte'
+  import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
+  import LineBanner, { BannerButton } from '$lib/components/layout/LineBanner.svelte'
+  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
+  import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
+  import BookADemo from '$lib/components/other/BookADemo.svelte'
+  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
+  import { useInterval } from '$lib/compositions/common/useInterval.svelte'
+  import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
+  import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+  import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
+  import { useToast } from '$lib/compositions/useToastNotification'
+  import { getConfig } from '$lib/services/pipelineManager'
+  import type { Snippet } from '$lib/types/svelte'
+  import type { LayoutData } from './$types'
 
   const dialog = useGlobalDialog()
 
-  let { children, data }: { children: Snippet; data: LayoutData } = $props()
+  const { children, data }: { children: Snippet; data: LayoutData } = $props()
 
   useRefreshPipelineList()
   usePipelineAction()
@@ -87,8 +87,8 @@
     })
   )
 
-  let api = usePipelineManager()
-  let { toastMain, dismissMain } = useToast()
+  const api = usePipelineManager()
+  const { toastMain, dismissMain } = useToast()
   $effect(() => {
     if (api.isNetworkHealthy) {
       dismissMain()
@@ -102,7 +102,7 @@
 
 <SvelteKitTopLoader
   height={2}
-  color={'rgb(var(--color-primary-500))'}
+  color={'var(--color-primary-500)'}
   showSpinner={false}
   ignoreBeforeNavigate={() => false}
   ignoreAfterNavigate={() => false}
@@ -189,7 +189,7 @@
         }}
       ></CreatePipelineButton>
     </div>
-    <BookADemo class="self-center preset-filled-primary-500">Book a demo</BookADemo>
+    <BookADemo class="btn self-center preset-filled-primary-500">Book a demo</BookADemo>
     <NavigationExtras inline></NavigationExtras>
   </OverlayDrawer>
   <OverlayDrawer
@@ -197,7 +197,7 @@
     side="right"
     bind:open={() => !!contextDrawer.content, () => (contextDrawer.content = null)}
     modal={false}
-    class="bg-white-dark overflow-auto p-4 pb-0 scrollbar md:p-6 md:pb-0"
+    class="bg-white-dark scrollbar overflow-auto p-4 pb-0 md:p-6 md:pb-0"
   >
     {@render contextDrawer.content?.()}
   </OverlayDrawer>

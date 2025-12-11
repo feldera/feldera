@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  let adhocQueries: Record<
+  const adhocQueries: Record<
     string,
     Record<
       string,
@@ -14,7 +14,7 @@
   import { type ExtendedPipeline } from '$lib/services/pipelineManager'
   import Query, { type Row, type QueryData } from '$lib/components/adhoc/Query.svelte'
   import { isPipelineInteractive } from '$lib/functions/pipelines/status'
-  import type { SQLValueJS } from '$lib/types/sql.ts'
+  import type { SQLValueJS } from '$lib/types/sql'
   import {
     CustomJSONParserTransformStream,
     parseCancellable
@@ -156,10 +156,10 @@
     }
 </script>
 
-<div class="h-full min-h-full overflow-y-auto scrollbar" use:reverseScroll.action>
+<div class="scrollbar h-full min-h-full overflow-y-auto" use:reverseScroll.action>
   <div class="flex flex-col gap-6">
     {#if !isInteractive}
-      <WarningBanner class="sticky top-0 z-20 -mb-4 -translate-y-2">
+      <WarningBanner class="sticky top-0 z-20 -mb-2">
         Start the pipeline to be able to run queries
       </WarningBanner>
     {/if}
