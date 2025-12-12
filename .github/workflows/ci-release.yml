@@ -22,6 +22,7 @@ jobs:
       id-token: write
       contents: read
       packages: write
+      actions: read
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -31,6 +32,9 @@ jobs:
           private-key: ${{ secrets.CI_ACCESS_APP_PKEY }}
           owner: ${{ github.repository_owner }}
           permission-contents: write
+          permission-actions: read
+          permission-workflows: write
+          permission-metadata: read
 
       - name: Set SHA_TO_RELEASE and CURRENT_VERSION
         if: github.event_name == 'repository_dispatch'
@@ -66,10 +70,11 @@ jobs:
           workflow: ci.yml
           workflow_conclusion: success
           commit: ${{ env.SHA_TO_RELEASE }}
-          name: feldera-sql-compiler-*|feldera-binaries-*|feldera-docs
+          name: feldera-sql-compiler-*|feldera-binaries-*|feldera-docs|feldera-sbom
           name_is_regexp: true
           skip_unpack: true
           if_no_artifact_found: fail
+          github_token: ${{ steps.app-token.outputs.token }}
 
       - name: Attach version to binaries
         run: |
@@ -78,6 +83,12 @@ jobs:
           unzip -jo feldera-sql-compiler.zip 'sql2dbsp-jar-with-dependencies.jar' -d .
           mv sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies-v${{ env.CURRENT_VERSION }}.jar
           mv feldera-docs.zip feldera-docs-v${{ env.CURRENT_VERSION }}.zip
+
+      - name: Prepare SBOM files
+        run: |
+          unzip feldera-sbom.zip
+          mv feldera-sbom-source-${{ env.SHA_TO_RELEASE }}.spdx.json feldera-sbom-source-v${{ env.CURRENT_VERSION }}.spdx.json
+          mv feldera-sbom-image-${{ env.SHA_TO_RELEASE }}.spdx.json feldera-sbom-image-v${{ env.CURRENT_VERSION }}.spdx.json
 
       - name: Generate Release token
         id: release-token
@@ -102,6 +113,8 @@ jobs:
             feldera-binaries-v${{ env.CURRENT_VERSION }}-aarch64-unknown-linux-gnu.zip
             feldera-binaries-v${{ env.CURRENT_VERSION }}-x86_64-unknown-linux-gnu.zip
             sql2dbsp-jar-with-dependencies-v${{ env.CURRENT_VERSION }}.jar
+            feldera-sbom-source-v${{ env.CURRENT_VERSION }}.spdx.json
+            feldera-sbom-image-v${{ env.CURRENT_VERSION }}.spdx.json
           # A custom token is necessary so the ci-post-release.yml workflow is triggered
           # see also https://github.com/softprops/action-gh-release/issues/59
           token: ${{ steps.release-token.outputs.token }}
