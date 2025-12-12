@@ -1,0 +1,42 @@
+name: Generate SBOMs
+
+on:
+  workflow_call:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  generate-sbom:
+    if: ${{ vars.CI_DRY_RUN != 'true' }}
+    runs-on: ubuntu-latest-amd64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Syft
+        uses: anchore/sbom-action/download-syft@v0.17.4
+
+      - name: Create source SBOM
+        run: syft dir:. --output spdx-json=feldera-sbom-source-${GITHUB_SHA}.spdx.json
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create image SBOM
+        run: |
+          IMAGE_REF=${{ vars.FELDERA_IMAGE_NAME }}:sha-${GITHUB_SHA}
+          syft "$IMAGE_REF" --output spdx-json=feldera-sbom-image-${GITHUB_SHA}.spdx.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: feldera-sbom
+          path: |
+            feldera-sbom-source-${{ github.sha }}.spdx.json
+            feldera-sbom-image-${{ github.sha }}.spdx.json
+          retention-days: 7
