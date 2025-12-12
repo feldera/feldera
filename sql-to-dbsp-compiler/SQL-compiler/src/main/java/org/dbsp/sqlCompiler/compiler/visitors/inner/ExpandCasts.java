@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -147,7 +148,12 @@ public class ExpandCasts extends InnerRewriteVisitor {
             fields.add(expression);
         }
 
-        return new DBSPTupleExpression(source.getNode(), type, fields);
+        DBSPExpression result = new DBSPTupleExpression(source.getNode(), type, fields);
+        if (source.getType().mayBeNull) {
+            result = new DBSPIfExpression(
+                    source.getNode(), source.is_null(), type.nullValue(), result);
+        }
+        return result;
     }
 
     DBSPExpression convertToTuple(DBSPExpression source, DBSPTypeRawTuple type) {

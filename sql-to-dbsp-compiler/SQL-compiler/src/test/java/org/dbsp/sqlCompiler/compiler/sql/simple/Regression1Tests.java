@@ -1447,5 +1447,20 @@ public class Regression1Tests extends SqlIoTest {
                  👋
                 (1 row)""");
     }
+
+    @Test
+    public void issue5260() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(roww ROW(i1 INT, i2 INT) NULL);
+                CREATE VIEW V AS SELECT roww <=> NULL FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(ROW(ROW(1, 2)))", """
+                 r | weight
+                ------------
+                 false | 1""");
+        ccs.step("INSERT INTO tbl VALUES(NULL)", """
+                 r | weight
+                ------------
+                 true | 1""");
+    }
 }
  
