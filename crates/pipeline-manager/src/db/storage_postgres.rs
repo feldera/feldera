@@ -467,7 +467,6 @@ impl Storage for StoragePostgres {
         Ok(pipeline_id)
     }
 
-    #[cfg(test)]
     async fn transit_program_status_to_pending(
         &self,
         tenant_id: TenantId,
