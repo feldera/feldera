@@ -139,6 +139,9 @@ public class Simplify extends ExpressionTranslator {
             result = new DBSPBoolLiteral(true);
         else if (source.is(DBSPCloneExpression.class))
             result = source.to(DBSPCloneExpression.class).expression.is_null();
+        else if (source.is(DBSPBaseTupleExpression.class) && source.to(DBSPBaseTupleExpression.class).fields == null)
+            // Null tuple literal
+            result = new DBSPBoolLiteral(true);
         this.map(expression, result);
     }
 
@@ -601,7 +604,7 @@ public class Simplify extends ExpressionTranslator {
         if (opcode == DBSPOpcode.MAP_INDEX ||
                 opcode == DBSPOpcode.SQL_INDEX ||
                 opcode == DBSPOpcode.RUST_INDEX) {
-            if (expression.left.is(DBSPCloneExpression.class)) {
+            if (left.is(DBSPCloneExpression.class)) {
                 result = new DBSPBinaryExpression(
                         expression.getNode(), expression.type, expression.opcode,
                         left.to(DBSPCloneExpression.class).expression, right);

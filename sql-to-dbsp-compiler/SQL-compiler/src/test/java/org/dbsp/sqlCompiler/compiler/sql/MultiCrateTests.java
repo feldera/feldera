@@ -54,7 +54,6 @@ public class MultiCrateTests extends BaseSQLTests {
         compileToMultiCrate(file, check, true);
     }
 
-
     static void compileProgramToMultiCrate(String sql, boolean check) throws IOException, SQLException, InterruptedException {
         File file = createInputScript(sql);
         compileToMultiCrate(file.getAbsolutePath(), check);

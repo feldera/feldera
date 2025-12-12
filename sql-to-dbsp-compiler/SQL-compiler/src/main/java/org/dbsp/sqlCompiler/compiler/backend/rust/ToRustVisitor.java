@@ -314,6 +314,16 @@ public class ToRustVisitor extends CircuitVisitor {
 
         for (DBSPDeclaration decl: circuit.declarations) {
             if (this.declareInside(decl)) {
+                List<DBSPTypeStruct> structs = new ArrayList<>();
+                FindNestedStructs fn = new FindNestedStructs(this.compiler, structs);
+                fn.apply(decl.item);
+                for (DBSPTypeStruct str: structs) {
+                    DBSPStructItem item = new DBSPStructItem(str, null);
+                    if (this.structsGenerated.contains(item.getName()))
+                        continue;
+                    item.accept(this.innerVisitor);
+                    this.structsGenerated.add(item.getName());
+                }
                 decl.accept(this);
             }
         }
