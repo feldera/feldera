@@ -99,6 +99,9 @@
 
 ## Principles, Implementation, and engineering
 
+* A visualization tool for the runtime behavior of Feldera pipelines
+  https://www.feldera.com/blog/a-visualization-tool-for-the-runtime-behavior-of-feldera-pipelines
+
 * Constant folding in Calcite
   https://www.feldera.com/blog/constant-folding-in-calcite
 

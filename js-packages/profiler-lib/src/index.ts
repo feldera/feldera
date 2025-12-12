@@ -1,15 +1,18 @@
 // Public API for profiler-lib
 
 export {
-    Profiler,
-    type ProfilerConfig,
+    Visualizer,
+    type VisualizerConfig,
     type ProfilerCallbacks,
     type MetricOption,
     type WorkerOption,
     type DisplayedAttributes as TooltipData,
     type TooltipRow,
-    type TooltipCell
+    type TooltipCell,
+    NodeAndMetric,
+    shadeOfRed
 } from './profiler.js';
-export { CircuitProfile, type JsonProfiles } from './profile.js';
+export { HierarchicalTable, HierarchicalTableRow, HierarchicalTableCellValue } from "./hierarchical-table.js";
+export { measurementCategory, CircuitProfile, type JsonProfiles } from './profile.js';
 export { type Dataflow, type SourcePositionRange } from './dataflow.js';
 export { type Option } from './util.js';

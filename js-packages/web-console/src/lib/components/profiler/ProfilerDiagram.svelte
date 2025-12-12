@@ -1,9 +1,11 @@
 <script lang="ts">
   import {
-    CircuitProfile,
     type Dataflow,
+    Visualizer,
+    CircuitProfile,
+    type VisualizerConfig,
+    type ProfilerCallbacks,
     type JsonProfiles,
-    Profiler,
     type ProfilerCallbacks,
     type ProfilerConfig
   } from 'profiler-lib'
@@ -28,15 +30,15 @@
   let graphContainer: HTMLDivElement | undefined = $state()
   let navigatorContainer: HTMLDivElement | undefined = $state()
 
-  // Profiler instance and profile data (combined as their lifecycle is connected)
-  let instance = $state<{ profiler: Profiler; profile: CircuitProfile } | null>(null)
+  // Visualizer instance and profile data (combined as their lifecycle is connected)
+  let instance = $state<{ visualizer: Visualizer; profile: CircuitProfile } | null>(null)
 
   // Public getter for profile (used by parent component)
   export function getProfile(): CircuitProfile | null {
     return instance?.profile ?? null
   }
 
-  // Initialize profiler when all containers are mounted and data is available
+  // Initialize visualizer when all containers are mounted and data is available
   $effect(() => {
     // Wait for all DOM elements to be available
     if (!graphContainer || !navigatorContainer) {
@@ -51,7 +53,7 @@
     $effect.root(() => {
       // Clean up previous instance if exists
       if (instance) {
-        instance.profiler.dispose()
+        instance.visualizer.dispose()
         instance = null
       }
 
@@ -60,77 +62,77 @@
         const profile = CircuitProfile.fromJson(profileData)
         profile.setDataflow(dataflowData, programCode)
 
-        // Create profiler configuration with callbacks
-        const config: ProfilerConfig = {
+        // Create visualizer configuration with callbacks
+        const config: VisualizerConfig = {
           graphContainer: graphContainer!,
           navigatorContainer: navigatorContainer!,
           callbacks
         }
 
-        // Create and render profiler
-        const profiler = new Profiler(config)
-        profiler.render(profile)
+        // Create and render visualizer
+        const visualizer = new Visualizer(config)
+        visualizer.render(profile)
 
-        instance = { profiler, profile }
+        instance = { visualizer, profile }
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : String(e)
-        callbacks.onError(`Failed to initialize profiler: ${errorMsg}`)
-        console.error('Failed to initialize profiler:', e)
+        callbacks.onError(`Failed to initialize visualizer: ${errorMsg}`)
+        console.error('Failed to initialize visualizer:', e)
       }
     })
   })
 
-  // Public methods that proxy to profiler-lib
+  // Public methods that proxy to visualizer-lib
   export function selectMetric(metricId: string): void {
-    instance?.profiler.selectMetric(metricId)
+    instance?.visualizer.selectMetric(metricId)
   }
 
   export function toggleWorker(workerId: string): void {
-    instance?.profiler.toggleWorker(workerId)
+    instance?.visualizer.toggleWorker(workerId)
   }
 
   export function toggleAllWorkers(): void {
-    instance?.profiler.toggleAllWorkers()
+    instance?.visualizer.toggleAllWorkers()
   }
 
   export function search(query: string): void {
-    instance?.profiler.search(query)
+    instance?.visualizer.search(query)
   }
 
   // Cleanup on component destruction
   onDestroy(() => {
     if (instance) {
-      instance.profiler.dispose()
+      instance.visualizer.dispose()
       instance = null
     }
   })
 </script>
 
-<div class="profiler-wrapper {className || ''}" data-testid="profiler-diagram">
+<div class="visualizer-wrapper {className || ''}" data-testid="visualizer-diagram">
   <!-- Main graph visualization (full size) -->
-  <div bind:this={graphContainer} class="profiler-graph"></div>
+  <div bind:this={graphContainer} class="visualizer-graph"></div>
 
   <!-- Overlay menus (positioned on top of graph) -->
-  <div class="profiler-menus">
+  <div class="visualizer-menus">
     <!-- Navigator minimap -->
-    <div bind:this={navigatorContainer} class="profiler-navigator"></div>
+    <div bind:this={navigatorContainer} class="visualizer-navigator"></div>
   </div>
 </div>
 
 <style>
-  .profiler-wrapper {
+  .visualizer-wrapper {
     width: 100%;
     height: 100%;
     position: absolute;
     overflow: hidden;
   }
 
-  .profiler-graph {
+  .visualizer-graph {
     width: 100%;
     height: 100%;
   }
 
-  .profiler-menus {
+  .visualizer-menus {
     position: absolute;
     top: 0.5rem;
     left: 0.5rem;
@@ -141,7 +143,7 @@
     gap: 0.5rem;
   }
 
-  .profiler-navigator {
+  .visualizer-navigator {
     width: 108px;
     height: 108px;
     background-color: rgba(255, 255, 255, 0.95);

@@ -191,7 +191,7 @@ class StringValue extends PropertyValue {
     constructor(id: any) {
         super();
         if (typeof id !== "string") {
-            throw new TypeError(`Expected a valid string, got: ${id}`);
+            throw new TypeError(`Expected a valid string, got, ${id}`);
         }
         this.value = id;
     }
@@ -231,7 +231,9 @@ class StringValue extends PropertyValue {
 }
 
 /** No value has been provided for a property. */
-class MissingValue extends PropertyValue {
+export class MissingValue extends PropertyValue {
+    public static readonly INSTANCE: MissingValue = new MissingValue();
+
     constructor() {
         super();
     }
@@ -270,6 +272,85 @@ class TimeValue extends PropertyValue {
     }
 }
 
+export type Category = "CPU" | "memory" | "cache" | "storage" | "";
+
+/** Which category does a measurement belong to */
+export function measurementCategory(prop: string): Category {
+    const map: Map<Category, Array<string>> = new Map();
+    map.set("CPU", [
+        "time%",
+        "invocations",
+        "left inputs",
+        "right inputs",
+        "computed outputs",
+        "inputs",
+        "steps",
+        "wait_time",
+        "exchange_wait_time",
+        "merge backpressure wait",
+        "time",
+        "total_idle_time",
+        "runtime_elapsed",
+        "total_runtime"]);
+    map.set("storage", [
+        "merge reduction",
+        "output redundancy",
+        "merging batches",
+        "merging size",
+        "input batches/batches",
+        "input batches/min size",
+        "input batches/max size",
+        "input batches/avg size",
+        "input batches/total records",
+        "output batches/batches",
+        "output batches/min size",
+        "output batches/max size",
+        "output batches/avg size",
+        "output batches/total records",
+        "slot 0 loose",
+        "slot 1 loose",
+        "slot 2 loose",
+        "slot 3 loose",
+        "slot 4 loose",
+        "slot 0 completed",
+        "slot 1 completed",
+        "slot 2 completed",
+        "slot 3 completed",
+        "slot 4 completed",
+        "slot 0 merging",
+        "slot 1 merging",
+        "slot 2 merging",
+        "slot 3 merging",
+        "slot 4 merging",
+        "batch sizes",
+        "bounds",
+        "Bloom filter size",
+        "Bloom filter bits/key"]);
+    map.set("cache", [
+        "background cache hit",
+        "foreground cache hit",
+        "background cache miss",
+        "foreground cache miss",
+        "foreground cache occupancy",
+        "background cache occupancy"]);
+    map.set("memory", [
+        "total size",
+        "allocated bytes",
+        "used bytes",
+        "shared bytes",
+        "batches",
+        "storage size",
+        "allocations"]);
+    for (const [k, v] of map) {
+        for (const value of v) {
+            if (prop.startsWith(value)) {
+                return k;
+            }
+        }
+    }
+    return "";
+}
+
 // Decoded measurement value.
 export class Measurement {
     constructor(
@@ -288,7 +369,7 @@ export class Measurement {
     }
 
     toString(): string {
-        return this.property + ": " + this.value.toString();
+        return this.property + ", " + this.value.toString();
     }
 
     /** Parse a JSON object with the specified label into zero or more measurements. */
@@ -421,6 +502,16 @@ export class Measurement {
                 return Option.none();
         }
     }
+}
+
+/** A node and the (maximum) value of a metric for that node.  The actual metric
+ * represented is not part of this data structure */
+export class NodeAndMetric {
+    constructor(
+        public readonly nodeId: string,
+        public readonly label: string,
+        /** Value between 0 and 100% */
+        public readonly normalizedValue: number) { }
 }
 
 /** A set of measurements for a single circuit graph node and many workers.
@@ -649,7 +740,7 @@ export class CircuitProfile {
         for (const node of this.simpleNodes.values()) {
             const parent = this.parents.get(node.id);
             if (parent.isSome()) {
-                // If parent is toplevel graph, it's not in the
+                // If parent is toplevel graph, it's not in the graph
                 const complex = this.complexNodes.get(parent.unwrap()).unwrap();
                 complex.sourcePositions.append(node.sourcePositions);
             }
@@ -707,11 +798,11 @@ export class CircuitProfile {
      * in different parts of the SQL).
      *
      * @param id - The node ID to look up
-     * @returns Array of SourcePositionRange objects, or empty array if:
+     * @returns Array of SourcePositionRange objects, or empty array if,
      *          - Node doesn't exist
      *          - Node has no source position information
      */
-    // This method is in CircuitProfile rather than Profiler because CircuitProfile
+    // This method is in CircuitProfile rather than Visualizer because CircuitProfile
     // owns both the node data (simpleNodes/complexNodes) and the source data (sources).
     getSourceRanges(id: NodeId): Array<SourcePositionRange> {
         const node = this.getNode(id);
@@ -739,7 +830,7 @@ export class CircuitProfile {
         return Option.some(ranges[0]!);
     }
 
-    constructor(readonly worker_count: number) { }
+    constructor(readonly worker_count: number, readonly rootNodeId: NodeId) { }
 
     // Scan the nodes and compute the range of each property
     computePropertyRanges() {
@@ -779,11 +870,12 @@ export class CircuitProfile {
     /** Create a CircuitProfile from the JSON serialization */
     static fromJson(json: JsonProfiles): CircuitProfile {
         let worker_count = json.worker_profiles.length;
-        let result = new CircuitProfile(worker_count);
         // Decode the graph structure and create the nodes.
         // The graph itself is always a complex node.
-        result.complexNodes.set(json.graph.nodes.id,
-            new ComplexNode(json.graph.nodes.id, json.graph.nodes.label, worker_count));
+        let rootNodeId = json.graph.nodes.id;
+        let result = new CircuitProfile(worker_count, rootNodeId);
+        result.complexNodes.set(rootNodeId,
+            new ComplexNode(rootNodeId, json.graph.nodes.label, worker_count));
         for (const nodeWrapper of json.graph.nodes.nodes) {
             // Ignore top-level graph region
             result.addNode(nodeWrapper, Option.none());
@@ -808,7 +900,13 @@ export class CircuitProfile {
                         }
                     }
                 } else if (result.complexNodes.has(node)) {
-                    // Ignore measurements for complex nodes.
+                    // Ignore measurements for complex nodes, except the root node, which has some special attributes
+                    if (node === rootNodeId) {
+                        n = result.complexNodes.get(node).unwrap();
+                        for (const m of measurements) {
+                            n.addMeasurement(m, index);
+                        }
+                    }
                 } else {
                     fail("Node not found " + node);
                 }

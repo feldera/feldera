@@ -67,7 +67,7 @@ The core profiler API is minimal and explicit:
 
 ```typescript
 // Configuration with explicit container references
-interface ProfilerConfig {
+interface VisualizerConfig {
   graphContainer: HTMLElement
   selectorContainer: HTMLElement
   navigatorContainer: HTMLElement
@@ -75,8 +75,8 @@ interface ProfilerConfig {
 }
 
 // Main class with clear lifecycle
-class Profiler {
-  constructor(config: ProfilerConfig)
+class Visualizer {
+  constructor(config: VisualizerConfig)
   render(profile: CircuitProfile): void
   dispose(): void
   getTooltip(): HTMLElement

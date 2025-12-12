@@ -1,11 +1,13 @@
 // Core profiler visualization library
 // This module provides the main API for rendering circuit profiles
 
-import { CircuitProfile } from "./profile.js";
+import { CircuitProfile, NodeAndMetric } from "./profile.js";
 import { Cytograph, CytographRendering } from "./cytograph.js";
 import { CircuitSelector } from "./selection.js";
 import { MetadataSelector } from './metadataSelection.js';
-import { Option } from "./util.js";
+import { Option, shadeOfRed } from "./util.js";
+
+export { NodeAndMetric, shadeOfRed };
 
 /** Represents a selectable metric option */
 export interface MetricOption {
@@ -35,7 +37,7 @@ export interface TooltipRow {
 
 /** Tooltip data structure */
 export interface DisplayedAttributes {
-    /** Column headers (worker names) */
+    /** Column headers */
     columns: string[];
     /** Rows of metrics with values */
     rows: TooltipRow[];
@@ -50,7 +52,7 @@ export interface ProfilerCallbacks {
     displayNodeAttributes: (data: Option<DisplayedAttributes>, visible: boolean) => void;
 
     /** Called when the available metrics change */
-    onMetricsChanged: (metrics: MetricOption[], selectedMetricId: string) => void;
+    onMetricsChanged: (metrics: MetricOption[], selectedMetric: string) => void;
 
     /** Called when the workers state changes */
     onWorkersChanged: (workers: WorkerOption[]) => void;
@@ -61,13 +63,11 @@ export interface ProfilerCallbacks {
     /** Called when an error should be displayed */
     onError: (error: string) => void;
 
-    /**
-     * Called when a leaf node is double-clicked.
-     */
+    /** Called when a node is double-clicked. */
     onNodeDoubleClick?: (nodeId: string, type: 'group' | 'leaf') => void;
 }
 
-export interface ProfilerConfig {
+export interface VisualizerConfig {
     /** Container element for the graph visualization */
     graphContainer: HTMLElement;
     /** Container element for the navigator minimap */
@@ -78,16 +78,16 @@ export interface ProfilerConfig {
 }
 
 /**
- * Main profiler class that orchestrates the visualization of circuit profiles.
+ * Main class that orchestrates the visualization of circuit profiles.
  * This is the primary API for embedding the profiler in other applications.
  */
-export class Profiler {
-    private readonly config: ProfilerConfig;
+export class Visualizer {
     private circuitSelector: CircuitSelector | null = null;
     private metadataSelector: MetadataSelector | null = null;
     private rendering: CytographRendering | null = null;
+    private profile: CircuitProfile | null = null;
 
-    constructor(config: ProfilerConfig) {
+    constructor(private readonly config: VisualizerConfig) {
         this.config = config;
     }
 
@@ -107,15 +107,24 @@ export class Profiler {
         this.config.callbacks.displayMessage(Option.none());
     }
 
+    /** Return the ids of the nodes that score highest according to the specified metric. */
+    public topNodes(metric: string): Array<NodeAndMetric> {
+        if (this.profile === null) {
+            return [];
+        }
+        return this.rendering?.topNodes(this.profile, metric) || [];
+    }
+
     /**
-     * Render a circuit profile with interactive visualization.
-     * This is the main entry point for displaying a profile.
+     * Display a circuit profile using interactive visualization.
+     * This is the main entry point for displaying the profile data.
      *
      * @param profile The circuit profile to visualize
      */
     render(profile: CircuitProfile): void {
         try {
             // Create selectors
+            this.profile = profile;
             this.circuitSelector = new CircuitSelector(profile);
             this.metadataSelector = new MetadataSelector(profile, this.config.callbacks);
 
@@ -124,14 +133,16 @@ export class Profiler {
 
             // Get initial selection and create graph
             const selection = this.circuitSelector.getSelection();
-            const cytograph = Cytograph.fromProfile(profile, selection);
+            const cytograph: Cytograph = Cytograph.fromProfile(profile, selection);
 
             // Create rendering with navigator
             this.rendering = new CytographRendering(
                 this.config.graphContainer,
                 this.config.navigatorContainer,
                 this.config.callbacks,
-                cytograph.graph, selection,
+                cytograph.graph,
+                cytograph.rootNodeId,
+                selection,
                 MetadataSelector.getFullSelection(),
                 this.message.bind(this),
                 this.clearMessage.bind(this)
@@ -169,11 +180,15 @@ export class Profiler {
         }
     }
 
+    public topLevelEvent(e: Event): void {
+        this.rendering?.onToplevelEvent(e);
+    }
+
     /**
      * Select a metric by ID
      */
-    selectMetric(metricId: string): void {
-        this.metadataSelector?.selectMetric(metricId);
+    selectMetric(metric: string): void {
+        this.metadataSelector?.selectMetric(metric);
     }
 
     /**
