@@ -100,6 +100,12 @@ Pipeline log:
 FELDERA_LOG_JSON=1 cargo run --bin=pipeline-manager
 ```
 
+Helm:
+
+```bash
+helm upgrade --install feldera <chart> --namespace feldera --create-namespace --set logJson=true
+```
+
 ## Notes
 
 - Plain-text logging remains the default; JSON is opt-in via `FELDERA_LOG_JSON`.
