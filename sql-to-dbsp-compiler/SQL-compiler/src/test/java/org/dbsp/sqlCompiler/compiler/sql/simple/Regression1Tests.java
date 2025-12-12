@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.sql.SQLException;
@@ -1462,5 +1463,37 @@ public class Regression1Tests extends SqlIoTest {
                 ------------
                  true | 1""");
     }
+
+    @Test
+    public void issue5276() {
+        this.getCCS("""
+            CREATE TYPE LEVEL_1 AS (
+              col VARCHAR
+            );
+            
+            CREATE TYPE LEVEL_0 AS (
+              col LEVEL_1
+            );
+            
+            CREATE TABLE T(l LEVEL_0, X INT);
+            CREATE TABLE S(X INT);
+            
+            CREATE VIEW V AS
+            (SELECT * FROM T) UNION (SELECT NULL, X FROM S)""");
+    }
+
+    @Test @Ignore
+    public void issue5275() {
+        this.getCC("""
+                CREATE TYPE LEVEL_1 AS (
+                  col VARCHAR
+                );
+                
+                CREATE TYPE LEVEL_0 AS (
+                  col LEVEL_1
+                );
+                
+                CREATE LOCAL VIEW V AS
+                SELECT CAST(NULL AS LEVEL_0)""");
+    }
 }
- 

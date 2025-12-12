@@ -55,6 +55,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -188,16 +189,20 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     public static DBSPExpression expandTupleCast(CalciteObject node, DBSPExpression source, DBSPType destinationType) {
         if (destinationType.is(DBSPTypeBaseType.class)) {
             return source.cast(node, destinationType, false).applyCloneIfNeeded();
-        } else switch (destinationType.code) {
-            case ARRAY, MAP:
-                return source.cast(node, destinationType, false).applyCloneIfNeeded();
-            case TUPLE, RAW_TUPLE: {
-                Utilities.enforce(source.getType().code == destinationType.code);
+        } else return switch (destinationType.code) {
+            case ARRAY, MAP -> source.cast(node, destinationType, false).applyCloneIfNeeded();
+            case TUPLE, RAW_TUPLE -> {
                 DBSPTypeTupleBase tuple = destinationType.to(DBSPTypeTupleBase.class);
                 DBSPExpression[] fields = new DBSPExpression[tuple.size()];
                 DBSPExpression safeSource = source.unwrapIfNullable();
                 for (int i = 0; i < tuple.size(); i++) {
-                    fields[i] = expandTupleCast(node, safeSource.field(i).simplify(), tuple.getFieldType(i));
+                    if (source.is(DBSPBaseTupleExpression.class) &&
+                            source.to(DBSPBaseTupleExpression.class).fields == null) {
+                        // NULL tuple literal
+                        fields[i] = source.getType().to(DBSPTypeTupleBase.class).getFieldExpressionType(i).none();
+                    } else {
+                        fields[i] = expandTupleCast(node, safeSource.field(i).simplify(), tuple.getFieldType(i));
+                    }
                 }
                 DBSPExpression convertedTuple;
                 if (destinationType.code == RAW_TUPLE) {
@@ -207,20 +212,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 }
                 if (destinationType.mayBeNull) {
                     if (!source.getType().mayBeNull) {
-                        return convertedTuple;
+                        yield convertedTuple;
                     } else {
                         DBSPExpression condition = source.is_null();
                         DBSPExpression positive = destinationType.none();
-                        return new DBSPIfExpression(node, condition, positive, convertedTuple);
+                        yield new DBSPIfExpression(node, condition, positive, convertedTuple);
                     }
                 } else {
                     // This will panic at runtime if the source tuple is null
-                    return convertedTuple;
+                    yield convertedTuple;
                 }
             }
-            default:
-                throw new InternalCompilerError("Unexpected type in cast " + destinationType);
-        }
+            default -> throw new InternalCompilerError("Unexpected type in cast " + destinationType);
+        };
     }
 
     public static DBSPExpression expandTuple(CalciteObject node, DBSPExpression source) {

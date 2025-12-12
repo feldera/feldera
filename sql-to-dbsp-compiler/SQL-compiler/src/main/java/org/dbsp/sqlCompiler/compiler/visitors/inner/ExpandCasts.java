@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -49,7 +50,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
         super(compiler, false);
     }
 
-    void unsupported(DBSPExpression source, DBSPType type) {
+    static void unsupported(DBSPExpression source, DBSPType type) {
         throw new UnsupportedException("Casting of value with type '" +
                 source.getType().asSqlString() +
                 "' to the target type '" + type.asSqlString() + "' not supported", source.getNode());
@@ -60,7 +61,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
         return VisitDecision.STOP;
     }
 
-    @Nullable DBSPExpression convertToVariant(DBSPExpression source, boolean mayBeNull) {
+    static @Nullable DBSPExpression convertToVariant(CalciteObject node, DBSPExpression source, boolean mayBeNull) {
         DBSPExpression expression;
         if (source.type.is(DBSPTypeTuple.class)) {
             // Convert a tuple to a VARIANT MAP indexed by the field names
@@ -84,7 +85,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 DBSPExpression field = source.field(i).simplify();
                 if (!field.getType().hasCopy())
                     field = field.applyCloneIfNeeded();
-                DBSPExpression rec = field.cast(source.getNode(), DBSPTypeVariant.create(false), false);
+                DBSPExpression rec = field.cast(node, DBSPTypeVariant.create(false), false);
                 values.add(rec);
             }
             expression = new DBSPMapExpression(type, keys, values);
@@ -99,18 +100,18 @@ public class ExpandCasts extends InnerRewriteVisitor {
             DBSPVariablePath var = elementType.ref().var();
             // This expression may need to be recursively converted
             DBSPExpression converter = var.deref()
-                    .applyCloneIfNeeded().cast(source.getNode(), DBSPTypeVariant.create(false), false)
+                    .applyCloneIfNeeded().cast(node, DBSPTypeVariant.create(false), false)
                     .closure(var);
-            expression = new DBSPBinaryExpression(source.getNode(),
+            expression = new DBSPBinaryExpression(node,
                     new DBSPTypeArray(DBSPTypeVariant.create(false), vecType.mayBeNull),
                     DBSPOpcode.ARRAY_CONVERT, source, converter);
         } else {
             return null;
         }
-        return new DBSPCastExpression(source.getNode(), expression, DBSPTypeVariant.create(mayBeNull), false);
+        return new DBSPCastExpression(node, expression, DBSPTypeVariant.create(mayBeNull), false);
     }
 
-    DBSPExpression convertToStructOrTuple(DBSPExpression source, DBSPTypeTuple type) {
+    public static DBSPExpression convertToStructOrTuple(CalciteObject node, DBSPExpression source, DBSPTypeTuple type) {
         List<DBSPExpression> fields = new ArrayList<>();
         DBSPTypeStruct struct = type.originalStruct;
         List<ProgramIdentifier> names = null;
@@ -123,40 +124,47 @@ public class ExpandCasts extends InnerRewriteVisitor {
             DBSPExpression index;
             if (sourceType.is(DBSPTypeTupleBase.class)) {
                 index = source.field(i);
-            } else {
+            } else if (sourceType.is(DBSPTypeVariant.class)) {
                 if (struct == null) {
                     index = new DBSPBinaryExpression(
                             // Result of index is always nullable
-                            source.getNode(), DBSPTypeVariant.create(true),
+                            node, DBSPTypeVariant.create(true),
                             DBSPOpcode.RUST_INDEX, source.applyCloneIfNeeded(),
                             new DBSPUSizeLiteral(i));
                 } else {
                     ProgramIdentifier fieldName = names.get(i);
                     index = new DBSPBinaryExpression(
                             // Result of index is always nullable
-                            source.getNode(), DBSPTypeVariant.create(true),
+                            node, DBSPTypeVariant.create(true),
                             DBSPOpcode.VARIANT_INDEX, source.applyCloneIfNeeded(),
                             new DBSPStringLiteral(fieldName.toString()));
                 }
+            } else {
+                 throw new InternalCompilerError("Unexpected source type " + sourceType);
             }
             DBSPExpression expression;
             if (fieldType.is(DBSPTypeTuple.class)) {
-                expression = this.convertToStructOrTuple(index.applyClone(), fieldType.to(DBSPTypeTuple.class));
+                expression = convertToStructOrTuple(node, index.applyClone(), fieldType.to(DBSPTypeTuple.class));
             } else {
-                expression = index.applyCloneIfNeeded().cast(source.getNode(), fieldType, false);
+                expression = index.applyCloneIfNeeded().cast(node, fieldType, false);
             }
             fields.add(expression);
         }
 
         DBSPExpression result = new DBSPTupleExpression(source.getNode(), type, fields);
         if (source.getType().mayBeNull) {
-            result = new DBSPIfExpression(
-                    source.getNode(), source.is_null(), type.nullValue(), result);
+            if (type.mayBeNull) {
+                result = new DBSPIfExpression(node, source.is_null(), type.nullValue(), result);
+            } else {
+                result = new DBSPIfExpression(node, source.is_null(),
+                        // Causes a runtime panic
+                        type.withMayBeNull(true).nullValue().unwrap(), result);
+            }
         }
         return result;
     }
 
-    DBSPExpression convertToTuple(DBSPExpression source, DBSPTypeRawTuple type) {
+    public static DBSPExpression convertToTuple(CalciteObject node, DBSPExpression source, DBSPTypeRawTuple type) {
         List<DBSPExpression> fields = new ArrayList<>();
         DBSPType sourceType = source.getType();
         if (!sourceType.is(DBSPTypeRawTuple.class))
@@ -166,16 +174,16 @@ public class ExpandCasts extends InnerRewriteVisitor {
             DBSPExpression index = source.field(i);
             DBSPExpression expression;
             if (fieldType.is(DBSPTypeTuple.class)) {
-                expression = this.convertToStructOrTuple(index.applyClone(), fieldType.to(DBSPTypeTuple.class));
+                expression = convertToStructOrTuple(node, index.applyClone(), fieldType.to(DBSPTypeTuple.class));
             } else {
-                expression = index.applyCloneIfNeeded().cast(source.getNode(), fieldType, false);
+                expression = index.applyCloneIfNeeded().cast(node, fieldType, false);
             }
             fields.add(expression);
         }
         return new DBSPRawTupleExpression(fields);
     }
 
-    @Nullable DBSPExpression convertToVector(DBSPExpression source, DBSPTypeArray type, boolean safe) {
+    static @Nullable DBSPExpression convertToVector(CalciteObject node, DBSPExpression source, DBSPTypeArray type, boolean safe) {
         DBSPType sourceType = source.getType();
         if (sourceType.is(DBSPTypeVariant.class)) {
             if (type.getElementType().is(DBSPTypeBaseType.class)) {
@@ -184,11 +192,11 @@ public class ExpandCasts extends InnerRewriteVisitor {
             } else {
                 // Convert to a Vector of VARIANT, and then...
                 DBSPTypeArray vecVType = new DBSPTypeArray(DBSPTypeVariant.create(false), sourceType.mayBeNull);
-                DBSPExpression vecV = source.cast(source.getNode(), vecVType, safe);
+                DBSPExpression vecV = source.cast(node, vecVType, safe);
                 // ...convert each element recursively to the target element type
                 DBSPVariablePath var = vecVType.getElementType().ref().var();
-                DBSPExpression convert = var.deref().cast(source.getNode(), type.getElementType(), safe).closure(var);
-                source = new DBSPBinaryExpression(source.getNode(),
+                DBSPExpression convert = var.deref().cast(node, type.getElementType(), safe).closure(var);
+                source = new DBSPBinaryExpression(node,
                         new DBSPTypeArray(type.getElementType(), sourceType.mayBeNull),
                         DBSPOpcode.ARRAY_CONVERT, vecV, convert);
             }
@@ -205,24 +213,24 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 DBSPExpression convert = var.deref();
                 if (convert.getType().is(DBSPTypeBaseType.class))
                     convert = convert.applyCloneIfNeeded();
-                convert = convert.cast(source.getNode(), type.getElementType(), safe).closure(var);
-                source = new DBSPBinaryExpression(source.getNode(),
+                convert = convert.cast(node, type.getElementType(), safe).closure(var);
+                source = new DBSPBinaryExpression(node,
                         new DBSPTypeArray(type.getElementType(), sourceType.mayBeNull),
                         DBSPOpcode.ARRAY_CONVERT, source, convert);
             } else {
-                this.unsupported(source, type);
+                unsupported(source, type);
             }
-            return source.cast(source.getNode(), type, safe);
+            return source.cast(node, type, safe);
         } else if (sourceType.is(DBSPTypeNull.class)) {
             return new DBSPArrayExpression(type, true);
         } else {
-            this.unsupported(source, type);
+            unsupported(source, type);
             // unreachable
             return source;
         }
     }
 
-    DBSPClosureExpression converter(DBSPType source, DBSPType dest, boolean safe) {
+    static DBSPClosureExpression converter(DBSPType source, DBSPType dest, boolean safe) {
         DBSPVariablePath var = source.ref().var();
         DBSPExpression convertValue = var.deref();
         if (convertValue.getType().is(DBSPTypeBaseType.class))
@@ -230,16 +238,16 @@ public class ExpandCasts extends InnerRewriteVisitor {
         return convertValue.cast(source.getNode(), dest, safe).closure(var);
     }
 
-    @Nullable DBSPExpression convertToMap(DBSPExpression source, DBSPTypeMap type, boolean safe) {
+    static @Nullable DBSPExpression convertToMap(CalciteObject node, DBSPExpression source, DBSPTypeMap type, boolean safe) {
         DBSPType sourceType = source.getType();
         if (sourceType.is(DBSPTypeMap.class)) {
             DBSPTypeMap sourceMap = sourceType.to(DBSPTypeMap.class);
             DBSPClosureExpression convertKey = converter(sourceMap.getKeyType(), type.getKeyType(), safe);
             DBSPClosureExpression convertValue = converter(sourceMap.getValueType(), type.getValueType(), safe);
             DBSPType convertedType = new DBSPTypeMap(type.getKeyType(), type.getValueType(), sourceType.mayBeNull);
-            source = new DBSPBinaryExpression(source.getNode(),
+            source = new DBSPBinaryExpression(node,
                     convertedType, DBSPOpcode.MAP_CONVERT, source, new DBSPRawTupleExpression(convertKey, convertValue));
-            return source.cast(source.getNode(), type, safe);
+            return source.cast(node, type, safe);
         }
         // Everything else use the default conversion
         return null;
@@ -247,6 +255,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
 
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
+        CalciteObject node = expression.getNode();
         this.push(expression);
         DBSPExpression source = this.transform(expression.source);
         DBSPType sourceType = source.getType();
@@ -268,22 +277,22 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 result = expression.source.unwrap().applyCloneIfNeeded();
             }
         } else if (type.is(DBSPTypeVariant.class)) {
-            result = this.convertToVariant(source, type.mayBeNull);
+            result = convertToVariant(node, source, type.mayBeNull);
         } else if (type.is(DBSPTypeArray.class)) {
-            result = this.convertToVector(source, type.to(DBSPTypeArray.class), expression.safe);
+            result = convertToVector(node, source, type.to(DBSPTypeArray.class), expression.safe);
         } else if (type.is(DBSPTypeTuple.class)) {
-            result = this.convertToStructOrTuple(source, type.to(DBSPTypeTuple.class));
+            result = convertToStructOrTuple(node, source, type.to(DBSPTypeTuple.class));
         } else if (type.is(DBSPTypeRawTuple.class)) {
-            result = this.convertToTuple(source, type.to(DBSPTypeRawTuple.class));
+            result = convertToTuple(node, source, type.to(DBSPTypeRawTuple.class));
         } else if (type.is(DBSPTypeMap.class)) {
-            result = this.convertToMap(source, type.to(DBSPTypeMap.class), expression.safe);
+            result = convertToMap(node, source, type.to(DBSPTypeMap.class), expression.safe);
         } else if (type.is(IsDateType.class) && source.getType().is(DBSPTypeBinary.class)) {
             throw new UnsupportedException(
                     "Cast function cannot convert BINARY value to " + type.asSqlString(), expression.getNode());
         }
         if (result == null)
             // Default implementation
-            result = source.cast(expression.getNode(), type, expression.safe);
+            result = source.cast(node, type, expression.safe);
         this.pop(expression);
         Utilities.enforce(expression.hasSameType(result));
         this.map(expression, result);
