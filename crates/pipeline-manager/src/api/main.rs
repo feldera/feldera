@@ -420,6 +420,24 @@ It contains the following fields:
         feldera_types::transaction::StartTransactionResponse,
         feldera_types::time_series::TimeSeries,
         feldera_types::time_series::SampleStatistics,
+        feldera_types::suspend::SuspendError,
+        feldera_types::suspend::PermanentSuspendError,
+        feldera_types::suspend::TemporarySuspendError,
+
+        // Adapter statistics
+        feldera_types::adapter_stats::ControllerStatus,
+        feldera_types::adapter_stats::GlobalControllerMetrics,
+        feldera_types::adapter_stats::InputEndpointStatus,
+        feldera_types::adapter_stats::InputEndpointMetrics,
+        feldera_types::adapter_stats::InputEndpointConfig,
+        feldera_types::adapter_stats::OutputEndpointStatus,
+        feldera_types::adapter_stats::OutputEndpointMetrics,
+        feldera_types::adapter_stats::OutputEndpointConfig,
+        feldera_types::adapter_stats::CompletedWatermark,
+        feldera_types::adapter_stats::TransactionInitiators,
+        feldera_types::adapter_stats::TransactionPhase,
+        feldera_types::adapter_stats::ConnectorTransactionPhase,
+        feldera_types::adapter_stats::PipelineState,
 
         // Telemetry & License
         feldera_cloud1_client::license::DisplaySchedule,

@@ -14,6 +14,7 @@ import {
   postPipeline as _postPipeline,
   postUpdateRuntime as _postUpdateRuntime,
   putPipeline as _putPipeline,
+  type ControllerStatus,
   type ErrorResponse,
   type Field,
   type GetPipelineSupportBundleData,
@@ -36,9 +37,7 @@ import {
   postPipelinePause,
   postPipelineResume,
   postPipelineStart,
-  postPipelineStop,
-  type RuntimeDesiredStatus,
-  type SqlCompilerMessage
+  postPipelineStop
 } from '$lib/services/manager'
 
 export type {
@@ -51,7 +50,7 @@ export type {
 } from '$lib/services/manager'
 
 import { match, P } from 'ts-pattern'
-import type { ControllerStatus, XgressRecord } from '$lib/types/pipelineManager'
+import type { XgressRecord } from '$lib/types/pipelineManager'
 
 export type { ProgramSchema } from '$lib/services/manager'
 export type ProgramStatus = _ProgramStatus
