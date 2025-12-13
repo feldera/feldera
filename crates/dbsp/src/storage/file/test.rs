@@ -10,12 +10,12 @@ use crate::{
             format::Compression,
             reader::{BulkRows, Reader},
         },
-        test::init_test_logger,
     },
     trace::{
         BatchReaderFactories, Builder, VecIndexedWSetFactories, VecWSetFactories,
         ord::vec::{indexed_wset_batch::VecIndexedWSetBuilder, wset_batch::VecWSetBuilder},
     },
+    utils::test::init_test_logger,
 };
 
 use super::{
