@@ -1,6 +1,5 @@
 <script lang="ts">
   import type {
-    CircuitProfile,
     Dataflow,
     JsonProfiles,
     MetricOption,
@@ -37,15 +36,7 @@
   let error = $state('')
 
   // Reference to ProfilerDiagram for calling methods
-  let profilerDiagram:
-    | {
-        selectMetric: (metricId: string) => void
-        toggleWorker: (workerId: string) => void
-        toggleAllWorkers: () => void
-        search: (query: string) => void
-        getProfile: () => CircuitProfile | null
-      }
-    | undefined = $state()
+  let profilerDiagram: ProfilerDiagram | undefined = $state()
 
   // Callbacks for profiler-lib
   const callbacks: ProfilerCallbacks = {

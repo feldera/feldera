@@ -1,13 +1,11 @@
 <script lang="ts">
   import {
-    type Dataflow,
-    Visualizer,
     CircuitProfile,
-    type VisualizerConfig,
-    type ProfilerCallbacks,
+    type Dataflow,
     type JsonProfiles,
     type ProfilerCallbacks,
-    type ProfilerConfig
+    Visualizer,
+    type VisualizerConfig
   } from 'profiler-lib'
   import { onDestroy } from 'svelte'
 
