@@ -8,6 +8,9 @@ mod tuple;
 #[cfg(test)]
 mod vec_ext;
 
+#[cfg(test)]
+pub(crate) mod test;
+
 mod dot;
 
 use std::cmp::Ordering;
