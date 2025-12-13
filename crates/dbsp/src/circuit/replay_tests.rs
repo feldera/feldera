@@ -1,5 +1,4 @@
 use feldera_types::config::StorageConfig;
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
     CmpFunc, DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
@@ -8,22 +7,11 @@ use crate::{
         time_series::{RelOffset, RelRange},
     },
     typed_batch::SpineSnapshot,
-    utils::{Tup2, Tup3},
+    utils::{Tup2, Tup3, test::init_test_logger},
 };
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
 use super::{CircuitConfig, CircuitStorageConfig, dbsp_handle::Mode};
-
-fn init_logging() {
-    let _ = tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().with_test_writer())
-        .with(
-            EnvFilter::try_from_default_env()
-                .or_else(|_| EnvFilter::try_new("debug"))
-                .unwrap(),
-        )
-        .try_init();
-}
 
 /// A trait that defines 0, 1, or multiple input or output streams.
 trait TestDataType {
@@ -173,7 +161,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
     assert_eq!(inputs1.len(), inputs2_1.len());
     assert_eq!(inputs2_2.len(), inputs3.len());
 
-    init_logging();
+    init_test_logger();
 
     let mut circuit_config = CircuitConfig::with_workers(4).with_mode(Mode::Persistent);
     let path = tempfile::tempdir().unwrap().keep();
