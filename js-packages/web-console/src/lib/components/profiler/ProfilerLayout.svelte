@@ -3,9 +3,9 @@
     Dataflow,
     JsonProfiles,
     MetricOption,
+    NodeAttributes,
     ProfilerCallbacks,
     SourcePositionRange,
-    TooltipData,
     WorkerOption
   } from 'profiler-lib'
   import { goto } from '$app/navigation'
@@ -27,8 +27,20 @@
   const { profileData, dataflowData, programCode, class: className, toolbarStart }: Props = $props()
 
   // UI state managed by this layout
-  let tooltipData: TooltipData | null = $state(null)
-  let tooltipVisible = $state(false)
+  let tooltipData:
+    | { nodeAttributes: NodeAttributes }
+    | {
+        genericTable: {
+          header: string
+          columns: string[]
+          rows: {
+            stub: { text: string; onclick?: () => void }
+            cells: { text: string; normalizedValue: number }[]
+          }[]
+        }
+      }
+    | null = $state(null)
+  let tooltipSticky = $state(false)
   let metrics: MetricOption[] = $state([])
   let selectedMetricId = $state('')
   let workers: WorkerOption[] = $state([])
@@ -40,9 +52,30 @@
 
   // Callbacks for profiler-lib
   const callbacks: ProfilerCallbacks = {
-    displayNodeAttributes: (data, visible) => {
-      tooltipData = data.match({ some: (v) => v, none: () => null })
-      tooltipVisible = visible
+    displayNodeAttributes: (data, isSticky) => {
+      tooltipData = data.match({ some: (v) => ({ nodeAttributes: v }), none: () => null })
+      tooltipSticky = isSticky
+    },
+    displayTopNodes(data, isSticky) {
+      tooltipData = data.match({
+        some: (topNodes) => ({
+          genericTable: {
+            header: `Nodes with highest values for the metric "${selectedMetricId}"`,
+            columns: ['Node', 'Value'],
+            rows: topNodes.map((n) => ({
+              stub: { text: n.nodeId, onclick: () => profilerDiagram?.search(n.nodeId) },
+              cells: [
+                {
+                  text: n.label,
+                  normalizedValue: n.normalizedValue
+                }
+              ]
+            }))
+          }
+        }),
+        none: () => null
+      })
+      tooltipSticky = isSticky
     },
     onMetricsChanged: (newMetrics: MetricOption[], newSelectedMetricId: string) => {
       metrics = newMetrics
@@ -130,6 +163,15 @@
   export { handleMetricChange, handleWorkerChange, handleToggleAllWorkers }
 </script>
 
+{#snippet pseudoNode({text, ...props}: {onmouseenter: () => void, onmouseleave: () => void, onclick: () => void, text: string})}
+  <button
+    class="cursor-default rounded-base border border-black bg-white px-2 text-black outline-none"
+    {...props}
+  >
+    {text}
+  </button>
+{/snippet}
+
 <!-- Toolbar with controls -->
 <div class="flex flex-wrap items-center gap-2 pb-2 sm:-mt-2">
   <!-- Toolbar start snippet (Load Profile and Snapshot) -->
@@ -148,6 +190,30 @@
         {/each}
       </select>
     </label>
+
+    {@render pseudoNode({
+      onmouseenter: () => profilerDiagram?.showGlobalMetrics(),
+      onmouseleave: () => profilerDiagram?.hideNodeAttributes(),
+      onclick: () => profilerDiagram?.showGlobalMetrics(true),
+      text: 'overall metrics'
+    })}
+
+    {@render pseudoNode({
+      onmouseenter: () => {
+        profilerDiagram?.showTopNodes(selectedMetricId, 20)
+      },
+      onmouseleave: () => {
+        profilerDiagram?.hideNodeAttributes()
+      },
+      onclick: () => {
+        profilerDiagram?.showTopNodes(selectedMetricId, 20, true)
+      },
+      text: 'top 20 nodes'
+    })}
+
+    <div class="vr">
+      <hr class="vr" />
+    </div>
 
     <!-- Workers Control -->
     <label class="flex items-center gap-2 text-sm">
@@ -223,54 +289,95 @@
       </div>
 
       <!-- Tooltip container (positioned in top-right) -->
-      {#if tooltipVisible && tooltipData}
-        <div class="profiler-tooltip-container">
+      {#if tooltipData}
+        <div class="profiler-tooltip-container {tooltipSticky ? '' : 'pointer-events-none'}">
           <div class="profiler-tooltip">
-            <table>
-              <!-- Header row with worker names -->
-              <thead>
-                <tr>
-                  <th></th>
-                  {#each tooltipData.columns as column}
-                    <th>{column}</th>
-                  {/each}
-                </tr>
-              </thead>
-
-              <!-- Metric rows -->
-              <tbody>
-                {#each tooltipData.rows as row}
+            {#if 'nodeAttributes' in tooltipData}
+              {@const { nodeAttributes } = tooltipData}
+              <table>
+                <!-- Header row with worker names -->
+                <thead>
                   <tr>
-                    <td class:current-metric={row.isCurrentMetric}>{row.metric}</td>
-                    {#each row.cells as cell}
-                      {@const percent = cell.percentile}
-                      {@const color = `rgb(255, ${Math.round((255 * (100 - percent)) / 100)}, ${Math.round((255 * (100 - percent)) / 100)})`}
-                      <td style:background-color={color} style:color="black" class="text-right">
-                        {cell.value}
-                      </td>
+                    <th></th>
+                    {#each nodeAttributes.columns as column}
+                      <th>{column}</th>
                     {/each}
                   </tr>
-                {/each}
+                </thead>
 
-                <!-- Source code row -->
-                {#if tooltipData.sources}
-                  <tr>
-                    <td>sources</td>
-                    <td colspan={tooltipData.columns.length} class="source-code"
-                      >{tooltipData.sources}</td
-                    >
-                  </tr>
-                {/if}
+                <!-- Metric rows -->
+                <tbody>
+                  {#each nodeAttributes.rows as row}
+                    <tr>
+                      <td class:current-metric={row.isCurrentMetric}>{row.metric}</td>
+                      {#each row.cells as cell}
+                        {@const percent = cell.percentile}
+                        {@const color = `rgb(255, ${Math.round((255 * (100 - percent)) / 100)}, ${Math.round((255 * (100 - percent)) / 100)})`}
+                        <td style:background-color={color} style:color="black" class="text-right">
+                          {cell.value}
+                        </td>
+                      {/each}
+                    </tr>
+                  {/each}
 
-                <!-- Additional attributes -->
-                {#each Array.from(tooltipData.attributes.entries()) as [key, value]}
+                  <!-- Source code row -->
+                  {#if nodeAttributes.sources}
+                    <tr>
+                      <td>sources</td>
+                      <td colspan={nodeAttributes.columns.length} class="source-code"
+                        >{nodeAttributes.sources}</td
+                      >
+                    </tr>
+                  {/if}
+
+                  <!-- Additional attributes -->
+                  {#each Array.from(nodeAttributes.attributes.entries()) as [key, value]}
+                    <tr>
+                      <td class="whitespace-nowrap">{key}</td>
+                      <td colspan={nodeAttributes.columns.length} class="whitespace-nowrap"
+                        >{value}</td
+                      >
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {:else if 'genericTable' in tooltipData}
+              {@const { genericTable } = tooltipData}
+              <table>
+                <!-- Header row with worker names -->
+                <thead>
                   <tr>
-                    <td class="whitespace-nowrap">{key}</td>
-                    <td colspan={tooltipData.columns.length} class="whitespace-nowrap">{value}</td>
+                    <th colspan={Number.MAX_SAFE_INTEGER}>{genericTable.header}</th>
                   </tr>
-                {/each}
-              </tbody>
-            </table>
+                  <tr>
+                    {#each genericTable.columns as column}
+                      <th>{column}</th>
+                    {/each}
+                  </tr>
+                </thead>
+
+                <!-- Metric rows -->
+                <tbody>
+                  {#each genericTable.rows as row}
+                    <tr>
+                      <td
+                        onclick={() => {
+                          row.stub.onclick?.()
+                        }}
+                        class={row.stub.onclick ? 'cursor-pointer' : ''}>{row.stub.text}</td
+                      >
+                      {#each row.cells as cell}
+                        {@const percent = cell.normalizedValue}
+                        {@const color = `rgb(255, ${Math.round((255 * (100 - percent)) / 100)}, ${Math.round((255 * (100 - percent)) / 100)})`}
+                        <td style:background-color={color} style:color="black" class="text-right">
+                          {cell.text}
+                        </td>
+                      {/each}
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
           </div>
         </div>
       {/if}
@@ -343,7 +450,6 @@
     top: 0.5rem;
     right: 0.5rem;
     z-index: 2;
-    pointer-events: none;
     max-height: calc(100vh - 1rem);
   }
 

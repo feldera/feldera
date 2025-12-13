@@ -830,7 +830,7 @@ export class CircuitProfile {
         return Option.some(ranges[0]!);
     }
 
-    constructor(readonly worker_count: number, readonly rootNodeId: NodeId) { }
+    constructor(readonly worker_count: number) { }
 
     // Scan the nodes and compute the range of each property
     computePropertyRanges() {
@@ -868,12 +868,12 @@ export class CircuitProfile {
     }
 
     /** Create a CircuitProfile from the JSON serialization */
-    static fromJson(json: JsonProfiles): CircuitProfile {
+    static fromJson(json: JsonProfiles) {
         let worker_count = json.worker_profiles.length;
         // Decode the graph structure and create the nodes.
         // The graph itself is always a complex node.
         let rootNodeId = json.graph.nodes.id;
-        let result = new CircuitProfile(worker_count, rootNodeId);
+        let result = new CircuitProfile(worker_count);
         result.complexNodes.set(rootNodeId,
             new ComplexNode(rootNodeId, json.graph.nodes.label, worker_count));
         for (const nodeWrapper of json.graph.nodes.nodes) {
@@ -935,7 +935,10 @@ export class CircuitProfile {
         }
 
         result.computePropertyRanges();
-        return result;
+        return {
+            profile: result,
+            rootNodeId
+        };
     }
 
     fixZ1Nodes() {

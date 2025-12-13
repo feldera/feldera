@@ -6,7 +6,7 @@ export {
     type ProfilerCallbacks,
     type MetricOption,
     type WorkerOption,
-    type DisplayedAttributes as TooltipData,
+    type NodeAttributes,
     type TooltipRow,
     type TooltipCell,
     NodeAndMetric,

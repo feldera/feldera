@@ -109,7 +109,7 @@
             accent-color: #c533b9;
         }
 
-        #toggle-workers-btn {
+        .control-button {
             background-color: rgba(255, 255, 255, 0.2);
             border: 1px solid rgba(255, 255, 255, 0.3);
             color: white;
@@ -121,7 +121,7 @@
             transition: all 0.2s;
         }
 
-        #toggle-workers-btn:hover {
+        .control-button:hover {
             background-color: rgba(255, 255, 255, 0.3);
         }
 
@@ -318,20 +318,18 @@
         </div>
 
         <div id="header-controls">
-            <div class="control-group">
-                <label id="toplevel-metrics" title="Click to display global metrics">Overall metrics</label>
-            </div>
-
             <!-- Metric Selector -->
             <div class="control-group">
-                <button for="metric-selector" id="top-nodes" title="Click to display top nodes">Metric:</button>
+                <label for="metric-selector">Metric:</label>
                 <select id="metric-selector"></select>
+                <button class="control-button" id="toplevel-metrics" title="Display global profile metrics. Click to pin">Overall metrics</button>
+                <button class="control-button" id="top-nodes" title="Display top nodes for a metric. Click to pin">Top 20 nodes</button>
             </div>
 
             <!-- Worker Checkboxes -->
             <div class="control-group">
                 <label>Workers:</label>
-                <button id="toggle-workers-btn">Toggle All</button>
+                <button class="control-button" id="toggle-workers-btn">Toggle All</button>
                 <div id="worker-checkboxes"></div>
             </div>
 

@@ -57,8 +57,8 @@
 
       try {
         // Parse the profile data
-        const profile = CircuitProfile.fromJson(profileData)
-        profile.setDataflow(dataflowData, programCode)
+        const circuit = CircuitProfile.fromJson(profileData)
+        circuit.profile.setDataflow(dataflowData, programCode)
 
         // Create visualizer configuration with callbacks
         const config: VisualizerConfig = {
@@ -69,9 +69,9 @@
 
         // Create and render visualizer
         const visualizer = new Visualizer(config)
-        visualizer.render(profile)
+        visualizer.render(circuit)
 
-        instance = { visualizer, profile }
+        instance = { visualizer, profile: circuit.profile }
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : String(e)
         callbacks.onError(`Failed to initialize visualizer: ${errorMsg}`)
@@ -81,20 +81,32 @@
   })
 
   // Public methods that proxy to visualizer-lib
-  export function selectMetric(metricId: string): void {
+  export function selectMetric(metricId: string) {
     instance?.visualizer.selectMetric(metricId)
   }
 
-  export function toggleWorker(workerId: string): void {
+  export function toggleWorker(workerId: string) {
     instance?.visualizer.toggleWorker(workerId)
   }
 
-  export function toggleAllWorkers(): void {
+  export function toggleAllWorkers() {
     instance?.visualizer.toggleAllWorkers()
   }
 
-  export function search(query: string): void {
+  export function search(query: string) {
     instance?.visualizer.search(query)
+  }
+
+  export function showGlobalMetrics(isSticky?: boolean) {
+    instance?.visualizer.showGlobalMetrics(isSticky)
+  }
+
+  export function hideNodeAttributes(hideSticky?: boolean) {
+    instance?.visualizer.hideNodeAttributes(hideSticky)
+  }
+
+  export function showTopNodes(metric: string, n: number, isSticky?: boolean) {
+    return instance?.visualizer.showTopNodes(metric, n, isSticky)
   }
 
   // Cleanup on component destruction
