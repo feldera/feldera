@@ -479,36 +479,42 @@ where
         O: IndexedZSet<Key = Z::Key, Val = Out>,
     {
         let circuit = self.circuit();
-        let stream = self.dyn_shard(&factories.input_factories);
-
-        // We construct the following circuit.  See `AggregateIncremental` documentation
-        // for details.
-        //
-        // ```
-        //                        ┌────────────────────────────────────────┐
-        //                        │                                        │
-        //                        │                                        ▼
-        // stream ┌────────────┐  │     ┌─────┐  stream.trace()  ┌────────────────────┐      ┌──────┐
-        // ──────►│accumulate  ├──┴────►┤trace├─────────────────►│AggregateIncremental├─────►│upsert├──────►
-        //        └────────────┘        └─────┘                  └────────────────────┘      └──────┘
-        // ```
-
         circuit
-            .add_binary_operator(
-                StreamingBinaryWrapper::new(AggregateIncremental::new(
-                    factories.keys_factory,
-                    factories.output_pair_factory,
-                    factories.output_pairs_factory,
-                    aggregator,
-                    circuit.clone(),
-                )),
-                &stream.dyn_accumulate(&factories.input_factories),
-                &stream
-                    .dyn_accumulate_trace(&factories.trace_factories, &factories.input_factories),
-            )
-            .mark_sharded()
-            .upsert::<O>(persistent_id, &factories.upsert_factories)
-            .mark_sharded()
+            .region("aggregate", || {
+                let stream = self.dyn_shard(&factories.input_factories);
+
+                // We construct the following circuit.  See `AggregateIncremental` documentation
+                // for details.
+                //
+                // ```
+                //                        ┌────────────────────────────────────────┐
+                //                        │                                        │
+                //                        │                                        ▼
+                // stream ┌────────────┐  │     ┌─────┐  stream.trace()  ┌────────────────────┐      ┌──────┐
+                // ──────►│accumulate  ├──┴────►┤trace├─────────────────►│AggregateIncremental├─────►│upsert├──────►
+                //        └────────────┘        └─────┘                  └────────────────────┘      └──────┘
+                // ```
+
+                circuit
+                    .add_binary_operator(
+                        StreamingBinaryWrapper::new(AggregateIncremental::new(
+                            factories.keys_factory,
+                            factories.output_pair_factory,
+                            factories.output_pairs_factory,
+                            aggregator,
+                            circuit.clone(),
+                        )),
+                        &stream.dyn_accumulate(&factories.input_factories),
+                        &stream.dyn_accumulate_trace(
+                            &factories.trace_factories,
+                            &factories.input_factories,
+                        ),
+                    )
+                    .mark_sharded()
+                    .upsert::<O>(persistent_id, &factories.upsert_factories)
+                    .mark_sharded()
+            })
+            .clone()
     }
 
     /// See [`Stream::aggregate_linear`].
@@ -543,22 +549,26 @@ where
         O: IndexedZSet<Key = Z::Key>,
         A: WeightTrait + ?Sized,
     {
-        self.dyn_weigh(&factories.aggregate_factories.input_factories, agg_func)
-            .set_persistent_id(
-                persistent_id
-                    .map(|name| format!("{name}-weighted"))
-                    .as_deref(),
-            )
-            .dyn_aggregate_generic(
-                persistent_id,
-                &factories.aggregate_factories,
-                &WeightedCount::new(
-                    factories.out_factory,
-                    factories.agg_factory,
-                    factories.option_agg_factory,
-                    out_func,
-                ),
-            )
+        self.circuit()
+            .region("aggregate_linear", || {
+                self.dyn_weigh(&factories.aggregate_factories.input_factories, agg_func)
+                    .set_persistent_id(
+                        persistent_id
+                            .map(|name| format!("{name}-weighted"))
+                            .as_deref(),
+                    )
+                    .dyn_aggregate_generic(
+                        persistent_id,
+                        &factories.aggregate_factories,
+                        &WeightedCount::new(
+                            factories.out_factory,
+                            factories.agg_factory,
+                            factories.option_agg_factory,
+                            out_func,
+                        ),
+                    )
+            })
+            .clone()
     }
 
     /// See [`Stream::weigh`].
@@ -669,25 +679,30 @@ where
         TS: DataTrait + ?Sized,
         Box<TS>: Clone,
     {
-        let weighted = self.dyn_weigh(&factories.aggregate_factories.input_factories, agg_func);
-        weighted.dyn_integrate_trace_retain_keys(waterline, retain_key_func);
+        self.circuit()
+            .region("aggregate_linear_retain_keys", || {
+                let weighted =
+                    self.dyn_weigh(&factories.aggregate_factories.input_factories, agg_func);
+                weighted.dyn_integrate_trace_retain_keys(waterline, retain_key_func);
 
-        weighted
-            .set_persistent_id(
-                persistent_id
-                    .map(|name| format!("{name}-weighted"))
-                    .as_deref(),
-            )
-            .dyn_aggregate_generic(
-                persistent_id,
-                &factories.aggregate_factories,
-                &WeightedCount::new(
-                    factories.out_factory,
-                    factories.agg_factory,
-                    factories.option_agg_factory,
-                    out_func,
-                ),
-            )
+                weighted
+                    .set_persistent_id(
+                        persistent_id
+                            .map(|name| format!("{name}-weighted"))
+                            .as_deref(),
+                    )
+                    .dyn_aggregate_generic(
+                        persistent_id,
+                        &factories.aggregate_factories,
+                        &WeightedCount::new(
+                            factories.out_factory,
+                            factories.agg_factory,
+                            factories.option_agg_factory,
+                            out_func,
+                        ),
+                    )
+            })
+            .clone()
     }
 }
 
