@@ -36,7 +36,7 @@ export interface TooltipRow {
 }
 
 /** Tooltip data structure */
-export interface DisplayedAttributes {
+export interface NodeAttributes {
     /** Column headers */
     columns: string[];
     /** Rows of metrics with values */
@@ -49,7 +49,9 @@ export interface DisplayedAttributes {
 
 /** Callbacks for profiler to communicate UI updates */
 export interface ProfilerCallbacks {
-    displayNodeAttributes: (data: Option<DisplayedAttributes>, visible: boolean) => void;
+    displayNodeAttributes: (data: Option<NodeAttributes>, isSticky: boolean) => void;
+
+    displayTopNodes: (data: Option<Array<NodeAndMetric>>, isSticky: boolean) => void;
 
     /** Called when the available metrics change */
     onMetricsChanged: (metrics: MetricOption[], selectedMetric: string) => void;
@@ -107,21 +109,13 @@ export class Visualizer {
         this.config.callbacks.displayMessage(Option.none());
     }
 
-    /** Return the ids of the nodes that score highest according to the specified metric. */
-    public topNodes(metric: string): Array<NodeAndMetric> {
-        if (this.profile === null) {
-            return [];
-        }
-        return this.rendering?.topNodes(this.profile, metric) || [];
-    }
-
     /**
      * Display a circuit profile using interactive visualization.
      * This is the main entry point for displaying the profile data.
      *
      * @param profile The circuit profile to visualize
      */
-    render(profile: CircuitProfile): void {
+    render({ profile, rootNodeId }: { profile: CircuitProfile, rootNodeId: string }): void {
         try {
             // Create selectors
             this.profile = profile;
@@ -141,7 +135,7 @@ export class Visualizer {
                 this.config.navigatorContainer,
                 this.config.callbacks,
                 cytograph.graph,
-                cytograph.rootNodeId,
+                rootNodeId,
                 selection,
                 MetadataSelector.getFullSelection(),
                 this.message.bind(this),
@@ -180,8 +174,59 @@ export class Visualizer {
         }
     }
 
-    public topLevelEvent(e: Event): void {
-        this.rendering?.onToplevelEvent(e);
+    /**
+     * Show global metrics for the top-level graph
+     * @param isSticky If true, the metrics will remain visible after mouse out
+     */
+    public showGlobalMetrics(isSticky?: boolean): void {
+        if (!this.rendering || (this.rendering.stickyInformation && !isSticky)) {
+            return;
+        }
+
+        if (isSticky) {
+            // Hide previous tooltip if any
+            this.rendering.hideNodeInformation();
+        }
+
+        this.rendering.setStickyNodeInformation(Boolean(isSticky));
+
+        // Display the top-level graph metrics
+        const rootNode = this.rendering.getRenderedNode(this.rendering.rootNodeId);
+        this.rendering.displayNodeAttributes(rootNode);
+    }
+
+    public showTopNodes(metric: string, n: number, isSticky?: boolean): void {
+        if (!this.rendering || !this.profile || (this.rendering.stickyInformation && !isSticky)) {
+            return;
+        }
+
+        if (isSticky) {
+            // Hide previous node information if any
+            this.rendering.hideNodeInformation();
+        }
+
+        this.rendering.setStickyNodeInformation(Boolean(isSticky));
+
+        const topNodes = this.rendering.topNodes(this.profile, metric, n)
+        this.config.callbacks.displayTopNodes(Option.some(topNodes), Boolean(isSticky))
+    }
+
+    /**
+     * Hide the currently displayed metrics
+     * @param hideSticky If true, hide metrics even if they're sticky. If false (default), only hide non-sticky metrics.
+     */
+    public hideNodeAttributes(hideSticky?: boolean): void {
+        if (!this.rendering) {
+            return;
+        }
+
+        if (hideSticky) {
+            this.rendering.setStickyNodeInformation(false);
+            this.rendering.hideNodeInformation();
+        } else if (!this.rendering.stickyInformation) {
+            // Only hide if not sticky
+            this.rendering.hideNodeInformation();
+        }
     }
 
     /**
@@ -203,6 +248,14 @@ export class Visualizer {
      */
     toggleAllWorkers(): void {
         this.metadataSelector?.toggleAllWorkers();
+    }
+
+    /** Return the ids of the nodes that score highest according to the specified metric. */
+    public topNodes(metric: string, n: number): Array<NodeAndMetric> {
+        if (this.profile === null || this.rendering === null) {
+            return [];
+        }
+        return this.rendering.topNodes(this.profile, metric, n);
     }
 
     /**

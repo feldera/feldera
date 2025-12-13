@@ -2,6 +2,10 @@
 
 ## Context: CLAUDE.md
 <!-- SECTION:CLAUDE.md START -->
+> Important! When `SECTION:some/path/CLAUDE.md START` HTML comment tag is encountered in this file, it means that the content within this tag applies to `some/path/` directory.
+
+## Context: CLAUDE.md
+<!-- SECTION:CLAUDE.md START -->
 # CLAUDE.md
 
 This and any nested CLAUDE.md files provide guidance to Claude Code (claude.ai/code) when working with the Feldera repository.
@@ -10116,5 +10120,8 @@ public void testComplexJoin() {
 
 This SQL-to-DBSP compiler represents a sophisticated piece of compiler engineering that successfully bridges the gap between declarative SQL and high-performance incremental computation. Its layered architecture, extensive use of design patterns, and integration with both Apache Calcite and the DBSP runtime create a powerful platform for incremental view maintenance at scale.
 <!-- SECTION:sql-to-dbsp-compiler/SQL-compiler/CLAUDE.md END -->
+
+---
+<!-- SECTION:CLAUDE.md END -->
 
 ---

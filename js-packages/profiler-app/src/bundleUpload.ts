@@ -37,7 +37,7 @@ export function setupBundleUpload(loader: ProfileLoader) {
 
             // Create circuit profile
             const circuit = CircuitProfile.fromJson(profile);
-            circuit.setDataflow(dataflow, programCode);
+            circuit.profile.setDataflow(dataflow, programCode);
 
             // Delegate to ProfileLoader for rendering (handles profiler lifecycle)
             loader.renderCircuit(circuit);

@@ -16,7 +16,7 @@ export class ProfileLoader {
      *
      * @param circuit The circuit profile to render
      */
-    renderCircuit(circuit: CircuitProfile): void {
+    renderCircuit(circuit: { profile: CircuitProfile, rootNodeId: string }): void {
         try {
             // Dispose old profiler and create new one (ensures clean state)
             this.visualizer.dispose();
@@ -29,8 +29,14 @@ export class ProfileLoader {
         }
     }
 
-    topLevelEvent(e: Event): void {
-        this.visualizer.topLevelEvent(e);
+    /** Show global metrics for the top-level graph */
+    showGlobalMetrics(isSticky?: boolean): void {
+        this.visualizer.showGlobalMetrics(isSticky);
+    }
+
+    /** Hide the currently displayed metrics */
+    hideNodeAttributes(hideSticky?: boolean): void {
+        this.visualizer.hideNodeAttributes(hideSticky);
     }
 
     /** Select a metric by ID */
@@ -59,7 +65,12 @@ export class ProfileLoader {
     }
 
     /** Return the top nodes for a specified metric */
-    topNodes(metric: string): Array<NodeAndMetric> {
-        return this.visualizer.topNodes(metric);
+    topNodes(metric: string, n: number): Array<NodeAndMetric> {
+        return this.visualizer.topNodes(metric, n);
+    }
+
+    /** Display the top nodes for a specified metric */
+    showTopNodes(metric: string, n: number, isSticky?: boolean | undefined): void {
+        this.visualizer.showTopNodes(metric, n, isSticky);
     }
 }

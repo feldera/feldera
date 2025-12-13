@@ -11,7 +11,7 @@ import { Point, Size } from "./planar.js";
 import { ViewNavigator } from './navigator.js';
 import { ZSet } from "./zset.js";
 import { MetadataSelection } from './metadataSelection.js';
-import { type DisplayedAttributes, type TooltipCell, type ProfilerCallbacks } from './profiler.js';
+import { type NodeAttributes, type TooltipCell, type ProfilerCallbacks } from './profiler.js';
 
 /** A measurement represented as a string, but also with a normalized value between 0 and 100. */
 class SerializedMeasurement {
@@ -168,7 +168,7 @@ export class Cytograph {
     // Maps edges ids in the underlying graph to edges ids in the drawn graph
     readonly edgeMap: Map<string, string>;
 
-    constructor(readonly graph: Graph<NodeId>, readonly rootNodeId: NodeId) {
+    constructor(readonly graph: Graph<NodeId>) {
         this.nodes = [];
         this.edges = [];
         this.edgeMap = new Map();
@@ -240,7 +240,7 @@ export class Cytograph {
     }
 
     /** Given a metric, return the displayed nodes that have the top values for the metric. */
-    topNodes(profile: CircuitProfile, metric: string): Array<NodeAndMetric> {
+    topNodes(profile: CircuitProfile, metric: string, n: number): Array<NodeAndMetric> {
         let result: Array<NodeAndMetric> = [];
         let range = profile.propertyRange(metric);
         if (range.isEmpty()) {
@@ -274,9 +274,9 @@ export class Cytograph {
         }
         // Sort in decreasing order
         result.sort((a, b) => b.normalizedValue - a.normalizedValue);
-        // Do not return more than 20 results
-        if (result.length > 20) {
-            result.length = 20;
+        // Do not return more than n results
+        if (result.length > n) {
+            result.length = n;
         }
         return result;
     }
@@ -284,7 +284,7 @@ export class Cytograph {
     // Create a Cytograph from a CircuitProfile filtered by the specified selection.
     static fromProfile(profile: CircuitProfile, selection: CircuitSelection): Cytograph {
         let g = this.createUnderlyingGraph(profile);
-        let result = new Cytograph(g, profile.rootNodeId);
+        let result = new Cytograph(g);
         let inserted = new OMap<NodeId, GraphNode>();
         let sources = profile.sources.unwrapOr(new Sources([]));
 
@@ -401,7 +401,9 @@ export class CytographRendering {
     currentGraph: Cytograph | null;
     readonly cy: cytoscape.Core;
     readonly navigator: ViewNavigator;
-    // If true do not remove the node information from the screen on mouse leave
+    /**
+     * If true do not remove the node information from the screen on mouse leave
+     */
     stickyInformation: boolean;
     // Last node that triggered a recomputation of the layout
     lastNode: Option<NodeId>;
@@ -623,8 +625,8 @@ export class CytographRendering {
         this.cy.center(el);
     }
 
-    topNodes(profile: CircuitProfile, metric: string): Array<NodeAndMetric> {
-        return this.currentGraph?.topNodes(profile, metric) || [];
+    topNodes(profile: CircuitProfile, metric: string, n: number): Array<NodeAndMetric> {
+        return this.currentGraph?.topNodes(profile, metric, n) || [];
     }
 
     /** Get a handle to the node in the rendering with the specified id. */
@@ -822,24 +824,6 @@ export class CytographRendering {
         this.stickyInformation = sticky;
     }
 
-    // An event is dispatched to the node that represents the top-level graph
-    onToplevelEvent(e: Event) {
-        // Act as if the event was dispatched to the toplevel (invisible) graph node
-        if (e.type === 'click') {
-            // Hide previous node if any
-            this.setStickyNodeInformation(false);
-            this.hideNodeInformation();
-            // Display current node
-            let singular = this.cy.getElementById(this.rootNodeId) as NodeSingular;
-            this.displayNodeAttributes(singular);
-            // Keep the information after mouse out
-            this.setStickyNodeInformation(true);
-        } else if (e.type === 'mouseover') {
-            let singular = this.cy.getElementById(this.rootNodeId) as NodeSingular;
-            this.displayNodeAttributes(singular);
-        }
-    }
-
     setEvents(callbacks: {
         onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined
     }) {
@@ -848,17 +832,14 @@ export class CytographRendering {
             //.on('render', () => console.log("rendering"))
             //.on('layoutstart', () => console.log("start layout"))
             .on('layoutstop', () => this.layoutComplete())
-            .on('mouseover', 'node', event => this.displayEventTargetAttributes(event))
+            .on('mouseover', 'node', event => this.displayEventTargetAttributes(event, false))
             .on('mouseout', 'node', event => this.mouseOut(event))
             .on('zoom pan resize', () => this.updateNavigator(this.navigator))
             .on('click', 'node', (e) => {
-                // Hide previous node if any
-                this.setStickyNodeInformation(false);
+                // Hide previous node information if any
                 this.hideNodeInformation();
                 // Display current node
-                this.displayEventTargetAttributes(e);
-                // Keep the information after mouse out
-                this.setStickyNodeInformation(true);
+                this.displayEventTargetAttributes(e, true);
             })
             .on('dblclick', 'node', (e) => {
                 let node = e.target as NodeSingular;
@@ -963,10 +944,14 @@ export class CytographRendering {
     // (1) the attributes of the node,
     // (2) it highlights the edges reaching the node,
     // (3) it displays the source position of the node.
-    displayEventTargetAttributes(event: EventObject) {
+    displayEventTargetAttributes(event: EventObject, isSticky: boolean) {
         let node: NodeSingular = event.target;
-        if (node.data("expanded") === true)
+        if (node.data("expanded") === true || (this.stickyInformation && !isSticky)) {
             return;
+        }
+
+        // Keep the information after mouse out
+        this.setStickyNodeInformation(isSticky);
 
         this.displayNodeAttributes(node);
     }
@@ -975,7 +960,7 @@ export class CytographRendering {
         const nodeId = node.id();
         const attributes: Attributes = node.data().attributes;
         const sources = node.data("sources")
-        if (this.cy === null || this.stickyInformation) {
+        if (this.cy === null) {
             return;
         }
 
@@ -988,7 +973,7 @@ export class CytographRendering {
         // Build structured tooltip data
         let visible = false;
 
-        const tooltipData: DisplayedAttributes = {
+        const tooltipData: NodeAttributes = {
             columns: [],
             rows: [],
             attributes: new Map()
@@ -1051,7 +1036,7 @@ export class CytographRendering {
             return;
 
         // Send tooltip data via callback
-        this.callbacks.displayNodeAttributes(Option.some(tooltipData), true);
+        this.callbacks.displayNodeAttributes(Option.some(tooltipData), this.stickyInformation);
     }
 
     // hide the information shown when hovering
