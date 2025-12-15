@@ -795,6 +795,7 @@ class TestPipeline(SharedTestPipeline):
             == CompletionTokenStatus.COMPLETE
         )
 
+    @enterprise_only
     def test_samply_profile(self):
         self.pipeline.set_runtime_config(
             RuntimeConfig(dev_tweaks={"profiling": "samply"})
