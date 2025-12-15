@@ -1496,4 +1496,21 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE LOCAL VIEW V AS
                 SELECT CAST(NULL AS LEVEL_0)""");
     }
+
+    @Test
+    public void issue5285() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(
+                id INT,
+                intt INT,
+                roww ROW(i1 INT, v1 VARCHAR NULL) NULL);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                AVG(roww[1]) AS roww FROM tbl
+                WHERE id = 0;""");
+        ccs.step("INSERT INTO tbl VALUES(0, -12, ROW(4, 'cat'))", """
+                 avg | weight
+                --------------
+                 4   | 1""");
+    }
 }
