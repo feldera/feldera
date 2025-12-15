@@ -1,6 +1,5 @@
 import invariant from 'tiny-invariant'
 import { groupBy } from '$lib/functions/common/array'
-import { nonNull } from '$lib/functions/common/function'
 import { tuple } from '$lib/functions/common/tuple'
 import { normalizeCaseIndependentName } from '$lib/functions/felderaRelation'
 import type {
