@@ -272,11 +272,11 @@ class TimeValue extends PropertyValue {
     }
 }
 
-export type Category = "CPU" | "memory" | "cache" | "storage" | "";
+export type MeasurementCategory = "CPU" | "memory" | "cache" | "storage" | "";
 
 /** Which category does a measurement belong to */
-export function measurementCategory(prop: string): Category {
-    const map: Map<Category, Array<string>> = new Map();
+export function measurementCategory(prop: string): MeasurementCategory {
+    const map: Map<MeasurementCategory, Array<string>> = new Map();
     map.set("CPU", [
         "time%",
         "invocations",
