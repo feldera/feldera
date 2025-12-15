@@ -822,9 +822,7 @@ impl Controller {
             )
         }
 
-        let err_msg = format!(
-            "is Samply installed and in `$PATH`? try: `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/abhizer/samply/releases/download/v0.13.2/samply-installer.sh | sh`",
-        );
+        let err_msg = "is Samply installed and in `$PATH`? try: `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/abhizer/samply/releases/download/v0.13.2/samply-installer.sh | sh`".to_string();
 
         let version = tokio::process::Command::new("samply")
             .arg("--version")
