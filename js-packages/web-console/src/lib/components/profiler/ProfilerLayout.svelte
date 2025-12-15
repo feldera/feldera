@@ -72,7 +72,9 @@
       selectedMetricId = newSelectedMetricId
     },
     onWorkersChanged: (newWorkers: WorkerOption[]) => {
-      workers = newWorkers
+      // Transpose the list of workers to display it as a 2-row CSS grid
+      const halfLen = Math.round(newWorkers.length / 2)
+      workers = newWorkers.map((_, i) => newWorkers[(i >> 1) + (i % 2) * halfLen])
     },
     displayMessage: (msg) => {
       message = msg.unwrapOr('')
@@ -174,7 +176,7 @@
     <!-- Metric Selector -->
     <label class="flex items-center gap-2 text-sm">
       <span class="text-surface-600-400">Metric:</span>
-      <select value={selectedMetricId} onchange={handleMetricChange} class="select w-40 text-sm">
+      <select value={selectedMetricId} onchange={handleMetricChange} class="select text-sm">
         {#each metrics as metric (metric.id)}
           <option value={metric.id}>{metric.label}</option>
         {/each}
@@ -211,7 +213,7 @@
       <button onclick={handleToggleAllWorkers} class="btn bg-surface-100-900! btn-sm px-2 text-xs">
         Toggle All
       </button>
-      <div class="flex gap-1">
+      <div class="grid grid-flow-col grid-rows-2 gap-0.5">
         {#each workers as worker (worker.id)}
           <input
             type="checkbox"
