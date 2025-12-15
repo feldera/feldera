@@ -407,6 +407,8 @@ export class CytographRendering {
     stickyInformation: boolean;
     // Last node that triggered a recomputation of the layout
     lastNode: Option<NodeId>;
+    // Current node that has tooltip displayed (for refreshing on metadata changes)
+    private currentTooltipNode: NodeId | null = null;
 
     readonly graph_style: StylesheetJson = [
         {
@@ -740,6 +742,14 @@ export class CytographRendering {
         this.computeImportance(profile, selection);
         this.computeAttributes(profile, selection);
         this.cy.style().update();
+
+        // Refresh the tooltip if there's a node currently displayed
+        if (this.currentTooltipNode !== null) {
+            const node = this.getRenderedNode(this.currentTooltipNode);
+            if (node) {
+                this.displayNodeAttributes(node);
+            }
+        }
     }
 
     /** Called when the graph has changed to trigger a new layout computation. */
@@ -964,6 +974,9 @@ export class CytographRendering {
             return;
         }
 
+        // Track the current tooltip node for refreshing on metadata changes
+        this.currentTooltipNode = nodeId;
+
         // highlight edges
         let reachable = this.reachableFrom(nodeId, true);
         reachable.addClass('highlight-forward');
@@ -1047,6 +1060,7 @@ export class CytographRendering {
     }
 
     hideNodeInformation() {
+        this.currentTooltipNode = null;
         this.callbacks.displayNodeAttributes(Option.none(), false);
         let reachable = this.cy.edges();
         reachable.removeClass('highlight-forward');
