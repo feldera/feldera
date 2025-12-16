@@ -4,18 +4,21 @@
 //! 2-column layer file.  To write more columns, either add another `Writer<N>`
 //! struct, which is easily done, or mark the currently private `Writer` as
 //! `pub`.
-use crate::storage::{
-    backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
-    buffer_cache::{BufferCache, CacheEntry, FBuf, FBufSerializer, LimitExceeded},
-    file::{
-        BLOOM_FILTER_SEED,
-        format::{
-            BlockHeader, DATA_BLOCK_MAGIC, DataBlockHeader, FILE_TRAILER_BLOCK_MAGIC, FileTrailer,
-            FileTrailerColumn, FilterBlockRef, FixedLen, INDEX_BLOCK_MAGIC, IndexBlockHeader,
-            NodeType, VERSION_NUMBER, Varint,
+use crate::{
+    dynamic::Factory,
+    storage::{
+        backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
+        buffer_cache::{BufferCache, CacheEntry, FBuf, FBufSerializer, LimitExceeded},
+        file::{
+            BLOOM_FILTER_SEED,
+            format::{
+                BlockHeader, DATA_BLOCK_MAGIC, DataBlockHeader, FILE_TRAILER_BLOCK_MAGIC,
+                FileTrailer, FileTrailerColumn, FilterBlockRef, FixedLen, INDEX_BLOCK_MAGIC,
+                IndexBlockHeader, NodeType, VERSION_NUMBER, Varint,
+            },
+            reader::TreeNode,
+            with_serializer,
         },
-        reader::TreeNode,
-        with_serializer,
     },
 };
 use binrw::{
@@ -46,7 +49,7 @@ use crate::{
 };
 
 use super::format::Compression;
-use super::{AnyFactories, Factories, reader::Reader};
+use super::{Factories, reader::Reader};
 
 struct VarintWriter {
     varint: Varint,
@@ -209,20 +212,28 @@ where
     }
 }
 
-struct ColumnWriter {
+struct ColumnWriter<K, A>
+where
+    K: DataTrait + ?Sized,
+    A: DataTrait + ?Sized,
+{
     parameters: Arc<Parameters>,
     rows: Range<u64>,
-    data_block: DataBlockBuilder,
-    index_blocks: Vec<IndexBlockBuilder>,
-    factories: AnyFactories,
+    data_block: DataBlockBuilder<K, A>,
+    index_blocks: Vec<IndexBlockBuilder<K>>,
+    factories: Factories<K, A>,
 }
 
-impl ColumnWriter {
-    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>) -> Self {
+impl<K, A> ColumnWriter<K, A>
+where
+    K: DataTrait + ?Sized,
+    A: DataTrait + ?Sized,
+{
+    fn new(factories: &Factories<K, A>, parameters: Arc<Parameters>) -> Self {
         ColumnWriter {
             parameters: parameters.clone(),
             rows: 0..0,
-            data_block: DataBlockBuilder::new(factories, parameters),
+            data_block: DataBlockBuilder::new(parameters),
             index_blocks: Vec::new(),
             factories: factories.clone(),
         }
@@ -230,21 +241,19 @@ impl ColumnWriter {
 
     fn take_rows(&mut self) -> Range<u64> {
         let end = self.rows.end;
-        replace(&mut self.rows, end..end)
+        let rows = replace(&mut self.rows, end..end);
+        assert!(!rows.is_empty());
+        rows
     }
 
-    fn finish<K, A>(
+    fn finish(
         &mut self,
         block_writer: &mut BlockWriter,
-    ) -> Result<FileTrailerColumn, StorageError>
-    where
-        K: DataTrait + ?Sized,
-        A: DataTrait + ?Sized,
-    {
+    ) -> Result<FileTrailerColumn, StorageError> {
         // Flush data.
         if !self.data_block.is_empty() {
-            let data_block = self.data_block.build::<K, A>();
-            self.write_data_block::<K, A>(block_writer, data_block)?;
+            let data_block = self.data_block.build(&self.factories);
+            self.write_data_block(block_writer, data_block)?;
         }
 
         // Flush index.
@@ -261,7 +270,7 @@ impl ColumnWriter {
                 });
             } else if !self.index_blocks[level].is_empty() {
                 let index_block = self.index_blocks[level].build();
-                self.write_index_block::<K>(block_writer, index_block, level)?;
+                self.write_index_block(block_writer, index_block, level)?;
             }
             level += 1;
         }
@@ -273,11 +282,11 @@ impl ColumnWriter {
         })
     }
 
-    fn get_index_block(&mut self, level: usize) -> &mut IndexBlockBuilder {
+    fn get_index_block(&mut self, level: usize) -> &mut IndexBlockBuilder<K> {
         if level >= self.index_blocks.len() {
             debug_assert_eq!(level, self.index_blocks.len());
             self.index_blocks.push(IndexBlockBuilder::new(
-                &self.factories,
+                self.factories.key_factory,
                 &self.parameters,
                 if level == 0 {
                     NodeType::Data
@@ -289,15 +298,11 @@ impl ColumnWriter {
         &mut self.index_blocks[level]
     }
 
-    fn write_data_block<K, A>(
+    fn write_data_block(
         &mut self,
         block_writer: &mut BlockWriter,
         data_block: DataBlock<K>,
-    ) -> Result<(), StorageError>
-    where
-        K: DataTrait + ?Sized,
-        A: DataTrait + ?Sized,
-    {
+    ) -> Result<(), StorageError> {
         let rows = data_block.rows();
         let (block, location) =
             block_writer.write_block(data_block.raw, self.parameters.compression)?;
@@ -319,20 +324,17 @@ impl ColumnWriter {
             &data_block.min_max,
             data_block.n_rows as u64,
         ) {
-            self.write_index_block::<K>(block_writer, index_block, 0)?;
+            self.write_index_block(block_writer, index_block, 0)?;
         }
         Ok(())
     }
 
-    fn write_index_block<K>(
+    fn write_index_block(
         &mut self,
         block_writer: &mut BlockWriter,
         mut index_block: IndexBlock<K>,
         mut level: usize,
-    ) -> Result<(), StorageError>
-    where
-        K: DataTrait + ?Sized,
-    {
+    ) -> Result<(), StorageError> {
         loop {
             let rows = index_block.rows.clone();
             let n_rows = index_block.n_rows();
@@ -361,18 +363,15 @@ impl ColumnWriter {
         }
     }
 
-    fn add_item<K, A>(
+    fn write(
         &mut self,
         block_writer: &mut BlockWriter,
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
-    ) -> Result<(), StorageError>
-    where
-        K: DataTrait + ?Sized,
-        A: DataTrait + ?Sized,
-    {
-        if let Some(data_block) = self.data_block.add_item(item, row_group) {
-            self.write_data_block::<K, A>(block_writer, data_block)?;
+    ) -> Result<(), StorageError> {
+        self.rows.end += 1;
+        if let Some(data_block) = self.data_block.add_item(&self.factories, item, row_group) {
+            self.write_data_block(block_writer, data_block)?;
         }
         Ok(())
     }
@@ -419,15 +418,19 @@ impl StrideBuilder {
     }
 }
 
-struct DataBlockBuilder {
+struct DataBlockBuilder<K, A>
+where
+    K: DataTrait + ?Sized,
+    A: DataTrait + ?Sized,
+{
     parameters: Arc<Parameters>,
     raw: FBuf,
     value_offsets: Vec<usize>,
     value_offset_stride: StrideBuilder,
     row_groups: ContiguousRanges,
     size_target: Option<usize>,
-    factories: AnyFactories,
     first_row: u64,
+    _phantom: PhantomData<fn(&K, &A)>,
 }
 
 struct DataBuildSpecs {
@@ -452,19 +455,23 @@ where
     }
 }
 
-impl DataBlockBuilder {
-    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>) -> Self {
+impl<K, A> DataBlockBuilder<K, A>
+where
+    K: DataTrait + ?Sized,
+    A: DataTrait + ?Sized,
+{
+    fn new(parameters: Arc<Parameters>) -> Self {
         let mut raw = FBuf::with_capacity(parameters.min_data_block);
         raw.resize(DataBlockHeader::LEN, 0);
         Self {
-            parameters: parameters.clone(),
             raw,
             row_groups: ContiguousRanges::with_capacity(parameters.min_branch),
             value_offsets: Vec::with_capacity(parameters.min_branch),
             value_offset_stride: StrideBuilder::new(),
+            parameters,
             size_target: None,
-            factories: factories.clone(),
             first_row: 0,
+            _phantom: PhantomData,
         }
     }
     fn clear(&mut self) {
@@ -478,15 +485,12 @@ impl DataBlockBuilder {
     fn is_empty(&self) -> bool {
         self.value_offsets.is_empty()
     }
-    fn try_add_item<K, A>(
+    fn try_add_item(
         &mut self,
+        factories: &Factories<K, A>,
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
-    ) -> Result<(), LimitExceeded>
-    where
-        K: DataTrait + ?Sized,
-        A: DataTrait + ?Sized,
-    {
+    ) -> Result<(), LimitExceeded> {
         if self.value_offsets.len() >= self.parameters.max_branch() {
             return Err(LimitExceeded);
         }
@@ -495,12 +499,9 @@ impl DataBlockBuilder {
         let old_stride = self.value_offset_stride;
 
         let mut result = Ok(0);
-        self.factories
-            .item_factory()
-            .with(item.0, item.1, &mut |item| {
-                result =
-                    rkyv_serialize(&mut self.raw, item, self.size_target.unwrap_or(usize::MAX));
-            });
+        factories.item_factory.with(item.0, item.1, &mut |item| {
+            result = rkyv_serialize(&mut self.raw, item, self.size_target.unwrap_or(usize::MAX));
+        });
         let offset = result.inspect_err(|_| self.raw.resize(old_len, 0))?;
 
         self.value_offsets.push(offset);
@@ -530,20 +531,17 @@ impl DataBlockBuilder {
 
         Ok(())
     }
-    fn add_item<K, A>(
+    fn add_item(
         &mut self,
+        factories: &Factories<K, A>,
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
-    ) -> Option<DataBlock<K>>
-    where
-        K: DataTrait + ?Sized,
-        A: DataTrait + ?Sized,
-    {
-        if self.try_add_item(item, row_group).is_ok() {
+    ) -> Option<DataBlock<K>> {
+        if self.try_add_item(factories, item, row_group).is_ok() {
             None
         } else {
-            let retval = self.build::<K, A>();
-            assert!(self.try_add_item(item, row_group).is_ok());
+            let retval = self.build(factories);
+            assert!(self.try_add_item(factories, item, row_group).is_ok());
             Some(retval)
         }
     }
@@ -578,14 +576,7 @@ impl DataBlockBuilder {
             len,
         }
     }
-    fn build<K, A>(&mut self) -> DataBlock<K>
-    where
-        K: DataTrait + ?Sized,
-        A: DataTrait + ?Sized,
-    {
-        let key_factory = self.factories.key_factory::<K>();
-        let item_factory = self.factories.item_factory::<K, A>();
-
+    fn build(&mut self, factories: &Factories<K, A>) -> DataBlock<K> {
         let specs = self.specs();
 
         self.raw
@@ -624,13 +615,13 @@ impl DataBlockBuilder {
         };
         header.overwrite_head(&mut self.raw);
 
-        let mut min = key_factory.default_box();
+        let mut min = factories.key_factory.default_box();
         let min_offset = *self.value_offsets.first().unwrap();
-        rkyv_deserialize_key::<K, A>(item_factory, &self.raw, min_offset, min.as_mut());
+        rkyv_deserialize_key(factories.item_factory, &self.raw, min_offset, min.as_mut());
 
-        let mut max = key_factory.default_box();
+        let mut max = factories.key_factory.default_box();
         let max_offset = *self.value_offsets.last().unwrap();
-        rkyv_deserialize_key::<K, A>(item_factory, &self.raw, max_offset, max.as_mut());
+        rkyv_deserialize_key(factories.item_factory, &self.raw, max_offset, max.as_mut());
 
         // Take our data buffer, replacing it by a new one with a capacity big
         // enough for the data in the current one.  We round up to a multiple of
@@ -691,13 +682,16 @@ impl ContiguousRanges {
     }
 }
 
-struct IndexBlockBuilder {
+struct IndexBlockBuilder<K>
+where
+    K: DataTrait + ?Sized,
+{
     parameters: Arc<Parameters>,
     raw: FBuf,
     entries: Vec<IndexEntry>,
     child_type: NodeType,
     size_target: Option<usize>,
-    factories: AnyFactories,
+    factory: &'static dyn Factory<K>,
     max_child_size: usize,
     first_row: u64,
 }
@@ -765,8 +759,15 @@ where
     Ok(offset)
 }
 
-impl IndexBlockBuilder {
-    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>, child_type: NodeType) -> Self {
+impl<K> IndexBlockBuilder<K>
+where
+    K: DataTrait + ?Sized,
+{
+    fn new(
+        factory: &'static dyn Factory<K>,
+        parameters: &Arc<Parameters>,
+        child_type: NodeType,
+    ) -> Self {
         let mut raw = FBuf::with_capacity(parameters.min_index_block);
         raw.resize(IndexBlockHeader::LEN, 0);
 
@@ -776,7 +777,7 @@ impl IndexBlockBuilder {
             entries: Vec::with_capacity(parameters.min_branch),
             child_type,
             size_target: None,
-            factories: factories.clone(),
+            factory,
             max_child_size: 0,
             first_row: 0,
         }
@@ -791,15 +792,12 @@ impl IndexBlockBuilder {
     fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
-    fn inner_try_add_entry<K>(
+    fn inner_try_add_entry(
         &mut self,
         child: BlockLocation,
         min_max: &(Box<K>, Box<K>),
         n_rows: u64,
-    ) -> Result<(), LimitExceeded>
-    where
-        K: DataTrait + ?Sized,
-    {
+    ) -> Result<(), LimitExceeded> {
         if self.entries.len() >= self.parameters.max_branch() {
             return Err(LimitExceeded);
         }
@@ -828,15 +826,12 @@ impl IndexBlockBuilder {
         }
         Ok(())
     }
-    fn try_add_entry<K>(
+    fn try_add_entry(
         &mut self,
         child: BlockLocation,
         min_max: &(Box<K>, Box<K>),
         n_rows: u64,
-    ) -> Result<(), LimitExceeded>
-    where
-        K: DataTrait + ?Sized,
-    {
+    ) -> Result<(), LimitExceeded> {
         let saved_len = self.raw.len();
         let saved_max_child_size = self.max_child_size;
         let n_entries = self.entries.len();
@@ -849,15 +844,12 @@ impl IndexBlockBuilder {
                 }
             })
     }
-    fn add_entry<K>(
+    fn add_entry(
         &mut self,
         child: BlockLocation,
         min_max: &(Box<K>, Box<K>),
         n_rows: u64,
-    ) -> Option<IndexBlock<K>>
-    where
-        K: DataTrait + ?Sized,
-    {
+    ) -> Option<IndexBlock<K>> {
         let f = |t: &mut Self| t.try_add_entry(child, min_max, n_rows);
         if f(self).is_ok() {
             None
@@ -910,12 +902,7 @@ impl IndexBlockBuilder {
             len,
         }
     }
-    fn build<K>(&mut self) -> IndexBlock<K>
-    where
-        K: DataTrait + ?Sized,
-    {
-        let key_factory = self.factories.key_factory::<K>();
-
+    fn build(&mut self) -> IndexBlock<K> {
         let specs = self.specs();
 
         self.raw
@@ -960,11 +947,11 @@ impl IndexBlockBuilder {
         };
         header.overwrite_head(&mut self.raw);
 
-        let mut min = key_factory.default_box();
+        let mut min = self.factory.default_box();
         let entry_0 = self.entries.first().unwrap();
         rkyv_deserialize(&self.raw, entry_0.min_offset, min.as_mut());
 
-        let mut max = key_factory.default_box();
+        let mut max = self.factory.default_box();
         let entry_n = self.entries.last().unwrap();
         rkyv_deserialize(&self.raw, entry_n.max_offset, max.as_mut());
 
@@ -1088,8 +1075,7 @@ struct Writer {
     cache: fn() -> Arc<BufferCache>,
     writer: BlockWriter,
     bloom_filter: Option<BloomFilter>,
-    cws: Vec<ColumnWriter>,
-    finished_columns: Vec<FileTrailerColumn>,
+    parameters: Arc<Parameters>,
 }
 
 impl Writer {
@@ -1108,17 +1094,8 @@ impl Writer {
         rate
     }
 
-    pub fn new(
-        factories: &[&AnyFactories],
-        cache: fn() -> Arc<BufferCache>,
-        storage_backend: &dyn StorageBackend,
-        parameters: Parameters,
-        n_columns: usize,
-        estimated_keys: usize,
-    ) -> Result<Self, StorageError> {
-        assert_eq!(factories.len(), n_columns);
-
-        let bloom_filter = Self::bloom_false_positive_rate().map(|bloom_false_positive_rate| {
+    fn new_bloom_filter(estimated_keys: usize) -> Option<BloomFilter> {
+        Self::bloom_false_positive_rate().map(|bloom_false_positive_rate| {
             BloomFilter::with_false_pos(bloom_false_positive_rate)
                 .seed(&BLOOM_FILTER_SEED)
                 .expected_items({
@@ -1127,67 +1104,31 @@ impl Writer {
                     // https://github.com/tomtomwombat/fastbloom/issues/17).
                     estimated_keys.max(64)
                 })
-        });
-        let parameters = Arc::new(parameters);
-        let cws = factories
-            .iter()
-            .map(|factories| ColumnWriter::new(factories, &parameters))
-            .collect();
-        let finished_columns = Vec::with_capacity(n_columns);
-        let worker = format!("w{}-", Runtime::worker_index());
-        let writer = Self {
+        })
+    }
+
+    pub fn new(
+        cache: fn() -> Arc<BufferCache>,
+        storage_backend: &dyn StorageBackend,
+        parameters: Arc<Parameters>,
+        estimated_keys: usize,
+    ) -> Result<Self, StorageError> {
+        Ok(Self {
             cache,
-            writer: BlockWriter::new(cache(), storage_backend.create_with_prefix(&worker.into())?),
-            bloom_filter,
-            cws,
-            finished_columns,
-        };
-        Ok(writer)
+            parameters,
+            writer: BlockWriter::new(
+                cache(),
+                storage_backend
+                    .create_with_prefix(&format!("w{}-", Runtime::worker_index()).into())?,
+            ),
+            bloom_filter: Self::new_bloom_filter(estimated_keys),
+        })
     }
 
-    pub fn write<K, A>(&mut self, column: usize, item: (&K, &A)) -> Result<(), StorageError>
-    where
-        K: DataTrait + ?Sized,
-        A: DataTrait + ?Sized,
-    {
-        let row_group = if column + 1 < self.n_columns() {
-            let row_group = self.cws[column + 1].take_rows();
-            assert!(!row_group.is_empty());
-            Some(row_group)
-        } else {
-            None
-        };
-
-        if column == 0 {
-            // Add `key` to bloom filter.
-            if let Some(bloom_filter) = &mut self.bloom_filter {
-                bloom_filter.insert_hash(item.0.default_hash());
-            }
-        }
-
-        // Add `value` to row group for column.
-        self.cws[column].rows.end += 1;
-        self.cws[column].add_item(&mut self.writer, item, &row_group)
-    }
-
-    pub fn finish_column<K, A>(&mut self, column: usize) -> Result<(), StorageError>
-    where
-        K: DataTrait + ?Sized,
-        A: DataTrait + ?Sized,
-    {
-        debug_assert_eq!(column, self.finished_columns.len());
-        for cw in self.cws.iter().skip(1) {
-            assert!(cw.rows.is_empty());
-        }
-
-        self.finished_columns
-            .push(self.cws[column].finish::<K, A>(&mut self.writer)?);
-        Ok(())
-    }
-
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
-        debug_assert_eq!(self.cws.len(), self.finished_columns.len());
-
+    pub fn close(
+        mut self,
+        finished_columns: Vec<FileTrailerColumn>,
+    ) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
         // Write the Bloom filter.
         let filter_location = if let Some(bloom_filter) = &self.bloom_filter {
             self.writer
@@ -1201,8 +1142,8 @@ impl Writer {
         let file_trailer = FileTrailer {
             header: BlockHeader::new(&FILE_TRAILER_BLOCK_MAGIC),
             version: VERSION_NUMBER,
-            columns: take(&mut self.finished_columns),
-            compression: self.cws[0].parameters.compression,
+            columns: finished_columns,
+            compression: self.parameters.compression,
             filter_offset: filter_location.offset,
             filter_size: filter_location.size.try_into().unwrap(),
             compatible_features: 0,
@@ -1215,14 +1156,6 @@ impl Writer {
             .insert_cache_entry(location, Arc::new(file_trailer));
 
         Ok((self.writer.complete()?, self.bloom_filter))
-    }
-
-    pub fn n_columns(&self) -> usize {
-        self.cws.len()
-    }
-
-    pub fn n_rows(&self) -> u64 {
-        self.cws[0].rows.end
     }
 
     pub fn storage(&self) -> &Arc<BufferCache> {
@@ -1275,8 +1208,7 @@ where
     A0: DataTrait + ?Sized,
 {
     inner: Writer,
-    pub(crate) factories: Factories<K0, A0>,
-    _phantom: PhantomData<fn(&K0, &A0)>,
+    column0: ColumnWriter<K0, A0>,
     #[cfg(debug_assertions)]
     prev0: Option<Box<K0>>,
 }
@@ -1294,17 +1226,10 @@ where
         parameters: Parameters,
         estimated_keys: usize,
     ) -> Result<Self, StorageError> {
+        let parameters = Arc::new(parameters);
         Ok(Self {
-            factories: factories.clone(),
-            inner: Writer::new(
-                &[&factories.any_factories()],
-                cache,
-                storage_backend,
-                parameters,
-                1,
-                estimated_keys,
-            )?,
-            _phantom: PhantomData,
+            column0: ColumnWriter::new(factories, parameters.clone()),
+            inner: Writer::new(cache, storage_backend, parameters, estimated_keys)?,
             #[cfg(debug_assertions)]
             prev0: None,
         })
@@ -1323,19 +1248,22 @@ where
             }
             self.prev0 = Some(clone_box(key0));
         }
-        self.inner.write(0, item)
+        if let Some(bloom_filter) = &mut self.inner.bloom_filter {
+            bloom_filter.insert_hash(item.0.default_hash());
+        }
+        self.column0.write(&mut self.inner.writer, item, &None)
     }
 
     /// Returns the number of calls to [`write0`](Self::write0) so far.
     pub fn n_rows(&self) -> u64 {
-        self.inner.n_rows()
+        self.column0.rows.end
     }
 
     /// Finishes writing the layer file and returns the writer passed to
     /// [`new`](Self::new).
     pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
-        self.inner.finish_column::<K0, A0>(0)?;
-        self.inner.close()
+        let c0 = self.column0.finish(&mut self.inner.writer)?;
+        self.inner.close(vec![c0])
     }
 
     /// Returns the path for the file being written.
@@ -1352,7 +1280,7 @@ where
     pub fn into_reader(
         self,
     ) -> Result<Reader<(&'static K0, &'static A0, ())>, super::reader::Error> {
-        let any_factories = self.factories.any_factories();
+        let any_factories = self.column0.factories.any_factories();
 
         let cache = self.inner.cache;
         let (file_handle, bloom_filter) = self.close()?;
@@ -1413,13 +1341,12 @@ where
     A1: DataTrait + ?Sized,
 {
     inner: Writer,
-    pub(crate) factories0: Factories<K0, A0>,
-    pub(crate) factories1: Factories<K1, A1>,
+    column0: ColumnWriter<K0, A0>,
+    column1: ColumnWriter<K1, A1>,
     #[cfg(debug_assertions)]
     prev0: Option<Box<K0>>,
     #[cfg(debug_assertions)]
     prev1: Option<Box<K1>>,
-    _phantom: PhantomData<fn(&K0, &A0, &K1, &A1)>,
 }
 
 impl<K0, A0, K1, A1> Writer2<K0, A0, K1, A1>
@@ -1438,22 +1365,15 @@ where
         parameters: Parameters,
         estimated_keys: usize,
     ) -> Result<Self, StorageError> {
+        let parameters = Arc::new(parameters);
         Ok(Self {
-            factories0: factories0.clone(),
-            factories1: factories1.clone(),
-            inner: Writer::new(
-                &[&factories0.any_factories(), &factories1.any_factories()],
-                cache,
-                storage_backend,
-                parameters,
-                2,
-                estimated_keys,
-            )?,
+            column0: ColumnWriter::new(factories0, parameters.clone()),
+            column1: ColumnWriter::new(factories1, parameters.clone()),
+            inner: Writer::new(cache, storage_backend, parameters, estimated_keys)?,
             #[cfg(debug_assertions)]
             prev0: None,
             #[cfg(debug_assertions)]
             prev1: None,
-            _phantom: PhantomData,
         })
     }
     /// Writes `item` to column 0.  All of the items previously written to
@@ -1476,7 +1396,15 @@ where
             self.prev1 = None;
         }
 
-        self.inner.write(0, item)
+        if let Some(bloom_filter) = &mut self.inner.bloom_filter {
+            bloom_filter.insert_hash(item.0.default_hash());
+        }
+
+        self.column0.write(
+            &mut self.inner.writer,
+            item,
+            &Some(self.column1.take_rows()),
+        )
     }
 
     /// Writes `item` to column 1.  `item.0` must be greater than passed in the
@@ -1495,12 +1423,12 @@ where
             self.prev1 = Some(clone_box(key1));
         }
 
-        self.inner.write(1, item)
+        self.column1.write(&mut self.inner.writer, item, &None)
     }
 
     /// Returns the number of calls to [`write0`](Self::write0) so far.
     pub fn n_rows(&self) -> u64 {
-        self.inner.n_rows()
+        self.column0.rows.end
     }
 
     /// Finishes writing the layer file and returns the writer passed to
@@ -1509,9 +1437,9 @@ where
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
     pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
-        self.inner.finish_column::<K0, A0>(0)?;
-        self.inner.finish_column::<K1, A1>(1)?;
-        self.inner.close()
+        let c0 = self.column0.finish(&mut self.inner.writer)?;
+        let c1 = self.column1.finish(&mut self.inner.writer)?;
+        self.inner.close(vec![c0, c1])
     }
 
     /// Returns the storage used for this writer.
@@ -1532,8 +1460,8 @@ where
         Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
         super::reader::Error,
     > {
-        let any_factories0 = self.factories0.any_factories();
-        let any_factories1 = self.factories1.any_factories();
+        let any_factories0 = self.column0.factories.any_factories();
+        let any_factories1 = self.column1.factories.any_factories();
         let cache = self.inner.cache;
         let (file_handle, bloom_filter) = self.close()?;
         Reader::new(
