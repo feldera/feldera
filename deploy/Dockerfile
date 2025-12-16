@@ -78,7 +78,7 @@ ENV PATH="$PATH:/home/ubuntu/.cargo/bin:/home/ubuntu/mold/bin"
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib"
 
 # Install Samply for profiling
-RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/abhizer/samply/releases/download/v0.13.2/samply-installer.sh | sh
+RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/feldera/samply/releases/download/v0.13.2/samply-installer.sh | sh
 
 #
 # Build phase to specifically customize for the feldera OSS container
