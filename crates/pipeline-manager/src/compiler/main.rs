@@ -19,7 +19,7 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use actix_files::NamedFile;
-use actix_web::{get, head, post, web, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web::{get, post, web, HttpRequest, HttpResponse, HttpServer, Responder};
 use futures_util::{join, StreamExt};
 use std::net::TcpListener;
 use std::path::Path;
@@ -42,9 +42,10 @@ fn decode_url_encoded_parameter(
     }
 }
 
-/// Check if the binary executable exists
-#[head("/binary/{pipeline_id}/{program_version}/{source_checksum}/{integrity_checksum}")]
-async fn check_binary(
+/// Checks if the required compilation artifacts exist for the specified pipeline and version.
+/// If `program_info_integrity_checksum` is "none", only the binary existence is checked.
+#[get("/artifacts/{pipeline_id}/{program_version}/{source_checksum}/{binary_integrity_checksum}/{program_info_integrity_checksum}")]
+async fn check_compilation_artifacts(
     config: web::Data<CompilerConfig>,
     req: HttpRequest,
 ) -> Result<impl Responder, ManagerError> {
@@ -56,9 +57,13 @@ async fn check_binary(
         decode_url_encoded_parameter("program_version", path_parameters.get("program_version"))?;
     let source_checksum =
         decode_url_encoded_parameter("source_checksum", path_parameters.get("source_checksum"))?;
-    let integrity_checksum = decode_url_encoded_parameter(
-        "integrity_checksum",
-        path_parameters.get("integrity_checksum"),
+    let binary_integrity_checksum = decode_url_encoded_parameter(
+        "binary_integrity_checksum",
+        path_parameters.get("binary_integrity_checksum"),
+    )?;
+    let program_info_integrity_checksum = decode_url_encoded_parameter(
+        "program_info_integrity_checksum",
+        path_parameters.get("program_info_integrity_checksum"),
     )?;
 
     // Validate each of them follows expected format
@@ -82,14 +87,15 @@ async fn check_binary(
             error: e,
         })
     })?;
-    validate_is_sha256_checksum(&integrity_checksum).map_err(|e| {
+
+    validate_is_sha256_checksum(&binary_integrity_checksum).map_err(|e| {
         ManagerError::from(ApiError::InvalidChecksumParam {
-            value: integrity_checksum.to_string(),
+            value: binary_integrity_checksum.to_string(),
             error: e,
         })
     })?;
 
-    // Form file path
+    // Form file paths
     let binary_file_path = config
         .working_dir()
         .join("rust-compilation")
@@ -98,15 +104,56 @@ async fn check_binary(
             &pipeline_id,
             program_version,
             &source_checksum,
-            &integrity_checksum,
+            &binary_integrity_checksum,
+        ));
+    let binary_exists = binary_file_path.exists();
+
+    if program_info_integrity_checksum == "none" {
+        let resp = if binary_exists {
+            HttpResponse::Ok().finish()
+        } else {
+            // return binary not found as json body
+            HttpResponse::NotFound().json(serde_json::json!({
+                "message": "Binary not found",
+                "binary_exists": binary_exists,
+            }))
+        };
+        return Ok(resp);
+    }
+
+    validate_is_sha256_checksum(&program_info_integrity_checksum).map_err(|e| {
+        ManagerError::from(ApiError::InvalidChecksumParam {
+            value: program_info_integrity_checksum.to_string(),
+            error: e,
+        })
+    })?;
+
+    let program_info_file_path = config
+        .working_dir()
+        .join("rust-compilation")
+        .join("pipeline-binaries")
+        .join(program_info_filename(
+            &pipeline_id,
+            program_version,
+            &source_checksum,
+            &program_info_integrity_checksum,
         ));
 
-    // Check if binary file path exists
-    if binary_file_path.exists() {
-        Ok(HttpResponse::Ok().finish())
+    // Check artifact existence and return status + headers indicating presence
+    let program_info_exists = program_info_file_path.exists();
+
+    let resp = if binary_exists && program_info_exists {
+        HttpResponse::Ok().finish()
     } else {
-        Ok(HttpResponse::NotFound().finish())
-    }
+        // return binary / program info not found as json body
+        HttpResponse::NotFound().json(serde_json::json!({
+            "message": "Binary or program info not found",
+            "binary_exists": binary_exists,
+            "program_info_exists": program_info_exists,
+        }))
+    };
+
+    Ok(resp)
 }
 
 /// Retrieves the binary executable.
@@ -667,7 +714,7 @@ pub async fn compiler_main(
         actix_web::App::new()
             .app_data(config.clone())
             .app_data(probe.clone())
-            .service(check_binary)
+            .service(check_compilation_artifacts)
             .service(get_binary)
             .service(get_program_info)
             .service(upload_binary)

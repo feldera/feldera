@@ -873,16 +873,22 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             );
             return Ok(false);
         };
-        let Some(integrity_checksum) = pipeline.program_binary_integrity_checksum.as_ref() else {
+        let Some(binary_integrity_checksum) = pipeline.program_binary_integrity_checksum.as_ref()
+        else {
             info!(
-                "Failed to perform binary existence check for pipeline {}: integrity checksum is missing. This may indicate that the program has not been compiled yet, will retry later.",
+                "Failed to perform binary existence check for pipeline {}: binary integrity checksum is missing. This may indicate that the program has not been compiled yet, will retry later.",
                 self.pipeline_id,
             );
             return Ok(false);
         };
 
+        let program_info_integrity_checksum = pipeline
+            .program_info_integrity_checksum
+            .as_deref()
+            .unwrap_or("none");
+
         let binary_check_url = format!(
-            "{}://{}:{}/binary/{}/{}/{}/{}",
+            "{}://{}:{}/artifacts/{}/{}/{}/{}/{}",
             if self.common_config.enable_https {
                 "https"
             } else {
@@ -893,12 +899,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             self.pipeline_id,
             program_version,
             source_checksum,
-            integrity_checksum,
+            binary_integrity_checksum,
+            program_info_integrity_checksum,
         );
 
         match self
             .client
-            .head(&binary_check_url)
+            .get(&binary_check_url)
             .timeout(Self::PIPELINE_STATUS_HTTP_REQUEST_TIMEOUT)
             .with_sentry_tracing()
             .send()
@@ -911,6 +918,21 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         Ok(true)
                     }
                     StatusCode::NOT_FOUND => {
+                        // extract body to find whether binary or program info is missing
+                        let resp: serde_json::Value = resp.json().await.unwrap_or_default();
+                        let binary_exists = resp
+                            .get("binary_exists")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("<unknown>");
+
+                        let program_info_exists = if program_info_integrity_checksum != "none" {
+                            resp.get("program_info_exists")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("<unknown>")
+                        } else {
+                            "<not applicable>"
+                        };
+
                         // Binary missing: set program status to Pending so compiler workers will recompile.
                         // NOTE: Missing binaries with older platform versions would be recompiled with the
                         // current platform version.
@@ -930,10 +952,23 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             )
                             .await
                         {
-                            Ok(()) => info!(
-                            "Program binary missing: set program status to Pending for pipeline {}",
-                            self.pipeline_id
-                        ),
+                            Ok(()) => {
+                                let message = format!(
+                                    "Compilation artifacts missing for pipeline {}: binary_exists={}, program_info_exists={}. Transited program status to Pending for recompilation.",
+                                    self.pipeline_id, binary_exists, program_info_exists
+                                );
+                                self.logs_sender
+                                    .send(LogMessage::new_from_control_plane(
+                                        module_path!(),
+                                        "runner",
+                                        pipeline.name.clone(),
+                                        self.pipeline_id.to_string(),
+                                        Level::INFO,
+                                        &message,
+                                    ))
+                                    .await;
+                                warn!(message)
+                            }
                             Err(e) => error!(
                                 "Failed to set program status to Pending for pipeline {}: {e}",
                                 self.pipeline_id
