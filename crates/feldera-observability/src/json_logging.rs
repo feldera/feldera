@@ -2,7 +2,7 @@ use chrono::Utc;
 use colored::{ColoredString, Colorize};
 use serde_json::{Map, Value};
 use tracing::Subscriber;
-use tracing_subscriber::fmt::format::{Format, Writer};
+use tracing_subscriber::fmt::format::{self, Format, Writer};
 use tracing_subscriber::fmt::{FormatEvent, FormatFields};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::LookupSpan;
@@ -305,7 +305,11 @@ fn init_logging(
             .try_init()
     } else {
         tracing_subscriber::registry()
-            .with(tracing_subscriber::fmt::layer().event_format(FormatWithPrefix::new(prefix)))
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .event_format(FormatWithPrefix::new(prefix))
+                    .fmt_fields(plain_text_fields()),
+            )
             .with(env_filter)
             .with(sentry::integrations::tracing::layer())
             .try_init()
@@ -351,4 +355,26 @@ fn value_to_string(value: Value) -> Option<String> {
         Value::Null => None,
         other => Some(other.to_string()),
     }
+}
+
+/// In plain text, render the message plus selected structured fields.
+fn plain_text_fields() -> impl for<'writer> tracing_subscriber::fmt::FormatFields<'writer> + Clone {
+    format::debug_fn(|writer, field, value| {
+        match field.name() {
+            "message" => {
+                write!(writer, " {value:?}")?;
+            }
+            "pipeline" | "pipeline_name" | "pipeline-name" => {
+                write!(writer, " pipeline-name={value:?}")?;
+            }
+            "pipeline_id" | "pipeline-id" => {
+                write!(writer, " pipeline-id={value:?}")?;
+            }
+            "tenant" => {
+                write!(writer, " tenant={value:?}")?;
+            }
+            _ => {}
+        }
+        Ok(())
+    })
 }

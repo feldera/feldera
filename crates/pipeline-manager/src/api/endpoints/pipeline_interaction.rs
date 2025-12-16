@@ -302,8 +302,10 @@ pub(crate) async fn post_pipeline_input_connector_action(
     // Log only if the response indicates success
     if response.status() == StatusCode::OK {
         info!(
-            "Connector action: {verb} pipeline '{pipeline_name}' on table '{table_name}' on connector '{connector_name}' (tenant: {})",
-            *tenant_id
+            pipeline = %pipeline_name,
+            pipeline_id = "N/A",
+            tenant = %tenant_id.0,
+            "Connector action: {verb} on table '{table_name}' on connector '{connector_name}'"
         );
     }
     Ok(response)
@@ -1334,8 +1336,10 @@ pub(crate) async fn post_pipeline_pause(
 
     if response.status() == StatusCode::ACCEPTED {
         info!(
-            "Accepted action: pausing pipeline {pipeline_name:?} (tenant: {})", // {pipeline_id}
-            *tenant_id
+            pipeline = %pipeline_name,
+            pipeline_id = "N/A",
+            tenant = %tenant_id.0,
+            "Accepted action: pausing pipeline"
         );
     }
     Ok(response)
@@ -1396,8 +1400,10 @@ pub(crate) async fn post_pipeline_resume(
 
     if response.status() == StatusCode::ACCEPTED {
         info!(
-            "Accepted action: resuming pipeline {pipeline_name:?} (tenant: {})", // {pipeline_id}
-            *tenant_id
+            pipeline = %pipeline_name,
+            pipeline_id = "N/A",
+            tenant = %tenant_id.0,
+            "Accepted action: resuming pipeline"
         );
     }
     Ok(response)
@@ -1482,8 +1488,10 @@ pub(crate) async fn post_pipeline_activate(
 
         if response.status() == StatusCode::ACCEPTED {
             info!(
-                "Accepted action: activating pipeline {pipeline_name:?} (tenant: {})", // {pipeline_id}
-                *tenant_id
+                pipeline = %pipeline_name,
+                pipeline_id = "N/A",
+                tenant = %tenant_id.0,
+                "Accepted action: activating pipeline"
             );
         }
         Ok(response)
@@ -1557,8 +1565,10 @@ pub(crate) async fn post_pipeline_approve(
 
         if response.status() == StatusCode::ACCEPTED {
             info!(
-                "Accepted action: approved pipeline bootstrapping (tenant: {})", // {pipeline_id}
-                *tenant_id
+                pipeline = %pipeline_name,
+                pipeline_id = "N/A",
+                tenant = %tenant_id.0,
+                "Accepted action: approved pipeline bootstrapping"
             );
         }
         Ok(response)

@@ -113,7 +113,8 @@ pub async fn rust_compiler_task(
                 DBError::UnknownPipeline { pipeline_id } => {
                     debug!(
                         pipeline_id = %pipeline_id,
-                        "Rust worker {worker_id}: compilation canceled: pipeline {pipeline_id} no longer exists"
+                        pipeline = "N/A",
+                        "Rust worker {worker_id}: compilation canceled: pipeline no longer exists"
                     );
                 }
                 DBError::OutdatedProgramVersion {
@@ -237,8 +238,7 @@ async fn attempt_end_to_end_rust_compilation(
             info!(
                 pipeline_id = %pipeline.id,
                 pipeline = %pipeline.name,
-                "Rust compilation success: pipeline {} (program version: {}) (took {:.2}s; source checksum: {}; binary integrity checksum: {}, size: {} bytes, program info integrity checksum: {}, profile: {})",
-                pipeline.id,
+                "Rust compilation success (program version: {}) (took {:.2}s; source checksum: {}; binary integrity checksum: {}, size: {} bytes, program info integrity checksum: {}, profile: {})",
                 pipeline.program_version,
                 duration.as_secs_f64(),
                 truncate_sha256_checksum(&source_checksum),
@@ -265,24 +265,23 @@ async fn attempt_end_to_end_rust_compilation(
                 info!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "Rust compilation canceled: pipeline {} no longer exists",
-                    pipeline.id,
+                    "Rust compilation canceled: pipeline no longer exists"
                 );
             }
             RustCompilationError::Outdated => {
                 info!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "Rust compilation canceled: pipeline {} (program version: {}) is outdated",
-                    pipeline.id, pipeline.program_version,
+                    "Rust compilation canceled: program version {} is outdated",
+                    pipeline.program_version
                 );
             }
             RustCompilationError::TerminatedBySignal => {
                 error!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "Rust compilation interrupted: pipeline {} (program version: {}) compilation process was terminated by a signal",
-                    pipeline.id, pipeline.program_version,
+                    "Rust compilation interrupted: compilation process was terminated by a signal (program version: {})",
+                    pipeline.program_version
                 );
             }
             RustCompilationError::RustError(compilation_info) => {
@@ -298,8 +297,8 @@ async fn attempt_end_to_end_rust_compilation(
                 info!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "Rust compilation failed: pipeline {} (program version: {}) due to Rust error",
-                    pipeline.id, pipeline.program_version
+                    "Rust compilation failed due to Rust error (program version: {})",
+                    pipeline.program_version
                 );
             }
             RustCompilationError::SystemError(internal_system_error) => {
@@ -315,10 +314,8 @@ async fn attempt_end_to_end_rust_compilation(
                 error!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "Rust compilation failed: pipeline {} (program version: {}) due to system error:\n{}",
-                    pipeline.id,
-                    pipeline.program_version,
-                    internal_system_error
+                    "Rust compilation failed due to system error (program version: {}): {internal_system_error}",
+                    pipeline.program_version
                 );
             }
             RustCompilationError::FileUploadError(upload_error) => {
@@ -334,10 +331,8 @@ async fn attempt_end_to_end_rust_compilation(
                 error!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "Rust compilation failed: pipeline {} (program version: {}) due to binary upload error:\n{}",
-                    pipeline.id,
-                    pipeline.program_version,
-                    upload_error
+                    "Rust compilation failed due to binary upload error (program version: {}): {upload_error}",
+                    pipeline.program_version
                 );
             }
         },
@@ -583,8 +578,11 @@ async fn upload_binary_to_endpoint_with_retries(
             Ok(result) => {
                 if attempts >= 1 {
                     info!(
-                        "Binary upload succeeded on attempt {} for pipeline {} (program version: {})",
-                        attempts, metadata.pipeline_id, metadata.program_version
+                        pipeline_id = %metadata.pipeline_id,
+                        pipeline = "N/A",
+                        "Binary upload succeeded on attempt {} (program version: {})",
+                        attempts,
+                        metadata.program_version
                     );
                 }
                 return Ok(result);
@@ -592,15 +590,24 @@ async fn upload_binary_to_endpoint_with_retries(
             Err(e) => {
                 if attempts > max_retries {
                     error!(
-                        "Binary upload failed after {} attempts for pipeline {} (program version: {}): {:?}",
-                        attempts, metadata.pipeline_id, metadata.program_version, e
+                        pipeline_id = %metadata.pipeline_id,
+                        pipeline = "N/A",
+                        "Binary upload failed after {} attempts (program version: {}): {:?}",
+                        attempts,
+                        metadata.program_version,
+                        e
                     );
                     return Err(e);
                 }
 
                 warn!(
-                    "Binary upload attempt {} failed for pipeline {} (program version: {}): {:?}. Retrying in {}ms...",
-                    attempts, metadata.pipeline_id, metadata.program_version, e, retry_delay_ms
+                    pipeline_id = %metadata.pipeline_id,
+                    pipeline = "N/A",
+                    "Binary upload attempt {} failed (program version: {}): {:?}. Retrying in {}ms...",
+                    attempts,
+                    metadata.program_version,
+                    e,
+                    retry_delay_ms
                 );
 
                 // Wait before retrying with exponential backoff
@@ -649,8 +656,11 @@ async fn upload_program_info_to_endpoint_with_retries(
             Ok(result) => {
                 if attempts >= 1 {
                     info!(
-                        "Program info upload succeeded on attempt {} for pipeline {} (program version: {})",
-                        attempts, metadata.pipeline_id, metadata.program_version
+                        pipeline_id = %metadata.pipeline_id,
+                        pipeline = "N/A",
+                        "Program info upload succeeded on attempt {} (program version: {})",
+                        attempts,
+                        metadata.program_version
                     );
                 }
                 return Ok(result);
@@ -658,15 +668,24 @@ async fn upload_program_info_to_endpoint_with_retries(
             Err(e) => {
                 if attempts > max_retries {
                     error!(
-                        "Program info upload failed after {} attempts for pipeline {} (program version: {}): {:?}",
-                        attempts, metadata.pipeline_id, metadata.program_version, e
+                        pipeline_id = %metadata.pipeline_id,
+                        pipeline = "N/A",
+                        "Program info upload failed after {} attempts (program version: {}): {:?}",
+                        attempts,
+                        metadata.program_version,
+                        e
                     );
                     return Err(e);
                 }
 
                 warn!(
-                    "Program info upload attempt {} failed for pipeline {} (program version: {}): {:?}. Retrying in {}ms...",
-                    attempts, metadata.pipeline_id, metadata.program_version, e, retry_delay_ms
+                    pipeline_id = %metadata.pipeline_id,
+                    pipeline = "N/A",
+                    "Program info upload attempt {} failed (program version: {}): {:?}. Retrying in {}ms...",
+                    attempts,
+                    metadata.program_version,
+                    e,
+                    retry_delay_ms
                 );
 
                 // Wait before retrying with exponential backoff
@@ -769,8 +788,11 @@ async fn upload_binary_to_endpoint(
         .unwrap_or_else(|_| endpoint.to_string());
 
     debug!(
-        "Successfully uploaded binary for pipeline {} (program version: {}) to {}",
-        metadata.pipeline_id, metadata.program_version, endpoint
+        pipeline_id = %metadata.pipeline_id,
+        pipeline = "N/A",
+        "Successfully uploaded binary (program version: {}) to {}",
+        metadata.program_version,
+        endpoint
     );
 
     Ok(response_text)
@@ -834,8 +856,11 @@ async fn upload_program_info_to_endpoint(
         .unwrap_or_else(|_| endpoint.to_string());
 
     debug!(
-        "Successfully uploaded program info for pipeline {} (program version: {}) to {}",
-        metadata.pipeline_id, metadata.program_version, endpoint
+        pipeline_id = %metadata.pipeline_id,
+        pipeline = "N/A",
+        "Successfully uploaded program info (program version: {}) to {}",
+        metadata.program_version,
+        endpoint
     );
 
     Ok(response_text)
@@ -899,8 +924,7 @@ pub async fn perform_rust_compilation(
     info!(
         pipeline_id = %pipeline_id,
         pipeline = pipeline_name_for_log.as_str(),
-        "Rust compilation started: pipeline {} (program version: {}{})",
-        pipeline_id,
+        "Rust compilation started (program version: {}{})",
         program_version,
         if !runtime_selector.is_platform() {
             format!(", runtime version: {runtime_selector}")

@@ -247,7 +247,7 @@ impl RunnerInteraction {
             _ => RunnerError::PipelineInteractionUnreachable {
                 pipeline_name: pipeline_name.to_string(),
                 request: request_str.clone(),
-                error: format!("unable to send request due to: {e}"),
+                error: format!("{e}"),
             },
         })?;
         let status = original_response.status();
@@ -255,7 +255,8 @@ impl RunnerInteraction {
         if !status.is_success() {
             info!(
                 pipeline = pipeline_name,
-                "HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}"
+                pipeline_id = "N/A",
+                "HTTP request to pipeline returned status code {status}. Failed request: {request_str}"
             );
         }
 
@@ -528,7 +529,7 @@ impl RunnerInteraction {
             _ => RunnerError::PipelineInteractionUnreachable {
                 pipeline_name: pipeline_name.to_string(),
                 request: request_str.to_string(),
-                error: format!("unable to send request due to: {e}"),
+                error: format!("{e}"),
             },
         })?;
 
@@ -537,7 +538,8 @@ impl RunnerInteraction {
         if !status.is_success() {
             info!(
                 pipeline = pipeline_name,
-                "HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}"
+                pipeline_id = "N/A",
+                "HTTP request to pipeline returned status code {status}. Failed request: {request_str}"
             );
         }
 
@@ -593,7 +595,7 @@ impl RunnerInteraction {
                     ),
                 },
                 _ => RunnerError::RunnerInteractionUnreachable {
-                    error: format!("unable to send request due to: {e}"),
+                    error: format!("{e}"),
                 },
             })?;
 

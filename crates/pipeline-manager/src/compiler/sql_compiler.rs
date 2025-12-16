@@ -105,7 +105,8 @@ pub async fn sql_compiler_task(
                 DBError::UnknownPipeline { pipeline_id } => {
                     debug!(
                         pipeline_id = %pipeline_id,
-                        "SQL worker {worker_id}: compilation canceled: pipeline {pipeline_id} no longer exists"
+                        pipeline = "N/A",
+                        "SQL worker {worker_id}: compilation canceled: pipeline no longer exists"
                     );
                 }
                 DBError::OutdatedProgramVersion {
@@ -217,8 +218,7 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
             info!(
                 pipeline_id = %pipeline.id,
                 pipeline = %pipeline.name,
-                "SQL compilation success: pipeline {} (program version: {}) (took {:.2}s)",
-                pipeline.id,
+                "SQL compilation success (program version: {}) (took {:.2}s)",
                 pipeline.program_version,
                 duration.as_secs_f64()
             );
@@ -238,24 +238,23 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                 debug!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "SQL compilation canceled: pipeline {} no longer exists",
-                    pipeline.id,
+                    "SQL compilation canceled: pipeline no longer exists"
                 );
             }
             SqlCompilationError::Outdated => {
                 debug!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "SQL compilation canceled: pipeline {} (program version: {}) is outdated",
-                    pipeline.id, pipeline.program_version,
+                    "SQL compilation canceled: program version {} is outdated",
+                    pipeline.program_version
                 );
             }
             SqlCompilationError::TerminatedBySignal => {
                 error!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "SQL compilation interrupted: pipeline {} (program version: {}) compilation process was terminated by a signal",
-                    pipeline.id, pipeline.program_version,
+                    "SQL compilation interrupted: compilation process was terminated by a signal (program version: {})",
+                    pipeline.program_version
                 );
             }
             SqlCompilationError::SqlError(compilation_info) => {
@@ -271,8 +270,8 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                 info!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "SQL compilation failed: pipeline {} (program version: {}) due to SQL errors",
-                    pipeline.id, pipeline.program_version
+                    "SQL compilation failed due to SQL errors (program version: {})",
+                    pipeline.program_version
                 );
             }
             SqlCompilationError::SystemError(internal_system_error) => {
@@ -288,10 +287,8 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                 error!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "SQL compilation failed: pipeline {} (program version: {}) due to system error:\n{}",
-                    pipeline.id,
-                    pipeline.program_version,
-                    internal_system_error
+                    "SQL compilation failed due to system error (program version: {}): {internal_system_error}",
+                    pipeline.program_version
                 );
             }
         },
@@ -524,8 +521,7 @@ pub(crate) async fn perform_sql_compilation(
     info!(
         pipeline_id = %pipeline_id,
         pipeline = pipeline_name,
-        "SQL compilation started: pipeline {} (program version: {}{})",
-        pipeline_id,
+        "SQL compilation started (program version: {}{})",
         program_version,
         if !runtime_selector.is_platform() {
             format!(", runtime version: {runtime_selector}")

@@ -123,14 +123,15 @@ impl LocalRunner {
                                 logs_sender.send(LogMessage::new_from_control_plane(
                                     module_path!(),
                                     "runner",
-                                    pipeline_id.to_string(),
+                                    String::new(),
                                     pipeline_id.to_string(),
                                     Level::ERROR,
                                     &line,
                                 )).await;
                                 error!(
                                     pipeline_id = %pipeline_id,
-                                    "Logs of pipeline {pipeline_id}: {line}"
+                                    pipeline = "N/A",
+                                    "Logs of pipeline: {line}"
                                 );
                             }
                         }
@@ -156,14 +157,15 @@ impl LocalRunner {
                                 logs_sender.send(LogMessage::new_from_control_plane(
                                     module_path!(),
                                     "runner",
-                                    pipeline_id.to_string(),
+                                    String::new(),
                                     pipeline_id.to_string(),
                                     Level::ERROR,
                                     &line,
                                 )).await;
                                 error!(
                                     pipeline_id = %pipeline_id,
-                                    "Logs of pipeline {pipeline_id}: {line}"
+                                    pipeline = "N/A",
+                                    "Logs of pipeline: {line}"
                                 );
                             }
                         }
@@ -339,14 +341,15 @@ impl LocalRunner {
         // Write to both runner and pipeline logs
         for error in &errors {
             error!(
-                "Resources error for pipeline {}: {}",
-                self.pipeline_id, error
+                pipeline_id = %self.pipeline_id,
+                pipeline = "N/A",
+                "Resources error: {error}"
             );
             self.logs_sender
                 .send(LogMessage::new_from_control_plane(
                     module_path!(),
                     "runner",
-                    self.pipeline_id.to_string(),
+                    String::new(),
                     self.pipeline_id.to_string(),
                     Level::ERROR,
                     &format!("Resources error: {error}"),
@@ -658,8 +661,9 @@ impl PipelineExecutor for LocalRunner {
                 Ok(_) => (),
                 Err(e) => {
                     warn!(
-                        "Failed to remove working directory for pipeline {}: {}",
-                        self.pipeline_id, e
+                        pipeline_id = %self.pipeline_id,
+                        pipeline = "N/A",
+                        "Failed to remove working directory: {e}"
                     );
                 }
             }

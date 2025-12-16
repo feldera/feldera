@@ -265,14 +265,28 @@ fn format_log_line(message: &LogMessage) -> String {
         return match message {
             LogMessage::Pipeline { line } => line.clone(),
             LogMessage::ControlPlane {
-                target: _,
+                target,
                 service: _,
-                pipeline_name: _,
-                pipeline_id: _,
+                pipeline_name,
+                pipeline_id,
                 level,
                 line,
                 timestamp,
-            } => format!("[control-plane] {timestamp} {level:>5} {line}"),
+            } => {
+                let display_name = if pipeline_name.is_empty() {
+                    "N/A"
+                } else {
+                    pipeline_name.as_str()
+                };
+                let mut output = format!("[manager] {timestamp} {level:>5} {target}: {line}");
+                if !pipeline_id.is_empty() {
+                    output.push_str(&format!(" pipeline-id={pipeline_id:?}"));
+                }
+                if !display_name.is_empty() {
+                    output.push_str(&format!(" pipeline-name={display_name:?}"));
+                }
+                output
+            }
         };
     }
 

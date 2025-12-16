@@ -218,10 +218,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// Runs until the pipeline is deleted or an unexpected error occurs.
     pub async fn run(mut self) {
         let pipeline_id = self.pipeline_id;
+        let pipeline_name = self.pipeline_name.as_deref().unwrap_or("N/A");
         debug!(
-            pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
+            pipeline = pipeline_name,
             pipeline_id = %pipeline_id,
-            "Automaton started: pipeline {pipeline_id}"
+            "Automaton started"
         );
         let mut poll_timeout = Duration::from_secs(0);
         loop {
@@ -254,7 +255,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             info!(
                                 pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
                                 pipeline_id = %pipeline_id,
-                                "Automaton ended: pipeline {pipeline_id}"
+                                "Automaton ended"
                             );
 
                             // By leaving the run loop, the automaton will consume itself.
@@ -275,7 +276,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             };
                             self.database_error_counter += 1;
                             error!(
-                                "Automaton of pipeline {pipeline_id} encountered a database error, retrying in {} seconds (retry no. {})... Error was:\n{e}",
+                                pipeline_id = %pipeline_id,
+                                pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
+                                "Automaton encountered a database error, retrying in {} seconds (retry no. {})... Error was: {e}",
                                 backoff_timeout.as_secs(),
                                 self.database_error_counter
                             );
@@ -453,8 +456,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 info!(
                                     pipeline_id = %self.pipeline_id,
                                     pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
-                                    "Pipeline automaton {}: version initially intended to be started ({}) is outdated by latest ({})",
-                                    self.pipeline_id,
+                                    "Pipeline automaton: version initially intended to be started ({}) is outdated by latest ({})",
                                     outdated_version,
                                     latest_version
                                 );
@@ -556,13 +558,15 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // Log the transition that occurred
         if transition != State::Unchanged {
             if transition == State::StorageTransitionToCleared {
+                let message = format!(
+                    "Storage transition: {} -> {}",
+                    pipeline.storage_status,
+                    StorageStatus::Cleared
+                );
                 info!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "Storage transition: {} -> {} for pipeline {}",
-                    pipeline.storage_status,
-                    StorageStatus::Cleared,
-                    pipeline.id
+                    "{message}"
                 );
                 self.logs_sender
                     .send(LogMessage::new_from_control_plane(
@@ -571,7 +575,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         pipeline.name.clone(),
                         pipeline.id.to_string(),
                         Level::INFO,
-                        "Storage has been cleared",
+                        &message,
                     ))
                     .await;
             } else {
@@ -585,8 +589,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     info!(
                         pipeline_id = %pipeline.id,
                         pipeline = %pipeline.name,
-                        "{message} for pipeline {}",
-                        pipeline.id
+                        "{message}"
                     );
                     self.logs_sender
                         .send(LogMessage::new_from_control_plane(
@@ -618,8 +621,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     info!(
                         pipeline_id = %pipeline.id,
                         pipeline = %pipeline.name,
-                        "{message} for pipeline {}",
-                        pipeline.id
+                        "{message}"
                     );
                     self.logs_sender
                         .send(LogMessage::new_from_control_plane(
@@ -681,10 +683,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     }
                 } else {
                     InternalRequestError::Unreachable {
-                        error: format!(
-                            "unable to send request due to: {e}, source: {}",
-                            source_error(&e)
-                        ),
+                        error: format!("{e}; source: {}", source_error(&e)),
                     }
                 }
             })?;
@@ -787,8 +786,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             info!(
                 pipeline_id = %pipeline.id,
                 pipeline = %pipeline.name,
-                "Runner cannot start pipeline {} because its runtime version ({}) is incompatible with current ({})",
-                pipeline.id,
+                "Runner cannot start pipeline because its runtime version ({}) is incompatible with current ({})",
                 pipeline.platform_version,
                 self.platform_version
             );
@@ -1097,8 +1095,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         .unwrap_or(self.default_provisioning_timeout.as_secs()),
                 );
                 info!(
-                    "Provisioning pipeline {} (tenant: {})",
-                    self.pipeline_id, self.tenant_id
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    tenant = %self.tenant_id.0,
+                    "Provisioning pipeline"
                 );
                 State::Unchanged
             }
@@ -1164,8 +1164,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
             Ok(None) => {
                 debug!(
-                    "Pipeline provisioning: pipeline {} is not yet provisioned",
-                    pipeline.id
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "Pipeline provisioning: not yet provisioned"
                 );
                 if Utc::now().timestamp_millis()
                     - pipeline
@@ -1174,8 +1175,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     > provisioning_timeout.as_millis() as i64
                 {
                     error!(
-                        "Pipeline provisioning: timed out for pipeline {}",
-                        pipeline.id
+                        pipeline_id = %pipeline.id,
+                        pipeline = %pipeline.name,
+                        "Pipeline provisioning: timed out"
                     );
                     State::TransitionToStopping {
                         error: Some(
@@ -1192,8 +1194,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
             Err(e) => {
                 error!(
-                    "Pipeline provisioning: error occurred for pipeline {}: {e}",
-                    pipeline.id
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "Pipeline provisioning: error occurred: {e}"
                 );
                 State::TransitionToStopping {
                     error: Some(ErrorResponse::from_error_nolog(&e)),
@@ -1277,7 +1280,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                     warn!(
                                         pipeline_id = %pipeline_id,
                                         pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
-                                        "Pipeline {pipeline_id} status is unavailable because the endpoint responded with 503 Service Unavailable:\n{error_response:?}"
+                                        "Pipeline status is unavailable because the endpoint responded with 503 Service Unavailable: {error_response:?}"
                                     );
                                     Ok(ExtendedRuntimeStatus {
                                         runtime_status: RuntimeStatus::Unavailable,
@@ -1305,7 +1308,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     error!(
                         pipeline_id = %pipeline_id,
                         pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
-                        "Pipeline {pipeline_id} has fatal runtime error and will be stopped. Error:\n{error_response:?}"
+                        "Pipeline has fatal runtime error and will be stopped. Error: {error_response:?}"
                     );
                     Err(error_response)
                 }
@@ -1324,12 +1327,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     warn!(
                         pipeline_id = %pipeline_id,
                         pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
-                        "Pipeline {pipeline_id} status is unavailable because the endpoint could not be reached due to: {e}"
+                        "Pipeline status endpoint could not be reached: {e}"
                     );
                     Ok(ExtendedRuntimeStatus {
                         runtime_status: RuntimeStatus::Unavailable,
                         runtime_status_details: json!(format!(
-                            "Pipeline status endpoint could not be reached due to: {e}"
+                            "Pipeline status endpoint could not be reached: {e}"
                         )),
                         runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                     })
@@ -1404,7 +1407,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 }
                 if extended_runtime_status.runtime_status == RuntimeStatus::Suspended {
                     info!(
-                        "Pipeline {} reported it has suspended the circuit and done its last checkpoint -- stopping it", self.pipeline_id
+                        pipeline_id = %self.pipeline_id,
+                        pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
+                        "Pipeline reported it has suspended the circuit and done its last checkpoint -- stopping it"
                     );
                     return State::TransitionToStopping {
                         error: None,
@@ -1435,8 +1440,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     ) -> State {
         if let Err(e) = self.pipeline_handle.stop().await {
             error!(
-                "Pipeline {} could not be stopped (will retry): {e}",
-                pipeline.id
+                pipeline_id = %pipeline.id,
+                pipeline = %pipeline.name,
+                "Pipeline could not be stopped (will retry): {e}"
             );
             State::Unchanged
         } else {
@@ -1457,8 +1463,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     ) -> State {
         if let Err(e) = self.pipeline_handle.clear().await {
             error!(
-                "Pipeline {} storage could not be cleared (will retry): {e}",
-                pipeline.id
+                pipeline_id = %pipeline.id,
+                pipeline = %pipeline.name,
+                "Pipeline storage could not be cleared (will retry): {e}"
             );
             State::Unchanged
         } else {

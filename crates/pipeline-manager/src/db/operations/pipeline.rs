@@ -1746,7 +1746,11 @@ pub(crate) async fn get_support_bundle_data(
         match bundle {
             Ok(bundle) => bundles.push(bundle),
             Err(e) => {
-                warn!("Skipped support bundle data for {pipeline_id}: {}", e);
+                warn!(
+                    pipeline_id = %pipeline_id,
+                    pipeline = "N/A",
+                    "Skipped support bundle data: {e}"
+                );
             }
         }
     }

@@ -331,14 +331,16 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                 if let Err(e) = join_handle.await {
                     error!(
                         pipeline_id = %pipeline_id,
-                        "Pipeline {pipeline_id} experienced a join error: {e}"
+                        pipeline = "N/A",
+                        "Pipeline experienced a join error: {e}"
                     )
                 }
             } else {
                 // Should be unreachable as this loop is the only one removing entries
                 error!(
                     pipeline_id = %pipeline_id,
-                    "Pipeline {pipeline_id} was marked as finished, and as such to be joined and removed. It has however already been removed."
+                    pipeline = "N/A",
+                    "Pipeline was marked as finished, and as such to be joined and removed. It has however already been removed."
                 );
             }
         }
