@@ -96,4 +96,10 @@ public final class DBSPSourceMultisetOperator
                 info.getZsetType(), originalRowType, metadata, name, null)
                 .addAnnotations(info.annotations(), DBSPSourceMultisetOperator.class);
     }
+
+    @Override
+    public DBSPSourceTableOperator withMetadata(TableMetadata metadata) {
+        return new DBSPSourceMultisetOperator(this.getRelNode(), this.sourceName, this.getOutputZSetType(),
+                this.originalRowType, metadata, this.tableName, this.comment);
+    }
 }

@@ -1,12 +1,20 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Repeat;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -54,6 +62,91 @@ public class ExpandCasts extends InnerRewriteVisitor {
         throw new UnsupportedException("Casting of value with type '" +
                 source.getType().asSqlString() +
                 "' to the target type '" + type.asSqlString() + "' not supported", source.getNode());
+    }
+
+    public static class RepeatExpandCasts extends Repeat {
+        public RepeatExpandCasts(DBSPCompiler compiler) {
+            super(compiler, new ExpandCasts(compiler).circuitRewriter(true));
+        }
+    }
+
+    public static class ExpandMetadataCasts extends CircuitCloneVisitor {
+        ExpandCasts expand;
+
+        public ExpandMetadataCasts(DBSPCompiler compiler) {
+            super(compiler, false);
+            this.expand = new ExpandCasts(compiler);
+        }
+
+        @Nullable DBSPExpression repeatExpand(@Nullable DBSPExpression expression) {
+            DBSPExpression previous = null;
+            while (previous != expression) {
+                previous = expression;
+                expression = this.expand.apply(expression).to(DBSPExpression.class);
+            }
+            return expression;
+        }
+
+        @Nullable public TableMetadata processMetadata(TableMetadata metadata) {
+            boolean changes = false;
+            List<InputColumnMetadata> metas = new ArrayList<>();
+            for (int i = 0; i < metadata.getColumnCount(); i++) {
+                InputColumnMetadata cm = metadata.getColumnMetadata(i);
+                DBSPExpression def = this.repeatExpand(cm.defaultValue);
+                if (def != cm.defaultValue)
+                    changes = true;
+                DBSPExpression lateness = this.repeatExpand(cm.lateness);
+                if (lateness != cm.lateness)
+                    changes = true;
+                DBSPExpression watermark = this.repeatExpand(cm.watermark);
+                if (watermark != cm.watermark)
+                    changes = true;
+                if (changes) {
+                    cm = new InputColumnMetadata(cm.getNode(), cm.name, cm.type, cm.isPrimaryKey,
+                            lateness, watermark, def, cm.defaultValuePosition, cm.interned);
+                }
+                metas.add(cm);
+            }
+            if (changes)
+                return new TableMetadata(metadata.tableName, metas, metadata.getForeignKeys(),
+                        metadata.materialized, metadata.isStreaming());
+            return null;
+        }
+
+        @Override
+        public void postorder(DBSPInputMapWithWaterlineOperator operator) {
+            TableMetadata tm = this.processMetadata(operator.metadata);
+            if (tm != null) {
+                this.map(operator, operator.withMetadata(tm), true);
+            } else {
+                super.postorder(operator);
+            }
+        }
+
+        @Override
+        public void postorder(DBSPSourceMapOperator operator) {
+            TableMetadata tm = this.processMetadata(operator.metadata);
+            if (tm != null) {
+                this.map(operator, operator.withMetadata(tm));
+            } else {
+                super.postorder(operator);
+            }
+        }
+
+        @Override
+        public void postorder(DBSPSourceMultisetOperator operator) {
+            TableMetadata tm = this.processMetadata(operator.metadata);
+            if (tm != null) {
+                this.map(operator, operator.withMetadata(tm));
+            } else {
+                super.postorder(operator);
+            }
+        }
+
+        @Override
+        public Token startVisit(IDBSPOuterNode circuit) {
+            return super.startVisit(circuit);
+        }
     }
 
     @Override

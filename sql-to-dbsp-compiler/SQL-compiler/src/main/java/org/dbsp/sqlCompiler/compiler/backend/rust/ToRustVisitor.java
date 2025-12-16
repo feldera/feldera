@@ -74,8 +74,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
-import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.CircuitWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -254,6 +254,7 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    /** True if a declaration should local to a circuit */
     boolean declareInside(DBSPDeclaration decl) {
         return decl.item.is(DBSPStaticItem.class) || decl.item.is(DBSPFunctionItem.class);
     }
@@ -266,7 +267,10 @@ public class ToRustVisitor extends CircuitVisitor {
         for (DBSPDeclaration decl : circuit.declarations) {
             if (!this.declareInside(decl) &&
                     !this.globalDeclarations.contains(decl.getName())) {
-                decl.accept(this.innerVisitor);
+                this.generateNestedStructs(decl.item, true);
+                if (!decl.item.is(DBSPStructItem.class))
+                    // If it's a StructItem the previous call already declared it
+                    decl.accept(this.innerVisitor);
                 this.globalDeclarations.declare(decl.getName());
             }
         }
@@ -314,16 +318,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
         for (DBSPDeclaration decl: circuit.declarations) {
             if (this.declareInside(decl)) {
-                List<DBSPTypeStruct> structs = new ArrayList<>();
-                FindNestedStructs fn = new FindNestedStructs(this.compiler, structs);
-                fn.apply(decl.item);
-                for (DBSPTypeStruct str: structs) {
-                    DBSPStructItem item = new DBSPStructItem(str, null);
-                    if (this.structsGenerated.contains(item.getName()))
-                        continue;
-                    item.accept(this.innerVisitor);
-                    this.structsGenerated.add(item.getName());
-                }
+                this.generateNestedStructs(decl.item, false);
                 decl.accept(this);
             }
         }
@@ -447,34 +442,63 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     public static class FindNestedStructs extends InnerVisitor {
-        final List<DBSPTypeStruct> structs;
+        final List<DBSPStructItem> structs;
+        final Set<String> found = new HashSet<>();
 
-        public FindNestedStructs(DBSPCompiler compiler, List<DBSPTypeStruct> result) {
+        /** Create a visitor to find struct types; deposit an item for each type found in 'result' */
+        public FindNestedStructs(DBSPCompiler compiler, List<DBSPStructItem> result) {
             super(compiler);
             this.structs = result;
         }
 
         @Override
+        public VisitDecision preorder(DBSPStructItem item) {
+            this.structs.add(item);
+            return VisitDecision.CONTINUE;
+        }
+
+        @Override
         public void postorder(DBSPTypeStruct struct) {
-            for (DBSPTypeStruct str: this.structs)
-                if (str.name.equals(struct.name))
-                    return;
-            this.structs.add(struct);
+            // Scan in postorder; structs cannot be mutually recursive, so this will
+            // build a topological order of sorts (at least for the root struct)
+            if (this.found.contains(struct.hashName))
+                return;
+            this.structs.add(new DBSPStructItem(struct, null));
+            this.found.add(struct.hashName);
         }
     }
 
     final Set<String> structsGenerated = new HashSet<>();
 
-    void generateStructHelpers(DBSPType struct, @Nullable TableMetadata metadata) {
-        List<DBSPTypeStruct> nested = new ArrayList<>();
-        FindNestedStructs fn = new FindNestedStructs(this.compiler, nested);
-        fn.apply(struct);
-        for (DBSPTypeStruct s: nested) {
-            DBSPStructItem item = new DBSPStructItem(s, metadata);
-            if (this.structsGenerated.contains(item.getName()))
-                continue;
-            item.accept(this.innerVisitor);
-            this.structsGenerated.add(item.getName());
+    void generateStructItem(DBSPStructItem item) {
+        if (this.structsGenerated.contains(item.getName()))
+            return;
+        item.accept(this.innerVisitor);
+        this.structsGenerated.add(item.getName());
+    }
+
+    void generateNestedStructs(IDBSPInnerNode node, boolean global) {
+        List<DBSPStructItem> structs = new ArrayList<>();
+        FindNestedStructs fn = new FindNestedStructs(this.compiler, structs);
+        fn.apply(node);
+        DBSPStructItem item = node.as(DBSPStructItem.class);
+        if (item != null && item.metadata != null) {
+            // Discover structs used in the metadata
+            for (int i = 0; i < item.metadata.getColumnCount(); i++) {
+                InputColumnMetadata meta = item.metadata.getColumnMetadata(i);
+                if (meta.defaultValue != null)
+                    fn.apply(meta.defaultValue);
+                if (meta.lateness != null)
+                    fn.apply(meta.lateness);
+                if (meta.watermark != null)
+                    fn.apply(meta.watermark);
+            }
+        }
+
+        for (DBSPStructItem found: structs) {
+            if (!global || !this.globalDeclarations.contains(found.getName())) {
+                this.generateStructItem(found);
+            }
         }
     }
 
@@ -536,7 +560,9 @@ public class ToRustVisitor extends CircuitVisitor {
         // Note that this is never a problem for SourceMapOperators with lateness, due to the
         // nature of the circuits synthesized for them.
         this.builder.newline();
-        this.generateStructHelpers(operator.originalRowType, operator.metadata);
+        var item = new DBSPStructItem(operator.originalRowType, operator.metadata);
+        this.generateNestedStructs(item, false);
+
         String registerFunction = operator.metadata.materialized ?
                 "register_materialized_input_zset" : "register_input_zset";
         this.builder.append("catalog.")
@@ -599,9 +625,9 @@ public class ToRustVisitor extends CircuitVisitor {
         this.computeHash(operator.asOperator());
         DBSPTypeStruct type = operator.getOriginalRowType();
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
-                new ProgramIdentifier(operator.getOriginalRowType().sanitizedName + "_key", false));
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_key", false));
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
-                new ProgramIdentifier(operator.getOriginalRowType().sanitizedName + "_upsert", false));
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_upsert", false));
         this.writeComments(operator.asOperator())
                 .append("let (")
                 .append(operator.asOperator().getNodeName(this.preferHash))
@@ -657,9 +683,9 @@ public class ToRustVisitor extends CircuitVisitor {
         this.computeHash(operator.asOperator());
         DBSPTypeStruct type = operator.getOriginalRowType();
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
-                new ProgramIdentifier(operator.getOriginalRowType().sanitizedName + "_key", false));
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_key", false));
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
-                new ProgramIdentifier(operator.getOriginalRowType().sanitizedName + "_upsert", false));
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_upsert", false));
         this.writeComments(operator.asOperator());
         this.builder.append("let (")
                 .append(operator.getOutput(0).getName(this.preferHash))
@@ -720,9 +746,9 @@ public class ToRustVisitor extends CircuitVisitor {
     public VisitDecision sourceMapPostfix(IInputMapOperator operator) {
         DBSPTypeStruct type = operator.getOriginalRowType();
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
-                new ProgramIdentifier(operator.getOriginalRowType().sanitizedName + "_key", false));
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_key", false));
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
-                new ProgramIdentifier(operator.getOriginalRowType().sanitizedName + "_upsert", false));
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_upsert", false));
         if (this.options.ioOptions.sqlNames) {
             this.builder.append("let ")
                     .append(operator.getTableName().name())
@@ -733,9 +759,9 @@ public class ToRustVisitor extends CircuitVisitor {
         }
 
         if (!this.useHandles) {
-            this.generateStructHelpers(type, operator.getMetadata());
-            this.generateStructHelpers(keyStructType, operator.getMetadata());
-            this.generateStructHelpers(upsertStruct, operator.getMetadata());
+            this.generateNestedStructs(new DBSPStructItem(type, null), false);
+            this.generateNestedStructs(new DBSPStructItem(keyStructType, null), false);
+            this.generateNestedStructs(new DBSPStructItem(upsertStruct, null), false);
 
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.getTableName());
             JsonNode j = tableDescription.asJson(true);
@@ -963,8 +989,8 @@ public class ToRustVisitor extends CircuitVisitor {
         this.writeComments(operator);
         this.innerVisitor.setOperatorContext(operator);
         if (!this.useHandles) {
-            DBSPType type = operator.originalRowType;
-            this.generateStructHelpers(type, null);
+            final DBSPType type = operator.originalRowType;
+            this.generateNestedStructs(type, false);
             this.computeHash(operator);
             if (operator.isIndex()) {
                 DBSPTypeRawTuple raw = operator.originalRowType.to(DBSPTypeRawTuple.class);

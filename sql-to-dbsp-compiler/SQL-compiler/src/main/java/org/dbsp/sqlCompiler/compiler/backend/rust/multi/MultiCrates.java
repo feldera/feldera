@@ -21,6 +21,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
@@ -151,6 +152,7 @@ public class MultiCrates {
             if (this.declarations.containsKey(string)) {
                 DBSPDeclaration decl = this.declarations.get(string);
                 if (expression.getType().code == DBSPTypeCode.ANY ||
+                        decl.item.is(DBSPFunctionItem.class) ||
                         decl.item.getType().sameType(expression.getType()))
                     this.found = true;
             }

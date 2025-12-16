@@ -506,8 +506,8 @@ public class ToJsonInnerVisitor extends InnerVisitor {
 
     @Override
     public void postorder(DBSPTypeStruct node) {
-        this.property("sanitizedName");
-        this.stream.append(node.sanitizedName);
+        this.property("hashName");
+        this.stream.append(node.hashName);
         this.property("name");
         node.name.asJson(this);
         super.postorder(node);

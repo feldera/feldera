@@ -160,7 +160,7 @@ public class UnusedFields extends Passes {
             }
             DBSPTypeStruct newType = new DBSPTypeStruct(
                     source.originalRowType.getNode(), source.originalRowType.name,
-                    source.originalRowType.sanitizedName, fields, source.originalRowType.mayBeNull);
+                    fields, source.originalRowType.mayBeNull);
 
             TableMetadata metadata = new TableMetadata(
                     source.metadata.tableName,

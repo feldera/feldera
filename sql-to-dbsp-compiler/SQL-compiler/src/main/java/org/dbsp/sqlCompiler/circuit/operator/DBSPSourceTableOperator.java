@@ -53,6 +53,9 @@ public abstract class DBSPSourceTableOperator
         this.getRelNode().to(RelAnd.class).add(new LastRel(node, this.getSourcePosition()));
     }
 
+    /** Create a new operator from this one, using the specified metadata */
+    public abstract DBSPSourceTableOperator withMetadata(TableMetadata metadata);
+
     @Override
     public DBSPTypeStruct getOriginalRowType() {
         return this.originalRowType;

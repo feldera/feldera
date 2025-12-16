@@ -127,7 +127,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveDeindexOperators(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         this.add(new RemoveIdentityOperators(compiler));
-        this.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
+        this.add(new ExpandCasts.RepeatExpandCasts(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
         this.add(new OptimizeWithGraph(compiler,
                 g -> new OptimizeMaps(compiler, false, g, operatorsAnalyzed)));
@@ -144,7 +144,8 @@ public class CircuitOptimizer extends Passes {
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
         this.add(new ImplementChains(compiler));
         // Lowering may surface additional casts that need to be expanded
-        this.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
+        this.add(new ExpandCasts.RepeatExpandCasts(compiler));
+        this.add(new ExpandCasts.ExpandMetadataCasts(compiler));
         this.add(new CSE(compiler));
         this.add(new ExpandJoins(compiler));
         this.add(new RemoveViewOperators(compiler, true));

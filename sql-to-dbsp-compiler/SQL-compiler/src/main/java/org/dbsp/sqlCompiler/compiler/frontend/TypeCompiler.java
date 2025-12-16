@@ -34,7 +34,6 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelStruct;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
@@ -269,8 +268,7 @@ public class TypeCompiler implements ICompilerComponent {
             DBSPType fType = this.convertType(range, col.getType(), true);
             fields.add(new DBSPTypeStruct.Field(col.node, col.getName(), index++, fType));
         }
-        String saneName = this.compiler.generateStructName(name, fields);
-        DBSPTypeStruct struct = new DBSPTypeStruct(node, name, saneName, fields, mayBeNull);
+        DBSPTypeStruct struct = new DBSPTypeStruct(node, name, fields, mayBeNull);
         if (asStruct) {
             return struct;
         } else {
@@ -284,7 +282,6 @@ public class TypeCompiler implements ICompilerComponent {
     }
 
     public static DBSPTypeStruct asStruct(
-            DBSPCompiler compiler,
             CalciteObject node, ProgramIdentifier name,
             List<ViewColumnMetadata> columns, boolean mayBeNull) {
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
@@ -292,8 +289,7 @@ public class TypeCompiler implements ICompilerComponent {
         for (ViewColumnMetadata col : columns) {
             fields.add(new DBSPTypeStruct.Field(col.node, col.getName(), index++, col.getType()));
         }
-        String saneName = compiler.generateStructName(name, fields);
-        return new DBSPTypeStruct(node, name, saneName, fields, mayBeNull);
+        return new DBSPTypeStruct(node, name, fields, mayBeNull);
     }
 
     final Set<Integer> timePrecisionsWarned = new HashSet<>();
@@ -310,29 +306,20 @@ public class TypeCompiler implements ICompilerComponent {
         boolean nullable = dt.isNullable();
         DBSPTypeStruct struct;
         if (dt.isStruct()) {
-            boolean isNamedStruct = dt instanceof RelStruct;
-            if (isNamedStruct) {
-                RelStruct rs = (RelStruct) dt;
-                ProgramIdentifier simpleName = Utilities.toIdentifier(rs.typeName);
-                // Struct must be already declared
-                struct = Objects.requireNonNull(this.compiler.getStructByName(simpleName));
-            } else {
-                List<DBSPTypeStruct.Field> fields = new ArrayList<>();
-                FreshName fieldNameGen = new FreshName(new HashSet<>());
-                int index = 0;
-                for (RelDataTypeField field : dt.getFieldList()) {
-                    DBSPType type = this.convertType(context, field.getType(), true);
-                    String fieldName = field.getName();
-                    if (this.compiler().options.languageOptions.lenient)
-                        // If we are not lenient and names are duplicated
-                        // we will get an exception below where we create the struct.
-                        fieldName = fieldNameGen.freshName(fieldName, true);
-                    fields.add(new DBSPTypeStruct.Field(
-                            CalciteObject.create(dt), new ProgramIdentifier(fieldName), index++, type));
-                }
-                String saneName = this.compiler.generateStructName(new ProgramIdentifier("*", false), fields);
-                struct = new DBSPTypeStruct(node, new ProgramIdentifier(saneName, false), saneName, fields, nullable);
+            List<DBSPTypeStruct.Field> fields = new ArrayList<>();
+            FreshName fieldNameGen = new FreshName(new HashSet<>());
+            int index = 0;
+            for (RelDataTypeField field : dt.getFieldList()) {
+                DBSPType type = this.convertType(context, field.getType(), true);
+                String fieldName = field.getName();
+                if (this.compiler().options.languageOptions.lenient)
+                    // If we are not lenient and names are duplicated
+                    // we will get an exception below where we create the struct.
+                    fieldName = fieldNameGen.freshName(fieldName, true);
+                fields.add(new DBSPTypeStruct.Field(
+                        CalciteObject.create(dt), new ProgramIdentifier(fieldName), index++, type));
             }
+            struct = new DBSPTypeStruct(node, new ProgramIdentifier("", false), fields, nullable);
             if (asStruct) {
                 return struct.withMayBeNull(dt.isNullable());
             } else {
