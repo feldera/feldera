@@ -325,6 +325,10 @@ pub enum CorruptionError {
     /// Invalid filter block location.
     #[error("Invalid file block location ({0}).")]
     InvalidFilterLocation(InvalidBlockLocation),
+
+    /// Missing bounds for row group that spans data block.
+    #[error("Missing bounds for row group that spans data block.")]
+    MissingBounds,
 }
 
 /// Reader for an array of [Varint]s in a storage file.
@@ -1069,10 +1073,15 @@ where
         Err(CorruptionError::MissingRow(row).into())
     }
 
-    unsafe fn get_bound(&self, index: usize, bound: &mut K) {
+    unsafe fn get_bound<'a>(&self, index: usize, bound: &'a mut K) -> Option<&'a mut K> {
         unsafe {
             let offset = self.bounds.get(&self.raw, index) as usize;
-            bound.deserialize_from_bytes(&self.raw, offset)
+            if offset != 0 {
+                bound.deserialize_from_bytes(&self.raw, offset);
+                Some(bound)
+            } else {
+                None
+            }
         }
     }
 
@@ -1102,12 +1111,16 @@ where
                 let row = self.get_row_bound(mid) + self.first_row;
                 let cmp = match range_compare(target_rows, row) {
                     Equal => {
-                        self.get_bound(mid, bound);
-                        let cmp = compare(bound);
-                        if cmp == Equal {
-                            return Some(mid / 2);
+                        if let Some(bound) = self.get_bound(mid, bound) {
+                            match compare(bound) {
+                                Equal => return Some(mid / 2),
+                                cmp => cmp,
+                            }
+                        } else if mid % 2 == 1 {
+                            Less
+                        } else {
+                            Greater
                         }
-                        cmp
                     }
                     cmp => cmp,
                 };
@@ -1147,8 +1160,10 @@ where
             let mut end = self.n_children();
             while *start < end {
                 let mid = start.midpoint(end);
-                self.get_bound(mid * 2, tmp_key);
-                if &targets[start_index] < tmp_key {
+                if self
+                    .get_bound(mid * 2, tmp_key)
+                    .is_some_and(|bound| &targets[start_index] < bound)
+                {
                     end = mid;
                 } else {
                     *start = mid + 1;
@@ -1170,15 +1185,16 @@ where
     }
 
     /// Returns the comparison of the largest bound key using `compare`.
-    unsafe fn compare_max<C>(&self, key_factory: &dyn Factory<K>, compare: &C) -> Ordering
+    unsafe fn compare_max<C>(&self, key_factory: &dyn Factory<K>, compare: &C) -> Option<Ordering>
     where
         C: Fn(&K) -> Ordering,
     {
         unsafe {
-            let mut ordering = Equal;
+            let mut ordering = None;
             key_factory.with(&mut |key| {
-                self.get_bound(self.n_children() * 2 - 1, key);
-                ordering = compare(key);
+                ordering = self
+                    .get_bound(self.n_children() * 2 - 1, key)
+                    .map(|key| compare(key));
             });
             ordering
         }
@@ -1527,11 +1543,12 @@ where
             );
         }
 
-        if file_trailer.incompatible_features != 0 {
-            return Err(CorruptionError::UnsupportedIncompatibleFeatures(
-                file_trailer.incompatible_features,
-            )
-            .into());
+        let unsupported_features =
+            file_trailer.incompatible_features & !FileTrailer::OMITTED_BOUNDS;
+        if unsupported_features != 0 {
+            return Err(
+                CorruptionError::UnsupportedIncompatibleFeatures(unsupported_features).into(),
+            );
         }
 
         assert_eq!(factories.len(), file_trailer.columns.len());
@@ -2608,7 +2625,10 @@ where
                 // `index_block` and the greatest value under `index_block` is less
                 // than the target.
                 if rows.end > index_block.rows().end
-                    && index_block.compare_max(row_group.factories.key_factory, compare) == Greater
+                    && index_block
+                        .compare_max(row_group.factories.key_factory, compare)
+                        .ok_or(CorruptionError::MissingBounds)?
+                        == Greater
                 {
                     rows.start = index_block.rows().end;
                     continue;

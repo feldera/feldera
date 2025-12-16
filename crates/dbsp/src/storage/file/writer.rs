@@ -217,6 +217,7 @@ where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
 {
+    column: usize,
     parameters: Arc<Parameters>,
     rows: Range<u64>,
     data_block: DataBlockBuilder<K, A>,
@@ -229,8 +230,9 @@ where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
 {
-    fn new(factories: &Factories<K, A>, parameters: Arc<Parameters>) -> Self {
+    fn new(column: usize, factories: &Factories<K, A>, parameters: Arc<Parameters>) -> Self {
         ColumnWriter {
+            column,
             parameters: parameters.clone(),
             rows: 0..0,
             data_block: DataBlockBuilder::new(parameters),
@@ -252,7 +254,7 @@ where
     ) -> Result<FileTrailerColumn, StorageError> {
         // Flush data.
         if !self.data_block.is_empty() {
-            let data_block = self.data_block.build(&self.factories);
+            let data_block = self.data_block.build(&self.factories, self.column == 0);
             self.write_data_block(block_writer, data_block)?;
         }
 
@@ -321,7 +323,8 @@ where
 
         if let Some(index_block) = self.get_index_block(0).add_entry(
             location,
-            &data_block.min_max,
+            data_block.min.as_deref(),
+            data_block.max.as_deref(),
             data_block.n_rows as u64,
         ) {
             self.write_index_block(block_writer, index_block, 0)?;
@@ -353,9 +356,12 @@ where
             .unwrap();
 
             level += 1;
-            let opt_index_block =
-                self.get_index_block(level)
-                    .add_entry(location, &index_block.min_max, n_rows);
+            let opt_index_block = self.get_index_block(level).add_entry(
+                location,
+                index_block.min.as_deref(),
+                index_block.max.as_deref(),
+                n_rows,
+            );
             index_block = match opt_index_block {
                 None => return Ok(()),
                 Some(index_block) => index_block,
@@ -369,8 +375,34 @@ where
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
     ) -> Result<(), StorageError> {
+        // Is the row that we're writing the first row in its row group[^0]?
+        //
+        // When the first row in a data block is the first row in its row group,
+        // we don't copy the row's key to the index block (as the minimum value
+        // in the child).  This is because the key can take up a lot of space if
+        // it is large, but on the other hand there is hardly any benefit since
+        // it will rarely keep us from having to bring the data block into
+        // memory.
+        //
+        // Similarly, when the last row in a data block is the last row in its
+        // row group, we don't copy the row's key to the index block either (as
+        // the maximum value in the child).
+        //
+        // We drop this optimization for column 0.  This column has only one row
+        // group that occupies all the rows, so this optimization would only
+        // affect the very first and very last data block, which isn't
+        // significant, and being able to rely on every bound being present in
+        // column 0 allows for a few simplifications elsewhere in the code.
+        //
+        // [^0]: The row group we're building for this column.  `row_group` is
+        // the row group for the next column.
+        let is_first_row_in_group = self.column != 0 && self.rows.is_empty();
+
         self.rows.end += 1;
-        if let Some(data_block) = self.data_block.add_item(&self.factories, item, row_group) {
+        if let Some(data_block) =
+            self.data_block
+                .add_item(&self.factories, item, row_group, is_first_row_in_group)
+        {
             self.write_data_block(block_writer, data_block)?;
         }
         Ok(())
@@ -429,6 +461,7 @@ where
     value_offset_stride: StrideBuilder,
     row_groups: ContiguousRanges,
     size_target: Option<usize>,
+    build_min: bool,
     first_row: u64,
     _phantom: PhantomData<fn(&K, &A)>,
 }
@@ -441,7 +474,8 @@ struct DataBuildSpecs {
 
 struct DataBlock<K: ?Sized> {
     raw: FBuf,
-    min_max: (Box<K>, Box<K>),
+    min: Option<Box<K>>,
+    max: Option<Box<K>>,
     n_rows: usize,
     first_row: u64,
 }
@@ -471,6 +505,7 @@ where
             parameters,
             size_target: None,
             first_row: 0,
+            build_min: false,
             _phantom: PhantomData,
         }
     }
@@ -490,6 +525,7 @@ where
         factories: &Factories<K, A>,
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
+        is_first_row_in_group: bool,
     ) -> Result<(), LimitExceeded> {
         if self.value_offsets.len() >= self.parameters.max_branch() {
             return Err(LimitExceeded);
@@ -504,6 +540,9 @@ where
         });
         let offset = result.inspect_err(|_| self.raw.resize(old_len, 0))?;
 
+        if self.value_offsets.is_empty() {
+            self.build_min = !is_first_row_in_group;
+        }
         self.value_offsets.push(offset);
         self.value_offset_stride.push(offset);
         if let Some(row_group) = row_group.as_ref() {
@@ -536,12 +575,18 @@ where
         factories: &Factories<K, A>,
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
+        is_first_row_in_group: bool,
     ) -> Option<DataBlock<K>> {
-        if self.try_add_item(factories, item, row_group).is_ok() {
+        if self
+            .try_add_item(factories, item, row_group, is_first_row_in_group)
+            .is_ok()
+        {
             None
         } else {
-            let retval = self.build(factories);
-            assert!(self.try_add_item(factories, item, row_group).is_ok());
+            let retval = self.build(factories, !is_first_row_in_group);
+            assert!(self
+                .try_add_item(factories, item, row_group, is_first_row_in_group)
+                .is_ok());
             Some(retval)
         }
     }
@@ -576,7 +621,7 @@ where
             len,
         }
     }
-    fn build(&mut self, factories: &Factories<K, A>) -> DataBlock<K> {
+    fn build(&mut self, factories: &Factories<K, A>, build_max: bool) -> DataBlock<K> {
         let specs = self.specs();
 
         self.raw
@@ -615,13 +660,19 @@ where
         };
         header.overwrite_head(&mut self.raw);
 
-        let mut min = factories.key_factory.default_box();
-        let min_offset = *self.value_offsets.first().unwrap();
-        rkyv_deserialize_key(factories.item_factory, &self.raw, min_offset, min.as_mut());
+        let min = self.build_min.then(|| {
+            let mut min = factories.key_factory.default_box();
+            let min_offset = *self.value_offsets.first().unwrap();
+            rkyv_deserialize_key(factories.item_factory, &self.raw, min_offset, min.as_mut());
+            min
+        });
 
-        let mut max = factories.key_factory.default_box();
-        let max_offset = *self.value_offsets.last().unwrap();
-        rkyv_deserialize_key(factories.item_factory, &self.raw, max_offset, max.as_mut());
+        let max = build_max.then(|| {
+            let mut max = factories.key_factory.default_box();
+            let max_offset = *self.value_offsets.last().unwrap();
+            rkyv_deserialize_key(factories.item_factory, &self.raw, max_offset, max.as_mut());
+            max
+        });
 
         // Take our data buffer, replacing it by a new one with a capacity big
         // enough for the data in the current one.  We round up to a multiple of
@@ -633,7 +684,8 @@ where
 
         let data_block = DataBlock {
             raw,
-            min_max: (min, max),
+            min,
+            max,
             n_rows: n_values,
             first_row: self.first_row,
         };
@@ -645,8 +697,8 @@ where
 
 struct IndexEntry {
     child: BlockLocation,
-    min_offset: usize,
-    max_offset: usize,
+    min_offset: Option<usize>,
+    max_offset: Option<usize>,
     row_total: u64,
 }
 
@@ -706,7 +758,8 @@ struct IndexBuildSpecs {
 
 struct IndexBlock<K: ?Sized> {
     raw: FBuf,
-    min_max: (Box<K>, Box<K>),
+    min: Option<Box<K>>,
+    max: Option<Box<K>>,
     rows: Range<u64>,
 }
 
@@ -795,7 +848,8 @@ where
     fn inner_try_add_entry(
         &mut self,
         child: BlockLocation,
-        min_max: &(Box<K>, Box<K>),
+        min: Option<&K>,
+        max: Option<&K>,
         n_rows: u64,
     ) -> Result<(), LimitExceeded> {
         if self.entries.len() >= self.parameters.max_branch() {
@@ -803,8 +857,12 @@ where
         }
         self.max_child_size = self.max_child_size.max(child.size);
         let limit = self.size_target.unwrap_or(usize::MAX);
-        let min_offset = rkyv_serialize(&mut self.raw, min_max.0.as_ref(), limit)?;
-        let max_offset = rkyv_serialize(&mut self.raw, min_max.1.as_ref(), limit)?;
+        let min_offset = min
+            .map(|min| rkyv_serialize(&mut self.raw, min, limit))
+            .transpose()?;
+        let max_offset = max
+            .map(|max| rkyv_serialize(&mut self.raw, max, limit))
+            .transpose()?;
         self.entries.push(IndexEntry {
             child,
             min_offset,
@@ -829,13 +887,14 @@ where
     fn try_add_entry(
         &mut self,
         child: BlockLocation,
-        min_max: &(Box<K>, Box<K>),
+        min: Option<&K>,
+        max: Option<&K>,
         n_rows: u64,
     ) -> Result<(), LimitExceeded> {
         let saved_len = self.raw.len();
         let saved_max_child_size = self.max_child_size;
         let n_entries = self.entries.len();
-        self.inner_try_add_entry(child, min_max, n_rows)
+        self.inner_try_add_entry(child, min, max, n_rows)
             .inspect_err(|_| {
                 self.max_child_size = saved_max_child_size;
                 self.raw.resize(saved_len, 0);
@@ -847,10 +906,11 @@ where
     fn add_entry(
         &mut self,
         child: BlockLocation,
-        min_max: &(Box<K>, Box<K>),
+        min: Option<&K>,
+        max: Option<&K>,
         n_rows: u64,
     ) -> Option<IndexBlock<K>> {
-        let f = |t: &mut Self| t.try_add_entry(child, min_max, n_rows);
+        let f = |t: &mut Self| t.try_add_entry(child, min, max, n_rows);
         if f(self).is_ok() {
             None
         } else {
@@ -904,15 +964,19 @@ where
     }
     fn build(&mut self) -> IndexBlock<K> {
         let specs = self.specs();
-
+        let entry_n = self.entries.last().unwrap();
+        let rows = self.first_row..self.first_row + entry_n.row_total;
         self.raw
             .reserve(specs.len.saturating_sub(self.raw.capacity()));
 
         specs.bound_map.put(
             &mut self.raw,
-            self.entries
-                .iter()
-                .flat_map(|entry| [entry.min_offset as u64, entry.max_offset as u64]),
+            self.entries.iter().flat_map(|entry| {
+                [
+                    entry.min_offset.unwrap_or_default() as u64,
+                    entry.max_offset.unwrap_or_default() as u64,
+                ]
+            }),
         );
 
         specs.row_totals.put(
@@ -947,20 +1011,25 @@ where
         };
         header.overwrite_head(&mut self.raw);
 
-        let mut min = self.factory.default_box();
-        let entry_0 = self.entries.first().unwrap();
-        rkyv_deserialize(&self.raw, entry_0.min_offset, min.as_mut());
+        let min = self.entries.first().unwrap().min_offset.map(|offset| {
+            let mut key = self.factory.default_box();
+            rkyv_deserialize(&self.raw, offset, key.as_mut());
+            key
+        });
 
-        let mut max = self.factory.default_box();
-        let entry_n = self.entries.last().unwrap();
-        rkyv_deserialize(&self.raw, entry_n.max_offset, max.as_mut());
+        let max = entry_n.max_offset.map(|offset| {
+            let mut key = self.factory.default_box();
+            rkyv_deserialize(&self.raw, offset, key.as_mut());
+            key
+        });
 
         let capacity = self.raw.capacity();
         let raw = replace(&mut self.raw, FBuf::with_capacity(capacity));
         let index_block = IndexBlock {
             raw,
-            min_max: (min, max),
-            rows: self.first_row..self.first_row + entry_n.row_total,
+            min,
+            max,
+            rows,
         };
         self.first_row += entry_n.row_total;
         self.clear();
@@ -1147,7 +1216,7 @@ impl Writer {
             filter_offset: filter_location.offset,
             filter_size: filter_location.size.try_into().unwrap(),
             compatible_features: 0,
-            incompatible_features: 0,
+            incompatible_features: FileTrailer::OMITTED_BOUNDS,
         };
         let (_block, location) = self
             .writer
@@ -1228,7 +1297,7 @@ where
     ) -> Result<Self, StorageError> {
         let parameters = Arc::new(parameters);
         Ok(Self {
-            column0: ColumnWriter::new(factories, parameters.clone()),
+            column0: ColumnWriter::new(0, factories, parameters.clone()),
             inner: Writer::new(cache, storage_backend, parameters, estimated_keys)?,
             #[cfg(debug_assertions)]
             prev0: None,
@@ -1367,8 +1436,8 @@ where
     ) -> Result<Self, StorageError> {
         let parameters = Arc::new(parameters);
         Ok(Self {
-            column0: ColumnWriter::new(factories0, parameters.clone()),
-            column1: ColumnWriter::new(factories1, parameters.clone()),
+            column0: ColumnWriter::new(0, factories0, parameters.clone()),
+            column1: ColumnWriter::new(1, factories1, parameters.clone()),
             inner: Writer::new(cache, storage_backend, parameters, estimated_keys)?,
             #[cfg(debug_assertions)]
             prev0: None,

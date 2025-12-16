@@ -693,6 +693,16 @@ fn two_columns_max_branch_2_uncompressed() {
 }
 
 #[test]
+fn two_columns_max_branch_3_uncompressed() {
+    init_test_logger();
+    test_2_columns_helper(
+        Parameters::default()
+            .with_max_branch(3)
+            .with_compression(None),
+    );
+}
+
+#[test]
 fn two_columns_max_branch_2_snappy() {
     init_test_logger();
     test_2_columns_helper(
