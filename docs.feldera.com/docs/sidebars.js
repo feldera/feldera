@@ -428,6 +428,11 @@ const pipelines = {
         "pipelines/checkpoint-sync",
         "pipelines/transactions",
         "pipelines/latency",
+        {
+            type: 'doc',
+            label: "Sidecar Containers",
+            id: "pipelines/sidecar",
+        },
     ]
 };
 
