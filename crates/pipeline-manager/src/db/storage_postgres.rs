@@ -400,8 +400,11 @@ impl Storage for StoragePostgres {
         assert_eq!(rows_affected, 1);
 
         info!(
-            "Updated pipeline {} from platform version {} to {}",
-            current.id, current.platform_version, platform_version
+            pipeline_id = %current.id,
+            pipeline = %current.name,
+            "Updated pipeline platform version from {} to {}",
+            current.platform_version,
+            platform_version
         );
 
         txn.commit().await?;

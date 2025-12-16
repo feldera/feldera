@@ -1037,8 +1037,9 @@ impl SupportDataCollector {
 
                     self.schedule.insert(next_collection, entry);
                     debug!(
-                        "Added support data collection for pipeline {} to schedule.",
-                        pipeline_id
+                        pipeline_id = %pipeline_id,
+                        pipeline = "N/A",
+                        "Added support data collection to schedule"
                     );
                 }
             }
@@ -1080,8 +1081,9 @@ impl SupportDataCollector {
                 }
                 Err(e) => {
                     error!(
-                        "Failed to collect support data for pipeline {}: {}",
-                        entry.pipeline_id, e
+                        pipeline_id = %entry.pipeline_id,
+                        pipeline = "N/A",
+                        "Failed to collect support data: {e}"
                     );
 
                     // Try again in a minute.
@@ -1117,13 +1119,18 @@ impl SupportDataCollector {
             Ok(pipeline) => pipeline,
             Err(DBError::UnknownPipeline { .. }) => {
                 debug!(
-                    "Removing {} from support data collection schedule (pipeline deleted)",
-                    entry.pipeline_id
+                    pipeline_id = %entry.pipeline_id,
+                    pipeline = "N/A",
+                    "Removing from support data collection schedule (pipeline deleted)"
                 );
                 return Ok(PostCollectionAction::Remove);
             }
             Err(e) => {
-                error!("Failed to get pipeline {}: {}", entry.pipeline_id, e);
+                error!(
+                    pipeline_id = %entry.pipeline_id,
+                    pipeline = "N/A",
+                    "Failed to get pipeline: {e}"
+                );
                 return Err(e.into());
             }
         };
@@ -1135,8 +1142,10 @@ impl SupportDataCollector {
         );
         if combined_status != CombinedStatus::Running {
             debug!(
-                "Removing {} from support data collection schedule (status change to: {:?})",
-                entry.pipeline_id, combined_status
+                pipeline_id = %pipeline.id,
+                pipeline = %pipeline.name,
+                "Removing from support data collection schedule (status change to: {:?})",
+                combined_status
             );
             return Ok(PostCollectionAction::Remove);
         }
@@ -1149,14 +1158,16 @@ impl SupportDataCollector {
             .await?;
         if let Err(err) = self.cleanup_old_collections(entry.pipeline_id).await {
             error!(
-                "Failed to cleanup old support data collections for pipeline {}: {}",
-                entry.pipeline_id, err
+                pipeline_id = %pipeline.id,
+                pipeline = %pipeline.name,
+                "Failed to cleanup old support data collections: {err}"
             );
         }
 
         debug!(
-            "Collected support data for pipeline {}, reschedule",
-            entry.pipeline_id
+            pipeline_id = %pipeline.id,
+            pipeline = %pipeline.name,
+            "Collected support data, reschedule"
         );
 
         Ok(PostCollectionAction::Reschedule)
@@ -1210,8 +1221,10 @@ impl SupportDataCollector {
         txn.commit().await?;
         if r != 0 {
             debug!(
-                "Cleaned up {} old support data collection(s) for pipeline {}",
-                r, pipeline_id
+                pipeline_id = %pipeline_id,
+                pipeline = "N/A",
+                "Cleaned up {} old support data collection(s)",
+                r
             );
         }
         Ok(())

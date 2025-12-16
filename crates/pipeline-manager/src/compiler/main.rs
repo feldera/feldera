@@ -245,8 +245,11 @@ async fn upload_binary(
     let total_size = save_file(&target_file_path, payload, &expected_integrity_checksum).await?;
 
     info!(
-        "Successfully received binary for pipeline {} (program version: {}) ({} bytes)",
-        pipeline_id, program_version, total_size
+        pipeline_id = %pipeline_id,
+        pipeline = "N/A",
+        "Successfully received binary (program version: {}) ({} bytes)",
+        program_version,
+        total_size
     );
 
     // Return success response
@@ -337,8 +340,11 @@ async fn upload_program_info(
     let total_size = save_file(&target_file_path, payload, &expected_integrity_checksum).await?;
 
     info!(
-        "Successfully received program info for pipeline {} (program version: {}) ({} bytes)",
-        pipeline_id, program_version, total_size
+        pipeline_id = %pipeline_id,
+        pipeline = "N/A",
+        "Successfully received program info (program version: {}) ({} bytes)",
+        program_version,
+        total_size
     );
 
     // Return success response

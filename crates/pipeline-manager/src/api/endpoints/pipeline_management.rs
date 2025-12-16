@@ -804,8 +804,9 @@ async fn fetch_connector_error_stats(
     // Check status code - quietly ignore 404 (endpoint not available on older pipelines)
     if response.status() == actix_web::http::StatusCode::NOT_FOUND {
         debug!(
-            "Pipeline '{}' does not support /stats/errors endpoint (404), skipping error stats",
-            pipeline_name
+            pipeline = %pipeline_name,
+            pipeline_id = "N/A",
+            "Pipeline does not support /stats/errors endpoint (404), skipping error stats"
         );
         return None;
     }
@@ -817,8 +818,9 @@ async fn fetch_connector_error_stats(
         Ok(response) => response,
         Err(e) => {
             error!(
-                "Failed to deserialize pipeline stats response for '{}': {}",
-                pipeline_name, e
+                pipeline = %pipeline_name,
+                pipeline_id = "N/A",
+                "Failed to deserialize pipeline stats response: {e}"
             );
             return None;
         }
@@ -954,7 +956,6 @@ pub(crate) async fn post_pipeline(
     body: web::Json<PostPutPipelineInternal>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_descr: PipelineDescr = body.into_inner().into();
-    let name = pipeline_descr.name.clone();
     let pipeline = state
         .db
         .lock()
@@ -971,9 +972,8 @@ pub(crate) async fn post_pipeline(
     info!(
         pipeline = %returned_pipeline.name,
         pipeline_id = %returned_pipeline.id,
-        "Created pipeline {name:?} ({}) (tenant: {})",
-        returned_pipeline.id,
-        *tenant_id
+        tenant = %tenant_id.0,
+        "Created pipeline"
     );
     Ok(HttpResponse::Created()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1044,9 +1044,8 @@ pub(crate) async fn put_pipeline(
         info!(
             pipeline = %returned_pipeline.name,
             pipeline_id = %returned_pipeline.id,
-            "Created pipeline {pipeline_name:?} ({}) (tenant: {})",
-            returned_pipeline.id,
-            *tenant_id
+            tenant = %tenant_id.0,
+            "Created pipeline"
         );
         Ok(HttpResponse::Created()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1055,10 +1054,9 @@ pub(crate) async fn put_pipeline(
         info!(
             pipeline = %returned_pipeline.name,
             pipeline_id = %returned_pipeline.id,
-            "Fully updated pipeline {pipeline_name:?} ({}) to version {} (tenant: {})",
-            returned_pipeline.id,
-            returned_pipeline.version,
-            *tenant_id
+            tenant = %tenant_id.0,
+            version = %returned_pipeline.version,
+            "Fully updated pipeline"
         );
         Ok(HttpResponse::Ok()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1131,8 +1129,12 @@ pub(crate) async fn patch_pipeline(
     let returned_pipeline = PipelineInfoInternal::new(pipeline);
 
     info!(
-        "Partially updated pipeline {pipeline_name:?} ({}) to version {} (tenant: {})",
-        returned_pipeline.id, returned_pipeline.version, *tenant_id
+        pipeline = %returned_pipeline.name,
+        pipeline_id = %returned_pipeline.id,
+        tenant = %tenant_id.0,
+        version = %returned_pipeline.version,
+        "Partially updated pipeline to version {}",
+        returned_pipeline.version
     );
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1216,8 +1218,12 @@ pub(crate) async fn post_update_runtime(
     let returned_pipeline = PipelineInfoInternal::new(pipeline);
 
     info!(
-        "Updated pipeline {pipeline_name:?} ({}) platform_version to {} (tenant: {})",
-        returned_pipeline.id, returned_pipeline.platform_version, *tenant_id
+        pipeline = %returned_pipeline.name,
+        pipeline_id = %returned_pipeline.id,
+        tenant = %tenant_id.0,
+        platform_version = %returned_pipeline.platform_version,
+        "Updated pipeline platform_version to {}",
+        returned_pipeline.platform_version
     );
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1265,9 +1271,8 @@ pub(crate) async fn delete_pipeline(
     info!(
         pipeline = %pipeline_name,
         pipeline_id = %pipeline_id,
-        "Deleted pipeline {pipeline_name:?} ({}) (tenant: {})",
-        pipeline_id,
-        *tenant_id
+        tenant = %tenant_id.0,
+        "Deleted pipeline"
     );
     Ok(HttpResponse::Ok().finish())
 }
@@ -1368,8 +1373,11 @@ pub(crate) async fn post_pipeline_start(
     };
 
     info!(
-        "Accepted action: going to start pipeline {pipeline_name:?} ({pipeline_id}) as {} (tenant: {})",
-        initial, *tenant_id
+        pipeline_id = %pipeline_id,
+        pipeline = %pipeline_name,
+        tenant = %tenant_id.0,
+        "Accepted action: going to start pipeline as {}",
+        initial
     );
     Ok(HttpResponse::Accepted().json(json!("Pipeline is starting")))
 }
@@ -1455,8 +1463,10 @@ pub(crate) async fn post_pipeline_stop(
             .set_deployment_resources_desired_status_stopped(*tenant_id, &pipeline_name)
             .await?;
         info!(
-            "Accepted action: going to forcefully stop pipeline {pipeline_name:?} ({pipeline_id}) (tenant: {})",
-            *tenant_id
+            pipeline_id = %pipeline_id,
+            pipeline = %pipeline_name,
+            tenant = %tenant_id.0,
+            "Accepted action: going to forcefully stop pipeline"
         );
         Ok(HttpResponse::Accepted().json(json!("Pipeline is forcefully stopping")))
     } else {
@@ -1479,8 +1489,10 @@ pub(crate) async fn post_pipeline_stop(
                 .await?;
             if was_set {
                 info!(
-                    "Accepted action: going to forcefully stop pipeline {pipeline_name:?} ({pipeline_id}) (tenant: {}) because it is not provisioned",
-                    *tenant_id
+                    pipeline_id = %pipeline_id,
+                    pipeline = %pipeline_name,
+                    tenant = %tenant_id.0,
+                    "Accepted action: going to forcefully stop pipeline because it is not provisioned"
                 );
                 Ok(HttpResponse::Accepted().json(json!("Pipeline is forcefully stopping")))
             } else {
@@ -1507,8 +1519,10 @@ pub(crate) async fn post_pipeline_stop(
                     .is_ok_and(|v| v.status() == actix_web::http::StatusCode::ACCEPTED)
                 {
                     info!(
-                        "Accepted action: going to non-forcefully stop pipeline {pipeline_name:?} ({pipeline_id}) (tenant: {})",
-                        *tenant_id
+                        pipeline = %pipeline_name,
+                        pipeline_id = %pipeline_id,
+                        tenant = %tenant_id.0,
+                        "Accepted action: going to non-forcefully stop pipeline"
                     );
                 }
                 response
@@ -1566,8 +1580,10 @@ pub(crate) async fn post_pipeline_clear(
         .await?;
 
     info!(
-        "Accepted storage action: going to clear storage of pipeline {pipeline_name:?} ({pipeline_id}) (tenant: {})",
-        *tenant_id
+        pipeline_id = %pipeline_id,
+        pipeline = %pipeline_name,
+        tenant = %tenant_id.0,
+        "Accepted storage action: going to clear storage of pipeline"
     );
     Ok(HttpResponse::Accepted().json(json!("Pipeline storage is being cleared")))
 }
