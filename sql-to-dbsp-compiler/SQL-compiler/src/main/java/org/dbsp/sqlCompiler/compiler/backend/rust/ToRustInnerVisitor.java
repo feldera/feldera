@@ -896,7 +896,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Default, PartialOrd, Ord)]")
                 .newline();
         builder.append("pub struct ")
-                .append(Objects.requireNonNull(struct.sanitizedName))
+                .append(Objects.requireNonNull(struct.hashName))
                 .append(" {")
                 .increase();
         for (DBSPTypeStruct.Field field: struct.fields.values()) {
@@ -909,19 +909,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .newline();
     }
 
-    void generateStructHelpers(DBSPTypeStruct s, @Nullable TableMetadata metadata) {
-        s = s.withMayBeNull(false).to(DBSPTypeStruct.class);
-        this.generateStructDeclaration(s);
-        this.generateFromTrait(s);
-        this.generateRenameMacro(s, metadata);
-    }
-
     @Override
     public VisitDecision preorder(DBSPStructItem item) {
         // pretend we are not in an operator context for the generated helper code
         DBSPOperator save = this.operatorContext;
         this.operatorContext = null;
-        this.generateStructHelpers(item.type, item.metadata);
+        DBSPTypeStruct s = item.type.withMayBeNull(false).to(DBSPTypeStruct.class);
+        this.generateStructDeclaration(s);
+        this.generateFromTrait(s);
+        this.generateSerdeMacros(item);
         this.operatorContext = save;
         return VisitDecision.STOP;
     }
@@ -982,13 +978,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
         EliminateStructs es = new EliminateStructs(this.compiler());
         DBSPTypeTuple tuple = es.apply(type).to(DBSPTypeTuple.class);
         this.builder.append("impl From<")
-                .append(type.sanitizedName)
+                .append(type.hashName)
                 .append("> for ");
         tuple.accept(this);
         this.builder.append(" {")
                 .increase()
                 .append("fn from(t: ")
-                .append(type.sanitizedName)
+                .append(type.hashName)
                 .append(") -> Self");
         this.builder.append(" {")
                 .increase()
@@ -1011,7 +1007,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("impl From<");
         tuple.accept(this);
         this.builder.append("> for ")
-                .append(type.sanitizedName);
+                .append(type.hashName);
         this.builder.append(" {")
                 .increase()
                 .append("fn from(t: ");
@@ -1057,6 +1053,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
         @Override
         public void postorder(DBSPHandleErrorExpression expression) {
+            // Strip source positions from these initializers for now
             DBSPExpression source = this.getE(expression.source);
             DBSPExpression result = new DBSPHandleErrorExpression(expression.getNode(), expression.index, source, false);
             this.map(expression, result);
@@ -1075,16 +1072,17 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     /**
      * Generate calls to the Rust macros that generate serialization and deserialization code
-     * for the struct.
-     *
-     * @param type      Type of record in the table.
-     * @param metadata  Metadata for the input columns (null for an output view). */
-    protected void generateRenameMacro(DBSPTypeStruct type,
-                                       @Nullable TableMetadata metadata) {
+     * for the struct. */
+    protected void generateSerdeMacros(DBSPStructItem item) {
         this.builder.append("deserialize_table_record!(");
-        this.builder.append(type.sanitizedName)
+        DBSPTypeStruct type = item.type;
+        TableMetadata metadata = item.metadata;
+        String typeName = type.name.name();
+        if (typeName.isEmpty())
+            typeName = type.hashName;
+        this.builder.append(type.hashName)
                 .append("[")
-                .append(Utilities.doubleQuote(type.name.name(), true))
+                .append(Utilities.doubleQuote(typeName, true))
                 .append(", Variant, ")
                 .append(type.fields.size())
                 .append("] {")
@@ -1119,21 +1117,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 if (isOption)
                     this.builder.append("Some(");
                 this.builder.append(field.type.mayBeNull ? "Some(None)" : "None");
+                if (isOption)
+                    this.builder.append(")");
             } else {
                 RewriteConnectorMetadata rw = new RewriteConnectorMetadata(this.compiler);
                 this.builder.append("|")
                         .append(RewriteConnectorMetadata.variableName())
                         .append(": &Option<Variant>| Some(");
-                if (isOption)
-                    this.builder.append("Some(");
                 IDBSPInnerNode defaultValue = this.createErrorWrappers.apply(meta.defaultValue);
                 defaultValue = rw.apply(defaultValue);
                 defaultValue.accept(this);
-                this.builder.append(")");
+                this.builder.append(".into())");
             }
-            if (isOption)
-                // closes for both branches of the if
-                this.builder.append(")");
 
             if (isOption && user.typeArgs[0].mayBeNull) {
                 // Option<Option<...>>
@@ -1147,7 +1142,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .newline();
 
         this.builder.append("serialize_table_record!(");
-        this.builder.append(type.sanitizedName)
+        this.builder.append(type.hashName)
                 .append("[")
                 .append(type.fields.size())
                 .append("]{")
@@ -1554,6 +1549,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 break;
             }
             case SQL_INDEX:
+                if (this.compact) {
+                    expression.left.accept(this);
+                    this.builder.append("[");
+                    expression.right.accept(this);
+                    this.builder.append("-1]");
+                    break;
+                }
                 throw new InternalCompilerError("Should have been eliminated");
             case RUST_INDEX:
             case SAFE_RUST_INDEX: {
@@ -1598,7 +1600,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                                     .append(field.fieldNo)
                                     .append(".clone())");
                         }
-                        this.builder.newline().append("}");
+                        this.builder.decrease().newline().append("}");
                     }
                 }
                 if (!leftDone) {
@@ -2572,7 +2574,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         // A *reference* to a struct type is just the type name.
         this.push(type);
         this.optionPrefix(type);
-        this.builder.append(type.sanitizedName);
+        this.builder.append(type.hashName);
         this.optionSuffix(type);
         this.pop(type);
         return VisitDecision.STOP;

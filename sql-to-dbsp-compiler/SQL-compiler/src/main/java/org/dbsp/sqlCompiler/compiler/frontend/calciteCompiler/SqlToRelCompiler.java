@@ -224,10 +224,11 @@ public class SqlToRelCompiler implements IWritesLogs {
     private final SchemaPlus rootSchema;
     private final CustomFunctions customFunctions;
     /** User-defined types */
-    private final HashMap<ProgramIdentifier, RelStruct> udt;
+    private final HashMap<ProgramIdentifier, RelDataType> udt;
     private final HashMap<ProgramIdentifier, DeclareViewStatement> declaredViews;
     /** Recursive views which have been referred */
     private final Set<ProgramIdentifier> usedViewDeclarations;
+
     /** Views which have been defined */
     private final Set<ProgramIdentifier> definedViews;
     // Changing this may break all sorts of things.  Calcite is very brittle to this kind of stuff.
@@ -380,7 +381,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.newlines.append("\n");
     }
 
-    /** A TypeFactory that knows about RelStruct, our representation of user-defined types */
+    /** A TypeFactory which has a custom id, which is used to generate some unique type names */
     public static class CustomTypeFactory extends SqlTypeFactoryImpl {
         static int currentId = 0;
         public final int id;
@@ -395,23 +396,12 @@ public class SqlToRelCompiler implements IWritesLogs {
             return Charsets.UTF_8;
         }
 
-        private RelDataType copyRelStruct(RelDataType type, boolean nullable) {
-            RelStruct strct = (RelStruct) type;
-            return new RelStruct(strct.id, strct.typeName, type.getFieldList(), nullable);
-        }
-
-        public RelStruct createRelStruct(SqlIdentifier name, List<RelDataTypeField> fields, boolean nullable) {
-            return new RelStruct(this.id, name, fields, nullable);
-        }
-
         @Override
         public RelDataType enforceTypeWithNullability(RelDataType type, boolean nullable) {
             if (type.isNullable() == nullable)
                 return type;
             RelDataType newType;
-            if (type instanceof RelStruct) {
-                newType = this.copyRelStruct(type, nullable);
-            } else if (type instanceof BasicSqlType) {
+            if (type instanceof BasicSqlType) {
                 newType = ((BasicSqlType)type).createWithNullability(nullable);
             } else if (type instanceof MapSqlType) {
                 newType = new MapSqlType(Objects.requireNonNull(type.getKeyType()),
@@ -883,16 +873,12 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
         if (typeSpec instanceof SqlUserDefinedTypeNameSpec udtObject) {
             if (result.isStruct()) {
-                RelStruct retval;
-                if (result instanceof RelStruct)
-                    retval = (RelStruct) result;
-                else
-                    retval = this.typeFactory.createRelStruct(
-                            udtObject.getTypeName(), result.getFieldList(), result.isNullable());
-                ProgramIdentifier name = new ProgramIdentifier(retval.getFullTypeString());
-                if (!this.udt.containsKey(name))
-                    Utilities.putNew(this.udt, name, retval);
-                return retval;
+                // This enables us to run multiple tests at the same time which declare the same user-defined type.
+                ProgramIdentifier name = new ProgramIdentifier(udtObject.toString() + this.typeFactory.id);
+                if (!this.udt.containsKey(name)) {
+                    Utilities.putNew(this.udt, name, result);
+                }
+                return result;
             }
         }
         return result;
@@ -2179,7 +2165,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                     builder.add(attributeDef.name.getSimple(), type);
                 }
                 RelDataType result = builder.build();
-                RelStruct retval = this.typeFactory.createRelStruct(ct.name, result.getFieldList(), result.isNullable());
+                RelDataType retval;
+                retval = builder.build();
                 Utilities.putNew(SqlToRelCompiler.this.udt, name, retval);
                 return retval;
             }

@@ -123,20 +123,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return new ProgramIdentifier(canon, nameIsQuoted);
     }
 
-    public String generateStructName(ProgramIdentifier typeName, List<DBSPTypeStruct.Field> fields) {
-        StringBuilder builder = new StringBuilder();
-        builder.append(typeName);
-        builder.append("[");
-        for (var field: fields) {
-            builder.append(field.getName())
-                    .append(":")
-                    .append(field.getType())
-                    .append(",");
-        }
-        builder.append("]");
-        return MerkleInner.hash(builder.toString()).makeIdentifier("struct");
-    }
-
     /** Where does the compiled program come from? */
     public enum InputSource {
         /** No data source set yet. */
@@ -271,8 +257,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return this.typeCompiler;
     }
 
-    public void registerStruct(DBSPTypeStruct type) {
-        this.globalTypes.register(type);
+    public void registerUDT(ProgramIdentifier name, DBSPTypeStruct type) {
+        this.globalTypes.register(name, type);
     }
 
     @Nullable

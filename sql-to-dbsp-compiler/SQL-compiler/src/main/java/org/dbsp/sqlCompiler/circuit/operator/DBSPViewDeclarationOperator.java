@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelAnd;
@@ -98,5 +99,10 @@ public final class DBSPViewDeclarationOperator
     @Override
     public DBSPTypeUser getHandleType() {
         throw new InternalCompilerError("Should not be called");
+    }
+
+    @Override
+    public DBSPSourceTableOperator withMetadata(TableMetadata metadata) {
+        throw new UnimplementedException();
     }
 }

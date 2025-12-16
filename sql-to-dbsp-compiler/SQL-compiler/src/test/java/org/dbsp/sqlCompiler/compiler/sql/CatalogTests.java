@@ -224,7 +224,7 @@ public class CatalogTests extends BaseSQLTests {
         this.statementsFailingInCompilation("""
                 CREATE TABLE example (
                     inserted_xid BIGINT not null,
-                    deleted_xid BIGINT not null default null -- '9223372036854775807'
+                    deleted_xid BIGINT not null default null
                 );""", "Nullable default value assigned to non-null column 'deleted_xid'");
     }
 
@@ -815,5 +815,17 @@ public class CatalogTests extends BaseSQLTests {
                 create table t0 (id int, s MAP<ty0, int>);
                 create materialized view v1 as select id, s from t0;""";
         this.getCCS(sql);
+    }
+
+    @Test
+    public void defaultValueRow() {
+        this.getCCS("""
+                CREATE TABLE example (
+                    inserted_xid BIGINT not null,
+                    deleted_xid BIGINT not null default '9223372036854775807',
+                    y BIGINT default 0,
+                    w BIGINT default NULL,
+                    z ROW(x INT, y INT) NOT NULL default ROW(1, 2)
+                );""");
     }
 }

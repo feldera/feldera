@@ -88,6 +88,12 @@ public final class DBSPSourceMapOperator
     }
 
     @Override
+    public DBSPSourceTableOperator withMetadata(TableMetadata metadata) {
+        return new DBSPSourceMapOperator(this.getRelNode(), this.sourceName, this.keyFields,
+                this.getOutputIndexedZSetType(), this.originalRowType, metadata, this.tableName, this.comment);
+    }
+
+    @Override
     public DBSPTypeStruct getOriginalRowType() {
         return this.originalRowType;
     }

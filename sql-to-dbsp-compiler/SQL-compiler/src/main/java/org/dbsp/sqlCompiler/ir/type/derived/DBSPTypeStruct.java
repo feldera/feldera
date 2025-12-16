@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.type.derived;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.backend.MerkleInner;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -41,6 +42,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -129,20 +131,36 @@ public class DBSPTypeStruct extends DBSPType {
     }
 
     public final ProgramIdentifier name;
-    public final String sanitizedName;
+    public final String hashName;
     public final LinkedHashMap<ProgramIdentifier, Field> fields;
 
-    public DBSPTypeStruct(CalciteObject node, ProgramIdentifier name, String sanitizedName,
+    private String generateStructHashName(ProgramIdentifier name, List<DBSPTypeStruct.Field> fields) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(name.name());
+        builder.append("[");
+        for (var field: fields) {
+            builder.append(field.getName())
+                    .append(":")
+                    .append(field.getType())
+                    .append(",");
+        }
+        builder.append("]");
+        return MerkleInner.hash(builder.toString()).makeIdentifier("struct");
+    }
+
+    public DBSPTypeStruct(CalciteObject node, ProgramIdentifier name,
                           Collection<Field> args, boolean mayBeNull) {
         super(node, STRUCT, mayBeNull);
-        this.sanitizedName = sanitizedName;
         this.name = name;
         this.fields = new LinkedHashMap<>();
+        List<DBSPTypeStruct.Field> fieldList = new ArrayList<>();
         for (Field f: args) {
             if (this.hasField(f.getName()))
                 this.error("Field name " + f + " is duplicated");
             this.fields.put(f.name, f);
+            fieldList.add(f);
         }
+        this.hashName = generateStructHashName(name, fieldList);
     }
 
     @Override
@@ -161,7 +179,7 @@ public class DBSPTypeStruct extends DBSPType {
                 return false;
         }
         return name == type.name &&
-                this.sanitizedName.equals(type.sanitizedName);
+                this.hashName.equals(type.hashName);
     }
 
     @Nullable @Override
@@ -182,14 +200,14 @@ public class DBSPTypeStruct extends DBSPType {
     }
 
     public DBSPTypeStruct rename(ProgramIdentifier newName) {
-        return new DBSPTypeStruct(this.getNode(), newName, this.sanitizedName, this.fields.values(), this.mayBeNull);
+        return new DBSPTypeStruct(this.getNode(), newName, this.fields.values(), this.mayBeNull);
     }
 
     @Override
     public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
-        return new DBSPTypeStruct(this.getNode(), this.name, this.sanitizedName, this.fields.values(), mayBeNull);
+        return new DBSPTypeStruct(this.getNode(), this.name, this.fields.values(), mayBeNull);
     }
 
     public boolean hasField(ProgramIdentifier fieldName) {
@@ -205,7 +223,7 @@ public class DBSPTypeStruct extends DBSPType {
         DBSPTypeStruct other = type.to(DBSPTypeStruct.class);
         if (!this.name.equals(other.name))
             return false;
-        if (!Objects.equals(this.sanitizedName, other.sanitizedName))
+        if (!Objects.equals(this.hashName, other.hashName))
             return false;
         if (this.fields.size() != other.fields.size())
             return false;
@@ -235,7 +253,7 @@ public class DBSPTypeStruct extends DBSPType {
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), this.name, this.sanitizedName, this.fields.hashCode());
+        return Objects.hash(super.hashCode(), this.name, this.hashName, this.fields.hashCode());
     }
 
     public DBSPType getFieldType(ProgramIdentifier fieldName) {
@@ -309,8 +327,7 @@ public class DBSPTypeStruct extends DBSPType {
     public static DBSPTypeStruct fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
         ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "name"));
-        String sanitizedName = Utilities.getStringProperty(node, "sanitizedName");
         List<DBSPTypeStruct.Field> fields = fromJsonInnerList(node, "fields", decoder, DBSPTypeStruct.Field.class);
-        return new DBSPTypeStruct(CalciteObject.EMPTY, name, sanitizedName, fields, mayBeNull);
+        return new DBSPTypeStruct(CalciteObject.EMPTY, name, fields, mayBeNull);
     }
 }

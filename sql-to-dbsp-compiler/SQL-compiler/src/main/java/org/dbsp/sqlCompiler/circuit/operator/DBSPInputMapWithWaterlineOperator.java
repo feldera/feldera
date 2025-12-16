@@ -211,4 +211,10 @@ public class DBSPInputMapWithWaterlineOperator
         return new DBSPInputMapWithWaterlineOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, keyFields,
                 outputType, originalRowType, metadata, name, initializer, timestamp, lub, filter, error);
     }
+
+    public DBSPInputMapWithWaterlineOperator withMetadata(TableMetadata metadata) {
+        return new DBSPInputMapWithWaterlineOperator(this.getRelNode(), this.sourceName, this.keyFields,
+                this.getOutputIndexedZSetType(), this.originalRowType, metadata, this.tableName,
+                this.initializer, this.timestamp, this.lub, this.filter, this.error);
+    }
 }

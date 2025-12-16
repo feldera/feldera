@@ -69,7 +69,7 @@ public interface IInputMapOperator extends IInputOperator {
             }
             current++;
         }
-        return new DBSPTypeStruct(this.getOriginalRowType().getNode(), name, name.name(), fields, false);
+        return new DBSPTypeStruct(this.getOriginalRowType().getNode(), name, fields, false);
     }
 
     /** Return a struct that is similar with the originalRowType, but where
@@ -92,12 +92,12 @@ public interface IInputMapOperator extends IInputOperator {
             }
             current++;
         }
-        return new DBSPTypeStruct(this.getOriginalRowType().getNode(), name, name.name(), fields, false);
+        return new DBSPTypeStruct(this.getOriginalRowType().getNode(), name, fields, false);
     }
 
     default DBSPTypeUser getHandleType() {
         DBSPTypeStruct upsertStruct = this.getStructUpsertType(
-                        new ProgramIdentifier(this.getOriginalRowType().sanitizedName + "_upsert", false));
+                        new ProgramIdentifier(this.getOriginalRowType().hashName + "_upsert", false));
         DBSPTypeIndexedZSet ix = this.getDataOutputType().to(DBSPTypeIndexedZSet.class);
         return new DBSPTypeUser(
                 ix.getNode(), DBSPTypeCode.USER, "MapHandle", false,

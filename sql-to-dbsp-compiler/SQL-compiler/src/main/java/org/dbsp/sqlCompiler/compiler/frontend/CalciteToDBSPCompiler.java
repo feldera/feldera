@@ -3151,9 +3151,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             */
         }
 
-        String saneName = this.compiler.generateStructName(stat.typeName, fields);
-        DBSPTypeStruct struct = new DBSPTypeStruct(object, stat.typeName, saneName, fields, false);
-        this.compiler.registerStruct(struct);
+        DBSPTypeStruct struct = new DBSPTypeStruct(object, stat.typeName, fields, false);
+        this.compiler.registerUDT(stat.typeName, struct);
         DBSPItem item = new DBSPStructItem(struct, null);
         this.getCircuit().addDeclaration(new DBSPDeclaration(item));
         return null;
@@ -3241,8 +3240,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             i++;
         }
 
-        DBSPTypeStruct keyStruct = TypeCompiler.asStruct(this.compiler,
-                ci.getCalciteObject(), ci.indexName, keyColumns, false);
+        DBSPTypeStruct keyStruct = TypeCompiler.asStruct(ci.getCalciteObject(), ci.indexName, keyColumns, false);
 
         DBSPExpression index = new DBSPRawTupleExpression(
                 new DBSPTupleExpression(Linq.map(

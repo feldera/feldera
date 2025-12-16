@@ -1482,7 +1482,7 @@ public class Regression1Tests extends SqlIoTest {
             (SELECT * FROM T) UNION (SELECT NULL, X FROM S)""");
     }
 
-    @Test @Ignore
+    @Test
     public void issue5275() {
         this.getCC("""
                 CREATE TYPE LEVEL_1 AS (

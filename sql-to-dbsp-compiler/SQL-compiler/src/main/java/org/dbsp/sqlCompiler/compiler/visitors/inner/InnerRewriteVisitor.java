@@ -363,7 +363,7 @@ public abstract class InnerRewriteVisitor
             fields.add(field);
         }
         this.pop(type);
-        DBSPType result = new DBSPTypeStruct(type.getNode(), type.name, type.sanitizedName, fields, type.mayBeNull);
+        DBSPType result = new DBSPTypeStruct(type.getNode(), type.name, fields, type.mayBeNull);
         this.map(type, result);
         return VisitDecision.STOP;
     }
