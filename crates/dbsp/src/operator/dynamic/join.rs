@@ -534,23 +534,23 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
     }
 
     #[track_caller]
-    pub fn dyn_balanced_join_mono(
+    pub fn dyn_join_mono_balanced(
         &self,
         factories: &JoinFactories<MonoIndexedZSet, MonoIndexedZSet, (), OrdZSet<DynData>>,
         other: &Stream<RootCircuit, MonoIndexedZSet>,
         join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynUnit>,
     ) -> Stream<RootCircuit, MonoZSet> {
-        self.dyn_balanced_join_generic(factories, other, join_funcs)
+        self.dyn_join_generic_balanced(factories, other, join_funcs)
     }
 
     #[track_caller]
-    pub fn dyn_balanced_join_index_mono(
+    pub fn dyn_join_index_mono_balanced(
         &self,
         factories: &JoinFactories<MonoIndexedZSet, MonoIndexedZSet, (), MonoIndexedZSet>,
         other: &Stream<RootCircuit, MonoIndexedZSet>,
         join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynData>,
     ) -> Stream<RootCircuit, MonoIndexedZSet> {
-        self.dyn_balanced_join_generic(factories, other, join_funcs)
+        self.dyn_join_generic_balanced(factories, other, join_funcs)
     }
 
     pub fn dyn_antijoin_mono(
@@ -834,7 +834,7 @@ where
     I1: IndexedZSet,
 {
     #[track_caller]
-    pub fn dyn_balanced_join_generic<I2, Z>(
+    pub fn dyn_join_generic_balanced<I2, Z>(
         &self,
         factories: &JoinFactories<I1, I2, (), Z>,
         other: &Stream<RootCircuit, I2>,
@@ -848,7 +848,7 @@ where
             return self.dyn_join_generic(factories, other, join_funcs);
         }
 
-        self.circuit().region("balanced_join", || {
+        self.circuit().region("join_balanced", || {
             let (left_accumulator, left_trace) = self.dyn_accumulate_trace_balanced(
                 &factories.left_trace_factories,
                 &factories.left_factories,
@@ -1906,7 +1906,7 @@ pub(crate) mod test {
 
                 let join_output = if balanced {
                     index1
-                        .balanced_join(&index2, |&k: &u64, s1, s2| {
+                        .join_balanced(&index2, |&k: &u64, s1, s2| {
                             Tup2(k, format!("{} {}", s1, s2))
                         })
                         .accumulate_output()
@@ -1920,7 +1920,7 @@ pub(crate) mod test {
 
                 let join_flatmap_output = if balanced {
                     index1
-                        .balanced_join_flatmap(&index2, |&k: &u64, s1, s2| {
+                        .join_flatmap_balanced(&index2, |&k: &u64, s1, s2| {
                             if s1.as_str() == "a" {
                                 None
                             } else {
@@ -2269,7 +2269,7 @@ pub(crate) mod test {
 
                     let output_handle = if balanced {
                         left_input
-                            .balanced_join(&right_input, f.clone())
+                            .join_balanced(&right_input, f.clone())
                             .accumulate_output()
                     } else {
                         left_input.join(&right_input, f.clone()).accumulate_output()

@@ -145,6 +145,10 @@ impl CommitProgress {
         self.in_progress.insert(node_id, progress);
     }
 
+    pub fn get_in_progress(&self) -> &BTreeMap<NodeId, Option<Position>> {
+        &self.in_progress
+    }
+
     pub fn summary(&self) -> CommitProgressSummary {
         let completed = self.completed.len() as u64;
         let in_progress = self.in_progress.len() as u64;

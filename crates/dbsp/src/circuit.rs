@@ -39,7 +39,8 @@ pub use circuit_builder::{
 };
 pub use dbsp_handle::{
     CheckpointCommitter, CircuitConfig, CircuitStorageConfig, DBSPHandle, DevTweaks, Host, Layout,
-    LayoutError, Mode, StorageCacheConfig, StorageConfig, StorageOptions,
+    LayoutError, Mode, StorageCacheConfig, StorageConfig, StorageOptions, balancer_balance_tax,
+    balancer_min_absolute_improvement_threshold, balancer_min_relative_improvement_threshold,
     splitter_output_chunk_size,
 };
 pub use runtime::{

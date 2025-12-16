@@ -150,12 +150,12 @@ where
         let join_factories = JoinFactories::new::<K, V, V2, OV, ()>();
 
         self.inner()
-            .dyn_balanced_join_mono(&join_factories, &other.inner(), join_funcs)
+            .dyn_join_mono_balanced(&join_factories, &other.inner(), join_funcs)
             .typed()
     }
 
     #[track_caller]
-    pub fn balanced_join<F, V2, OV>(
+    pub fn join_balanced<F, V2, OV>(
         &self,
         other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
         join: F,
@@ -173,7 +173,7 @@ where
         let join_factories = JoinFactories::new::<K, V, V2, OV, ()>();
 
         self.inner()
-            .dyn_balanced_join_mono(&join_factories, &other.inner(), join_funcs)
+            .dyn_join_mono_balanced(&join_factories, &other.inner(), join_funcs)
             .typed()
     }
 
@@ -210,7 +210,7 @@ where
     }
 
     #[track_caller]
-    pub fn balanced_left_join<F, V2, OV>(
+    pub fn left_join_balanced<F, V2, OV>(
         &self,
         other: &Stream<RootCircuit, OrdIndexedZSet<K, Option<V2>>>,
         join: F,
@@ -257,12 +257,12 @@ where
         let join_factories = JoinFactories::new::<K, V, V2, OV, ()>();
 
         self.inner()
-            .dyn_balanced_join_mono(&join_factories, &other.inner(), join_funcs)
+            .dyn_join_mono_balanced(&join_factories, &other.inner(), join_funcs)
             .typed()
     }
 
     #[track_caller]
-    pub fn balanced_join_flatmap<F, V2, OV, It>(
+    pub fn join_flatmap_balanced<F, V2, OV, It>(
         &self,
         other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
         join: F,
@@ -284,7 +284,7 @@ where
         let join_factories = JoinFactories::new::<K, V, V2, OV, ()>();
 
         self.inner()
-            .dyn_balanced_join_mono(&join_factories, &other.inner(), join_funcs)
+            .dyn_join_mono_balanced(&join_factories, &other.inner(), join_funcs)
             .typed()
     }
 
@@ -318,7 +318,7 @@ where
 
     /// Like `left_join`, but can produce multiple output values for each (k, v1, v2) tuple.
     #[track_caller]
-    pub fn balanced_left_join_flatmap<F, V2, OV, It>(
+    pub fn left_join_flatmap_balanced<F, V2, OV, It>(
         &self,
         other: &Stream<RootCircuit, OrdIndexedZSet<K, Option<V2>>>,
         join: F,
@@ -368,12 +368,12 @@ where
         let join_factories = JoinFactories::new::<K, V, V2, OK, OV>();
 
         self.inner()
-            .dyn_balanced_join_index_mono(&join_factories, &other.inner(), join_funcs)
+            .dyn_join_index_mono_balanced(&join_factories, &other.inner(), join_funcs)
             .typed()
     }
 
     #[track_caller]
-    pub fn balanced_join_index<F, V2, OK, OV, It>(
+    pub fn join_index_balanced<F, V2, OK, OV, It>(
         &self,
         other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
         join: F,
@@ -396,7 +396,7 @@ where
         let join_factories = JoinFactories::new::<K, V, V2, OK, OV>();
 
         self.inner()
-            .dyn_balanced_join_index_mono(&join_factories, &other.inner(), join_funcs)
+            .dyn_join_index_mono_balanced(&join_factories, &other.inner(), join_funcs)
             .typed()
     }
 
@@ -431,7 +431,7 @@ where
 
     /// Like `left_join_flatmap`, but produces an indexed output stream.
     #[track_caller]
-    pub fn balanced_left_join_index<F, V2, OK, OV, It>(
+    pub fn left_join_index_balanced<F, V2, OK, OV, It>(
         &self,
         other: &Stream<RootCircuit, OrdIndexedZSet<K, Option<V2>>>,
         join: F,

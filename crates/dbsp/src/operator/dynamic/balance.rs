@@ -6,7 +6,9 @@ mod rebalancing_accumulator;
 #[cfg(test)]
 mod test;
 
+pub use accumulate_trace_balanced::FlushState;
 pub use balancer::{
-    Balancer, BalancerError, BalancerHint, BalancerHints, JoinConstraint, PartitioningPolicy,
+    BALANCE_TAX, Balancer, BalancerError, BalancerHint, BalancerHints, JoinConstraint,
+    MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD, MIN_RELATIVE_IMPROVEMENT_THRESHOLD, PartitioningPolicy,
 };
 pub use maxsat::MaxSat;

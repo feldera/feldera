@@ -862,7 +862,13 @@ where
         //     Runtime::worker_index(),
         //     self.stream.is_none()
         // );
-        self.stream.is_none()
+        //self.stream.is_none()
+
+        // Unlike all other operators, this operator doesn't assume that is_flush_complete is equivalent
+        // to self.stream.is_none(). This is based on how this operator is used with RebalancingExchangeSender.
+        // operator.
+        // TODO: change other operators to forward is_flush_complete to their inner operator too.
+        self.operator.is_flush_complete()
     }
 
     fn flush_progress(&self) -> Option<Position> {

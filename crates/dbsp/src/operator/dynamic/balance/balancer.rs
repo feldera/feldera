@@ -1,16 +1,24 @@
 use crate::{
+    Error, Runtime,
     algebra::F64,
-    circuit::{circuit_builder::MetadataExchange, GlobalNodeId, NodeId},
+    circuit::{
+        GlobalNodeId, NodeId, balancer_balance_tax, balancer_min_absolute_improvement_threshold,
+        balancer_min_relative_improvement_threshold,
+        circuit_builder::{CircuitBase, MetadataExchange},
+    },
     operator::dynamic::balance::{
+        FlushState, MaxSat,
         accumulate_trace_balanced::{KeyDistribution, RebalancingExchangeSenderExchangeMetadata},
         maxsat::{Cost, HardConstraint, VariableIndex},
-        MaxSat,
     },
-    utils::components,
-    Error, Runtime,
+    utils::{components, indent},
 };
+use itertools::Itertools as _;
 use num::abs;
-use petgraph::graph::UnGraph;
+use petgraph::{
+    algo::kosaraju_scc,
+    graph::{DiGraph, UnGraph},
+};
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
@@ -18,9 +26,11 @@ use std::{
     fmt::{Display, Error as FmtError, Formatter},
     rc::Rc,
 };
+use tracing::info;
 
-const MIN_RELATIVE_IMPROVEMENT_THRESHOLD: f64 = 1.5;
-const MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD: Cost = Cost(0);
+pub const MIN_RELATIVE_IMPROVEMENT_THRESHOLD: f64 = 1.2;
+pub const MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD: u64 = 10_000;
+pub const BALANCE_TAX: f64 = 1.1;
 
 #[derive(Debug, Clone, Serialize)]
 pub enum BalancerError {
@@ -220,8 +230,29 @@ impl From<PartitioningPolicy> for u8 {
 /// Streams in the cluster must be assigned partitioning policies in coordination.
 #[derive(Default, Debug)]
 struct Cluster {
-    streams: BTreeSet<NodeId>,
+    /// Map from input stream to the layer index it belongs to.
+    streams: BTreeMap<NodeId, usize>,
+
+    /// Maps the output node id of a join operator, to its input streams.
+    /// The bool indicates whether the join is a left join.
+    // TODO: I don't thin the key in this map serves any purpose. This could just be a vector of values.
     joins: BTreeMap<NodeId, (NodeId, NodeId, bool)>,
+
+    /// Partitions the cluster into layers such that nodes within a layer can be flushed together.
+    ///
+    /// This is used to postpone flushing a stream until all other streams in the same layer have
+    /// received all inputs for the current transaction and the balancer is able to establish an
+    /// optimal partitioning policy for the layer.
+    ///
+    /// Multiple layers are needed if there are dependencies between streams in the cluster, e.g.,:
+    /// ```text
+    /// s3 = join(s1, s2)
+    /// s4 = join(s1, s3)
+    /// ```
+    ///
+    /// Here s1 and s2 don't have any dependencies within the cluster and
+    /// belong to layer 0. s3 depends on s1 and belongs to layer 1.
+    layers: BTreeMap<usize, Vec<NodeId>>,
 
     /// Partitioning policies for each stream selected at the start of the current step.
     solution: BTreeMap<NodeId, PartitioningPolicy>,
@@ -253,103 +284,14 @@ pub struct BalancerHints {
     pub skew_hint: Option<F64>,
 }
 
-impl RebalancingExchangeSenderExchangeMetadata {
-    /// Check if the stream has a unique fixed policy that cannot change during the current transaction.
-    ///
-    /// Given metadata collected from RebalancingExchangeSender instances in all workers
-    /// and current user hints, returns:
-    /// * Some(policy) if the stream has a unique fixed policy that cannot change at the current step, i.e.,:
-    ///   - At least one of the workers has flushed the current transaction, and therefore can no longer rebalance
-    ///   - Or the hint specifies a fixed policy and this policy doesn't contradict
-    /// * None if the stream doesn't have a fixed policy and can be rebalanced.
-    /// * Error if the policy can no longer change during the current transaction and it contradicts the hint.
-    fn get_fixed_policy(
-        metadata: &[Option<RebalancingExchangeSenderExchangeMetadata>],
-        hints: &BalancerHints,
-    ) -> Result<Option<PartitioningPolicy>, BalancerError> {
-        // println!(
-        //     "{} get_fixed_policy (metadata: {:?}) hints: {:?})",
-        //     Runtime::worker_index(),
-        //     metadata
-        //         .iter()
-        //         .map(|metadata| metadata.as_ref().map(|metadata| metadata.flushed))
-        //         .collect::<Vec<_>>(),
-        //     hints
-        // );
-
-        let any_flushed = metadata.iter().any(|metadata| {
-            if let Some(metadata) = metadata {
-                metadata.flushed
-            } else {
-                false
-            }
-        });
-
-        let all_flushed = metadata.iter().all(|metadata| {
-            if let Some(metadata) = metadata {
-                metadata.flushed
-            } else {
-                false
-            }
-        });
-
-        // If at least one worker has flushed the current transaction, but the transaction is not yet
-        // committed, i.e., not all workers have flushed, then the policy cannot change until the
-        // next transaction.
-        let fixed_policy = if any_flushed && !all_flushed {
-            // println!("{} metadata: {:?}", Runtime::worker_index(), metadata);
-            // All workers must have the same policy.
-            assert!(metadata
-                .iter()
-                .all(|worker_metadata| worker_metadata.is_some()
-                    && worker_metadata.as_ref().unwrap().current_policy
-                        == metadata[0].as_ref().unwrap().current_policy));
-            Some(metadata[0].as_ref().unwrap().current_policy)
-        } else {
-            None
-        };
-
-        // println!("fixed_policy: {:?}, hints: {:?}", fixed_policy, hints);
-
-        if fixed_policy.is_some()
-            && hints.policy_hint.is_some()
-            && fixed_policy != hints.policy_hint
-        {
-            return Err(BalancerError::InvalidPolicyHint(
-                hints.policy_hint.unwrap(),
-                format!("the current policy {fixed_policy:?} can no longer be changed during the current transaction"),
-            ));
-        }
-
-        if hints.policy_hint.is_some() {
-            Ok(hints.policy_hint)
-        } else {
-            Ok(fixed_policy)
-        }
-    }
-
-    /// Compute combined key distribution from metadata collected from
-    /// RebalancingExchangeSender instances in all workers.
-    fn key_distribution(
-        metadata: &[Option<RebalancingExchangeSenderExchangeMetadata>],
-    ) -> KeyDistribution {
-        metadata.iter().fold(
-            KeyDistribution::new(Runtime::num_workers()),
-            |mut key_distribution, metadata| {
-                if let Some(metadata) = metadata {
-                    key_distribution.merge(&metadata.key_distribution);
-                };
-                key_distribution
-            },
-        )
-    }
-}
-
 #[derive(Default, Debug)]
 struct BalancerInner {
     /// All integrals managed by the balancer:
     /// origin node id -> (exchange sender node id, hints)
-    integrals: BTreeMap<NodeId, (NodeId, BalancerHints)>,
+    integrals: BTreeMap<NodeId, (NodeId, Option<String>, BalancerHints)>,
+
+    /// The most recent metadata for each stream.
+    metadata: BTreeMap<NodeId, Vec<Option<RebalancingExchangeSenderExchangeMetadata>>>,
 
     /// All joins managed by the balancer:
     /// join node id -> (left input node id, right input node id, is left join)
@@ -363,16 +305,134 @@ struct BalancerInner {
 
     /// Circuit's metadata exchange used to collect metadata from RebalancingExchangeSender instances.
     metadata_exchange: MetadataExchange,
+
+    /// True between start_transaction and transaction_committed.
+    transaction_in_progress: bool,
 }
 
 impl BalancerInner {
     fn new(metadata_exchange: &MetadataExchange) -> Self {
         Self {
             integrals: BTreeMap::new(),
+            metadata: BTreeMap::new(),
             joins: BTreeMap::new(),
             clusters: Vec::new(),
             stream_to_cluster: BTreeMap::new(),
             metadata_exchange: metadata_exchange.clone(),
+            transaction_in_progress: false,
+        }
+    }
+
+    fn key_distribution_for_stream(&self, stream: NodeId) -> Option<KeyDistribution> {
+        let exchange_sender_metadata: &Vec<Option<RebalancingExchangeSenderExchangeMetadata>> =
+            self.metadata.get(&stream)?;
+        Some(Self::key_distribution(exchange_sender_metadata))
+    }
+
+    fn display_graph(&self) -> String {
+        let integrals = self
+            .integrals
+            .iter()
+            .map(|(stream, (exchange_sender, persistent_id, _))| {
+                format!(
+                    "{stream} ({}balancer:{exchange_sender})",
+                    persistent_id
+                        .as_ref()
+                        .map(|id| format!("pid:{id}, "))
+                        .unwrap_or_default()
+                )
+            })
+            .join(", ");
+        let joins = self
+            .joins
+            .values()
+            .map(|(left, right, is_left_join)| {
+                format!(
+                    "{}join({left},{right})",
+                    if *is_left_join { "left_" } else { "" }
+                )
+            })
+            .join(", ");
+
+        format!("Streams: {integrals}\nJoins: {joins}")
+    }
+
+    fn display_clusters(&self) -> String {
+        (0..self.clusters.len())
+            .map(|index| {
+                format!(
+                    "Cluster {index}:\n{}",
+                    indent(&self.display_cluster(index), 2)
+                )
+            })
+            .join("\n")
+    }
+
+    fn display_cluster(&self, cluster_index: usize) -> String {
+        let cluster = &self.clusters[cluster_index];
+        let integrals = cluster
+            .streams
+            .keys()
+            .map(|stream| {
+                let policy = cluster
+                    .solution
+                    .get(stream)
+                    .map(|policy| format!(": <{policy:?}>"))
+                    .unwrap_or_default();
+                let distribution = self
+                    .key_distribution_for_stream(*stream)
+                    .map(|distribution| format!(" distribution: {distribution}"))
+                    .unwrap_or_default();
+                //let flushed = self.flushed_status_for_stream(*stream);
+                format!("{stream}{policy}{distribution}")
+            })
+            .join("\n");
+        let joins = cluster
+            .joins
+            .values()
+            .map(|(left, right, is_left_join)| {
+                format!(
+                    "{}join({left},{right})",
+                    if *is_left_join { "left_" } else { "" }
+                )
+            })
+            .join(", ");
+        let layers = cluster
+            .layers
+            .iter()
+            .map(|(layer, streams)| {
+                format!(
+                    "Layer {layer}: [{}]",
+                    streams.iter().map(|stream| stream.to_string()).join(", ")
+                )
+            })
+            .join(", ");
+        format!(
+            "Streams:\n{}\nJoins: {joins}\nLayers: {layers}",
+            indent(&integrals, 2)
+        )
+    }
+
+    fn display(&self) -> String {
+        format!(
+            "Join graph:\n{}\nClusters:\n{}",
+            indent(&self.display_graph(), 2),
+            indent(&self.display_clusters(), 2)
+        )
+    }
+
+    /// Cache metadata for each stream at the end of each step, so that it can be accessed without re-parsing it,
+    /// e.g., in ready_to_commit.
+    fn parse_metadata(&mut self) {
+        self.metadata.clear();
+
+        for (stream, (exchange_sender, _persistent_id, _)) in self.integrals.iter() {
+            let exchange_sender_metadata = self
+                .metadata_exchange
+                .get_global_operator_metadata_typed::<RebalancingExchangeSenderExchangeMetadata>(
+                *exchange_sender,
+            );
+            self.metadata.insert(*stream, exchange_sender_metadata);
         }
     }
 
@@ -380,6 +440,7 @@ impl BalancerInner {
     fn solve_cluster(
         &self,
         cluster_index: usize,
+        ignore_fixed_policies: bool,
     ) -> Result<BTreeMap<NodeId, PartitioningPolicy>, BalancerError> {
         //let cluster = &mut self.clusters[cluster_index];
 
@@ -391,26 +452,20 @@ impl BalancerInner {
         let mut current_effective_policy = BTreeMap::new();
 
         // Create a MaxSat variable for each stream in the cluster.
-        for stream in self.clusters[cluster_index].streams.clone().iter() {
-            let (exchange_sender, hints) = self.integrals.get(stream).unwrap();
+        for stream in self.clusters[cluster_index].streams.clone().keys() {
+            let (_exchange_sender, _persistent_id, hints) = self.integrals.get(stream).unwrap();
 
-            let exchange_sender_metadata: Vec<Option<RebalancingExchangeSenderExchangeMetadata>> = self
-                .metadata_exchange
-                .get_global_operator_metadata_typed::<RebalancingExchangeSenderExchangeMetadata>(
-                    *exchange_sender,
-                );
+            let exchange_sender_metadata: Vec<Option<RebalancingExchangeSenderExchangeMetadata>> =
+                self.metadata.get(stream).cloned().unwrap_or_default();
 
-            if let Some(metadata) = &exchange_sender_metadata
+            if let Some(metadata) = exchange_sender_metadata
                 .first()
                 .and_then(|metadata| metadata.as_ref())
             {
                 current_effective_policy.insert(*stream, metadata.current_policy);
             }
 
-            let fixed_policy = RebalancingExchangeSenderExchangeMetadata::get_fixed_policy(
-                &exchange_sender_metadata,
-                hints,
-            )?;
+            let fixed_policy = self.get_fixed_policy(&exchange_sender_metadata, hints)?;
 
             // println!(
             //     "{} fixed_policy for {stream} (hints: {hints:?}): {:?}",
@@ -419,7 +474,9 @@ impl BalancerInner {
             // );
 
             let mut domain = self.compute_domain(&exchange_sender_metadata, hints);
-            if let Some(fixed_policy) = &fixed_policy {
+            if let Some(fixed_policy) = &fixed_policy
+                && !ignore_fixed_policies
+            {
                 domain.retain(|policy, _| *policy == *fixed_policy);
             }
 
@@ -467,9 +524,10 @@ impl BalancerInner {
         {
             let new_solution_cost = self.validate_solution(&solution, &domains).unwrap();
 
-            if new_solution_cost.0 as f64 * MIN_RELATIVE_IMPROVEMENT_THRESHOLD
+            if new_solution_cost.0 as f64 * balancer_min_relative_improvement_threshold()
                 < current_solution_cost.0 as f64
-                && new_solution_cost + MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD < current_solution_cost
+                && new_solution_cost + Cost(balancer_min_absolute_improvement_threshold())
+                    < current_solution_cost
             {
                 return Ok(solution);
             } else {
@@ -507,7 +565,23 @@ impl BalancerInner {
 
         for i in 0..num_clusters {
             // println!("{} solving cluster {i}", Runtime::worker_index());
-            let cluster_solution = self.solve_cluster(i)?;
+            let cluster_solution = self.solve_cluster(i, false)?;
+            // let optimal_solution = self.solve_cluster(i, true)?;
+            // if optimal_solution != cluster_solution {
+            //     info!(
+            //         "Optimal solution {optimal_solution:?} differs from the proposed solution {:?} (cluster: {}\nfixed policies: {fixed_policies:?})",
+            //         &self.clusters[i].solution,
+            //         self.display_cluster(i)
+            //     );
+            // }
+            if cluster_solution != self.clusters[i].solution && Runtime::worker_index() == 0 {
+                info!(
+                    "Cluster {i} solution changed: {:?} -> {:?} (cluster: {})",
+                    &self.clusters[i].solution,
+                    cluster_solution,
+                    self.display_cluster(i)
+                );
+            }
             solutions.extend(cluster_solution);
             // println!("cluster {i}; solution: {:?}", self.clusters[i].solution);
         }
@@ -542,8 +616,7 @@ impl BalancerInner {
             };
             (size_hint as u64, max_size)
         } else {
-            let key_distribution =
-                RebalancingExchangeSenderExchangeMetadata::key_distribution(metadata);
+            let key_distribution = Self::key_distribution(metadata);
 
             let total_size = abs(key_distribution.total_records()) as u64;
             let max_size = abs(key_distribution.sizes.iter().cloned().max().unwrap()) as u64;
@@ -556,10 +629,16 @@ impl BalancerInner {
             // Broadcast: every worker maintains the entire integral.
             (PartitioningPolicy::Broadcast, Cost(total_size)),
             // Balance: every worker maintains an equal share of the integral.
-            // the 1.5x factor discourages the use of this policy unless the skew is >1.5x.
+            // Assuming a perfectly balanced key distribution, this policy is slightly less efficient than Shard,
+            // since it requires computing a more expensive hash of the entire key/value pair.
+            // The `balancer_balance_tax` factor is used to discourage the use of this policy over Shard
+            // if the skew is <balancer_balance_tax.
             (
                 PartitioningPolicy::Balance,
-                Cost(((total_size / Runtime::num_workers() as u64) as f64 * 1.5) as u64),
+                Cost(
+                    ((total_size / Runtime::num_workers() as u64) as f64 * balancer_balance_tax())
+                        as u64,
+                ),
             ),
         ])
     }
@@ -578,7 +657,7 @@ impl BalancerInner {
         //     Runtime::worker_index(),
         //     hint
         // );
-        let (_exchange_sender, hints) = self
+        let (_exchange_sender, _persistent_id, hints) = self
             .integrals
             .get_mut(&node_id)
             .ok_or(BalancerError::NotRegisteredWithBalancer(node_id))?;
@@ -591,7 +670,7 @@ impl BalancerInner {
 
                 if let Some(policy) = policy {
                     hints.policy_hint = Some(policy);
-                    self.solve_cluster(cluster_index)?;
+                    self.solve_cluster(cluster_index, false)?;
                 } else {
                     hints.policy_hint = None;
                 }
@@ -599,7 +678,7 @@ impl BalancerInner {
             BalancerHint::Size(size) => hints.size_hint = size,
             BalancerHint::Skew(skew) => hints.skew_hint = skew,
         }
-        self.integrals.get_mut(&node_id).unwrap().1 = hints.clone();
+        self.integrals.get_mut(&node_id).unwrap().2 = hints.clone();
 
         Ok(())
     }
@@ -630,6 +709,127 @@ impl BalancerInner {
     fn set_policy_for_stream(&mut self, stream: NodeId, policy: PartitioningPolicy) {
         let cluster_index = *self.stream_to_cluster.get(&stream).unwrap();
         self.clusters[cluster_index].solution.insert(stream, policy);
+    }
+
+    fn ready_to_commit(&self, node_id: NodeId) -> bool {
+        // Find cluster and layer for node_id
+        let cluster_index = *self.stream_to_cluster.get(&node_id).unwrap();
+
+        let cluster = &self.clusters[cluster_index];
+        let layer = *cluster.streams.get(&node_id).unwrap();
+
+        // Get all nodes in this layer
+        let nodes_in_layer = cluster.layers.get(&layer).unwrap();
+
+        // Check if all workers for all nodes in this layer are in state >= FlushRequested
+        for stream in nodes_in_layer {
+            let Some(exchange_sender_metadata) = self.metadata.get(stream) else {
+                return false;
+            };
+
+            // Check that all workers have flush_state >= FlushInProgress
+            for worker_metadata in exchange_sender_metadata.iter() {
+                match worker_metadata {
+                    Some(metadata) => {
+                        if metadata.flush_state < FlushState::FlushRequested {
+                            return false;
+                        }
+                    }
+                    None => {
+                        // If a worker doesn't have metadata, it's not ready
+                        return false;
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
+    /// Check if the stream has a unique fixed policy that cannot change during the current transaction.
+    ///
+    /// Given metadata collected from RebalancingExchangeSender instances in all workers
+    /// and current user hints, returns:
+    /// * Some(policy) if the stream has a unique fixed policy that cannot change at the current step, i.e.,:
+    ///   - At least one of the workers has flushed the current transaction, and therefore can no longer rebalance
+    ///   - Or the hint specifies a fixed policy and this policy doesn't contradict
+    /// * None if the stream doesn't have a fixed policy and can be rebalanced.
+    /// * Error if the policy can no longer change during the current transaction and it contradicts the hint.
+    fn get_fixed_policy(
+        &self,
+        metadata: &[Option<RebalancingExchangeSenderExchangeMetadata>],
+        hints: &BalancerHints,
+    ) -> Result<Option<PartitioningPolicy>, BalancerError> {
+        // println!(
+        //     "{} get_fixed_policy (metadata: {:?}) hints: {:?})",
+        //     Runtime::worker_index(),
+        //     metadata,
+        //     hints
+        // );
+
+        // If any worker has started rebalancing its state, the policy for this stream cannot change until the next transaction.
+        let any_flushed = metadata.iter().any(|metadata| {
+            if let Some(metadata) = metadata {
+                metadata.flush_state >= FlushState::RebalanceInProgress
+            } else {
+                false
+            }
+        });
+
+        // If at least one worker has flushed the current transaction, then the policy cannot change until the
+        // next transaction. Special case if this is the first step of a new transaction or we are between transactions
+        // (i.e., when set_hint is called) and workers have not had a chance to exchange metadata yet (an alternative
+        // is to introduce another round of metadata exchange after transaction commit).
+        let fixed_policy = if any_flushed && self.transaction_in_progress {
+            // println!("{} metadata: {:?}", Runtime::worker_index(), metadata);
+            // All workers must have the same policy.
+            assert!(
+                metadata
+                    .iter()
+                    .all(|worker_metadata| worker_metadata.is_some()
+                        && worker_metadata.as_ref().unwrap().current_policy
+                            == metadata[0].as_ref().unwrap().current_policy)
+            );
+            Some(metadata[0].as_ref().unwrap().current_policy)
+        } else {
+            None
+        };
+
+        // println!("fixed_policy: {:?}, hints: {:?}", fixed_policy, hints);
+
+        if fixed_policy.is_some()
+            && hints.policy_hint.is_some()
+            && fixed_policy != hints.policy_hint
+        {
+            return Err(BalancerError::InvalidPolicyHint(
+                hints.policy_hint.unwrap(),
+                format!(
+                    "the current policy {fixed_policy:?} can no longer be changed during the current transaction"
+                ),
+            ));
+        }
+
+        if hints.policy_hint.is_some() {
+            Ok(hints.policy_hint)
+        } else {
+            Ok(fixed_policy)
+        }
+    }
+
+    /// Compute combined key distribution from metadata collected from
+    /// RebalancingExchangeSender instances in all workers.
+    fn key_distribution(
+        metadata: &[Option<RebalancingExchangeSenderExchangeMetadata>],
+    ) -> KeyDistribution {
+        metadata.iter().fold(
+            KeyDistribution::new(Runtime::num_workers()),
+            |mut key_distribution, metadata| {
+                if let Some(metadata) = metadata {
+                    key_distribution.merge(&metadata.key_distribution);
+                };
+                key_distribution
+            },
+        )
     }
 }
 
@@ -664,11 +864,16 @@ impl Balancer {
     ///
     /// * `stream` - The origin node id of the stream.
     /// * `exchange_sender` - Node id of the exchange sender operator that produces the stream.
-    pub fn register_integral(&self, stream: NodeId, exchange_sender: NodeId) {
-        self.inner
-            .borrow_mut()
-            .integrals
-            .insert(stream, (exchange_sender, BalancerHints::default()));
+    pub fn register_integral(
+        &self,
+        stream: NodeId,
+        exchange_sender: NodeId,
+        persistent_id: Option<String>,
+    ) {
+        self.inner.borrow_mut().integrals.insert(
+            stream,
+            (exchange_sender, persistent_id, BalancerHints::default()),
+        );
     }
 
     /// Invoked during circuit construction to register a join between `left` and `right` streams.
@@ -712,27 +917,55 @@ impl Balancer {
     }
 
     /// Invoked after the circuit has been constructed and before it starts running.
-    pub fn prepare(&self) {
+    pub fn prepare(&self, circuit: &dyn CircuitBase) {
         // Compute connected components of the join graph.
-        self.compute_clusters();
+        self.compute_clusters(circuit);
+        if Runtime::worker_index() == 0 {
+            info!("Join balancer state:\n{}", indent(&self.display(), 2));
+        }
     }
 
     // Invoked at the start of each transaction.
-    pub fn start_transaction(&self) {}
+    pub fn start_transaction(&self) {
+        // if Runtime::worker_index() == 0 {
+        //     println!("Balancer::start_transaction");
+        // }
+    }
+
+    pub fn transaction_committed(&self) {
+        self.inner.borrow_mut().transaction_in_progress = false;
+    }
+
+    /// Check if the balancer has full information about key distribution of streams in the same layer as node_id
+    /// for the current transaction.
+    ///
+    /// When true, the partitioning policy proposed by the balancer is the best it can do until the next transaction.
+    ///
+    /// This is just a hint: an individual operator may choose to start flushing its state for the current transaction
+    /// without waiting for this to be true. In this case, it partitioning policy can no longer change until the next
+    /// transaction, which also reduces the space of possible policies for other streams in the same cluster.
+    pub fn ready_to_commit(&self, node_id: NodeId) -> bool {
+        self.inner.borrow().ready_to_commit(node_id)
+    }
 
     // Invoked at the start of each step. Updates costs and solves the optimization problem.
     pub fn start_step(&self) {
         // This shouldn't fail since all hints are validated when they are installed
         // and otherwise the balancer should not get stuck with invalid policies.
 
-        // println!(
-        //     "{} start_step: solving all clusters",
-        //     Runtime::worker_index()
-        // );
+        // if Runtime::worker_index() == 0 {
+        //     println!("Balancer::start_step");
+        // }
 
         let solutions = self.inner.borrow_mut().solve_all_clusters().unwrap();
         // println!("{} solutions: {:?}", Runtime::worker_index(), solutions);
         self.inner.borrow_mut().set_policy(&solutions);
+
+        self.inner.borrow_mut().transaction_in_progress = true;
+    }
+
+    pub fn update_metadata(&self) {
+        self.inner.borrow_mut().parse_metadata();
     }
 
     /// Return the policy selected for the stream at the start of the step.
@@ -740,7 +973,53 @@ impl Balancer {
         self.inner.borrow().get_policy_for_stream(node_id)
     }
 
-    fn compute_clusters(&self) {
+    /// Partition nodes in `cluster` into layers such that nodes within a layer only depend
+    /// on nodes in earlier layers.
+    ///
+    /// Layer 0 consists of all nodes that don't depend on any other nodes in the cluster.
+    /// Layer 1 consists of all nodes that depend on nodes in layer 0.
+    /// Layer 2 consists of all nodes that depend on nodes in layers 0 and 1, etc.
+    ///
+    /// Returns a map from layer index to the nodes in that layer and a map from node id to the layer index it belongs to.
+    fn compute_layers(
+        &self,
+        dependencies: &BTreeMap<NodeId, BTreeSet<NodeId>>,
+        cluster: &[NodeId],
+    ) -> (BTreeMap<usize, Vec<NodeId>>, BTreeMap<NodeId, usize>) {
+        let mut layers: BTreeMap<usize, Vec<NodeId>> = BTreeMap::new();
+        let mut layer_index = 0;
+        let mut remaining_nodes = cluster.iter().cloned().collect::<BTreeSet<_>>();
+        let mut node_to_layer = BTreeMap::new();
+
+        while !remaining_nodes.is_empty() {
+            let mut layer = Vec::new();
+            let mut new_remaining_nodes = BTreeSet::new();
+
+            // Find all cluster nodes without dependencies among remaining nodes; add them to layer_index and remove them from cluster.
+            for node in remaining_nodes.iter() {
+                if dependencies
+                    .get(node)
+                    .unwrap()
+                    .iter()
+                    .any(|dep| remaining_nodes.contains(dep))
+                {
+                    new_remaining_nodes.insert(*node);
+                } else {
+                    layer.push(*node);
+                    node_to_layer.insert(*node, layer_index);
+                }
+            }
+
+            remaining_nodes = new_remaining_nodes;
+
+            layers.insert(layer_index, layer);
+            layer_index += 1;
+        }
+
+        (layers, node_to_layer)
+    }
+
+    fn compute_clusters(&self, circuit: &dyn CircuitBase) {
         // println!(
         //     "{} compute_clusters: integrals: {:?}, joins: {:?}",
         //     Runtime::worker_index(),
@@ -769,28 +1048,102 @@ impl Balancer {
 
         // Compute connected components of the join graph.
         let clusters = components(&join_graph);
-
-        let clusters: Vec<Cluster> = clusters
+        let clusters = clusters
             .into_iter()
-            .map(|(nodes, edges)| Cluster {
-                streams: nodes
-                    .into_iter()
-                    .map(|node| *join_graph.node_weight(node).unwrap())
-                    .collect(),
-                joins: edges
+            .map(|(node_indices, edge_indices)| {
+                let nodes = node_indices
+                    .iter()
+                    .map(|node| *join_graph.node_weight(*node).unwrap())
+                    .collect::<Vec<_>>();
+                let edges = edge_indices
                     .into_iter()
                     .map(|edge| {
                         let join_id = *join_graph.edge_weight(edge).unwrap();
                         let join_descr = inner.joins.get(&join_id).unwrap();
                         (join_id, *join_descr)
                     })
-                    .collect(),
-                solution: BTreeMap::new(),
+                    .collect::<BTreeMap<_, _>>();
+                (nodes, edges)
+            })
+            .collect::<Vec<_>>();
+
+        let dependencies: BTreeMap<NodeId, BTreeSet<NodeId>> = circuit.transitive_ancestors();
+
+        let cluster_nodes: Vec<BTreeSet<NodeId>> = clusters
+            .iter()
+            .map(|(nodes, _)| nodes.iter().cloned().collect())
+            .collect();
+
+        // For each cluster, compute the union of dependencies of its nodes.
+        let cluster_dependencies: Vec<BTreeSet<NodeId>> = cluster_nodes
+            .iter()
+            .map(|cluster_nodes| {
+                cluster_nodes
+                    .iter()
+                    .flat_map(|node| dependencies.get(node).into_iter().flatten())
+                    .cloned()
+                    .collect()
+            })
+            .collect();
+
+        // Add an edge between two clusters in a DiGraph if there is a dependency between them.
+        let mut cluster_graph = DiGraph::<usize, ()>::new();
+        let cluster_indices: Vec<_> = (0..cluster_nodes.len())
+            .map(|i| cluster_graph.add_node(i))
+            .collect();
+
+        for (i, deps) in cluster_dependencies.iter().enumerate() {
+            for (j, other_nodes) in cluster_nodes.iter().enumerate() {
+                if i != j && deps.intersection(other_nodes).next().is_some() {
+                    cluster_graph.add_edge(cluster_indices[i], cluster_indices[j], ());
+                }
+            }
+        }
+
+        // Compute strongly connected components of the cluster dependency graph.
+        let sccs = kosaraju_scc(&cluster_graph);
+
+        // Merge all clusters in each component
+        let mut merged_clusters: Vec<(Vec<NodeId>, BTreeMap<NodeId, (NodeId, NodeId, bool)>)> =
+            Vec::new();
+
+        for scc in sccs {
+            if scc.is_empty() {
+                continue;
+            }
+
+            let mut merged_nodes = Vec::new();
+            let mut merged_edges: BTreeMap<NodeId, (NodeId, NodeId, bool)> = BTreeMap::new();
+
+            for cluster_idx in scc {
+                let original_cluster_idx = cluster_graph[cluster_idx];
+                let (nodes, edges) = &clusters[original_cluster_idx];
+                merged_nodes.extend(nodes.iter().cloned());
+                merged_edges.extend(
+                    edges
+                        .iter()
+                        .map(|(join_id, join_descr)| (*join_id, *join_descr)),
+                );
+            }
+
+            merged_clusters.push((merged_nodes, merged_edges));
+        }
+
+        let clusters: Vec<Cluster> = merged_clusters
+            .into_iter()
+            .map(|(nodes, joins)| {
+                let (layers, streams) = self.compute_layers(&dependencies, &nodes);
+                Cluster {
+                    streams,
+                    joins,
+                    layers,
+                    solution: BTreeMap::new(),
+                }
             })
             .collect();
 
         for (index, cluster) in clusters.iter().enumerate() {
-            for stream in cluster.streams.iter() {
+            for (stream, _layer) in cluster.streams.iter() {
                 inner.stream_to_cluster.insert(*stream, index);
             }
         }
@@ -828,5 +1181,9 @@ impl Balancer {
         self.inner
             .borrow_mut()
             .set_policy_for_stream(stream, policy);
+    }
+
+    pub fn display(&self) -> String {
+        self.inner.borrow().display()
     }
 }

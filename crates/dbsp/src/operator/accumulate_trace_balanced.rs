@@ -1,10 +1,10 @@
 use super::dynamic::trace::TimedSpine;
 use crate::{
+    DBData, RootCircuit, Stream, ZWeight,
     algebra::IndexedZSet as DynIndexedZSet,
     dynamic::Erase,
     trace::BatchReaderFactories,
     typed_batch::{Spine, TypedBatch},
-    DBData, RootCircuit, Stream, ZWeight,
 };
 
 impl<K, V, B> Stream<RootCircuit, TypedBatch<K, V, ZWeight, B>>

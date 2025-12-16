@@ -6,7 +6,6 @@ use super::dbsp_handle::{Layout, Mode};
 use crate::SchedulerError;
 use crate::circuit::DevTweaks;
 use crate::circuit::checkpointer::Checkpointer;
-use crate::circuit::checkpointer::Checkpointer;
 use crate::error::Error as DbspError;
 use crate::operator::communication::Exchange;
 use crate::storage::backend::StorageBackend;

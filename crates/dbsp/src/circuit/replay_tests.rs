@@ -613,7 +613,7 @@ fn join_circuit1(
 
     let output_handle1 = if balancing {
         input_stream1_indexed
-            .balanced_join(&input_stream2_indexed, |key, _v1, _v2| *key)
+            .join_balanced(&input_stream2_indexed, |key, _v1, _v2| *key)
             .accumulate_output_persistent(Some("output1"))
     } else {
         input_stream1_indexed
@@ -659,7 +659,7 @@ fn join_circuit2(
 
     let output_handle1 = if balancing {
         input_stream1_indexed
-            .balanced_join(&input_stream2_indexed, |key, _v1, _v2| *key)
+            .join_balanced(&input_stream2_indexed, |key, _v1, _v2| *key)
             .accumulate_output_persistent(Some("output1"))
     } else {
         input_stream1_indexed
@@ -669,7 +669,7 @@ fn join_circuit2(
 
     let output_handle2 = if balancing {
         input_stream2_indexed
-            .balanced_join(&input_stream3_indexed, |key, _v1, _v2| *key)
+            .join_balanced(&input_stream3_indexed, |key, _v1, _v2| *key)
             .accumulate_output_persistent(Some("output2"))
     } else {
         input_stream2_indexed

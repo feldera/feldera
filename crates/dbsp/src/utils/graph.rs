@@ -118,7 +118,7 @@ mod tests {
         let n3_component = comps.iter().find(|c| c.0.contains(&n3)).unwrap();
         assert_eq!(n3_component.0.len(), 1);
         assert_eq!(n3_component.1.len(), 0); // Isolated node has no edges
-                                             // Verify the connected component has the edge
+        // Verify the connected component has the edge
         let connected_component = comps.iter().find(|c| c.0.contains(&n1)).unwrap();
         assert_eq!(connected_component.1.len(), 1);
         assert!(connected_component.1.contains(&e1));

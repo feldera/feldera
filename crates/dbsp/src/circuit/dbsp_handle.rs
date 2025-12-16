@@ -1,10 +1,13 @@
+use crate::circuit::GlobalNodeId;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::runtime::ThreadType;
 use crate::circuit::schedule::{CommitProgress, CommitProgressSummary};
-use crate::circuit::GlobalNodeId;
 use crate::monitor::visual_graph::Graph;
-use crate::operator::dynamic::balance::{BalancerHint, PartitioningPolicy};
+use crate::operator::dynamic::balance::{
+    BALANCE_TAX, BalancerHint, MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD,
+    MIN_RELATIVE_IMPROVEMENT_THRESHOLD, PartitioningPolicy,
+};
 use crate::storage::backend::StorageError;
 use crate::storage::file::BLOOM_FILTER_FALSE_POSITIVE_RATE;
 use crate::trace::MergerType;
@@ -316,6 +319,44 @@ pub struct DevTweaks {
     // TODO: splitter_chunk_size_bytes, per-operator chunk size.
     pub splitter_chunk_size_records: u64,
 
+    /// The minimum relative improvement threshold for the join balancer.
+    ///
+    /// This parameter prevents the join balancer from making changes to the
+    /// partitioning policy if the improvement is not significant, since the overhead
+    /// of such rebalancing, especially when performed frequently, can exceed the benefits.
+    ///
+    /// A rebalancing is considered significant if the relative estimated improvement for the cluster
+    /// of joins where the rebalancing is applied is at least this threshold.
+    ///
+    /// A rebalancing is applied if both this threshold and `balancer_min_absolute_improvement_threshold` are met.
+    ///
+    /// The default value is 1.2.
+    pub balancer_min_relative_improvement_threshold: f64,
+
+    /// The minimum absolute improvement threshold for the balancer.
+    ///
+    /// This parameter prevents the join balancer from making changes to the
+    /// partitioning policy if the improvement is not significant, since the overhead
+    /// of such rebalancing, especially when performed frequently, can exceed the benefits.
+    ///
+    /// A rebalancing is considered significant if the absolute estimated improvement for the cluster
+    /// of joins where the rebalancing is applied is at least this threshold. The cost model used by
+    /// the balancer is based on the number of records in the largest partition of a collection.
+    ///
+    /// A rebalancing is applied if both this threshold and `balancer_min_relative_improvement_threshold` are met.
+    ///
+    /// The default value is 10,000.
+    pub balancer_min_absolute_improvement_threshold: u64,
+
+    /// Factor that discourages the use of the Balance policy in a perfectly balanced collection.
+    ///
+    /// Assuming a perfectly balanced key distribution, the Balance policy is slightly less efficient than Shard,
+    /// since it requires computing the hash of the entire key/value pair. This factor discourages the use of this policy
+    /// if the skew is `<balancer_balance_tax`.
+    ///
+    /// The default value is 1.1.
+    pub balancer_balance_tax: f64,
+
     /// False-positive rate for Bloom filters on batches on storage, as a
     /// fraction f, where 0 < f < 1.
     ///
@@ -343,6 +384,9 @@ impl Default for DevTweaks {
             stack_overflow_backtrace: false,
             splitter_chunk_size_records: 10_000,
             bloom_false_positive_rate: BLOOM_FILTER_FALSE_POSITIVE_RATE,
+            balancer_min_relative_improvement_threshold: MIN_RELATIVE_IMPROVEMENT_THRESHOLD,
+            balancer_min_absolute_improvement_threshold: MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD,
+            balancer_balance_tax: BALANCE_TAX,
         }
     }
 }
@@ -368,6 +412,18 @@ impl DevTweaks {
 /// should attempt to limit their output to this chunk size.
 pub fn splitter_output_chunk_size() -> usize {
     Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records as usize)
+}
+
+pub fn balancer_min_absolute_improvement_threshold() -> u64 {
+    Runtime::with_dev_tweaks(|d| d.balancer_min_absolute_improvement_threshold)
+}
+
+pub fn balancer_min_relative_improvement_threshold() -> f64 {
+    Runtime::with_dev_tweaks(|d| d.balancer_min_relative_improvement_threshold)
+}
+
+pub fn balancer_balance_tax() -> f64 {
+    Runtime::with_dev_tweaks(|d| d.balancer_balance_tax)
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.
@@ -443,6 +499,21 @@ impl CircuitConfig {
 
     pub fn with_splitter_chunk_size_records(mut self, records: u64) -> Self {
         self.dev_tweaks.splitter_chunk_size_records = records;
+        self
+    }
+
+    pub fn with_balancer_min_relative_improvement_threshold(mut self, threshold: f64) -> Self {
+        self.dev_tweaks.balancer_min_relative_improvement_threshold = threshold;
+        self
+    }
+
+    pub fn with_balancer_min_absolute_improvement_threshold(mut self, threshold: u64) -> Self {
+        self.dev_tweaks.balancer_min_absolute_improvement_threshold = threshold;
+        self
+    }
+
+    pub fn with_balancer_balance_tax(mut self, tax: f64) -> Self {
+        self.dev_tweaks.balancer_balance_tax = tax;
         self
     }
 
@@ -897,6 +968,14 @@ impl WorkersCommitProgress {
         let mut result = CommitProgressSummary::new();
 
         for worker_progress in self.0.values() {
+            // println!(
+            //     "{worker} in progress: {}",
+            //     worker_progress
+            //         .get_in_progress()
+            //         .keys()
+            //         .map(|k| k.to_string())
+            //         .join(", ")
+            // );
             result.merge(&worker_progress.summary());
         }
 

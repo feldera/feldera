@@ -4340,10 +4340,9 @@ impl ControllerInner {
             pool_size as usize,
             source_tasks.chain(sink_tasks),
         )
-        .map_err(|e| {
+        .inspect_err(|_e| {
             // Set the state to terminated to make sure that when we later unpark auxiliary threads, they will exit.
             controller.status.set_state(PipelineState::Terminated);
-            e
         })?;
 
         let _ = controller.connect_input("now", &now_endpoint_config(&config), None);

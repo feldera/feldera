@@ -313,9 +313,9 @@ impl MaxSat {
         value: VariableValue,
     ) -> bool {
         if let Some(cost) = self.variables[variable.0].domain.remove(&value) {
-            self.backtrack_stack
-                .last_mut()
-                .map(|frame| frame.removed_assignments.push((variable, value, cost)));
+            if let Some(frame) = self.backtrack_stack.last_mut() {
+                frame.removed_assignments.push((variable, value, cost))
+            }
             true
         } else {
             false
@@ -371,10 +371,11 @@ impl MaxSat {
     /// Solve the MaxSat problem.
     pub fn solve(&mut self) -> Result<BTreeMap<VariableIndex, VariableValue>, BalancerError> {
         // println!("---------START-----------");
-        assert!(self
-            .variables
-            .iter()
-            .all(|variable| !variable.domain.is_empty()));
+        assert!(
+            self.variables
+                .iter()
+                .all(|variable| !variable.domain.is_empty())
+        );
 
         // Initialize affected_variables to all variables before the first iteration.
         let mut affected_variables = BTreeSet::new();
@@ -450,7 +451,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::operator::dynamic::balance::{
-        maxsat::Cost, JoinConstraint, MaxSat, PartitioningPolicy,
+        JoinConstraint, MaxSat, PartitioningPolicy, maxsat::Cost,
     };
 
     #[cfg(test)]

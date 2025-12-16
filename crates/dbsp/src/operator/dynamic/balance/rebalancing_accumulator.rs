@@ -3,18 +3,18 @@ use std::{borrow::Cow, cell::RefCell, panic::Location, rc::Rc, sync::Arc};
 use size_of::SizeOf;
 
 use crate::{
+    Circuit, Error, NumEntries, Scope, Stream,
     circuit::{
         checkpointer::EmptyCheckpoint,
         circuit_builder::RefStreamValue,
         metadata::{
-            BatchSizeStats, MetaItem, OperatorLocation, OperatorMeta, ALLOCATED_BYTES_LABEL,
-            INPUT_BATCHES_LABEL, NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, SHARED_BYTES_LABEL,
-            USED_BYTES_LABEL,
+            ALLOCATED_BYTES_LABEL, BatchSizeStats, INPUT_BATCHES_LABEL, MetaItem,
+            NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, OperatorLocation, OperatorMeta,
+            SHARED_BYTES_LABEL, USED_BYTES_LABEL,
         },
         operator_traits::{Operator, UnaryOperator},
     },
     trace::{Batch, BatchReader, Spine, Trace},
-    Circuit, Error, NumEntries, Scope, Stream,
 };
 
 impl<C, B> Stream<C, B>

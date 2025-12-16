@@ -46,7 +46,7 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
         other: &Stream<RootCircuit, MonoIndexedZSet>,
         join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynUnit>,
     ) -> Stream<RootCircuit, MonoZSet> {
-        self.dyn_balanced_left_join(factories, other, join_funcs)
+        self.dyn_left_join_balanced(factories, other, join_funcs)
     }
 
     #[track_caller]
@@ -56,7 +56,7 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
         other: &Stream<RootCircuit, MonoIndexedZSet>,
         join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynData>,
     ) -> Stream<RootCircuit, MonoIndexedZSet> {
-        self.dyn_balanced_left_join(factories, other, join_funcs)
+        self.dyn_left_join_balanced(factories, other, join_funcs)
     }
 }
 
@@ -143,7 +143,7 @@ where
     V1: DataTrait + ?Sized,
 {
     #[track_caller]
-    pub fn dyn_balanced_left_join<V2, Z>(
+    pub fn dyn_left_join_balanced<V2, Z>(
         &self,
         factories: &JoinFactories<OrdIndexedZSet<K, V1>, OrdIndexedZSet<K, V2>, (), Z>,
         other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
@@ -157,7 +157,7 @@ where
             return self.dyn_left_join(factories, other, join_funcs);
         }
 
-        // The implementation is identical to `balanced_join`, except these two changes that
+        // The implementation is identical to `join_balanced`, except these two changes that
         // are necessary to implement the left join as an inner join:
         // - we saturate the `other` stream
         // - we set the `SATURATE` parameter to `true` for the first join operator.
@@ -167,7 +167,7 @@ where
             trace_factories: factories.right_trace_factories.clone(),
         };
 
-        self.circuit().region("balanced_left_join", || {
+        self.circuit().region("left_join_balanced", || {
             let (left_accumulator, left_trace) = self.dyn_accumulate_trace_balanced(
                 &factories.left_trace_factories,
                 &factories.left_factories,
@@ -319,7 +319,7 @@ mod test {
 
                     let output_handle = if balanced {
                         left_input
-                            .balanced_left_join(&right_input, f.clone())
+                            .left_join_balanced(&right_input, f.clone())
                             .accumulate_output()
                     } else {
                         left_input
@@ -407,7 +407,7 @@ mod test {
 
                     let output_handle = if balanced {
                         left_input
-                            .balanced_left_join_index(&right_input, f.clone())
+                            .left_join_index_balanced(&right_input, f.clone())
                             .accumulate_output()
                     } else {
                         left_input

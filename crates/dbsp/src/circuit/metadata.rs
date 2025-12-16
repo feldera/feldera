@@ -62,6 +62,11 @@ pub const NUM_ACCUMULATOR_RECORDS_TO_REPARTITION_LABEL: &str = "accumulator reco
 /// The number of integral records that must be repartitioned in the current rebalancing.
 pub const NUM_INTEGRAL_RECORDS_TO_REPARTITION_LABEL: &str = "integral records to repartition";
 
+/// The total time spent rebalancing the stream.
+pub const TOTAL_REBALANCING_TIME_LABEL: &str = "total rebalancing time";
+
+pub const INPROGRESS_REBALANCING_TIME_LABEL: &str = "in-progress rebalancing time";
+
 /// An operator's location within the source program
 pub type OperatorLocation = Option<&'static Location<'static>>;
 

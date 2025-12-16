@@ -2,9 +2,11 @@ use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use proptest::collection::vec;
 use proptest::prelude::*;
 use std::hash::Hasher;
-use tempfile::{tempdir, TempDir};
+use tempfile::{TempDir, tempdir};
 
 use crate::{
+    Circuit, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Runtime,
+    ZWeight,
     circuit::{CircuitConfig, CircuitStorageConfig, GlobalNodeId},
     default_hasher,
     dynamic::{Data, DowncastTrait as _},
@@ -14,9 +16,7 @@ use crate::{
     },
     trace::{BatchReader as _, Cursor as _},
     typed_batch::{BatchReader, IndexedZSetReader, SpineSnapshot, TypedBatch},
-    utils::{test::init_test_logger, Tup2, Tup3},
-    Circuit, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Runtime,
-    ZWeight,
+    utils::{Tup2, Tup3, test::init_test_logger},
 };
 use anyhow::Result as AnyResult;
 use proptest::prelude::Strategy;
@@ -104,7 +104,7 @@ fn join_with_balancer_test_circuit(circuit: &mut RootCircuit) -> AnyResult<JoinT
 
     // let balanced_stream_output = balanced_stream.accumulate_output();
     let join_output_handle = left_input
-        .balanced_join(&right_input, |key, v1, v2| Tup3(*key, *v1, Some(*v2)))
+        .join_balanced(&right_input, |key, v1, v2| Tup3(*key, *v1, Some(*v2)))
         .accumulate_integrate_trace()
         .apply(|trace| trace.ro_snapshot().consolidate())
         .output();
@@ -117,6 +117,8 @@ fn join_with_balancer_test_circuit(circuit: &mut RootCircuit) -> AnyResult<JoinT
         join_output_handle,
     ))
 }
+
+// s3 = s1.join(s2), s5 =s3.join(s4)
 
 fn left_join_with_balancer_test_circuit(
     circuit: &mut RootCircuit,
@@ -137,7 +139,7 @@ fn left_join_with_balancer_test_circuit(
 
     // let balanced_stream_output = balanced_stream.accumulate_output();
     let join_output_handle = left_input
-        .balanced_left_join(&right_input, |key, v1, v2| Tup3(*key, *v1, *v2))
+        .left_join_balanced(&right_input, |key, v1, v2| Tup3(*key, *v1, *v2))
         .accumulate_integrate_trace()
         .apply(|trace| trace.ro_snapshot().consolidate())
         .output();
@@ -158,7 +160,9 @@ fn test_accumulate_trace_with_balancer(
 ) {
     let (mut circuit, (input_handle, input_node_id, output_delta, output_trace)) =
         Runtime::init_circuit(
-            CircuitConfig::from(workers).with_splitter_chunk_size_records(2),
+            CircuitConfig::from(workers)
+                .with_splitter_chunk_size_records(2)
+                .with_balancer_min_absolute_improvement_threshold(0),
             accumulate_trace_with_balancer_test_circuit,
         )
         .unwrap();
@@ -295,6 +299,7 @@ pub(crate) fn mkconfig(workers: usize) -> (TempDir, CircuitConfig) {
 
     let cconf = CircuitConfig::from(workers)
         .with_splitter_chunk_size_records(2)
+        .with_balancer_min_absolute_improvement_threshold(0)
         .with_storage(storage);
     (temp, cconf)
 }
@@ -856,7 +861,7 @@ fn test_skewed_inner_join_left() {
 }
 
 #[test]
-fn test_skewed_left_join_left() {
+fn test_skewed_left_join_no_checkpoints() {
     test_skewed_join_left(true);
 }
 

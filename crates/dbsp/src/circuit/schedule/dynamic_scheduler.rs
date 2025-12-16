@@ -70,7 +70,7 @@ use petgraph::algo::toposort;
 use tokio::{select, sync::Notify, task::JoinSet};
 
 #[derive(Debug)]
-enum FlushState {
+pub enum FlushState {
     /// The operator is waiting for all predecessors to be flushed.
     UnflushedDependencies(usize),
     /// `flush` has been called, but `flush_complete` hasn't yet returned
@@ -371,7 +371,7 @@ impl Inner {
             }
         }
 
-        circuit.balancer().prepare();
+        circuit.balancer().prepare(circuit);
 
         Ok(scheduler)
     }
@@ -474,6 +474,12 @@ impl Inner {
                 }
             }
         }
+        // if Runtime::worker_index() == 0 {
+        //     println!(
+        //         "{}",
+        //         serde_json::to_string(&circuit.metadata_exchange().get_global_metadata()).unwrap()
+        //     );
+        // }
 
         commit_progress
     }
@@ -503,12 +509,14 @@ impl Inner {
         if self.first_step {
             self.first_step = false;
             self.exchange_metadata(circuit).await?;
+            circuit.balancer().update_metadata();
         }
         circuit.balancer().start_step();
         let result = self.do_step(circuit).await;
 
         // Exchange metadata with peers.
         self.exchange_metadata(circuit).await?;
+        circuit.balancer().update_metadata();
 
         if let TransactionPhase::Committing(unflushed_operators) = &self.transaction_phase {
             let commit_complete = self
@@ -518,6 +526,7 @@ impl Inner {
 
             if commit_complete {
                 self.transaction_phase = TransactionPhase::CommitComplete;
+                circuit.balancer().transaction_committed();
             }
         }
 
