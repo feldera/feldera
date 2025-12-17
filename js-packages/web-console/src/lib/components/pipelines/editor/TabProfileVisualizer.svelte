@@ -118,7 +118,14 @@
           await profileFiles[1].find((file) => dataflowGraphRegex.test(file.filename))!.read()
         )
       ) as unknown as Dataflow
-      const sources = pipeline.current.programCode.split('\n')
+      const pipelineConfig = JSON.parse(
+        decoder.decode(
+          await profileFiles[1].find((file) => pipelineConfigRegex.test(file.filename))!.read()
+        )
+      ) as unknown as {
+        program_code: string
+      }
+      const sources = pipelineConfig.program_code.split('\n')
 
       getProfileData = enclosure({
         profile,
