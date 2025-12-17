@@ -1529,4 +1529,24 @@ public class Regression1Tests extends SqlIoTest {
                  b|false | 1
                  ab|false | 1""");
     }
+
+    @Test
+    public void issue5299() {
+        this.getCC("""
+                CREATE LINEAR AGGREGATE u256_sum(value BINARY(32)) RETURNS BINARY(32);
+                
+                CREATE TABLE A (
+                    id VARCHAR(20) NOT NULL PRIMARY KEY,
+                    a VARCHAR(64),
+                    b VARCHAR(64),
+                    sno BIGINT NOT NULL PRIMARY KEY LATENESS 100::BIGINT,
+                    small DECIMAL(38, 18),
+                    num1 BINARY(32),
+                    num2 BINARY(32)
+                ) WITH ('append_only' = 'true');
+                
+                CREATE VIEW b AS
+                SELECT u256_sum(num1), u256_sum(num2), SUM(small), MAX(sno)
+                FROM A""");
+    }
 }

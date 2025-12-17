@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
@@ -31,7 +32,8 @@ public class NonMonotoneType extends ScalarMonotoneType {
     public static IMaybeMonotoneType nonMonotone(DBSPType type) {
         if (type.is(DBSPTypeBaseType.class) || type.is(DBSPTypeArray.class) ||
                 type.is(DBSPTypeMap.class) || type.is(DBSPTypeAny.class) ||
-                type.is(DBSPComparatorType.class) || (type.is(DBSPTypeFunction.class))) {
+                type.is(DBSPComparatorType.class) || type.is(DBSPTypeFunction.class) ||
+                type.is(DBSPTypeUser.class)) {
             return new NonMonotoneType(type);
         } else if (type.is(DBSPTypeTupleBase.class)) {
             return nonMonotoneTuple(type.to(DBSPTypeTupleBase.class));
