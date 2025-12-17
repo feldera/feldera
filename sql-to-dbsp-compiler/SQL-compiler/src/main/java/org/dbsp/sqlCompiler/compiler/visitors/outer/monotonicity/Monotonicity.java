@@ -77,6 +77,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -784,8 +785,11 @@ public class Monotonicity extends CircuitVisitor {
             return tuple.makeTuple(fields);
         } else if (type.is(DBSPTypeRef.class)) {
             return makeNoExpression(type.ref()).borrow();
+        } else if (type.is(DBSPTypeUser.class)) {
+            // Can happen for e.g., user-defined aggregates
+            return new NoExpression(CalciteObject.EMPTY, type);
         } else {
-            throw new InternalCompilerError("Monotonicity information for type " + type.asSqlString(),
+            throw new InternalCompilerError("Monotonicity information for type " + type,
                     type.getNode());
         }
     }
