@@ -177,15 +177,14 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
         }
 
         if (!used.tupleSizesUsed.isEmpty() && this.generateTuples) {
-            this.builder().append("declare_tuples! {").increase();
             for (int i : used.tupleSizesUsed) {
                 if (i <= 10)
                     // These are already pre-declared
                     continue;
+                this.builder().append("declare_tuple! {");
                 this.builder().append(this.tup(i));
-                this.builder().append(",").newline();
+                this.builder().append("}").newline();
             }
-            this.builder().decrease().append("}").newline().newline();
 
             for (int i : used.tupleSizesUsed) {
                 if (i <= 10)

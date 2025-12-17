@@ -42,6 +42,8 @@ pub struct Q9Output(
     String,
 );
 
+dbsp::never_none!(Q9Output);
+
 type Q9Stream = Stream<RootCircuit, OrdZSet<Q9Output>>;
 
 /// Query 9: Winning Bids (Not in original suite)

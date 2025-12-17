@@ -44,8 +44,8 @@ where
 }
 
 #[cfg(test)]
-dbsp::declare_tuples! {
-    Tuple3<T0, T1, T2>,
+feldera_macros::declare_tuple! {
+    Tuple3<T0, T1, T2>
 }
 
 #[test]

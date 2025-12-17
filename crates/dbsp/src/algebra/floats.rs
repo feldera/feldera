@@ -22,7 +22,7 @@ macro_rules! float {
         $(
             paste!{
             #[doc = concat!("A wrapper around [`", stringify!($inner), "`] that provides additional useful traits, such as [Ord].")]
-            #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+            #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, feldera_macros::IsNone)]
             #[repr(transparent)]
             #[size_of(skip_all)]
             #[derive(Serialize, Deserialize)]

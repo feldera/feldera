@@ -211,6 +211,7 @@ nix = { workspace = true, features = ["signal", "mman", "time", "feature"] }
 [dev-dependencies]
 actix-test = { workspace = true }
 bstr = { workspace = true, features = ["serde1"] }
+feldera-macros = { workspace = true }
 serde_json = { workspace = true }
 size-of = { workspace = true }
 tempfile = { workspace = true }
