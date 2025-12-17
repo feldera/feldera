@@ -707,6 +707,53 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue5300() throws IOException, SQLException, InterruptedException {
+        File file = createInputScript("""
+                CREATE LINEAR AGGREGATE u64_sum(value INT) RETURNS INT;
+                
+                CREATE TABLE A (
+                    id VARCHAR(20) NOT NULL PRIMARY KEY,
+                    a VARCHAR(64),
+                    b VARCHAR(64),
+                    sno INT,
+                    small BIGINT,
+                    num1 INT,
+                    num2 INT
+                ) WITH ('append_only' = 'true');
+                
+                CREATE VIEW b AS
+                SELECT id, a, b, u64_sum(num1), u64_sum(num2), SUM(small), MAX(sno)
+                FROM A
+                GROUP BY id, a, b""");
+
+        File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+        PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
+        script.println("""
+                use feldera_sqllib::*;
+                
+                pub type u64_sum_accumulator_type = i64;
+                
+                pub fn u64_sum_map(val: i32) -> u64_sum_accumulator_type {
+                    val.into()
+                }
+                
+                pub fn u64_sum_post(val: u64_sum_accumulator_type) -> i32 {
+                    val.try_into().unwrap()
+                }
+                """);
+        script.close();
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        if (messages.errorCount() > 0)
+            throw new RuntimeException(messages.toString());
+        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+
+        // Truncate file to 0 bytes
+        FileWriter writer = new FileWriter(udf);
+        writer.close();
+    }
+
+
+    @Test
     public void testUDA2() throws IOException, InterruptedException, SQLException {
         File file = createInputScript("""
                 CREATE LINEAR AGGREGATE I128_SUM(s BINARY(16)) RETURNS BINARY(16);
