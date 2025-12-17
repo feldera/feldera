@@ -247,7 +247,7 @@ public class ExpandAggregates extends Passes {
             if (!ga.shuffle.isIdentityPermutation()) {
                 DBSPTypeIndexedZSet ix = result.getOutputIndexedZSetType();
                 DBSPVariablePath vReorder = ix.getKVRefType().var();
-                DBSPTupleExpression key = DBSPTupleExpression.flatten(vReorder.field(0).deref());
+                DBSPTupleExpression key = DBSPTupleExpression.flatten(vReorder.field(0).deref().applyCloneIfNeeded());
                 Shuffle inverse = ga.shuffle.invert();
                 DBSPBaseTupleExpression value =
                         DBSPTupleExpression.flatten(vReorder.field(1).deref())
@@ -365,7 +365,7 @@ public class ExpandAggregates extends Passes {
                 // If all operations are MIN or MAX no postprocessing is necessary.
                 this.addOperator(chain);
                 DBSPClosureExpression post = new DBSPRawTupleExpression(
-                        postVar.field(0).deref(),
+                        postVar.field(0).deref().applyCloneIfNeeded(),
                         new DBSPTupleExpression(postProcessing, false))
                         .closure(postVar);
                 chain = new DBSPMapIndexOperator(node, post, chain.outputPort());
