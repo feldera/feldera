@@ -1,4 +1,5 @@
 use crate::trace::Deserializable;
+use feldera_macros::IsNone;
 use rkyv::{Archive, Deserialize, Serialize, de::deserializers::SharedDeserializeMap};
 use size_of::SizeOf;
 use std::{
@@ -15,7 +16,7 @@ pub trait CmpFunc<T>: Send + Sync + 'static {
 
 /// Wrapper around type `T` that uses `F` instead of
 /// `Ord::cmp` to compare values.
-#[derive(SizeOf, Archive, Serialize, Deserialize)]
+#[derive(SizeOf, Archive, Serialize, Deserialize, IsNone)]
 #[archive(compare(PartialEq, PartialOrd))]
 pub struct WithCustomOrd<T, F> {
     pub val: T,

@@ -113,7 +113,7 @@ public class RustFileWriter extends RustWriter {
         }
         this.generatePreamble();
         if (!this.used.tupleSizesUsed.isEmpty()) {
-            this.builder().append("use dbsp::declare_tuples;").newline();
+            this.builder().append("use feldera_macros::declare_tuple;").newline();
         }
         if (this.generateMalloc)
             this.outputBuilder.append(BaseRustCodeGenerator.ALLOC_PREAMBLE);

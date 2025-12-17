@@ -7,6 +7,7 @@ use crate::{
 use base58::{FromBase58, ToBase58};
 use base64::prelude::*;
 use dbsp::NumEntries;
+use feldera_macros::IsNone;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, serde_config::BinaryFormat,
 };
@@ -45,6 +46,7 @@ type CompactVec = SmallVec<[u8; THRESHOLD]>;
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[serde(transparent)]
