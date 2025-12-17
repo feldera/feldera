@@ -730,12 +730,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     );
                 };
 
-                // Before moving to provisioning, ensure the program binary exists in the compiler.
-                // If it does not, request recompilation by transitioning the program status to
+                // Before moving to provisioning, ensure the compilation artifacts exist in the compiler.
+                // If they do not, request recompilation by transitioning the program status to
                 // `Pending` such that compiler workers will pick it up and avoid attempting to
                 // provision a pipeline with no binary.
                 if !self
-                    .check_compiler_binary_and_request_recompile_if_missing(pipeline)
+                    .check_compilation_artifacts_and_request_recompile_if_missing(pipeline)
                     .await?
                 {
                     return Ok(State::Unchanged);
@@ -854,11 +854,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         }
     }
 
-    /// Check compiler for binary presence and request recompilation if missing.
+    /// Check compilation artifacts and request recompilation if missing.
     ///
-    /// Returns `true` when binary exists;
-    /// `false` when binary is missing or the check failed transiently.
-    async fn check_compiler_binary_and_request_recompile_if_missing(
+    /// Returns `Ok(true)` when artifacts exist;
+    /// `Ok(false)` to indicate artifacts are missing;
+    async fn check_compilation_artifacts_and_request_recompile_if_missing(
         &mut self,
         pipeline: &ExtendedPipelineDescr,
     ) -> Result<bool, DBError> {
@@ -922,13 +922,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         let resp: serde_json::Value = resp.json().await.unwrap_or_default();
                         let binary_exists = resp
                             .get("binary_exists")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("<unknown>");
+                            .and_then(|v| v.as_bool())
+                            .map_or("<unknown>", |v| if v { "true" } else { "false" });
 
                         let program_info_exists = if program_info_integrity_checksum != "none" {
                             resp.get("program_info_exists")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("<unknown>")
+                                .and_then(|v| v.as_bool())
+                                .map_or("<unknown>", |v| if v { "true" } else { "false" })
                         } else {
                             "<not applicable>"
                         };
@@ -1584,7 +1584,9 @@ mod test {
     use crate::db::storage::Storage;
     use crate::db::storage_postgres::StoragePostgres;
     use crate::db::types::pipeline::{PipelineDescr, PipelineId};
-    use crate::db::types::program::{ProgramInfo, RustCompilationInfo, SqlCompilationInfo};
+    use crate::db::types::program::{
+        ProgramInfo, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
+    };
     use crate::db::types::resources_status::ResourcesStatus;
     use crate::db::types::version::Version;
     use crate::error::ManagerError;
@@ -1736,6 +1738,17 @@ mod test {
                 .deployment_runtime_status
         }
 
+        async fn program_status(&self) -> ProgramStatus {
+            let automaton = &self.automaton;
+            self.db
+                .lock()
+                .await
+                .get_pipeline_by_id(automaton.tenant_id, automaton.pipeline_id)
+                .await
+                .unwrap()
+                .program_status
+        }
+
         async fn tick(&mut self) {
             self.automaton.do_run().await.unwrap();
         }
@@ -1830,14 +1843,23 @@ mod test {
         let logs_sender = LogsSender::new(logs_sender);
         let notifier = Arc::new(Notify::new());
         let client = reqwest::Client::new();
+
+        // Extract host and port from mock server address to simulate the compiler service
+        // for testing compilation artifact existence checks
+        let (compiler_host, compiler_port) = deployment_location
+            .as_str()
+            .split_once(':')
+            .map(|(host, port)| (host.to_string(), port.parse().unwrap_or(8085)))
+            .unwrap_or_else(|| ("127.0.0.1".to_string(), 8085));
+
         let automaton = PipelineAutomaton::new(
             CommonConfig {
                 platform_version: "v0".to_string(),
                 bind_address: "127.0.0.1".to_string(),
                 api_host: "127.0.0.1".to_string(),
                 api_port: 8080,
-                compiler_host: "127.0.0.1".to_string(),
-                compiler_port: 8085,
+                compiler_host,
+                compiler_port,
                 runner_host: "127.0.0.1".to_string(),
                 runner_port: 8089,
                 http_workers: 1,
@@ -1922,10 +1944,26 @@ mod test {
         (mock_server, temp_dir, setup(db.clone(), addr).await)
     }
 
+    fn artifacts_path(pipeline_id: PipelineId) -> String {
+        format!(
+            "/artifacts/{}/{}/{}/{}/{}",
+            pipeline_id,
+            1,
+            "not-used-program-binary-source-checksum",
+            "not-used-program-binary-integrity-checksum",
+            "not-used-program-info-integrity-checksum",
+        )
+    }
+
     #[tokio::test]
     #[rustfmt::skip]
     async fn starting() {
         let (mut server, _temp, mut test) = setup_complete().await;
+
+        // Mock compiler artifacts check to succeed
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(&mut server, vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))]).await;
+
         test.desire_start(RuntimeDesiredStatus::Paused).await;
         assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
         assert_eq!(test.runtime_status().await, None);
@@ -1962,7 +2000,10 @@ mod test {
     #[tokio::test]
     #[rustfmt::skip]
     async fn stop_provisioning() {
-        let (_server, _temp, mut test) = setup_complete().await;
+        let (mut server, _temp, mut test) = setup_complete().await;
+        // Mock compiler artifacts check to succeed
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(&mut server, vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))]).await;
         test.desire_start(RuntimeDesiredStatus::Paused).await;
         assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
         assert_eq!(test.runtime_status().await, None);
@@ -1982,6 +2023,9 @@ mod test {
     #[rustfmt::skip]
     async fn stop_initializing() {
         let (mut server, _temp, mut test) = setup_complete().await;
+        // Mock compiler artifacts check to succeed
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(&mut server, vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))]).await;
         test.desire_start(RuntimeDesiredStatus::Paused).await;
         assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
         assert_eq!(test.runtime_status().await, None);
@@ -2009,6 +2053,9 @@ mod test {
     #[rustfmt::skip]
     async fn detecting_suspended() {
         let (mut server, _temp, mut test) = setup_complete().await;
+        // Mock compiler artifacts check to succeed
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(&mut server, vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))]).await;
         test.desire_start(RuntimeDesiredStatus::Paused).await;
         assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
         assert_eq!(test.runtime_status().await, None);
@@ -2032,5 +2079,42 @@ mod test {
         test.tick().await;
         assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
         assert_eq!(test.runtime_status().await, None);
+    }
+
+    #[tokio::test]
+    #[rustfmt::skip]
+    async fn missing_artifacts_sets_pending() {
+        let (mut server, _temp, mut test) = setup_complete().await;
+
+        // Mock compiler artifacts check to fail with detailed body
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(&mut server, vec![MockEndpoint::new(
+            "GET",
+            &artifacts_path,
+            404,
+            json!({
+                "message": "Binary or program info not found",
+                "binary_exists": false,
+                "program_info_exists": false,
+            }),
+        )]).await;
+
+        // Desire start; first tick should see missing artifacts, set program status to Pending
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        assert_eq!(test.runtime_status().await, None);
+        assert_eq!(test.program_status().await, ProgramStatus::Success);
+
+        test.tick().await; // artifact check + Pending transition
+
+        // Remains Stopped and program status becomes Pending
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        assert_eq!(test.program_status().await, ProgramStatus::Pending);
+
+
+        test.tick().await;
+        // Remains Stopped as program is still Pending
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+
     }
 }
