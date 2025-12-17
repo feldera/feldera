@@ -43,7 +43,9 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.Linq;
@@ -247,7 +249,11 @@ public abstract class DBSPExpression
     /** Insert a cast which may only change nullability */
     public DBSPExpression nullabilityCast(DBSPType to, boolean safe) {
         DBSPType sourceType = this.getType();
-        Utilities.enforce(sourceType.sameTypeIgnoringNullability(to),
+        // We also accept casts of the form CHAR(4) TO VARCHAR
+        boolean stringToString = sourceType.is(DBSPTypeString.class) && to.is(DBSPTypeString.class);
+        boolean binaryToBinary = sourceType.is(DBSPTypeBinary.class) && to.is(DBSPTypeBinary.class);
+        Utilities.enforce(sourceType.sameTypeIgnoringNullability(to) ||
+                stringToString || binaryToBinary,
                 () -> "Cast from " + sourceType + " to " + to + " is not a nullability cast.");
         return this.cast(this.getNode(), to, safe);
     }

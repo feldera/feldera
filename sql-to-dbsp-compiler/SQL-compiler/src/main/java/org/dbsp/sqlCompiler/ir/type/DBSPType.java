@@ -205,7 +205,6 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
 
     public boolean sameTypeIgnoringNullability(DBSPType type) {
         if (this.mayBeNull == type.mayBeNull)
-            // This prevents us from trying to make something nullable that can't be
             return this.sameType(type);
         return this.withMayBeNull(true).sameType(type.withMayBeNull(true));
     }

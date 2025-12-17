@@ -1513,4 +1513,20 @@ public class Regression1Tests extends SqlIoTest {
                 --------------
                  4   | 1""");
     }
+
+    @Test
+    public void issue5293() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x VARCHAR);
+                CREATE VIEW V AS
+                WITH FT as (select 'a' as e union all select 'bc')
+                SELECT x, x in (SELECT e from FT)
+                FROM T;""");
+        ccs.step("INSERT INTO T VALUES('a'), ('b'), ('ab');", """
+                 x | in | weight
+                -------------
+                 a| true | 1
+                 b|false | 1
+                 ab|false | 1""");
+    }
 }
