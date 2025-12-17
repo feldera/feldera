@@ -22,6 +22,7 @@ use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_adapterlib::ConnectorMetadata;
+use feldera_macros::IsNone;
 use feldera_sqllib::{ByteArray, SqlString, Variant};
 use feldera_types::config::{
     default_max_batch_size, default_max_queued_records, ConnectorConfig, FormatConfig, FtModel,
@@ -2461,6 +2462,7 @@ fn test_kafka_metadata_json() {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct TestRawStructMetadata {

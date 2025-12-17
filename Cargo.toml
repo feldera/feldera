@@ -15,6 +15,7 @@ members = [
   "crates/adapterlib",
   "crates/adapters",
   "crates/dbsp",
+  "crates/feldera-macros",
   "crates/feldera-observability",
   "crates/fda",
   "crates/nexmark",
@@ -113,6 +114,7 @@ feldera-datagen = { path = "crates/datagen" }
 feldera-fxp = { version = "0.211.0", path = "crates/fxp", features = ["dbsp"] }
 feldera-iceberg = { path = "crates/iceberg" }
 feldera-observability = { version = "0.211.0", path = "crates/feldera-observability" }
+feldera-macros = { version = "0.211.0", path = "crates/feldera-macros" }
 feldera-sqllib = { path = "crates/sqllib" }
 feldera-storage = { version = "0.211.0", path = "crates/storage" }
 feldera-types = { version = "0.211.0", path = "crates/feldera-types" }

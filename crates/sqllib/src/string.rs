@@ -10,7 +10,9 @@ use crate::{
     some_polymorphic_function1, some_polymorphic_function2, string_interner::*, Variant,
 };
 
+use arcstr::ArcStr;
 use core::fmt::Error;
+use feldera_macros::IsNone;
 use feldera_types::{deserialize_without_context, serialize_without_context};
 use itertools::Itertools;
 use like::{Escape, Like};
@@ -29,13 +31,13 @@ use std::{
     sync::Arc,
 };
 
-use arcstr::ArcStr;
-
 type StringRef = ArcStr;
 pub type InternedString = InternedStringId;
 
 /// An immutable reference counted string.
-#[derive(Clone, Default, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Clone, Default, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize, IsNone,
+)]
 #[serde(transparent)]
 pub struct SqlString(StringRef);
 

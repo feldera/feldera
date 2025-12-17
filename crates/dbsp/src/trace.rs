@@ -33,6 +33,7 @@ pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::trace::cursor::{
     DefaultPushCursor, FilteredMergeCursor, PushCursor, UnfilteredMergeCursor,
 };
+use crate::utils::IsNone;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use dyn_clone::DynClone;
@@ -87,13 +88,24 @@ pub use layers::Trie;
 /// `DBData` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::Key: DBData` and `B::Val: DBData`.
 pub trait DBData:
-    Default + Clone + Eq + Ord + Hash + SizeOf + Send + Sync + Debug + ArchivedDBData + 'static
+    Default + Clone + Eq + Ord + Hash + SizeOf + Send + Sync + Debug + ArchivedDBData + IsNone + 'static
 {
 }
 
 /// Automatically implement DBData for everything that satisfied the bounds.
 impl<T> DBData for T where
-    T: Default + Clone + Eq + Ord + Hash + SizeOf + Send + Sync + Debug + ArchivedDBData + 'static /* as ArchivedDBData>::Repr: Ord + PartialOrd<T>, */
+    T: Default
+        + Clone
+        + Eq
+        + Ord
+        + Hash
+        + SizeOf
+        + Send
+        + Sync
+        + Debug
+        + ArchivedDBData
+        + IsNone
+        + 'static /* as ArchivedDBData>::Repr: Ord + PartialOrd<T>, */
 {
 }
 

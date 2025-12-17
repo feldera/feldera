@@ -14,6 +14,7 @@ use chrono::{
 };
 use core::fmt::Formatter;
 use dbsp::num_entries_scalar;
+use feldera_macros::IsNone;
 use feldera_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
     TimestampFormat,
@@ -48,6 +49,7 @@ use crate::{
     rkyv::Serialize,
     rkyv::Deserialize,
     serde::Serialize,
+    IsNone,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -1148,6 +1150,7 @@ pub fn parse_timestampNN(format: Option<SqlString>, st: Option<SqlString>) -> Op
     rkyv::Serialize,
     rkyv::Deserialize,
     serde::Serialize,
+    IsNone,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -2017,6 +2020,7 @@ some_polymorphic_function1!(date_trunc_day, Date, Date, Date);
     rkyv::Serialize,
     rkyv::Deserialize,
     serde::Serialize,
+    IsNone,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]

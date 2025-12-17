@@ -7,6 +7,7 @@ use crate::{
 };
 use dbsp::algebra::{F32, F64};
 use feldera_fxp::DynamicDecimal;
+use feldera_macros::IsNone;
 use feldera_types::serde_with_context::serde_config::VariantFormat;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -38,6 +39,7 @@ use std::{fmt::Debug, hash::Hash};
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    IsNone,
 )]
 #[archive(bound(
     serialize = "__S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer + rkyv::ser::SharedSerializeRegistry",

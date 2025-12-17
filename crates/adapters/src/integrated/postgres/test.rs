@@ -28,6 +28,7 @@ mod pg {
 
     use chrono::SubsecRound;
     use dbsp::{utils::Tup1, Runtime};
+    use feldera_macros::IsNone;
     use feldera_sqllib::{SqlDecimal, SqlString, Variant, F32, F64};
     use feldera_types::{
         config::PipelineConfig,
@@ -73,6 +74,7 @@ mod pg {
         rkyv::Archive,
         rkyv::Serialize,
         rkyv::Deserialize,
+        IsNone,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     pub(super) struct PostgresTestStruct {
