@@ -98,8 +98,7 @@ where
 }
 
 struct Column1<T> {
-    row0: usize,
-    row1: usize,
+    rows: Option<(usize, usize)>,
     _phantom: PhantomData<T>,
 }
 
@@ -109,10 +108,20 @@ where
 {
     fn new() -> Self {
         Self {
-            row0: 0,
-            row1: 0,
+            rows: Self::skip_empty(0, 0),
             _phantom: PhantomData,
         }
+    }
+
+    fn skip_empty(mut row0: usize, mut row1: usize) -> Option<(usize, usize)> {
+        while row0 < T::n0() {
+            if row1 < T::n1(row0) {
+                return Some((row0, row1));
+            }
+            row0 += 1;
+            row1 = 0;
+        }
+        None
     }
 }
 
@@ -123,17 +132,9 @@ where
     type Item = (T::K1, T::A1);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.row0 >= T::n0() {
-            None
-        } else {
-            let retval = Some((T::key1(self.row0, self.row1), T::aux1(self.row0, self.row1)));
-            self.row1 += 1;
-            if self.row1 >= T::n1(self.row0) {
-                self.row0 += 1;
-                self.row1 = 0;
-            }
-            retval
-        }
+        let (row0, row1) = self.rows?;
+        self.rows = Self::skip_empty(row0, row1 + 1);
+        Some((T::key1(row0, row1), T::aux1(row0, row1)))
     }
 }
 
@@ -388,12 +389,14 @@ fn test_cursor<K, A, N, T>(
     let offset = unsafe { rows.before().absolute_position() };
     test_cursor_helper(rows, offset, n, &expected);
 
-    let start = thread_rng().gen_range(0..n);
-    let end = thread_rng().gen_range(start..=n);
-    let subset = rows.subset(start as u64..end as u64);
-    test_cursor_helper(&subset, offset + start as u64, end - start, |index| {
-        expected(index + start)
-    })
+    if n > 0 {
+        let start = thread_rng().gen_range(0..n);
+        let end = thread_rng().gen_range(start..=n);
+        let subset = rows.subset(start as u64..end as u64);
+        test_cursor_helper(&subset, offset + start as u64, end - start, |index| {
+            expected(index + start)
+        })
+    }
 }
 
 fn test_bulk_rows<K, A, N, T>(
@@ -631,8 +634,8 @@ where
 }
 
 fn test_2_columns_helper(parameters: Parameters) {
-    struct TwoInts;
-    impl TwoColumns for TwoInts {
+    struct TwoInts<const MIN_N1: usize>;
+    impl<const MIN_N1: usize> TwoColumns for TwoInts<MIN_N1> {
         type K0 = i32;
         type A0 = u64;
         type K1 = i32;
@@ -649,11 +652,11 @@ fn test_2_columns_helper(parameters: Parameters) {
             (key0 - 1, key0 + 1)
         }
         fn aux0(_row0: usize) -> Self::A0 {
-            0x1111
+            1111
         }
 
-        fn n1(_row0: usize) -> usize {
-            7
+        fn n1(row0: usize) -> usize {
+            row0 % 7 + MIN_N1
         }
         fn key1(row0: usize, row1: usize) -> Self::K1 {
             (row0 + row1 * 2) as i32
@@ -663,11 +666,17 @@ fn test_2_columns_helper(parameters: Parameters) {
             (key1 - 1, key1 + 1)
         }
         fn aux1(_row0: usize, _row1: usize) -> Self::A1 {
-            0x2222
+            2222
         }
     }
-    test_two_columns::<TwoInts>(parameters.clone());
-    test_two_columns_multifetch::<TwoInts>(parameters);
+
+    // We want to run most of our tests with the possibility of empty row groups
+    // in column 1.
+    test_two_columns::<TwoInts<0>>(parameters.clone());
+
+    // However, we can't directly fetch such a file into an indexed Z-set, so
+    // run those with at least 1 row in each row group.
+    test_two_columns_multifetch::<TwoInts<1>>(parameters);
 }
 
 #[test]

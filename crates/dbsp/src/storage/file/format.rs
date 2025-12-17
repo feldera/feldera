@@ -193,7 +193,8 @@ pub struct FileTrailer {
     ///
     /// If any of these bits are set, the version number must be at least 3.
     ///
-    /// [FileTrailer::OMITTED_BOUNDS] is the only current incompatible feature.
+    /// [FileTrailer::OMITTED_BOUNDS] and [FileTrailer::EMPTY_ROW_GROUP] are the
+    /// only current incompatible features.
     pub incompatible_features: u64,
 }
 
@@ -203,6 +204,10 @@ impl FileTrailer {
     ///
     /// [omitted]: crate::storage::file::format#omitted-bounds
     pub const OMITTED_BOUNDS: u64 = 1;
+
+    /// Must be set in [FileTrailer::incompatible_features] if any row group
+    /// (other than column 0) contains zero rows.
+    pub const EMPTY_ROW_GROUP: u64 = 2;
 }
 
 /// Information about a column.
@@ -226,8 +231,7 @@ pub struct FileTrailerColumn {
     #[brw(align_after = 4)]
     pub node_type: NodeType,
 
-    /// Number of rows in the column.  Column 0 may have any number of rows;
-    /// subsequent columns must each have more rows than the previous.
+    /// Number of rows in the column.
     pub n_rows: u64,
 }
 

@@ -580,7 +580,7 @@ where
         let row_groups = self.row_groups.as_ref().unwrap();
         let start = row_groups.get(&self.raw, index);
         let end = row_groups.get(&self.raw, index + 1);
-        if start < end {
+        if start <= end {
             Ok(start..end)
         } else {
             Err(CorruptionError::InvalidRowGroup {
@@ -1543,8 +1543,8 @@ where
             );
         }
 
-        let unsupported_features =
-            file_trailer.incompatible_features & !FileTrailer::OMITTED_BOUNDS;
+        let unsupported_features = file_trailer.incompatible_features
+            & !(FileTrailer::OMITTED_BOUNDS | FileTrailer::EMPTY_ROW_GROUP);
         if unsupported_features != 0 {
             return Err(
                 CorruptionError::UnsupportedIncompatibleFeatures(unsupported_features).into(),
@@ -1567,18 +1567,6 @@ where
                 actual: columns.len(),
                 expected: T::n_columns(),
             });
-        }
-        for i in 1..columns.len() {
-            let prev_n_rows = columns[i - 1].n_rows;
-            let this_n_rows = columns[i].n_rows;
-            if this_n_rows < prev_n_rows {
-                return Err(CorruptionError::DecreasingRowCount {
-                    column: i,
-                    prev_n_rows,
-                    this_n_rows,
-                }
-                .into());
-            }
         }
 
         let bloom_filter = match bloom_filter {
@@ -1816,7 +1804,6 @@ where
     /// Returns `true` if the row group contains no rows.
     ///
     /// The row group for column 0 is empty if and only if the layer file is
-    /// empty.  A row group obtained from [`Cursor::next_column`] is never
     /// empty.
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
@@ -2325,9 +2312,8 @@ where
     T: ColumnSpec,
 {
     /// Obtains the row group in the next column associated with the current
-    /// row.  If the cursor is on a row, the returned row group will contain at
-    /// least one row.  If the cursor is before or after the row group, the
-    /// returned row group will be empty.
+    /// row.  If the cursor is before or after the row group, the returned row
+    /// group will be empty.
     ///
     /// This method does not do I/O, but it can report [Error::Corruption].
     pub fn next_column<'b>(&'b self) -> Result<RowGroup<'a, NK, NA, NN, T>, Error> {

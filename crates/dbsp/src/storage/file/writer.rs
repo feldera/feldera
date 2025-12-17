@@ -33,6 +33,7 @@ use feldera_storage::StoragePath;
 use snap::raw::{Encoder, max_compress_len};
 use std::{
     cell::RefCell,
+    convert::identity,
     sync::{Arc, Once},
 };
 use std::{
@@ -223,6 +224,7 @@ where
     data_block: DataBlockBuilder<K, A>,
     index_blocks: Vec<IndexBlockBuilder<K>>,
     factories: Factories<K, A>,
+    contains_empty_row_group: bool,
 }
 
 impl<K, A> ColumnWriter<K, A>
@@ -238,20 +240,23 @@ where
             data_block: DataBlockBuilder::new(parameters),
             index_blocks: Vec::new(),
             factories: factories.clone(),
+            contains_empty_row_group: false,
         }
     }
 
     fn take_rows(&mut self) -> Range<u64> {
         let end = self.rows.end;
         let rows = replace(&mut self.rows, end..end);
-        assert!(!rows.is_empty());
+        if rows.is_empty() {
+            self.contains_empty_row_group = true;
+        }
         rows
     }
 
     fn finish(
         &mut self,
         block_writer: &mut BlockWriter,
-    ) -> Result<FileTrailerColumn, StorageError> {
+    ) -> Result<(FileTrailerColumn, bool), StorageError> {
         // Flush data.
         if !self.data_block.is_empty() {
             let data_block = self.data_block.build(&self.factories, self.column == 0);
@@ -264,24 +269,30 @@ where
             if level == self.index_blocks.len() - 1 && self.index_blocks[level].entries.len() == 1 {
                 let builder = &self.index_blocks[level];
                 let entry = &builder.entries[0];
-                return Ok(FileTrailerColumn {
-                    node_type: builder.child_type,
-                    node_offset: entry.child.offset,
-                    node_size: entry.child.size as u32,
-                    n_rows: entry.row_total,
-                });
+                return Ok((
+                    FileTrailerColumn {
+                        node_type: builder.child_type,
+                        node_offset: entry.child.offset,
+                        node_size: entry.child.size as u32,
+                        n_rows: entry.row_total,
+                    },
+                    self.contains_empty_row_group,
+                ));
             } else if !self.index_blocks[level].is_empty() {
                 let index_block = self.index_blocks[level].build();
                 self.write_index_block(block_writer, index_block, level)?;
             }
             level += 1;
         }
-        Ok(FileTrailerColumn {
-            node_type: NodeType::Data,
-            node_offset: 0,
-            node_size: 0,
-            n_rows: 0,
-        })
+        Ok((
+            FileTrailerColumn {
+                node_type: NodeType::Data,
+                node_offset: 0,
+                node_size: 0,
+                n_rows: 0,
+            },
+            self.contains_empty_row_group,
+        ))
     }
 
     fn get_index_block(&mut self, level: usize) -> &mut IndexBlockBuilder<K> {
@@ -1196,7 +1207,7 @@ impl Writer {
 
     pub fn close(
         mut self,
-        finished_columns: Vec<FileTrailerColumn>,
+        finished_columns: Vec<(FileTrailerColumn, bool)>,
     ) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
         // Write the Bloom filter.
         let filter_location = if let Some(bloom_filter) = &self.bloom_filter {
@@ -1207,16 +1218,24 @@ impl Writer {
             BlockLocation { offset: 0, size: 0 }
         };
 
+        let (columns, contains_empty_row_groups): (Vec<_>, Vec<_>) =
+            finished_columns.into_iter().unzip();
+
+        let mut incompatible_features = FileTrailer::OMITTED_BOUNDS;
+        if contains_empty_row_groups.into_iter().any(identity) {
+            incompatible_features |= FileTrailer::EMPTY_ROW_GROUP;
+        }
+
         // Write the file trailer block.
         let file_trailer = FileTrailer {
             header: BlockHeader::new(&FILE_TRAILER_BLOCK_MAGIC),
             version: VERSION_NUMBER,
-            columns: finished_columns,
+            columns,
             compression: self.parameters.compression,
             filter_offset: filter_location.offset,
             filter_size: filter_location.size.try_into().unwrap(),
             compatible_features: 0,
-            incompatible_features: FileTrailer::OMITTED_BOUNDS,
+            incompatible_features,
         };
         let (_block, location) = self
             .writer
