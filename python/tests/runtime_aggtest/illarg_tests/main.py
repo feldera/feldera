@@ -3,6 +3,7 @@
 from tests.runtime_aggtest.aggtst_base import *  # noqa: F403
 from tests.runtime_aggtest.atest_run import run  # noqa: F403
 
+from test_agg import *  # noqa: F403
 from test_arr_map_type_fn import *  # noqa: F403
 from test_date_time_fn import *  # noqa: F403
 from test_numeric_type_fn import *  # noqa: F403
