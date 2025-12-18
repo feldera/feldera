@@ -2049,3 +2049,318 @@ fn lir() {
     println!("{actual:#}");
     assert_eq!(actual, expected);
 }
+
+/// Test that `ControllerStatus` and its `ExternalControllerStatus` conversion produce identical JSON.
+///
+/// This test verifies that:
+/// 1. A `ControllerStatus` instance with detailed mock data can be serialized to JSON
+/// 2. Converting it to `ExternalControllerStatus` via `to_api_type()` and serializing produces the same JSON
+/// 3. All fields (global metrics, suspend errors, input/output endpoints) are correctly preserved
+///
+/// This ensures consistency between the internal representation (with atomics/mutexes) and
+/// the external API type used for HTTP responses.
+#[test]
+fn test_external_controller_status_serialization() {
+    use crate::controller::stats::InputEndpointStatus;
+    use crate::{ControllerStatus, OutputEndpointConfig, PipelineState};
+    use chrono::{TimeZone, Utc};
+    use feldera_types::suspend::{PermanentSuspendError, SuspendError};
+    use std::sync::atomic::Ordering;
+    use uuid::Uuid;
+
+    // Helper function to create a ControllerStatus with detailed mock values
+    fn create_mock_status() -> ControllerStatus {
+        let config = serde_json::from_value(json!({
+            "name": "test_pipeline",
+            "workers": 4,
+        }))
+        .unwrap();
+
+        let mut status = ControllerStatus::new(config, 998500, None);
+
+        // Configure global metrics using available public API
+        status.set_state(PipelineState::Paused);
+        status.set_bootstrap_in_progress(false);
+
+        // Set public atomic fields
+        status
+            .global_metrics
+            .rss_bytes
+            .store(1024 * 1024 * 512, Ordering::Relaxed); // 512 MB
+        status
+            .global_metrics
+            .cpu_msecs
+            .store(45000, Ordering::Relaxed);
+        status
+            .global_metrics
+            .uptime_msecs
+            .store(120000, Ordering::Relaxed);
+        status.global_metrics.start_time = Utc.timestamp_opt(1700000000, 0).unwrap();
+        status.global_metrics.incarnation_uuid =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        status.global_metrics.initial_start_time = Utc.timestamp_opt(1699999000, 0).unwrap();
+        status
+            .global_metrics
+            .storage_bytes
+            .store(1024 * 1024 * 1024 * 2, Ordering::Relaxed); // 2 GB
+        status
+            .global_metrics
+            .storage_mb_secs
+            .store(500000, Ordering::Relaxed);
+        status
+            .global_metrics
+            .runtime_elapsed_msecs
+            .store(98000, Ordering::Relaxed);
+        status
+            .global_metrics
+            .buffered_input_records
+            .store(1500, Ordering::Relaxed);
+        status
+            .global_metrics
+            .buffered_input_bytes
+            .store(150000, Ordering::Relaxed);
+        status
+            .global_metrics
+            .total_input_records
+            .store(1000000, Ordering::Relaxed);
+        status
+            .global_metrics
+            .total_input_bytes
+            .store(500000000, Ordering::Relaxed);
+        status
+            .global_metrics
+            .total_processed_records
+            .store(998500, Ordering::Relaxed);
+        status
+            .global_metrics
+            .total_processed_bytes
+            .store(499250000, Ordering::Relaxed);
+        status
+            .global_metrics
+            .total_completed_records
+            .store(998000, Ordering::Relaxed);
+        status
+            .global_metrics
+            .pipeline_complete
+            .store(false, Ordering::Relaxed);
+
+        // Set suspend error (std::sync::Mutex returns Result, so we need to unwrap)
+        *status.suspend_error.lock().unwrap() = Some(SuspendError::Permanent(vec![
+            PermanentSuspendError::StorageRequired,
+            PermanentSuspendError::UnsupportedInputEndpoint("kafka_input".to_string()),
+        ]));
+
+        // Add input endpoints
+        let mut inputs = status.inputs.write();
+
+        // Input 1: kafka_input with errors and paused
+        let kafka_endpoint = InputEndpointStatus::new(
+            "kafka_input",
+            serde_json::from_value(json!({
+                "stream": "test_stream",
+                "transport": {
+                    "name": "kafka_input",
+                    "config": {
+                        "topics": ["test-topic"],
+                        "bootstrap.servers": "localhost:9092"
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {}
+                }
+            }))
+            .unwrap(),
+            None,
+            None,
+        );
+        kafka_endpoint.metrics.total_bytes.store(250000000, Ordering::Relaxed);
+        kafka_endpoint.metrics.total_records.store(500000, Ordering::Relaxed);
+        kafka_endpoint.metrics.buffered_records.store(750, Ordering::Relaxed);
+        kafka_endpoint.metrics.buffered_bytes.store(75000, Ordering::Relaxed);
+        kafka_endpoint.metrics.num_transport_errors.store(5, Ordering::Relaxed);
+        kafka_endpoint.metrics.num_parse_errors.store(12, Ordering::Relaxed);
+        kafka_endpoint.metrics.end_of_input.store(false, Ordering::Relaxed);
+        kafka_endpoint.paused.store(true, Ordering::Relaxed);
+        *kafka_endpoint.fatal_error.lock().unwrap() = Some("Connection refused: Unable to connect to Kafka broker".to_string());
+        inputs.insert(0, kafka_endpoint);
+
+        // Input 2: file_input with barrier and no errors
+        let file_endpoint = InputEndpointStatus::new(
+            "file_input",
+            serde_json::from_value(json!({
+                "stream": "file_stream",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": "/data/input.csv"
+                    }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": {}
+                }
+            }))
+            .unwrap(),
+            None,
+            None,
+        );
+        file_endpoint.metrics.total_bytes.store(250000000, Ordering::Relaxed);
+        file_endpoint.metrics.total_records.store(500000, Ordering::Relaxed);
+        file_endpoint.metrics.buffered_records.store(750, Ordering::Relaxed);
+        file_endpoint.metrics.buffered_bytes.store(75000, Ordering::Relaxed);
+        file_endpoint.metrics.num_transport_errors.store(0, Ordering::Relaxed);
+        file_endpoint.metrics.num_parse_errors.store(3, Ordering::Relaxed);
+        file_endpoint.metrics.end_of_input.store(true, Ordering::Relaxed);
+        file_endpoint.barrier.store(true, Ordering::Relaxed);
+        inputs.insert(1, file_endpoint);
+
+        drop(inputs);
+
+        // Add output endpoint
+        let output_config: OutputEndpointConfig = serde_json::from_value(json!({
+            "stream": "test_output",
+            "transport": {
+                "name": "http_output"
+            },
+            "format": {
+                "name": "json",
+                "config": {}
+            }
+        }))
+        .unwrap();
+        status.add_output(&0, "http_output", &output_config, None);
+
+        // Set output metrics
+        if let Some(output) = status.output_status().get(&0) {
+            output.metrics.transmitted_records.store(998000, Ordering::Relaxed);
+            output.metrics.transmitted_bytes.store(499000000, Ordering::Relaxed);
+            output.metrics.queued_records.store(100, Ordering::Relaxed);
+            output.metrics.queued_batches.store(5, Ordering::Relaxed);
+            output.metrics.buffered_records.store(50, Ordering::Relaxed);
+            output.metrics.buffered_batches.store(2, Ordering::Relaxed);
+            output.metrics.num_encode_errors.store(8, Ordering::Relaxed);
+            output.metrics.num_transport_errors.store(3, Ordering::Relaxed);
+            output.metrics.total_processed_input_records.store(998500, Ordering::Relaxed);
+            output.metrics.memory.store(1024 * 1024 * 10, Ordering::Relaxed); // 10 MB
+        }
+
+        status
+    }
+
+    // Create ControllerStatus with mock values
+    let controller_status = create_mock_status();
+
+    // Serialize the ControllerStatus to JSON
+    let controller_json =
+        serde_json::to_value(&controller_status).expect("Failed to serialize ControllerStatus");
+
+    // Convert to ExternalControllerStatus using the to_api_type method
+    let external_status = controller_status.to_api_type();
+
+    // Serialize the ExternalControllerStatus to JSON
+    let external_json = serde_json::to_value(&external_status)
+        .expect("Failed to serialize ExternalControllerStatus");
+
+    // Both should serialize to the same JSON (excluding fields marked with skip_serializing)
+    assert_eq!(
+        controller_json, external_json,
+        "ControllerStatus and ExternalControllerStatus should serialize to the same JSON"
+    );
+
+    // Verify specific fields to ensure they were properly converted
+    assert_eq!(
+        external_json["global_metrics"]["state"],
+        json!("Paused"),
+        "Pipeline state should be Paused"
+    );
+    assert_eq!(
+        external_json["global_metrics"]["rss_bytes"],
+        json!(1024 * 1024 * 512),
+        "RSS bytes should match"
+    );
+    assert_eq!(
+        external_json["global_metrics"]["total_input_records"],
+        json!(1000000),
+        "Total input records should match"
+    );
+
+    // Verify suspend error
+    assert!(
+        external_json["suspend_error"].is_object(),
+        "Suspend error should be present"
+    );
+    assert_eq!(
+        external_json["suspend_error"]["Permanent"][0]["StorageRequired"],
+        json!(null),
+        "Should have StorageRequired error"
+    );
+
+    // Verify inputs array
+    let inputs = external_json["inputs"]
+        .as_array()
+        .expect("inputs should be an array");
+    assert_eq!(inputs.len(), 2, "Should have 2 input endpoints");
+
+    // Verify first input (kafka_input)
+    assert_eq!(
+        inputs[1]["endpoint_name"],
+        json!("kafka_input"),
+        "First input should be kafka_input"
+    );
+    assert_eq!(
+        inputs[1]["metrics"]["total_records"],
+        json!(500000),
+        "kafka_input should have 500000 total records"
+    );
+    assert_eq!(
+        inputs[1]["paused"],
+        json!(true),
+        "kafka_input should be paused"
+    );
+    assert_eq!(
+        inputs[1]["fatal_error"],
+        json!("Connection refused: Unable to connect to Kafka broker"),
+        "kafka_input should have fatal error"
+    );
+
+    // Verify second input (file_input)
+    assert_eq!(
+        inputs[0]["endpoint_name"],
+        json!("file_input"),
+        "Second input should be file_input"
+    );
+    assert_eq!(
+        inputs[0]["barrier"],
+        json!(true),
+        "file_input should have barrier"
+    );
+    assert_eq!(
+        inputs[0]["metrics"]["end_of_input"],
+        json!(true),
+        "file_input should have end_of_input"
+    );
+
+    // Verify outputs array
+    let outputs = external_json["outputs"]
+        .as_array()
+        .expect("outputs should be an array");
+    assert_eq!(outputs.len(), 1, "Should have 1 output endpoint");
+
+    // Verify output (http_output)
+    assert_eq!(
+        outputs[0]["endpoint_name"],
+        json!("http_output"),
+        "Output should be http_output"
+    );
+    assert_eq!(
+        outputs[0]["metrics"]["transmitted_records"],
+        json!(998000),
+        "http_output should have 998000 transmitted records"
+    );
+    assert_eq!(
+        outputs[0]["metrics"]["num_encode_errors"],
+        json!(8),
+        "http_output should have 8 encode errors"
+    );
+}

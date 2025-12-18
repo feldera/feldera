@@ -90,48 +90,30 @@ struct PipelineStats {
     suspend_error: Option<Value>,
 }
 
-impl From<&Map<String, Value>> for RawMetrics {
-    fn from(stats: &Map<String, Value>) -> Self {
-        let pipeline_stats: PipelineStats =
-            serde_json::from_value(Value::Object(stats.clone())).unwrap();
-        let global_metrics = &pipeline_stats.global_metrics;
+impl From<&feldera_rest_api::types::ControllerStatus> for RawMetrics {
+    fn from(stats: &feldera_rest_api::types::ControllerStatus) -> Self {
+        let global_metrics = &stats.global_metrics;
 
         // Check for input errors
-        let input_errors = pipeline_stats.inputs.iter().any(|input| {
+        let input_errors = stats.inputs.iter().any(|input| {
             input.fatal_error.is_some()
                 || input.metrics.num_parse_errors > 0
                 || input.metrics.num_transport_errors > 0
         });
 
         // Calculate total input bytes
-        let input_bytes = pipeline_stats
+        let input_bytes = stats
             .inputs
             .iter()
             .map(|input| input.metrics.total_bytes)
             .sum();
 
         Self {
-            rss_bytes: global_metrics
-                .get("rss_bytes")
-                .and_then(|v| v.as_i64())
-                .unwrap(),
-            uptime_msecs: global_metrics
-                .get("uptime_msecs")
-                .and_then(|v| v.as_i64())
-                .unwrap(),
-            incarnation_uuid: global_metrics
-                .get("incarnation_uuid")
-                .and_then(|v| v.as_str())
-                .unwrap()
-                .to_string(),
-            storage_bytes: global_metrics
-                .get("storage_bytes")
-                .and_then(|v| v.as_i64())
-                .unwrap(),
-            total_processed_records: global_metrics
-                .get("total_processed_records")
-                .and_then(|v| v.as_i64())
-                .unwrap(),
+            rss_bytes: global_metrics.rss_bytes,
+            uptime_msecs: global_metrics.uptime_msecs,
+            incarnation_uuid: global_metrics.incarnation_uuid.to_string(),
+            storage_bytes: global_metrics.storage_bytes,
+            total_processed_records: global_metrics.total_processed_records,
             input_bytes,
             input_errors,
         }
@@ -343,7 +325,7 @@ async fn collect_metrics(
     pipeline_name: &str,
     duration: Option<u64>,
     needs_commit: bool,
-) -> Vec<Map<String, Value>> {
+) -> Vec<feldera_rest_api::types::ControllerStatus> {
     enum PipelineStatus<T> {
         Ingesting,
         Committing(T),
@@ -368,21 +350,17 @@ async fn collect_metrics(
 
                 match status {
                     PipelineStatus::Ingesting => {
-                        if let Some(global_metrics) = stats.get("global_metrics") {
-                            if let Some(complete) = global_metrics.get("pipeline_complete") {
-                                if complete.as_bool().unwrap_or(false) {
-                                    println!("Pipeline completed, stopping benchmark");
-                                    if needs_commit {
-                                        status = PipelineStatus::Committing(Box::pin(
-                                            client
-                                                .commit_transaction()
-                                                .pipeline_name(pipeline_name)
-                                                .send(),
-                                        ));
-                                    } else {
-                                        break;
-                                    }
-                                }
+                        if stats.global_metrics.pipeline_complete {
+                            println!("Pipeline completed, stopping benchmark");
+                            if needs_commit {
+                                status = PipelineStatus::Committing(Box::pin(
+                                    client
+                                        .commit_transaction()
+                                        .pipeline_name(pipeline_name)
+                                        .send(),
+                                ));
+                            } else {
+                                break;
                             }
                         }
 
@@ -436,7 +414,7 @@ async fn transform_to_bmf(
     client: &Client,
     name: String,
     format: OutputFormat,
-    metrics: Vec<Map<String, Value>>,
+    metrics: Vec<feldera_rest_api::types::ControllerStatus>,
 ) -> Benchmark {
     // Convert raw JSON metrics to structured data
     let raw_metrics: Vec<RawMetrics> = metrics.iter().map(RawMetrics::from).collect();

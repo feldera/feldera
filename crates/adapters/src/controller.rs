@@ -3892,6 +3892,7 @@ impl TransactionState {
 /// be in one of these two states:
 ///
 /// The initiator cannot start another transaction until the current transaction is committed.
+// Keep in sync with feldera_types::ExternalTransactionPhase
 #[derive(Clone, PartialEq, Eq, Copy, Debug, Serialize)]
 enum TransactionPhase {
     /// The initiator can push more data as part of the transaction.
@@ -3901,11 +3902,34 @@ enum TransactionPhase {
     Committed,
 }
 
+impl TransactionPhase {
+    /// Convert to the public API type in `feldera_types`.
+    fn to_api_type(self) -> feldera_types::adapter_stats::ExternalTransactionPhase {
+        use feldera_types::adapter_stats;
+        match self {
+            TransactionPhase::Started => adapter_stats::ExternalTransactionPhase::Started,
+            TransactionPhase::Committed => adapter_stats::ExternalTransactionPhase::Committed,
+        }
+    }
+}
+
 /// Connection phase with an additional label used for debugging.
+// Keep in sync with feldera_types::ExternalConnectorTransactionPhase
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]
 struct ConnectorTransactionPhase {
     phase: TransactionPhase,
     label: Option<String>,
+}
+
+impl ConnectorTransactionPhase {
+    /// Convert to the public API type in `feldera_types`.
+    fn to_api_type(&self) -> feldera_types::adapter_stats::ExternalConnectorTransactionPhase {
+        use feldera_types::adapter_stats;
+        adapter_stats::ExternalConnectorTransactionPhase {
+            phase: self.phase.to_api_type(),
+            label: self.label.clone(),
+        }
+    }
 }
 
 /// Information about entities that initiated the current transaction.
@@ -3931,6 +3955,21 @@ pub struct TransactionInitiators {
 }
 
 impl TransactionInitiators {
+    /// Convert to the public API type in `feldera_types`.
+    pub fn to_api_type(&self) -> feldera_types::adapter_stats::ExternalTransactionInitiators {
+        use feldera_types::adapter_stats;
+
+        adapter_stats::ExternalTransactionInitiators {
+            transaction_id: self.transaction_id,
+            initiated_by_api: self.initiated_by_api.map(|phase| phase.to_api_type()),
+            initiated_by_connectors: self
+                .initiated_by_connectors
+                .iter()
+                .map(|(name, connector_phase)| (name.clone(), connector_phase.to_api_type()))
+                .collect(),
+        }
+    }
+
     /// Clear the transaction requested state.
     ///
     /// Must be invoked when a transaction is committed.

@@ -1107,7 +1107,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
 
             match format {
                 OutputFormat::Text => {
-                    let table = json_to_table(&serde_json::Value::Object(response.into_inner()))
+                    let stats_value = serde_json::to_value(response.as_ref())
+                        .expect("Failed to serialize pipeline stats");
+                    let table = json_to_table(&stats_value)
                         .collapse()
                         .into_pool_table()
                         .to_string();
@@ -1763,12 +1765,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     1,
                 ))
                 .unwrap();
-            let current_transaction_id = stats
-                .into_inner()
-                .get("global_metrics")
-                .and_then(|v| v.get("transaction_id"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as u64;
+            let current_transaction_id = stats.into_inner().global_metrics.transaction_id;
 
             // Check if there's no transaction in progress
             if current_transaction_id == 0 {
@@ -1780,7 +1777,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
 
             // Verify transaction ID if provided
             if let Some(expected_transaction_id) = transaction_id {
-                if current_transaction_id != expected_transaction_id {
+                if current_transaction_id != expected_transaction_id as i64 {
                     eprintln!(
                         "Specified transaction {} doesn't match current active transaction {}",
                         expected_transaction_id, current_transaction_id
@@ -1818,12 +1815,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         ))
                         .unwrap();
 
-                    let current_transaction_id = stats
-                        .into_inner()
-                        .get("global_metrics")
-                        .and_then(|v| v.get("transaction_id"))
-                        .and_then(|v| v.as_i64())
-                        .unwrap_or(0) as u64;
+                    let current_transaction_id = stats.into_inner().global_metrics.transaction_id;
 
                     // If transaction_id is 0, it means the transaction has been committed
                     if current_transaction_id != actual_transaction_id {

@@ -4,13 +4,12 @@ import { tuple } from '$lib/functions/common/tuple'
 import { normalizeCaseIndependentName } from '$lib/functions/felderaRelation'
 import type {
   ControllerStatus,
-  GlobalMetricsTimestamp,
   InputEndpointMetrics,
   InputEndpointStatus,
   OutputEndpointMetrics,
-  OutputEndpointStatus,
-  TimeSeriesEntry
-} from '$lib/types/pipelineManager'
+  OutputEndpointStatus
+} from '$lib/services/manager'
+import type { GlobalMetricsTimestamp, TimeSeriesEntry } from '$lib/types/pipelineManager'
 import { discreteDerivative } from './common/math'
 
 export const emptyPipelineMetrics = {
@@ -59,12 +58,14 @@ export const accumulatePipelineMetrics =
                     buffered_records: acc.buffered_records + metrics.buffered_records,
                     num_transport_errors: acc.num_transport_errors + metrics.num_transport_errors,
                     num_parse_errors: acc.num_parse_errors + metrics.num_parse_errors,
-                    end_of_input: acc.end_of_input || metrics.end_of_input
+                    end_of_input: acc.end_of_input || metrics.end_of_input,
+                    buffered_bytes: acc.buffered_bytes + metrics.buffered_bytes
                   }
                 },
                 {
                   total_bytes: 0,
                   total_records: 0,
+                  buffered_bytes: 0,
                   buffered_records: 0,
                   num_transport_errors: 0,
                   num_parse_errors: 0,
@@ -91,7 +92,10 @@ export const accumulatePipelineMetrics =
                   total_processed_input_records:
                     acc.total_processed_input_records + metrics.total_processed_input_records,
                   transmitted_bytes: acc.transmitted_bytes + metrics.transmitted_bytes,
-                  transmitted_records: acc.transmitted_records + metrics.transmitted_records
+                  transmitted_records: acc.transmitted_records + metrics.transmitted_records,
+                  queued_batches: acc.queued_batches + metrics.queued_batches,
+                  queued_records: acc.queued_records + metrics.queued_records,
+                  memory: acc.memory + metrics.memory
                 }
               },
               {
@@ -101,7 +105,10 @@ export const accumulatePipelineMetrics =
                 num_transport_errors: 0,
                 total_processed_input_records: 0,
                 transmitted_bytes: 0,
-                transmitted_records: 0
+                transmitted_records: 0,
+                queued_batches: 0,
+                queued_records: 0,
+                memory: 0
               }
             )
           )

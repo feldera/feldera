@@ -4647,7 +4647,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ControllerStatus"
                 }
               }
             }
@@ -6674,6 +6674,34 @@
           "optimized_symbols"
         ]
       },
+      "CompletedWatermark": {
+        "type": "object",
+        "description": "A watermark that has been fully processed by the pipeline.",
+        "required": [
+          "metadata",
+          "ingested_at",
+          "processed_at",
+          "completed_at"
+        ],
+        "properties": {
+          "completed_at": {
+            "type": "string",
+            "description": "Timestamp when all outputs produced from this input have been pushed to all output endpoints."
+          },
+          "ingested_at": {
+            "type": "string",
+            "description": "Timestamp when the data was ingested from the wire."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Metadata that describes the position in the input stream (e.g., Kafka partition/offset pairs)."
+          },
+          "processed_at": {
+            "type": "string",
+            "description": "Timestamp when the data was processed by the circuit."
+          }
+        }
+      },
       "CompletionStatus": {
         "type": "string",
         "description": "Completion token status returned by the `/completion_status` endpoint.",
@@ -6898,6 +6926,23 @@
           }
         }
       },
+      "ConnectorTransactionPhase": {
+        "type": "object",
+        "description": "Connector transaction phase with debugging label.",
+        "required": [
+          "phase"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Optional label for debugging.",
+            "nullable": true
+          },
+          "phase": {
+            "$ref": "#/components/schemas/TransactionPhase"
+          }
+        }
+      },
       "ConsumerConfig": {
         "type": "object",
         "required": [
@@ -6952,6 +6997,42 @@
           },
           "replay_policy": {
             "$ref": "#/components/schemas/ReplayPolicy"
+          }
+        }
+      },
+      "ControllerStatus": {
+        "type": "object",
+        "description": "Complete pipeline statistics returned by the `/stats` endpoint.\n\nThis schema definition matches the serialized JSON structure from\n`adapters::controller::ControllerStatus`. The actual implementation with\natomics and mutexes lives in the adapters crate, which uses ExternalControllerStatus to\nregister this OpenAPI schema, making it available to pipeline-manager\nwithout requiring a direct dependency on the adapters crate.",
+        "required": [
+          "global_metrics",
+          "inputs",
+          "outputs"
+        ],
+        "properties": {
+          "global_metrics": {
+            "$ref": "#/components/schemas/GlobalControllerMetrics"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InputEndpointStatus"
+            },
+            "description": "Input endpoint configs and metrics."
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutputEndpointStatus"
+            },
+            "description": "Output endpoint configs and metrics."
+          },
+          "suspend_error": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SuspendError"
+              }
+            ],
+            "nullable": true
           }
         }
       },
@@ -7695,6 +7776,154 @@
           }
         }
       },
+      "GlobalControllerMetrics": {
+        "type": "object",
+        "description": "Global controller metrics.",
+        "required": [
+          "state",
+          "bootstrap_in_progress",
+          "transaction_status",
+          "transaction_id",
+          "transaction_initiators",
+          "rss_bytes",
+          "cpu_msecs",
+          "uptime_msecs",
+          "start_time",
+          "incarnation_uuid",
+          "initial_start_time",
+          "storage_bytes",
+          "storage_mb_secs",
+          "runtime_elapsed_msecs",
+          "buffered_input_records",
+          "buffered_input_bytes",
+          "total_input_records",
+          "total_input_bytes",
+          "total_processed_records",
+          "total_processed_bytes",
+          "total_completed_records",
+          "pipeline_complete"
+        ],
+        "properties": {
+          "bootstrap_in_progress": {
+            "type": "boolean",
+            "description": "The pipeline has been resumed from a checkpoint and is currently bootstrapping new and modified views."
+          },
+          "buffered_input_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of bytes currently buffered by all endpoints.",
+            "minimum": 0
+          },
+          "buffered_input_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of records currently buffered by all endpoints.",
+            "minimum": 0
+          },
+          "cpu_msecs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "CPU time used by the pipeline across all threads, in milliseconds.",
+            "minimum": 0
+          },
+          "incarnation_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Uniquely identifies the pipeline process that started at start_time."
+          },
+          "initial_start_time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Time at which the pipeline process from which we resumed started, in seconds since the epoch.",
+            "minimum": 0
+          },
+          "pipeline_complete": {
+            "type": "boolean",
+            "description": "True if the pipeline has processed all input data to completion."
+          },
+          "rss_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Resident set size of the pipeline process, in bytes.",
+            "minimum": 0
+          },
+          "runtime_elapsed_msecs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Time elapsed while the pipeline is executing a step, multiplied by the number of threads, in milliseconds.",
+            "minimum": 0
+          },
+          "start_time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Time at which the pipeline process started, in seconds since the epoch.",
+            "minimum": 0
+          },
+          "state": {
+            "$ref": "#/components/schemas/PipelineState"
+          },
+          "storage_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Current storage usage in bytes.",
+            "minimum": 0
+          },
+          "storage_mb_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Storage usage integrated over time, in megabytes * seconds.",
+            "minimum": 0
+          },
+          "total_completed_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of input records processed to completion.",
+            "minimum": 0
+          },
+          "total_input_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of bytes received from all endpoints.",
+            "minimum": 0
+          },
+          "total_input_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of records received from all endpoints.",
+            "minimum": 0
+          },
+          "total_processed_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total bytes of input records processed by the DBSP engine.",
+            "minimum": 0
+          },
+          "total_processed_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of input records processed by the DBSP engine.",
+            "minimum": 0
+          },
+          "transaction_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "ID of the current transaction or 0 if no transaction is in progress."
+          },
+          "transaction_initiators": {
+            "$ref": "#/components/schemas/TransactionInitiators"
+          },
+          "transaction_status": {
+            "type": "string",
+            "description": "Status of the current transaction."
+          },
+          "uptime_msecs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Time since the pipeline process started, in milliseconds.",
+            "minimum": 0
+          }
+        }
+      },
       "GlueCatalogConfig": {
         "type": "object",
         "description": "AWS Glue catalog config.",
@@ -7876,6 +8105,105 @@
           }
         ],
         "description": "Describes an input connector configuration"
+      },
+      "InputEndpointMetrics": {
+        "type": "object",
+        "description": "Performance metrics for an input endpoint.",
+        "required": [
+          "total_bytes",
+          "total_records",
+          "buffered_records",
+          "buffered_bytes",
+          "num_transport_errors",
+          "num_parse_errors",
+          "end_of_input"
+        ],
+        "properties": {
+          "buffered_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of bytes currently buffered by the endpoint (not yet consumed by the circuit).",
+            "minimum": 0
+          },
+          "buffered_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of records currently buffered by the endpoint (not yet consumed by the circuit).",
+            "minimum": 0
+          },
+          "end_of_input": {
+            "type": "boolean",
+            "description": "True if end-of-input has been signaled."
+          },
+          "num_parse_errors": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of parse errors.",
+            "minimum": 0
+          },
+          "num_transport_errors": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of transport errors.",
+            "minimum": 0
+          },
+          "total_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total bytes pushed to the endpoint since it was created.",
+            "minimum": 0
+          },
+          "total_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total records pushed to the endpoint since it was created.",
+            "minimum": 0
+          }
+        }
+      },
+      "InputEndpointStatus": {
+        "type": "object",
+        "description": "Input endpoint status information.",
+        "required": [
+          "endpoint_name",
+          "config",
+          "metrics",
+          "paused",
+          "barrier"
+        ],
+        "properties": {
+          "barrier": {
+            "type": "boolean",
+            "description": "Endpoint is currently a barrier to checkpointing and suspend."
+          },
+          "completed_frontier": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CompletedWatermark"
+              }
+            ],
+            "nullable": true
+          },
+          "config": {
+            "$ref": "#/components/schemas/ShortEndpointConfig"
+          },
+          "endpoint_name": {
+            "type": "string",
+            "description": "Endpoint name."
+          },
+          "fatal_error": {
+            "type": "string",
+            "description": "The first fatal error that occurred at the endpoint.",
+            "nullable": true
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/InputEndpointMetrics"
+          },
+          "paused": {
+            "type": "boolean",
+            "description": "Endpoint has been paused by the user."
+          }
+        }
       },
       "IntervalUnit": {
         "type": "string",
@@ -8546,6 +8874,110 @@
         ],
         "description": "Describes an output connector configuration"
       },
+      "OutputEndpointMetrics": {
+        "type": "object",
+        "description": "Performance metrics for an output endpoint.",
+        "required": [
+          "transmitted_records",
+          "transmitted_bytes",
+          "queued_records",
+          "queued_batches",
+          "buffered_records",
+          "buffered_batches",
+          "num_encode_errors",
+          "num_transport_errors",
+          "total_processed_input_records",
+          "memory"
+        ],
+        "properties": {
+          "buffered_batches": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of batches in the buffer.",
+            "minimum": 0
+          },
+          "buffered_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of records pushed to the output buffer.",
+            "minimum": 0
+          },
+          "memory": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Extra memory in use beyond that used for queuing records.",
+            "minimum": 0
+          },
+          "num_encode_errors": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of encoding errors.",
+            "minimum": 0
+          },
+          "num_transport_errors": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of transport errors.",
+            "minimum": 0
+          },
+          "queued_batches": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of queued batches.",
+            "minimum": 0
+          },
+          "queued_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of queued records.",
+            "minimum": 0
+          },
+          "total_processed_input_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The number of input records processed by the circuit.",
+            "minimum": 0
+          },
+          "transmitted_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bytes sent on the underlying transport.",
+            "minimum": 0
+          },
+          "transmitted_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Records sent on the underlying transport.",
+            "minimum": 0
+          }
+        }
+      },
+      "OutputEndpointStatus": {
+        "type": "object",
+        "description": "Output endpoint status information.",
+        "required": [
+          "endpoint_name",
+          "config",
+          "metrics"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ShortEndpointConfig"
+          },
+          "endpoint_name": {
+            "type": "string",
+            "description": "Endpoint name."
+          },
+          "fatal_error": {
+            "type": "string",
+            "description": "The first fatal error that occurred at the endpoint.",
+            "nullable": true
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/OutputEndpointMetrics"
+          }
+        }
+      },
       "PartialProgramInfo": {
         "type": "object",
         "description": "Program information is the result of the SQL compilation.",
@@ -8620,6 +9052,34 @@
             "nullable": true
           }
         }
+      },
+      "PermanentSuspendError": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "StorageRequired"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "EnterpriseFeature"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "UnsupportedInputEndpoint"
+            ],
+            "properties": {
+              "UnsupportedInputEndpoint": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "Reasons why a pipeline does not support suspend and resume operations."
       },
       "PipelineConfig": {
         "allOf": [
@@ -9268,6 +9728,15 @@
             "$ref": "#/components/schemas/Version"
           }
         }
+      },
+      "PipelineState": {
+        "type": "string",
+        "description": "Pipeline state.",
+        "enum": [
+          "Paused",
+          "Running",
+          "Terminated"
+        ]
       },
       "PostPutPipeline": {
         "type": "object",
@@ -10433,6 +10902,19 @@
           }
         }
       },
+      "ShortEndpointConfig": {
+        "type": "object",
+        "description": "Schema definition for endpoint config that only includes the stream field.",
+        "required": [
+          "stream"
+        ],
+        "properties": {
+          "stream": {
+            "type": "string",
+            "description": "The name of the stream."
+          }
+        }
+      },
       "SourcePosition": {
         "type": "object",
         "required": [
@@ -10906,6 +11388,41 @@
           "Clearing"
         ]
       },
+      "SuspendError": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "Permanent"
+            ],
+            "properties": {
+              "Permanent": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PermanentSuspendError"
+                },
+                "description": "Pipeline does not support suspend-and-resume.\n\nThese reasons only change if the pipeline's configuration changes, e.g.\nif a pipeline has an input connector that does not support\nsuspend-and-resume, and then that input connector is removed."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "Temporary"
+            ],
+            "properties": {
+              "Temporary": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TemporarySuspendError"
+                },
+                "description": "Pipeline supports suspend-and-resume, but a suspend requested now will\nbe delayed."
+              }
+            }
+          }
+        ],
+        "description": "Whether a pipeline supports checkpointing and suspend-and-resume."
+      },
       "SyncConfig": {
         "type": "object",
         "required": [
@@ -11028,6 +11545,40 @@
           }
         }
       },
+      "TemporarySuspendError": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "Replaying"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "Bootstrapping"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "TransactionInProgress"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "InputEndpointBarrier"
+            ],
+            "properties": {
+              "InputEndpointBarrier": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "Reasons why a pipeline cannot be suspended at this time."
+      },
       "TenantId": {
         "type": "string",
         "format": "uuid"
@@ -11053,6 +11604,44 @@
             "description": "Time series.\n\nThese report 60 seconds of samples, one per second."
           }
         }
+      },
+      "TransactionInitiators": {
+        "type": "object",
+        "description": "Information about entities that initiated the current transaction.",
+        "required": [
+          "initiated_by_connectors"
+        ],
+        "properties": {
+          "initiated_by_api": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TransactionPhase"
+              }
+            ],
+            "nullable": true
+          },
+          "initiated_by_connectors": {
+            "type": "object",
+            "description": "Transaction phases initiated by connectors, indexed by endpoint name.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ConnectorTransactionPhase"
+            }
+          },
+          "transaction_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "ID assigned to the transaction (None if no transaction is in progress).",
+            "nullable": true
+          }
+        }
+      },
+      "TransactionPhase": {
+        "type": "string",
+        "description": "Transaction phase.",
+        "enum": [
+          "Started",
+          "Committed"
+        ]
       },
       "TransportConfig": {
         "oneOf": [

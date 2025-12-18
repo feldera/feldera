@@ -1385,7 +1385,7 @@ async fn query(
 
 #[get("/stats")]
 async fn stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    Ok(HttpResponse::Ok().json(state.controller()?.status()))
+    Ok(HttpResponse::Ok().json(state.controller()?.status().to_api_type()))
 }
 
 /// This endpoint returns a subset of stats that don't need updating and so is more performant than /stats
