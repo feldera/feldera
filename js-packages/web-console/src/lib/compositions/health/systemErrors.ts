@@ -2,13 +2,13 @@ import JSONbig from 'true-json-bigint'
 import { groupBy } from '$lib/functions/common/array'
 import { resolve } from '$lib/functions/svelte'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
+import type { ControllerStatus } from '$lib/services/manager'
 import type {
   CompilerOutput,
   ExtendedPipeline,
   Pipeline,
   SqlCompilerMessage
 } from '$lib/services/pipelineManager'
-import type { ControllerStatus } from '$lib/types/pipelineManager'
 
 export type SystemError<T = any, Report = ReportDetails> = Error & {
   message: string

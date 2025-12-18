@@ -38,7 +38,7 @@
   use:bindScrollY={{ scrollY }}
 >
   <div class="bg-white-dark sticky top-0 -mr-1 flex justify-between pb-2 pl-4">
-    <span class="font-semibold">Pipelines</span>
+    <span class="content-center font-semibold">Pipelines</span>
     <button onclick={onclose} class="fd fd-x btn-icon text-[24px]" aria-label="Close pipelines list"
     ></button>
   </div>

@@ -467,11 +467,9 @@ pub(crate) async fn get_pipeline_output_connector_status(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     responses(
-        // TODO: implement `ToSchema` for `ControllerStatus`, which is the
-        //       actual type returned by this endpoint and move it to feldera-types.
         (status = OK
             , description = "Pipeline statistics retrieved successfully"
-            , body = Object),
+            , body = ControllerStatus),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse

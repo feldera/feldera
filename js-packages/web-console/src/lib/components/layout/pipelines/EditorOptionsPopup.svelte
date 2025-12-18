@@ -5,8 +5,7 @@
   import Popup from '$lib/components/common/Popup.svelte'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
 
-  const { editorFontSize, autoSavePipeline, showMinimap, showStickyScroll } =
-    useCodeEditorSettings()
+  const { editorFontSize, autoSaveFiles, showMinimap, showStickyScroll } = useCodeEditorSettings()
 </script>
 
 <Popup>
@@ -27,8 +26,8 @@
           Autosave
           <Switch
             name="autoSave"
-            checked={autoSavePipeline.value}
-            onCheckedChange={(e) => (autoSavePipeline.value = e.checked)}
+            checked={autoSaveFiles.value}
+            onCheckedChange={(e) => (autoSaveFiles.value = e.checked)}
           >
             <Switch.Control>
               <Switch.Thumb />

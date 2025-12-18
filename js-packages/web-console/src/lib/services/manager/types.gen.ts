@@ -339,6 +339,30 @@ export type CombinedStatus =
 export type CompilationProfile = 'dev' | 'unoptimized' | 'optimized' | 'optimized_symbols'
 
 /**
+ * A watermark that has been fully processed by the pipeline.
+ */
+export type CompletedWatermark = {
+  /**
+   * Timestamp when all outputs produced from this input have been pushed to all output endpoints.
+   */
+  completed_at: string
+  /**
+   * Timestamp when the data was ingested from the wire.
+   */
+  ingested_at: string
+  /**
+   * Metadata that describes the position in the input stream (e.g., Kafka partition/offset pairs).
+   */
+  metadata: {
+    [key: string]: unknown
+  }
+  /**
+   * Timestamp when the data was processed by the circuit.
+   */
+  processed_at: string
+}
+
+/**
  * Completion token status returned by the `/completion_status` endpoint.
  */
 export type CompletionStatus = 'complete' | 'inprogress'
@@ -527,6 +551,17 @@ export type ConnectorStats = {
   num_errors: number
 }
 
+/**
+ * Connector transaction phase with debugging label.
+ */
+export type ConnectorTransactionPhase = {
+  /**
+   * Optional label for debugging.
+   */
+  label?: string | null
+  phase: TransactionPhase
+}
+
 export type ConsumerConfig = {
   deliver_policy: DeliverPolicy
   description?: string | null
@@ -541,6 +576,28 @@ export type ConsumerConfig = {
   name?: string | null
   rate_limit?: number
   replay_policy?: ReplayPolicy
+}
+
+/**
+ * Complete pipeline statistics returned by the `/stats` endpoint.
+ *
+ * This schema definition matches the serialized JSON structure from
+ * `adapters::controller::ControllerStatus`. The actual implementation with
+ * atomics and mutexes lives in the adapters crate, which uses ExternalControllerStatus to
+ * register this OpenAPI schema, making it available to pipeline-manager
+ * without requiring a direct dependency on the adapters crate.
+ */
+export type ControllerStatus = {
+  global_metrics: GlobalControllerMetrics
+  /**
+   * Input endpoint configs and metrics.
+   */
+  inputs: Array<InputEndpointStatus>
+  /**
+   * Output endpoint configs and metrics.
+   */
+  outputs: Array<OutputEndpointStatus>
+  suspend_error?: SuspendError | null
 }
 
 export type Credentials =
@@ -1232,6 +1289,94 @@ export type GetPipelineParameters = {
 }
 
 /**
+ * Global controller metrics.
+ */
+export type GlobalControllerMetrics = {
+  /**
+   * The pipeline has been resumed from a checkpoint and is currently bootstrapping new and modified views.
+   */
+  bootstrap_in_progress: boolean
+  /**
+   * Total number of bytes currently buffered by all endpoints.
+   */
+  buffered_input_bytes: number
+  /**
+   * Total number of records currently buffered by all endpoints.
+   */
+  buffered_input_records: number
+  /**
+   * CPU time used by the pipeline across all threads, in milliseconds.
+   */
+  cpu_msecs: number
+  /**
+   * Uniquely identifies the pipeline process that started at start_time.
+   */
+  incarnation_uuid: string
+  /**
+   * Time at which the pipeline process from which we resumed started, in seconds since the epoch.
+   */
+  initial_start_time: number
+  /**
+   * True if the pipeline has processed all input data to completion.
+   */
+  pipeline_complete: boolean
+  /**
+   * Resident set size of the pipeline process, in bytes.
+   */
+  rss_bytes: number
+  /**
+   * Time elapsed while the pipeline is executing a step, multiplied by the number of threads, in milliseconds.
+   */
+  runtime_elapsed_msecs: number
+  /**
+   * Time at which the pipeline process started, in seconds since the epoch.
+   */
+  start_time: number
+  state: PipelineState
+  /**
+   * Current storage usage in bytes.
+   */
+  storage_bytes: number
+  /**
+   * Storage usage integrated over time, in megabytes * seconds.
+   */
+  storage_mb_secs: number
+  /**
+   * Total number of input records processed to completion.
+   */
+  total_completed_records: number
+  /**
+   * Total number of bytes received from all endpoints.
+   */
+  total_input_bytes: number
+  /**
+   * Total number of records received from all endpoints.
+   */
+  total_input_records: number
+  /**
+   * Total bytes of input records processed by the DBSP engine.
+   */
+  total_processed_bytes: number
+  /**
+   * Total number of input records processed by the DBSP engine.
+   */
+  total_processed_records: number
+  /**
+   * ID of the current transaction or 0 if no transaction is in progress.
+   */
+  transaction_id: number
+  transaction_initiators: TransactionInitiators
+  /**
+   * Status of the current transaction.
+   */
+  transaction_status: string
+  /**
+   * Time since the pipeline process started, in milliseconds.
+   */
+  uptime_msecs: number
+}
+
+/**
  * AWS Glue catalog config.
  */
 export type GlueCatalogConfig = {
@@ -1425,6 +1570,65 @@ export type InputEndpointConfig = ConnectorConfig & {
    * connected to.
    */
   stream: string
+}
+
+/**
+ * Performance metrics for an input endpoint.
+ */
+export type InputEndpointMetrics = {
+  /**
+   * Number of bytes currently buffered by the endpoint (not yet consumed by the circuit).
+   */
+  buffered_bytes: number
+  /**
+   * Number of records currently buffered by the endpoint (not yet consumed by the circuit).
+   */
+  buffered_records: number
+  /**
+   * True if end-of-input has been signaled.
+   */
+  end_of_input: boolean
+  /**
+   * Number of parse errors.
+   */
+  num_parse_errors: number
+  /**
+   * Number of transport errors.
+   */
+  num_transport_errors: number
+  /**
+   * Total bytes pushed to the endpoint since it was created.
+   */
+  total_bytes: number
+  /**
+   * Total records pushed to the endpoint since it was created.
+   */
+  total_records: number
+}
+
+/**
+ * Input endpoint status information.
+ */
+export type InputEndpointStatus = {
+  /**
+   * Endpoint is currently a barrier to checkpointing and suspend.
+   */
+  barrier: boolean
+  completed_frontier?: CompletedWatermark | null
+  config: InputEndpointConfig
+  /**
+   * Endpoint name.
+   */
+  endpoint_name: string
+  /**
+   * The first fatal error that occurred at the endpoint.
+   */
+  fatal_error?: string | null
+  metrics: InputEndpointMetrics
+  /**
+   * Endpoint has been paused by the user.
+   */
+  paused: boolean
 }
 
 /**
@@ -2047,6 +2251,68 @@ export type OutputEndpointConfig = ConnectorConfig & {
 }
 
 /**
+ * Performance metrics for an output endpoint.
+ */
+export type OutputEndpointMetrics = {
+  /**
+   * Number of batches in the buffer.
+   */
+  buffered_batches: number
+  /**
+   * Number of records pushed to the output buffer.
+   */
+  buffered_records: number
+  /**
+   * Extra memory in use beyond that used for queuing records.
+   */
+  memory: number
+  /**
+   * Number of encoding errors.
+   */
+  num_encode_errors: number
+  /**
+   * Number of transport errors.
+   */
+  num_transport_errors: number
+  /**
+   * Number of queued batches.
+   */
+  queued_batches: number
+  /**
+   * Number of queued records.
+   */
+  queued_records: number
+  /**
+   * The number of input records processed by the circuit.
+   */
+  total_processed_input_records: number
+  /**
+   * Bytes sent on the underlying transport.
+   */
+  transmitted_bytes: number
+  /**
+   * Records sent on the underlying transport.
+   */
+  transmitted_records: number
+}
+
+/**
+ * Output endpoint status information.
+ */
+export type OutputEndpointStatus = {
+  config: OutputEndpointConfig
+  /**
+   * Endpoint name.
+   */
+  endpoint_name: string
+  /**
+   * The first fatal error that occurred at the endpoint.
+   */
+  fatal_error?: string | null
+  metrics: OutputEndpointMetrics
+}
+
+/**
  * Program information is the result of the SQL compilation.
  */
 export type PartialProgramInfo = {
@@ -2086,6 +2352,16 @@ export type PatchPipeline = {
   udf_rust?: string | null
   udf_toml?: string | null
 }
+
+/**
+ * Reasons why a pipeline does not support suspend and resume operations.
+ */
+export type PermanentSuspendError =
+  | 'StorageRequired'
+  | 'EnterpriseFeature'
+  | {
+      UnsupportedInputEndpoint: string
+    }
 
 /**
  * Pipeline deployment configuration.
@@ -2373,6 +2649,11 @@ export type PipelineSelectedInfo = {
   udf_toml?: string | null
   version: Version
 }
+
+/**
+ * Pipeline state.
+ */
+export type PipelineState = 'Paused' | 'Running' | 'Terminated'
 
 /**
  * Create a new pipeline (POST), or fully update an existing pipeline (PUT).
@@ -3483,6 +3764,28 @@ export type StorageOptions = {
  */
 export type StorageStatus = 'Cleared' | 'InUse' | 'Clearing'
 
+/**
+ * Whether a pipeline supports checkpointing and suspend-and-resume.
+ */
+export type SuspendError =
+  | {
+      /**
+       * Pipeline does not support suspend-and-resume.
+       *
+       * These reasons only change if the pipeline's configuration changes, e.g.
+       * if a pipeline has an input connector that does not support
+       * suspend-and-resume, and then that input connector is removed.
+       */
+      Permanent: Array<PermanentSuspendError>
+    }
+  | {
+      /**
+       * Pipeline supports suspend-and-resume, but a suspend requested now will
+       * be delayed.
+       */
+      Temporary: Array<TemporarySuspendError>
+    }
+
 export type SyncConfig = {
   /**
    * The access key used to authenticate with the storage provider.
@@ -3624,6 +3927,17 @@ export type SyncConfig = {
   upload_concurrency?: number | null
 }
 
+/**
+ * Reasons why a pipeline cannot be suspended at this time.
+ */
+export type TemporarySuspendError =
+  | 'Replaying'
+  | 'Bootstrapping'
+  | 'TransactionInProgress'
+  | {
+      InputEndpointBarrier: string
+    }
+
 export type TenantId = string
 
 /**
@@ -3641,6 +3955,28 @@ export type TimeSeries = {
    */
   samples: Array<SampleStatistics>
 }
+
+/**
+ * Information about entities that initiated the current transaction.
+ */
+export type TransactionInitiators = {
+  initiated_by_api?: TransactionPhase | null
+  /**
+   * Transaction phases initiated by connectors, indexed by endpoint name.
+   */
+  initiated_by_connectors: {
+    [key: string]: ConnectorTransactionPhase
+  }
+  /**
+   * ID assigned to the transaction (None if no transaction is in progress).
+   */
+  transaction_id?: number | null
+}
+
+/**
+ * Transaction phase.
+ */
+export type TransactionPhase = 'Started' | 'Committed'
 
 /**
  * Transport-specific endpoint configuration passed to
@@ -5022,6 +5358,76 @@ export type PostPipelineResumeResponses = {
   202: unknown
 }
 
+export type GetPipelineSamplyProfileData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/samply_profile'
+}
+
+export type GetPipelineSamplyProfileErrors = {
+  /**
+   * No samply profile exists for the pipeline, create one by calling `POST /pipelines/{pipeline_name}/samply_profile/start?duration_secs=30`
+   */
+  400: ErrorResponse
+  /**
+   * Pipeline with that name does not exist
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+  503: ErrorResponse
+}
+
+export type GetPipelineSamplyProfileError =
+  GetPipelineSamplyProfileErrors[keyof GetPipelineSamplyProfileErrors]
+
+export type GetPipelineSamplyProfileResponses = {
+  /**
+   * Samply profile as a gzip containing the profile that can be inspected by the samply tool
+   */
+  200: Blob | File
+}
+
+export type GetPipelineSamplyProfileResponse =
+  GetPipelineSamplyProfileResponses[keyof GetPipelineSamplyProfileResponses]
+
+export type StartSamplyProfileData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: {
+    duration_secs?: number
+  }
+  url: '/v0/pipelines/{pipeline_name}/samply_profile'
+}
+
+export type StartSamplyProfileErrors = {
+  /**
+   * Pipeline with that name does not exist
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+  503: ErrorResponse
+}
+
+export type StartSamplyProfileError = StartSamplyProfileErrors[keyof StartSamplyProfileErrors]
+
+export type StartSamplyProfileResponses = {
+  /**
+   * Started profiling the pipeline with the Samply tool
+   */
+  200: unknown
+}
+
 export type PostPipelineStartData = {
   body?: never
   path: {
@@ -5121,9 +5527,7 @@ export type GetPipelineStatsResponses = {
   /**
    * Pipeline statistics retrieved successfully
    */
-  200: {
-    [key: string]: unknown
-  }
+  200: ControllerStatus
 }
 
 export type GetPipelineStatsResponse = GetPipelineStatsResponses[keyof GetPipelineStatsResponses]

@@ -54,6 +54,7 @@ use feldera_adapterlib::{
 };
 use feldera_storage::histogram::SlidingHistogram;
 use feldera_types::{
+    adapter_stats::{serialize_input_endpoint_config, serialize_output_endpoint_config},
     config::{FtModel, PipelineConfig},
     suspend::SuspendError,
     time_series::SampleStatistics,
@@ -135,6 +136,7 @@ pub enum TransactionStatus {
     CommitInProgress,
 }
 
+// Keep in sync with feldera_types::ExternalGlobalControllerMetrics
 #[derive(Default, Serialize)]
 pub struct GlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
@@ -425,6 +427,7 @@ where
 }
 
 /// Controller statistics.
+// Keep in sync with feldera_types::ExternalControllerStatus
 #[derive(Serialize)]
 pub struct ControllerStatus {
     /// Global controller configuration.
@@ -1121,8 +1124,166 @@ impl ControllerStatus {
             }
         }
     }
+
+    /// Convert from internal `ControllerStatus` to the public API type in `feldera_types`.
+    ///
+    /// This function ensures that the "duplicate" types in `feldera_types::adapter_stats`
+    /// stay correlated with the original types and won't go out of sync.
+    pub fn to_api_type(&self) -> feldera_types::adapter_stats::ExternalControllerStatus {
+        use feldera_types::adapter_stats;
+
+        // Convert global metrics
+        let global_metrics = adapter_stats::ExternalGlobalControllerMetrics {
+            state: match self.global_metrics.state.load(Ordering::Acquire) {
+                PipelineState::Paused => adapter_stats::PipelineState::Paused,
+                PipelineState::Running => adapter_stats::PipelineState::Running,
+                PipelineState::Terminated => adapter_stats::PipelineState::Terminated,
+            },
+            bootstrap_in_progress: self
+                .global_metrics
+                .bootstrap_in_progress
+                .load(Ordering::Acquire),
+            transaction_status: match self
+                .global_metrics
+                .transaction_status
+                .load(Ordering::Acquire)
+            {
+                TransactionStatus::NoTransaction => "NoTransaction".to_string(),
+                TransactionStatus::TransactionInProgress => "TransactionInProgress".to_string(),
+                TransactionStatus::CommitInProgress => "CommitInProgress".to_string(),
+            },
+            transaction_id: self.global_metrics.transaction_id.load(Ordering::Acquire),
+            transaction_initiators: self
+                .global_metrics
+                .transaction_initiators
+                .lock()
+                .unwrap()
+                .to_api_type(),
+            rss_bytes: self.global_metrics.rss_bytes.load(Ordering::Relaxed),
+            cpu_msecs: self.global_metrics.cpu_msecs.load(Ordering::Relaxed),
+            uptime_msecs: self.global_metrics.uptime_msecs.load(Ordering::Relaxed),
+            start_time: self.global_metrics.start_time,
+            incarnation_uuid: self.global_metrics.incarnation_uuid,
+            initial_start_time: self.global_metrics.initial_start_time,
+            storage_bytes: self.global_metrics.storage_bytes.load(Ordering::Relaxed),
+            storage_mb_secs: self.global_metrics.storage_mb_secs.load(Ordering::Relaxed),
+            runtime_elapsed_msecs: self
+                .global_metrics
+                .runtime_elapsed_msecs
+                .load(Ordering::Relaxed),
+            buffered_input_records: self
+                .global_metrics
+                .buffered_input_records
+                .load(Ordering::Acquire),
+            buffered_input_bytes: self
+                .global_metrics
+                .buffered_input_bytes
+                .load(Ordering::Acquire),
+            total_input_records: self
+                .global_metrics
+                .total_input_records
+                .load(Ordering::Acquire),
+            total_input_bytes: self
+                .global_metrics
+                .total_input_bytes
+                .load(Ordering::Acquire),
+            total_processed_records: self
+                .global_metrics
+                .total_processed_records
+                .load(Ordering::Acquire),
+            total_processed_bytes: self
+                .global_metrics
+                .total_processed_bytes
+                .load(Ordering::Acquire),
+            total_completed_records: self
+                .global_metrics
+                .total_completed_records
+                .load(Ordering::Acquire),
+            pipeline_complete: self
+                .global_metrics
+                .pipeline_complete
+                .load(Ordering::Acquire),
+        };
+
+        // Convert input endpoints and sort by endpoint_name to match serialize_inputs behavior
+        let mut inputs: Vec<_> = self
+            .input_status()
+            .values()
+            .map(|input| adapter_stats::ExternalInputEndpointStatus {
+                endpoint_name: input.endpoint_name.clone(),
+                config: input.config.clone(),
+                metrics: adapter_stats::ExternalInputEndpointMetrics {
+                    total_bytes: input.metrics.total_bytes.load(Ordering::Acquire),
+                    total_records: input.metrics.total_records.load(Ordering::Acquire),
+                    buffered_records: input.metrics.buffered_records.load(Ordering::Acquire),
+                    buffered_bytes: input.metrics.buffered_bytes.load(Ordering::Acquire),
+                    num_transport_errors: input
+                        .metrics
+                        .num_transport_errors
+                        .load(Ordering::Acquire),
+                    num_parse_errors: input.metrics.num_parse_errors.load(Ordering::Acquire),
+                    end_of_input: input.metrics.end_of_input.load(Ordering::Acquire),
+                },
+                fatal_error: input.fatal_error.lock().unwrap().clone(),
+                paused: input.paused.load(Ordering::Acquire),
+                barrier: input.barrier.load(Ordering::Acquire),
+                completed_frontier: input
+                    .completed_frontier
+                    .0
+                    .lock()
+                    .unwrap()
+                    .completed_watermark
+                    .as_ref()
+                    .map(|wm| adapter_stats::ExternalCompletedWatermark {
+                        metadata: wm.metadata.clone(),
+                        ingested_at: wm.ingested_at.to_rfc3339(),
+                        processed_at: wm.processed_at.to_rfc3339(),
+                        completed_at: wm.completed_at.to_rfc3339(),
+                    }),
+            })
+            .collect();
+        inputs.sort_by(|ep1, ep2| ep1.endpoint_name.cmp(&ep2.endpoint_name));
+
+        // Convert output endpoints and sort by endpoint_name to match serialize_outputs behavior
+        let mut outputs: Vec<_> = self
+            .output_status()
+            .values()
+            .map(|output| adapter_stats::ExternalOutputEndpointStatus {
+                endpoint_name: output.endpoint_name.clone(),
+                config: output.config.clone(),
+                metrics: adapter_stats::ExternalOutputEndpointMetrics {
+                    transmitted_records: output.metrics.transmitted_records.load(Ordering::Acquire),
+                    transmitted_bytes: output.metrics.transmitted_bytes.load(Ordering::Relaxed),
+                    queued_records: output.metrics.queued_records.load(Ordering::Relaxed),
+                    queued_batches: output.metrics.queued_batches.load(Ordering::Relaxed),
+                    buffered_records: output.metrics.buffered_records.load(Ordering::Relaxed),
+                    buffered_batches: output.metrics.buffered_batches.load(Ordering::Relaxed),
+                    num_encode_errors: output.metrics.num_encode_errors.load(Ordering::Relaxed),
+                    num_transport_errors: output
+                        .metrics
+                        .num_transport_errors
+                        .load(Ordering::Relaxed),
+                    total_processed_input_records: output
+                        .metrics
+                        .total_processed_input_records
+                        .load(Ordering::Relaxed),
+                    memory: output.metrics.memory.load(Ordering::Relaxed),
+                },
+                fatal_error: output.fatal_error.lock().unwrap().clone(),
+            })
+            .collect();
+        outputs.sort_by(|ep1, ep2| ep1.endpoint_name.cmp(&ep2.endpoint_name));
+
+        adapter_stats::ExternalControllerStatus {
+            global_metrics,
+            suspend_error: self.suspend_error.lock().unwrap().clone(),
+            inputs,
+            outputs,
+        }
+    }
 }
 
+// Keep in sync with feldera_types::ExternalInputEndpointMetrics
 #[derive(Serialize)]
 pub struct InputEndpointMetrics {
     /// Total bytes pushed to the endpoint since it was created.
@@ -1668,6 +1829,7 @@ impl WatermarkTrackerInner {
 }
 
 /// A watermark that has been fully processed by the pipeline.
+/// // Keep in sync with feldera_types::ExternalCompletedWatermark
 #[derive(Clone, Debug)]
 pub(crate) struct CompletedWatermark {
     /// Metadata that describes the position in the input stream, e.g., Kafka partition/offset pairs.
@@ -1705,6 +1867,7 @@ struct WatermarkListEntry {
 }
 
 /// Input endpoint status information.
+/// // Keep in sync with feldera_types::ExternalInputEndpointStatus
 #[derive(Serialize)]
 pub struct InputEndpointStatus {
     pub endpoint_name: String,
@@ -1771,25 +1934,6 @@ where
         .unwrap()
         .completed_watermark
         .serialize(serializer)
-}
-
-#[derive(Serialize)]
-struct StreamOnly<'a> {
-    stream: &'a str,
-}
-
-/// Serialize only `config.stream`, omitting other fields.
-fn serialize_input_endpoint_config<S>(
-    config: &InputEndpointConfig,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    StreamOnly {
-        stream: &config.stream,
-    }
-    .serialize(serializer)
 }
 
 impl InputEndpointStatus {
@@ -1970,6 +2114,7 @@ impl InputEndpointStatus {
     }
 }
 
+// Keep in sync with feldera_types::ExternalOutputEndpointMetrics
 #[derive(Default, Serialize)]
 pub struct OutputEndpointMetrics {
     /// Records and bytes sent on the underlying transport (HTTP, Kafka, etc.)
@@ -2089,6 +2234,7 @@ pub struct OutputEndpointMetricsSnapshot {
 }
 
 /// Output endpoint status information.
+/// // Keep in sync with feldera_types::ExternalOutputEndpointStatus
 #[derive(Serialize)]
 pub struct OutputEndpointStatus {
     pub endpoint_name: String,
@@ -2109,20 +2255,6 @@ impl OutputEndpointStatus {
         self.metrics.buffered_records.load(Ordering::Relaxed) != 0
             || self.metrics.queued_records.load(Ordering::Relaxed) != 0
     }
-}
-
-/// Serialize only `config.stream`, omitting other fields.
-fn serialize_output_endpoint_config<S>(
-    config: &OutputEndpointConfig,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    StreamOnly {
-        stream: &config.stream,
-    }
-    .serialize(serializer)
 }
 
 /// Public read API.

@@ -77,6 +77,9 @@ import type {
   GetPipelineOutputConnectorStatusErrors,
   GetPipelineOutputConnectorStatusResponses,
   GetPipelineResponses,
+  GetPipelineSamplyProfileData,
+  GetPipelineSamplyProfileErrors,
+  GetPipelineSamplyProfileResponses,
   GetPipelineStatsData,
   GetPipelineStatsErrors,
   GetPipelineStatsResponses,
@@ -149,6 +152,9 @@ import type {
   PutPipelineData,
   PutPipelineErrors,
   PutPipelineResponses,
+  StartSamplyProfileData,
+  StartSamplyProfileErrors,
+  StartSamplyProfileResponses,
   StartTransactionData,
   StartTransactionErrors,
   StartTransactionResponses,
@@ -250,7 +256,9 @@ export const getApiKey = <ThrowOnError extends boolean = false>(
   })
 
 /**
- * List of retained cluster monitor events ordered from most recent to least recent.
+ * List Cluster Events
+ *
+ * Retrieve a list of retained cluster monitor events ordered from most recent to least recent.
  *
  * The returned events only have limited details, the full details can be retrieved using
  * the `GET /v0/cluster/events/<event-id>` endpoint.
@@ -275,6 +283,8 @@ export const listClusterEvents = <ThrowOnError extends boolean = false>(
   })
 
 /**
+ * Get Cluster Event
+ *
  * Get specific cluster monitor event.
  *
  * The identifiers of the events can be retrieved via `GET /v0/cluster/events`.
@@ -863,6 +873,42 @@ export const postPipelineResume = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/resume',
+    ...options
+  })
+
+/**
+ * Get Samply Profile
+ *
+ * Retrieve the most recent samply profile of a running pipeline.
+ */
+export const getPipelineSamplyProfile = <ThrowOnError extends boolean = false>(
+  options: Options<GetPipelineSamplyProfileData, ThrowOnError>
+) =>
+  (options.client ?? client).get<
+    GetPipelineSamplyProfileResponses,
+    GetPipelineSamplyProfileErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/samply_profile',
+    ...options
+  })
+
+/**
+ * Start a Samply profile
+ *
+ * Profile the pipeline using the Samply profiler for the next `duration_secs` seconds.
+ */
+export const startSamplyProfile = <ThrowOnError extends boolean = false>(
+  options: Options<StartSamplyProfileData, ThrowOnError>
+) =>
+  (options.client ?? client).post<
+    StartSamplyProfileResponses,
+    StartSamplyProfileErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/samply_profile',
     ...options
   })
 

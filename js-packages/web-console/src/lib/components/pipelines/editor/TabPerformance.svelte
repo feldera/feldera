@@ -152,7 +152,7 @@
         </div>
         <div class="flex flex-col">
           <div class="text-start text-sm text-nowrap">
-            <span class="hidden sm:inline">Records</span> Processed
+            Records Processed
           </div>
           <div class="pt-2">
             {formatQty(global.total_processed_records)}
@@ -160,7 +160,7 @@
         </div>
         <div class="flex flex-col">
           <div class="text-start text-sm text-nowrap">
-            <span class="hidden sm:inline">Records</span> Buffered
+            Records Buffered
           </div>
           <div class="pt-2">
             {formatQty(global.buffered_input_records)}
@@ -287,14 +287,16 @@
           </table>
         {/if}
         {#if metrics.current.views.size}
-          <table class="bg-white-dark table h-min max-w-[1300px] rounded text-base">
+          <table class="bg-white-dark table h-min max-w-[1500px] rounded text-base">
             <thead>
               <tr>
                 <th class="font-normal text-surface-600-400">View</th>
                 <th class="!text-end font-normal text-surface-600-400">Transmitted records</th>
                 <th class="!text-end font-normal text-surface-600-400">Transmitted bytes</th>
                 <th class="!text-end font-normal text-surface-600-400">Buffered records</th>
+                <th class="!text-end font-normal text-surface-600-400">Queued records</th>
                 <th class="!text-end font-normal text-surface-600-400">Buffered batches</th>
+                <th class="!text-end font-normal text-surface-600-400">Queued batches</th>
                 <th class="!text-end font-normal text-surface-600-400">Encode errors</th>
                 <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
               </tr>
@@ -312,7 +314,9 @@
                     {humanSize(stats.transmitted_bytes)}
                   </td>
                   <td class="text-end">{formatQty(stats.buffered_records)} </td>
+                  <td class="text-end">{formatQty(stats.queued_records)} </td>
                   <td class="text-end">{formatQty(stats.buffered_batches)} </td>
+                  <td class="text-end">{formatQty(stats.queued_batches)} </td>
                   <td class="text-end">{formatQty(stats.num_encode_errors)} </td>
                   <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
                 </tr>
