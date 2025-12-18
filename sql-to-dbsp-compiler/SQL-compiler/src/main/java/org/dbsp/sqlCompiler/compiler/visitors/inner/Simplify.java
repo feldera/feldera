@@ -152,7 +152,7 @@ public class Simplify extends ExpressionTranslator {
         if (source.is(DBSPSomeExpression.class)) {
             result = source.to(DBSPSomeExpression.class).expression;
         } else {
-            result = source.unwrapIfNullable();
+            result = source.unwrapIfNullable(expression.message);
         }
         this.map(expression, result);
     }

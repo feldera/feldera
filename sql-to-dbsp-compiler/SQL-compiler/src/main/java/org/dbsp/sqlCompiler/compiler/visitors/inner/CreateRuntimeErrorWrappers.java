@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.util.Utilities;
 
 import java.util.HashMap;
@@ -66,6 +67,20 @@ public class CreateRuntimeErrorWrappers extends ExpressionTranslator {
             return;
         DBSPExpression source = this.getE(expression.source);
         DBSPExpression cast = new DBSPCastExpression(expression.getNode(), source, expression.getType(), expression.safe);
+        // Wrap the cast into an error handler
+        DBSPHandleErrorExpression handler = new DBSPHandleErrorExpression(
+                expression.getNode(), this.getIndex(expression.getSourcePosition().start), cast,
+                // source code may not be available outside an operator
+                true);
+        this.map(expression, handler);
+    }
+
+    @Override
+    public void postorder(DBSPUnwrapExpression expression) {
+        if (this.translationMap.containsKey(expression))
+            return;
+        DBSPExpression source = this.getE(expression.expression);
+        DBSPExpression cast = new DBSPUnwrapExpression(expression.message, source);
         // Wrap the cast into an error handler
         DBSPHandleErrorExpression handler = new DBSPHandleErrorExpression(
                 expression.getNode(), this.getIndex(expression.getSourcePosition().start), cast,

@@ -192,7 +192,10 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
 
     @Override
     public void postorder(DBSPMinMax aggregator) {
-        this.map(aggregator, aggregator);
+        DBSPExpression post = this.getEN(aggregator.postProcessing);
+        @Nullable DBSPClosureExpression postClosure = post != null ? post.to(DBSPClosureExpression.class) : null;
+        DBSPMinMax result = new DBSPMinMax(aggregator.getNode(), aggregator.getType(), postClosure, aggregator.aggregation);
+        this.map(aggregator, result);
     }
 
     @Override
@@ -455,7 +458,7 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     @Override
     public void postorder(DBSPUnwrapExpression node) {
         DBSPExpression expression = this.getE(node.expression);
-        this.map(node, new DBSPUnwrapExpression(expression));
+        this.map(node, new DBSPUnwrapExpression(node.message, expression));
     }
 
     @Override

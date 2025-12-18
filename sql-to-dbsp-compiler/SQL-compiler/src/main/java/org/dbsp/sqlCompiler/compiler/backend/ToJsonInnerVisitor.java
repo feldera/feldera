@@ -625,6 +625,13 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public void postorder(DBSPUnwrapExpression node) {
+        this.property("message");
+        this.stream.append(node.message);
+        super.postorder(node);
+    }
+
+    @Override
     public void postorder(DBSPUnsignedUnwrapExpression node) {
         this.property("nullsLast");
         this.stream.append(node.nullsLast);

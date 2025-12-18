@@ -102,7 +102,7 @@ public class LeadLagAggregates extends WindowAggregates {
         List<DBSPExpression> lagColumnExpressions = new ArrayList<>();
         for (int i = 0; i < lagColumns.size(); i++) {
             int field = lagColumns.get(i);
-            DBSPExpression expression = var.unwrap()
+            DBSPExpression expression = var.unwrap("LAG value should never be NULL")
                     .deref()
                     .field(field)
                     // cast the results to whatever Calcite says they will be.

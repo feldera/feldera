@@ -589,7 +589,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     "TIMESTAMP used for TUMBLE function is nullable; this can cause runtime crashes.\n" +
                             "We recommend filtering out null values before applying the TUMBLE function");
         }
-        args[0] = row.deref().field(timestampIndex).unwrapIfNullable();
+        args[0] = row.deref().field(timestampIndex).unwrapIfNullable("TUMBLE timestamp should never be NULL");
         args[1] = interval;
         if (start != null)
             args[2] = start;

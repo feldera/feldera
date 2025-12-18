@@ -1005,13 +1005,18 @@ pub fn md5_s(source: SqlString) -> SqlString {
 
 some_polymorphic_function1!(md5, s, SqlString, SqlString);
 
+#[doc(hidden)]
 pub fn intern(s: Option<SqlString>) -> Option<InternedString> {
     s.map(|s| intern_string(&s))
 }
 
+#[doc(hidden)]
 pub fn unintern(id: Option<InternedString>) -> Option<SqlString> {
     match id {
         None => None,
-        Some(id) => unintern_string(&id),
+        Some(id) => match unintern_string(&id) {
+            Some(s) => Some(s),
+            None => panic!("Interning library has not returned a string for id='{id}'"),
+        },
     }
 }

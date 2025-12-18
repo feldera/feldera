@@ -2125,10 +2125,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPUnwrapExpression expression) {
         this.push(expression);
         this.builder.append("(");
+        this.builder.append("unwrap_value(");
         expression.expression.accept(this);
-        if (expression.expression.getType().is(DBSPTypeTupleBase.class))
-            this.builder.append(".as_ref()");
-        this.builder.append(".unwrap()");
+        this.builder.append(", ")
+                .append(Utilities.doubleQuote(expression.message, false))
+                .append(")");
         this.builder.append(")");
         this.pop(expression);
         return VisitDecision.STOP;

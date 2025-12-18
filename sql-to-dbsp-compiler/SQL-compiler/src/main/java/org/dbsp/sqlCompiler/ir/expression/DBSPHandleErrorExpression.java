@@ -13,7 +13,6 @@ import org.dbsp.util.Utilities;
 /**
  * This expression is inserted very late in the circuit transformation
  * to handle (some) expressions that can lead to runtime panics.
- * Today it is only used for casts, but we hope to expand its uses.
  *
  * <p>The actual Rust representation has slightly different types
  * than this instruction; the argument type in particular will always

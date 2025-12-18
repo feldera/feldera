@@ -122,13 +122,14 @@ public abstract class DBSPExpression
     }
 
     /** Unwrap an expression with a nullable type */
-    public DBSPExpression unwrap() {
+    public DBSPExpression unwrap(String message) {
         Utilities.enforce(this.type.mayBeNull, () -> "Unwrapping non-nullable type");
-        return new DBSPUnwrapExpression(this);
+        return new DBSPUnwrapExpression(message, this);
     }
 
-    /** Unwrap an expression if the type is nullable */
-    public DBSPExpression unwrapIfNullable() {
+    /** Unwrap an expression if the type is nullable
+     * @param message Message to report if the unwrap fails. */
+    public DBSPExpression unwrapIfNullable(String message) {
         if (!this.type.mayBeNull)
             return this;
         DBSPBaseTupleExpression tuple = this.as(DBSPBaseTupleExpression.class);
@@ -141,7 +142,7 @@ public abstract class DBSPExpression
                 default: break;
             }
         }
-        return this.unwrap();
+        return this.unwrap(message);
     }
 
     public DBSPExpressionStatement toStatement() {
