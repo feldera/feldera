@@ -2,8 +2,8 @@ use crate::{
     DBData, DBWeight, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
     dynamic::{
-        DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
-        Factory, WeightTrait, WeightTraitTyped, WithFactory,
+        DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
+        WeightTrait, WeightTraitTyped,
     },
     storage::{
         buffer_cache::CacheStats,
@@ -39,7 +39,6 @@ where
 {
     factories0: FileFactories<K, DynUnit>,
     factories1: FileFactories<V, R>,
-    opt_key_factory: &'static dyn Factory<DynOpt<K>>,
     pub vec_indexed_wset_factory: VecIndexedWSetFactories<K, V, R>,
 }
 
@@ -53,7 +52,6 @@ where
         Self {
             factories0: self.factories0.clone(),
             factories1: self.factories1.clone(),
-            opt_key_factory: self.opt_key_factory,
             vec_indexed_wset_factory: self.vec_indexed_wset_factory.clone(),
         }
     }
@@ -74,7 +72,6 @@ where
         Self {
             factories0: FileFactories::new::<KType, ()>(),
             factories1: FileFactories::new::<VType, RType>(),
-            opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
             vec_indexed_wset_factory: VecIndexedWSetFactories::new::<KType, VType, RType>(),
         }
     }
