@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.frontend.parser;
 
 import org.apache.calcite.sql.SqlCall;
-import org.apache.calcite.sql.SqlCreate;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlLiteral;
@@ -18,46 +17,47 @@ import org.dbsp.util.Utilities;
 import java.util.List;
 import java.util.Objects;
 
-/** Parse tree for {@code DECLARE RECURSIVE VIEW} statement. */
-public class SqlDeclareView extends SqlCreate {
-    public final SqlIdentifier name;
-    public final SqlNodeList columns;
-
-    private static final SqlOperator OPERATOR =
-            new SqlSpecialOperator("DECLARE RECURSIVE VIEW", SqlKind.OTHER) {
+/** Parse tree for {@code PRIMARY KEY} constraints. */
+public class SqlPrimaryKey extends SqlCall {
+    protected static final SqlSpecialOperator PRIMARY =
+            new SqlSpecialOperator("PRIMARY KEY", SqlKind.PRIMARY_KEY) {
                 @Override
                 public SqlCall createCall(
                         @Nullable SqlLiteral functionQualifier, SqlParserPos pos, @Nullable SqlNode... operands) {
                     Utilities.enforce(operands.length == 2);
-                    return new SqlDeclareView(pos,
-                            (SqlIdentifier) Objects.requireNonNull(operands[0]),
+                    return new SqlPrimaryKey(pos,
+                            (SqlIdentifier) operands[0],
                             (SqlNodeList) Objects.requireNonNull(operands[1]));
                 }
             };
 
-    public SqlDeclareView(SqlParserPos pos, SqlIdentifier name, SqlNodeList columns) {
-        super(OPERATOR, pos, false, false);
-        this.name = Objects.requireNonNull(name, "name");
-        this.columns = columns;
+    private final @Nullable SqlIdentifier name;
+    private final SqlNodeList columnList;
+
+    /** Creates a SqlKeyConstraint. */
+    public SqlPrimaryKey(SqlParserPos pos, @Nullable SqlIdentifier name,
+                         SqlNodeList columnList) {
+        super(pos);
+        this.name = name;
+        this.columnList = columnList;
+    }
+
+    @Override public SqlOperator getOperator() {
+        return PRIMARY;
     }
 
     @SuppressWarnings("nullness")
     @Override public List<SqlNode> getOperandList() {
-        return ImmutableNullableList.of(this.name, this.columns);
+        return ImmutableNullableList.of(name, columnList);
     }
 
     @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
-        writer.keyword("DECLARE");
-        writer.keyword("RECURSIVE");
-        writer.keyword("VIEW");
-        name.unparse(writer, leftPrec, rightPrec);
-        {
-            SqlWriter.Frame frame = writer.startList("(", ")");
-            for (SqlNode c : columns) {
-                writer.sep(",");
-                c.unparse(writer, 0, 0);
-            }
-            writer.endList(frame);
+        if (name != null) {
+            writer.keyword("CONSTRAINT");
+            name.unparse(writer, 0, 0);
         }
+        writer.keyword(getOperator().getName()); // "PRIMARY KEY"
+        columnList.unparse(writer, 1, 1);
     }
 }
+

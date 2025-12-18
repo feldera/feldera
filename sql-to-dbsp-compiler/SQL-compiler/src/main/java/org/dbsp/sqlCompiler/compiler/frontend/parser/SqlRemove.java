@@ -32,6 +32,7 @@ public class SqlRemove extends SqlCall {
                 @Override public SqlCall createCall(@Nullable SqlLiteral functionQualifier,
                                                     SqlParserPos pos,
                                                     @Nullable SqlNode... operands) {
+                    Utilities.enforce(operands.length == 3);
                     return new SqlRemove(
                             pos,
                             Objects.requireNonNull(operands[0]),
@@ -64,7 +65,7 @@ public class SqlRemove extends SqlCall {
 
     @SuppressWarnings("nullness")
     @Override public List<SqlNode> getOperandList() {
-        return ImmutableNullableList.of(targetTable, source);
+        return ImmutableNullableList.of(this.targetTable, this.source, this.columnList);
     }
 
     @SuppressWarnings("assignment.type.incompatible")

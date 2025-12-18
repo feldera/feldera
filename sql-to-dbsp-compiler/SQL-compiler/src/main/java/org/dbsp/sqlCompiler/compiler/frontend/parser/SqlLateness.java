@@ -106,7 +106,5 @@ public class SqlLateness extends SqlCall {
         writer.newlineAndIndent();
     }
 
-    @Override public void validate(SqlValidator validator, SqlValidatorScope scope) {
-        // TODO
-    }
+    @Override public void validate(SqlValidator validator, SqlValidatorScope scope) {    }
 }
