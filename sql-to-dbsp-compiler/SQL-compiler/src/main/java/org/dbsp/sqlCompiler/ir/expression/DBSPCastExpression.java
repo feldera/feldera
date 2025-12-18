@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
@@ -49,8 +50,9 @@ public final class DBSPCastExpression extends DBSPExpression {
         super(node, to);
         this.source = source;
         this.safe = safe;
-        Utilities.enforce(source.getType().is(DBSPTypeTupleBase.class) == to.is(DBSPTypeTupleBase.class)
-                || source.getType().is(DBSPTypeVariant.class) || to.is(DBSPTypeVariant.class),
+        Utilities.enforce(source.getType().is(DBSPTypeNull.class)
+                        || source.getType().is(DBSPTypeTupleBase.class) == to.is(DBSPTypeTupleBase.class)
+                        || source.getType().is(DBSPTypeVariant.class) || to.is(DBSPTypeVariant.class),
                 () -> "Cast to/from tuple from/to non-tuple " + source.getType() + " to " + to);
         Utilities.enforce(to.code != DBSPTypeCode.INTERNED_STRING, () -> "Cast to INTERNED");
         Utilities.enforce(source.getType().code != DBSPTypeCode.INTERNED_STRING, () -> "Cast from INTERNED");

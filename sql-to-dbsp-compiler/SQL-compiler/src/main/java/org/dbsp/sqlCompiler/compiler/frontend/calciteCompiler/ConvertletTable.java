@@ -797,14 +797,14 @@ public class ConvertletTable extends ReflectiveConvertletTable {
                     call.getParserPosition(), call, value, validator, rexBuilder, safe);
         }
 
+        if (SqlUtil.isNullLiteral(left, false)) {
+            validator.setValidatedNodeType(left, arg.getType());
+            return arg;
+        }
         final SqlDataTypeSpec dataType = (SqlDataTypeSpec) right;
         RelDataType type =
                 SqlCastFunction.deriveType(cx.getTypeFactory(), arg.getType(),
                         dataType.deriveType(validator), safe);
-        if (SqlUtil.isNullLiteral(left, false)) {
-            validator.setValidatedNodeType(left, type);
-            return cx.convertExpression(left);
-        }
         if (null != dataType.getCollectionsTypeName()) {
             RelDataType argComponentType = arg.getType().getComponentType();
 

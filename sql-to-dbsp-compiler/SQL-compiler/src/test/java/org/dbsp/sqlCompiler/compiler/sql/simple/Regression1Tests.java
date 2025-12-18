@@ -1549,4 +1549,19 @@ public class Regression1Tests extends SqlIoTest {
                 SELECT u256_sum(num1), u256_sum(num2), SUM(small), MAX(sno)
                 FROM A""");
     }
+
+    @Test
+    public void issue5307() {
+        this.getCCS("""
+                CREATE TYPE LEVEL_1 AS (
+                  col VARCHAR NOT NULL
+                );
+                
+                CREATE TYPE LEVEL_0 AS (
+                  col LEVEL_1
+                );
+                
+                CREATE LOCAL VIEW V AS
+                SELECT NULL::LEVEL_0 AS null_col""");
+    }
 }
