@@ -1,8 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.frontend.parser;
 
+import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlCreate;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperator;
@@ -26,7 +28,16 @@ public class SqlCreateTable extends SqlCreate {
     public final @Nullable SqlNodeList tableProperties;
 
     private static final SqlOperator OPERATOR =
-            new SqlSpecialOperator("CREATE TABLE", SqlKind.CREATE_TABLE);
+            new SqlSpecialOperator("CREATE TABLE", SqlKind.CREATE_TABLE) {
+                @Override
+                public SqlCall createCall(@Nullable SqlLiteral functionQualifier, SqlParserPos pos, @Nullable SqlNode... operands) {
+                    Utilities.enforce(operands.length == 3);
+                    return new SqlCreateTable(pos, false, false,
+                            (SqlIdentifier) Objects.requireNonNull(operands[0]),
+                            (SqlNodeList) Objects.requireNonNull(operands[1]),
+                            (SqlNodeList) operands[2]);
+                }
+            };
 
     public SqlCreateTable(SqlParserPos pos, boolean replace, boolean ifNotExists,
                           SqlIdentifier name, SqlNodeList columnsOrForeignKeys,
@@ -40,7 +51,7 @@ public class SqlCreateTable extends SqlCreate {
 
     @SuppressWarnings("nullness")
     @Override public List<SqlNode> getOperandList() {
-        return ImmutableNullableList.of(name, columnsOrForeignKeys, tableProperties);
+        return ImmutableNullableList.of(this.name, this.columnsOrForeignKeys, this.tableProperties);
     }
 
     public static void writeProperties(SqlWriter writer, @Nullable SqlNodeList properties) {
@@ -62,21 +73,25 @@ public class SqlCreateTable extends SqlCreate {
         }
     }
 
+    @Override
+    public SqlNode clone(SqlParserPos pos) {
+        return new SqlCreateTable(pos, this.getReplace(), this.ifNotExists, this.name,
+                this.columnsOrForeignKeys, this.tableProperties);
+    }
+
     @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
         writer.keyword("CREATE");
         writer.keyword("TABLE");
-        if (ifNotExists) {
+        if (this.ifNotExists) {
             writer.keyword("IF NOT EXISTS");
         }
-        name.unparse(writer, leftPrec, rightPrec);
-        {
-            SqlWriter.Frame frame = writer.startList("(", ")");
-            for (SqlNode c : columnsOrForeignKeys) {
-                writer.sep(",");
-                c.unparse(writer, 0, 0);
-            }
-            writer.endList(frame);
+        this.name.unparse(writer, leftPrec, rightPrec);
+        SqlWriter.Frame frame = writer.startList("(", ")");
+        for (SqlNode c : this.columnsOrForeignKeys) {
+            writer.sep(",");
+            c.unparse(writer, 0, 0);
         }
+        writer.endList(frame);
         writeProperties(writer, this.tableProperties);
     }
 }

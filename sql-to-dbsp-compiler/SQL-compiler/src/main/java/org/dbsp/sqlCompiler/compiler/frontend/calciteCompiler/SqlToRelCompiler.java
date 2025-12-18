@@ -95,11 +95,8 @@ import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlTypeNameSpec;
 import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
 import org.apache.calcite.sql.SqlWriter;
-import org.apache.calcite.sql.ddl.SqlAttributeDefinition;
 import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
-import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.ddl.SqlDropTable;
-import org.apache.calcite.sql.ddl.SqlKeyConstraint;
 import org.apache.calcite.sql.dialect.OracleSqlDialect;
 import org.apache.calcite.sql.fun.SqlDatetimeSubtractionOperator;
 import org.apache.calcite.sql.parser.SqlParseException;
@@ -135,14 +132,17 @@ import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.ExtendedSqlParserPos;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlAttributeDefinition;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateAggregate;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateIndex;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateType;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlDeclareView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration;
@@ -151,6 +151,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentCharacterString;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlPrimaryKey;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlViewColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateAggregateStatement;
@@ -692,13 +693,15 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     /** Given a SQL statement returns a SqlNode - a calcite AST
      * representation of the query.
-     * @param sql  SQL query to compile */
+     * @param sql  SQL query to compile
+     * @param saveLines  True if the lines "take space": are accounted as part of the input program */
     public SqlNode parse(String sql, boolean saveLines) throws SqlParseException {
         SqlParser sqlParser = this.createSqlParser(sql, saveLines);
         SqlNode result = sqlParser.parseStmt();
-        return this.postParsingProcess(result);
+        return this.postParsingProcess(result, saveLines);
     }
 
+    /** Remove calls to unary plus */
     static class RemoveUnaryNoop extends SqlShuttle {
         @Override
         public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlCall call) {
@@ -707,38 +710,52 @@ public class SqlToRelCompiler implements IWritesLogs {
                 Utilities.enforce(newCall.getOperandList().size() == 1,
                         () -> "Expected unary plus to have exactly 1 operand");
                 return newCall.getOperandList().get(0);
-            } else if (newCall.getOperator().kind == SqlKind.CREATE_VIEW) {
-                // The shuttle does not correctly create a view by replacing operands.
-                SqlCreateView view = (SqlCreateView) call;
-                List<SqlNode> operands = newCall.getOperandList();
-                newCall = new SqlCreateView(call.getParserPosition(), false, view.viewKind,
-                        view.name, view.columnList, view.viewProperties, operands.get(3));
             }
             return newCall;
         }
     }
 
-    SqlNode postParsingProcess(SqlNode node) {
+    static class ReplacePositions extends SqlShuttle {
+        final boolean internal;
+
+        ReplacePositions(boolean internal) {
+            this.internal = internal;
+        }
+
+        @Override
+        public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlCall call) {
+            SqlCall newCall = Objects.requireNonNull((SqlCall) super.visit(call));
+            SqlParserPos pos = new ExtendedSqlParserPos(call.getParserPosition(), this.internal);
+            newCall = (SqlCall) newCall.clone(pos);
+            return newCall;
+        }
+    }
+
+    SqlNode postParsingProcess(SqlNode node, boolean saveLines) {
         node.accept(this.getExtraValidator());
         if (this.options.languageOptions.unaryPlusNoop) {
             RemoveUnaryNoop remove = new RemoveUnaryNoop();
             node = Objects.requireNonNull(remove.visitNode(node));
         }
+        ReplacePositions replace = new ReplacePositions(!saveLines);
+        node = Objects.requireNonNull(replace.visitNode(node));
         return node;
     }
 
     public SqlNode parse(String sql) throws SqlParseException {
         SqlNode result = this.parse(sql, true);
-        return this.postParsingProcess(result);
+        return this.postParsingProcess(result, true);
     }
 
-    /** Given a list of statements separated by semicolons, parse all of them. */
+    /** Given a list of statements separated by semicolons, parse all of them.
+     * @param saveLines True if the lines are from the user program; false if they are internally generated. */
     public List<ParsedStatement> parseStatements(String statements, boolean saveLines) throws SqlParseException {
         SqlParser sqlParser = this.createSqlParser(statements, saveLines);
         List<ParsedStatement> result = new ArrayList<>();
         SqlNodeList sqlNodes = sqlParser.parseStmtList();
         for (SqlNode node: sqlNodes) {
-            ParsedStatement stat = new ParsedStatement(this.postParsingProcess(node), saveLines);
+            SqlNode sqlNode = this.postParsingProcess(node, saveLines);
+            ParsedStatement stat = new ParsedStatement(sqlNode, saveLines);
             result.add(stat);
         }
         return result;
@@ -1120,12 +1137,12 @@ public class SqlToRelCompiler implements IWritesLogs {
         List<RelColumnMetadata> result = new ArrayList<>();
         int index = 0;
         Map<String, SqlNode> columnDefinition = new HashMap<>();
-        SqlKeyConstraint key = null;
+        SqlPrimaryKey key = null;
         Map<String, SqlIdentifier> primaryKeys = new HashMap<>();
 
         // First scan for standard style PRIMARY KEY constraints.
         for (SqlNode col: Objects.requireNonNull(list)) {
-            if (col instanceof SqlKeyConstraint) {
+            if (col instanceof SqlPrimaryKey) {
                 if (key != null) {
                     this.errorReporter.reportError(new SourcePositionRange(col.getParserPosition()),
                             "Duplicate key", "PRIMARY KEY already declared");
@@ -1133,7 +1150,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                             "Duplicate key", "Previous declaration", true);
                     break;
                 }
-                key = (SqlKeyConstraint) col;
+                key = (SqlPrimaryKey) col;
                 if (key.operandCount() != 2) {
                     throw new InternalCompilerError("Expected 2 operands", CalciteObject.create(key));
                 }
@@ -1198,7 +1215,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     defaultValue = this.validateConstantExpression(cd, cd.defaultValue, sources);
                 }
                 interned = cd.interned;
-            } else if (col instanceof SqlKeyConstraint ||
+            } else if (col instanceof SqlPrimaryKey ||
                        col instanceof SqlForeignKey) {
                 continue;
             } else {
@@ -1449,7 +1466,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             builder.append("CREATE VIEW TMP0 AS SELECT\n");
             newLineNumber = builder.toString().split("\n").length + 1;
 
-            SourcePositionRange range = new SourcePositionRange(body.getParserPosition());
+            SourcePositionRange range = new SourcePositionRange(body.getParserPosition(), false);
             String bodyExpression = sources.getFragment(range, false);
             builder.append(bodyExpression);
             builder.append("\nFROM TMP;");

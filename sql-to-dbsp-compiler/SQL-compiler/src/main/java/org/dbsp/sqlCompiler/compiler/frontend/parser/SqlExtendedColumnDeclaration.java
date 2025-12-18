@@ -1,10 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.frontend.parser;
 
-import com.google.common.collect.ImmutableList;
 import org.apache.calcite.schema.ColumnStrategy;
 import org.apache.calcite.sql.*;
 import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
 import org.apache.calcite.sql.parser.SqlParserPos;
+import org.apache.calcite.util.ImmutableNullableList;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -12,13 +12,40 @@ import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /** This class is based on {@link SqlColumnDeclaration} from Calcite.
  * It should be an extension of that class, but that class doesn't have
  * a public constructor, so we have copied here the code. */
 public class SqlExtendedColumnDeclaration extends SqlCall {
     private static final SqlSpecialOperator OPERATOR =
-            new SqlSpecialOperator("COLUMN_DECL", SqlKind.COLUMN_DECL);
+            new SqlSpecialOperator("COLUMN_DECL", SqlKind.COLUMN_DECL) {
+                static List<SqlIdentifier> extract(SqlNodeList list) {
+                    List<SqlIdentifier> result = new ArrayList<>();
+                    for (SqlNode node: list) {
+                        result.add((SqlIdentifier) node);
+                    }
+                    return result;
+                }
+
+                @Override
+                public SqlCall createCall(
+                        @Nullable SqlLiteral functionQualifier, SqlParserPos pos, @Nullable SqlNode... operands) {
+                    Utilities.enforce(operands.length == 11);
+                    return new SqlExtendedColumnDeclaration(pos,
+                            (SqlIdentifier) Objects.requireNonNull(operands[0]),
+                            (SqlDataTypeSpec) Objects.requireNonNull(operands[1]),
+                            operands[2],
+                            ColumnStrategy.valueOf(((SqlIdentifier) Objects.requireNonNull(operands[3])).getSimple()),
+                            extract((SqlNodeList) Objects.requireNonNull(operands[4])),
+                            extract((SqlNodeList) Objects.requireNonNull(operands[5])),
+                            ((SqlLiteral) Objects.requireNonNull(operands[6])).booleanValue(),
+                            operands[7],
+                            operands[8],
+                            operands[9],
+                            ((SqlLiteral) Objects.requireNonNull(operands[10])).booleanValue());
+                }
+            };
 
     public final SqlIdentifier name;
     public final SqlDataTypeSpec dataType;
@@ -48,7 +75,6 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
         this.defaultValue = null;
         this.foreignKeyTables = new ArrayList<>();
         this.foreignKeyColumns = new ArrayList<>();
-        this.interned = interned;
         if (foreignKeyTable != null)
             this.foreignKeyTables.add(foreignKeyTable);
         if (foreignKeyColumn != null)
@@ -56,6 +82,36 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
         this.primaryKey = primaryKey;
         this.lateness = lateness;
         this.watermark = watermark;
+        this.interned = interned;
+    }
+
+    private SqlExtendedColumnDeclaration(
+            SqlParserPos pos, SqlIdentifier name, SqlDataTypeSpec dataType, @Nullable SqlNode expression,
+            ColumnStrategy strategy, List<SqlIdentifier> foreignKeyTables, List<SqlIdentifier> foreignKeyColumns,
+            boolean primaryKey, @Nullable SqlNode lateness, @Nullable SqlNode watermark, @Nullable SqlNode defaultValue,
+            boolean interned) {
+        super(pos);
+        this.name = name;
+        this.dataType = dataType;
+        this.expression = expression;
+        this.strategy = strategy;
+        this.foreignKeyTables = foreignKeyTables;
+        this.foreignKeyColumns = foreignKeyColumns;
+        this.primaryKey = primaryKey;
+        this.lateness = lateness;
+        this.watermark = watermark;
+        this.defaultValue = defaultValue;
+        this.interned = interned;
+    }
+
+    @Override public List<SqlNode> getOperandList() {
+        return ImmutableNullableList.of(this.name, this.dataType, this.expression,
+                new SqlIdentifier(this.strategy.name(), SqlParserPos.ZERO),
+                new SqlNodeList(this.foreignKeyTables, SqlParserPos.ZERO),
+                new SqlNodeList(this.foreignKeyColumns, SqlParserPos.ZERO),
+                SqlLiteral.createBoolean(this.primaryKey, SqlParserPos.ZERO),
+                this.lateness, this.watermark, this.defaultValue,
+                SqlLiteral.createBoolean(this.interned, SqlParserPos.ZERO));
     }
 
     public SqlExtendedColumnDeclaration setPrimaryKey(SqlParserPos pos) {
@@ -82,7 +138,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
         return this;
     }
 
-    public SqlExtendedColumnDeclaration setLatenes(SqlNode lateness) {
+    public SqlExtendedColumnDeclaration setLateness(SqlNode lateness) {
         if (this.lateness != null) {
             throw new CompilationError("Column " + Utilities.singleQuote(this.name.getSimple()) +
                     " already has lateness", CalciteObject.create(lateness));
@@ -111,10 +167,6 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
 
     @Override public SqlOperator getOperator() {
         return OPERATOR;
-    }
-
-    @Override public List<SqlNode> getOperandList() {
-        return ImmutableList.of(this.name, this.dataType);
     }
 
     @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {

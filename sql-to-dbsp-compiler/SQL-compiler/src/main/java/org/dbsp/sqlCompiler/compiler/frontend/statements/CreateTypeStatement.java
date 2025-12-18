@@ -1,9 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.apache.calcite.rel.type.RelDataType;
-import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateType;
 
 public class CreateTypeStatement extends RelStatement {
     public final SqlCreateType createType;

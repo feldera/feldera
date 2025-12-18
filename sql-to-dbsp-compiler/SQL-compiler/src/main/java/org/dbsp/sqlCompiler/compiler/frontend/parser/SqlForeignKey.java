@@ -3,14 +3,18 @@ package org.dbsp.sqlCompiler.compiler.frontend.parser;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlSpecialOperator;
 import org.apache.calcite.sql.SqlWriter;
 import org.apache.calcite.sql.parser.SqlParserPos;
+import org.checkerframework.checker.nullness.qual.Nullable;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
+import java.util.Objects;
 
 /** A FOREIGN KEY declaration that can appear in a table but not as an attribute
  * of a column.
@@ -21,7 +25,17 @@ import java.util.List;
  * */
 public class SqlForeignKey extends SqlCall {
     private static final SqlSpecialOperator FOREIGN =
-            new SqlSpecialOperator("FOREIGN", SqlKind.OTHER);
+            new SqlSpecialOperator("FOREIGN", SqlKind.OTHER) {
+                @Override
+                public SqlCall createCall(
+                        @Nullable SqlLiteral functionQualifier, SqlParserPos pos, @Nullable SqlNode... operands) {
+                    Utilities.enforce(operands.length == 3);
+                    return new SqlForeignKey(pos,
+                            (SqlNodeList) Objects.requireNonNull(operands[0]),
+                            (SqlIdentifier) Objects.requireNonNull(operands[1]),
+                            (SqlNodeList) Objects.requireNonNull(operands[2]));
+                }
+            };
 
     public final SqlNodeList columnList;
     public final SqlIdentifier otherTable;
