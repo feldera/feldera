@@ -1564,4 +1564,13 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE LOCAL VIEW V AS
                 SELECT NULL::LEVEL_0 AS null_col""");
     }
+
+    @Test
+    public void issue5311() {
+        this.getCCS("""
+                CREATE TABLE tbl(intt INT);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                LAG(intt) OVER ()
+                FROM tbl;""");
+    }
 }

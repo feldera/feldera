@@ -1313,7 +1313,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.operation);
         this.builder.append("_persistent");
         this.builder.append("::<_, _, _, ");
-        operator.comparator.accept(this.innerVisitor);
+        this.builder.append(operator.comparator.to(DBSPComparatorExpression.class).getComparatorStructName());
         this.builder.append(", _>")
                 .append("(hash, ")
                 .increase();
