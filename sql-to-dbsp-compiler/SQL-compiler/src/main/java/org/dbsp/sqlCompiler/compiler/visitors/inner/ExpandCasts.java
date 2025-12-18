@@ -251,7 +251,8 @@ public class ExpandCasts extends InnerRewriteVisitor {
             } else {
                 result = new DBSPIfExpression(node, source.is_null(),
                         // Causes a runtime panic
-                        type.withMayBeNull(true).nullValue().unwrap(), result);
+                        type.withMayBeNull(true).nullValue()
+                                .unwrap("Cast to non-nullable value applied to NULL"), result);
             }
         }
         return result;
@@ -367,7 +368,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             } else if (sourceType.mayBeNull && !type.is(DBSPTypeVariant.class)) {
                 // Cast from Option<T> to T
                 // Only VARIANT has a different implementation
-                result = expression.source.unwrap().applyCloneIfNeeded();
+                result = expression.source.unwrap("NULL value should be impossible here").applyCloneIfNeeded();
             }
         } else if (type.is(DBSPTypeVariant.class)) {
             result = convertToVariant(node, source, type.mayBeNull);

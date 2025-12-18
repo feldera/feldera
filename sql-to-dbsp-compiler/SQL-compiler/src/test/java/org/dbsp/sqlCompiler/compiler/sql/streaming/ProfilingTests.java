@@ -74,7 +74,7 @@ public class ProfilingTests extends StreamingTestBase {
                     append_to_collection_handle,
                     append_to_map_handle,
                     read_output_spine,
-                    casts::{cast_to_Timestamp_s,handle_error},
+                    casts::{cast_to_Timestamp_s,handle_error,unwrap_value},
                     string::SqlString,
                 };
 

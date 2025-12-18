@@ -194,7 +194,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case TUPLE, RAW_TUPLE -> {
                 DBSPTypeTupleBase tuple = destinationType.to(DBSPTypeTupleBase.class);
                 DBSPExpression[] fields = new DBSPExpression[tuple.size()];
-                DBSPExpression safeSource = source.unwrapIfNullable();
+                DBSPExpression safeSource = source.unwrapIfNullable("Cast to non-nullable type applied to NULL value");
                 for (int i = 0; i < tuple.size(); i++) {
                     if (source.is(DBSPBaseTupleExpression.class) &&
                             source.to(DBSPBaseTupleExpression.class).fields == null) {

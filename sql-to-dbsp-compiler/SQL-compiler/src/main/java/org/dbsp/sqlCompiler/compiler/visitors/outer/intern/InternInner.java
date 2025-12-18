@@ -267,7 +267,7 @@ public class InternInner extends ExpressionTranslator {
                 Utilities.enforce(internedType.code == originalType.code);
                 DBSPTypeTupleBase tuple = originalType.to(DBSPTypeTupleBase.class);
                 DBSPExpression[] fields = new DBSPExpression[tuple.size()];
-                DBSPExpression safeSource = interned.unwrapIfNullable();
+                DBSPExpression safeSource = interned.unwrapIfNullable("Tuple should not be NULL");
                 for (int i = 0; i < tuple.size(); i++) {
                     DBSPExpression simplified = Simplify.simplify(this.compiler, safeSource.field(i));
                     fields[i] = callUninternRecursive(simplified, tuple.getFieldType(i));

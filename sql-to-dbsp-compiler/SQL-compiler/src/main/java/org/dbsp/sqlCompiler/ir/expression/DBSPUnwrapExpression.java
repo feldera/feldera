@@ -15,10 +15,12 @@ import org.dbsp.util.Utilities;
  * Note that there is a different resultUnwrap, which is meant
  * to be applied to Result values */
 public final class DBSPUnwrapExpression extends DBSPExpression {
+    public final String message;
     public final DBSPExpression expression;
 
-    public DBSPUnwrapExpression(DBSPExpression expression) {
+    public DBSPUnwrapExpression(String message, DBSPExpression expression) {
         super(expression.getNode(), expression.getType().withMayBeNull(false));
+        this.message = message;
         this.expression = expression;
         Utilities.enforce(expression.getType().mayBeNull);
     }
@@ -41,18 +43,24 @@ public final class DBSPUnwrapExpression extends DBSPExpression {
         DBSPUnwrapExpression o = other.as(DBSPUnwrapExpression.class);
         if (o == null)
             return false;
-        return this.expression == o.expression;
+        return this.message.equals(o.message) && this.expression == o.expression;
     }
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPUnwrapExpression(this.expression.deepCopy());
+        return new DBSPUnwrapExpression(this.message, this.expression.deepCopy());
     }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append(this.expression)
+        if (this.message.isEmpty())
+            return builder.append(this.expression)
                 .append(".unwrap()");
+        else
+            return builder.append(this.expression)
+                    .append(".expect(")
+                    .append(Utilities.doubleQuote(this.message, false))
+                    .append(")");
     }
 
     @Override
@@ -67,6 +75,7 @@ public final class DBSPUnwrapExpression extends DBSPExpression {
     public static DBSPUnwrapExpression fromJson(JsonNode node, JsonDecoder decoder) {
         getJsonType(node, decoder);
         DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
-        return new DBSPUnwrapExpression(expression);
+        String message = Utilities.getStringProperty(node, "message");
+        return new DBSPUnwrapExpression(message, expression);
     }
 }

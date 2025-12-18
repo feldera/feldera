@@ -3941,6 +3941,14 @@ pub fn cast_to_Uuid_bytes(value: ByteArray) -> SqlResult<Uuid> {
 
 cast_function!(Uuid, Uuid, bytes, ByteArray);
 
+#[doc(hidden)]
+pub fn unwrap_value<T>(value: Option<T>, message: &'static str) -> SqlResult<T> {
+    match value {
+        None => Err(SqlRuntimeError::from_strng(message)),
+        Some(value) => Ok(value),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use arcstr::ArcStr;

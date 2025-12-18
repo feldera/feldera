@@ -505,7 +505,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         DBSPExpression reduced = null;
 
         if (source.mayBeMonotone()) {
-            reduced = new DBSPUnwrapExpression(source.getReducedExpression());
+            reduced = new DBSPUnwrapExpression(expression.message, source.getReducedExpression());
         }
         if (this.positiveExpressions.contains(expression.expression))
             this.positiveExpressions.add(expression);

@@ -122,7 +122,8 @@ public class InternTests extends SqlIoTest {
         DBSPExpression expr0 = ExpressionCompiler.expandTupleCast(CalciteObject.EMPTY, var, tuple);
         Assert.assertEquals("Tup2::new((t.0), (t.1), )", expr0.toString());
         DBSPExpression expr1 = ExpressionCompiler.expandTupleCast(CalciteObject.EMPTY, nVar, tuple);
-        Assert.assertEquals("Tup2::new((n.unwrap().0), (n.unwrap().1), )", expr1.toString());
+        Assert.assertEquals("Tup2::new((n.expect(\"Cast to non-nullable type applied to NULL value\").0), " +
+                "(n.expect(\"Cast to non-nullable type applied to NULL value\").1), )", expr1.toString());
         DBSPExpression expr2 = ExpressionCompiler.expandTupleCast(CalciteObject.EMPTY, var, nTuple);
         Assert.assertEquals("Some(Tup2::new((t.0), (t.1), ))", expr2.toString());
         DBSPExpression expr3 = ExpressionCompiler.expandTupleCast(CalciteObject.EMPTY, nVar, nTuple);
@@ -130,7 +131,7 @@ public class InternTests extends SqlIoTest {
                 if n.is_none() {
                     None
                 } else {
-                    Some(Tup2::new((n.unwrap().0), (n.unwrap().1), ))
+                    Some(Tup2::new((n.expect("Cast to non-nullable type applied to NULL value").0), (n.expect("Cast to non-nullable type applied to NULL value").1), ))
                 }""", expr3.toString());
     }
 }

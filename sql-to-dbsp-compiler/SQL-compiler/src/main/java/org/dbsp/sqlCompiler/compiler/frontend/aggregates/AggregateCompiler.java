@@ -965,7 +965,8 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPExpression isNull = this.getAggregatedValue().is_null();
             DBSPPath path = new DBSPPath(LinearAggregate.userDefinedAccumulatorTypeName(function.getName()), "zero");
             DBSPExpression accumulatorZero = new DBSPApplyExpression(new DBSPPathExpression(DBSPTypeAny.getDefault(), path), innerAccumType);
-            DBSPExpression unwrappedAggregated = this.getAggregatedValue().unwrapIfNullable();
+            DBSPExpression unwrappedAggregated = this.getAggregatedValue()
+                    .unwrapIfNullable("Aggregated value should not be NULL");
             DBSPExpression callMap =
                     new DBSPTupleExpression(
                             new DBSPIfExpression(this.node, isNull, accumulatorZero,
