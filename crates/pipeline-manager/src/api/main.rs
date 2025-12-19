@@ -393,6 +393,7 @@ It contains the following fields:
         feldera_types::transport::iceberg::GlueCatalogConfig,
         feldera_types::transport::postgres::PostgresReaderConfig,
         feldera_types::transport::postgres::PostgresWriterConfig,
+        feldera_types::transport::postgres::PostgresWriteMode,
         feldera_types::transport::redis::RedisOutputConfig,
         feldera_types::transport::http::Chunk,
         feldera_types::transport::clock::ClockConfig,

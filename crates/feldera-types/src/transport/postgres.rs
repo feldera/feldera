@@ -1,5 +1,34 @@
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use utoipa::ToSchema;
+
+/// PostgreSQL write mode.
+///
+/// Determines how the PostgreSQL output connector writes data to the target table.
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema, Default)]
+pub enum PostgresWriteMode {
+    /// Materialized mode: perform direct INSERT, UPDATE, and DELETE operations on the table.
+    /// This is the default behavior and maintains the postgres table as a materialized snapshot of the output view.
+    #[default]
+    #[serde(rename = "materialized")]
+    Materialized,
+
+    /// CDC (Change Data Capture) mode: write all operations as INSERT operations
+    /// into an append-only event log with additional metadata columns.
+    /// In this mode, inserts, updates, and deletes are all represented as new rows
+    /// with metadata columns describing the operation type and timestamp.
+    #[serde(rename = "cdc")]
+    Cdc,
+}
+
+impl Display for PostgresWriteMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Materialized => write!(f, "materialized"),
+            Self::Cdc => write!(f, "cdc"),
+        }
+    }
+}
 
 /// Postgres input connector configuration.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
@@ -21,6 +50,38 @@ pub struct PostgresWriterConfig {
 
     /// The table to write the output to.
     pub table: String,
+
+    /// Write mode for the connector.
+    ///
+    /// - `materialized` (default): Perform direct INSERT, UPDATE, and DELETE operations on the table.
+    /// - `cdc`: Write all operations as INSERT operations into an append-only event log
+    ///   with additional metadata columns describing the operation type and timestamp.
+    #[serde(default)]
+    #[schema(default = PostgresWriteMode::default)]
+    pub mode: PostgresWriteMode,
+
+    /// Name of the operation metadata column in CDC mode.
+    ///
+    /// Only used when `mode = "cdc"`. This column will contain:
+    /// - `"i"` for insert operations
+    /// - `"u"` for upsert operations
+    /// - `"d"` for delete operations
+    ///
+    /// Default: `"__feldera_op"`
+    #[serde(default = "default_cdc_op_column")]
+    #[schema(default = default_cdc_op_column)]
+    pub cdc_op_column: String,
+
+    /// Name of the timestamp metadata column in CDC mode.
+    ///
+    /// Only used when `mode = "cdc"`. This column will contain the timestamp
+    /// (in RFC 3339 format) when the batch of updates was output
+    /// by the pipeline.
+    ///
+    /// Default: `"__feldera_ts"`
+    #[serde(default = "default_cdc_ts_column")]
+    #[schema(default = default_cdc_ts_column)]
+    pub cdc_ts_column: String,
 
     /// A sequence of CA certificates in PEM format.
     pub ssl_ca_pem: Option<String>,
@@ -68,6 +129,10 @@ pub struct PostgresWriterConfig {
     /// This setting does not affect `UPDATE` statements, which always replace the
     /// value associated with the key.
     ///
+    /// This setting has no effect when `mode = "cdc"`, since all operations
+    /// are performed as append-only `INSERT`s into the target table.
+    /// Any conflict in CDC mode will result in an error.
+    ///
     /// Default: `false`
     #[serde(default)]
     pub on_conflict_do_nothing: bool,
@@ -75,4 +140,38 @@ pub struct PostgresWriterConfig {
 
 fn default_max_buffer_size() -> usize {
     usize::pow(2, 20)
+}
+
+fn default_cdc_op_column() -> String {
+    "__feldera_op".to_string()
+}
+
+fn default_cdc_ts_column() -> String {
+    "__feldera_ts".to_string()
+}
+
+impl PostgresWriterConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.mode == PostgresWriteMode::Cdc {
+            if self.cdc_op_column.trim().is_empty() {
+                return Err("cdc_op_column cannot be empty in CDC mode".to_string());
+            }
+            if self.cdc_ts_column.trim().is_empty() {
+                return Err("cdc_ts_column cannot be empty in CDC mode".to_string());
+            }
+
+            if !self.cdc_op_column.is_ascii() {
+                return Err("cdc_op_column must contain only ASCII characters".to_string());
+            }
+
+            if !self.cdc_ts_column.is_ascii() {
+                return Err("cdc_ts_column must contain only ASCII characters".to_string());
+            }
+
+            if self.on_conflict_do_nothing {
+                log::warn!("on_conflict_do_nothing has no effect in CDC mode and will be ignored");
+            }
+        }
+        Ok(())
+    }
 }

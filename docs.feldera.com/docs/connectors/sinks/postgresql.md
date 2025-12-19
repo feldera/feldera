@@ -21,6 +21,9 @@ in the PostgreSQL table.
 | ----------------------- | ------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `uri`\*                 | string  |           | A PostgreSQL connection URL, e.g., `"postgresql://postgres:1234@127.0.0.1:7373/postgres"` (see the tokio-postgres [Config](https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html) struct for a detailed list of options). |
 | `table`\*               | string  |           | The PostgreSQL table to write the outputs to. The schema of this table should be compatible with the schema of the output view.                                                                                                                    |
+| `mode`                  | string  | `materialized` | Specifies the mode to run the connector in (`materialized` or `"cdc"`). |
+| `cdc_op_column`         | string  | `__feldera_op` | Name of the operation metadata column in CDC mode. This column in the output row will contain `"i"` (insert), `"u"` (upsert), or `"d"` (delete). Only used when `mode = "cdc"`. This column must exist in the PostgreSQL target table and store character values.                                                                                                    |
+| `cdc_ts_column`         | string  | `__feldera_ts` | Name of the timestamp metadata column in CDC mode. Contains timestamp when the record was output. Only used when `mode = "cdc"`. This column must exist in the PostgreSQL target table, and store **timestamp** values in **RFC 3339 format**.                                                                                                                     |
 | `ssl_ca_pem`            | string  |           | A sequence of CA certificates in PEM format. Required for TLS, and takes precedence over `ssl_ca_location`.                                                                                                                                                                                                |
 | `ssl_ca_location`       | string  |           | Path to a file containing a sequence of CA certificates in PEM format. Required for TLS, takes lower precedence than `ssl_ca_pem`.                                                                                                                                                                                                |
 | `ssl_client_pem`        | string  |           | The client certificate in PEM format. Takes precedence over `ssl_client_location`.                                                                                                                                                                                                             |
@@ -31,7 +34,7 @@ in the PostgreSQL table.
 | `verify_hostname`       | boolean | `true`    | True to enable hostname verification when using TLS. True by default.                                                                                                                                                                              |
 | `max_records_in_buffer` | integer |           | The maximum number of records in a single buffer. If not specified, there is no explicit limit on the number of records, but the buffer may still be constrained by `max_buffer_size_bytes`.                                                       |
 | `max_buffer_size_bytes` | integer | `1048576` | The maximum buffer size (in bytes) for a single operation. Buffers for `INSERT`, `UPDATE`, and `DELETE` queries are maintained separately. Default is 1 MiB (`1048576` bytes).                                                                     |
-| `on_conflict_do_nothing` | bool   | `false`   | Specifies how the connector handles conflicts when executing an `INSERT` into a table with a primary key. By default, an existing row with the same key is overwritten. Setting this flag to `true` preserves the existing row and ignores the new insert. <p> This setting does not affect `UPDATE` statements, which always replace the value associated with the key.</p> |
+| `on_conflict_do_nothing` | bool   | `false`   | Specifies how the connector handles conflicts when executing an `INSERT` into a table with a primary key. By default, an existing row with the same key is overwritten. Setting this flag to `true` preserves the existing row and ignores the new insert. <p> This setting does not affect `UPDATE` statements, which always replace the value associated with the key.</p><p>**This setting has no effect when `mode = "cdc"`, since all operations are performed as append-only `INSERT`s into the target table. Any conflict in CDC mode will result in an error.**</p> |
 
 
 [*]: Required fields
@@ -39,6 +42,32 @@ in the PostgreSQL table.
 The schema of the PostgreSQL table should match the schema of the Feldera view, as outlined in the table below, with the following exceptions:
 - Narrower Feldera types such as `INT2` and `FLOAT4` can be stored in wider PostgreSQL column types like `INT8` and `FLOAT8` respectively.
 - Columns in the PostgreSQL table that are **nullable** or have **default** values may be omitted from the Feldera view.
+
+### Write Modes
+
+The PostgreSQL connector supports two write modes:
+
+#### Materialized Mode (Default)
+
+In materialized mode (`"mode": "materialized"`), the connector performs direct `INSERT`, `UPDATE`, and `DELETE` operations on the target table. This mode:
+  - Maintains the target table as a materialized snapshot of the view
+  - Updates existing records in-place and removes deleted records
+
+#### CDC Mode
+
+In CDC mode (`"mode": "cdc"`), the connector writes all operations as `INSERT` operations into an append-only event log. This mode:
+  - Preserves a complete history of all changes
+  - Adds metadata columns to track operation type and timestamp
+
+When using CDC mode, you must ensure your PostgreSQL table includes the metadata columns:
+- Operation column (default: `__feldera_op`): Contains `"i"` (insert), `"u"` (upsert), or `"d"` (delete)
+- Timestamp column (default: `__feldera_ts`): Contains timestamp when the record was output
+
+You can customize the names of these columns using the `cdc_op_column` and `cdc_ts_column` configuration options.
+
+:::warning
+Please be careful when specifying `PRIMARY KEY` constraints in the PostgreSQL target table when using `cdc` mode.
+:::
 
 ### Connecting with TLS / SSL
 
