@@ -17,6 +17,7 @@ pub enum ServiceName {
     ControlPlane,
     KubernetesRunner,
     Pipeline,
+    ApiServer,
 }
 
 impl ServiceName {
@@ -28,6 +29,7 @@ impl ServiceName {
             ServiceName::ControlPlane => "control-plane",
             ServiceName::KubernetesRunner => "kubernetes-runner",
             ServiceName::Pipeline => "pipeline",
+            ServiceName::ApiServer => "api-server",
         }
     }
 }
