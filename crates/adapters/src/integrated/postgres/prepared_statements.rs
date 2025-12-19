@@ -1,5 +1,8 @@
 use super::error::BackoffError;
-use feldera_types::{program_schema::Relation, transport::postgres::PostgresWriterConfig};
+use feldera_types::{
+    program_schema::Relation,
+    transport::postgres::{PostgresWriteMode, PostgresWriterConfig},
+};
 use itertools::Itertools;
 use postgres::Statement;
 
@@ -21,69 +24,83 @@ impl RawQueries {
 
         let mut raw_queries = RawQueries::default();
 
-        {
-            let on_conflict = if config.on_conflict_do_nothing {
-                " DO NOTHING".to_owned()
-            } else {
-                let keys = keys.join(", ");
+        match config.mode {
+            PostgresWriteMode::Cdc => {
+                // In CDC mode, everything is an INSERT into the event log
+                raw_queries.insert = format!(
+                    r#"INSERT INTO "{table}" SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)"#,
+                );
+                // For CDC mode, upsert and delete operations also use INSERT
+                raw_queries.upsert = raw_queries.insert.clone();
+                raw_queries.delete = raw_queries.insert.clone();
+            }
+            PostgresWriteMode::Materialized => {
+                let on_conflict = if config.on_conflict_do_nothing {
+                    " DO NOTHING".to_owned()
+                } else {
+                    let keys = keys.join(", ");
 
-                let columns: String = value_schema
+                    let columns: String = value_schema
+                        .fields
+                        .iter()
+                        .map(|f| {
+                            let f = f.name.sql_name();
+                            format!(r#" {f} = EXCLUDED.{f} "#)
+                        })
+                        .join(", ");
+
+                    format!(" ({keys}) DO UPDATE SET {columns}")
+                };
+
+                raw_queries.insert = format!(
+                    r#"INSERT INTO "{table}" SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb) ON CONFLICT {on_conflict}"#,
+                );
+            }
+        }
+
+        // Only generate DELETE and UPDATE queries for normal mode
+        if matches!(config.mode, PostgresWriteMode::Materialized) {
+            {
+                let (table_keys, d_keys): (Vec<_>, Vec<_>) = keys
+                    .iter()
+                    .map(|k| (format!(r#" "{table}".{k} "#), format!("d.{k}")))
+                    .unzip();
+
+                raw_queries.delete = format!(
+                    r#"DELETE FROM "{table}" USING (SELECT {} FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)) as d where ({}) = ({})"#,
+                    keys.iter()
+                        .map(|k| k.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    table_keys.join(", "),
+                    d_keys.join(", "),
+                );
+            }
+
+            {
+                let table_alias = "t";
+                let new_alias = "n";
+                let columns = value_schema
                     .fields
                     .iter()
                     .map(|f| {
                         let f = f.name.sql_name();
-                        format!(r#" {f} = EXCLUDED.{f} "#)
+                        format!("{f} = {new_alias}.{f}")
                     })
+                    .collect::<Vec<_>>()
                     .join(", ");
 
-                format!(" ({keys}) DO UPDATE SET {columns}")
-            };
+                let (table_fields, new_fields): (Vec<_>, Vec<_>) = keys
+                    .iter()
+                    .map(|f| (format!("{table_alias}.{f}"), format!("{new_alias}.{f}")))
+                    .unzip();
 
-            raw_queries.insert = format!(
-                r#"INSERT INTO "{table}" SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb) ON CONFLICT {on_conflict}"#,
-            );
-        }
-
-        {
-            let (table_keys, d_keys): (Vec<_>, Vec<_>) = keys
-                .iter()
-                .map(|k| (format!(r#" "{table}".{k} "#), format!("d.{k}")))
-                .unzip();
-
-            raw_queries.delete = format!(
-                r#"DELETE FROM "{table}" USING (SELECT {} FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)) as d where ({}) = ({})"#,
-                keys.iter()
-                    .map(|k| k.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                table_keys.join(", "),
-                d_keys.join(", "),
-            );
-        }
-
-        {
-            let table_alias = "t";
-            let new_alias = "n";
-            let columns = value_schema
-                .fields
-                .iter()
-                .map(|f| {
-                    let f = f.name.sql_name();
-                    format!("{f} = {new_alias}.{f}")
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            let (table_fields, new_fields): (Vec<_>, Vec<_>) = keys
-                .iter()
-                .map(|f| (format!("{table_alias}.{f}"), format!("{new_alias}.{f}")))
-                .unzip();
-
-            raw_queries.upsert = format!(
-                r#"UPDATE "{table}" AS {table_alias} SET {columns} FROM (SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)) AS {new_alias} WHERE ({}) = ({})"#,
-                table_fields.join(", "),
-                new_fields.join(", ")
-            );
+                raw_queries.upsert = format!(
+                    r#"UPDATE "{table}" AS {table_alias} SET {columns} FROM (SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)) AS {new_alias} WHERE ({}) = ({})"#,
+                    table_fields.join(", "),
+                    new_fields.join(", ")
+                );
+            }
         }
 
         raw_queries
