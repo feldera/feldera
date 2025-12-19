@@ -2174,15 +2174,37 @@ fn test_external_controller_status_serialization() {
             None,
             None,
         );
-        kafka_endpoint.metrics.total_bytes.store(250000000, Ordering::Relaxed);
-        kafka_endpoint.metrics.total_records.store(500000, Ordering::Relaxed);
-        kafka_endpoint.metrics.buffered_records.store(750, Ordering::Relaxed);
-        kafka_endpoint.metrics.buffered_bytes.store(75000, Ordering::Relaxed);
-        kafka_endpoint.metrics.num_transport_errors.store(5, Ordering::Relaxed);
-        kafka_endpoint.metrics.num_parse_errors.store(12, Ordering::Relaxed);
-        kafka_endpoint.metrics.end_of_input.store(false, Ordering::Relaxed);
+        kafka_endpoint
+            .metrics
+            .total_bytes
+            .store(250000000, Ordering::Relaxed);
+        kafka_endpoint
+            .metrics
+            .total_records
+            .store(500000, Ordering::Relaxed);
+        kafka_endpoint
+            .metrics
+            .buffered_records
+            .store(750, Ordering::Relaxed);
+        kafka_endpoint
+            .metrics
+            .buffered_bytes
+            .store(75000, Ordering::Relaxed);
+        kafka_endpoint
+            .metrics
+            .num_transport_errors
+            .store(5, Ordering::Relaxed);
+        kafka_endpoint
+            .metrics
+            .num_parse_errors
+            .store(12, Ordering::Relaxed);
+        kafka_endpoint
+            .metrics
+            .end_of_input
+            .store(false, Ordering::Relaxed);
         kafka_endpoint.paused.store(true, Ordering::Relaxed);
-        *kafka_endpoint.fatal_error.lock().unwrap() = Some("Connection refused: Unable to connect to Kafka broker".to_string());
+        *kafka_endpoint.fatal_error.lock().unwrap() =
+            Some("Connection refused: Unable to connect to Kafka broker".to_string());
         inputs.insert(0, kafka_endpoint);
 
         // Input 2: file_input with barrier and no errors
@@ -2205,13 +2227,34 @@ fn test_external_controller_status_serialization() {
             None,
             None,
         );
-        file_endpoint.metrics.total_bytes.store(250000000, Ordering::Relaxed);
-        file_endpoint.metrics.total_records.store(500000, Ordering::Relaxed);
-        file_endpoint.metrics.buffered_records.store(750, Ordering::Relaxed);
-        file_endpoint.metrics.buffered_bytes.store(75000, Ordering::Relaxed);
-        file_endpoint.metrics.num_transport_errors.store(0, Ordering::Relaxed);
-        file_endpoint.metrics.num_parse_errors.store(3, Ordering::Relaxed);
-        file_endpoint.metrics.end_of_input.store(true, Ordering::Relaxed);
+        file_endpoint
+            .metrics
+            .total_bytes
+            .store(250000000, Ordering::Relaxed);
+        file_endpoint
+            .metrics
+            .total_records
+            .store(500000, Ordering::Relaxed);
+        file_endpoint
+            .metrics
+            .buffered_records
+            .store(750, Ordering::Relaxed);
+        file_endpoint
+            .metrics
+            .buffered_bytes
+            .store(75000, Ordering::Relaxed);
+        file_endpoint
+            .metrics
+            .num_transport_errors
+            .store(0, Ordering::Relaxed);
+        file_endpoint
+            .metrics
+            .num_parse_errors
+            .store(3, Ordering::Relaxed);
+        file_endpoint
+            .metrics
+            .end_of_input
+            .store(true, Ordering::Relaxed);
         file_endpoint.barrier.store(true, Ordering::Relaxed);
         inputs.insert(1, file_endpoint);
 
@@ -2233,16 +2276,31 @@ fn test_external_controller_status_serialization() {
 
         // Set output metrics
         if let Some(output) = status.output_status().get(&0) {
-            output.metrics.transmitted_records.store(998000, Ordering::Relaxed);
-            output.metrics.transmitted_bytes.store(499000000, Ordering::Relaxed);
+            output
+                .metrics
+                .transmitted_records
+                .store(998000, Ordering::Relaxed);
+            output
+                .metrics
+                .transmitted_bytes
+                .store(499000000, Ordering::Relaxed);
             output.metrics.queued_records.store(100, Ordering::Relaxed);
             output.metrics.queued_batches.store(5, Ordering::Relaxed);
             output.metrics.buffered_records.store(50, Ordering::Relaxed);
             output.metrics.buffered_batches.store(2, Ordering::Relaxed);
             output.metrics.num_encode_errors.store(8, Ordering::Relaxed);
-            output.metrics.num_transport_errors.store(3, Ordering::Relaxed);
-            output.metrics.total_processed_input_records.store(998500, Ordering::Relaxed);
-            output.metrics.memory.store(1024 * 1024 * 10, Ordering::Relaxed); // 10 MB
+            output
+                .metrics
+                .num_transport_errors
+                .store(3, Ordering::Relaxed);
+            output
+                .metrics
+                .total_processed_input_records
+                .store(998500, Ordering::Relaxed);
+            output
+                .metrics
+                .memory
+                .store(1024 * 1024 * 10, Ordering::Relaxed); // 10 MB
         }
 
         status
