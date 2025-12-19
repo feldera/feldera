@@ -16,7 +16,7 @@ These identity fields are lifted alongside the standard top-level metadata (`tim
 
 | Field              | Meaning                                                                          |
 | ------------------ | -------------------------------------------------------------------------------- |
-| `feldera-service`  | Source: `manager` \| `runner` \| `compiler-server` \| `kubernetes-runner` \| `control-plane` \| `pipeline` (auto-tagged by module path). This identifies which Feldera component produced the log. |
+| `feldera-service`  | Source: `manager` \| `runner` \| `compiler-server` \| `kubernetes-runner` \| `api-server` \| `control-plane` \| `pipeline` (auto-tagged by module path). This identifies which Feldera component produced the log. |
 | `pipeline-name`    | Human-friendly pipeline name when available; if it is not immediately available it is set to `N/A`. Present for pipeline events. Control plane events tied to a specific pipeline also include this name. |
 | `pipeline-id`      | Pipeline UUID when the event relates to a specific pipeline. Present for pipeline events. Control plane events tied to a specific pipeline also include this ID. |
 
