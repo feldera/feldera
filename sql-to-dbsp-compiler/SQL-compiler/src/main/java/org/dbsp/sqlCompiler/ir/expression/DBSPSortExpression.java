@@ -51,12 +51,9 @@ public final class DBSPSortExpression extends DBSPExpression {
     // Usually a DBSPComparatorExpression, but can be a PathExpression too.
     public final DBSPExpression comparator;
     public final DBSPType elementType;
-    @Nullable
-    public final DBSPExpression limit;
 
     public DBSPSortExpression(
-            CalciteObject node, DBSPType elementType,
-            DBSPExpression comparator, @Nullable DBSPExpression limit) {
+            CalciteObject node, DBSPType elementType, DBSPExpression comparator) {
         super(node, new DBSPTypeFunction(
                 // Return type
                 new DBSPTypeArray(elementType, false),
@@ -66,7 +63,6 @@ public final class DBSPSortExpression extends DBSPExpression {
                         new DBSPTypeArray(elementType, false).ref())));
         this.comparator = comparator;
         this.elementType = elementType;
-        this.limit = limit;
     }
 
     @Override
@@ -76,10 +72,6 @@ public final class DBSPSortExpression extends DBSPExpression {
         visitor.push(this);
         visitor.property("comparator");
         this.comparator.accept(visitor);
-        if (this.limit != null) {
-            visitor.property("limit");
-            this.limit.accept(visitor);
-        }
         visitor.property("elementType");
         this.elementType.accept(visitor);
         visitor.pop(this);
@@ -93,8 +85,7 @@ public final class DBSPSortExpression extends DBSPExpression {
         if (o == null)
             return false;
         return this.comparator == o.comparator &&
-                this.elementType == o.elementType &&
-                this.limit == o.limit;
+                this.elementType == o.elementType;
     }
 
     @Override
@@ -107,7 +98,7 @@ public final class DBSPSortExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPSortExpression(this.getNode(), this.elementType,
-                this.comparator.deepCopy().to(DBSPComparatorExpression.class), this.limit);
+                this.comparator.deepCopy().to(DBSPComparatorExpression.class));
     }
 
     @Override
@@ -115,8 +106,7 @@ public final class DBSPSortExpression extends DBSPExpression {
         DBSPSortExpression otherExpression = other.as(DBSPSortExpression.class);
         if (otherExpression == null)
             return false;
-        return this.comparator.equivalent(context, otherExpression.comparator) &&
-                EquivalenceContext.equiv(this.limit, otherExpression.limit);
+        return this.comparator.equivalent(context, otherExpression.comparator);
     }
 
 
@@ -124,9 +114,6 @@ public final class DBSPSortExpression extends DBSPExpression {
     public static DBSPSortExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPExpression.class);
         DBSPType elementType = fromJsonInner(node, "elementType", decoder, DBSPType.class);
-        DBSPExpression limit = null;
-        if (node.has("limit"))
-            limit = fromJsonInner(node, "limit", decoder, DBSPExpression.class);
-        return new DBSPSortExpression(CalciteObject.EMPTY, elementType, comparator, limit);
+        return new DBSPSortExpression(CalciteObject.EMPTY, elementType, comparator);
     }
 }

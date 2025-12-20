@@ -404,9 +404,8 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     @Override
     public void postorder(DBSPSortExpression node) {
         DBSPExpression comparator = this.getE(node.comparator);
-        DBSPExpression limit = this.getEN(node.limit);
         this.map(node, new DBSPSortExpression(node.getNode(), node.elementType,
-                comparator.to(DBSPComparatorExpression.class), limit));
+                comparator.to(DBSPComparatorExpression.class)));
     }
 
     @Override

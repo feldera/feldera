@@ -344,12 +344,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 // we don't use sort_unstable_by because it is
                 // non-deterministic
                 .append("v.sort_by(comp);").newline();
-        if (expression.limit != null) {
-            this.builder.append("let mut v = (**array).clone();").newline();
-            this.builder.append("v.truncate(");
-            expression.limit.accept(this);
-            this.builder.append(");").newline();
-        }
         this.builder.append("v.into()");
         this.builder.newline()
                 .decrease()
