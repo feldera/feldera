@@ -1573,4 +1573,18 @@ public class Regression1Tests extends SqlIoTest {
                 LAG(intt) OVER ()
                 FROM tbl;""");
     }
+
+    @Test
+    public void limitDuplicate() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT);
+                CREATE VIEW V AS SELECT * FROM T ORDER BY x LIMIT 1;""");
+        ccs.step("""
+                INSERT INTO T VALUES(1);
+                INSERT INTO T VALUES(1);
+                """, """
+                 x | weight
+                ------------
+                 1 | 1""");
+    }
 }

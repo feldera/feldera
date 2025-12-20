@@ -96,6 +96,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
@@ -2743,19 +2744,23 @@ public class CalciteToDBSPCompiler extends RelVisitor
         IntermediateRel node = CalciteObject.create(sort);
         RelNode input = sort.getInput();
         DBSPSimpleOperator opInput = this.getOperator(input);
-        if (this.options.languageOptions.ignoreOrderBy && sort.fetch == null) {
+        if (this.options.languageOptions.ignoreOrderBy && sort.fetch == null && sort.offset == null) {
             this.warnNoSort(node);
             Utilities.putNew(this.nodeOperator, sort, opInput);
             return;
         }
-        if (sort.offset != null)
-            throw new UnimplementedException("OFFSET in SORT not yet implemented", 172, node);
 
         DBSPExpression limit = null;
         if (sort.fetch != null) {
             ExpressionCompiler expressionCompiler = new ExpressionCompiler(sort, null, this.compiler);
-            // We expect the limit to be a constant
             limit = expressionCompiler.compile(sort.fetch);
+            limit = limit.cast(limit.getNode(), DBSPTypeUSize.create(limit.getType().mayBeNull), false);
+        }
+        DBSPExpression offset = null;
+        if (sort.offset != null) {
+            ExpressionCompiler expressionCompiler = new ExpressionCompiler(sort, null, this.compiler);
+            offset = expressionCompiler.compile(sort.offset);
+            offset = offset.cast(offset.getNode(), DBSPTypeUSize.create(offset.getType().mayBeNull), false);
         }
 
         DBSPType inputRowType = this.convertType(node.getPositionRange(), input.getRowType(), false);
@@ -2773,12 +2778,19 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // Generate comparison function for sorting the vector
         DBSPComparatorExpression comparator = generateComparator(
                 node, sort.getCollation().getFieldCollations(), inputRowType, false);
-        if (sort.fetch != null) {
-            // TopK operator.
+        DBSPEqualityComparatorExpression eq = new DBSPEqualityComparatorExpression(node, comparator);
+
+        DBSPExpression total = null;
+        if (offset != null && limit != null) {
+            total = ExpressionCompiler.makeBinaryExpression(
+                    node, limit.getType(), DBSPOpcode.ADD, limit, offset);
+        }
+
+        if (limit != null || offset != null) {
+            // We build one or two TopK operators: one for total and one for offset
             // Since TopK is always incremental we have to wrap it into a D-I pair
             DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, index.outputPort());
             this.addOperator(diff);
-            DBSPEqualityComparatorExpression eq = new DBSPEqualityComparatorExpression(node, comparator);
 
             // Output producer is (index, row) -> row
             DBSPVariablePath left = DBSPTypeInteger.getType(node, INT64, false).var();
@@ -2787,21 +2799,49 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPTupleExpression tuple = new DBSPTupleExpression(flattened, false);
             DBSPClosureExpression outputProducer = tuple.closure(left, right);
 
-            limit = limit.cast(limit.getNode(), DBSPTypeUSize.create(limit.getType().mayBeNull), false);
-            DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(
-                    node, DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER,
-                    comparator, limit, eq, outputProducer, diff.outputPort());
-            this.addOperator(topK);
-            DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, topK.outputPort());
-            this.addOperator(integral);
+            // TopK operator to compute the first offset rows, which will be dropped
+            DBSPSimpleOperator offsetOperator = null;
+            if (offset != null) {
+                offsetOperator = new DBSPIndexedTopKOperator(
+                        node, DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER,
+                        comparator, offset, eq, outputProducer, diff.outputPort());
+                this.addOperator(offsetOperator);
+                offsetOperator = new DBSPIntegrateOperator(node, offsetOperator.outputPort());
+                this.addOperator(offsetOperator);
+
+                if (limit != null)
+                    limit = total;
+            }
+
+            DBSPSimpleOperator limitOperator = null;
+            if (limit != null) {
+                limitOperator = new DBSPIndexedTopKOperator(
+                        node, DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER,
+                        comparator, limit, eq, outputProducer, diff.outputPort());
+                this.addOperator(limitOperator);
+                limitOperator = new DBSPIntegrateOperator(node, limitOperator.outputPort());
+                this.addOperator(limitOperator);
+            }
+
+            if (offsetOperator != null) {
+                if (limitOperator != null) {
+                    limitOperator = new DBSPSubtractOperator(node, limitOperator.outputPort(), offsetOperator.outputPort());
+                } else {
+                    limitOperator = new DBSPSubtractOperator(node, index.outputPort(), offsetOperator.outputPort());
+                }
+                this.addOperator(limitOperator);
+            }
+
             // If we ignore ORDER BY this is the result.
             boolean done = this.options.languageOptions.ignoreOrderBy;
-            // We can also ignore the order by for some ancestors
+            // We can also ignore the order by for ancestor nodes that do not care about it.
+            // Perhaps the optimizer should have handled this case.
             if (!this.ancestors.isEmpty()) {
                 RelNode last = Utilities.last(this.ancestors);
                 if (last instanceof LogicalAggregate ||
                         last instanceof LogicalProject ||
-                        last instanceof LogicalJoin) {
+                        last instanceof LogicalJoin ||
+                        last instanceof LogicalAsofJoin) {
                     done = true;
                 }
             }
@@ -2812,14 +2852,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.warnNoSort(node);
             if (done) {
                 // We must drop the index we built.
-                DBSPDeindexOperator deindex = new DBSPDeindexOperator(node.getFinal(), node, integral.outputPort());
+                DBSPDeindexOperator deindex = new DBSPDeindexOperator(node.getFinal(), node, limitOperator.outputPort());
                 this.assignOperator(sort, deindex);
                 return;
             }
             // Otherwise we have to sort again in a vector!
             // Fall through, continuing from the integral.
-            index = integral;
+            index = limitOperator;
         }
+
         // Global sort.  Implemented by aggregate in a single Vec<> which is then sorted.
         // Apply an aggregation function that just creates a vector.
         DBSPTypeArray arrayType = new DBSPTypeArray(inputRowType, false);
@@ -2843,9 +2884,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 folder, null, index.outputPort());
         this.addOperator(agg);
 
-        if (limit != null)
-            limit = limit.cast(limit.getNode(), DBSPTypeUSize.INSTANCE, false);
-        DBSPSortExpression sorter = new DBSPSortExpression(node, inputRowType, comparator, limit);
+        DBSPSortExpression sorter = new DBSPSortExpression(node, inputRowType, comparator);
         DBSPSimpleOperator result = new DBSPMapOperator(
                 node.getFinal(), sorter, TypeCompiler.makeZSet(arrayType), agg.outputPort());
         this.assignOperator(sort, result);
