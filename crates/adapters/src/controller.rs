@@ -4339,7 +4339,11 @@ impl ControllerInner {
             "connector-init",
             pool_size as usize,
             source_tasks.chain(sink_tasks),
-        )?;
+        )
+        .inspect_err(|_e| {
+            // Set the state to terminated to make sure that when we later unpark auxiliary threads, they will exit.
+            controller.status.set_state(PipelineState::Terminated);
+        })?;
 
         let _ = controller.connect_input("now", &now_endpoint_config(&config), None);
 
@@ -4868,18 +4872,22 @@ impl ControllerInner {
         self.runtime
             .upgrade()
             .expect("attempt to add an output connector after the runtime has terminated")
-            .spawn_aux_thread(&format!("{endpoint_name_string}-output"), move || {
-                Self::output_thread_func(
-                    endpoint_id,
-                    endpoint_name_string,
-                    output_buffer_config,
-                    encoder,
-                    parker,
-                    queue,
-                    disconnect_flag,
-                    controller,
-                )
-            });
+            .spawn_aux_thread(
+                &format!("{endpoint_name_string}-output"),
+                parker,
+                move |parker| {
+                    Self::output_thread_func(
+                        endpoint_id,
+                        endpoint_name_string,
+                        output_buffer_config,
+                        encoder,
+                        parker,
+                        queue,
+                        disconnect_flag,
+                        controller,
+                    )
+                },
+            );
 
         Ok(endpoint_id)
     }

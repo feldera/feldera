@@ -686,7 +686,9 @@ impl Runtime {
                     }
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
-                    Err(TryRecvError::Empty) => parker.park(),
+                    Err(TryRecvError::Empty) => {
+                        parker.park();
+                    }
                     Err(_) => {
                         break;
                     }
@@ -1913,7 +1915,6 @@ pub(crate) mod tests {
             panic!("revert_to_unknown_checkpoint is supposed to fail");
         };
 
-        println!("revert_to_unknown_checkpoint: result: {err:?}");
         assert!(matches!(
             err,
             DbspError::Storage(StorageError::CheckpointNotFound(_))
