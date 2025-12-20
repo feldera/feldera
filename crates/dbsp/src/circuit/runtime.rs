@@ -265,7 +265,7 @@ struct RuntimeInner {
     kill_signal: AtomicBool,
     // Background threads spawned by this runtime, including for aux threads, in no specific order.
     background_threads: Mutex<Vec<JoinHandle<()>>>,
-    aux_threads: Mutex<Vec<JoinHandle<()>>>,
+    aux_threads: Mutex<Vec<(JoinHandle<()>, Unparker)>>,
     buffer_caches: Vec<EnumMap<ThreadType, Arc<BufferCache>>>,
     pin_cpus: Vec<EnumMap<ThreadType, CoreId>>,
     worker_sequence_numbers: Vec<AtomicUsize>,
@@ -656,20 +656,25 @@ impl Runtime {
     /// The auxiliary thread will have access to the runtime's resources, including the
     /// storage backend. The current use case for this is to be able to use spines outside
     /// of the DBSP worker threads, e.g., to maintain output buffers.
-    pub fn spawn_aux_thread<F>(&self, thread_name: &str, f: F)
+    pub fn spawn_aux_thread<F>(&self, thread_name: &str, parker: Parker, f: F)
     where
-        F: FnOnce() + Send + 'static,
+        F: FnOnce(Parker) + Send + 'static,
     {
         let runtime = self.clone();
+        let unparker = parker.unparker().clone();
         let handle = Builder::new()
             .name(thread_name.to_string())
-            .spawn(|| {
+            .spawn(move || {
                 RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
-                f()
+                f(parker)
             })
             .expect("failed to spawn auxiliary thread");
 
-        self.inner().aux_threads.lock().unwrap().push(handle)
+        self.inner()
+            .aux_threads
+            .lock()
+            .unwrap()
+            .push((handle, unparker))
     }
 
     /// Returns this runtime's buffer cache for thread type `thread_type` in
@@ -1104,6 +1109,16 @@ impl RuntimeHandle {
         for (_worker, unparker) in self.workers.iter() {
             unparker.unpark();
         }
+
+        self.runtime
+            .inner()
+            .aux_threads
+            .lock()
+            .unwrap()
+            .iter()
+            .for_each(|(_h, unparker)| {
+                unparker.unpark();
+            });
     }
 
     /// Wait for all workers in the runtime to terminate.
@@ -1138,7 +1153,7 @@ impl RuntimeHandle {
             .lock()
             .unwrap()
             .drain(..)
-            .for_each(|h| {
+            .for_each(|(h, _unparker)| {
                 let _ = h.join();
             });
 
