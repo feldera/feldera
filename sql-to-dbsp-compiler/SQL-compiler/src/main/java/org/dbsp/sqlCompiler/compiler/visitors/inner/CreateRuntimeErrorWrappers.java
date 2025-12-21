@@ -80,7 +80,7 @@ public class CreateRuntimeErrorWrappers extends ExpressionTranslator {
         if (this.translationMap.containsKey(expression))
             return;
         DBSPExpression source = this.getE(expression.expression);
-        DBSPExpression cast = new DBSPUnwrapExpression(expression.message, source);
+        DBSPExpression cast = new DBSPUnwrapExpression(expression.message, source.applyCloneIfNeeded());
         // Wrap the cast into an error handler
         DBSPHandleErrorExpression handler = new DBSPHandleErrorExpression(
                 expression.getNode(), this.getIndex(expression.getSourcePosition().start), cast,
