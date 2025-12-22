@@ -750,10 +750,11 @@ where
     }
 
     fn clock_end(&mut self, scope: Scope) {
-        if scope + 1 == self.root_scope && !self.reset_on_clock_start {
-            if let Some(tr) = self.trace.as_mut() {
-                tr.set_frontier(&self.time.epoch_start(scope));
-            }
+        if scope + 1 == self.root_scope
+            && !self.reset_on_clock_start
+            && let Some(tr) = self.trace.as_mut()
+        {
+            tr.set_frontier(&self.time.epoch_start(scope));
         }
         self.time = self.time.advance(scope + 1);
     }

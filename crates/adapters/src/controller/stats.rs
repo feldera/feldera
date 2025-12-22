@@ -582,17 +582,16 @@ impl ControllerStatus {
             if !input.paused.load(Ordering::Acquire) {
                 continue;
             }
-            if let Some(start_after) = &input.config.connector_config.start_after {
-                if start_after
+            if let Some(start_after) = &input.config.connector_config.start_after
+                && start_after
                     .iter()
                     .all(|label| !unfinished_labels.contains(label))
-                {
-                    info!(
-                        "starting endpoint {}, whose 'start_after' dependencies have been satisfied",
-                        input.endpoint_name
-                    );
-                    endpoints_to_start.push(*endpoint_id);
-                }
+            {
+                info!(
+                    "starting endpoint {}, whose 'start_after' dependencies have been satisfied",
+                    input.endpoint_name
+                );
+                endpoints_to_start.push(*endpoint_id);
             }
         }
 

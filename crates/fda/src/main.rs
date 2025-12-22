@@ -1782,14 +1782,14 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             }
 
             // Verify transaction ID if provided
-            if let Some(expected_transaction_id) = transaction_id {
-                if current_transaction_id != expected_transaction_id as i64 {
-                    eprintln!(
-                        "Specified transaction {} doesn't match current active transaction {}",
-                        expected_transaction_id, current_transaction_id
-                    );
-                    std::process::exit(1);
-                }
+            if let Some(expected_transaction_id) = transaction_id
+                && current_transaction_id != expected_transaction_id as i64
+            {
+                eprintln!(
+                    "Specified transaction {} doesn't match current active transaction {}",
+                    expected_transaction_id, current_transaction_id
+                );
+                std::process::exit(1);
             }
 
             let actual_transaction_id = current_transaction_id;

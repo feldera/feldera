@@ -2605,7 +2605,6 @@ where
 
     fn check_fixedpoint(&self, scope: Scope) -> bool {
         self.nodes.borrow().iter().all(|node| {
-            let res = node.borrow().fixedpoint(scope);
             /*
             if !res {
                 let n = node.borrow();
@@ -2613,7 +2612,7 @@ where
                 eprintln!("not fixed {:?} {}", n1.global_id(), n1.name());
             };
             */
-            res
+            node.borrow().fixedpoint(scope)
         })
     }
 }
@@ -5789,10 +5788,10 @@ where
     }
 
     fn clock_end(&mut self, scope: Scope) {
-        if scope == 0 {
-            if let Some(export_stream) = &mut self.export_stream {
-                export_stream.put(self.operator.borrow_mut().get_final_output());
-            }
+        if scope == 0
+            && let Some(export_stream) = &mut self.export_stream
+        {
+            export_stream.put(self.operator.borrow_mut().get_final_output());
         }
         self.operator.borrow_mut().clock_end(scope);
     }
@@ -6666,21 +6665,21 @@ impl CircuitHandle {
 
             // Add all ancestors of `participate_in_backfill_new` to the `participate_in_backfill` set, except streams
             // that can be replayed from a different node.
-            if let Some(stream_id) = stream_id {
-                if let Some(replay_source) = self.circuit.get_replay_source(stream_id) {
-                    // If the replay source is itself in the need_backfill set (i.e., it's an integral without
-                    // a checkpoint), it cannot be used for replay.
-                    if !need_backfill.contains(&replay_source.local_node_id()) {
-                        replay_streams.insert(stream_id, replay_source.clone());
-                        // trace!(
-                        //     "worker {}: Replacing node_id {node_id} with replay source {}",
-                        //     Runtime::worker_index(),
-                        //     replay_source.origin_node_id()
-                        // );
+            if let Some(stream_id) = stream_id
+                && let Some(replay_source) = self.circuit.get_replay_source(stream_id)
+            {
+                // If the replay source is itself in the need_backfill set (i.e., it's an integral without
+                // a checkpoint), it cannot be used for replay.
+                if !need_backfill.contains(&replay_source.local_node_id()) {
+                    replay_streams.insert(stream_id, replay_source.clone());
+                    // trace!(
+                    //     "worker {}: Replacing node_id {node_id} with replay source {}",
+                    //     Runtime::worker_index(),
+                    //     replay_source.origin_node_id()
+                    // );
 
-                        // Replace the node_id with the replay source.
-                        node_id = replay_source.local_node_id();
-                    }
+                    // Replace the node_id with the replay source.
+                    node_id = replay_source.local_node_id();
                 }
             }
 

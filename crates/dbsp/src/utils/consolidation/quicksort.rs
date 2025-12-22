@@ -97,17 +97,17 @@ fn recurse<'a, T, R, F>(
         // element in the slice. Partition the slice into elements equal to
         // and elements greater than the pivot. This case is usually hit
         // when the slice contains many duplicate elements.
-        if let Some(p) = pred {
-            if !is_less(p, &v[pivot]) {
-                let mid = partition_equal(v, v2, pivot, is_less);
+        if let Some(p) = pred
+            && !is_less(p, &v[pivot])
+        {
+            let mid = partition_equal(v, v2, pivot, is_less);
 
-                // Continue sorting elements greater than the pivot.
-                v = &mut v[mid..];
-                v2 = &mut v2[mid..];
-                unsafe { assume(v.len() == v2.len()) }
+            // Continue sorting elements greater than the pivot.
+            v = &mut v[mid..];
+            v2 = &mut v2[mid..];
+            unsafe { assume(v.len() == v2.len()) }
 
-                continue;
-            }
+            continue;
         }
 
         // Partition the slice.

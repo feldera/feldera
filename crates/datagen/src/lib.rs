@@ -1759,13 +1759,13 @@ impl<'a> RecordGenerator<'a> {
             u8::MAX as i64
         };
         let range = range_as_i64(&field.name, &settings.range)?;
-        if let Some((a, b)) = range {
-            if a > b {
-                return Err(anyhow!(
-                    "Invalid range, min > max for field {:?}",
-                    field.name
-                ));
-            }
+        if let Some((a, b)) = range
+            && a > b
+        {
+            return Err(anyhow!(
+                "Invalid range, min > max for field {:?}",
+                field.name
+            ));
         }
         let scale = settings.scale;
 
@@ -1847,13 +1847,13 @@ impl<'a> RecordGenerator<'a> {
         let max = N::max_value().to_f64().unwrap_or(f64::MAX);
         let range = range_as_f64(&field.name, &settings.range)?;
 
-        if let Some((a, b)) = range {
-            if a > b {
-                return Err(anyhow!(
-                    "Invalid range, min > max for field {:?}",
-                    field.name
-                ));
-            }
+        if let Some((a, b)) = range
+            && a > b
+        {
+            return Err(anyhow!(
+                "Invalid range, min > max for field {:?}",
+                field.name
+            ));
         }
         if let Some(nl) = Self::maybe_null(field, settings, rng) {
             *obj = nl;
@@ -1939,13 +1939,13 @@ impl<'a> RecordGenerator<'a> {
     ) -> AnyResult<()> {
         let (min, max) = decimal_max_range(field)?;
         let range = range_as_decimal(&field.name, &settings.range)?;
-        if let Some((a, b)) = range {
-            if a > b {
-                return Err(anyhow!(
-                    "Invalid range, min > max for field {:?}",
-                    field.name
-                ));
-            }
+        if let Some((a, b)) = range
+            && a > b
+        {
+            return Err(anyhow!(
+                "Invalid range, min > max for field {:?}",
+                field.name
+            ));
         }
         if let Some(nl) = Self::maybe_null(field, settings, rng) {
             *obj = nl;
@@ -2101,13 +2101,13 @@ impl<'a> RecordGenerator<'a> {
         obj: &mut Value,
     ) -> AnyResult<()> {
         let range = parse_range_for_uuid(&field.name, &settings.range)?;
-        if let Some((a, b)) = range {
-            if a > b {
-                return Err(anyhow!(
-                    "Invalid range, min > max for field {:?}",
-                    field.name
-                ));
-            }
+        if let Some((a, b)) = range
+            && a > b
+        {
+            return Err(anyhow!(
+                "Invalid range, min > max for field {:?}",
+                field.name
+            ));
         }
         let scale = settings.scale;
 

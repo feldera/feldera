@@ -539,14 +539,13 @@ impl InputQueue<()> {
                 break;
             };
 
-            if let Some(label) = start_transaction {
-                if self
+            if let Some(label) = start_transaction
+                && self
                     .transaction_in_progress
                     .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                     .is_ok()
-                {
-                    self.consumer.start_transaction(label.as_deref());
-                }
+            {
+                self.consumer.start_transaction(label.as_deref());
             }
 
             if let Some(mut buffer) = buffer {

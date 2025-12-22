@@ -365,14 +365,13 @@ impl RuntimeInner {
                 LockedDirectory::new_blocking(storage.config.path(), Duration::from_secs(60))?;
             let backend = storage.backend;
 
-            if let Some(init_checkpoint) = storage.init_checkpoint {
-                if !backend
+            if let Some(init_checkpoint) = storage.init_checkpoint
+                && !backend
                     .exists(&Checkpointer::checkpoint_dir(init_checkpoint).child("CHECKPOINT"))?
-                {
-                    return Err(DbspError::Storage(StorageError::CheckpointNotFound(
-                        init_checkpoint,
-                    )));
-                }
+            {
+                return Err(DbspError::Storage(StorageError::CheckpointNotFound(
+                    init_checkpoint,
+                )));
             }
 
             Some(RuntimeStorage {
@@ -450,10 +449,10 @@ fn panic_hook(panic_info: &PanicHookInfo<'_>, default_panic_hook: &dyn Fn(&Panic
     default_panic_hook(panic_info);
 
     RUNTIME.with(|runtime| {
-        if let Ok(runtime) = runtime.try_borrow() {
-            if let Some(runtime) = runtime.as_ref() {
-                runtime.panic(panic_info);
-            }
+        if let Ok(runtime) = runtime.try_borrow()
+            && let Some(runtime) = runtime.as_ref()
+        {
+            runtime.panic(panic_info);
         }
     })
 }

@@ -778,10 +778,10 @@ where
             trace_cursor.map_times(&mut |trace_ts, weight| {
                 // Update weights in `distinct_vals`.
                 for (ts, total_weight) in self.distinct_vals.borrow_mut().iter_mut() {
-                    if let Some(ts) = ts {
-                        if trace_ts.less_equal(ts) {
-                            *total_weight += **weight;
-                        }
+                    if let Some(ts) = ts
+                        && trace_ts.less_equal(ts)
+                    {
+                        *total_weight += **weight;
                     }
                 }
                 // Timestamp in the future - update `time_of_interest`.

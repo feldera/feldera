@@ -386,19 +386,17 @@ struct StrideReader {
 impl StrideReader {
     fn new(raw: &FBuf, start: usize, stride: usize, count: usize) -> Result<Self, Error> {
         let block_size = raw.len();
-        if count > 0 {
-            if let Some(last) = stride
+        if count > 0
+            && let Some(last) = stride
                 .checked_mul(count - 1)
                 .and_then(|len| len.checked_add(start))
-            {
-                if last < block_size {
-                    return Ok(Self {
-                        start,
-                        stride,
-                        count,
-                    });
-                }
-            }
+            && last < block_size
+        {
+            return Ok(Self {
+                start,
+                stride,
+                count,
+            });
         }
         Err(CorruptionError::InvalidStride {
             block_size,
@@ -700,15 +698,15 @@ where
                     best = Some(mid);
                 }
             }
-            if let Some(best) = best {
-                if best != mid {
-                    // We kept searching beyond the key that was ultimately best, so
-                    // we have to re-deserialize the best one.  With some additional
-                    // complication, we could avoid this if we had two different
-                    // slots to deserialize keys and we could indicate to the caller
-                    // which one was the right one.
-                    self.key(factories, best, key);
-                }
+            if let Some(best) = best
+                && best != mid
+            {
+                // We kept searching beyond the key that was ultimately best, so
+                // we have to re-deserialize the best one.  With some additional
+                // complication, we could avoid this if we had two different
+                // slots to deserialize keys and we could indicate to the caller
+                // which one was the right one.
+                self.key(factories, best, key);
             }
             best
         }

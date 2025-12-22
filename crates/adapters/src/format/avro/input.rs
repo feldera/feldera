@@ -470,10 +470,10 @@ impl AvroParser {
         while let Some((name, value)) = field {
             if name == "before" {
                 seen_before = true;
-                if let AvroValue::Union(_, val) = value {
-                    if **val != AvroValue::Null {
-                        before = Some(&**val);
-                    }
+                if let AvroValue::Union(_, val) = value
+                    && **val != AvroValue::Null
+                {
+                    before = Some(&**val);
                 }
 
                 if seen_after {
@@ -483,10 +483,10 @@ impl AvroParser {
 
             if name == "after" {
                 seen_after = true;
-                if let AvroValue::Union(_, val) = value {
-                    if **val != AvroValue::Null {
-                        after = Some(&**val);
-                    }
+                if let AvroValue::Union(_, val) = value
+                    && **val != AvroValue::Null
+                {
+                    after = Some(&**val);
                 }
                 if seen_before {
                     break;

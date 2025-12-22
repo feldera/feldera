@@ -392,17 +392,17 @@ where
         for kv in updates.dyn_iter() {
             let (key, val) = kv.split();
 
-            if let Some(key_filter) = &key_filter {
-                if !(key_filter.filter_func())(key) {
-                    continue;
-                }
+            if let Some(key_filter) = &key_filter
+                && !(key_filter.filter_func())(key)
+            {
+                continue;
             }
 
             if let Some(val) = val.get() {
-                if let Some(val_filter) = &val_filter {
-                    if !(val_filter.filter_func())(val) {
-                        continue;
-                    }
+                if let Some(val_filter) = &val_filter
+                    && !(val_filter.filter_func())(val)
+                {
+                    continue;
                 }
 
                 let (kv, weight) = item.split_mut();

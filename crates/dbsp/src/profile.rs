@@ -573,17 +573,15 @@ impl Profiler {
             for (label, item) in meta.iter() {
                 write!(output, "{label}: ").unwrap();
                 item.format(&mut output).unwrap();
-                if label == "time%" {
-                    if let MetaItem::Percent {
+                if label == "time%"
+                    && let MetaItem::Percent {
                         numerator,
                         denominator,
                     } = item
-                    {
-                        if *denominator != 0 {
-                            importance = *numerator as f64 / *denominator as f64;
-                        }
-                    };
-                }
+                    && *denominator != 0
+                {
+                    importance = *numerator as f64 / *denominator as f64;
+                };
                 output.push_str("\\l");
             }
 
