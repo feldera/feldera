@@ -714,7 +714,7 @@ See [`NOW()`](/sql/datetime/#now) documentation for more details.
 
 Feldera implements garbage collection for temporal filters by discarding records older
 than the left window bound (e.g., records more than 7 days old in the above example).
-This optimization is sound because `NOW()` grows monotonically, and not _not_ require
+This optimization is sound because `NOW()` grows monotonically, and does _not_ require
 the timestamp column to have a waterline.
 
 
