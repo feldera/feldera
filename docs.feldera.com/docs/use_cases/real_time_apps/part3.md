@@ -155,4 +155,4 @@ pub fn get(&mut self, id: u64) -> Rc<CellContent> {
 
 ## Conclusion
 
-In this article, we showed how to build a minimal UI for our real-time spreadsheet using egui and WebAssembly, focusing on on-demand data fetching and caching. With these techniques in place, we can efficiently handle billions of cells without overwhelming the client’s memory or bandwidth. Check out our [GitHub repository](https://github.com/feldera/techdemo-spreadsheet) for the full code and feel free to [try the live demo](https://xls.feldera.io) to see everything in action.
+In this article, we showed how to build a minimal UI for our real-time spreadsheet using egui and WebAssembly, focusing on on-demand data fetching and caching. With these techniques in place, we can efficiently handle billions of cells without overwhelming the client’s memory or bandwidth. Check out our [GitHub repository](https://github.com/feldera/techdemo-spreadsheet) for the full code.
