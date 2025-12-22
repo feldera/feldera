@@ -259,12 +259,11 @@ impl KafkaInputConfig {
 
         if let (Some(partitions), KafkaStartFromConfig::Offsets(offsets)) =
             (&self.partitions, &self.start_from)
+            && partitions.len() != offsets.len()
         {
-            if partitions.len() != offsets.len() {
-                anyhow::bail!(
-                    "the number of partitions ('{partitions:?}') should be equal to the number of offsets '{offsets:?}' specified"
-                )
-            }
+            anyhow::bail!(
+                "the number of partitions ('{partitions:?}') should be equal to the number of offsets '{offsets:?}' specified"
+            )
         }
 
         Ok(())
