@@ -4,6 +4,7 @@ use crate::{some_function2, some_polymorphic_function2};
 use ::serde::{Deserialize, Serialize};
 use dbsp::algebra::F64;
 use dbsp::num_entries_scalar;
+use feldera_macros::IsNone;
 use feldera_types::serde_with_context::SerializeWithContext;
 use geo::EuclideanDistance;
 use geo::Point;
@@ -26,6 +27,7 @@ use size_of::*;
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]

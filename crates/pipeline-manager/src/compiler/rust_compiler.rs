@@ -1476,10 +1476,11 @@ extern crate sync_checkpoint;"#,
         arcstr = {{ version = "1.2.0" }}
         paste = {{ version = "1.0.12" }}
         derive_more = {{ version = "0.99.17", features = ["add", "not", "from"] }}
-        dbsp = {{ path = "{}/crates/dbsp", features = ["backend-mode"] }}
-        dbsp_adapters = {{ path = "{}/crates/adapters" {}}}
-        feldera-types = {{ path = "{}/crates/feldera-types" }}
-        feldera-sqllib = {{ path = "{}/crates/sqllib" }}{}
+        dbsp = {{ path = "{runtime_sources}/crates/dbsp", features = ["backend-mode"] }}
+        dbsp_adapters = {{ path = "{runtime_sources}/crates/adapters" {}}}
+        feldera-macros = {{ path = "{runtime_sources}/crates/feldera-macros" }}
+        feldera-types = {{ path = "{runtime_sources}/crates/feldera-types" }}
+        feldera-sqllib = {{ path = "{runtime_sources}/crates/sqllib" }}{}
         serde = {{ version = "1.0", features = ["derive"] }}
         compare = {{ version = "0.1.0" }}
         size-of = {{ version = "0.1.5", package = "feldera-size-of" }}
@@ -1487,16 +1488,12 @@ extern crate sync_checkpoint;"#,
         rkyv = {{ version = "0.7.45", default-features = false, features = ["std", "size_64"] }}
         tikv-jemallocator = {{ version = "0.6.0", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }}
     "#,
-        runtime_sources, // Path: dbsp
-        runtime_sources, // Path: dbsp_adapters
         if cfg!(feature = "feldera-enterprise") {
              // Enterprise features for: dbsp_adapters
              ", features = [\"feldera-enterprise\"] ".to_string()
         } else {
             "".to_string()
         },
-        runtime_sources, // Path: feldera-types
-        runtime_sources, // Path: feldera-sqllib
         if cfg!(feature = "feldera-enterprise") {
             // Enterprise crate: dbsp-enterprise, sync-checkpoint
             formatdoc! { r#"
@@ -1509,7 +1506,8 @@ extern crate sync_checkpoint;"#,
             }
         } else {
             "".to_string()
-        }
+        },
+        runtime_sources = runtime_sources,
     };
     let cargo_toml_file_path = workspace_dir.join("Cargo.toml");
     recreate_file_with_content(&cargo_toml_file_path, &cargo_toml).await?;

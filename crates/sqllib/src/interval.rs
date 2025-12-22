@@ -9,6 +9,7 @@ use crate::{
     Date, SqlDecimal,
 };
 use dbsp::{algebra::F64, num_entries_scalar};
+use feldera_macros::IsNone;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
@@ -45,6 +46,7 @@ use crate::{Time, Timestamp};
     rkyv::Deserialize,
     Serialize,
     Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -424,6 +426,7 @@ some_function2!(
     rkyv::Deserialize,
     Serialize,
     Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]

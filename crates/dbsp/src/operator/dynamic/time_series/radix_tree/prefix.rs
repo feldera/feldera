@@ -4,6 +4,7 @@ use std::{
     mem::size_of,
 };
 
+use feldera_macros::IsNone;
 use num::PrimInt;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
@@ -26,6 +27,7 @@ use super::{RADIX, RADIX_BITS};
     Archive,
     Serialize,
     Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Eq, PartialEq, PartialOrd, Ord))]
 #[archive(compare(PartialEq, PartialOrd))]

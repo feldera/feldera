@@ -3750,8 +3750,8 @@ dependencies = [
  "enum-map",
  "fastbloom",
  "fdlimit",
- "feldera-ijson",
  "feldera-ir",
+ "feldera-macros",
  "feldera-size-of",
  "feldera-storage",
  "feldera-types",
@@ -3861,6 +3861,7 @@ dependencies = [
  "feldera-datagen",
  "feldera-iceberg",
  "feldera-ir",
+ "feldera-macros",
  "feldera-observability",
  "feldera-size-of",
  "feldera-sqllib",
@@ -3949,6 +3950,7 @@ dependencies = [
  "clap",
  "csv",
  "dbsp",
+ "feldera-macros",
  "feldera-size-of",
  "feldera_rust_decimal",
  "hdrhist",
@@ -4919,21 +4921,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "feldera-ijson"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79db07c272b041d903546dbc40d8c11aa647a1be12806cef6ada8e0cf081c5f0"
-dependencies = [
- "dashmap 5.5.3",
- "feldera-size-of",
- "lazy_static",
- "ordered-float 3.9.2",
- "rkyv",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "feldera-ir"
 version = "0.211.0"
 dependencies = [
@@ -4943,6 +4930,20 @@ dependencies = [
  "serde_json",
  "utoipa",
  "zip 6.0.0",
+]
+
+[[package]]
+name = "feldera-macros"
+version = "0.211.0"
+dependencies = [
+ "derive_more 1.0.0",
+ "feldera-size-of",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "rkyv",
+ "serde",
+ "syn 2.0.101",
 ]
 
 [[package]]
@@ -5006,6 +5007,7 @@ dependencies = [
  "chrono",
  "dbsp",
  "feldera-fxp",
+ "feldera-macros",
  "feldera-size-of",
  "feldera-types",
  "flate2",
@@ -7586,7 +7588,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1e1c390732d15f1d48471625cd92d154e66db2c56645e29a9cd26f4699f72dc"
 dependencies = [
  "num-traits",
- "rkyv",
 ]
 
 [[package]]
@@ -9037,6 +9038,7 @@ dependencies = [
  "csv",
  "dbsp",
  "derive_more 0.99.20",
+ "feldera-macros",
  "feldera-size-of",
  "feldera-sqllib",
  "paste",

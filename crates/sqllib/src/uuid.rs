@@ -1,6 +1,7 @@
 //! Uuid operations
 
 use dbsp::NumEntries;
+use feldera_macros::IsNone;
 use feldera_types::serde_with_context::{
     serde_config::UuidFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
@@ -21,6 +22,7 @@ use std::fmt::{self, Debug, Display};
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]

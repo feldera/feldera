@@ -76,6 +76,7 @@ public final class MultiCratesWriter extends RustWriter {
                 derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
                 dbsp = { path = "$ROOT/crates/dbsp", features = ["backend-mode"] }
                 dbsp_adapters = { path = "$ROOT/crates/adapters", default-features = false }
+                feldera-macros = { path = "$ROOT/crates/feldera-macros" }
                 feldera-types = { path = "$ROOT/crates/feldera-types" }
                 feldera-sqllib = { path = "$ROOT/crates/sqllib" }
                 serde = { version = "1.0", features = ["derive"] }

@@ -2,6 +2,7 @@ mod advance_retreat;
 mod sample;
 //pub(crate) mod tests;
 mod consolidation;
+mod is_none;
 mod sort;
 mod tuple;
 
@@ -21,6 +22,8 @@ pub use consolidation::{
     consolidate, consolidate_from, consolidate_paired_slices, consolidate_payload_from,
     consolidate_slice, ConsolidatePairedSlices,
 };
+
+pub use is_none::IsNone;
 
 #[allow(unused_imports)]
 pub use dot::{DotEdgeAttributes, DotNodeAttributes};

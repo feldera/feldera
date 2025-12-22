@@ -61,6 +61,10 @@
 
 #![allow(clippy::type_complexity)]
 
+// allow referring to self as ::dbsp for macros to work universally (from this crate and from others)
+// see https://github.com/rust-lang/rust/issues/54647
+extern crate self as dbsp;
+
 pub mod dynamic;
 mod error;
 mod hash;

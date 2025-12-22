@@ -41,6 +41,7 @@ cached = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 rkyv = { workspace = true, features = ["std", "size_64"] }
 size-of = { workspace = true, features = ["hashbrown", "xxhash-xxh3", "rust_decimal"] }
+feldera-macros = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
