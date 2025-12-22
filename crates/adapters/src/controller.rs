@@ -1693,15 +1693,14 @@ fn non_materialized_replay_sources(
 
     // If this table is in need_backfill but is not in diff (i.e., its persistent ID hasn't changed), return it.
     for persistent_id in bootstrap_info.need_backfill.values().flatten() {
-        if let Some(table_name) = tables.get(persistent_id) {
-            if !diff
+        if let Some(table_name) = tables.get(persistent_id)
+            && !diff
                 .program_diff()
                 .as_ref()
                 .map(|diff| diff.is_affected_relation(table_name))
                 .unwrap_or(false)
-            {
-                need_backfill_persistent_ids.push(table_name.clone());
-            }
+        {
+            need_backfill_persistent_ids.push(table_name.clone());
         }
     }
 
@@ -1743,59 +1742,59 @@ impl CircuitThread {
 
         let lir = circuit.lir()?;
 
-        if let Some(state) = &state {
-            if let Some(diff) = &pipeline_diff {
-                // Check for tables that need to be materialized but they aren't. This check is the reason
-                // we have to check if we need to bootstrap (and get user approval) here and not earlier,
-                // in open_checkpoint().
-                if let Some(bootstrap_info) = circuit.bootstrap_info() {
-                    let non_materialized_tables =
-                        non_materialized_replay_sources(bootstrap_info, &pipeline_config, diff);
-                    if !non_materialized_tables.is_empty() {
-                        return Err(ControllerError::BootstrapNotAllowed {
-                            error: format!(
-                                "- The following tables are not materialized, but some of the views that depend on these tables require bootstrapping: {}. We recommend materializing all tables in the program to avoid such errors in the future",
-                                non_materialized_tables
-                                    .iter()
-                                    .map(|t| format!("'{t}'"))
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            ),
-                        });
-                    }
+        if let Some(state) = &state
+            && let Some(diff) = &pipeline_diff
+        {
+            // Check for tables that need to be materialized but they aren't. This check is the reason
+            // we have to check if we need to bootstrap (and get user approval) here and not earlier,
+            // in open_checkpoint().
+            if let Some(bootstrap_info) = circuit.bootstrap_info() {
+                let non_materialized_tables =
+                    non_materialized_replay_sources(bootstrap_info, &pipeline_config, diff);
+                if !non_materialized_tables.is_empty() {
+                    return Err(ControllerError::BootstrapNotAllowed {
+                        error: format!(
+                            "- The following tables are not materialized, but some of the views that depend on these tables require bootstrapping: {}. We recommend materializing all tables in the program to avoid such errors in the future",
+                            non_materialized_tables
+                                .iter()
+                                .map(|t| format!("'{t}'"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                    });
+                }
+            }
+
+            if !diff.is_empty() {
+                info!("Pipeline changes detected: {diff}");
+                if state.bootstrap_policy() == BootstrapPolicy::Reject {
+                    return Err(ControllerError::BootstrapRejectedByUser);
+                } else if state.bootstrap_policy() == BootstrapPolicy::AwaitApproval {
+                    info!("Awaiting user approval before bootstrapping modified pipeline.");
+                    state.set_phase(PipelinePhase::Initializing(
+                        InitializationState::AwaitingApproval(Box::new(diff.clone())),
+                    ));
                 }
 
-                if !diff.is_empty() {
-                    info!("Pipeline changes detected: {diff}");
-                    if state.bootstrap_policy() == BootstrapPolicy::Reject {
-                        return Err(ControllerError::BootstrapRejectedByUser);
-                    } else if state.bootstrap_policy() == BootstrapPolicy::AwaitApproval {
-                        info!("Awaiting user approval before bootstrapping modified pipeline.");
-                        state.set_phase(PipelinePhase::Initializing(
-                            InitializationState::AwaitingApproval(Box::new(diff.clone())),
-                        ));
-                    }
+                loop {
+                    match state.bootstrap_policy() {
+                        BootstrapPolicy::Allow => {
+                            info!(
+                                "User approved pipeline changes. Proceeding with initialization."
+                            );
 
-                    loop {
-                        match state.bootstrap_policy() {
-                            BootstrapPolicy::Allow => {
-                                info!(
-                                    "User approved pipeline changes. Proceeding with initialization."
-                                );
-
-                                // Next, we are going to call ControllerInner::new(), which will initialize connectors.
-                                // Go back to `InitializationState::Starting` in the meantime.
-                                state.set_phase(PipelinePhase::Initializing(
-                                    InitializationState::Starting,
-                                ));
-                                break;
-                            }
-                            BootstrapPolicy::Reject => {
-                                return Err(ControllerError::BootstrapRejectedByUser);
-                            }
-                            BootstrapPolicy::AwaitApproval => {
-                                sleep(Duration::from_millis(10));
-                            }
+                            // Next, we are going to call ControllerInner::new(), which will initialize connectors.
+                            // Go back to `InitializationState::Starting` in the meantime.
+                            state.set_phase(PipelinePhase::Initializing(
+                                InitializationState::Starting,
+                            ));
+                            break;
+                        }
+                        BootstrapPolicy::Reject => {
+                            return Err(ControllerError::BootstrapRejectedByUser);
+                        }
+                        BootstrapPolicy::AwaitApproval => {
+                            sleep(Duration::from_millis(10));
                         }
                     }
                 }
@@ -1820,22 +1819,22 @@ impl CircuitThread {
                     .unwrap()
                     .node_id;
 
-                if let Some(replay_info) = circuit.bootstrap_info() {
-                    if replay_info.need_backfill.contains_key(&node_id) {
-                        info!(
-                            "Found checkpointed state for input connector '{endpoint_name}', but the table that the connector is attached to has been modified and its state has been cleared; the connector will restart from scratch"
-                        );
-                        continue;
-                    }
+                if let Some(replay_info) = circuit.bootstrap_info()
+                    && replay_info.need_backfill.contains_key(&node_id)
+                {
+                    info!(
+                        "Found checkpointed state for input connector '{endpoint_name}', but the table that the connector is attached to has been modified and its state has been cleared; the connector will restart from scratch"
+                    );
+                    continue;
                 }
 
-                if let Some(pipeline_diff) = &pipeline_diff {
-                    if pipeline_diff.is_affected_connector(endpoint_name.as_str()) {
-                        info!(
-                            "Found checkpointed state for input connector '{endpoint_name}', but connector configuration has changed; the connector will restart from scratch"
-                        );
-                        continue;
-                    }
+                if let Some(pipeline_diff) = &pipeline_diff
+                    && pipeline_diff.is_affected_connector(endpoint_name.as_str())
+                {
+                    info!(
+                        "Found checkpointed state for input connector '{endpoint_name}', but connector configuration has changed; the connector will restart from scratch"
+                    );
+                    continue;
                 }
 
                 let initial_stats = input_statistics
@@ -3306,13 +3305,11 @@ impl ControllerInit {
                     .program_diff()
                     .as_ref()
                     .is_none_or(|diff| !diff.is_affected_relation(&connector_config.stream))
-            {
-                if let Some(checkpointed_connector_config) =
+                && let Some(checkpointed_connector_config) =
                     checkpoint_config.inputs.get(connector_name.as_str())
-                {
-                    connector_config.connector_config.paused =
-                        checkpointed_connector_config.connector_config.paused;
-                }
+            {
+                connector_config.connector_config.paused =
+                    checkpointed_connector_config.connector_config.paused;
             }
         }
 
@@ -3523,17 +3520,17 @@ impl BackpressureThread {
                     && !ep.is_full();
                 match should_run {
                     true => {
-                        if running_endpoints.insert(*epid) {
-                            if let Some(reader) = ep.reader.as_ref() {
-                                reader.extend()
-                            }
+                        if running_endpoints.insert(*epid)
+                            && let Some(reader) = ep.reader.as_ref()
+                        {
+                            reader.extend()
                         }
                     }
                     false => {
-                        if running_endpoints.remove(epid) {
-                            if let Some(reader) = ep.reader.as_ref() {
-                                reader.pause()
-                            }
+                        if running_endpoints.remove(epid)
+                            && let Some(reader) = ep.reader.as_ref()
+                        {
+                            reader.pause()
                         }
                     }
                 }
@@ -5979,16 +5976,15 @@ impl RunningCheckpoint {
             .as_ref()
             .and_then(|s| s.uuid())
             .is_none()
+            && let Err(error) = circuit.circuit.gc_checkpoint()
         {
-            if let Err(error) = circuit.circuit.gc_checkpoint() {
-                warn!("error removing old checkpoints: {error}");
-            }
+            warn!("error removing old checkpoints: {error}");
         }
 
-        if let Some(ft) = &mut circuit.ft {
-            if let Err(error) = ft.checkpointed(checkpoint.step) {
-                warn!("Error truncating journal following checkpoint ({error})");
-            }
+        if let Some(ft) = &mut circuit.ft
+            && let Err(error) = ft.checkpointed(checkpoint.step)
+        {
+            warn!("Error truncating journal following checkpoint ({error})");
         }
         Ok(checkpoint)
     }

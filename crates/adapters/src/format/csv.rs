@@ -98,21 +98,21 @@ impl CsvParser {
         metadata: &Option<Variant>,
         errors: &mut Vec<ParseError>,
     ) {
-        if !self.headers || self.last_event_number > 0 {
-            if let Err(e) = self.input_stream.insert(record, metadata) {
-                errors.push(ParseError::text_event_error(
-                    "failed to deserialize CSV record",
-                    e,
-                    self.last_event_number + 1,
-                    Some(
-                        &std::str::from_utf8(record)
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|_| format!("{:?}", record))
-                            .to_string(),
-                    ),
-                    None,
-                ));
-            }
+        if (!self.headers || self.last_event_number > 0)
+            && let Err(e) = self.input_stream.insert(record, metadata)
+        {
+            errors.push(ParseError::text_event_error(
+                "failed to deserialize CSV record",
+                e,
+                self.last_event_number + 1,
+                Some(
+                    &std::str::from_utf8(record)
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|_| format!("{:?}", record))
+                        .to_string(),
+                ),
+                None,
+            ));
         }
     }
 

@@ -1083,11 +1083,11 @@ where
         let mut cursor = SpineCursor::new_cursor(&self.factories, batches);
         for key in intermediate.dyn_iter_mut() {
             cursor.seek_key(key);
-            if let Some(current_key) = cursor.get_key() {
-                if current_key == key {
-                    debug_assert!(cursor.val_valid() && !cursor.weight().is_zero());
-                    sample.push_ref(key);
-                }
+            if let Some(current_key) = cursor.get_key()
+                && current_key == key
+            {
+                debug_assert!(cursor.val_valid() && !cursor.weight().is_zero());
+                sample.push_ref(key);
             }
         }
     }

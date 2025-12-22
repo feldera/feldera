@@ -404,14 +404,14 @@ impl ProducerContext for DataProducerContext {
         delivery_result: &DeliveryResult<'_>,
         _delivery_opaque: Self::DeliveryOpaque,
     ) {
-        if let Err((error, _message)) = delivery_result {
-            if let Some(cb) = self.async_error_callback.read().unwrap().as_ref() {
-                cb(
-                    false,
-                    AnyError::new(error.clone()),
-                    Some("kafka_ft_delivery"),
-                );
-            }
+        if let Err((error, _message)) = delivery_result
+            && let Some(cb) = self.async_error_callback.read().unwrap().as_ref()
+        {
+            cb(
+                false,
+                AnyError::new(error.clone()),
+                Some("kafka_ft_delivery"),
+            );
         }
     }
 }

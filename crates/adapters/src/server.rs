@@ -971,11 +971,11 @@ fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>, tag: Op
         error!("{error}");
     }
 
-    if is_fatal_controller_error(&error) {
-        if let Ok(controller) = state.take_controller() {
-            state.set_phase(PipelinePhase::Failed(error));
-            controller.initiate_stop();
-        }
+    if is_fatal_controller_error(&error)
+        && let Ok(controller) = state.take_controller()
+    {
+        state.set_phase(PipelinePhase::Failed(error));
+        controller.initiate_stop();
     }
 }
 
@@ -1750,10 +1750,10 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
                     tokio::time::sleep(Duration::from_millis(50)).await;
                 }
                 state.set_phase(PipelinePhase::Suspended);
-                if let Ok(controller) = state.take_controller() {
-                    if let Err(error) = controller.async_stop().await {
-                        error!("stopping controller failed ({error})");
-                    }
+                if let Ok(controller) = state.take_controller()
+                    && let Err(error) = controller.async_stop().await
+                {
+                    error!("stopping controller failed ({error})");
                 }
             }
 
@@ -2025,11 +2025,11 @@ async fn output_endpoint(
         // returning it to actix, so the only way to run cleanup code
         // when the HTTP request terminates is to piggyback on the
         // destructor.
-        if let Some(state) = weak_state.upgrade() {
-            if let Ok(controller) = state.controller() {
-                controller.disconnect_output(&endpoint_id);
-                controller.unregister_api_connection();
-            }
+        if let Some(state) = weak_state.upgrade()
+            && let Ok(controller) = state.controller()
+        {
+            controller.disconnect_output(&endpoint_id);
+            controller.unregister_api_connection();
         }
     })))
 }

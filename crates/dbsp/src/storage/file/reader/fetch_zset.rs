@@ -76,15 +76,15 @@ where
             output_blocks: BTreeMap::new(),
             pending: 0,
         };
-        if !this.keys.is_empty() {
-            if let Some(node) = &reader.columns[0].root {
-                let mut reads = Vec::new();
-                this.try_read(
-                    FetchZSetRead::new(0..this.keys.len(), node.clone()),
-                    &mut reads,
-                )?;
-                this.start_reads(reads);
-            }
+        if !this.keys.is_empty()
+            && let Some(node) = &reader.columns[0].root
+        {
+            let mut reads = Vec::new();
+            this.try_read(
+                FetchZSetRead::new(0..this.keys.len(), node.clone()),
+                &mut reads,
+            )?;
+            this.start_reads(reads);
         }
         Ok(this)
     }

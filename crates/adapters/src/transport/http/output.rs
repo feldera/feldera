@@ -152,10 +152,9 @@ impl HttpOutputEndpointInner {
         // A failure simply means that there are no receivers.
         if let Some(Ok(_)) = self.sender.read().unwrap().as_ref().map(|sender| {
             sender.try_send((Buffer::new(seq_number, Bytes::from(json_buf)), ack_sender))
-        }) {
-            if let Some(ack_receiver) = ack_receiver {
-                let _ = ack_receiver.blocking_recv();
-            }
+        }) && let Some(ack_receiver) = ack_receiver
+        {
+            let _ = ack_receiver.blocking_recv();
         }
 
         Ok(())

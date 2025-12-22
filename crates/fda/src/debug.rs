@@ -293,12 +293,12 @@ async fn unbundle_support_bundle(
             if *supports_runtime_version {
                 platform_version_tag.clone()
             } else {
-                if let Some(bundle_version_str) = &platform_version {
-                    if bundle_version_str != instance_version {
-                        warn!(
-                            "This Feldera instance does not enable `runtime_version`. Pipelines will be created using the instance's current version instead of the bundle's version, which may lead to incompatibilities or unexpected behavior. To ensure pipelines match the bundle's version, restart the platform with `FELDERA_UNSTABLE_FEATURES='runtime_version'`."
-                        );
-                    }
+                if let Some(bundle_version_str) = &platform_version
+                    && bundle_version_str != instance_version
+                {
+                    warn!(
+                        "This Feldera instance does not enable `runtime_version`. Pipelines will be created using the instance's current version instead of the bundle's version, which may lead to incompatibilities or unexpected behavior. To ensure pipelines match the bundle's version, restart the platform with `FELDERA_UNSTABLE_FEATURES='runtime_version'`."
+                    );
                 }
                 None
             }

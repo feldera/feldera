@@ -1576,12 +1576,12 @@ where
                 }
 
                 // Consolidate the spine for the current timestamp and return it.
-                let output = self.future_outputs.borrow_mut()
+
+
+                self.future_outputs.borrow_mut()
                     .remove(&time)
                     .and_then(|spine| spine.consolidate())
-                    .unwrap_or_else(|| Z::dyn_empty(&self.output_factories));
-
-                output
+                    .unwrap_or_else(|| Z::dyn_empty(&self.output_factories))
             } else {
                 let mut output_tuples = self.output_factories.weighted_items_factory().default_box();
                 output_tuples.reserve(chunk_size);

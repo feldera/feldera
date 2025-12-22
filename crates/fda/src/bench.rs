@@ -368,19 +368,19 @@ async fn collect_metrics(
                         }
 
                         // Check if we've reached the duration limit
-                        if let Some(duration) = duration {
-                            if start_time.elapsed() >= duration {
-                                println!("Reached duration limit of {}s", duration.as_secs());
-                                if needs_commit {
-                                    status = PipelineStatus::Committing(Box::pin(
-                                        client
-                                            .commit_transaction()
-                                            .pipeline_name(pipeline_name)
-                                            .send(),
-                                    ));
-                                } else {
-                                    break;
-                                }
+                        if let Some(duration) = duration
+                            && start_time.elapsed() >= duration
+                        {
+                            println!("Reached duration limit of {}s", duration.as_secs());
+                            if needs_commit {
+                                status = PipelineStatus::Committing(Box::pin(
+                                    client
+                                        .commit_transaction()
+                                        .pipeline_name(pipeline_name)
+                                        .send(),
+                                ));
+                            } else {
+                                break;
                             }
                         }
                         sleep(Duration::from_secs(1)).await;
@@ -485,12 +485,10 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
     }
 
     // Check storage configuration
-    if let Some(runtime_config) = &pipeline.runtime_config {
-        if runtime_config.storage.is_none() {
-            warn!(
-                "Storage is not enabled for this pipeline. This may affect benchmark performance."
-            );
-        }
+    if let Some(runtime_config) = &pipeline.runtime_config
+        && runtime_config.storage.is_none()
+    {
+        warn!("Storage is not enabled for this pipeline. This may affect benchmark performance.");
     }
 
     // Stop pipeline if running and restart with recompile
