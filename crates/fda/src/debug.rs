@@ -6,8 +6,8 @@ use std::{
     path::Path,
 };
 
-use feldera_rest_api::types::*;
 use feldera_rest_api::Client;
+use feldera_rest_api::types::*;
 use feldera_types::config::RuntimeConfig;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -16,7 +16,7 @@ use tracing::{debug, info, warn};
 use zip::ZipArchive;
 
 use crate::cli::DebugActions;
-use crate::{handle_errors_fatal, pipeline, OutputFormat, PipelineAction};
+use crate::{OutputFormat, PipelineAction, handle_errors_fatal, pipeline};
 
 fn parse_metrics(file_name: &Path) -> anyhow::Result<()> {
     #[derive(Clone, Debug, Default)]
@@ -295,7 +295,9 @@ async fn unbundle_support_bundle(
             } else {
                 if let Some(bundle_version_str) = &platform_version {
                     if bundle_version_str != instance_version {
-                        warn!("This Feldera instance does not enable `runtime_version`. Pipelines will be created using the instance's current version instead of the bundle's version, which may lead to incompatibilities or unexpected behavior. To ensure pipelines match the bundle's version, restart the platform with `FELDERA_UNSTABLE_FEATURES='runtime_version'`.");
+                        warn!(
+                            "This Feldera instance does not enable `runtime_version`. Pipelines will be created using the instance's current version instead of the bundle's version, which may lead to incompatibilities or unexpected behavior. To ensure pipelines match the bundle's version, restart the platform with `FELDERA_UNSTABLE_FEATURES='runtime_version'`."
+                        );
                     }
                 }
                 None

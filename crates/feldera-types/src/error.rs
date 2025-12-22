@@ -88,14 +88,13 @@ impl ErrorResponse {
         }
 
         // Print error backtrace if available for an internal server error
-        if error.status_code() == StatusCode::INTERNAL_SERVER_ERROR {
-            if let Some(backtrace) = response
+        if error.status_code() == StatusCode::INTERNAL_SERVER_ERROR
+            && let Some(backtrace) = response
                 .details
                 .get("backtrace")
                 .and_then(JsonValue::as_str)
-            {
-                error!("Error backtrace:\n{backtrace}");
-            }
+        {
+            error!("Error backtrace:\n{backtrace}");
         }
 
         response

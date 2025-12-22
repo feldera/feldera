@@ -658,7 +658,10 @@ impl S3InputReader {
 
                                             let error_offset =
                                                 latest_start_offset + latest_buf.len() as u64;
-                                            tracing::warn!("error reading object '{}' at offset '{error_offset}': {e:?}; retrying: ({reading_errors}/{max_retries})", &partially_processed_key.key);
+                                            tracing::warn!(
+                                                "error reading object '{}' at offset '{error_offset}': {e:?}; retrying: ({reading_errors}/{max_retries})",
+                                                &partially_processed_key.key
+                                            );
 
                                             if reading_errors > max_retries {
                                                 consumer.error(
