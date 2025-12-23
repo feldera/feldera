@@ -45,6 +45,17 @@ if [ "${CALCITE_BUILD_NEXT}" = "y" ]; then
     fi
 
     pushd "${CALCITE_BUILD_DIR}" >/dev/null
+    jvm_version=$(./gradlew --version | sed -n 's/^JVM: *//p')
+    case $jvm_version in
+	19* | 20* | 21*) ;;
+	2[5-9]*)
+	    echo >&2 "*** ERROR *** Java version 25+ does not work with Calcite"
+	    exit 1
+	    ;;
+	*)
+	    echo "*** WARNING *** Only Java versions 19, 20, and 21 are known to work with Calcite but you have $jvm_version"
+	    ;;
+    esac
     ./gradlew build -x test -x checkStyleMain -x autoStyleJavaCheck build --console=plain -Dorg.gradle.logging.level=quiet
 
     for DIR in core server linq4j; do
