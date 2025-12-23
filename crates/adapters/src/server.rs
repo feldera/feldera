@@ -50,7 +50,6 @@ use feldera_types::checkpoint::{
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
-use feldera_types::config::RuntimeConfig;
 use feldera_types::constants::STATUS_FILE;
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::query_params::{
@@ -252,8 +251,6 @@ pub(crate) struct ServerState {
 
     metadata: String,
 
-    runtime_config: RuntimeConfig,
-
     // rate limiter based on tags
     // NOTE: we assume that there are a finite small number
     // of tags, so using String is fine.
@@ -267,7 +264,6 @@ impl ServerState {
         desired_status: RuntimeDesiredStatus,
         bootstrap_policy: BootstrapPolicy,
         deployment_id: Uuid,
-        runtime_config: RuntimeConfig,
     ) -> Self {
         // Max 10 errors per minute
         let rate_limiter = TokenBucketRateLimiter::new(10, Duration::from_secs(60));
@@ -282,23 +278,17 @@ impl ServerState {
             bootstrap_policy: Mutex::new(bootstrap_policy),
             deployment_id,
             rate_limiter,
-            runtime_config,
             samply_profile: Default::default(),
         }
     }
 
-    fn for_error(
-        error: ControllerError,
-        deployment_id: Uuid,
-        runtime_config: RuntimeConfig,
-    ) -> Self {
+    fn for_error(error: ControllerError, deployment_id: Uuid) -> Self {
         Self::new(
             PipelinePhase::InitializationError(Arc::new(error)),
             String::default(),
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             deployment_id,
-            runtime_config,
         )
     }
 
@@ -674,7 +664,6 @@ pub fn run_server(
             initial_status,
             bootstrap_policy,
             args.deployment_id,
-            config.global.clone(),
         ));
 
         // Initialize the pipeline in a separate thread.  On success, this thread
@@ -719,11 +708,7 @@ pub fn run_server(
     let state = start_controller(&args, &config, circuit_factory, system_runner.runtime())
         .unwrap_or_else(|error| {
             error!("Initialization failed: {error}");
-            WebData::new(ServerState::for_error(
-                error,
-                args.deployment_id,
-                config.global.clone(),
-            ))
+            WebData::new(ServerState::for_error(error, args.deployment_id))
         });
 
     let workers = if let Some(http_workers) = config.global.http_workers {
@@ -2237,7 +2222,6 @@ outputs:
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             Uuid::new_v4(),
-            parse_config(config_file.path()).unwrap().global.clone(),
         ));
         let state_clone = state.clone();
 
@@ -2529,7 +2513,6 @@ outputs:
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             Uuid::default(),
-            parse_config(config_file.path()).unwrap().global.clone(),
         ));
         let state_clone = state.clone();
 
