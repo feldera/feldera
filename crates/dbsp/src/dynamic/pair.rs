@@ -100,17 +100,17 @@ where
     Trait2: DataTrait + ?Sized,
 {
     fn fst(&self) -> &Trait1::Archived {
-        <T1 as Erase<Trait1>>::erase_archived(&self.0)
+        <T1 as Erase<Trait1>>::erase_archived(self.get_t0())
     }
 
     fn snd(&self) -> &Trait2::Archived {
-        <T2 as Erase<Trait2>>::erase_archived(&self.1)
+        <T2 as Erase<Trait2>>::erase_archived(self.get_t1())
     }
 
     fn split(&self) -> (&Trait1::Archived, &Trait2::Archived) {
         (
-            <T1 as Erase<Trait1>>::erase_archived(&self.0),
-            <T2 as Erase<Trait2>>::erase_archived(&self.1),
+            <T1 as Erase<Trait1>>::erase_archived(self.get_t0()),
+            <T2 as Erase<Trait2>>::erase_archived(self.get_t1()),
         )
     }
 }

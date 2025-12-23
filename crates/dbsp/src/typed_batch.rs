@@ -703,7 +703,7 @@ where
 #[cfg(test)]
 #[test]
 fn test_typedbox_rkyv() {
-    use rkyv::{archived_value, de::deserializers::SharedDeserializeMap};
+    use rkyv::archived_value;
 
     let tbox = TypedBox::<u64, DynData>::new(12345u64);
 
@@ -715,9 +715,7 @@ fn test_typedbox_rkyv() {
     let archived: &<TypedBox<u64, DynData> as Archive>::Archived =
         unsafe { archived_value::<TypedBox<u64, DynData>>(bytes.as_slice(), 0) };
 
-    let tbox2 = archived
-        .deserialize(&mut SharedDeserializeMap::new())
-        .unwrap();
+    let tbox2 = archived.deserialize(&mut Deserializer::default()).unwrap();
 
     assert_eq!(tbox, tbox2);
 }

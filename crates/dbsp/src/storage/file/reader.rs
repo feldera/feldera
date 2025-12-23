@@ -3,7 +3,7 @@
 //! [`Reader`] is the top-level interface for reading layer files.
 
 use super::format::{Compression, FileTrailer};
-use super::{AnyFactories, Factories};
+use super::{AnyFactories, Deserializer, Factories};
 use crate::dynamic::{DynVec, WeightTrait};
 use crate::storage::buffer_cache::{CacheAccess, CacheEntry};
 use crate::storage::file::format::FilterBlock;
@@ -463,6 +463,7 @@ where
     value_map: ValueMapReader,
     row_groups: Option<VarintReader>,
     first_row: u64,
+    version: u32,
     _phantom: PhantomData<fn(&K, &A)>,
 }
 
@@ -485,6 +486,7 @@ where
         raw: Arc<FBuf>,
         location: BlockLocation,
         first_row: u64,
+        version: u32,
     ) -> Result<Self, Error> {
         let header =
             DataBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice())).map_err(|e| {
@@ -510,6 +512,7 @@ where
             )?,
             raw,
             first_row,
+            version,
             _phantom: PhantomData,
         })
     }
@@ -519,8 +522,14 @@ where
         node: &TreeNode,
         cache: &BufferCache,
         file_id: FileId,
+        version: u32,
     ) -> Result<Arc<Self>, Error> {
-        let block = Arc::new(Self::from_raw(raw, node.location, node.rows.start)?);
+        let block = Arc::new(Self::from_raw(
+            raw,
+            node.location,
+            node.rows.start,
+            version,
+        )?);
         cache.insert(file_id, node.location.offset, block.clone());
         Ok(block)
     }
@@ -545,8 +554,13 @@ where
             ),
             None => {
                 let block = file.read_block(node.location)?;
-                let entry =
-                    Self::from_raw_with_cache(block, node, &cache, file.file_handle.file_id())?;
+                let entry = Self::from_raw_with_cache(
+                    block,
+                    node,
+                    &cache,
+                    file.file_handle.file_id(),
+                    file.version,
+                )?;
                 (CacheAccess::Miss, entry)
             }
         };
@@ -620,8 +634,10 @@ where
     unsafe fn item(&self, factories: &Factories<K, A>, index: usize, item: (&mut K, &mut A)) {
         unsafe {
             let archived_item = self.archived_item(factories, index);
-            DeserializeDyn::deserialize(archived_item.fst(), item.0);
-            DeserializeDyn::deserialize(archived_item.snd(), item.1);
+            let mut deserializer = Deserializer::new(self.version);
+            DeserializeDyn::deserialize_with(archived_item.fst(), item.0, &mut deserializer);
+            let mut deserializer = Deserializer::new(self.version);
+            DeserializeDyn::deserialize_with(archived_item.snd(), item.1, &mut deserializer);
         }
     }
     unsafe fn item_for_row(&self, factories: &Factories<K, A>, row: u64, item: (&mut K, &mut A)) {
@@ -633,13 +649,15 @@ where
     unsafe fn key(&self, factories: &Factories<K, A>, index: usize, key: &mut K) {
         unsafe {
             let item = self.archived_item(factories, index);
-            DeserializeDyn::deserialize(item.fst(), key)
+            let mut deserializer = Deserializer::new(self.version);
+            DeserializeDyn::deserialize_with(item.fst(), key, &mut deserializer)
         }
     }
     unsafe fn aux(&self, factories: &Factories<K, A>, index: usize, aux: &mut A) {
         unsafe {
             let item = self.archived_item(factories, index);
-            DeserializeDyn::deserialize(item.snd(), aux)
+            let mut deserializer = Deserializer::new(self.version);
+            DeserializeDyn::deserialize_with(item.snd(), aux, &mut deserializer)
         }
     }
     unsafe fn key_for_row(&self, factories: &Factories<K, A>, row: u64, key: &mut K) {
@@ -824,13 +842,14 @@ where
         node: &TreeNode,
         cache: &BufferCache,
         file_id: FileId,
+        version: u32,
     ) -> Result<Self, Error> {
         match node.node_type {
             NodeType::Data => Ok(Self::Data(DataBlock::from_raw_with_cache(
-                raw, node, cache, file_id,
+                raw, node, cache, file_id, version,
             )?)),
             NodeType::Index => Ok(Self::Index(IndexBlock::from_raw_with_cache(
-                raw, node, cache, file_id,
+                raw, node, cache, file_id, version,
             )?)),
         }
     }
@@ -865,6 +884,7 @@ where
     child_offsets: VarintReader,
     child_sizes: VarintReader,
     first_row: u64,
+    version: u32,
     _phantom: PhantomData<K>,
 }
 
@@ -885,6 +905,7 @@ where
         raw: Arc<FBuf>,
         location: BlockLocation,
         first_row: u64,
+        version: u32,
     ) -> Result<Self, Error> {
         let header =
             IndexBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice())).map_err(|e| {
@@ -941,6 +962,7 @@ where
             )?,
             raw,
             first_row,
+            version,
             _phantom: PhantomData,
         })
     }
@@ -950,8 +972,14 @@ where
         node: &TreeNode,
         cache: &BufferCache,
         file_id: FileId,
+        version: u32,
     ) -> Result<Arc<Self>, Error> {
-        let block = Arc::new(Self::from_raw(raw, node.location, node.rows.start)?);
+        let block = Arc::new(Self::from_raw(
+            raw,
+            node.location,
+            node.rows.start,
+            version,
+        )?);
         cache.insert(file_id, node.location.offset, block.clone());
         Ok(block)
     }
@@ -982,8 +1010,13 @@ where
             }
             None => {
                 let block = file.read_block(node.location)?;
-                let entry =
-                    Self::from_raw_with_cache(block, node, &cache, file.file_handle.file_id())?;
+                let entry = Self::from_raw_with_cache(
+                    block,
+                    node,
+                    &cache,
+                    file.file_handle.file_id(),
+                    file.version,
+                )?;
                 (CacheAccess::Miss, entry)
             }
         };
@@ -1072,7 +1105,8 @@ where
     unsafe fn get_bound(&self, index: usize, bound: &mut K) {
         unsafe {
             let offset = self.bounds.get(&self.raw, index) as usize;
-            bound.deserialize_from_bytes(&self.raw, offset)
+            let mut deserializer = Deserializer::new(self.version);
+            bound.deserialize_from_bytes_with(&self.raw, offset, &mut deserializer)
         }
     }
 
@@ -1318,6 +1352,7 @@ struct ImmutableFileRef {
     file_handle: Arc<dyn FileReader>,
     compression: Option<Compression>,
     stats: AtomicCacheStats,
+    version: u32,
 }
 
 impl Debug for ImmutableFileRef {
@@ -1339,12 +1374,14 @@ impl ImmutableFileRef {
         file_handle: Arc<dyn FileReader>,
         compression: Option<Compression>,
         stats: AtomicCacheStats,
+        version: u32,
     ) -> Self {
         Self {
             cache,
             file_handle,
             compression,
             stats,
+            version,
         }
     }
 
@@ -1583,7 +1620,13 @@ where
         };
 
         Ok(Self {
-            file: ImmutableFileRef::new(cache, file, file_trailer.compression, stats),
+            file: ImmutableFileRef::new(
+                cache,
+                file,
+                file_trailer.compression,
+                stats,
+                file_trailer.version,
+            ),
             columns,
             bloom_filter,
             _phantom: PhantomData,
