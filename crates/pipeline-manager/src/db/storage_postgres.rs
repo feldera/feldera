@@ -782,20 +782,34 @@ impl Storage for StoragePostgres {
             StorageStatus::InUse,
         )
         .await?;
-        operations::pipeline::set_deployment_resources_status(
+        operations::pipeline::set_deployment_resources_status_provisioning(
             &txn,
             tenant_id,
             pipeline_id,
             version_guard,
-            ResourcesStatus::Provisioning,
-            None,
-            None,
-            None,
-            None,
-            Some(deployment_id),
-            Some(deployment_config),
-            None,
-            None,
+            deployment_id,
+            deployment_config,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn remain_deployment_resources_status_provisioning(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_resources_status_details: serde_json::Value,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::pipeline::remain_deployment_resources_status_provisioning(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            version_guard,
+            deployment_resources_status_details,
         )
         .await?;
         txn.commit().await?;
@@ -808,24 +822,46 @@ impl Storage for StoragePostgres {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_location: &str,
+        deployment_resources_status_details: serde_json::Value,
         extended_runtime_status: ExtendedRuntimeStatus,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        operations::pipeline::set_deployment_resources_status(
+        operations::pipeline::set_deployment_resources_status_provisioned(
             &txn,
             tenant_id,
             pipeline_id,
             version_guard,
-            ResourcesStatus::Provisioned,
-            Some(extended_runtime_status.runtime_status),
-            Some(extended_runtime_status.runtime_status_details),
-            Some(extended_runtime_status.runtime_desired_status),
-            None,
-            None,
-            None,
-            Some(deployment_location.to_string()),
-            None,
+            deployment_location.to_string(),
+            deployment_resources_status_details,
+            extended_runtime_status.runtime_status,
+            extended_runtime_status.runtime_status_details,
+            extended_runtime_status.runtime_desired_status,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn remain_deployment_resources_status_provisioned(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_resources_status_details: serde_json::Value,
+        extended_runtime_status: ExtendedRuntimeStatus,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::pipeline::remain_deployment_resources_status_provisioned(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            version_guard,
+            deployment_resources_status_details,
+            extended_runtime_status.runtime_status,
+            extended_runtime_status.runtime_status_details,
+            extended_runtime_status.runtime_desired_status,
         )
         .await?;
         txn.commit().await?;
@@ -854,20 +890,35 @@ impl Storage for StoragePostgres {
             None,
         )
         .await?;
-        operations::pipeline::set_deployment_resources_status(
+        operations::pipeline::set_deployment_resources_status_stopping(
             &txn,
             tenant_id,
             pipeline_id,
             version_guard,
-            ResourcesStatus::Stopping,
-            None,
-            None,
-            None,
             deployment_error,
-            None,
-            None,
-            None,
             suspend_info,
+        )
+        .await?;
+
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn remain_deployment_resources_status_stopping(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_resources_status_details: serde_json::Value,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::pipeline::remain_deployment_resources_status_stopping(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            version_guard,
+            deployment_resources_status_details,
         )
         .await?;
 
@@ -883,20 +934,11 @@ impl Storage for StoragePostgres {
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        operations::pipeline::set_deployment_resources_status(
+        operations::pipeline::set_deployment_resources_status_stopped(
             &txn,
             tenant_id,
             pipeline_id,
             version_guard,
-            ResourcesStatus::Stopped,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
         )
         .await?;
         txn.commit().await?;

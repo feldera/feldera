@@ -326,7 +326,7 @@ pub(crate) trait Storage {
         pipeline_name: &str,
     ) -> Result<PipelineId, DBError>;
 
-    /// Transitions deployment status to `Provisioning`.
+    /// Transitions resources status to `Provisioning`.
     async fn transit_deployment_resources_status_to_provisioning(
         &self,
         tenant_id: TenantId,
@@ -336,17 +336,37 @@ pub(crate) trait Storage {
         deployment_config: serde_json::Value,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to one of the provisioned runtime statuses.
+    /// Remains resources status `Provisioning`.
+    async fn remain_deployment_resources_status_provisioning(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_resources_status_details: serde_json::Value,
+    ) -> Result<(), DBError>;
+
+    /// Transitions resources status to `Provisioned`.
     async fn transit_deployment_resources_status_to_provisioned(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_location: &str,
+        deployment_resources_status_details: serde_json::Value,
         extended_runtime_status: ExtendedRuntimeStatus,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to `Stopping`.
+    /// Remains resources status `Provisioned`.
+    async fn remain_deployment_resources_status_provisioned(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_resources_status_details: serde_json::Value,
+        extended_runtime_status: ExtendedRuntimeStatus,
+    ) -> Result<(), DBError>;
+
+    /// Transitions resources status to `Stopping`.
     async fn transit_deployment_resources_status_to_stopping(
         &self,
         tenant_id: TenantId,
@@ -356,7 +376,16 @@ pub(crate) trait Storage {
         suspend_info: Option<serde_json::Value>,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to `Stopped`.
+    /// Remains resources status `Stopping`.
+    async fn remain_deployment_resources_status_stopping(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_resources_status_details: serde_json::Value,
+    ) -> Result<(), DBError>;
+
+    /// Transitions resources status to `Stopped`.
     async fn transit_deployment_resources_status_to_stopped(
         &self,
         tenant_id: TenantId,

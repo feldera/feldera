@@ -151,3 +151,9 @@ pub(crate) fn source_error(mut err: &dyn StdError) -> &dyn StdError {
     }
     err
 }
+
+impl From<ManagerError> for ErrorResponse {
+    fn from(val: ManagerError) -> Self {
+        ErrorResponse::from_error_nolog(&val)
+    }
+}
