@@ -146,6 +146,10 @@ class View(SqlObject):
             )
 
 
+class CompileTimeError(Exception):
+    """Raised when the pipeline fails during compilation."""
+
+
 class DeploymentErrorException(Exception):
     """Adds deployment error information to an exception.
 
@@ -177,6 +181,10 @@ class DeploymentErrorException(Exception):
             f"{str(self.original_exception)}\n"
             f"Pipeline deployment error: {self.deployment_error}"
         )
+
+
+class RuntimeExecutionError(Exception):
+    """Raised when the pipeline execution fails during runtime."""
 
 
 class TstAccumulator:
@@ -244,15 +252,23 @@ class TstAccumulator:
 
             for view in views:
                 view.validate(pipeline)
+
         except Exception as e:
-            # Augment exception with deployment error if available so that
-            # assert_expected_error can pattern-match both against the expected error substring.
-            if pipeline is not None:
+            # Determine if this is a compile time or runtime error based on the pipeline state
+            if pipeline is None:
+                # Failure during pipeline creation is a compile time error
+                raise CompileTimeError(f"COMPILE-TIME ERROR:\n{e}") from e
+            else:
+                # Augment exception with deployment error if available so that
+                # assert_expected_error can pattern-match both against the expected error substring.
                 deployment_error = pipeline.deployment_error()
                 if deployment_error is not None and deployment_error:
                     # Convert deployment_error dict to string for exception
                     raise DeploymentErrorException(str(deployment_error), e)
-            raise
+
+                else:
+                    # Pipeline was created, so the failure here is a runtime error
+                    raise RuntimeExecutionError(f"RUNTIME ERROR:\n{e}") from e
         finally:
             # Try to get the pipelines that were created by
             # `PipelineBuilder` but failed to compile.
@@ -309,6 +325,8 @@ class TstAccumulator:
                 raise AssertionError(
                     f"View: `{view.name}` was expected to fail, but it passed."
                 )
+            except AssertionError:
+                raise  # Re-raise assertion errors about unexpected success
             except Exception as e:
                 self.assert_expected_error(view, e)
 
