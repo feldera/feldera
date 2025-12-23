@@ -280,10 +280,6 @@ export function measurementCategory(prop: string): MeasurementCategory {
     map.set("CPU", [
         "time%",
         "invocations",
-        "left inputs",
-        "right inputs",
-        "computed outputs",
-        "inputs",
         "steps",
         "wait_time",
         "exchange_wait_time",
@@ -322,6 +318,7 @@ export function measurementCategory(prop: string): MeasurementCategory {
         "slot 2 merging",
         "slot 3 merging",
         "slot 4 merging",
+        "storage size",
         "batch sizes",
         "bounds",
         "Bloom filter size",
@@ -334,12 +331,15 @@ export function measurementCategory(prop: string): MeasurementCategory {
         "foreground cache occupancy",
         "background cache occupancy"]);
     map.set("memory", [
+        "left inputs",
+        "right inputs",
+        "computed outputs",
+        "inputs",
         "total size",
         "allocated bytes",
         "used bytes",
         "shared bytes",
         "batches",
-        "storage size",
         "allocations"]);
     for (const [k, v] of map) {
         for (const value of v) {

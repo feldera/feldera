@@ -67,7 +67,7 @@ as a zip file from a third party.
 
 ## Profiler visualization UI
 
-The profiler visualization interface has is shown in the following
+The profiler visualization interface is shown in the following
 image:
 
 ![Profiler UI structure](ui-structure.png)
@@ -195,9 +195,8 @@ high value, while a white node has a low value.
 
 #### Finding nodes with high value of a metric
 
-Clicking on the button labeled "Metric:" will display a table with
-nodes that have a high value with respect to this metric (at most 20
-nodes are displayed):
+Clicking on the button labeled "top 20 nodes" will display a table with
+nodes that have a high value with respect to this metric:
 
 ![Finding nodes with high values for a metric](important-nodes.png)
 
