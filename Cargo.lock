@@ -4936,8 +4936,10 @@ dependencies = [
 name = "feldera-macros"
 version = "0.211.0"
 dependencies = [
+ "dbsp",
  "derive_more 1.0.0",
  "feldera-size-of",
+ "feldera-sqllib",
  "prettyplease",
  "proc-macro2",
  "quote",
