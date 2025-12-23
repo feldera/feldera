@@ -255,6 +255,10 @@ pub struct ExtendedPipelineDescr {
     /// Timestamp when the `deployment_resources_status` last changed.
     pub deployment_resources_status_since: DateTime<Utc>,
 
+    /// Details about the resources status.
+    /// No assumptions should be made about the structure of this JSON value.
+    pub deployment_resources_status_details: Option<serde_json::Value>,
+
     /// Resources desired status of the current deployment.
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
 
@@ -264,6 +268,8 @@ pub struct ExtendedPipelineDescr {
     /// Observed runtime status of the current deployment.
     pub deployment_runtime_status: Option<RuntimeStatus>,
 
+    /// Details about the runtime status.
+    /// No assumptions should be made about the structure of this JSON value.
     pub deployment_runtime_status_details: Option<serde_json::Value>,
 
     /// Timestamp when the `deployment_runtime_status` observation last changed.

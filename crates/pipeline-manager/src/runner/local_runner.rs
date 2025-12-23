@@ -9,7 +9,7 @@ use crate::db::types::pipeline::{
 use crate::db::types::version::Version;
 use crate::error::{source_error, ManagerError};
 use crate::runner::error::RunnerError;
-use crate::runner::pipeline_executor::PipelineExecutor;
+use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use async_trait::async_trait;
 use feldera_observability::ReqwestTracingExt;
@@ -18,6 +18,7 @@ use feldera_types::config::{
 };
 use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus};
 use reqwest::StatusCode;
+use serde_json::json;
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
@@ -294,7 +295,7 @@ impl LocalRunner {
 
     /// Checks the process and working directory of the deployment.
     /// Returns a fatal error if it is encountered.
-    async fn inner_check(&mut self) -> Result<(), String> {
+    async fn inner_check(&mut self) -> Result<serde_json::Value, String> {
         // Pipeline process status must be checkable and not have exited
         let process_check = if let Some(p) = &mut self.process {
             match p.try_wait() {
@@ -303,7 +304,7 @@ impl LocalRunner {
                         // If there is an exit status, the process has exited
                         Err(format!("Pipeline process exited prematurely with {status}"))
                     } else {
-                        Ok(())
+                        Ok("has not exited".to_string())
                     }
                 }
                 Err(e) => {
@@ -321,7 +322,7 @@ impl LocalRunner {
         // Pipeline working directory must exist
         let pipeline_dir = &self.config.pipeline_dir(self.pipeline_id);
         let working_dir_check = if Path::new(pipeline_dir).is_dir() {
-            Ok(())
+            Ok("exists".to_string())
         } else {
             Err(format!(
                 "Working directory '{}' no longer exists.",
@@ -359,7 +360,10 @@ impl LocalRunner {
 
         // Result
         if errors.is_empty() {
-            Ok(())
+            Ok(json!({
+                "process": process_check.unwrap_or("".to_string()),
+                "working_dir": working_dir_check.unwrap_or("".to_string()),
+            }))
         } else {
             Err(errors.join("\n"))
         }
@@ -600,10 +604,11 @@ impl PipelineExecutor for LocalRunner {
     }
 
     /// Process deployment provisioning is completed when the port file is found and read.
-    async fn is_provisioned(&mut self) -> Result<Option<String>, ManagerError> {
-        if let Err(error) = self.inner_check().await {
-            return Err(ManagerError::from(RunnerError::RunnerCheckError { error }));
-        }
+    async fn is_provisioned(&mut self) -> Result<ProvisionStatus, ManagerError> {
+        let details = self
+            .inner_check()
+            .await
+            .map_err(|error| ManagerError::from(RunnerError::RunnerCheckError { error }))?;
 
         let port_file_path = self.config.port_file_path(self.pipeline_id);
         match fs::read_to_string(port_file_path).await {
@@ -613,26 +618,27 @@ impl PipelineExecutor for LocalRunner {
                     Ok(port) => {
                         // Pipelines run on the same host as the runner
                         let host = &self.common_config.runner_host;
-                        Ok(Some(format!("{host}:{port}")))
+                        Ok(ProvisionStatus::Provisioned {
+                            location: format!("{host}:{port}"),
+                            details,
+                        })
                     }
                     Err(e) => Err(ManagerError::from(RunnerError::RunnerProvisionError {
                         error: format!("unable to parse port file due to: {e}"),
                     })),
                 }
             }
-            Err(_) => Ok(None),
+            Err(_) => Ok(ProvisionStatus::Ongoing { details }),
         }
     }
 
     /// Checks the process and working directory is healthy.
     /// - Pipeline working directory must exist
     /// - Process status must be checkable and not be exited
-    async fn check(&mut self) -> Result<(), ManagerError> {
-        if let Err(error) = self.inner_check().await {
-            Err(ManagerError::from(RunnerError::RunnerCheckError { error }))
-        } else {
-            Ok(())
-        }
+    async fn check(&mut self) -> Result<serde_json::Value, ManagerError> {
+        self.inner_check()
+            .await
+            .map_err(|error| ManagerError::from(RunnerError::RunnerCheckError { error }))
     }
 
     /// Kills the pipeline process and terminates the thread which follows its stdout and stderr.
