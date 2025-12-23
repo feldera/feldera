@@ -563,7 +563,8 @@ where
         layer_file.write0((&T::key0(row0), &T::aux0(row0))).unwrap();
     }
 
-    let reader = layer_file.into_reader().unwrap();
+    let (reader, column_info) = layer_file.into_reader().unwrap();
+    dbg!(column_info);
     reader.evict();
     let rows0 = reader.rows();
     let expected0 = |row0| {
@@ -628,7 +629,8 @@ where
         layer_file.write0((&T::key0(row0), &T::aux0(row0))).unwrap();
     }
 
-    let reader = layer_file.into_reader().unwrap();
+    let (reader, column_info) = layer_file.into_reader().unwrap();
+    dbg!(column_info);
     reader.evict();
     test_multifetch_two_columns::<T>(&reader);
 }
@@ -787,7 +789,7 @@ where
         let reader = if reopen {
             println!("closing writer and reopening as reader");
             let path = writer.path().clone();
-            let (_file_handle, _bloom_filter) = writer.close().unwrap();
+            let (_file_handle, _bloom_filter, _column_info) = writer.close().unwrap();
             Reader::open(
                 &[&factories.any_factories()],
                 test_buffer_cache,
@@ -797,7 +799,9 @@ where
             .unwrap()
         } else {
             println!("transforming writer into reader");
-            writer.into_reader().unwrap()
+            let (reader, column_info) = writer.into_reader().unwrap();
+            dbg!(column_info);
+            reader
         };
         reader.evict();
         assert_eq!(reader.rows().len(), n as u64);
@@ -842,7 +846,7 @@ fn test_one_column_zset<K, A>(
         let reader = if reopen {
             println!("closing writer and reopening as reader");
             let path = writer.path().clone();
-            let (_file_handle, _bloom_filter) = writer.close().unwrap();
+            let (_file_handle, _bloom_filter, _column_info) = writer.close().unwrap();
             Reader::open(
                 &[&factories.any_factories()],
                 test_buffer_cache,
@@ -852,7 +856,9 @@ fn test_one_column_zset<K, A>(
             .unwrap()
         } else {
             println!("transforming writer into reader");
-            writer.into_reader().unwrap()
+            let (reader, column_info) = writer.into_reader().unwrap();
+            dbg!(column_info);
+            reader
         };
         reader.evict();
         assert_eq!(reader.rows().len(), n as u64);

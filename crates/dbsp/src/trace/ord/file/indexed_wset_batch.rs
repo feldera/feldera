@@ -1,6 +1,7 @@
 use crate::{
     DBData, DBWeight, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
+    circuit::metadata::{MetaItem, OperatorMeta},
     dynamic::{
         DataTrait, DynDataTyped, DynPair, DynVec, DynWeightedPairs, Erase, Factory, LeanVec,
         WeightTrait, WeightTraitTyped, WithFactory,
@@ -148,6 +149,24 @@ where
             (&'static V, &'static R, ()),
         )>,
     >,
+
+    /// Metadata, if we have it.  We only have it if we wrote this file
+    /// ourselves; if we opened one, we don't because we can't write it to the
+    /// file.
+    metadata: Option<Metadata>,
+}
+
+#[derive(SizeOf)]
+struct Metadata {
+    /// Number of values inlined into the first column's auxdata rather than
+    /// written in column 1.
+    inlined_values: usize,
+
+    /// Estimated number of bytes of bounds that weren't written to the file.
+    /// This is `None` if we were able to omit all of them and therefore
+    /// couldn't estimate the size of the ones that were omitted.  This is 0 if
+    /// all the values were inlined.
+    estimated_bounds_omitted_bytes: Option<usize>,
 }
 
 impl<K, V, R> Debug for FileIndexedWSet<K, V, R>
@@ -195,6 +214,7 @@ where
         Self {
             factories: self.factories.clone(),
             file: self.file.clone(),
+            metadata: None,
         }
     }
 }
@@ -396,6 +416,31 @@ where
             }
         }
     }
+
+    /// Metadata for file-based indexed Z-sets.
+    ///
+    /// This metadata is only available for indexed Z-sets that we wrote, not
+    /// for ones that we read from a file, since it isn't saved to storage.
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        if let Some(metadata) = &self.metadata {
+            if let Some(bytes) = metadata.estimated_bounds_omitted_bytes {
+                meta.extend(metadata! {
+                    "estimated omitted bounds" => MetaItem::bytes(bytes)
+                })
+            } else {
+                meta.extend(metadata! {
+                    "batches with all bounds omitted" => MetaItem::Count(1)
+                })
+            }
+
+            meta.extend(metadata! {
+                "inlined values" => MetaItem::Percent {
+                    numerator: metadata.inlined_values as u64,
+                    denominator: metadata.inlined_values as u64 + self.file.n_rows(1)
+                }
+            });
+        }
+    }
 }
 
 impl<K, V, R> Batch for FileIndexedWSet<K, V, R>
@@ -425,6 +470,7 @@ where
         Ok(Self {
             factories: factories.clone(),
             file,
+            metadata: None,
         })
     }
 }
@@ -800,6 +846,7 @@ where
     weight: Box<R>,
     num_tuples: usize,
     num_vals: usize,
+    inlined_values: usize,
 }
 
 impl<K, V, R> FileIndexedWSetBuilder<K, V, R>
@@ -853,17 +900,24 @@ where
             pairs: factories.vrs_factory.default_box(),
             num_tuples: 0,
             num_vals: 0,
+            inlined_values: 0,
         }
     }
 
     fn done(self) -> FileIndexedWSet<K, V, R> {
+        let (reader, info) = self.writer.into_reader().unwrap_storage();
         FileIndexedWSet {
             factories: self.factories,
-            file: Arc::new(self.writer.into_reader().unwrap_storage()),
+            file: Arc::new(reader),
+            metadata: Some(Metadata {
+                inlined_values: self.inlined_values,
+                estimated_bounds_omitted_bytes: info[1].estimated_omitted_bounds_bytes(),
+            }),
         }
     }
 
     fn push_key(&mut self, key: &K) {
+        self.inlined_values += self.pairs.len();
         self.writer.write0((key, &*self.pairs)).unwrap_storage();
         self.pairs.clear();
         self.num_vals = 0;

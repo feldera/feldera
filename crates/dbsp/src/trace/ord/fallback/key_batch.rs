@@ -1,20 +1,12 @@
 use crate::{
-    DBData, DBWeight, NumEntries, Timestamp,
-    dynamic::{
+    circuit::metadata::OperatorMeta, dynamic::{
         DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
         WeightTrait,
-    },
-    storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
-    trace::{
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
-        FileKeyBatchFactories, Filter, MergeCursor, VecKeyBatch, VecKeyBatchFactories,
-        WeightedItem,
-        cursor::{DelegatingCursor, PushCursor},
-        ord::{
-            FileKeyBatch, file::key_batch::FileKeyBuilder, merge_batcher::MergeBatcher,
-            vec::key_batch::VecKeyBuilder,
-        },
-    },
+    }, storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError}, trace::{
+        cursor::{DelegatingCursor, PushCursor}, ord::{
+            file::key_batch::FileKeyBuilder, merge_batcher::MergeBatcher, vec::key_batch::VecKeyBuilder, FileKeyBatch
+        }, Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, FileKeyBatchFactories, Filter, MergeCursor, VecKeyBatch, VecKeyBatchFactories, WeightedItem
+    }, DBData, DBWeight, NumEntries, Timestamp
 };
 use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
@@ -304,6 +296,13 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.maybe_contains_key(hash),
             Inner::File(file) => file.maybe_contains_key(hash),
+        }
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        match &self.inner {
+            Inner::Vec(vec) => vec.metadata(meta),
+            Inner::File(file) => file.metadata(meta),
         }
     }
 }

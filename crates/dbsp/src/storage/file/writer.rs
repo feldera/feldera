@@ -33,7 +33,6 @@ use feldera_storage::StoragePath;
 use snap::raw::{Encoder, max_compress_len};
 use std::{
     cell::RefCell,
-    convert::identity,
     sync::{Arc, Once},
 };
 use std::{
@@ -224,7 +223,64 @@ where
     data_block: DataBlockBuilder<K, A>,
     index_blocks: Vec<IndexBlockBuilder<K>>,
     factories: Factories<K, A>,
-    contains_empty_row_group: bool,
+    info: ColumnInfo,
+}
+
+/// Information about a column written to a layer file.
+#[derive(Default, Copy, Clone, Debug)]
+pub struct ColumnInfo {
+    /// Number of rows.
+    // This isn't maintained while building the column, only filled in when we
+    // finish it.
+    pub n_rows: u64,
+
+    /// Number of data blocks.
+    pub n_data_blocks: usize,
+
+    /// Number of index blocks.
+    pub n_index_blocks: usize,
+
+    /// The number of empty row groups in the column.
+    ///
+    /// - In column 0, this is 1 if the file is empty, 0 otherwise.
+    ///
+    /// - In other columns, the number of nonempty row groups is the number of
+    ///   rows in the previous column minus `n_empty_row_groups`.
+    pub n_empty_row_groups: usize,
+
+    /// Number of bytes of index bounds in this column.
+    pub n_bounds_bytes: usize,
+
+    /// The number of bounds that are included in index blocks in this column.
+    pub n_bounds: usize,
+
+    /// The number of bounds that have been omitted from index blocks in this
+    /// column.
+    pub n_omitted_bounds: usize,
+}
+
+impl ColumnInfo {
+    fn add_bounds(&mut self, n_bounds: usize) {
+        self.n_bounds += n_bounds;
+        self.n_omitted_bounds += 2 - n_bounds;
+    }
+
+    /// Returns an estimate of the number of bytes that were saved by omitting
+    /// bounds.  This is estimated based on the size of the bounds that could
+    /// not be omitted, which means that it can't be computed at all if all the
+    /// bounds were omitted.
+    ///
+    /// This will always be `Some(0)` in column 0, which can't omit bounds.
+    pub fn estimated_omitted_bounds_bytes(&self) -> Option<usize> {
+        if self.n_omitted_bounds == 0 {
+            Some(0)
+        } else if self.n_bounds_bytes > 0 && self.n_bounds > 0 {
+            let bytes_per_bound = self.n_bounds_bytes as f64 / self.n_bounds as f64;
+            Some((bytes_per_bound * self.n_omitted_bounds as f64) as usize)
+        } else {
+            None
+        }
+    }
 }
 
 impl<K, A> ColumnWriter<K, A>
@@ -240,7 +296,7 @@ where
             data_block: DataBlockBuilder::new(parameters),
             index_blocks: Vec::new(),
             factories: factories.clone(),
-            contains_empty_row_group: false,
+            info: ColumnInfo::default(),
         }
     }
 
@@ -248,7 +304,7 @@ where
         let end = self.rows.end;
         let rows = replace(&mut self.rows, end..end);
         if rows.is_empty() {
-            self.contains_empty_row_group = true;
+            self.info.n_empty_row_groups += 1;
         }
         rows
     }
@@ -256,7 +312,7 @@ where
     fn finish(
         &mut self,
         block_writer: &mut BlockWriter,
-    ) -> Result<(FileTrailerColumn, bool), StorageError> {
+    ) -> Result<(FileTrailerColumn, ColumnInfo), StorageError> {
         // Flush data.
         if !self.data_block.is_empty() {
             let data_block = self.data_block.build(&self.factories, self.column == 0);
@@ -276,7 +332,15 @@ where
                         node_size: entry.child.size as u32,
                         n_rows: entry.row_total,
                     },
-                    self.contains_empty_row_group,
+                    ColumnInfo {
+                        n_rows: entry.row_total,
+                        n_empty_row_groups: if self.column == 0 && entry.row_total > 0 {
+                            1
+                        } else {
+                            self.info.n_empty_row_groups
+                        },
+                        ..self.info
+                    },
                 ));
             } else if !self.index_blocks[level].is_empty() {
                 let index_block = self.index_blocks[level].build();
@@ -291,7 +355,7 @@ where
                 node_size: 0,
                 n_rows: 0,
             },
-            self.contains_empty_row_group,
+            self.info,
         ))
     }
 
@@ -316,6 +380,8 @@ where
         block_writer: &mut BlockWriter,
         data_block: DataBlock<K>,
     ) -> Result<(), StorageError> {
+        self.info.add_bounds(data_block.n_bounds());
+        self.info.n_data_blocks += 1;
         let rows = data_block.rows();
         let (block, location) =
             block_writer.write_block(data_block.raw, self.parameters.compression)?;
@@ -350,6 +416,9 @@ where
         mut level: usize,
     ) -> Result<(), StorageError> {
         loop {
+            self.info.n_bounds_bytes += index_block.n_bound_bytes;
+            self.info.add_bounds(index_block.n_bounds());
+            self.info.n_index_blocks += 1;
             let rows = index_block.rows.clone();
             let n_rows = index_block.n_rows();
             let (block, location) =
@@ -498,6 +567,9 @@ where
     fn rows(&self) -> Range<u64> {
         self.first_row..self.first_row + self.n_rows as u64
     }
+    fn n_bounds(&self) -> usize {
+        self.min.is_some() as usize + self.max.is_some() as usize
+    }
 }
 
 impl<K, A> DataBlockBuilder<K, A>
@@ -595,9 +667,10 @@ where
             None
         } else {
             let retval = self.build(factories, !is_first_row_in_group);
-            assert!(self
-                .try_add_item(factories, item, row_group, is_first_row_in_group)
-                .is_ok());
+            assert!(
+                self.try_add_item(factories, item, row_group, is_first_row_in_group)
+                    .is_ok()
+            );
             Some(retval)
         }
     }
@@ -772,11 +845,15 @@ struct IndexBlock<K: ?Sized> {
     min: Option<Box<K>>,
     max: Option<Box<K>>,
     rows: Range<u64>,
+    n_bound_bytes: usize,
 }
 
 impl<K: ?Sized> IndexBlock<K> {
     fn n_rows(&self) -> u64 {
         self.rows.end - self.rows.start
+    }
+    fn n_bounds(&self) -> usize {
+        self.min.is_some() as usize + self.max.is_some() as usize
     }
 }
 
@@ -974,6 +1051,7 @@ where
         }
     }
     fn build(&mut self) -> IndexBlock<K> {
+        let n_bound_bytes = self.raw.len() - IndexBlockHeader::LEN;
         let specs = self.specs();
         let entry_n = self.entries.last().unwrap();
         let rows = self.first_row..self.first_row + entry_n.row_total;
@@ -1041,6 +1119,7 @@ where
             min,
             max,
             rows,
+            n_bound_bytes,
         };
         self.first_row += entry_n.row_total;
         self.clear();
@@ -1207,8 +1286,8 @@ impl Writer {
 
     pub fn close(
         mut self,
-        finished_columns: Vec<(FileTrailerColumn, bool)>,
-    ) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
+        finished_columns: Vec<(FileTrailerColumn, ColumnInfo)>,
+    ) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>, Vec<ColumnInfo>), StorageError> {
         // Write the Bloom filter.
         let filter_location = if let Some(bloom_filter) = &self.bloom_filter {
             self.writer
@@ -1218,11 +1297,13 @@ impl Writer {
             BlockLocation { offset: 0, size: 0 }
         };
 
-        let (columns, contains_empty_row_groups): (Vec<_>, Vec<_>) =
-            finished_columns.into_iter().unzip();
+        let (columns, column_info): (Vec<_>, Vec<_>) = finished_columns.into_iter().unzip();
 
-        let mut incompatible_features = FileTrailer::OMITTED_BOUNDS;
-        if contains_empty_row_groups.into_iter().any(identity) {
+        let mut incompatible_features = 0;
+        if column_info.iter().any(|info| info.n_omitted_bounds > 0) {
+            incompatible_features |= FileTrailer::OMITTED_BOUNDS;
+        }
+        if column_info.iter().any(|info| info.n_empty_row_groups > 0) {
             incompatible_features |= FileTrailer::EMPTY_ROW_GROUP;
         }
 
@@ -1243,7 +1324,7 @@ impl Writer {
         self.writer
             .insert_cache_entry(location, Arc::new(file_trailer));
 
-        Ok((self.writer.complete()?, self.bloom_filter))
+        Ok((self.writer.complete()?, self.bloom_filter, column_info))
     }
 
     pub fn storage(&self) -> &Arc<BufferCache> {
@@ -1349,9 +1430,13 @@ where
 
     /// Finishes writing the layer file and returns the writer passed to
     /// [`new`](Self::new).
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
+    pub fn close(
+        mut self,
+    ) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>, ColumnInfo), StorageError> {
         let c0 = self.column0.finish(&mut self.inner.writer)?;
-        self.inner.close(vec![c0])
+        let (reader, bloom_filter, column_info) = self.inner.close(vec![c0])?;
+        let column_info: [ColumnInfo; 1] = column_info.try_into().unwrap();
+        Ok((reader, bloom_filter, column_info[0]))
     }
 
     /// Returns the path for the file being written.
@@ -1364,16 +1449,20 @@ where
         self.inner.storage()
     }
 
-    /// Finishes writing the layer file and returns a reader for it.
+    /// Finishes writing the layer file and returns a reader for it, as well as
+    /// extra information about the column that was written.
     pub fn into_reader(
         self,
-    ) -> Result<Reader<(&'static K0, &'static A0, ())>, super::reader::Error> {
+    ) -> Result<(Reader<(&'static K0, &'static A0, ())>, ColumnInfo), super::reader::Error> {
         let any_factories = self.column0.factories.any_factories();
 
         let cache = self.inner.cache;
-        let (file_handle, bloom_filter) = self.close()?;
+        let (file_handle, bloom_filter, column_info) = self.close()?;
 
-        Reader::new(&[&any_factories], cache, file_handle, bloom_filter)
+        Ok((
+            Reader::new(&[&any_factories], cache, file_handle, bloom_filter)?,
+            column_info,
+        ))
     }
 }
 
@@ -1524,10 +1613,13 @@ where
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
+    pub fn close(
+        mut self,
+    ) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>, [ColumnInfo; 2]), StorageError> {
         let c0 = self.column0.finish(&mut self.inner.writer)?;
         let c1 = self.column1.finish(&mut self.inner.writer)?;
-        self.inner.close(vec![c0, c1])
+        let (reader, bloom_filter, column_info) = self.inner.close(vec![c0, c1])?;
+        Ok((reader, bloom_filter, column_info.try_into().unwrap()))
     }
 
     /// Returns the storage used for this writer.
@@ -1540,23 +1632,30 @@ where
         self.inner.path()
     }
 
-    /// Finishes writing the layer file and returns a reader for it.
+    /// Finishes writing the layer file and returns a reader for it, as well as
+    /// extra information about the columns that were written.
     #[allow(clippy::type_complexity)]
     pub fn into_reader(
         self,
     ) -> Result<
-        Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
+        (
+            Reader<(&'static K0, &'static A0, (&'static K1, &'static A1, ()))>,
+            [ColumnInfo; 2],
+        ),
         super::reader::Error,
     > {
         let any_factories0 = self.column0.factories.any_factories();
         let any_factories1 = self.column1.factories.any_factories();
         let cache = self.inner.cache;
-        let (file_handle, bloom_filter) = self.close()?;
-        Reader::new(
-            &[&any_factories0, &any_factories1],
-            cache,
-            file_handle,
-            bloom_filter,
-        )
+        let (file_handle, bloom_filter, column_info) = self.close()?;
+        Ok((
+            Reader::new(
+                &[&any_factories0, &any_factories1],
+                cache,
+                file_handle,
+                bloom_filter,
+            )?,
+            column_info,
+        ))
     }
 }
