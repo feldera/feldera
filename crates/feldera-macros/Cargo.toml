@@ -24,6 +24,8 @@ derive_more = { version = "1.0", features = ["not"] }
 rkyv = { workspace = true, features = ["std", "size_64", "validation"] }
 serde = { workspace = true, features = ["derive"] }
 size-of = { workspace = true }
+dbsp = { workspace = true }
+feldera-sqllib = { workspace = true }
 
 [lib]
 proc-macro = true

@@ -266,6 +266,7 @@ where
                 &read.node,
                 &self.cache,
                 self.reader.file_handle().file_id(),
+                self.reader.file.version,
             )
             .unwrap();
             self.process_read(&read.keys, tree_block, reads)?;
@@ -581,6 +582,7 @@ where
                 &read.node,
                 &self.cache,
                 self.reader.file_handle().file_id(),
+                self.reader.file.version,
             )
             .unwrap();
             self.process_read(read.keys, tree_block, reads)?;
