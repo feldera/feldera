@@ -1067,7 +1067,7 @@ where
             .key_distribtion_for_stream_local_worker(self.input_node_id)
         {
             meta.extend(metadata! {
-                LOCAL_SHARD_SIZE_LABEL => MetaItem::Count(local_shard_size.abs() as usize),
+                LOCAL_SHARD_SIZE_LABEL => MetaItem::Count(local_shard_size.unsigned_abs() as usize),
             });
         }
     }

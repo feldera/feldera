@@ -1257,6 +1257,8 @@ public class ToRustVisitor extends CircuitVisitor {
         String operation = "join_index";
         if (operator.is(DBSPLeftJoinIndexOperator.class))
             operation = "left_join_index";
+        if (operator.balanced)
+            operation += "_balanced";
         this.computeHash(operator);
         this.innerVisitor.setOperatorContext(operator);
         DBSPType streamType = this.streamType(operator);

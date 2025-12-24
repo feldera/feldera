@@ -141,6 +141,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new LowerAsof(compiler));
         this.add(new LowerCircuitVisitor(compiler));
         this.add(new AdjustSqlIndex(compiler).circuitRewriter(true));
+        this.add(new OptimizeWithGraph(compiler, g -> new BalancedJoins(compiler, g), 1));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
         this.add(new ImplementChains(compiler));
         // Lowering may surface additional casts that need to be expanded

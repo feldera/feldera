@@ -414,7 +414,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 }
                 DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(
                         jfm.getRelNode(), operator.getOutputZSetType(), jfm.getFunction(),
-                        jfm.filter, newMap, operator.isMultiset, jfm.left(), jfm.right())
+                        jfm.filter, newMap, operator.isMultiset, jfm.left(), jfm.right(), jfm.balanced)
                         .copyAnnotations(operator).copyAnnotations(source.node()).to(DBSPSimpleOperator.class);
                 this.map(operator, result);
                 return;

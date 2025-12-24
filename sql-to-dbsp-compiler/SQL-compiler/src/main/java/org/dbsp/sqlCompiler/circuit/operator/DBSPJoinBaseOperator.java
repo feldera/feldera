@@ -12,12 +12,16 @@ import org.dbsp.util.Utilities;
 /** Base class for the many kinds of joins we have, some incremental,
  * some non-incremental. */
 public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator {
+    /** If true the join is dynamically balanced; else it is always a hash-join */
+    public final boolean balanced;
+
     protected DBSPJoinBaseOperator(
             CalciteRelNode node, String operation, DBSPExpression function,
             DBSPType outputType, boolean isMultiset,
-            OutputPort left, OutputPort right) {
+            OutputPort left, OutputPort right, boolean balanced) {
         super(node, operation, function, outputType, isMultiset, left, right, true);
         this.checkParameterCount(function, 3);
+        this.balanced = balanced;
         DBSPClosureExpression closure = this.getClosureFunction();
         DBSPTypeIndexedZSet leftType = left.getOutputIndexedZSetType();
         DBSPTypeIndexedZSet rightType = right.getOutputIndexedZSetType();
@@ -36,11 +40,25 @@ public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator {
                         " does not match right input key type " + rightType.keyType);
     }
 
+    protected static String joinOperationName(String operation, boolean balanced) {
+        if (balanced)
+            return operation + "_balanced";
+        return operation;
+    }
+
     /** Replace inputs and function, preserve output type */
     public final DBSPJoinBaseOperator withFunctionAndInputs(
             DBSPExpression function, OutputPort left, OutputPort right) {
         return this.with(function, this.outputType, Linq.list(left, right), false)
                 .to(DBSPJoinBaseOperator.class);
+    }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!other.is(DBSPJoinBaseOperator.class))
+            return false;
+        DBSPJoinBaseOperator o = other.to(DBSPJoinBaseOperator.class);
+        return super.equivalent(other) && this.balanced == o.balanced;
     }
 
     public DBSPType getKeyType() {
