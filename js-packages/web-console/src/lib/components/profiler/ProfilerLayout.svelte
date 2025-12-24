@@ -51,12 +51,13 @@
         some: (topNodes) => ({
           genericTable: {
             header: `Nodes with highest values for the metric "${selectedMetricId}"`,
-            columns: ['Node', 'Value'],
+            columns: ['Node', 'Value', 'Operation'],
             rows: topNodes.map((n) => ({
               stub: { text: n.nodeId, onclick: () => profilerDiagram?.search(n.nodeId) },
               cells: [
                 {
                   text: n.label,
+                  operation: n.operation,
                   normalizedValue: n.normalizedValue
                 }
               ]
@@ -88,6 +89,7 @@
   // Handle metric selection change
   function handleMetricChange(event: Event) {
     const target = event.target as HTMLSelectElement
+    selectedMetricId = target.value
     profilerDiagram?.selectMetric(target.value)
   }
 
@@ -192,15 +194,15 @@
 
     {@render pseudoNode({
       onmouseenter: () => {
-        profilerDiagram?.showTopNodes(selectedMetricId, 20)
+        profilerDiagram?.showTopNodes(selectedMetricId)
       },
       onmouseleave: () => {
         profilerDiagram?.hideNodeAttributes()
       },
       onclick: () => {
-        profilerDiagram?.showTopNodes(selectedMetricId, 20, true)
+        profilerDiagram?.showTopNodes(selectedMetricId, true)
       },
-      text: 'top 20 nodes'
+      text: 'top nodes'
     })}
 
     <div class="vr">

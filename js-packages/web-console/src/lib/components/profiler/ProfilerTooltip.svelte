@@ -12,7 +12,7 @@
           columns: string[]
           rows: {
             stub: { text: string; onclick?: () => void }
-            cells: { text: string; normalizedValue: number }[]
+            cells: { text: string; operation: string, normalizedValue: number }[]
           }[]
         }
       }
@@ -141,6 +141,7 @@
                   >
                     {cell.text}
                   </td>
+                  <td>{cell.operation}</td>
                 {/each}
               </tr>
             {/each}
@@ -158,16 +159,22 @@
     right: 0.5rem;
     z-index: 2;
     max-height: calc(100vh - 1rem);
+    /* Causes scroll-bar on child if too tall */
+    height: 100%;
   }
 
   /* Tooltip styling */
   .profiler-tooltip {
     background-color: black;
+    /* Make sure tooltip edges are rounded */
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
     padding: 0;
-    /* Make sure tooltip edges are rounded */
-    overflow: clip;
+    /* Force scroll-bar if too tall */
+    max-height: calc(100% - 1rem);
+    max-width: calc(100% - 1rem);
+    overflow-y: auto;
+    overflow-x: auto;
   }
 
   .profiler-tooltip table {
@@ -175,6 +182,12 @@
     border-collapse: collapse;
     font-size: 12px;
     width: 100%;
+  }
+
+  .profiler-tooltip table thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
 
   .profiler-tooltip table td,
@@ -209,6 +222,9 @@
   .profiler-tooltip table tr.category-header {
     cursor: pointer;
     user-select: none;
+    position: sticky;
+    top: 24px;
+    z-index: 1;
   }
 
   .profiler-tooltip table tr.category-header:hover {

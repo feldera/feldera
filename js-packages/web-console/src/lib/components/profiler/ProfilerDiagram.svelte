@@ -105,8 +105,8 @@
     instance?.visualizer.hideNodeAttributes(hideSticky)
   }
 
-  export function showTopNodes(metric: string, n: number, isSticky?: boolean) {
-    return instance?.visualizer.showTopNodes(metric, n, isSticky)
+  export function showTopNodes(metric: string, isSticky?: boolean) {
+    return instance?.visualizer.showTopNodes(metric, isSticky)
   }
 
   // Cleanup on component destruction
@@ -157,9 +157,6 @@
     width: 108px;
     height: 108px;
     background-color: rgba(255, 255, 255, 0.95);
-    border: 2px solid rgb(var(--color-surface-100));
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     padding: 2px;
   }
 </style>

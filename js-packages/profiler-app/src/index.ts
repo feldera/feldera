@@ -225,9 +225,9 @@ async function main() {
         }
     });
 
-    metricButton?.addEventListener('mouseover', () => loader.showTopNodes(metricSelector.value, 20, false));
+    metricButton?.addEventListener('mouseover', () => loader.showTopNodes(metricSelector.value, false));
     metricButton?.addEventListener('mouseout', () => loader.hideNodeAttributes());
-    metricButton?.addEventListener('click', () => loader.showTopNodes(metricSelector.value, 20, true) );
+    metricButton?.addEventListener('click', () => loader.showTopNodes(metricSelector.value, true));
 
     // Show welcome message
     messageContainer.innerHTML = `
