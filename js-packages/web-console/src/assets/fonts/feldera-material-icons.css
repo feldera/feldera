@@ -2,8 +2,8 @@
   font-family: "feldera-material-icons";
   font-display: block;
   src:
-    url("feldera-material-icons.woff2?2a389b04abd598cd3d710c07eeda715d") format("woff2"),
-    url("feldera-material-icons.woff?2a389b04abd598cd3d710c07eeda715d") format("woff");
+    url("feldera-material-icons.woff2?d067ef87d498bef53290155ea13a30aa") format("woff2"),
+    url("feldera-material-icons.woff?d067ef87d498bef53290155ea13a30aa") format("woff");
 }
 
 .fd {
@@ -17,168 +17,177 @@
   vertical-align: top;
 }
 
-.fd-network:before {
+.fd-circle-stop:before {
   content: "\f101";
 }
-.fd-chevron-down:before {
+.fd-square-power:before {
   content: "\f102";
 }
-.fd-circle-x:before {
+.fd-book-open:before {
   content: "\f103";
 }
-.fd-check:before {
+.fd-chevron-right:before {
   content: "\f104";
 }
-.fd-more_horiz:before {
+.fd-paintbrush:before {
   content: "\f105";
 }
-.fd-arrow-down:before {
+.fd-info:before {
   content: "\f106";
 }
-.fd-mic:before {
+.fd-square:before {
   content: "\f107";
 }
-.fd-user:before {
+.fd-log-out:before {
   content: "\f108";
 }
-.fd-circle-plus:before {
+.fd-database-off:before {
   content: "\f109";
 }
-.fd-server-cog:before {
+.fd-panel-bottom:before {
   content: "\f10a";
 }
-.fd-pause:before {
+.fd-key:before {
   content: "\f10b";
 }
-.fd-message-circle-question:before {
+.fd-user:before {
   content: "\f10c";
 }
-.fd-file-text:before {
+.fd-circle-x:before {
   content: "\f10d";
 }
-.fd-info:before {
+.fd-dot:before {
   content: "\f10e";
 }
-.fd-server-off:before {
+.fd-chevron-down:before {
   content: "\f10f";
 }
-.fd-book-open:before {
+.fd-pause:before {
   content: "\f110";
 }
-.fd-circle-stop-locked:before {
+.fd-network:before {
   content: "\f111";
 }
-.fd-sun:before {
+.fd-pencil-line:before {
   content: "\f112";
 }
-.fd-wine:before {
+.fd-triangle-alert:before {
   content: "\f113";
 }
-.fd-circle-user:before {
+.fd-plus:before {
   content: "\f114";
 }
-.fd-book-marked:before {
+.fd-chevron-left:before {
   content: "\f115";
 }
-.fd-moon:before {
+.fd-circle-check-big:before {
   content: "\f116";
 }
-.fd-square-power:before {
+.fd-moon:before {
   content: "\f117";
 }
-.fd-square:before {
+.fd-panel-left:before {
   content: "\f118";
 }
-.fd-sliders-horizontal:before {
+.fd-wine:before {
   content: "\f119";
 }
-.fd-panel-bottom:before {
+.fd-check:before {
   content: "\f11a";
 }
-.fd-database-off:before {
+.fd-sliders-horizontal:before {
   content: "\f11b";
 }
-.fd-triangle-alert:before {
+.fd-file-text:before {
   content: "\f11c";
 }
-.fd-plus:before {
+.fd-circle-stop-locked:before {
   content: "\f11d";
 }
-.fd-arrow-right:before {
+.fd-panel-right:before {
   content: "\f11e";
 }
-.fd-file-down:before {
+.fd-circle-slash:before {
   content: "\f11f";
 }
-.fd-x:before {
+.fd-trash-2:before {
   content: "\f120";
 }
-.fd-database:before {
+.fd-server-off:before {
   content: "\f121";
 }
-.fd-circle-stop:before {
+.fd-server-cog:before {
   content: "\f122";
 }
-.fd-paintbrush:before {
+.fd-server:before {
   content: "\f123";
 }
 .fd-settings:before {
   content: "\f124";
 }
-.fd-eraser:before {
+.fd-mic:before {
   content: "\f125";
 }
-.fd-circle-check-big:before {
+.fd-rocket:before {
   content: "\f126";
 }
-.fd-trash-2:before {
+.fd-arrow-down:before {
   content: "\f127";
 }
-.fd-circle-slash:before {
+.fd-lightbulb:before {
   content: "\f128";
 }
-.fd-server:before {
+.fd-circle-alert:before {
   content: "\f129";
 }
-.fd-pencil-line:before {
+.fd-mic-off:before {
   content: "\f12a";
 }
-.fd-dot:before {
+.fd-message-circle-question:before {
   content: "\f12b";
 }
-.fd-rocket:before {
+.fd-lock-open:before {
   content: "\f12c";
 }
-.fd-play:before {
+.fd-database:before {
   content: "\f12d";
 }
-.fd-panel-left:before {
+.fd-circle-plus:before {
   content: "\f12e";
 }
-.fd-chevron-right:before {
+.fd-more_horiz:before {
   content: "\f12f";
 }
-.fd-copy:before {
+.fd-sun:before {
   content: "\f130";
 }
-.fd-panel-right:before {
+.fd-file-down:before {
   content: "\f131";
 }
-.fd-menu:before {
+.fd-book-marked:before {
   content: "\f132";
 }
-.fd-save:before {
+.fd-circle-user:before {
   content: "\f133";
 }
-.fd-lock-open:before {
+.fd-menu:before {
   content: "\f134";
 }
-.fd-mic-off:before {
+.fd-save:before {
   content: "\f135";
 }
-.fd-lightbulb:before {
+.fd-arrow-right:before {
   content: "\f136";
 }
-.fd-circle-alert:before {
+.fd-eraser:before {
   content: "\f137";
+}
+.fd-play:before {
+  content: "\f138";
+}
+.fd-x:before {
+  content: "\f139";
+}
+.fd-copy:before {
+  content: "\f13a";
 }

@@ -7,6 +7,8 @@ import {
   type FetchOptions,
   getApiKeys,
   getAuthConfig,
+  getClusterEvent,
+  getClusterEvents,
   getConfig,
   getConfigSession,
   getDemos,
@@ -159,6 +161,8 @@ export const usePipelineManager = (options?: FetchOptions) => {
       return x
     },
     deleteApiKey: reportError(deleteApiKey, (keyName) => `Failed to delete ${keyName} API key`),
+    getClusterEvents: reportError(getClusterEvents),
+    getClusterEvent: reportError(getClusterEvent),
     relationEgressStream: reportError(
       relationEgressStream,
       (_, relationName) => `Failed to connect to the egress stream of relation ${relationName}`

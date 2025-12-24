@@ -19,7 +19,7 @@
     </span>
     {#if content.scrollableContent}
       <div
-        class="scrollbar max-h-[60vh] overflow-y-auto rounded border bg-surface-100-900 p-2 whitespace-pre-wrap"
+        class="bg-surface-100-800 scrollbar max-h-[60vh] overflow-y-auto rounded border p-2 whitespace-pre-wrap"
       >
         {content.scrollableContent}
       </div>

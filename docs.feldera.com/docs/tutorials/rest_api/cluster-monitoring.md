@@ -16,7 +16,7 @@ The resources monitoring feature is not yet stabilized, but can already be activ
 The cluster monitor events can be retrieved via two endpoints:
 
 - [**GET /v0/cluster/events**](/api/list-cluster-events):
-  retrieves all cluster monitor events stored in the database.
+  retrieves all cluster monitor events stored in the database, sorted from the latest to the earliest.
   It returns only the status fields to limit its response size, and further individual event
   details can be retrieved via the individual endpoint.
 
