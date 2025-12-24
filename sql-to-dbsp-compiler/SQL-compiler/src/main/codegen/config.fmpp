@@ -10,7 +10,6 @@ data: {
       "org.apache.calcite.schema.ColumnStrategy"
       "org.apache.calcite.sql.SqlCreate"
       "org.apache.calcite.sql.SqlDrop"
-      "org.apache.calcite.sql.ddl.SqlDdlNodes"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlViewColumnDeclaration"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration"

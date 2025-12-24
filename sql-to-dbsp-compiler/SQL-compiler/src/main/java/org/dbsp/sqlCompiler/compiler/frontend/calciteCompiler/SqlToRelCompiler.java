@@ -95,8 +95,6 @@ import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlTypeNameSpec;
 import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
 import org.apache.calcite.sql.SqlWriter;
-import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
-import org.apache.calcite.sql.ddl.SqlDropTable;
 import org.apache.calcite.sql.dialect.OracleSqlDialect;
 import org.apache.calcite.sql.fun.SqlDatetimeSubtractionOperator;
 import org.apache.calcite.sql.parser.SqlParseException;
@@ -145,6 +143,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateType;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlDeclareView;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlDropTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
@@ -1180,16 +1179,13 @@ public class SqlToRelCompiler implements IWritesLogs {
         for (SqlNode col: Objects.requireNonNull(list)) {
             SqlIdentifier name;
             SqlDataTypeSpec typeSpec;
-            boolean isPrimaryKey = false;
+            boolean isPrimaryKey;
             RexNode lateness = null;
             RexNode watermark = null;
             RexNode defaultValue = null;
             SourcePositionRange defaultValueRange = null;
-            boolean interned = false;
-            if (col instanceof SqlColumnDeclaration cd) {
-                name = cd.name;
-                typeSpec = cd.dataType;
-            } else if (col instanceof SqlExtendedColumnDeclaration cd) {
+            boolean interned;
+            if (col instanceof SqlExtendedColumnDeclaration cd) {
                 name = cd.name;
                 typeSpec = cd.dataType;
                 if (cd.primaryKey && key != null) {
@@ -1899,7 +1895,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
-    void validateConnectorsProperty(CalciteObject node, boolean isTable, ProgramIdentifier tableView, SqlFragment key, SqlFragment value) {
+    void validateConnectorsProperty(CalciteObject ignored, boolean isTable, ProgramIdentifier tableView,
+                                    SqlFragment keyIgnored, SqlFragment value) {
         try {
             JsonNode jsonNode = Utilities.deterministicObjectMapper().readTree(value.getString());
             if (!jsonNode.isArray()) {
@@ -2182,10 +2179,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                     builder.add(attributeDef.name.getSimple(), type);
                 }
                 RelDataType result = builder.build();
-                RelDataType retval;
-                retval = builder.build();
-                Utilities.putNew(SqlToRelCompiler.this.udt, name, retval);
-                return retval;
+                Utilities.putNew(SqlToRelCompiler.this.udt, name, result);
+                return result;
             }
         };
         ProgramIdentifier typeName = Utilities.toIdentifier(ct.name);

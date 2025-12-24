@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.frontend.parser;
 
 import org.apache.calcite.schema.ColumnStrategy;
 import org.apache.calcite.sql.*;
-import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.ImmutableNullableList;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -14,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** This class is based on {@link SqlColumnDeclaration} from Calcite.
+/** This class is based on SqlColumnDeclaration from Calcite.
  * It should be an extension of that class, but that class doesn't have
  * a public constructor, so we have copied here the code. */
 public class SqlExtendedColumnDeclaration extends SqlCall {

@@ -18,9 +18,7 @@ import org.dbsp.util.Utilities;
 import java.util.List;
 import java.util.Objects;
 
-/** Parse tree for {@code CREATE VIEW} statement.
-    Ideally we would inherit {@link org.apache.calcite.sql.ddl.SqlCreateView}
-    but the constructor isn't public. */
+/** Parse tree for {@code CREATE VIEW} statement. */
 public class SqlCreateView extends SqlCreate {
     public enum ViewKind {
         /** For materialized views the DBSP program will keep the full contents */
