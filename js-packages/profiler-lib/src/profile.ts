@@ -287,7 +287,11 @@ export function measurementCategory(prop: string): MeasurementCategory {
         "time",
         "total_idle_time",
         "runtime_elapsed",
-        "total_runtime"]);
+        "total_runtime",
+        "total rebalancing time",
+        "in-progress rebalancing time",
+        "integral records to repartition",
+        "rebalancings"]);
     map.set("storage", [
         "merge reduction",
         "output redundancy",
@@ -454,6 +458,9 @@ export class Measurement {
             case "output batches/max size":
             case "output batches/avg size":
             case "output batches/total records":
+            case "integral records to repartition":
+            case "rebalancings":
+            case "accumulator records to repartition":
                 if (Measurement.RANDOM_DATA) {
                     return Option.some(new NumberValue(Math.random() * 1000));
                 }
@@ -465,6 +472,8 @@ export class Measurement {
             case "total_idle_time":
             case "runtime_elapsed":
             case "total_runtime":
+            case "total rebalancing time":
+            case "in-progress rebalancing time":
                 if (Measurement.RANDOM_DATA) {
                     return Option.some(TimeValue.fromSecondsNanos(Math.floor(Math.random() * 100), 0));
                 }
@@ -487,6 +496,8 @@ export class Measurement {
             case "slot 2 merging":
             case "slot 3 merging":
             case "slot 4 merging":
+            case "balancer policy":
+            case "rebalancing in progress":
                 return Option.some(new StringValue(value[0]));
             case "batch sizes":
             case "bounds":
@@ -504,12 +515,13 @@ export class Measurement {
     }
 }
 
-/** A node and the (maximum) value of a metric for that node.  The actual metric
+/** A node, its operation, and the (maximum) value of a metric for that node.  The actual metric
  * represented is not part of this data structure */
 export class NodeAndMetric {
     constructor(
         public readonly nodeId: string,
         public readonly label: string,
+        public readonly operation: string,
         /** Value between 0 and 100% */
         public readonly normalizedValue: number) { }
 }

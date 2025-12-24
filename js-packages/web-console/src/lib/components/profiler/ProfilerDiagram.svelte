@@ -105,8 +105,8 @@
     instance?.visualizer.hideNodeAttributes(hideSticky)
   }
 
-  export function showTopNodes(metric: string, n: number, isSticky?: boolean) {
-    return instance?.visualizer.showTopNodes(metric, n, isSticky)
+  export function showTopNodes(metric: string, isSticky?: boolean) {
+    return instance?.visualizer.showTopNodes(metric, isSticky)
   }
 
   // Cleanup on component destruction

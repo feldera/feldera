@@ -37,7 +37,7 @@ if [ -n "$manager_pid" ]; then
     exit 1
 fi
 
-cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build $RUST_BUILD_PROFILE
+#cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build $RUST_BUILD_PROFILE
 cd "${ROOT_DIR}" && ~/.cargo/bin/cargo run --bin pipeline-manager $RUST_BUILD_PROFILE $PG_EMBED -- \
     --bind-address="${BIND_ADDRESS}" \
     ${DB_CONNECTION_STRING}
