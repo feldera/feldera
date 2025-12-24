@@ -52,7 +52,7 @@ public class SimpleAggregates extends WindowAggregates {
                         key, left, right);
         // Do not insert the last operator
         return new DBSPStreamJoinOperator(this.node.maybeFinal(isLast), TypeCompiler.makeZSet(append.getResultType()),
-                append, true, indexedInput, aggregate.outputPort());
+                append, true, indexedInput, aggregate.outputPort(), false);
     }
 
     @Override

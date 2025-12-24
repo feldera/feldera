@@ -768,7 +768,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPClosureExpression appendFields = body.closure(key, leftVar, rightVar);
 
         DBSPStreamJoinIndexOperator result = new DBSPStreamJoinIndexOperator(
-                node, joinOutputType, appendFields, false, left.outputPort(), right.outputPort());
+                node, joinOutputType, appendFields, false, left.outputPort(), right.outputPort(), false);
         addOperator.accept(result);
         return result;
     }
@@ -1675,7 +1675,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             final DBSPClosureExpression makeTuple = lr.closure(k, l0, r0);
             joinResult = new DBSPStreamJoinOperator(node, TypeCompiler.makeZSet(lr.getType()),
                     makeTuple, left.isMultiset || right.isMultiset,
-                    leftNonNullIndex.outputPort(), rightNonNullIndex.outputPort());
+                    leftNonNullIndex.outputPort(), rightNonNullIndex.outputPort(), false);
             inner = joinResult;
 
             if (joinType == JoinRelType.LEFT && leftPulled == left && !hasFilter) {
@@ -1719,7 +1719,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 final DBSPLeftJoinOperator lj = new DBSPLeftJoinOperator(
                         node, TypeCompiler.makeZSet(makeLeftTuple.getResultType()),
                         makeLeftTuple, left.isMultiset || right.isMultiset,
-                        leftDiff.outputPort(), rightDiff.outputPort());
+                        leftDiff.outputPort(), rightDiff.outputPort(), false);
                 this.addOperator(lj);
                 final DBSPIntegrateOperator integrate = new DBSPIntegrateOperator(node, lj.outputPort());
                 // Additional casts may be needed to fix key field types on the left side
@@ -2413,7 +2413,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     inputI.outputPort());
             this.addOperator(index);
             previous = new DBSPStreamJoinOperator(node, TypeCompiler.makeZSet(resultType),
-                    closure, false, previousIndex.outputPort(), index.outputPort());
+                    closure, false, previousIndex.outputPort(), index.outputPort(), false);
             this.addOperator(previous);
         }
         Utilities.enforce(resultType.sameType(previous.getOutputZSetElementType()));

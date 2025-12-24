@@ -50,7 +50,7 @@ public final class DBSPConcreteAsofJoinOperator extends DBSPJoinBaseOperator {
                                         DBSPExpression comparator,
                                         boolean isMultiset, boolean isLeft,
                                         OutputPort left, OutputPort right) {
-        super(node, "asof_join", function, outputType, isMultiset, left, right);
+        super(node, "asof_join", function, outputType, isMultiset, left, right, false);
         this.isLeft = isLeft;
         this.comparator = comparator;
         this.leftTimestamp = leftTimestamp;

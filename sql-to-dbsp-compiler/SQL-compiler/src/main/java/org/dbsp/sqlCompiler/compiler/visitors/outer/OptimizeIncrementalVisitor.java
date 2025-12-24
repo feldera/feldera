@@ -129,7 +129,7 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
             DBSPSimpleOperator replace = new DBSPJoinOperator(operator.getRelNode(),
                     operator.getOutputZSetType(),
                     operator.getFunction(), operator.isMultiset,
-                    sourceSource.get(0), sourceSource.get(1));
+                    sourceSource.get(0), sourceSource.get(1), operator.balanced);
             this.addOperator(replace);
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(
                     operator.getRelNode(), replace.outputPort());
@@ -147,7 +147,7 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
             DBSPSimpleOperator replace = new DBSPJoinIndexOperator(operator.getRelNode(),
                     operator.getOutputIndexedZSetType(),
                     operator.getFunction(), operator.isMultiset,
-                    sourceSource.get(0), sourceSource.get(1));
+                    sourceSource.get(0), sourceSource.get(1), operator.balanced);
             this.addOperator(replace);
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getRelNode(), replace.outputPort());
             this.map(operator, integral);

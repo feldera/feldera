@@ -213,7 +213,7 @@ public class RewriteNow extends CircuitCloneVisitor {
                 .closure(key, left, right);
         Utilities.enforce(nowIndexed != null);
         DBSPSimpleOperator result = new DBSPStreamJoinOperator(operator.getRelNode(), joinType,
-                joinFunction, operator.isMultiset, index.outputPort(), nowIndexed.outputPort());
+                joinFunction, operator.isMultiset, index.outputPort(), nowIndexed.outputPort(), false);
         this.addOperator(result);
         return result;
     }

@@ -473,7 +473,7 @@
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26}
         ],
-        "persistent_id": "47cb54e0e3400032561f07d695462ef691b9c1d6ba68ee27c35d2033ad44a3e9"
+        "persistent_id": "e250f5920ce49df2b4ed6413e7735bd57f8790a16923c6ceb7000e8d67d766e8"
       },
       "s9": {
         "operation": "sum",
@@ -485,7 +485,7 @@
           "final": 10
         },
         "positions": [],
-        "persistent_id": "087132e3fddfdf1940662f137e42e2f354ad9a623e09f22861af0001a167d40c"
+        "persistent_id": "b07b42fc36f39f5204380b749d85d5b9f8dc1a1e7ee8ae329bdfa2ddccabd0a1"
       }
     }, "s10": {
       "operation": "inspect",
@@ -500,7 +500,7 @@
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1},
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
       ],
-      "persistent_id": "12ac9e4cba406528432e234f7ebe6efad19866b1e837686f0986125c577920dd"
+      "persistent_id": "e2d2a4dd0dfb82283495f1e6c8753a2106cc518b3fca2b3ce4c7b0cedcdb95b5"
     }, "s11": {
       "operation": "inspect",
       "inputs": [
