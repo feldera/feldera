@@ -1563,6 +1563,11 @@ impl MetadataExchange {
             .insert(id, metadata.clone());
     }
 
+    /// Clear the local metadata for the operator with the given id.
+    pub fn clear_local_operator_metadata(&self, id: NodeId) {
+        self.inner.local_metadata.borrow_mut().metadata.remove(&id);
+    }
+
     /// Update the local metadata for the operator with the given id by serializing `metadata` to a JSON value.
     pub fn set_local_operator_metadata_typed<T>(&self, id: NodeId, metadata: T)
     where
@@ -1583,6 +1588,14 @@ impl MetadataExchange {
             .metadata
             .get(&id)
             .cloned()
+    }
+
+    pub fn get_local_operator_metadata_typed<T>(&self, id: NodeId) -> Option<T>
+    where
+        T: DeserializeOwned,
+    {
+        self.get_local_operator_metadata(id)
+            .map(|val| serde_json::from_value::<T>(val).unwrap())
     }
 
     /// Set the global metadata received from peers (invoked by the scheduler).
@@ -6990,12 +7003,23 @@ impl CircuitHandle {
             },
         )?;
 
-        // debug!(
-        //     "worker {}: CircuitHandle::restore: found {} operators that require backfill: {:?}",
-        //     Runtime::worker_index(),
-        //     need_backfill.len(),
-        //     need_backfill.iter().cloned().collect::<Vec<GlobalNodeId>>()
-        // );
+        // Additional nodes that must be backfilled to keep the balancer state consistent.
+        let additional_need_backfill: BTreeSet<GlobalNodeId> =
+            self.invalidate_balancer_clusters(&need_backfill);
+        if Runtime::worker_index() == 0 {
+            debug!(
+                "CircuitHandle::restore: additional need backfill: {:?}",
+                additional_need_backfill
+            );
+        }
+        need_backfill.extend(additional_need_backfill);
+
+        debug!(
+            "worker {}: CircuitHandle::restore: found {} operators that require backfill: {:?}",
+            Runtime::worker_index(),
+            need_backfill.len(),
+            need_backfill.iter().cloned().collect::<Vec<GlobalNodeId>>()
+        );
 
         // We can only backfill a nested circuit as a whole, so if we encounter at least
         // one node in a nested circuit that needs backfill, we backfill the
@@ -7074,40 +7098,42 @@ impl CircuitHandle {
 
             // info!("CircuitHandle::restore: replay circuit is ready");
 
-            // self.circuit.to_dot_file(
-            //     |node| {
-            //         if !node.global_id().is_child_of(self.circuit.global_id()) {
-            //             return None;
-            //         }
-            //         let color = if replay_sources.contains_key(&node.local_id()) {
-            //             Some(0xff5555)
-            //         } else if participate_in_backfill.contains(&node.local_id()) {
-            //             Some(0x5555ff)
-            //         } else {
-            //             None
-            //         };
-            //         Some(DotNodeAttributes::new().with_color(color))
-            //     },
-            //     |edge| {
-            //         let style = if edge.is_dependency() {
-            //             Some("dotted".to_string())
-            //         } else {
-            //             None
-            //         };
-            //         let label = if let Some(stream) = &edge.stream {
-            //             Some(format!("consumers: {}", stream.num_consumers()))
-            //         } else {
-            //             None
-            //         };
-            //         Some(
-            //             DotEdgeAttributes::new(edge.stream_id())
-            //                 .with_style(style)
-            //                 .with_label(label),
-            //         )
-            //     },
-            //     "replay.dot",
-            // );
-            // info!("CircuitHandle::restore: replay circuit is written to replay.dot");
+            // if Runtime::worker_index() == 0 {
+            //     self.circuit.to_dot_file(
+            //         |node| {
+            //             if !node.global_id().is_child_of(self.circuit.global_id()) {
+            //                 return None;
+            //             }
+            //             let color = if replay_sources.contains_key(&node.local_id()) {
+            //                 Some(0xff5555)
+            //             } else if participate_in_backfill.contains(&node.local_id()) {
+            //                 Some(0x5555ff)
+            //             } else {
+            //                 None
+            //             };
+            //             Some(crate::utils::DotNodeAttributes::new().with_color(color))
+            //         },
+            //         |edge| {
+            //             let style = if edge.is_dependency() {
+            //                 Some("dotted".to_string())
+            //             } else {
+            //                 None
+            //             };
+            //             let label = if let Some(stream) = &edge.stream {
+            //                 Some(format!("consumers: {}", stream.num_consumers()))
+            //             } else {
+            //                 None
+            //             };
+            //             Some(
+            //                 crate::utils::DotEdgeAttributes::new(edge.stream_id())
+            //                     .with_style(style)
+            //                     .with_label(label),
+            //             )
+            //         },
+            //         "replay.dot",
+            //     );
+            //     println!("CircuitHandle::restore: replay circuit is written to replay.dot");
+            // }
 
             // Add persistent IDs to the need_backfill set.
             let need_backfill = nodes_to_backfill
@@ -7133,6 +7159,122 @@ impl CircuitHandle {
         } else {
             Ok(None)
         }
+    }
+
+    /// Compute additional nodes whose state must be discarded and backfilled in order
+    /// to ensure that the balancer state is consistent.
+    ///
+    /// The new version of the circuit may have a different join graph in which the partitioning
+    /// policy used to create the checkpoint may no longer be valid.
+    ///
+    /// Example:
+    ///
+    /// Consider the following checkpointed circuit:
+    ///
+    /// s1 = join(a, b)
+    /// s2 = join(c, d)
+    ///
+    /// where streams a and c are partitioned using PartitioningPolicy::Broadcast, and
+    /// b and d are partitioned using PartitioningPolicy::Shard.
+    ///
+    /// The new circuit adds
+    ///
+    /// s3 = join(a, c)
+    ///
+    /// This new circuit is in an inconsistent state since we can't join two broadcast streams.
+    ///
+    /// This function computes a conservative approximation of the set of nodes whose state must
+    /// be discarded and backfilled to avoid such inconsistencies:
+    ///
+    /// 1. For each join cluster, check if there exists a solution that extends the partitioning
+    ///    policies of the nodes restores from the checkpoint.
+    /// 2. If no solution exists, mark all nodes in the cluster and their transitive successors
+    ///    as needing backfill.
+    fn invalidate_balancer_clusters(
+        &self,
+        need_backfill: &BTreeSet<GlobalNodeId>,
+    ) -> BTreeSet<GlobalNodeId> {
+        // Convert GlobalNodeId to top-level NodeId for comparison with balancer data.
+        let need_backfill_node_ids: BTreeSet<NodeId> = need_backfill
+            .iter()
+            .map(|gid| gid.top_level_ancestor())
+            .collect();
+
+        // Compute exchange sender nodes that need to be discarded and backfilled.
+        let additional_need_backfill = self
+            .circuit
+            .balancer()
+            .invalidate_clusters_for_bootstrapping(&need_backfill_node_ids);
+
+        // Invalidate all successors as well; otherwise we can end up with nodes that are not
+        // marked for backfill but their ancestors are.
+        let nodes_to_add = self.propagate_need_backfill_forward(
+            additional_need_backfill
+                .difference(&need_backfill_node_ids)
+                .cloned()
+                .collect(),
+        );
+
+        // Convert NodeIds back to GlobalNodeIds and add to additional_need_backfill
+        nodes_to_add
+            .into_iter()
+            .map(|node_id| GlobalNodeId::root().child(node_id))
+            .collect()
+    }
+
+    /// Compute all transitive successors of need_backfill nodes.
+    fn propagate_need_backfill_forward(
+        &self,
+        mut need_backfill: BTreeSet<NodeId>,
+    ) -> BTreeSet<NodeId> {
+        // Recursively add all successors of these exchange sender nodes
+        let mut worklist: Vec<NodeId> = need_backfill.iter().cloned().collect();
+        let mut visited = BTreeSet::new();
+
+        while let Some(node_id) = worklist.pop() {
+            if visited.contains(&node_id) {
+                continue;
+            }
+            visited.insert(node_id);
+
+            // Get all successors of this node
+            let successors: Vec<NodeId> = self
+                .circuit
+                .edges()
+                .by_source
+                .get(&node_id)
+                .into_iter()
+                .flat_map(|edges| edges.iter().map(|edge| edge.to))
+                .collect();
+
+            for successor in successors {
+                if !visited.contains(&successor) {
+                    worklist.push(successor);
+                    need_backfill.insert(successor);
+                }
+            }
+
+            // Add all dependencies of this node. Makes sure that the output half of Z-1 is marked for backfill.
+            let dependencies: Vec<NodeId> = self
+                .circuit
+                .edges()
+                .by_destination
+                .get(&node_id)
+                .into_iter()
+                .flat_map(|edges| edges.iter())
+                .filter(|edge| edge.is_dependency())
+                .map(|edge| edge.from)
+                .collect();
+
+            for dependency in dependencies {
+                if !visited.contains(&dependency) {
+                    worklist.push(dependency);
+                    need_backfill.insert(dependency);
+                }
+            }
+        }
+
+        need_backfill
     }
 
     /// Iterative step of computing the set of nodes that participate in the replay phase.

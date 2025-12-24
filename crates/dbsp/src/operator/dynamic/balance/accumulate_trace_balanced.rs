@@ -463,7 +463,7 @@ where
             balancer,
             metadata_exchange,
             input_batch_stats: BatchSizeStats::new(),
-            flush_state: RefCell::new(FlushState::TransactionStarted),
+            flush_state: RefCell::new(FlushState::FlushCompleted),
             num_steps_in_transaction: RefCell::new(0),
             current_policy: RefCell::new(PartitioningPolicy::Shard),
             rebalance_state: RefCell::new(None),
@@ -1160,11 +1160,24 @@ where
             })?;
 
         *self.current_policy.borrow_mut() = checkpoint.current_policy;
-        self.update_exchange_metadata();
         self.balancer
             .set_policy_for_stream(self.input_node_id, checkpoint.current_policy);
         *self.key_distribution.borrow_mut() = checkpoint.key_distribution;
 
+        // Report current policy to metadata_exchange. See invalidate_clusters_for_bootstrapping.
+        self.update_exchange_metadata();
+
+        Ok(())
+    }
+
+    fn clear_state(&mut self) -> Result<(), crate::Error> {
+        *self.current_policy.borrow_mut() = PartitioningPolicy::Shard;
+        *self.key_distribution.borrow_mut() = KeyDistribution::new(Runtime::num_workers());
+
+        // Clear the metadata. If the operator is deactivated during bootstrapping, its metadata
+        // shouldn't confuse the balancer.
+        self.metadata_exchange
+            .clear_local_operator_metadata(self.global_id.local_node_id().unwrap());
         Ok(())
     }
 }

@@ -444,9 +444,6 @@ impl BalancerInner {
     ) -> Result<BTreeMap<NodeId, PartitioningPolicy>, BalancerError> {
         //let cluster = &mut self.clusters[cluster_index];
 
-        let mut maxsat = MaxSat::new();
-        let mut variable_indexes = BTreeMap::new();
-
         let mut domains = BTreeMap::new();
 
         let mut current_effective_policy = BTreeMap::new();
@@ -480,29 +477,10 @@ impl BalancerInner {
                 domain.retain(|policy, _| *policy == *fixed_policy);
             }
 
-            let variable_index = maxsat.add_variable(&stream.to_string(), &domain);
-            variable_indexes.insert(*stream, variable_index);
             domains.insert(*stream, domain);
         }
 
-        for (_join, (left, right, is_left_join)) in self.clusters[cluster_index].joins.iter() {
-            maxsat.add_constraint(JoinConstraint::new(
-                variable_indexes[left],
-                variable_indexes[right],
-                *is_left_join,
-            ));
-        }
-
-        let solution = maxsat.solve()?;
-        let solution: BTreeMap<NodeId, PartitioningPolicy> = variable_indexes
-            .iter()
-            .map(|(stream, variable_index)| {
-                (
-                    *stream,
-                    PartitioningPolicy::try_from(*solution.get(variable_index).unwrap()).unwrap(),
-                )
-            })
-            .collect();
+        let solution = self.solve_cluster_with_domains(cluster_index, &domains)?;
 
         // Solution didn't change -- return it.
         if self.clusters[cluster_index].solution == solution {
@@ -540,6 +518,54 @@ impl BalancerInner {
         //     Runtime::worker_index(),
         //     solution
         // );
+        Ok(solution)
+    }
+
+    /// Solve the cluster with pre-computed variable domains.
+    fn solve_cluster_with_domains(
+        &self,
+        cluster_index: usize,
+        domains: &BTreeMap<NodeId, BTreeMap<PartitioningPolicy, Cost>>,
+    ) -> Result<BTreeMap<NodeId, PartitioningPolicy>, BalancerError> {
+        //let cluster = &mut self.clusters[cluster_index];
+
+        let mut maxsat = MaxSat::new();
+        let mut variable_indexes = BTreeMap::new();
+
+        // Create a MaxSat variable for each stream in the cluster.
+        for stream in self.clusters[cluster_index].streams.clone().keys() {
+            let domain = domains.get(stream).unwrap().clone();
+
+            let variable_index = maxsat.add_variable(&stream.to_string(), &domain);
+            variable_indexes.insert(*stream, variable_index);
+        }
+
+        for (_join, (left, right, is_left_join)) in self.clusters[cluster_index].joins.iter() {
+            maxsat.add_constraint(JoinConstraint::new(
+                variable_indexes[left],
+                variable_indexes[right],
+                *is_left_join,
+            ));
+        }
+
+        let solution = maxsat.solve()?;
+        let solution: BTreeMap<NodeId, PartitioningPolicy> = variable_indexes
+            .iter()
+            .map(|(stream, variable_index)| {
+                (
+                    *stream,
+                    PartitioningPolicy::try_from(*solution.get(variable_index).unwrap()).unwrap(),
+                )
+            })
+            .collect();
+
+        // if Runtime::worker_index() == 0 {
+        //     println!(
+        //         "found new solution: {:?}, current solution: {:?}",
+        //         solution, self.clusters[cluster_index].solution
+        //     );
+        // }
+
         Ok(solution)
     }
 
@@ -693,6 +719,20 @@ impl BalancerInner {
         current_policy
     }
 
+    /// Domain with a single policy and cost 0.
+    fn fixed_policy_domain(policy: PartitioningPolicy) -> BTreeMap<PartitioningPolicy, Cost> {
+        BTreeMap::from([(policy, Cost(0))])
+    }
+
+    /// Complete domain with all policies, each with cost 0.
+    fn default_policy_domain() -> BTreeMap<PartitioningPolicy, Cost> {
+        BTreeMap::from([
+            (PartitioningPolicy::Shard, Cost(0)),
+            (PartitioningPolicy::Broadcast, Cost(0)),
+            (PartitioningPolicy::Balance, Cost(0)),
+        ])
+    }
+
     // Get current policy for a stream.
     fn get_policy_for_stream(&self, node_id: NodeId) -> Option<PartitioningPolicy> {
         //println!("stream_to_cluster({node_id}): {:?}", self.stream_to_cluster);
@@ -831,6 +871,55 @@ impl BalancerInner {
             },
         )
     }
+
+    /// Detect clusters whose state is inconsistent after restoring from checkpoint and add their
+    /// and return the exchange sender node ids that need to be backfilled.
+    fn invalidate_clusters_for_bootstrapping(
+        &self,
+        need_backfill: &BTreeSet<NodeId>,
+    ) -> BTreeSet<NodeId> {
+        let mut additional_need_backfill = BTreeSet::new();
+
+        for cluster_index in 0..self.clusters.len() {
+            // Find exchange senders that don't need backfill. These senders have partitioning policies set by the balancer
+            // prior to the checkpoint. Check if the cluster can be solved with the same partitioning policies.
+            // If not, we need to backfill the entire cluster.
+
+            let mut domains = BTreeMap::new();
+            let mut exchange_senders = BTreeSet::new();
+
+            for stream_id in self.clusters[cluster_index].streams.keys() {
+                let exchange_sender_id = self.integrals.get(stream_id).unwrap().0;
+                exchange_senders.insert(exchange_sender_id);
+                if !need_backfill.contains(&exchange_sender_id) {
+                    // The operator reported its policy as part of the restore operation.
+                    let exchange_sender_metadata = self
+                        .metadata_exchange
+                        .get_local_operator_metadata_typed::<RebalancingExchangeSenderExchangeMetadata>(
+                        exchange_sender_id,
+                    ).unwrap();
+
+                    let policy = exchange_sender_metadata.current_policy;
+                    domains.insert(*stream_id, Self::fixed_policy_domain(policy));
+                } else {
+                    domains.insert(*stream_id, Self::default_policy_domain());
+                }
+            }
+
+            if self
+                .solve_cluster_with_domains(cluster_index, &domains)
+                .is_err()
+            {
+                info!(
+                    "Cluster {cluster_index} has inconsistent partitioning policies after restoring from checkpoint; the state of the cluster will be discarded and backfilled"
+                );
+                additional_need_backfill.extend(exchange_senders);
+            }
+        }
+
+        // println!("additional_need_backfill: {:?}", additional_need_backfill);
+        additional_need_backfill
+    }
 }
 
 /// The Balancer dynamically picks partitioning policies for all adaptive joins
@@ -914,6 +1003,19 @@ impl Balancer {
             .borrow_mut()
             .joins
             .insert(join, (left, right, true));
+    }
+
+    pub fn num_clusters(&self) -> usize {
+        self.inner.borrow().clusters.len()
+    }
+
+    pub fn invalidate_clusters_for_bootstrapping(
+        &self,
+        need_backfill: &BTreeSet<NodeId>,
+    ) -> BTreeSet<NodeId> {
+        self.inner
+            .borrow()
+            .invalidate_clusters_for_bootstrapping(need_backfill)
     }
 
     /// Invoked after the circuit has been constructed and before it starts running.

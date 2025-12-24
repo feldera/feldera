@@ -322,6 +322,12 @@ fn test_join_with_balancer(
 
     let (_temp, mut cconf) = mkconfig(workers);
 
+    let constructor = if left_join {
+        left_join_with_balancer_test_circuit
+    } else {
+        join_with_balancer_test_circuit
+    };
+
     let (
         mut circuit,
         (
@@ -331,15 +337,7 @@ fn test_join_with_balancer(
             mut right_input_node_id,
             mut output_integral_handle,
         ),
-    ) = Runtime::init_circuit(
-        cconf.clone(),
-        if left_join {
-            left_join_with_balancer_test_circuit
-        } else {
-            join_with_balancer_test_circuit
-        },
-    )
-    .unwrap();
+    ) = Runtime::init_circuit(cconf.clone(), constructor).unwrap();
 
     let mut all_left_tuples: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
     let mut all_right_tuples: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
@@ -452,7 +450,7 @@ fn test_join_with_balancer(
                         right_input_node_id,
                         output_integral_handle,
                     ),
-                ) = Runtime::init_circuit(cconf.clone(), join_with_balancer_test_circuit).unwrap();
+                ) = Runtime::init_circuit(cconf.clone(), constructor).unwrap();
             }
         }
     }
@@ -923,7 +921,7 @@ fn test_skewed_join_right(checkpoints: bool, left_join: bool) {
 
 #[test]
 fn test_skewed_join_right_no_checkpoints() {
-    test_skewed_join_right(true, false);
+    test_skewed_join_right(false, false);
 }
 
 #[test]
@@ -933,12 +931,12 @@ fn test_skewed_join_right_checkpoints() {
 
 #[test]
 fn test_skewed_left_join_right_no_checkpoints() {
-    test_skewed_join_right(true, false);
+    test_skewed_join_right(false, true);
 }
 
 #[test]
 fn test_skewed_left_join_right_checkpoints() {
-    test_skewed_join_right(true, false);
+    test_skewed_join_right(true, true);
 }
 
 proptest! {
