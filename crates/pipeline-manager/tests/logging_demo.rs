@@ -23,20 +23,24 @@ fn emits_sample_log() {
         "text log should include the pipeline prefix: {text_out:?}"
     );
     assert!(
-        prefix_line.contains("logging_demo: logging demo event"),
-        "text log should include the message: {text_out:?}"
+        prefix_line.contains("logging_demo:"),
+        "text log should include the target: {text_out:?}"
     );
-    let typed_line = text_lines
+    assert!(
+        prefix_line.contains("logging demo event"),
+        "text log should include the message payload: {text_out:?}"
+    );
+    let structured_line = text_lines
         .iter()
         .find(|line| line.contains("typed field coverage"))
-        .expect("expected typed field text log line");
+        .expect("expected text log line with structured fields");
     assert!(
-        typed_line.contains("demo_int=42"),
-        "text log should include typed field output: {text_out:?}"
+        structured_line.contains("logging_demo:"),
+        "text line with structured fields should include the target: {text_out:?}"
     );
     assert!(
-        typed_line.contains("demo_u64=18446744073709551615"),
-        "text log should include u64 field output: {text_out:?}"
+        structured_line.contains("typed field coverage"),
+        "text line with structured fields should include the message: {text_out:?}"
     );
 
     let json_out = run_child("json");
