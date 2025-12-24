@@ -285,11 +285,6 @@
             <artifactId>calcite-linq4j</artifactId>
             <version>${calcite.version}</version>
         </dependency>
-        <dependency>
-            <groupId>org.apache.calcite</groupId>
-            <artifactId>calcite-server</artifactId>
-            <version>${calcite.version}</version>
-        </dependency>
         <!-- GEO library -->
         <dependency>
             <groupId>org.locationtech.jts</groupId>
