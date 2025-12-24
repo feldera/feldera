@@ -36,7 +36,7 @@
 
 {#if value}
   <div class="profiler-tooltip-container {sticky ? '' : 'pointer-events-none'}">
-    <div class="profiler-tooltip" style="height: 100%">
+    <div class="profiler-tooltip">
       {#if 'nodeAttributes' in value}
         {@const { nodeAttributes } = value}
         <table>
@@ -158,19 +158,17 @@
     top: 0.5rem;
     right: 0.5rem;
     z-index: 2;
-    max-height: calc(100vh - 1rem);
-    /* Causes scroll-bar on child if too tall */
-    height: 100%;
+    border-radius: 8px;
+    max-height: calc(100% - 1rem);
+    max-width: calc(100% - 1rem);
+    overflow-y: auto;
+    overflow-x: auto;
   }
 
   /* Tooltip styling */
   .profiler-tooltip {
     background-color: black;
-    border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
     padding: 0;
-    /* Force scroll-bar if too tall */
-    overflow: auto;
   }
 
   .profiler-tooltip table {
@@ -185,6 +183,12 @@
     padding: 2px 10px;
     color: white;
     white-space: nowrap;
+  }
+
+  .profiler-tooltip table thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
 
   .profiler-tooltip table th {
@@ -212,6 +216,9 @@
   .profiler-tooltip table tr.category-header {
     cursor: pointer;
     user-select: none;
+    position: sticky;
+    top: 24px;
+    z-index: 1;
   }
 
   .profiler-tooltip table tr.category-header:hover {

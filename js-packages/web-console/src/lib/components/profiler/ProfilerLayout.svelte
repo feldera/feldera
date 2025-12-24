@@ -87,11 +87,9 @@
   }
 
   // Handle metric selection change
-  function handleMetricChange(event: Event) {
-    const target = event.target as HTMLSelectElement
-    selectedMetricId = target.value
-    profilerDiagram?.selectMetric(target.value)
-  }
+  $effect(() => {
+    profilerDiagram?.selectMetric(selectedMetricId)
+  })
 
   // Handle worker checkbox change
   function handleWorkerChange(workerId: string) {
@@ -178,7 +176,7 @@
     <!-- Metric Selector -->
     <label class="flex items-center gap-2 text-sm">
       <span class="text-surface-600-400">Metric:</span>
-      <select value={selectedMetricId} onchange={handleMetricChange} class="select text-sm">
+      <select bind:value={selectedMetricId} class="select text-sm">
         {#each metrics as metric (metric.id)}
           <option value={metric.id}>{metric.label}</option>
         {/each}
@@ -194,13 +192,13 @@
 
     {@render pseudoNode({
       onmouseenter: () => {
-        profilerDiagram?.showTopNodes(selectedMetricId)
+        profilerDiagram?.showTopNodes()
       },
       onmouseleave: () => {
         profilerDiagram?.hideNodeAttributes()
       },
       onclick: () => {
-        profilerDiagram?.showTopNodes(selectedMetricId, true)
+        profilerDiagram?.showTopNodes(true)
       },
       text: 'top nodes'
     })}

@@ -405,6 +405,8 @@ export class CytographRendering {
     lastNode: Option<NodeId>;
     // Current node that has tooltip displayed (for refreshing on metadata changes)
     private currentTooltipNode: NodeId | null = null;
+    // Callback to refresh sticky tooltip when metadata changes (e.g., metric or workers)
+    private refreshStickyTooltipCallback: (() => void) | null = null;
 
     readonly graph_style: StylesheetJson = [
         {
@@ -746,6 +748,9 @@ export class CytographRendering {
                 this.displayNodeAttributes(node);
             }
         }
+
+        // Refresh sticky tooltip if one is displayed (e.g., "top 20 nodes")
+        this.refreshStickyTooltipCallback?.();
     }
 
     /** Called when the graph has changed to trigger a new layout computation. */
@@ -972,6 +977,8 @@ export class CytographRendering {
 
         // Track the current tooltip node for refreshing on metadata changes
         this.currentTooltipNode = nodeId;
+        // Clear sticky tooltip callback when showing a normal node tooltip
+        this.refreshStickyTooltipCallback = null;
 
         // highlight edges
         let reachable = this.reachableFrom(nodeId, true);
@@ -1057,10 +1064,18 @@ export class CytographRendering {
 
     hideNodeInformation() {
         this.currentTooltipNode = null;
+        this.refreshStickyTooltipCallback = null;
         this.callbacks.displayNodeAttributes(Option.none(), false);
         let reachable = this.cy.edges();
         reachable.removeClass('highlight-forward');
         reachable.removeClass('highlight-backward');
+    }
+
+    /**
+     * Set the callback to refresh sticky tooltip when metadata changes
+     */
+    setRefreshStickyTooltipCallback(callback: (() => void) | null): void {
+        this.refreshStickyTooltipCallback = callback;
     }
 
     /**
@@ -1077,5 +1092,6 @@ export class CytographRendering {
 
         // Clear references
         this.currentGraph = null;
+        this.refreshStickyTooltipCallback = null;
     }
 }
