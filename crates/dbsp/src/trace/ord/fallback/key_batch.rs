@@ -1,12 +1,21 @@
 use crate::{
-    circuit::metadata::OperatorMeta, dynamic::{
+    DBData, DBWeight, NumEntries, Timestamp,
+    circuit::metadata::OperatorMeta,
+    dynamic::{
         DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
         WeightTrait,
-    }, storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError}, trace::{
-        cursor::{DelegatingCursor, PushCursor}, ord::{
-            file::key_batch::FileKeyBuilder, merge_batcher::MergeBatcher, vec::key_batch::VecKeyBuilder, FileKeyBatch
-        }, Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, FileKeyBatchFactories, Filter, MergeCursor, VecKeyBatch, VecKeyBatchFactories, WeightedItem
-    }, DBData, DBWeight, NumEntries, Timestamp
+    },
+    storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
+    trace::{
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
+        FileKeyBatchFactories, Filter, MergeCursor, VecKeyBatch, VecKeyBatchFactories,
+        WeightedItem,
+        cursor::{DelegatingCursor, PushCursor},
+        ord::{
+            FileKeyBatch, file::key_batch::FileKeyBuilder, merge_batcher::MergeBatcher,
+            vec::key_batch::VecKeyBuilder,
+        },
+    },
 };
 use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;

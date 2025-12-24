@@ -1,12 +1,22 @@
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue}, circuit::{checkpointer::Checkpoint, metadata::OperatorMeta}, dynamic::{DataTrait, DynUnit, DynVec, Erase, WeightTrait, WeightTraitTyped}, storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError}, trace::{
-        cursor::{CursorFactory, DelegatingCursor, PushCursor}, deserialize_wset, merge_batches_by_reference, ord::{
+    DBWeight, NumEntries,
+    algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
+    circuit::{checkpointer::Checkpoint, metadata::OperatorMeta},
+    dynamic::{DataTrait, DynUnit, DynVec, Erase, WeightTrait, WeightTraitTyped},
+    storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
+    trace::{
+        Batch, BatchLocation, BatchReader, Builder, FallbackKeyBatch, FileWSet, FileWSetFactories,
+        Filter, MergeCursor,
+        cursor::{CursorFactory, DelegatingCursor, PushCursor},
+        deserialize_wset, merge_batches_by_reference,
+        ord::{
             fallback::utils::BuildTo,
             file::wset_batch::FileWSetBuilder,
             merge_batcher::MergeBatcher,
             vec::wset_batch::{VecWSet, VecWSetBuilder},
-        }, serialize_wset, Batch, BatchLocation, BatchReader, Builder, FallbackKeyBatch, FileWSet, FileWSetFactories, Filter, MergeCursor
-    }, DBWeight, NumEntries
+        },
+        serialize_wset,
+    },
 };
 use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
