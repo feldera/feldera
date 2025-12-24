@@ -195,7 +195,7 @@ export class Visualizer {
         this.rendering.displayNodeAttributes(rootNode);
     }
 
-    public showTopNodes(metric: string, n: number, isSticky?: boolean): void {
+    public showTopNodes(metric: string, isSticky?: boolean): void {
         if (!this.rendering || !this.profile || (this.rendering.stickyInformation && !isSticky)) {
             return;
         }
@@ -207,7 +207,7 @@ export class Visualizer {
 
         this.rendering.setStickyNodeInformation(Boolean(isSticky));
 
-        const topNodes = this.rendering.topNodes(this.profile, metric, n)
+        const topNodes = this.rendering.topNodes(this.profile, metric)
         this.config.callbacks.displayTopNodes(Option.some(topNodes), Boolean(isSticky))
     }
 
@@ -251,11 +251,11 @@ export class Visualizer {
     }
 
     /** Return the ids of the nodes that score highest according to the specified metric. */
-    public topNodes(metric: string, n: number): Array<NodeAndMetric> {
+    public topNodes(metric: string): Array<NodeAndMetric> {
         if (this.profile === null || this.rendering === null) {
             return [];
         }
-        return this.rendering.topNodes(this.profile, metric, n);
+        return this.rendering.topNodes(this.profile, metric);
     }
 
     /**

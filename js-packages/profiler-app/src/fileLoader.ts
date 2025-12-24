@@ -65,12 +65,12 @@ export class ProfileLoader {
     }
 
     /** Return the top nodes for a specified metric */
-    topNodes(metric: string, n: number): Array<NodeAndMetric> {
-        return this.visualizer.topNodes(metric, n);
+    topNodes(metric: string): Array<NodeAndMetric> {
+        return this.visualizer.topNodes(metric);
     }
 
     /** Display the top nodes for a specified metric */
-    showTopNodes(metric: string, n: number, isSticky?: boolean | undefined): void {
-        this.visualizer.showTopNodes(metric, n, isSticky);
+    showTopNodes(metric: string, isSticky?: boolean | undefined): void {
+        this.visualizer.showTopNodes(metric, isSticky);
     }
 }
