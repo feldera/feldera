@@ -36,8 +36,8 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
             CalciteRelNode node, DBSPTypeZSet outputType,
             DBSPExpression function, @Nullable DBSPClosureExpression filter, @Nullable DBSPClosureExpression map,
             boolean isMultiset,
-            OutputPort left, OutputPort right) {
-        super(node, "join_flatmap", function, outputType, isMultiset, left, right);
+            OutputPort left, OutputPort right, boolean balanced) {
+        super(node, joinOperationName("join_flatmap", balanced), function, outputType, isMultiset, left, right, balanced);
         this.filter = filter;
         this.map = map;
         Utilities.enforce(left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType));
@@ -55,7 +55,7 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
             return new DBSPJoinFilterMapOperator(
                     this.getRelNode(), outputType.to(DBSPTypeZSet.class),
                     Objects.requireNonNull(function), this.filter, this.map,
-                    this.isMultiset, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+                    this.isMultiset, newInputs.get(0), newInputs.get(1), this.balanced).copyAnnotations(this);
         }
         return this;
     }
@@ -102,10 +102,11 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
         DBSPClosureExpression map = null;
         if (node.has("map"))
             map = fromJsonInner(node, "map", decoder, DBSPClosureExpression.class);
+        boolean balanced = Utilities.getBooleanProperty(node, "balanced");
         return new DBSPJoinFilterMapOperator(
                 CalciteEmptyRel.INSTANCE, info.getZsetType(), info.getFunction(),
                 filter, map,
-                info.isMultiset(), info.getInput(0), info.getInput(1))
+                info.isMultiset(), info.getInput(0), info.getInput(1), balanced)
                 .addAnnotations(info.annotations(), DBSPJoinFilterMapOperator.class);
     }
 }

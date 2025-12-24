@@ -350,7 +350,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 node.getClosureFunction(), node.filter, node.map);
         DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
                 newFunction, null, null, node.isMultiset,
-                this.mapped(node.left()), this.mapped(node.right()))
+                this.mapped(node.left()), this.mapped(node.right()), node.balanced)
                 .copyAnnotations(node);
         this.map(node, result);
     }
@@ -366,7 +366,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 node.filter, node.map);
         DBSPSimpleOperator result = new DBSPLeftJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
                 newFunction, null, null, node.isMultiset,
-                this.mapped(node.left()), this.mapped(node.right()))
+                this.mapped(node.left()), this.mapped(node.right()), node.balanced)
                 .copyAnnotations(node);
         this.map(node, result);
     }

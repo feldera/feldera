@@ -167,6 +167,6 @@ public class FirstLastAggregate extends WindowAggregates {
         CalciteRelNode n = this.node;
         // Do not insert the last operator
         return new DBSPStreamJoinOperator(this.node.maybeFinal(isLast), TypeCompiler.makeZSet(append.getResultType()),
-                append, true, indexedInput.outputPort(), topK.outputPort());
+                append, true, indexedInput.outputPort(), topK.outputPort(), false);
     }
 }

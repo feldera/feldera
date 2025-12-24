@@ -47,7 +47,7 @@ public class SubstituteLeftJoins extends CircuitCloneVisitor {
 
             DBSPJoinOperator join = new DBSPJoinOperator(
                     operator.getRelNode(), operator.getOutputZSetType(), operator.getFunction(), operator.isMultiset,
-                    left, right);
+                    left, right, operator.balanced);
             this.addOperator(join);
             DBSPAntiJoinOperator anti = new DBSPAntiJoinOperator(operator.getRelNode(), left, right);
             this.addOperator(anti);

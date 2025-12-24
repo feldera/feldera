@@ -51,7 +51,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator {
                                 DBSPExpression comparator,
                                 boolean isMultiset, boolean isLeft,
                                 OutputPort left, OutputPort right) {
-        super(node, "asof_join_abstract", function, outputType, isMultiset, left, right);
+        super(node, "asof_join_abstract", function, outputType, isMultiset, left, right, false);
         this.isLeft = isLeft;
         this.comparator = comparator;
         this.leftTimestampIndex = leftTimestampIndex;
