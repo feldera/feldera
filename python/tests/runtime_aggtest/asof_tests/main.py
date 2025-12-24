@@ -8,6 +8,7 @@ from test_asof import *  # noqa: F403
 from test_asof_multijoins import *  # noqa: F403
 from test_asof_illarg import *  # noqa: F403
 from test_asof_subq import *  # noqa: F403
+from test_asof_multi_on import *  # noqa: F403
 
 
 def main():

@@ -76,3 +76,17 @@ class asof_test_illarg6(TstView):
                         MATCH_CONDITION (t2.intt = (SELECT t2_sub.intt))
                         ON t1.id = t2.id;"""
         self.expected_error = "table 't2_sub' not found"
+
+
+class asof_on_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW asof_on_illegal AS SELECT
+                        t1.id, t1.intt AS t1_intt, t2.intt AS t2_intt
+                        FROM asof_tbl1 t1
+                        LEFT ASOF JOIN asof_tbl2 t2
+                        MATCH_CONDITION (t1.intt >= t2.intt )
+                        ON t1.id != t2.id;"""
+        self.expected_error = (
+            "ASOF JOIN condition must be a conjunction of equality comparisons"
+        )
