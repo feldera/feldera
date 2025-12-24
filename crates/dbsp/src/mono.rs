@@ -150,7 +150,7 @@ where
         let join_factories = JoinFactories::new::<K, V, V2, OV, ()>();
 
         self.inner()
-            .dyn_join_mono_balanced(&join_factories, &other.inner(), join_funcs)
+            .dyn_join_mono(&join_factories, &other.inner(), join_funcs)
             .typed()
     }
 
@@ -205,7 +205,7 @@ where
         let join_factories = JoinFactories::new::<K, V, Option<V2>, OV, ()>();
 
         self.inner()
-            .dyn_left_join_balanced_mono(&join_factories, &other.inner(), join_funcs)
+            .dyn_left_join_mono(&join_factories, &other.inner(), join_funcs)
             .typed()
     }
 
@@ -257,7 +257,7 @@ where
         let join_factories = JoinFactories::new::<K, V, V2, OV, ()>();
 
         self.inner()
-            .dyn_join_mono_balanced(&join_factories, &other.inner(), join_funcs)
+            .dyn_join_mono(&join_factories, &other.inner(), join_funcs)
             .typed()
     }
 
@@ -312,7 +312,7 @@ where
         let join_factories = JoinFactories::new::<K, V, Option<V2>, OV, ()>();
 
         self.inner()
-            .dyn_left_join_balanced_mono(&join_factories, &other.inner(), join_funcs)
+            .dyn_left_join_mono(&join_factories, &other.inner(), join_funcs)
             .typed()
     }
 
@@ -368,7 +368,7 @@ where
         let join_factories = JoinFactories::new::<K, V, V2, OK, OV>();
 
         self.inner()
-            .dyn_join_index_mono_balanced(&join_factories, &other.inner(), join_funcs)
+            .dyn_join_index_mono(&join_factories, &other.inner(), join_funcs)
             .typed()
     }
 
@@ -425,7 +425,7 @@ where
         let join_factories = JoinFactories::new::<K, V, Option<V2>, OK, OV>();
 
         self.inner()
-            .dyn_left_join_balanced_index_mono(&join_factories, &other.inner(), join_funcs)
+            .dyn_left_join_index_mono(&join_factories, &other.inner(), join_funcs)
             .typed()
     }
 

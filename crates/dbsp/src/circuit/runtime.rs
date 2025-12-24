@@ -661,6 +661,13 @@ impl Runtime {
     /// The auxiliary thread will have access to the runtime's resources, including the
     /// storage backend. The current use case for this is to be able to use spines outside
     /// of the DBSP worker threads, e.g., to maintain output buffers.
+    ///
+    /// # Arguments
+    ///
+    /// * `thread_name` - The name of the thread.
+    /// * `parker` - The thread will use this parker when waiting for work. Use it to unpark
+    ///   the thread when terminating the runtime.
+    /// * `f` - The function to execute in the thread.
     pub fn spawn_aux_thread<F>(&self, thread_name: &str, parker: Parker, f: F)
     where
         F: FnOnce(Parker) + Send + 'static,
