@@ -184,6 +184,52 @@ class NumberValue extends PropertyValue {
     }
 }
 
+/** A property value that is a Boolean. */
+class BooleanValue extends PropertyValue {
+    readonly value: boolean;
+
+    constructor(id: any) {
+        super();
+        if (typeof id !== "boolean") {
+            throw new TypeError(`Expected a valid boolean, got, ${id}`);
+        }
+        this.value = id;
+    }
+
+    getNumericValue(): Option<number> {
+        return this.value ? Option.some(0) : Option.some(1);
+    }
+
+    override compareTo(other: PropertyValue): number {
+        let v1 = this.value;
+        if (other instanceof BooleanValue) {
+            let v2 = other.value;
+            if (v1 < v2) return -1;
+            if (v1 > v2) return 1;
+            return 0;
+        }
+        return super.compareTo(other);
+    }
+
+    override plus(other: PropertyValue): PropertyValue {
+        if (other instanceof MissingValue) {
+            return this;
+        }
+        if (other instanceof BooleanValue) {
+            return new BooleanValue(this.value || other.value);
+        }
+        throw new Error("Cannot add BooleanValue to " + other);
+    }
+
+    override getStringValue(): string {
+        return this.value.toString();
+    }
+
+    override toString(): string {
+        return this.value.toString();
+    }
+}
+
 /** A property value that is a string, with no numeric value. */
 class StringValue extends PropertyValue {
     readonly value: string;
@@ -497,8 +543,9 @@ export class Measurement {
             case "slot 3 merging":
             case "slot 4 merging":
             case "balancer policy":
-            case "rebalancing in progress":
                 return Option.some(new StringValue(value[0]));
+            case "rebalancing in progress":
+                return Option.some(new BooleanValue(value[0]));
             case "batch sizes":
             case "bounds":
             case "mir_node":
