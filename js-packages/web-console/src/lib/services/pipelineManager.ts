@@ -3,6 +3,7 @@ import {
   type CombinedStatus as _CombinedStatus,
   deleteApiKey as _deleteApiKey,
   deletePipeline as _deletePipeline,
+  getClusterEvent as _getClusterEvent,
   getConfig as _getConfig,
   getConfigSession as _getConfigSession,
   getPipeline as _getPipeline,
@@ -24,6 +25,7 @@ import {
   httpInput,
   httpOutput,
   listApiKeys,
+  listClusterEvents,
   listPipelines,
   type PatchPipeline,
   type PipelineInfo,
@@ -528,6 +530,14 @@ export const deleteApiKey = (name: string, options?: FetchOptions) =>
 export const getPipelineDataflowGraph = (pipelineName: string) =>
   mapResponse(_getPipelineDataflowGraph({ path: { pipeline_name: pipelineName } }), (v) => v)
 
+export const getClusterEvents = () => mapResponse(listClusterEvents(), (v) => v)
+
+export const getClusterEvent = (eventId: string) =>
+  mapResponse(
+    _getClusterEvent({ path: { event_id: eventId }, query: { selector: 'all' } }),
+    (v) => v
+  )
+
 /**
  * Returns the raw stream for downloading a pipeline support bundle.
  * Use getPipelineSupportBundle wrapper for progress tracking.
@@ -749,3 +759,16 @@ export const getPipelineSupportBundleUrl = (
   }
   return `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/support_bundle?${query.toString()}`
 }
+
+// Mock event types for status timeline
+export type PipelineEventType = 'normal' | 'partial_issue' | 'major_issue'
+
+export interface PipelineEvent {
+  type: PipelineEventType
+  timestamp: string // ISO 8601 date string
+}
+
+export interface PipelineEventDetail extends PipelineEvent {
+  description: string
+}
+

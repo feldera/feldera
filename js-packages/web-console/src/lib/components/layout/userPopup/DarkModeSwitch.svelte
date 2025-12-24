@@ -2,10 +2,12 @@
   import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
 
+  let { class: className = '' }: { class?: string } = $props()
+
   const darkMode = useDarkMode()
 </script>
 
-<div class="flex flex-col gap-2">
+<div class="flex flex-col gap-2 {className}">
   Theme
   <SegmentedControl
     value={darkMode.current}
