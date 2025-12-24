@@ -115,19 +115,21 @@ export const intersperse = <T>(arr: T[], separator: T | ((i: number) => T)) => {
   )
 }
 
-const compare = <T extends string | number>(a: T, b: T) =>
+const compare = <T extends string | number | Date>(a: T, b: T) =>
   typeof a === 'string'
     ? a.localeCompare(b as string)
     : typeof a === 'number'
       ? a - (b as number)
-      : (() => {
-          throw new Error('Cannot compare unsupported types')
-        })()
+      : a instanceof Date
+        ? a.getTime() - (b as Date).getTime()
+        : (() => {
+            throw new Error('Cannot compare unsupported types')
+          })()
 
 /**
  * The groups are ordered by associated key. Order of items in a group is arbitrary
  */
-export const groupBy = <T, K extends string | number>(list: T[], getKey: (item: T) => K) => {
+export const groupBy = <T, K extends string | number | Date>(list: T[], getKey: (item: T) => K) => {
   if (!list.length) {
     return []
   }

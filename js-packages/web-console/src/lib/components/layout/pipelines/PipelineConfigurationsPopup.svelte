@@ -72,7 +72,7 @@
       }
     }}
     onApply={async (json) => {
-      let patch: Partial<Pipeline> = {}
+      let patch: Partial = {}
       try {
         patch.runtimeConfig = JSONbig.parse(json.runtimeConfig)
         patch.programConfig = JSONbig.parse(json.programConfig)
