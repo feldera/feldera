@@ -184,6 +184,52 @@ class NumberValue extends PropertyValue {
     }
 }
 
+/** A property value that is a Boolean. */
+class BooleanValue extends PropertyValue {
+    readonly value: boolean;
+
+    constructor(id: any) {
+        super();
+        if (typeof id !== "boolean") {
+            throw new TypeError(`Expected a valid boolean, got, ${id}`);
+        }
+        this.value = id;
+    }
+
+    getNumericValue(): Option<number> {
+        return this.value ? Option.some(0) : Option.some(1);
+    }
+
+    override compareTo(other: PropertyValue): number {
+        let v1 = this.value;
+        if (other instanceof BooleanValue) {
+            let v2 = other.value;
+            if (v1 < v2) return -1;
+            if (v1 > v2) return 1;
+            return 0;
+        }
+        return super.compareTo(other);
+    }
+
+    override plus(other: PropertyValue): PropertyValue {
+        if (other instanceof MissingValue) {
+            return this;
+        }
+        if (other instanceof BooleanValue) {
+            return new BooleanValue(this.value || other.value);
+        }
+        throw new Error("Cannot add BooleanValue to " + other);
+    }
+
+    override getStringValue(): string {
+        return this.value.toString();
+    }
+
+    override toString(): string {
+        return this.value.toString();
+    }
+}
+
 /** A property value that is a string, with no numeric value. */
 class StringValue extends PropertyValue {
     readonly value: string;
@@ -287,7 +333,11 @@ export function measurementCategory(prop: string): MeasurementCategory {
         "time",
         "total_idle_time",
         "runtime_elapsed",
-        "total_runtime"]);
+        "total_runtime",
+        "total rebalancing time",
+        "in-progress rebalancing time",
+        "integral records to repartition",
+        "rebalancings"]);
     map.set("storage", [
         "merge reduction",
         "output redundancy",
@@ -454,6 +504,9 @@ export class Measurement {
             case "output batches/max size":
             case "output batches/avg size":
             case "output batches/total records":
+            case "integral records to repartition":
+            case "rebalancings":
+            case "accumulator records to repartition":
                 if (Measurement.RANDOM_DATA) {
                     return Option.some(new NumberValue(Math.random() * 1000));
                 }
@@ -465,6 +518,8 @@ export class Measurement {
             case "total_idle_time":
             case "runtime_elapsed":
             case "total_runtime":
+            case "total rebalancing time":
+            case "in-progress rebalancing time":
                 if (Measurement.RANDOM_DATA) {
                     return Option.some(TimeValue.fromSecondsNanos(Math.floor(Math.random() * 100), 0));
                 }
@@ -487,7 +542,10 @@ export class Measurement {
             case "slot 2 merging":
             case "slot 3 merging":
             case "slot 4 merging":
+            case "balancer policy":
                 return Option.some(new StringValue(value[0]));
+            case "rebalancing in progress":
+                return Option.some(new BooleanValue(value[0]));
             case "batch sizes":
             case "bounds":
             case "mir_node":
@@ -504,12 +562,13 @@ export class Measurement {
     }
 }
 
-/** A node and the (maximum) value of a metric for that node.  The actual metric
+/** A node, its operation, and the (maximum) value of a metric for that node.  The actual metric
  * represented is not part of this data structure */
 export class NodeAndMetric {
     constructor(
         public readonly nodeId: string,
         public readonly label: string,
+        public readonly operation: string,
         /** Value between 0 and 100% */
         public readonly normalizedValue: number) { }
 }
