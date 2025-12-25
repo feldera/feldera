@@ -721,6 +721,7 @@ mod test {
         DBData, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime, ZSetHandle, ZWeight,
         algebra::F32,
         circuit::CircuitConfig,
+        typed_batch::IndexedZSetReader,
         utils::{Tup2, Tup3, Tup4},
         zset,
     };

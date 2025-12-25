@@ -51,12 +51,13 @@
         some: (topNodes) => ({
           genericTable: {
             header: `Nodes with highest values for the metric "${selectedMetricId}"`,
-            columns: ['Node', 'Value'],
+            columns: ['Node', 'Value', 'Operation'],
             rows: topNodes.map((n) => ({
               stub: { text: n.nodeId, onclick: () => profilerDiagram?.search(n.nodeId) },
               cells: [
                 {
                   text: n.label,
+                  operation: n.operation,
                   normalizedValue: n.normalizedValue
                 }
               ]
@@ -86,10 +87,9 @@
   }
 
   // Handle metric selection change
-  function handleMetricChange(event: Event) {
-    const target = event.target as HTMLSelectElement
-    profilerDiagram?.selectMetric(target.value)
-  }
+  $effect(() => {
+    profilerDiagram?.selectMetric(selectedMetricId)
+  })
 
   // Handle worker checkbox change
   function handleWorkerChange(workerId: string) {
@@ -176,7 +176,7 @@
     <!-- Metric Selector -->
     <label class="flex items-center gap-2 text-sm">
       <span class="text-surface-600-400">Metric:</span>
-      <select value={selectedMetricId} onchange={handleMetricChange} class="select text-sm">
+      <select bind:value={selectedMetricId} class="select text-sm">
         {#each metrics as metric (metric.id)}
           <option value={metric.id}>{metric.label}</option>
         {/each}
@@ -192,15 +192,15 @@
 
     {@render pseudoNode({
       onmouseenter: () => {
-        profilerDiagram?.showTopNodes(selectedMetricId, 20)
+        profilerDiagram?.showTopNodes()
       },
       onmouseleave: () => {
         profilerDiagram?.hideNodeAttributes()
       },
       onclick: () => {
-        profilerDiagram?.showTopNodes(selectedMetricId, 20, true)
+        profilerDiagram?.showTopNodes(true)
       },
-      text: 'top 20 nodes'
+      text: 'top nodes'
     })}
 
     <div class="vr">

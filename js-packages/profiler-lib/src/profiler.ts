@@ -175,6 +175,27 @@ export class Visualizer {
     }
 
     /**
+     * Internal method to display global metrics
+     */
+    private displayGlobalMetricsInternal(): void {
+        if (!this.rendering) return;
+        const rootNode = this.rendering.getRenderedNode(this.rendering.rootNodeId);
+        this.rendering.displayNodeAttributes(rootNode);
+    }
+
+    /**
+     * Internal method to display top nodes for a given metric
+     */
+    private displayTopNodesInternal(isSticky: boolean): void {
+        if (!this.rendering || !this.profile || !this.metadataSelector) {
+            return;
+        }
+        const metric = this.metadataSelector.getSelection().metric;
+        const topNodes = this.rendering.topNodes(this.profile, metric);
+        this.config.callbacks.displayTopNodes(Option.some(topNodes), isSticky);
+    }
+
+    /**
      * Show global metrics for the top-level graph
      * @param isSticky If true, the metrics will remain visible after mouse out
      */
@@ -189,13 +210,10 @@ export class Visualizer {
         }
 
         this.rendering.setStickyNodeInformation(Boolean(isSticky));
-
-        // Display the top-level graph metrics
-        const rootNode = this.rendering.getRenderedNode(this.rendering.rootNodeId);
-        this.rendering.displayNodeAttributes(rootNode);
+        this.displayGlobalMetricsInternal();
     }
 
-    public showTopNodes(metric: string, n: number, isSticky?: boolean): void {
+    public showTopNodes(isSticky?: boolean): void {
         if (!this.rendering || !this.profile || (this.rendering.stickyInformation && !isSticky)) {
             return;
         }
@@ -203,12 +221,12 @@ export class Visualizer {
         if (isSticky) {
             // Hide previous node information if any
             this.rendering.hideNodeInformation();
+            // Set refresh callback to re-display top nodes with current metric when metadata changes
+            this.rendering.setRefreshStickyTooltipCallback(() => this.displayTopNodesInternal(true));
         }
 
         this.rendering.setStickyNodeInformation(Boolean(isSticky));
-
-        const topNodes = this.rendering.topNodes(this.profile, metric, n)
-        this.config.callbacks.displayTopNodes(Option.some(topNodes), Boolean(isSticky))
+        this.displayTopNodesInternal(Boolean(isSticky));
     }
 
     /**
@@ -251,11 +269,11 @@ export class Visualizer {
     }
 
     /** Return the ids of the nodes that score highest according to the specified metric. */
-    public topNodes(metric: string, n: number): Array<NodeAndMetric> {
+    public topNodes(metric: string): Array<NodeAndMetric> {
         if (this.profile === null || this.rendering === null) {
             return [];
         }
-        return this.rendering.topNodes(this.profile, metric, n);
+        return this.rendering.topNodes(this.profile, metric);
     }
 
     /**

@@ -2,6 +2,7 @@ use anyhow::Result as AnyResult;
 use chrono::Datelike;
 use clap::Parser;
 use dbsp::circuit::CircuitConfig;
+use dbsp::typed_batch::IndexedZSetReader;
 use dbsp::utils::Tup2;
 use dbsp::{
     DBSPHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, circuit::Layout,

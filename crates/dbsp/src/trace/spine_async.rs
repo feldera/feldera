@@ -897,6 +897,15 @@ where
     merger: AsyncMerger<B>,
 }
 
+impl<B> Spine<B>
+where
+    B: Batch,
+{
+    pub fn get_batches(&self) -> Vec<Arc<B>> {
+        self.merger.get_batches()
+    }
+}
+
 impl<B> SizeOf for Spine<B>
 where
     B: Batch,
@@ -1156,7 +1165,7 @@ impl<B: Batch> Clone for SpineCursor<B> {
 }
 
 impl<B: Batch> SpineCursor<B> {
-    fn new_cursor(factories: &B::Factories, batches: Vec<Arc<B>>) -> Self {
+    pub fn new_cursor(factories: &B::Factories, batches: Vec<Arc<B>>) -> Self {
         SpineCursorBuilder {
             batches,
             cursor_builder: |batches| {

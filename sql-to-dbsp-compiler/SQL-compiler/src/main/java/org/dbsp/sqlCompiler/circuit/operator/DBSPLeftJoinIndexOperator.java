@@ -25,8 +25,8 @@ public final class DBSPLeftJoinIndexOperator extends DBSPJoinBaseOperator {
     public DBSPLeftJoinIndexOperator(
             CalciteRelNode node, DBSPTypeIndexedZSet outputType,
             DBSPExpression function, boolean isMultiset,
-            OutputPort left, OutputPort right) {
-        super(node, "left_join_index", function, outputType, isMultiset, left, right);
+            OutputPort left, OutputPort right, boolean balanced) {
+        super(node, joinOperationName("left_join_index", balanced), function, outputType, isMultiset, left, right, balanced);
         Utilities.enforce(left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType));
         Utilities.enforce(right.getOutputIndexedZSetType().elementType.mayBeNull);
     }
@@ -39,7 +39,7 @@ public final class DBSPLeftJoinIndexOperator extends DBSPJoinBaseOperator {
             return new DBSPLeftJoinIndexOperator(
                 this.getRelNode(), outputType.to(DBSPTypeIndexedZSet.class),
                 Objects.requireNonNull(function),
-                this.isMultiset, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+                this.isMultiset, newInputs.get(0), newInputs.get(1), this.balanced).copyAnnotations(this);
         return this;
     }
 
@@ -57,9 +57,10 @@ public final class DBSPLeftJoinIndexOperator extends DBSPJoinBaseOperator {
     @SuppressWarnings("unused")
     public static DBSPLeftJoinIndexOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        boolean balanced = Utilities.getBooleanProperty(node, "balanced");
         return new DBSPLeftJoinIndexOperator(
                 CalciteEmptyRel.INSTANCE, info.getIndexedZsetType(), info.getFunction(),
-                info.isMultiset(), info.getInput(0), info.getInput(1))
+                info.isMultiset(), info.getInput(0), info.getInput(1), balanced)
                 .addAnnotations(info.annotations(), DBSPLeftJoinIndexOperator.class);
     }
 }

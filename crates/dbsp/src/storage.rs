@@ -7,8 +7,6 @@ pub mod backend;
 pub mod buffer_cache;
 pub mod dirlock;
 pub mod file;
-#[cfg(test)]
-mod test;
 
 use fdlimit::{Outcome::LimitRaised, raise_fd_limit};
 use tracing::warn;

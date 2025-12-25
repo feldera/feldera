@@ -273,6 +273,15 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPJoinBaseOperator operator) {
+        if (this.preorder(operator.to(DBSPBinaryOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("balanced");
+        this.stream.append(operator.balanced);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPConcreteAsofJoinOperator operator) {
         if (this.preorder(operator.to(DBSPJoinBaseOperator.class)).stop())
             return VisitDecision.STOP;

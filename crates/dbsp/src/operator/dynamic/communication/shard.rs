@@ -81,7 +81,7 @@ where
                             Some(location),
                             move || Vec::new(),
                             move |batch: IB, batches: &mut Vec<OB>| {
-                                Self::shard_batch(
+                                shard_batch(
                                     batch,
                                     Runtime::num_workers(),
                                     &mut builders,
@@ -121,57 +121,58 @@ where
 
         Some(output)
     }
+}
 
-    // Partitions the batch into `nshards` partitions based on the hash of the key.
-    fn shard_batch<OB>(
-        mut batch: IB,
-        shards: usize,
-        builders: &mut Vec<OB::Builder>,
-        outputs: &mut Vec<OB>,
-        factories: &OB::Factories,
-    ) where
-        OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R>,
-    {
-        builders.clear();
+// Partitions the batch into `nshards` partitions based on the hash of the key.
+pub fn shard_batch<IB, OB>(
+    mut batch: IB,
+    shards: usize,
+    builders: &mut Vec<OB::Builder>,
+    outputs: &mut Vec<OB>,
+    factories: &OB::Factories,
+) where
+    IB: BatchReader<Time = ()>,
+    OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R>,
+{
+    builders.clear();
 
-        for _ in 0..shards {
-            // We iterate over tuples in the batch in order; hence tuples added
-            // to each shard are also ordered, so we can use the more efficient
-            // `Builder` API (instead of `Batcher`) to construct output batches.
-            builders.push(OB::Builder::with_capacity(
-                factories,
-                batch.key_count() / shards,
-                batch.len() / shards,
-            ));
-        }
+    for _ in 0..shards {
+        // We iterate over tuples in the batch in order; hence tuples added
+        // to each shard are also ordered, so we can use the more efficient
+        // `Builder` API (instead of `Batcher`) to construct output batches.
+        builders.push(OB::Builder::with_capacity(
+            factories,
+            batch.key_count() / shards,
+            batch.len() / shards,
+        ));
+    }
 
-        let mut cursor = batch.consuming_cursor(None, None);
-        if cursor.has_mut() {
-            while cursor.key_valid() {
-                let b = &mut builders[cursor.key().default_hash() as usize % shards];
-                while cursor.val_valid() {
-                    b.push_diff_mut(cursor.weight_mut());
-                    b.push_val_mut(cursor.val_mut());
-                    cursor.step_val();
-                }
-                b.push_key_mut(cursor.key_mut());
-                cursor.step_key();
+    let mut cursor = batch.consuming_cursor(None, None);
+    if cursor.has_mut() {
+        while cursor.key_valid() {
+            let b = &mut builders[cursor.key().default_hash() as usize % shards];
+            while cursor.val_valid() {
+                b.push_diff_mut(cursor.weight_mut());
+                b.push_val_mut(cursor.val_mut());
+                cursor.step_val();
             }
-        } else {
-            while cursor.key_valid() {
-                let b = &mut builders[cursor.key().default_hash() as usize % shards];
-                while cursor.val_valid() {
-                    b.push_diff(cursor.weight());
-                    b.push_val(cursor.val());
-                    cursor.step_val();
-                }
-                b.push_key(cursor.key());
-                cursor.step_key();
+            b.push_key_mut(cursor.key_mut());
+            cursor.step_key();
+        }
+    } else {
+        while cursor.key_valid() {
+            let b = &mut builders[cursor.key().default_hash() as usize % shards];
+            while cursor.val_valid() {
+                b.push_diff(cursor.weight());
+                b.push_val(cursor.val());
+                cursor.step_val();
             }
+            b.push_key(cursor.key());
+            cursor.step_key();
         }
-        for builder in builders.drain(..) {
-            outputs.push(builder.done());
-        }
+    }
+    for builder in builders.drain(..) {
+        outputs.push(builder.done());
     }
 }
 

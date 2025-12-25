@@ -12,7 +12,10 @@ use std::{
 use rand::{Fill, Rng, thread_rng};
 use tokio::sync::oneshot;
 
-use crate::storage::{backend::BlockLocation, buffer_cache::FBuf, test::init_test_logger};
+use crate::{
+    storage::{backend::BlockLocation, buffer_cache::FBuf},
+    utils::test::init_test_logger,
+};
 
 use super::{FileReader, StorageBackend};
 

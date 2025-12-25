@@ -1,4 +1,7 @@
-use crate::{RuntimeError, SchedulerError, storage::backend::StorageError};
+use crate::{
+    RuntimeError, SchedulerError, operator::dynamic::balance::BalancerError,
+    storage::backend::StorageError,
+};
 use anyhow::Error as AnyError;
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 use std::{
@@ -23,6 +26,7 @@ pub enum Error {
     IO(IOError),
     Constructor(AnyError),
     Storage(StorageError),
+    Balancer(BalancerError),
 }
 
 impl DetailedError for Error {
@@ -33,6 +37,7 @@ impl DetailedError for Error {
             Self::IO(_) => Cow::from("IOError"),
             Self::Constructor(_) => Cow::from("CircuitConstructorError"),
             Self::Storage(_) => Cow::from("StorageError"),
+            Self::Balancer(_) => Cow::from("BalancerError"),
         }
     }
 }
@@ -55,6 +60,7 @@ impl Serialize for Error {
                 .serialize_struct("CircuitConstructorError", 0)?
                 .end(),
             Self::Storage(error) => error.serialize(serializer),
+            Self::Balancer(error) => error.serialize(serializer),
         }
     }
 }
@@ -78,6 +84,9 @@ impl Display for Error {
             }
             Self::Storage(error) => {
                 write!(f, "storage error: {error}")
+            }
+            Self::Balancer(error) => {
+                write!(f, "balancer error: {error}")
             }
         }
     }
@@ -104,5 +113,11 @@ impl From<RuntimeError> for Error {
 impl From<StorageError> for Error {
     fn from(error: StorageError) -> Self {
         Self::Storage(error)
+    }
+}
+
+impl From<BalancerError> for Error {
+    fn from(error: BalancerError) -> Self {
+        Self::Balancer(error)
     }
 }

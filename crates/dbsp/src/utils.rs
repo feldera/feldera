@@ -2,11 +2,15 @@ mod advance_retreat;
 mod sample;
 //pub(crate) mod tests;
 mod consolidation;
+mod graph;
 mod sort;
 mod tuple;
 
 #[cfg(test)]
 mod vec_ext;
+
+#[cfg(test)]
+pub(crate) mod test;
 
 mod dot;
 
@@ -21,6 +25,7 @@ pub use consolidation::{
     ConsolidatePairedSlices, consolidate, consolidate_from, consolidate_paired_slices,
     consolidate_payload_from, consolidate_slice,
 };
+pub use graph::components;
 
 #[allow(unused_imports)]
 pub use dot::{DotEdgeAttributes, DotNodeAttributes};
@@ -28,6 +33,7 @@ pub use dot::{DotEdgeAttributes, DotNodeAttributes};
 #[cfg(test)]
 pub use consolidation::consolidate_pairs;
 
+use itertools::Itertools as _;
 pub use sample::sample_slice;
 pub use sort::{stable_sort, stable_sort_by};
 pub use tuple::{
@@ -84,4 +90,11 @@ pub(crate) fn bytes_of<T>(slice: &[T]) -> &[std::mem::MaybeUninit<u8>] {
     // Safety: It's always sound to interpret possibly uninitialized bytes as
     // `MaybeUninit<u8>`
     unsafe { std::slice::from_raw_parts(slice.as_ptr().cast(), std::mem::size_of_val(slice)) }
+}
+
+/// Indent a string by the given number of spaces.
+pub fn indent(s: &str, indent: usize) -> String {
+    s.lines()
+        .map(|line| format!("{:indent$}{line}", "", indent = indent))
+        .join("\n")
 }

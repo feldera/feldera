@@ -347,7 +347,7 @@ public class RangeAggregates extends WindowAggregates {
                     addExtraFieldBody.closure(key, left, right);
             return new DBSPStreamJoinOperator(node.maybeFinal(isLast), TypeCompiler.makeZSet(addExtraFieldBody.getType()),
                     addExtraField, indexInput.isMultiset || windowAgg.isMultiset,
-                    indexInput.outputPort(), integral.outputPort());
+                    indexInput.outputPort(), integral.outputPort(), false);
         }
     }
 

@@ -516,6 +516,7 @@ mod test {
         static_compile::seroutput::SerBatchImpl,
         test::{MockOutputConsumer, TestStruct, generate_test_batches_with_weights},
     };
+    use dbsp::typed_batch::IndexedZSetReader;
     use dbsp::{OrdZSet, utils::Tup2};
     use feldera_types::format::json::JsonUpdateFormat;
     use feldera_types::program_schema::Relation;

@@ -9,3 +9,7 @@ pub fn default_hash<T: Hash + ?Sized>(x: &T) -> u64 {
     x.hash(&mut hasher);
     hasher.finish()
 }
+
+pub fn default_hasher() -> impl Hasher {
+    Xxh3Default::new()
+}

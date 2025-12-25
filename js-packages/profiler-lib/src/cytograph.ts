@@ -240,7 +240,7 @@ export class Cytograph {
     }
 
     /** Given a metric, return the displayed nodes that have the top values for the metric. */
-    topNodes(profile: CircuitProfile, metric: string, n: number): Array<NodeAndMetric> {
+    topNodes(profile: CircuitProfile, metric: string): Array<NodeAndMetric> {
         let result: Array<NodeAndMetric> = [];
         let range = profile.propertyRange(metric);
         if (range.isEmpty()) {
@@ -270,14 +270,10 @@ export class Cytograph {
             if (range.isPoint()) {
                 normalized = 0;
             }
-            result.push(new NodeAndMetric(id, max!.toString(), normalized));
+            result.push(new NodeAndMetric(id, max!.toString(), node.label, normalized));
         }
         // Sort in decreasing order
         result.sort((a, b) => b.normalizedValue - a.normalizedValue);
-        // Do not return more than n results
-        if (result.length > n) {
-            result.length = n;
-        }
         return result;
     }
 
@@ -409,6 +405,8 @@ export class CytographRendering {
     lastNode: Option<NodeId>;
     // Current node that has tooltip displayed (for refreshing on metadata changes)
     private currentTooltipNode: NodeId | null = null;
+    // Callback to refresh sticky tooltip when metadata changes (e.g., metric or workers)
+    private refreshStickyTooltipCallback: (() => void) | null = null;
 
     readonly graph_style: StylesheetJson = [
         {
@@ -627,8 +625,8 @@ export class CytographRendering {
         this.cy.center(el);
     }
 
-    topNodes(profile: CircuitProfile, metric: string, n: number): Array<NodeAndMetric> {
-        return this.currentGraph?.topNodes(profile, metric, n) || [];
+    topNodes(profile: CircuitProfile, metric: string): Array<NodeAndMetric> {
+        return this.currentGraph?.topNodes(profile, metric) || [];
     }
 
     /** Get a handle to the node in the rendering with the specified id. */
@@ -750,6 +748,9 @@ export class CytographRendering {
                 this.displayNodeAttributes(node);
             }
         }
+
+        // Refresh sticky tooltip if one is displayed (e.g., "top 20 nodes")
+        this.refreshStickyTooltipCallback?.();
     }
 
     /** Called when the graph has changed to trigger a new layout computation. */
@@ -976,6 +977,8 @@ export class CytographRendering {
 
         // Track the current tooltip node for refreshing on metadata changes
         this.currentTooltipNode = nodeId;
+        // Clear sticky tooltip callback when showing a normal node tooltip
+        this.refreshStickyTooltipCallback = null;
 
         // highlight edges
         let reachable = this.reachableFrom(nodeId, true);
@@ -1061,10 +1064,18 @@ export class CytographRendering {
 
     hideNodeInformation() {
         this.currentTooltipNode = null;
+        this.refreshStickyTooltipCallback = null;
         this.callbacks.displayNodeAttributes(Option.none(), false);
         let reachable = this.cy.edges();
         reachable.removeClass('highlight-forward');
         reachable.removeClass('highlight-backward');
+    }
+
+    /**
+     * Set the callback to refresh sticky tooltip when metadata changes
+     */
+    setRefreshStickyTooltipCallback(callback: (() => void) | null): void {
+        this.refreshStickyTooltipCallback = callback;
     }
 
     /**
@@ -1081,5 +1092,6 @@ export class CytographRendering {
 
         // Clear references
         this.currentGraph = null;
+        this.refreshStickyTooltipCallback = null;
     }
 }
