@@ -397,7 +397,7 @@ pub type CheckpointCallbackFn = Box<dyn FnOnce(Result<Checkpoint, Arc<Controller
 /// Type of the callback argument to [`Controller::start_suspend`].
 pub type SuspendCallbackFn = Box<dyn FnOnce(Result<(), Arc<ControllerError>>) + Send>;
 
-/// Type of the callback argument to [`Controller::start_checkpoint_sync`].
+/// Type of the callback argument to [`Controller::start_sync_checkpoint`].
 pub type SyncCheckpointCallbackFn = Box<dyn FnOnce(Result<(), Arc<ControllerError>>) + Send>;
 
 /// A command that [Controller] can send to [Controller::circuit_thread].
@@ -1584,15 +1584,141 @@ impl Controller {
     }
 }
 
-struct SyncCheckpointRequest {
-    uuid: Arc<TokioMutex<Option<uuid::Uuid>>>,
-    cb: Option<SyncCheckpointCallbackFn>,
+/// Represents a background thread that pushes checkpoints to object storage.
+struct CheckpointSyncThread {
+    uuid: uuid::Uuid,
+    storage: Arc<dyn StorageBackend>,
+    config: SyncConfig,
 }
 
-impl SyncCheckpointRequest {
-    fn uuid(&self) -> Option<uuid::Uuid> {
-        *self.uuid.blocking_lock()
+impl CheckpointSyncThread {
+    fn run(self) -> Result<(), Arc<ControllerError>> {
+        match SYNCHRONIZER.push(self.uuid, self.storage, self.config) {
+            Err(err) => {
+                CHECKPOINT_SYNC_PUSH_FAILURES.fetch_add(1, Ordering::Relaxed);
+                Err(Arc::new(ControllerError::checkpoint_push_error(
+                    err.to_string(),
+                )))
+            }
+            Ok(metrics) => {
+                CHECKPOINT_SYNC_PUSH_SUCCESS.fetch_add(1, Ordering::Relaxed);
+                if let Some(metrics) = metrics {
+                    CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED.record(metrics.speed);
+                    CHECKPOINT_SYNC_PUSH_DURATION_SECONDS.record(metrics.duration.as_secs());
+                    CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES.record(metrics.bytes);
+                }
+                Ok(())
+            }
+        }
     }
+}
+
+/// Represents a running checkpoint sync operation.
+enum RunningCheckpointSync {
+    Error(uuid::Uuid, Arc<ControllerError>),
+    Waiting(
+        uuid::Uuid,
+        JoinHandle<()>,
+        oneshot::Receiver<Result<(), Arc<ControllerError>>>,
+    ),
+    Done(uuid::Uuid),
+}
+
+impl RunningCheckpointSync {
+    fn new(circuit: &mut CircuitThread, uuid: uuid::Uuid) -> Self {
+        SamplySpan::new(debug_span!("fg-checkpoint-sync", uuid = %uuid))
+            .in_scope(|| Self::start(circuit, uuid))
+            .unwrap_or_else(|e| Self::Error(uuid, e))
+    }
+
+    fn uuid(&self) -> uuid::Uuid {
+        match self {
+            Self::Error(uuid, _) => *uuid,
+            Self::Waiting(uuid, _, _) => *uuid,
+            Self::Done(uuid) => *uuid,
+        }
+    }
+
+    fn start(circuit: &mut CircuitThread, uuid: uuid::Uuid) -> Result<Self, Arc<ControllerError>> {
+        let Some((_, options)) = circuit.controller.status.pipeline_config.storage() else {
+            return Err(Arc::new(ControllerError::storage_error(
+                "cannot sync checkpoints when storage is disabled".to_owned(),
+                dbsp::storage::backend::StorageError::StorageDisabled,
+            )));
+        };
+
+        let feldera_types::config::StorageBackendConfig::File(ref file_cfg) = options.backend
+        else {
+            return Err(Arc::new(ControllerError::storage_error(
+                "syncing checkpoint is only supported with file backend".to_owned(),
+                dbsp::storage::backend::StorageError::BackendNotSupported(Box::new(
+                    options.backend.clone(),
+                )),
+            )));
+        };
+
+        let FileBackendConfig {
+            sync: Some(ref sync),
+            ..
+        } = **file_cfg
+        else {
+            return Err(Arc::new(ControllerError::storage_error(
+                "sync config is not set; cannot push checkpoints".to_owned(),
+                dbsp::storage::backend::StorageError::BackendNotSupported(Box::new(
+                    options.backend.clone(),
+                )),
+            )));
+        };
+
+        let (sender, receiver) = oneshot::channel();
+        let thread = CheckpointSyncThread {
+            uuid,
+            storage: circuit.storage.as_ref().cloned().ok_or(Arc::new(
+                ControllerError::checkpoint_push_error(
+                    "cannot push checkpoints to object store: storage is set to None".to_owned(),
+                ),
+            ))?,
+            config: sync.to_owned(),
+        };
+        let unparker = circuit.parker.unparker().clone();
+        let join_handle = std::thread::Builder::new()
+            .name(String::from("feldera-checkpoint-sync"))
+            .spawn(move || {
+                let result = SamplySpan::new(debug_span!("bg-checkpoint-sync", uuid = %uuid))
+                    .in_scope(|| thread.run());
+                let _ = sender.send(result);
+                unparker.unpark();
+            })
+            .unwrap();
+        Ok(Self::Waiting(uuid, join_handle, receiver))
+    }
+
+    fn poll(&mut self) -> Option<Result<(), Arc<ControllerError>>> {
+        let uuid = self.uuid();
+
+        match replace(self, Self::Done(uuid)) {
+            Self::Error(_, error) => Some(Err(error)),
+            Self::Waiting(uuid, join_handle, mut receiver) => match receiver.try_recv() {
+                Ok(result) => {
+                    join_handle.join().unwrap();
+                    Some(result)
+                }
+                Err(TryRecvError::Empty) => {
+                    *self = Self::Waiting(uuid, join_handle, receiver);
+                    None
+                }
+                Err(TryRecvError::Closed) => unreachable!(
+                    "RunningCheckpointSync::Waiting should have been replaced by RunningCheckpointSync::Done"
+                ),
+            },
+            Self::Done(_) => Some(Ok(())),
+        }
+    }
+}
+
+struct SyncCheckpointRequest {
+    uuid: uuid::Uuid,
+    cb: SyncCheckpointCallbackFn,
 }
 
 #[derive(Clone)]
@@ -1623,8 +1749,10 @@ struct CircuitThread {
     checkpoint_requests: Vec<CheckpointRequest>,
     running_checkpoint: Option<RunningCheckpoint>,
 
-    /// Currently only allows one request at a time.
-    sync_checkpoint_request: Option<SyncCheckpointRequest>,
+    sync_checkpoint_requests: Vec<SyncCheckpointRequest>,
+
+    /// Active checkpoint sync.
+    running_checkpoint_sync: Option<RunningCheckpointSync>,
 
     /// Storage backend for writing checkpoints.
     storage: Option<Arc<dyn StorageBackend>>,
@@ -1924,7 +2052,8 @@ impl CircuitThread {
             checkpoint_delay_warning: None,
             checkpoint_requests: Vec::new(),
             running_checkpoint: None,
-            sync_checkpoint_request: None,
+            running_checkpoint_sync: None,
+            sync_checkpoint_requests: Vec::new(),
             step,
             input_metadata: input_metadata.unwrap_or_default(),
             last_commit_progress_update: Instant::now(),
@@ -1978,6 +2107,8 @@ impl CircuitThread {
             if self.checkpoint_requested() {
                 self.checkpoint();
             }
+
+            self.poll_running_checkpoint_sync();
 
             if self.sync_checkpoint_requested() {
                 self.sync_checkpoint();
@@ -2306,9 +2437,9 @@ impl CircuitThread {
                         .push(CheckpointRequest::SuspendCommand(reply_callback));
                 }
                 Command::SyncCheckpoint((uuid, reply_callback)) => {
-                    self.sync_checkpoint_request = Some(SyncCheckpointRequest {
-                        uuid: Arc::new(TokioMutex::new(Some(uuid))),
-                        cb: Some(reply_callback),
+                    self.sync_checkpoint_requests.push(SyncCheckpointRequest {
+                        uuid,
+                        cb: reply_callback,
                     });
                 }
             }
@@ -2656,7 +2787,7 @@ impl CircuitThread {
     }
 
     fn sync_checkpoint_requested(&self) -> bool {
-        self.sync_checkpoint_request.is_some()
+        !self.sync_checkpoint_requests.is_empty()
     }
 
     #[allow(unused)]
@@ -2666,88 +2797,47 @@ impl CircuitThread {
             .map_err(|e| Arc::new(ControllerError::dbsp_error(e)))
     }
 
+    fn poll_running_checkpoint_sync(&mut self) {
+        fn process_sync_requests(
+            requests: &mut Vec<SyncCheckpointRequest>,
+            uuid: uuid::Uuid,
+            result: Result<(), Arc<ControllerError>>,
+        ) {
+            for request in requests.extract_if(.., |x| x.uuid == uuid) {
+                (request.cb)(result.clone());
+            }
+        }
+
+        let Some(mut running_sync) = self.running_checkpoint_sync.take() else {
+            return;
+        };
+
+        match running_sync {
+            RunningCheckpointSync::Waiting(uuid, _, _) => {
+                let Some(result) = running_sync.poll() else {
+                    self.running_checkpoint_sync = Some(running_sync);
+                    return;
+                };
+
+                process_sync_requests(&mut self.sync_checkpoint_requests, uuid, result);
+            }
+            RunningCheckpointSync::Error(uuid, result) => {
+                process_sync_requests(&mut self.sync_checkpoint_requests, uuid, Err(result));
+            }
+            RunningCheckpointSync::Done(uuid) => {
+                process_sync_requests(&mut self.sync_checkpoint_requests, uuid, Ok(()));
+            }
+        };
+    }
+
     fn sync_checkpoint(&mut self) {
-        let Some((uuid_lock, Some(cb))) = self
-            .sync_checkpoint_request
-            .as_mut()
-            .map(|u| (u.uuid.clone(), u.cb.take()))
-        else {
+        let Some(req) = self.sync_checkpoint_requests.first() else {
             return;
         };
 
-        let Some(uuid) = *uuid_lock.blocking_lock() else {
-            return;
-        };
-
-        let Some((_, options)) = self.controller.status.pipeline_config.storage() else {
-            cb(Err(Arc::new(ControllerError::storage_error(
-                "cannot sync checkpoints when storage is disabled".to_owned(),
-                dbsp::storage::backend::StorageError::StorageDisabled,
-            ))));
-            return;
-        };
-
-        let feldera_types::config::StorageBackendConfig::File(ref file_cfg) = options.backend
-        else {
-            cb(Err(Arc::new(ControllerError::storage_error(
-                "syncing checkpoint is only supported with file backend".to_owned(),
-                dbsp::storage::backend::StorageError::BackendNotSupported(Box::new(
-                    options.backend.clone(),
-                )),
-            ))));
-            return;
-        };
-
-        let FileBackendConfig {
-            sync: Some(ref sync),
-            ..
-        } = **file_cfg
-        else {
-            cb(Err(Arc::new(ControllerError::storage_error(
-                "sync config is not set; cannot push checkpoints".to_owned(),
-                dbsp::storage::backend::StorageError::BackendNotSupported(Box::new(
-                    options.backend.clone(),
-                )),
-            ))));
-            return;
-        };
-
-        let Some(ref storage) = self.storage else {
-            tracing::error!("storage is set to None");
-            cb(Err(Arc::new(ControllerError::checkpoint_push_error(
-                "cannot push checkpoints to object store: storage is set to None".to_owned(),
-            ))));
-            return;
-        };
-
-        let storage = storage.to_owned();
-        let config = sync.to_owned();
-
-        thread::Builder::new()
-            .name("s3-synchronizer".to_string())
-            .spawn(move || {
-                match SYNCHRONIZER.push(uuid, storage.clone(), config.clone()) {
-                    Err(err) => {
-                        CHECKPOINT_SYNC_PUSH_FAILURES.fetch_add(1, Ordering::Relaxed);
-                        cb(Err(Arc::new(ControllerError::checkpoint_push_error(
-                            err.to_string(),
-                        ))));
-                    }
-                    Ok(metrics) => {
-                        CHECKPOINT_SYNC_PUSH_SUCCESS.fetch_add(1, Ordering::Relaxed);
-                        if let Some(metrics) = metrics {
-                            CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED.record(metrics.speed);
-                            CHECKPOINT_SYNC_PUSH_DURATION_SECONDS
-                                .record(metrics.duration.as_secs());
-                            CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES.record(metrics.bytes);
-                        }
-                        cb(Ok(()))
-                    }
-                }
-
-                uuid_lock.blocking_lock().take()
-            })
-            .expect("failed to spawn s3-synchronizer thread");
+        if self.running_checkpoint_sync.is_none() {
+            self.running_checkpoint_sync = Some(RunningCheckpointSync::new(self, req.uuid));
+        }
     }
 }
 
@@ -5979,11 +6069,7 @@ impl RunningCheckpoint {
         checkpoint: Checkpoint,
         circuit: &mut CircuitThread,
     ) -> Result<Checkpoint, ControllerError> {
-        if circuit
-            .sync_checkpoint_request
-            .as_ref()
-            .and_then(|s| s.uuid())
-            .is_none()
+        if circuit.sync_checkpoint_requests.is_empty()
             && let Err(error) = circuit.circuit.gc_checkpoint()
         {
             warn!("error removing old checkpoints: {error}");
