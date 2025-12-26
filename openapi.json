@@ -9810,6 +9810,14 @@
           }
         }
       },
+      "PostgresWriteMode": {
+        "type": "string",
+        "description": "PostgreSQL write mode.\n\nDetermines how the PostgreSQL output connector writes data to the target table.",
+        "enum": [
+          "materialized",
+          "cdc"
+        ]
+      },
       "PostgresWriterConfig": {
         "type": "object",
         "description": "Postgres output connector configuration.",
@@ -9818,6 +9826,16 @@
           "table"
         ],
         "properties": {
+          "cdc_op_column": {
+            "type": "string",
+            "description": "Name of the operation metadata column in CDC mode.\n\nOnly used when `mode = \"cdc\"`. This column will contain:\n- `\"i\"` for insert operations\n- `\"u\"` for upsert operations\n- `\"d\"` for delete operations\n\nDefault: `\"__feldera_op\"`",
+            "default": "__feldera_op"
+          },
+          "cdc_ts_column": {
+            "type": "string",
+            "description": "Name of the timestamp metadata column in CDC mode.\n\nOnly used when `mode = \"cdc\"`. This column will contain the timestamp\n(in RFC 3339 format) when the batch of updates was output\nby the pipeline.\n\nDefault: `\"__feldera_ts\"`",
+            "default": "__feldera_ts"
+          },
           "max_buffer_size_bytes": {
             "type": "integer",
             "description": "The maximum buffer size in for a single operation.\nNote that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are\nseparate.\nDefault: 1 MiB",
@@ -9830,9 +9848,17 @@
             "nullable": true,
             "minimum": 0
           },
+          "mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PostgresWriteMode"
+              }
+            ],
+            "default": "materialized"
+          },
           "on_conflict_do_nothing": {
             "type": "boolean",
-            "description": "Specifies how the connector handles conflicts when executing an `INSERT`\ninto a table with a primary key. By default, an existing row with the same\nkey is overwritten. Setting this flag to `true` preserves the existing row\nand ignores the new insert.\n\nThis setting does not affect `UPDATE` statements, which always replace the\nvalue associated with the key.\n\nDefault: `false`"
+            "description": "Specifies how the connector handles conflicts when executing an `INSERT`\ninto a table with a primary key. By default, an existing row with the same\nkey is overwritten. Setting this flag to `true` preserves the existing row\nand ignores the new insert.\n\nThis setting does not affect `UPDATE` statements, which always replace the\nvalue associated with the key.\n\nThis setting has no effect when `mode = \"cdc\"`, since all operations\nare performed as append-only `INSERT`s into the target table.\nAny conflict in CDC mode will result in an error.\n\nDefault: `false`"
           },
           "ssl_ca_location": {
             "type": "string",
