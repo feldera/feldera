@@ -3,7 +3,7 @@
 //! A "layer file" stores `n > 0` columns of data, each of which has a key type
 //! `K[i]` and an auxiliary data type `A[i]`.  Each column is arranged into
 //! groups of rows, where column 0 forms a single group and each row in column
-//! `i` is associated with a group of one or more rows in column `i + 1` (for
+//! `i` is associated with a group of zero or more rows in column `i + 1` (for
 //! `i + 1 < n`).  A group contains sorted, unique values. A group cursor for
 //! column `i` can move forward and backward by rows, seek forward and backward
 //! by the key type `K[i]` or using a predicate based on `K[i]`, and (when `i +

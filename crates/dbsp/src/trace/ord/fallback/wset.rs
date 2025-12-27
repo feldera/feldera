@@ -1,7 +1,7 @@
 use crate::{
     DBWeight, NumEntries,
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
-    circuit::checkpointer::Checkpoint,
+    circuit::{checkpointer::Checkpoint, metadata::OperatorMeta},
     dynamic::{DataTrait, DynUnit, DynVec, Erase, WeightTrait, WeightTraitTyped},
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
@@ -330,6 +330,13 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.keys(),
             Inner::File(file) => file.keys(),
+        }
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        match &self.inner {
+            Inner::Vec(vec) => vec.metadata(meta),
+            Inner::File(file) => file.metadata(meta),
         }
     }
 }
