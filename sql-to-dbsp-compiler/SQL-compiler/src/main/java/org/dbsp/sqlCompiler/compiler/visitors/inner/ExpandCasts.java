@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -300,8 +301,15 @@ public class ExpandCasts extends InnerRewriteVisitor {
             // If the element type does not match, need to convert all elements
             if (!type.getElementType().equals(sourceVecType.getElementType())) {
                 if (sourceVecType.getElementType().is(DBSPTypeAny.class)) {
-                    // This can only happen if the source is an empty vector
-                    return new DBSPArrayExpression(type, false);
+                    if (source.is(DBSPArrayExpression.class)) {
+                        DBSPArrayExpression arr = source.to(DBSPArrayExpression.class);
+                        if (arr.data == null)
+                            return new DBSPArrayExpression(type, true);
+                        if (arr.data.isEmpty())
+                            return new DBSPArrayExpression(type, false);
+                        throw new CompilationError("Could not infer a type for array elements; " +
+                                "please specify it using CAST(array AS X ARRAY)", source.getNode());
+                    }
                 }
                 DBSPVariablePath var = sourceVecType.getElementType().ref().var();
                 DBSPExpression convert = var.deref();

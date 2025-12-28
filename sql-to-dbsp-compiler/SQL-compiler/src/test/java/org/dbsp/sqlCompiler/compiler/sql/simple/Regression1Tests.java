@@ -16,7 +16,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.sql.SQLException;
@@ -1586,5 +1585,27 @@ public class Regression1Tests extends SqlIoTest {
                  x | weight
                 ------------
                  1 | 1""");
+    }
+
+    @Test
+    public void issue5345() {
+        this.showPlan();
+        var ccs = this.getCCS("""
+                CREATE MATERIALIZED VIEW t1 AS
+                    SELECT DISTINCT
+                        t.f1,
+                        t.f2,
+                        CAST(t.f3 AS TEXT ARRAY) AS f3,
+                        t.f4
+                    FROM (
+                        VALUES
+                            ('a', 1, ARRAY['by'], true),
+                            ('b', 1, ARRAY(), false)
+                    ) AS t (f1, f2, f3, f4);""");
+        ccs.step("", """
+                 f1 | f2 | f3 | f4    | weight
+                -------------------------------
+                 a| 1 | { by} | true  | 1
+                 b| 1 | {}    | false | 1""");
     }
 }

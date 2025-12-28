@@ -77,6 +77,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -87,6 +88,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
@@ -200,6 +202,17 @@ public class Simplify extends ExpressionTranslator {
         DBSPExpression source = this.getE(expression.source);
         DBSPType type = expression.getType();
         DBSPExpression result = source.cast(expression.getNode(), type, expression.safe);
+        // (array<T>)(array<unknown>)a -> array<T>.
+        // This should not be necessary, but there is a bug in Calcite somehwere
+        if (source.is(DBSPCastExpression.class)) {
+            if (source.getType().is(DBSPTypeArray.class) && type.is(DBSPTypeArray.class)) {
+                DBSPTypeArray arr = source.getType().to(DBSPTypeArray.class);
+                if (arr.getElementType().is(DBSPTypeAny.class)) {
+                    result = source.to(DBSPCastExpression.class).source
+                            .cast(expression.getNode(), type, expression.safe);
+                }
+            }
+        }
         DBSPLiteral lit = source.as(DBSPLiteral.class);
         if (lit != null) {
             DBSPType litType = lit.getType();
