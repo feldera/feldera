@@ -1274,8 +1274,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     void unimplementedCast(DBSPCastExpression expression) {
-        if (this.compact)
+        if (this.compact) {
+            this.builder.append("((")
+                    .append(expression.type)
+                    .append(")")
+                    .append(expression.source)
+                    .append(")");
             return;
+        }
         throw new UnimplementedException(
                 "Cast from " + expression.source.getType() + " to " + expression.getType() +
                 " not implemented", expression.getNode());
