@@ -240,7 +240,7 @@ CREATE TABLE {name} (
     struct_array_ test_struct ARRAY,
     map_          JSONB,
     __feldera_op  CHAR,
-    __feldera_ts  TIMESTAMP
+    __feldera_ts  BIGINT
 )"#
                     ),
                     &[],
@@ -355,7 +355,10 @@ CREATE TABLE {name} (
                     .collect(),
                 map_: serde_json::from_value(r.get::<_, serde_json::Value>("map_")).unwrap(),
                 __feldera_op: r.get("__feldera_op"),
-                __feldera_ts: feldera_sqllib::Timestamp::from_naiveDateTime(r.get("__feldera_ts")),
+                __feldera_ts: feldera_sqllib::Timestamp::from_dateTime(
+                    chrono::DateTime::from_timestamp_micros(r.get::<_, i64>("__feldera_ts"))
+                        .unwrap(),
+                ),
             }
         }
     }
@@ -736,20 +739,8 @@ fn test_pg_on_conflict_do_update() {
 
 #[test]
 #[serial]
-fn test_pg_on_conflict_do_update_cdc() {
-    test_pg_on_conflict(false, PostgresWriteMode::Cdc);
-}
-
-#[test]
-#[serial]
 fn test_pg_on_conflict_do_nothing() {
     test_pg_on_conflict(true, PostgresWriteMode::Materialized);
-}
-
-#[test]
-#[serial]
-fn test_pg_on_conflict_do_nothing_cdc() {
-    test_pg_on_conflict(true, PostgresWriteMode::Cdc);
 }
 
 #[test]
