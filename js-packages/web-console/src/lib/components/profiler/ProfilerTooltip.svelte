@@ -158,23 +158,16 @@
     top: 0.5rem;
     right: 0.5rem;
     z-index: 2;
-    max-height: calc(100vh - 1rem);
-    /* Causes scroll-bar on child if too tall */
-    height: 100%;
-  }
-
-  /* Tooltip styling */
-  .profiler-tooltip {
-    background-color: black;
-    /* Make sure tooltip edges are rounded */
-    border-radius: 4px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-    padding: 0;
-    /* Force scroll-bar if too tall */
+    border-radius: 8px;
     max-height: calc(100% - 1rem);
     max-width: calc(100% + 1rem);
     overflow-y: auto;
     overflow-x: auto;
+  }
+  /* Tooltip styling */
+  .profiler-tooltip {
+    background-color: black;
+    padding: 0;
   }
 
   .profiler-tooltip table {
