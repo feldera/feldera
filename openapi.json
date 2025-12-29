@@ -9858,7 +9858,7 @@
           },
           "on_conflict_do_nothing": {
             "type": "boolean",
-            "description": "Specifies how the connector handles conflicts when executing an `INSERT`\ninto a table with a primary key. By default, an existing row with the same\nkey is overwritten. Setting this flag to `true` preserves the existing row\nand ignores the new insert.\n\nThis setting does not affect `UPDATE` statements, which always replace the\nvalue associated with the key.\n\nThis setting has no effect when `mode = \"cdc\"`, since all operations\nare performed as append-only `INSERT`s into the target table.\nAny conflict in CDC mode will result in an error.\n\nDefault: `false`"
+            "description": "Specifies how the connector handles conflicts when executing an `INSERT`\ninto a table with a primary key. By default, an existing row with the same\nkey is overwritten. Setting this flag to `true` preserves the existing row\nand ignores the new insert.\n\nThis setting does not affect `UPDATE` statements, which always replace the\nvalue associated with the key.\n\nThis setting is not supported when `mode = \"cdc\"`, since all operations\nare performed as append-only `INSERT`s into the target table.\nAny conflict in CDC mode will result in an error.\n\nDefault: `false`"
           },
           "ssl_ca_location": {
             "type": "string",
