@@ -14,7 +14,7 @@ pub enum PostgresWriteMode {
     Materialized,
 
     /// CDC (Change Data Capture) mode: write all operations as INSERT operations
-    /// into an append-only event log with additional metadata columns.
+    /// into a Postgres table that serves as an append-only event log.
     /// In this mode, inserts, updates, and deletes are all represented as new rows
     /// with metadata columns describing the operation type and timestamp.
     #[serde(rename = "cdc")]
@@ -129,7 +129,7 @@ pub struct PostgresWriterConfig {
     /// This setting does not affect `UPDATE` statements, which always replace the
     /// value associated with the key.
     ///
-    /// This setting has no effect when `mode = "cdc"`, since all operations
+    /// This setting is not supported when `mode = "cdc"`, since all operations
     /// are performed as append-only `INSERT`s into the target table.
     /// Any conflict in CDC mode will result in an error.
     ///
@@ -152,26 +152,45 @@ fn default_cdc_ts_column() -> String {
 
 impl PostgresWriterConfig {
     pub fn validate(&self) -> Result<(), String> {
-        if self.mode == PostgresWriteMode::Cdc {
-            if self.cdc_op_column.trim().is_empty() {
-                return Err("cdc_op_column cannot be empty in CDC mode".to_string());
-            }
-            if self.cdc_ts_column.trim().is_empty() {
-                return Err("cdc_ts_column cannot be empty in CDC mode".to_string());
-            }
+        match self.mode {
+            PostgresWriteMode::Cdc => {
+                if self.cdc_op_column.trim().is_empty() {
+                    return Err("cdc_op_column cannot be empty in CDC mode".to_string());
+                }
+                if self.cdc_ts_column.trim().is_empty() {
+                    return Err("cdc_ts_column cannot be empty in CDC mode".to_string());
+                }
 
-            if !self.cdc_op_column.is_ascii() {
-                return Err("cdc_op_column must contain only ASCII characters".to_string());
-            }
+                if !self.cdc_op_column.is_ascii() {
+                    return Err("cdc_op_column must contain only ASCII characters".to_string());
+                }
 
-            if !self.cdc_ts_column.is_ascii() {
-                return Err("cdc_ts_column must contain only ASCII characters".to_string());
-            }
+                if !self.cdc_ts_column.is_ascii() {
+                    return Err("cdc_ts_column must contain only ASCII characters".to_string());
+                }
 
-            if self.on_conflict_do_nothing {
-                log::warn!("on_conflict_do_nothing has no effect in CDC mode and will be ignored");
+                if self.on_conflict_do_nothing {
+                    return Err("on_conflict_do_nothing not supported in CDC mode since all operations are performed as append-only INSERTs into the target table".to_string());
+                }
             }
-        }
+            PostgresWriteMode::Materialized => {
+                if self.cdc_ts_column != default_cdc_ts_column()
+                    && !self.cdc_ts_column.trim().is_empty()
+                {
+                    return Err(
+                        "cdc_ts_column must not be set when in MATERIALIZED mode".to_string()
+                    );
+                }
+                if self.cdc_op_column != default_cdc_op_column()
+                    && !self.cdc_op_column.trim().is_empty()
+                {
+                    return Err(
+                        "cdc_op_column must not be set when in MATERIALIZED mode".to_string()
+                    );
+                }
+            }
+        };
+
         Ok(())
     }
 }

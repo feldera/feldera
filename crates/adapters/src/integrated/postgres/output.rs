@@ -562,9 +562,9 @@ These statements were successfully prepared before reconnecting. Does the table 
             .context("failed when encoding CDC op field")?;
         write!(
             buf,
-            r#","{}":"{}""#,
+            r#","{}":{}"#,
             self.config.cdc_ts_column,
-            chrono::Utc::now().to_rfc3339()
+            chrono::Utc::now().timestamp_micros()
         )
         .context("failed when encoding CDC TS field")?;
 
