@@ -517,7 +517,8 @@ export class CytographRendering {
         readonly selection: CircuitSelection,
         private metadataSelection: MetadataSelection,
         private message: (msg: string) => void,
-        private clearMessage: () => void) {
+        private clearMessage: () => void,
+        private onTooltipContextChanged: () => void) {
         cytoscape.use(elk);
         cytoscape.use(dblclick);
 
@@ -972,6 +973,7 @@ export class CytographRendering {
 
         // Track the current tooltip node for refreshing on metadata changes
         this.currentTooltipNode = nodeId;
+        this.onTooltipContextChanged()
 
         // highlight edges
         let reachable = this.reachableFrom(nodeId, true);
@@ -1057,6 +1059,7 @@ export class CytographRendering {
 
     hideNodeInformation() {
         this.currentTooltipNode = null;
+        this.onTooltipContextChanged()
         this.callbacks.displayNodeAttributes(Option.none(), false);
         let reachable = this.cy.edges();
         reachable.removeClass('highlight-forward');
