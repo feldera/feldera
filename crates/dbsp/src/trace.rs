@@ -409,7 +409,7 @@ where
             Box::new(UnfilteredMergeCursor::new(self.cursor()))
         } else {
             Box::new(FilteredMergeCursor::new(
-                UnfilteredMergeCursor::new(self.cursor()),
+                self.cursor(),
                 key_filter,
                 value_filter,
             ))

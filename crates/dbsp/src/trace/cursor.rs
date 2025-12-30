@@ -805,7 +805,7 @@ where
     K: ?Sized,
     V: ?Sized,
     R: ?Sized,
-    C: MergeCursor<K, V, T, R>,
+    C: Cursor<K, V, T, R>,
 {
     cursor: C,
     key_filter: Option<Filter<K>>,
@@ -818,7 +818,7 @@ where
     K: ?Sized,
     V: ?Sized,
     R: ?Sized,
-    C: MergeCursor<K, V, T, R>,
+    C: Cursor<K, V, T, R>,
 {
     pub fn new(
         mut cursor: C,
@@ -864,7 +864,7 @@ where
     K: ?Sized,
     V: ?Sized,
     R: ?Sized,
-    C: MergeCursor<K, V, T, R>,
+    C: Cursor<K, V, T, R>,
 {
     fn key_valid(&self) -> bool {
         self.cursor.key_valid()
