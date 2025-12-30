@@ -198,6 +198,68 @@ impl InputBuffer for Option<Box<dyn InputBuffer>> {
     }
 }
 
+impl InputBuffer for Box<dyn InputBuffer> {
+    fn len(&self) -> BufferSize {
+        self.as_ref().len()
+    }
+
+    fn hash(&self, hasher: &mut dyn Hasher) {
+        self.as_ref().hash(hasher)
+    }
+
+    fn flush(&mut self) {
+        self.as_mut().flush()
+    }
+
+    fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+        self.as_mut().take_some(n)
+    }
+}
+
+/// A wrapper around a [StagedBuffers] that implements the [InputBuffer] trait.
+///
+/// The `StagedBuffers` trait is similar to `InputBuffer` in that it supports flushing
+/// a set of tuples to the circuit. Unlike `InputBuffer`, it doesn't support returning
+/// its size as a `BufferSize`. It also doesn't support hashing and taking a subset of
+/// records.
+///
+/// This wrapper adds the former by storing `BufferSize` collected from `InputBuffer`s
+/// used to create the `StagedBuffers`.
+///
+/// `hash()` and `take_some()` methods are unimplemented. Therefore this wrapper can only be
+/// safely used in contexts where these methods are not needed.
+///
+// FIXME: It would be better to encode the unimplemented functionality in the type system,
+// e.g., as an extension trait.
+pub struct StagedInputBuffer {
+    buffer: Box<dyn StagedBuffers>,
+    size: BufferSize,
+}
+
+impl StagedInputBuffer {
+    pub fn new(buffer: Box<dyn StagedBuffers>, size: BufferSize) -> Self {
+        Self { buffer, size }
+    }
+}
+
+impl InputBuffer for StagedInputBuffer {
+    fn flush(&mut self) {
+        self.buffer.flush()
+    }
+
+    fn len(&self) -> BufferSize {
+        self.size
+    }
+
+    fn hash(&self, _hasher: &mut dyn Hasher) {
+        unimplemented!()
+    }
+
+    fn take_some(&mut self, _n: usize) -> Option<Box<dyn InputBuffer>> {
+        unimplemented!()
+    }
+}
+
 /// Parses raw bytes into database records.
 pub trait Parser: Send + Sync {
     /// Parses `data` into records and returns the records and any parse errors

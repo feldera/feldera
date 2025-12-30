@@ -293,7 +293,11 @@ where
     }
 }
 
-impl<T, U> StagedBuffers for MockDeZSetStreamStagedBuffers<T, U> {
+impl<T, U> StagedBuffers for MockDeZSetStreamStagedBuffers<T, U>
+where
+    T: Send + Sync,
+    U: Send + Sync,
+{
     fn flush(&mut self) {
         self.handle
             .0

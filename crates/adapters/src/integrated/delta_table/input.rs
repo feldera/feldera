@@ -28,7 +28,7 @@ use deltalake::logstore::IORuntime;
 use deltalake::table::PeekCommit;
 use deltalake::table::builder::ensure_table_uri;
 use deltalake::{DeltaTable, DeltaTableBuilder, datafusion};
-use feldera_adapterlib::format::ParseError;
+use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
 use feldera_adapterlib::transport::{InputQueueEntry, Resume, Watermark, parse_resume_info};
 use feldera_adapterlib::utils::datafusion::{
     execute_query_collect, execute_singleton_query, timestamp_to_sql_expression,
@@ -484,7 +484,7 @@ struct DeltaTableInputEndpointInner {
     /// * Updated to `Some(new_version)` after advancing to the next table version in the transaction log
     ///   in follow mode or after ingesting the initial snapshot.
     last_resume_status: Mutex<Option<DeltaResumeInfo>>,
-    queue: Arc<InputQueue<Option<DeltaResumeInfo>>>,
+    queue: Arc<InputQueue<Option<DeltaResumeInfo>, StagedInputBuffer>>,
 }
 
 impl DeltaTableInputEndpointInner {
@@ -1482,7 +1482,7 @@ impl DeltaTableInputEndpointInner {
         // Create a job queue to efficiently parse record batches retrieved by the query.
         let job_queue = JobQueue::<
             (RecordBatch, DateTime<Utc>),
-            (Option<Box<dyn InputBuffer>>, Vec<ParseError>, DateTime<Utc>),
+            (Option<StagedInputBuffer>, Vec<ParseError>, DateTime<Utc>),
         >::new(
             num_parsers,
             move || {
@@ -1503,7 +1503,11 @@ impl DeltaTableInputEndpointInner {
                                 input_stream.as_mut(),
                             )
                             .await;
-                            (parsed_buffer, errors, timestamp)
+                            let staged_buffer = parsed_buffer.map(|buffer| {
+                                let len = buffer.len();
+                                StagedInputBuffer::new(input_stream.stage(vec![buffer]), len)
+                            });
+                            (staged_buffer, errors, timestamp)
                         }
                     })
                 })
