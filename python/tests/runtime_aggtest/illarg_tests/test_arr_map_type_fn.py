@@ -75,6 +75,7 @@ class illarg_arr_concat_legal(TstView):
                     None,
                     "14",
                     "hello ",
+                    "TRUE",
                     "bye",
                     "14",
                     "See you!",
@@ -82,6 +83,7 @@ class illarg_arr_concat_legal(TstView):
                     None,
                     "14",
                     "hello ",
+                    "TRUE",
                 ]
             }
         ]
@@ -115,6 +117,7 @@ class illarg_arr_append_legal(TstView):
                     None,
                     "14",
                     "hello ",
+                    "TRUE",
                     "hello ",
                 ],
                 "udt": [{"i1": 4, "v1": "cat"}, {"i1": 4, "v1": "cat"}],
@@ -141,7 +144,9 @@ class illarg_arr_append_illegal(TstView):
 class illarg_arr_compact_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"arr": ["bye", "14", "See you!", "-0.52", "14", "hello "]}]
+        self.data = [
+            {"arr": ["bye", "14", "See you!", "-0.52", "14", "hello ", "TRUE"]}
+        ]
         self.sql = """CREATE MATERIALIZED VIEW arr_compact_legal AS SELECT
                       ARRAY_COMPACT(arr) AS arr
                       FROM illegal_tbl
@@ -184,7 +189,9 @@ class illarg_arr_contains_illegal(TstView):
 class illarg_arr_distinct_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"arr": ["bye", "14", "See you!", "-0.52", None, "hello "]}]
+        self.data = [
+            {"arr": ["bye", "14", "See you!", "-0.52", None, "hello ", "TRUE"]}
+        ]
         self.sql = """CREATE MATERIALIZED VIEW arr_distinct_legal AS SELECT
                       ARRAY_DISTINCT(arr) AS arr
                       FROM illegal_tbl
@@ -207,8 +214,8 @@ class illarg_arr_except_legal(TstView):
         # checked manually
         self.data = [
             {
-                "arr": [None, "-0.52", "14", "See you!", "bye"],
-                "arr1": [None, "-0.52", "14", "See you!", "bye"],
+                "arr": [None, "-0.52", "14", "See you!", "TRUE", "bye"],
+                "arr1": [None, "-0.52", "14", "See you!", "TRUE", "bye"],
                 "arr_udt": [{"i1": 4, "v1": "cat"}],
             }
         ]
@@ -258,7 +265,17 @@ class illarg_arr_insert_legal(TstView):
         # checked manually
         self.data = [
             {
-                "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello ", "fred"],
+                "arr": [
+                    "bye",
+                    "14",
+                    "See you!",
+                    "-0.52",
+                    None,
+                    "14",
+                    "hello ",
+                    "fred",
+                    "TRUE",
+                ],
                 "udt": [{"i1": 4, "v1": "cat"}, None, None, {"i1": 4, "v1": "cat"}],
             }
         ]
@@ -304,7 +321,7 @@ class illarg_arr_intersect_illegal(TstView):
 class illarg_arr_join_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"arr": "bye,14,See you!,-0.52,*,14,hello "}]
+        self.data = [{"arr": "bye,14,See you!,-0.52,*,14,hello ,TRUE"}]
         self.sql = """CREATE MATERIALIZED VIEW arr_join_legal AS SELECT
                       ARRAY_JOIN(arr,',', '*') AS arr
                       FROM illegal_tbl
@@ -334,7 +351,7 @@ class illarg_arr_join_illegal1(TstView):
 class illarg_arr_to_string_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"arr": "bye,14,See you!,-0.52,*,14,hello "}]
+        self.data = [{"arr": "bye,14,See you!,-0.52,*,14,hello ,TRUE"}]
         self.sql = """CREATE MATERIALIZED VIEW arr_to_string_legal AS SELECT
                       ARRAY_JOIN(arr,',', '*') AS arr
                       FROM illegal_tbl
@@ -355,7 +372,7 @@ class illarg_arr_to_string_illegal(TstView):
 class illarg_arr_length_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"arr": 7}]
+        self.data = [{"arr": 8}]
         self.sql = """CREATE MATERIALIZED VIEW arr_length_legal AS SELECT
                       ARRAY_LENGTH(arr) AS arr
                       FROM illegal_tbl
@@ -376,7 +393,7 @@ class illarg_arr_length_illegal(TstView):
 class illarg_arr_cardinality_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"arr": 7}]
+        self.data = [{"arr": 8}]
         self.sql = """CREATE MATERIALIZED VIEW arr_cardinality_legal AS SELECT
                       CARDINALITY(arr) AS arr
                       FROM illegal_tbl
@@ -482,7 +499,19 @@ class illarg_arr_prepend_legal(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"arr": ["friend", "bye", "14", "See you!", "-0.52", None, "14", "hello "]}
+            {
+                "arr": [
+                    "friend",
+                    "bye",
+                    "14",
+                    "See you!",
+                    "-0.52",
+                    None,
+                    "14",
+                    "hello ",
+                    "TRUE",
+                ]
+            }
         ]
         self.sql = """CREATE MATERIALIZED VIEW arr_prepend_legal AS SELECT
                       ARRAY_PREPEND(arr, 'friend') AS arr
@@ -504,7 +533,9 @@ class illarg_arr_prepend_illegal(TstView):
 class illarg_arr_remove_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"arr": ["bye", "14", "-0.52", None, "14", "hello "], "udt": []}]
+        self.data = [
+            {"arr": ["bye", "14", "-0.52", None, "14", "hello ", "TRUE"], "udt": []}
+        ]
         self.sql = """CREATE MATERIALIZED VIEW arr_remove_legal AS SELECT
                       ARRAY_REMOVE(arr, 'See you!') AS arr,
                       ARRAY_REMOVE(ARRAY[udt], (4, 'cat')) AS udt
@@ -526,7 +557,9 @@ class illarg_arr_remove_illegal(TstView):
 class illarg_arr_reverse_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"arr": ["hello ", "14", None, "-0.52", "See you!", "14", "bye"]}]
+        self.data = [
+            {"arr": ["TRUE", "hello ", "14", None, "-0.52", "See you!", "14", "bye"]}
+        ]
         self.sql = """CREATE MATERIALIZED VIEW arr_reverse_legal AS SELECT
                       ARRAY_REVERSE(arr) AS arr
                       FROM illegal_tbl
@@ -550,8 +583,8 @@ class illarg_arr_repeat_legal(TstView):
         self.data = [
             {
                 "arr": [
-                    ["bye", "14", "See you!", "-0.52", None, "14", "hello "],
-                    ["bye", "14", "See you!", "-0.52", None, "14", "hello "],
+                    ["bye", "14", "See you!", "-0.52", None, "14", "hello ", "TRUE"],
+                    ["bye", "14", "See you!", "-0.52", None, "14", "hello ", "TRUE"],
                 ]
             }
         ]
@@ -604,7 +637,18 @@ class illarg_arr_union_legal(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"arr": [None, "-0.52", "14", "See you!", "bye", "friend", "hello "]}
+            {
+                "arr": [
+                    None,
+                    "-0.52",
+                    "14",
+                    "See you!",
+                    "TRUE",
+                    "bye",
+                    "friend",
+                    "hello ",
+                ]
+            }
         ]
         self.sql = """CREATE MATERIALIZED VIEW arr_union_legal AS SELECT
                       ARRAY_UNION(arr, ARRAY['friend']) AS arr
@@ -647,7 +691,9 @@ class illarg_arr_element_illegal(TstView):
 class illarg_sort_arr_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"arr": ["hello ", "bye", "See you!", "14", "14", "-0.52", None]}]
+        self.data = [
+            {"arr": ["hello ", "bye", "TRUE", "See you!", "14", "14", "-0.52", None]}
+        ]
         self.sql = """CREATE MATERIALIZED VIEW sort_arr_legal AS SELECT
                       SORT_ARRAY(arr, False) AS arr
                       FROM illegal_tbl
@@ -668,7 +714,9 @@ class illarg_sort_arr_illegal(TstView):
 class illarg_transform_arr_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"arr": ["BYE", "14", "SEE YOU!", "-0.52", None, "14", "HELLO "]}]
+        self.data = [
+            {"arr": ["BYE", "14", "SEE YOU!", "-0.52", None, "14", "HELLO ", "TRUE"]}
+        ]
         self.sql = """CREATE MATERIALIZED VIEW transform_arr_legal AS SELECT
                       TRANSFORM(arr, x -> UPPER(X)) AS arr
                       FROM illegal_tbl

@@ -40,7 +40,7 @@ class illarg_equality_legal(TstView):
                       datee = DATE '2020-06-21' AS datee,
                       tme = TIME '14:23:44.456' AS tme,
                       uuidd = UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
-                      arr = ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] AS arr,
+                      arr = ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AS arr,
                       mapp = MAP['a', 12, 'b', 17] AS mapp,
                       roww = ROW(4, 'cat') AS roww,
                       udt = (4, 'cat') AS udt
@@ -94,7 +94,7 @@ class illarg_inequality_legal(TstView):
                       datee != DATE '2020-06-21' AS datee,
                       tme != TIME '14:23:44.456' AS tme,
                       uuidd != UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
-                      arr != ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] AS arr,
+                      arr != ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AS arr,
                       mapp != MAP['a', 12, 'b', 17] AS mapp,
                       roww != ROW(4, 'cat') AS roww,
                       udt != (4, 'cat') AS udt
@@ -148,7 +148,7 @@ class illarg_greater_than_legal(TstView):
                       datee > DATE '2020-06-21' AS datee,
                       tme > TIME '14:23:44.456' AS tme,
                       uuidd > UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
-                      arr > ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] AS arr,
+                      arr > ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AS arr,
                       mapp > MAP['a', 12, 'b', 17] AS mapp,
                       roww > ROW(4, 'cat') AS roww,
                       udt > (4, 'cat') AS udt
@@ -202,7 +202,7 @@ class illarg_less_than_legal(TstView):
                       datee < DATE '2020-06-21' AS datee,
                       tme < TIME '14:23:44.456' AS tme,
                       uuidd < UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
-                      arr < ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] AS arr,
+                      arr < ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AS arr,
                       mapp < MAP['a', 12, 'b', 17] AS mapp,
                       roww < ROW(4, 'cat') AS roww,
                       udt < (4, 'cat') AS udt
@@ -256,7 +256,7 @@ class illarg_less_or_equal_legal(TstView):
                       datee <= DATE '2020-06-21' AS datee,
                       tme <= TIME '14:23:44.456' AS tme,
                       uuidd <= UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
-                      arr <= ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] AS arr,
+                      arr <= ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AS arr,
                       mapp <= MAP['a', 12, 'b', 17] AS mapp,
                       roww <= ROW(4, 'cat') AS roww,
                       udt <= (4, 'cat') AS udt
@@ -310,7 +310,7 @@ class illarg_greater_or_equal_legal(TstView):
                       datee >= DATE '2020-06-21' AS datee,
                       tme >= TIME '14:23:44.456' AS tme,
                       uuidd >= UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
-                      arr >= ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] AS arr,
+                      arr >= ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AS arr,
                       mapp >= MAP['a', 12, 'b', 17] AS mapp,
                       roww >= ROW(4, 'cat') AS roww,
                       udt >= (4, 'cat') AS udt
@@ -434,6 +434,7 @@ class illarg_equality_null_legal(TstView):
                 "uuidd": True,
                 "arr": True,
                 "mapp": True,
+                "roww": True,
                 "udt": True,
             }
         ]
@@ -451,6 +452,7 @@ class illarg_equality_null_legal(TstView):
                       uuidd <=> NULL AS uuidd,
                       arr <=> NULL  AS arr,
                       mapp <=> NULL AS mapp,
+                      roww <=> NULL AS roww,
                       udt <=> NULL AS udt
                       FROM illegal_tbl
                       WHERE id = 2"""
@@ -502,7 +504,7 @@ class illarg_isdistinct_legal(TstView):
                       datee IS DISTINCT FROM DATE '2020-06-20' AS datee,
                       tme IS DISTINCT FROM TIME '14:23:44.45' AS tme,
                       uuidd IS DISTINCT FROM UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4d' AS uuidd,
-                      arr IS DISTINCT FROM ARRAY['14', 'See you!', '-0.52', NULL, '14', 'hello '] AS arr,
+                      arr IS DISTINCT FROM ARRAY['14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AS arr,
                       mapp IS DISTINCT FROM MAP['a', 12] AS mapp,
                       roww IS DISTINCT FROM ROW(5, NULL) AS roww,
                       udt IS DISTINCT FROM (5, NULL) AS udt
@@ -556,7 +558,7 @@ class illarg_isnot_distinct_legal(TstView):
                       datee IS NOT DISTINCT FROM DATE '2020-06-21' AS datee,
                       tme IS NOT DISTINCT FROM TIME '14:23:44.456' AS tme,
                       uuidd IS NOT DISTINCT FROM UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
-                      arr IS NOT DISTINCT FROM ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] AS arr,
+                      arr IS NOT DISTINCT FROM ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AS arr,
                       mapp IS NOT DISTINCT FROM MAP['a', 12, 'b', 17] AS mapp,
                       roww IS NOT DISTINCT FROM ROW(5, NULL) AS roww,
                       udt IS NOT DISTINCT FROM (5, NULL) AS udt
@@ -664,7 +666,7 @@ class illarg_notbetween_and_legal(TstView):
                       datee NOT BETWEEN DATE '2020-06-20' AND DATE '2020-06-22' AS datee,
                       tme NOT BETWEEN TIME '14:23:43.456' AND TIME '14:23:45.456' AS tme,
                       uuidd NOT BETWEEN UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
-                      arr NOT BETWEEN ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] AND ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] AS arr,
+                      arr NOT BETWEEN ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AND ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AS arr,
                       mapp NOT BETWEEN MAP['a', 12, 'b', 17] AND MAP['a', 12, 'b', 17] AS mapp,
                       roww NOT BETWEEN ROW(4,'cat') AND ROW(4,'cat') AS roww,
                       udt NOT BETWEEN (4,'cat') AND (4,'cat') AS udt
@@ -720,7 +722,7 @@ class illarg_in_legal(TstView):
                       datee IN (DATE '2020-06-21') AS datee,
                       tme IN (TIME '14:23:44.456') AS tme,
                       uuidd IN (UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
-                      arr IN (ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ']) AS arr,
+                      arr IN (ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE']) AS arr,
                       mapp IN (MAP['a', 12, 'b', 17]) AS mapp,
                       roww IN (ROW(4,'cat')) AS roww,
                       udt IN ((4,'cat')) AS udt
@@ -762,7 +764,7 @@ class illarg_not_in_legal(TstView):
                       datee NOT IN (DATE '2020-06-21') AS datee,
                       tme NOT IN (TIME '14:23:44.456') AS tme,
                       uuidd NOT IN (UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
-                      arr NOT IN (ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ']) AS arr,
+                      arr NOT IN (ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE']) AS arr,
                       mapp NOT IN (MAP['a', 12, 'b', 17]) AS mapp,
                       roww NOT IN (ROW(4,'cat')) AS roww,
                       udt NOT IN ((4,'cat')) AS udt
@@ -987,7 +989,7 @@ class illarg_case_val_when_arr_legal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW case_val_when_arr_legal AS SELECT
                       id,
                       CASE arr
-                        WHEN ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] THEN 0
+                        WHEN ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] THEN 0
                         WHEN ARRAY['-0.14', 'friends', 'See you!', '2021-01-20', '10:10', '2020-10-01 00:00:00'] THEN 1
                         ELSE NULL
                       END AS arr
@@ -1103,7 +1105,7 @@ class illarg_case_when_legal(TstView):
                       CASE WHEN datee = DATE '2020-06-21' THEN True ELSE NULL END AS datee,
                       CASE WHEN tme = TIME '14:23:44.456' THEN True ELSE NULL END AS tme,
                       CASE WHEN uuidd = UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' THEN True ELSE NULL END AS uuidd,
-                      CASE WHEN arr = ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] THEN True ELSE NULL END AS arr,
+                      CASE WHEN arr = ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] THEN True ELSE NULL END AS arr,
                       CASE WHEN mapp = MAP['a', 12, 'b', 17] THEN True ELSE NULL END AS mapp,
                       CASE WHEN roww = ROW(4,'cat') THEN True ELSE NULL END AS roww,
                       CASE WHEN udt = (4,'cat') THEN True ELSE NULL END AS udt
@@ -1139,7 +1141,7 @@ class illarg_coalesce_legal(TstView):
                 "datee": "2020-06-21",
                 "tme": "14:23:44.456",
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
-                "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello "],
+                "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello ", "TRUE"],
                 "mapp": {"a": 12, "b": 17},
                 "roww": {"i1": 4, "v1": "cat"},
                 "udt": {"i1": 4, "v1": "cat"},
@@ -1475,7 +1477,7 @@ class illarg_nullif_legal(TstView):
                 "datee": None,
                 "tme": "14:23:44.456",
                 "uuidd": None,
-                "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello "],
+                "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello ", "TRUE"],
                 "mapp": {"a": 12, "b": 17},
                 "roww": None,
                 "udt": None,
@@ -1510,3 +1512,49 @@ class illarg_nullif_illegal(TstView):
                       FROM illegal_tbl
                       WHERE id = 0"""
         self.expected_error = "Cannot apply 'NULLIF' to arguments of type"
+
+
+# IS UNKNOWN
+class illarg_is_unknown_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"booll": False, "arr": False}]
+        self.sql = """CREATE MATERIALIZED VIEW is_unknown_legal AS SELECT
+                      booll IS UNKNOWN AS booll,
+                      arr[8]::BOOLEAN IS UNKNOWN AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_is_unknown_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW is_unknown_legal AS SELECT
+                      udt IS UNKNOWN AS udt
+                      FROM illegal_tbl
+                      WHERE id = 2"""
+        self.expected_error = " Cannot apply 'IS UNKNOWN' to arguments of type"
+
+
+# IS NOT UNKNOWN
+class illarg_is_not_unknown_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"booll": False, "arr": False}]
+        self.sql = """CREATE MATERIALIZED VIEW is_not_unknown_legal AS SELECT
+                      booll IS UNKNOWN AS booll,
+                      arr[8]::BOOLEAN IS UNKNOWN AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_is_not_unknown_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW is_not_unknown_legal AS SELECT
+                      roww IS NOT UNKNOWN AS roww
+                      FROM illegal_tbl
+                      WHERE id = 2"""
+        self.expected_error = " Cannot apply 'IS NOT UNKNOWN' to arguments of type"
