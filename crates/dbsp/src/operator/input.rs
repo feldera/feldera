@@ -58,7 +58,7 @@ pub type ZSetStream<K> = Stream<RootCircuit, OrdZSet<K>>;
 /// than in [StagedBuffers::flush].  This means that, if the code driving the
 /// circuit can buffer data ahead of the circuit's demand for it, the cost can
 /// be hidden and data processing as a whole runs faster.
-pub trait StagedBuffers {
+pub trait StagedBuffers: Send + Sync {
     /// Flushes the data gathered into this buffer to the circuit.
     fn flush(&mut self);
 }
