@@ -88,6 +88,7 @@ export class Visualizer {
     private metadataSelector: MetadataSelector | null = null;
     private rendering: CytographRendering | null = null;
     private profile: CircuitProfile | null = null;
+    private onRefreshTooltip: (() => void) | null = null;
 
     constructor(private readonly config: VisualizerConfig) {
         this.config = config;
@@ -139,7 +140,8 @@ export class Visualizer {
                 selection,
                 MetadataSelector.getFullSelection(),
                 this.message.bind(this),
-                this.clearMessage.bind(this)
+                this.clearMessage.bind(this),
+                () => this.onRefreshTooltip = null
             );
             this.rendering.setEvents({
                 onNodeDoubleClick: (node, type) => {
@@ -162,6 +164,7 @@ export class Visualizer {
 
             this.metadataSelector.setOnChange(() => {
                 this.rendering!.updateMetadata(profile, this.metadataSelector!.getSelection());
+                this.onRefreshTooltip?.()
             });
 
             // Produce the graph visualization
@@ -172,6 +175,27 @@ export class Visualizer {
             const message = e instanceof Error ? e.message : String(e);
             this.reportError(`Error displaying circuit profile: ${message}`);
         }
+    }
+
+    /**
+     * Internal method to display global metrics
+     */
+    private displayGlobalMetricsImpl(): void {
+        if (!this.rendering) return;
+        const rootNode = this.rendering.getRenderedNode(this.rendering.rootNodeId);
+        this.rendering.displayNodeAttributes(rootNode);
+    }
+
+    /**
+     * Internal method to display top nodes for a metric selected beforehand
+     */
+    private displayTopNodesImpl(isSticky: boolean): void {
+        if (!this.rendering || !this.profile || !this.metadataSelector) {
+            return;
+        }
+        const metric = this.metadataSelector.getSelection().metric;
+        const topNodes = this.rendering.topNodes(this.profile, metric);
+        this.config.callbacks.displayTopNodes(Option.some(topNodes), isSticky);
     }
 
     /**
@@ -189,13 +213,10 @@ export class Visualizer {
         }
 
         this.rendering.setStickyNodeInformation(Boolean(isSticky));
-
-        // Display the top-level graph metrics
-        const rootNode = this.rendering.getRenderedNode(this.rendering.rootNodeId);
-        this.rendering.displayNodeAttributes(rootNode);
+        this.displayGlobalMetricsImpl();
     }
 
-    public showTopNodes(metric: string, isSticky?: boolean): void {
+    public showTopNodes(isSticky?: boolean): void {
         if (!this.rendering || !this.profile || (this.rendering.stickyInformation && !isSticky)) {
             return;
         }
@@ -203,12 +224,12 @@ export class Visualizer {
         if (isSticky) {
             // Hide previous node information if any
             this.rendering.hideNodeInformation();
+            // Set refresh callback to re-display top nodes with current metric when metadata changes
+            this.onRefreshTooltip = (() => this.displayTopNodesImpl(true));
         }
 
         this.rendering.setStickyNodeInformation(Boolean(isSticky));
-
-        const topNodes = this.rendering.topNodes(this.profile, metric)
-        this.config.callbacks.displayTopNodes(Option.some(topNodes), Boolean(isSticky))
+        this.displayTopNodesImpl(Boolean(isSticky));
     }
 
     /**
@@ -278,5 +299,6 @@ export class Visualizer {
         this.circuitSelector = null;
         this.metadataSelector = null;
         this.rendering = null;
+        this.onRefreshTooltip = null;
     }
 }

@@ -48,14 +48,17 @@ export class MetadataSelector {
      */
     initialize(): void {
         // Notify about available metrics
+        this.notifyMetricsChanged();
+        // Notify about available workers
+        this.notifyWorkersChanged();
+    }
+
+    notifyMetricsChanged() {
         const metrics: MetricOption[] = Array.from(this.allMetrics).sort().map(metric => ({
             id: metric,
             label: metric
         }));
         this.callbacks.onMetricsChanged(metrics, this.selectedMetric);
-
-        // Notify about available workers
-        this.notifyWorkersChanged();
     }
 
     /**

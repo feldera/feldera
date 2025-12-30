@@ -160,7 +160,7 @@
     z-index: 2;
     border-radius: 8px;
     max-height: calc(100% - 1rem);
-    max-width: calc(100% + 1rem);
+    max-width: calc(100% - 1rem);
     overflow-y: auto;
     overflow-x: auto;
   }

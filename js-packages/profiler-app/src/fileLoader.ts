@@ -70,7 +70,7 @@ export class ProfileLoader {
     }
 
     /** Display the top nodes for a specified metric */
-    showTopNodes(metric: string, isSticky?: boolean | undefined): void {
-        this.visualizer.showTopNodes(metric, isSticky);
+    showTopNodes(isSticky?: boolean | undefined): void {
+        this.visualizer.showTopNodes(isSticky);
     }
 }
