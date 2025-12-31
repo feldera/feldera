@@ -8,7 +8,7 @@ use crate::runtime_status::RuntimeDesiredStatus;
 /// Circuit metrics output format.
 /// - `prometheus`: [format](https://github.com/prometheus/docs/blob/4b1b80f5f660a2f8dc25a54f52a65a502f31879a/docs/instrumenting/exposition_formats.md) expected by Prometheus
 /// - `json`: JSON format
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricsFormat {
     Prometheus,

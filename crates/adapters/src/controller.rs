@@ -3844,7 +3844,7 @@ impl StatisticsThread {
             if time_series.len() >= 60 {
                 time_series.pop_front();
             }
-            time_series.push_back(sample.clone());
+            time_series.push_back(sample);
             drop(time_series);
 
             // Notify subscribers about the new time series data
