@@ -16,18 +16,13 @@ use crate::{
     },
 };
 
-use std::{hash::Hash, panic::Location};
+use std::{ops::Range, panic::Location};
 
-circuit_cache_key!(ShardId<C, D>((StreamId, ShardingPolicy) => Stream<C, D>));
+circuit_cache_key!(ShardId<C, D>((StreamId, Range<usize>) => Stream<C, D>));
 circuit_cache_key!(UnshardId<C, D>(StreamId => Stream<C, D>));
 
-// An attempt to future-proof the design for when we support multiple sharding
-// disciplines.
-#[derive(Hash, PartialEq, Eq)]
-pub struct ShardingPolicy;
-
-fn sharding_policy<C>(_circuit: &C) -> ShardingPolicy {
-    ShardingPolicy
+fn all_workers() -> Range<usize> {
+    0..Runtime::num_workers()
 }
 
 impl<C, IB> Stream<C, IB>
@@ -49,6 +44,25 @@ where
             .unwrap_or_else(|| self.clone())
     }
 
+    /// See [`Stream::shard_workers`].
+    #[track_caller]
+    pub fn dyn_shard_workers(
+        &self,
+        workers: Range<usize>,
+        factories: &IB::Factories,
+    ) -> Stream<C, IB>
+    where
+        IB: Batch + Send,
+    {
+        // `shard_generic_workers` returns `None` if there is only one worker
+        // thread and hence sharding is a no-op.  In this case, we simply return
+        // the input stream.  This allows us to use `shard_workers`
+        // unconditionally without incurring any overhead in the single-threaded
+        // case.
+        self.dyn_shard_generic_workers(workers, factories)
+            .unwrap_or_else(|| self.clone())
+    }
+
     /// Like [`Self::dyn_shard`], but can assemble the results into any output batch
     /// type `OB`.
     ///
@@ -59,22 +73,40 @@ where
     where
         OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R> + Send,
     {
+        self.dyn_shard_generic_workers(all_workers(), factories)
+    }
+
+    /// Like [`Self::dyn_shard`], but can assemble the results into any output batch
+    /// type `OB`.
+    ///
+    /// Returns `None` when the circuit is not running inside a multithreaded
+    /// runtime or is running in a runtime with a single worker thread.
+    #[track_caller]
+    pub fn dyn_shard_generic_workers<OB>(
+        &self,
+        workers: Range<usize>,
+        factories: &OB::Factories,
+    ) -> Option<Stream<C, OB>>
+    where
+        OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R> + Send,
+    {
         if Runtime::num_workers() == 1 {
             return None;
         }
         let location = Location::caller();
-        let factories_clone = factories.clone();
         let output = self
             .circuit()
             .cache_get_or_insert_with(
-                ShardId::new((self.stream_id(), sharding_policy(self.circuit()))),
+                ShardId::new((self.stream_id(), workers.clone())),
                 move || {
                     // As a minor optimization, we reuse this array across all invocations
                     // of the sharding operator.
                     let mut builders = Vec::with_capacity(Runtime::num_workers());
-                    let factories_clone2 = factories_clone.clone();
-                    let factories_clone3 = factories_clone.clone();
-                    let factories_clone4 = factories_clone.clone();
+                    let factories_clone2 = factories.clone();
+                    let factories_clone3 = factories.clone();
+                    let factories_clone4 = factories.clone();
+                    let workers_clone = workers.clone();
+                    let workers_clone2 = workers.clone();
 
                     let output = self.circuit().region("shard", || {
                         let (sender, receiver) = new_exchange_operators(
@@ -83,7 +115,7 @@ where
                             move |batch: IB, batches: &mut Vec<OB>| {
                                 shard_batch(
                                     batch,
-                                    Runtime::num_workers(),
+                                    &workers_clone,
                                     &mut builders,
                                     batches,
                                     &factories_clone3,
@@ -103,7 +135,7 @@ where
                     });
 
                     self.circuit().cache_insert(
-                        ShardId::new((output.stream_id(), sharding_policy(self.circuit()))),
+                        ShardId::new((output.stream_id(), workers_clone2)),
                         output.clone(),
                     );
 
@@ -123,10 +155,11 @@ where
     }
 }
 
-// Partitions the batch into `nshards` partitions based on the hash of the key.
+// Partitions the batch into shards covering `workers` (out of
+// `all_workers()`), based on the hash of the key.
 pub fn shard_batch<IB, OB>(
     mut batch: IB,
-    shards: usize,
+    workers: &Range<usize>,
     builders: &mut Vec<OB::Builder>,
     outputs: &mut Vec<OB>,
     factories: &OB::Factories,
@@ -136,6 +169,9 @@ pub fn shard_batch<IB, OB>(
 {
     builders.clear();
 
+    // XXX If `shards == 1` and `OB` and `IB` are the same, then we could
+    // implement this more efficiently, without copying.
+    let shards = workers.len();
     for _ in 0..shards {
         // We iterate over tuples in the batch in order; hence tuples added
         // to each shard are also ordered, so we can use the more efficient
@@ -171,8 +207,14 @@ pub fn shard_batch<IB, OB>(
             cursor.step_key();
         }
     }
+    for _ in 0..workers.start {
+        outputs.push(OB::dyn_empty(factories));
+    }
     for builder in builders.drain(..) {
         outputs.push(builder.done());
+    }
+    for _ in workers.end..Runtime::num_workers() {
+        outputs.push(OB::dyn_empty(factories));
     }
 }
 
@@ -189,7 +231,7 @@ where
     /// incorrect results
     pub fn mark_sharded(&self) -> Self {
         self.circuit().cache_insert(
-            ShardId::new((self.stream_id(), sharding_policy(self.circuit()))),
+            ShardId::new((self.stream_id(), all_workers())),
             self.clone(),
         );
         self.clone()
@@ -197,10 +239,8 @@ where
 
     /// Returns `true` if a sharded version of the current stream exists
     pub fn has_sharded_version(&self) -> bool {
-        self.circuit().cache_contains(&ShardId::<C, T>::new((
-            self.stream_id(),
-            sharding_policy(self.circuit()),
-        )))
+        self.circuit()
+            .cache_contains(&ShardId::<C, T>::new((self.stream_id(), all_workers())))
     }
 
     /// Returns the sharded version of the stream if it exists
@@ -208,10 +248,7 @@ where
     /// the `shard` operator to it).  Otherwise, returns `self`.
     pub fn try_sharded_version(&self) -> Self {
         self.circuit()
-            .cache_get(&ShardId::new((
-                self.stream_id(),
-                sharding_policy(self.circuit()),
-            )))
+            .cache_get(&ShardId::new((self.stream_id(), all_workers())))
             .unwrap_or_else(|| self.clone())
     }
 
@@ -230,10 +267,7 @@ where
         }
 
         self.circuit()
-            .cache_get(&ShardId::<C, T>::new((
-                self.stream_id(),
-                sharding_policy(self.circuit()),
-            )))
+            .cache_get(&ShardId::<C, T>::new((self.stream_id(), all_workers())))
             .is_some_and(|sharded| sharded.ptr_eq(self))
     }
 
