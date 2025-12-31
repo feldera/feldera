@@ -58,6 +58,9 @@ pub struct CheckpointSyncStatus {
 
     /// Most recently failed checkpoint sync, and the associated error.
     pub failure: Option<CheckpointSyncFailure>,
+
+    /// Most recently successful automated periodic checkpoint sync.
+    pub periodic: Option<Uuid>,
 }
 
 /// Information about a failed checkpoint sync.

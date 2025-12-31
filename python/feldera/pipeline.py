@@ -825,10 +825,11 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         resp = self.client.sync_checkpoint_status(self.name)
         success = resp.get("success")
+        periodic = resp.get("periodic")
 
         fail = resp.get("failure") or {}
 
-        if uuid == success:
+        if uuid == success or uuid == periodic:
             return CheckpointStatus.Success
 
         fail = resp.get("failure") or {}
@@ -842,6 +843,26 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             return CheckpointStatus.InProgress
 
         return CheckpointStatus.Unknown
+
+    def last_successful_checkpoint_sync(self) -> UUID:
+        """
+        Returns the UUID of the last successfully synced checkpoint.
+
+        :return: The UUID of the last successfully synced checkpoint.
+        """
+
+        resp = self.client.sync_checkpoint_status(self.name)
+        success = resp.get("success")
+        periodic = resp.get("periodic")
+
+        if success is None and periodic is None:
+            raise RuntimeError("no checkpoints have been synced yet")
+        elif success is None:
+            return UUID(periodic)
+        elif periodic is None:
+            return UUID(success)
+        else:
+            return max(UUID(success), UUID(periodic))
 
     def query(self, query: str) -> Generator[Mapping[str, Any], None, None]:
         """

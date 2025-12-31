@@ -148,7 +148,9 @@ pub use feldera_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     RuntimeConfig, TransportConfig,
 };
-use feldera_types::config::{FileBackendConfig, FtConfig, FtModel, OutputBufferConfig, SyncConfig};
+use feldera_types::config::{
+    FileBackendConfig, FtConfig, FtModel, OutputBufferConfig, StorageBackendConfig, SyncConfig,
+};
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{SqlIdentifier, canonical_identifier};
@@ -520,6 +522,10 @@ impl Controller {
 
     pub(crate) fn last_checkpoint(&self) -> LastCheckpoint {
         self.inner.last_checkpoint()
+    }
+
+    pub(crate) fn last_checkpoint_sync(&self) -> LastCheckpoint {
+        self.inner.last_checkpoint_sync()
     }
 
     pub fn lir(&self) -> &LirCircuit {
@@ -1693,7 +1699,7 @@ impl RunningCheckpointSync {
         Ok(Self::Waiting(uuid, join_handle, receiver))
     }
 
-    fn poll(&mut self) -> Option<Result<(), Arc<ControllerError>>> {
+    fn poll(&mut self, circuit: &mut CircuitThread) -> Option<Result<(), Arc<ControllerError>>> {
         let uuid = self.uuid();
 
         match replace(self, Self::Done(uuid)) {
@@ -1701,6 +1707,13 @@ impl RunningCheckpointSync {
             Self::Waiting(uuid, join_handle, mut receiver) => match receiver.try_recv() {
                 Ok(result) => {
                     join_handle.join().unwrap();
+
+                    let mut last_sync = circuit.controller.last_checkpoint_sync.lock().unwrap();
+                    *last_sync = LastCheckpoint {
+                        timestamp: Instant::now(),
+                        id: Some(uuid),
+                    };
+
                     Some(result)
                 }
                 Err(TryRecvError::Empty) => {
@@ -1716,9 +1729,21 @@ impl RunningCheckpointSync {
     }
 }
 
-struct SyncCheckpointRequest {
-    uuid: uuid::Uuid,
-    cb: SyncCheckpointCallbackFn,
+enum SyncCheckpointRequest {
+    Scheduled(uuid::Uuid),
+    Requested {
+        uuid: uuid::Uuid,
+        cb: SyncCheckpointCallbackFn,
+    },
+}
+
+impl SyncCheckpointRequest {
+    fn uuid(&self) -> uuid::Uuid {
+        match self {
+            Self::Scheduled(uuid) => *uuid,
+            Self::Requested { uuid, .. } => *uuid,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -2136,10 +2161,12 @@ impl CircuitThread {
             output_backpressure_warning = None;
 
             match trigger.trigger(
-                self.last_checkpoint().timestamp,
+                self.last_checkpoint(),
+                self.last_checkpoint_sync(),
                 self.replaying(),
                 self.circuit.bootstrap_in_progress(),
                 self.checkpoint_requested(),
+                self.sync_checkpoint_requested(),
             ) {
                 Action::Step => {
                     if !self.step()? {
@@ -2147,6 +2174,9 @@ impl CircuitThread {
                     }
                 }
                 Action::Checkpoint => self.checkpoint_requests.push(CheckpointRequest::Scheduled),
+                Action::SyncCheckpoint(chk) => self
+                    .sync_checkpoint_requests
+                    .push(SyncCheckpointRequest::Scheduled(chk)),
                 Action::Park(Some(deadline)) => self.parker.park_deadline(deadline),
                 Action::Park(None) => self.parker.park(),
             }
@@ -2341,6 +2371,10 @@ impl CircuitThread {
         self.controller.last_checkpoint()
     }
 
+    fn last_checkpoint_sync(&self) -> LastCheckpoint {
+        self.controller.last_checkpoint_sync()
+    }
+
     fn update_last_checkpoint(&self, result: &Result<Checkpoint, ControllerError>) {
         *self.controller.last_checkpoint.lock().unwrap() = LastCheckpoint {
             timestamp: Instant::now(),
@@ -2437,10 +2471,11 @@ impl CircuitThread {
                         .push(CheckpointRequest::SuspendCommand(reply_callback));
                 }
                 Command::SyncCheckpoint((uuid, reply_callback)) => {
-                    self.sync_checkpoint_requests.push(SyncCheckpointRequest {
-                        uuid,
-                        cb: reply_callback,
-                    });
+                    self.sync_checkpoint_requests
+                        .push(SyncCheckpointRequest::Requested {
+                            uuid,
+                            cb: reply_callback,
+                        });
                 }
             }
         }
@@ -2803,8 +2838,10 @@ impl CircuitThread {
             uuid: uuid::Uuid,
             result: Result<(), Arc<ControllerError>>,
         ) {
-            for request in requests.extract_if(.., |x| x.uuid == uuid) {
-                (request.cb)(result.clone());
+            for request in requests.extract_if(.., |x| x.uuid() == uuid) {
+                if let SyncCheckpointRequest::Requested { cb, .. } = request {
+                    (cb)(result.clone());
+                }
             }
         }
 
@@ -2814,7 +2851,7 @@ impl CircuitThread {
 
         match running_sync {
             RunningCheckpointSync::Waiting(uuid, _, _) => {
-                let Some(result) = running_sync.poll() else {
+                let Some(result) = running_sync.poll(self) else {
                     self.running_checkpoint_sync = Some(running_sync);
                     return;
                 };
@@ -2836,7 +2873,7 @@ impl CircuitThread {
         };
 
         if self.running_checkpoint_sync.is_none() {
-            self.running_checkpoint_sync = Some(RunningCheckpointSync::new(self, req.uuid));
+            self.running_checkpoint_sync = Some(RunningCheckpointSync::new(self, req.uuid()));
         }
     }
 }
@@ -3168,6 +3205,9 @@ struct StepTrigger {
     /// Time between automatic checkpoints.
     checkpoint_interval: Option<Duration>,
 
+    /// Time between automatic checkpoint syncs.
+    sync_interval: Option<Duration>,
+
     /// The circuit is bootstrapping. Used to detect the transition from bootstrapping
     /// to normal mode.
     bootstrapping: bool,
@@ -3184,6 +3224,9 @@ enum Action {
 
     /// Step the circuit.
     Step,
+
+    /// Synchronize a checkpoint to object storage.
+    SyncCheckpoint(uuid::Uuid),
 }
 
 impl StepTrigger {
@@ -3193,6 +3236,15 @@ impl StepTrigger {
         let max_buffering_delay = Duration::from_micros(config.max_buffering_delay_usecs);
         let min_batch_size_records = config.min_batch_size_records;
         let checkpoint_interval = config.fault_tolerance.checkpoint_interval();
+        let sync_interval = config.storage.as_ref().and_then(|s| match &s.backend {
+            StorageBackendConfig::File(file) => file
+                .sync
+                .as_ref()
+                .and_then(|s| s.push_interval)
+                .map(Duration::from_secs),
+            _ => None,
+        });
+
         Self {
             controller,
             buffer_timeout: None,
@@ -3200,12 +3252,14 @@ impl StepTrigger {
             min_batch_size_records,
             checkpoint_interval,
             bootstrapping,
+            sync_interval,
         }
     }
 
     /// Determines when to trigger the next step, given:
     ///
-    /// - The time of the last checkpoint.
+    /// - The metadata about the last checkpoint.
+    /// - The metadata about the last sync checkpoint.
     /// - Whether we're currently `replaying`.
     /// - Whether the pipeline is currently `bootstrapping`.
     /// - Whether the pipeline is currently `running`.
@@ -3214,10 +3268,12 @@ impl StepTrigger {
     /// Returns the action for the controller to take.
     fn trigger(
         &mut self,
-        last_checkpoint: Instant,
+        last_checkpoint: LastCheckpoint,
+        last_sync: LastCheckpoint,
         replaying: bool,
         bootstrapping: bool,
         checkpoint_requested: bool,
+        sync_checkpoint_requested: bool,
     ) -> Action {
         // If any input endpoints are blocking suspend, then those are the only
         // ones that we count; otherwise, count all of them.
@@ -3238,7 +3294,12 @@ impl StepTrigger {
         // Time of the next checkpoint.
         let checkpoint = self
             .checkpoint_interval
-            .map(|interval| last_checkpoint + interval);
+            .map(|interval| last_checkpoint.timestamp + interval);
+
+        // Time of the next checkpoint sync.
+        let sync_checkpoint = self
+            .sync_interval
+            .map(|interval| last_sync.timestamp + interval);
 
         // Used to force a step regardless of input
         let committing = self.controller.transaction_commit_requested();
@@ -3258,6 +3319,13 @@ impl StepTrigger {
             step(self)
         } else if checkpoint.is_some_and(|t| now >= t) && !checkpoint_requested {
             Action::Checkpoint
+        } else if sync_checkpoint.is_some_and(|t| now >= t)
+            && !sync_checkpoint_requested
+            && let Some(chk) = last_checkpoint.id
+            && !chk.is_nil()
+            && Some(chk) != last_sync.id
+        {
+            Action::SyncCheckpoint(chk)
         } else if self.controller.status.unset_step_requested()
             || buffered_records > self.min_batch_size_records
             || self.buffer_timeout.is_some_and(|t| now >= t)
@@ -4284,6 +4352,7 @@ impl TransactionInfo {
 pub struct ControllerInner {
     pub status: Arc<ControllerStatus>,
     last_checkpoint: Mutex<LastCheckpoint>,
+    last_checkpoint_sync: Mutex<LastCheckpoint>,
     secrets_dir: PathBuf,
     num_api_connections: AtomicU64,
     command_sender: Sender<Command>,
@@ -4354,6 +4423,7 @@ impl ControllerInner {
             command_sender,
             catalog: Arc::new(catalog),
             last_checkpoint: Default::default(),
+            last_checkpoint_sync: Default::default(),
             lir,
             trace_snapshot: Arc::new(TokioMutex::new(BTreeMap::new())),
             next_input_id: Atomic::new(0),
@@ -4449,6 +4519,10 @@ impl ControllerInner {
 
     fn last_checkpoint(&self) -> LastCheckpoint {
         self.last_checkpoint.lock().unwrap().clone()
+    }
+
+    fn last_checkpoint_sync(&self) -> LastCheckpoint {
+        self.last_checkpoint_sync.lock().unwrap().clone()
     }
 
     fn get_transaction_number(&self) -> u64 {

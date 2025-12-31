@@ -11518,6 +11518,13 @@
             "default": 10,
             "minimum": 0
           },
+          "push_interval": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The interval (in seconds) between each push of checkpoints to object store.\n\nDefault: disabled (no periodic push).",
+            "nullable": true,
+            "minimum": 0
+          },
           "region": {
             "type": "string",
             "description": "The region that this bucket is in.\n\nLeave empty for Minio or the default region (`us-east-1` for AWS).",
