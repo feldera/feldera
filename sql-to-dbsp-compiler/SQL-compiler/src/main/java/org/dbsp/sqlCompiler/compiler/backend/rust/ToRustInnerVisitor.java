@@ -1035,7 +1035,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     static class RewriteConnectorMetadata extends ExpressionTranslator {
         public static final DBSPVariablePath var =
                 new DBSPVariablePath(CustomFunctions.ConnectorMetadataFunction.NAME.toLowerCase(Locale.ENGLISH),
-                        DBSPTypeVariant.INSTANCE_NULLABLE);
+                        DBSPTypeVariant.INSTANCE_NULLABLE.ref());
 
         public static String variableName() {
             return var.variable;
@@ -1057,7 +1057,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         public void postorder(DBSPApplyExpression expression) {
             String function = expression.getFunctionName();
             if (function != null && function.equalsIgnoreCase(CustomFunctions.ConnectorMetadataFunction.NAME)) {
-                this.map(expression, var);
+                this.map(expression, var.deref().applyClone());
                 return;
             }
             super.postorder(expression);
