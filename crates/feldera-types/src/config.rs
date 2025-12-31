@@ -527,6 +527,12 @@ pub struct SyncConfig {
     #[serde(default = "default_pull_interval")]
     pub pull_interval: u64,
 
+    /// The interval (in seconds) between each push of checkpoints to object store.
+    ///
+    /// Default: disabled (no periodic push).
+    #[serde(default)]
+    pub push_interval: Option<u64>,
+
     /// Extra flags to pass to `rclone`.
     ///
     /// WARNING: Supplying incorrect or conflicting flags can break `rclone`.

@@ -160,6 +160,10 @@ impl CheckpointSyncState {
             }
         }
     }
+
+    fn completed_periodic(&mut self, uuid: uuid::Uuid) {
+        self.status.periodic = Some(uuid);
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1681,8 +1685,17 @@ async fn checkpoint_status(state: WebData<ServerState>) -> impl Responder {
 }
 
 #[get("/checkpoint/sync_status")]
-async fn sync_checkpoint_status(state: WebData<ServerState>) -> impl Responder {
-    HttpResponse::Ok().json(state.sync_checkpoint_state.lock().unwrap().status.clone())
+async fn sync_checkpoint_status(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    let mut sync_state = state.sync_checkpoint_state.lock().unwrap();
+
+    let controller = state.controller()?;
+    if let Some(chk) = controller.last_checkpoint_sync().id {
+        sync_state.completed_periodic(chk);
+    }
+
+    Ok(HttpResponse::Ok().json(sync_state.status.clone()))
 }
 
 /// Suspends the pipeline and terminate the circuit.
