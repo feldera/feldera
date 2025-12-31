@@ -8000,8 +8000,7 @@
             "$ref": "#/components/schemas/TransactionInitiators"
           },
           "transaction_status": {
-            "type": "string",
-            "description": "Status of the current transaction."
+            "$ref": "#/components/schemas/TransactionStatus"
           },
           "uptime_msecs": {
             "type": "integer",
@@ -11806,6 +11805,15 @@
         "enum": [
           "Started",
           "Committed"
+        ]
+      },
+      "TransactionStatus": {
+        "type": "string",
+        "description": "Transaction status summarized as a single value.",
+        "enum": [
+          "NoTransaction",
+          "TransactionInProgress",
+          "CommitInProgress"
         ]
       },
       "TransportConfig": {

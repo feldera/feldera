@@ -1,17 +1,15 @@
+use bytemuck::NoUninit;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{
-    config::InputEndpointConfig, config::OutputEndpointConfig, suspend::SuspendError,
-    transaction::TransactionId,
-};
+use crate::{suspend::SuspendError, transaction::TransactionId};
 
 /// Pipeline state.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, ToSchema)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "PascalCase")]
 pub enum PipelineState {
     /// All input endpoints are paused (or are in the process of being paused).
@@ -56,47 +54,11 @@ pub struct EndpointErrorStats<T> {
     pub metrics: T,
 }
 
-/// Helper struct for serializing only the stream name from endpoint configs.
-#[derive(Serialize)]
-struct StreamOnly<'a> {
-    stream: &'a str,
-}
-
 /// Schema definition for endpoint config that only includes the stream field.
-#[derive(ToSchema)]
-#[schema(as = ShortEndpointConfig)]
+#[derive(Deserialize, Serialize, ToSchema)]
 pub struct ShortEndpointConfig {
     /// The name of the stream.
-    #[allow(dead_code)]
-    stream: String,
-}
-
-/// Serialize only `config.stream`, omitting other fields.
-pub fn serialize_input_endpoint_config<S>(
-    config: &InputEndpointConfig,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    StreamOnly {
-        stream: &config.stream,
-    }
-    .serialize(serializer)
-}
-
-/// Serialize only `config.stream`, omitting other fields.
-pub fn serialize_output_endpoint_config<S>(
-    config: &OutputEndpointConfig,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    StreamOnly {
-        stream: &config.stream,
-    }
-    .serialize(serializer)
+    pub stream: String,
 }
 
 /// Pipeline error statistics response from the runtime.
@@ -113,8 +75,20 @@ pub struct PipelineStatsErrorsResponse {
 // OpenAPI schema definitions for controller statistics
 // These match the serialized JSON structure from the adapters crate
 
+/// Transaction status summarized as a single value.
+#[derive(
+    Debug, Default, Copy, PartialEq, Eq, Clone, NoUninit, Serialize, Deserialize, ToSchema,
+)]
+#[repr(u8)]
+pub enum TransactionStatus {
+    #[default]
+    NoTransaction,
+    TransactionInProgress,
+    CommitInProgress,
+}
+
 /// Transaction phase.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "PascalCase")]
 #[schema(as = TransactionPhase)]
 pub enum ExternalTransactionPhase {
@@ -125,7 +99,7 @@ pub enum ExternalTransactionPhase {
 }
 
 /// Connector transaction phase with debugging label.
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, Debug, Deserialize, Serialize, ToSchema)]
 #[schema(as = ConnectorTransactionPhase)]
 pub struct ExternalConnectorTransactionPhase {
     /// Current phase of the transaction.
@@ -136,7 +110,7 @@ pub struct ExternalConnectorTransactionPhase {
 }
 
 /// Information about entities that initiated the current transaction.
-#[derive(Clone, Default, Debug, Serialize, ToSchema)]
+#[derive(Clone, Default, Debug, Deserialize, Serialize, ToSchema)]
 #[schema(as = TransactionInitiators)]
 pub struct ExternalTransactionInitiators {
     /// ID assigned to the transaction (None if no transaction is in progress).
@@ -151,7 +125,7 @@ pub struct ExternalTransactionInitiators {
 }
 
 /// A watermark that has been fully processed by the pipeline.
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[schema(as = CompletedWatermark)]
 pub struct ExternalCompletedWatermark {
     /// Metadata that describes the position in the input stream (e.g., Kafka partition/offset pairs).
@@ -166,7 +140,7 @@ pub struct ExternalCompletedWatermark {
 }
 
 /// Performance metrics for an input endpoint.
-#[derive(Default, Serialize, ToSchema)]
+#[derive(Default, Deserialize, Serialize, ToSchema)]
 #[schema(as = InputEndpointMetrics)]
 pub struct ExternalInputEndpointMetrics {
     /// Total bytes pushed to the endpoint since it was created.
@@ -186,15 +160,13 @@ pub struct ExternalInputEndpointMetrics {
 }
 
 /// Input endpoint status information.
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema)]
 #[schema(as = InputEndpointStatus)]
 pub struct ExternalInputEndpointStatus {
     /// Endpoint name.
     pub endpoint_name: String,
     /// Endpoint configuration.
-    #[serde(serialize_with = "serialize_input_endpoint_config")]
-    #[schema(value_type = ShortEndpointConfig)]
-    pub config: InputEndpointConfig,
+    pub config: ShortEndpointConfig,
     /// Performance metrics.
     #[schema(value_type = InputEndpointMetrics)]
     pub metrics: ExternalInputEndpointMetrics,
@@ -210,7 +182,7 @@ pub struct ExternalInputEndpointStatus {
 }
 
 /// Performance metrics for an output endpoint.
-#[derive(Default, Serialize, ToSchema)]
+#[derive(Default, Deserialize, Serialize, ToSchema, PartialEq, Eq, PartialOrd, Ord)]
 #[schema(as = OutputEndpointMetrics)]
 pub struct ExternalOutputEndpointMetrics {
     /// Records sent on the underlying transport.
@@ -236,15 +208,13 @@ pub struct ExternalOutputEndpointMetrics {
 }
 
 /// Output endpoint status information.
-#[derive(Serialize, ToSchema)]
+#[derive(Deserialize, Serialize, ToSchema)]
 #[schema(as = OutputEndpointStatus)]
 pub struct ExternalOutputEndpointStatus {
     /// Endpoint name.
     pub endpoint_name: String,
     /// Endpoint configuration.
-    #[serde(serialize_with = "serialize_output_endpoint_config")]
-    #[schema(value_type = ShortEndpointConfig)]
-    pub config: OutputEndpointConfig,
+    pub config: ShortEndpointConfig,
     /// Performance metrics.
     #[schema(value_type = OutputEndpointMetrics)]
     pub metrics: ExternalOutputEndpointMetrics,
@@ -253,7 +223,7 @@ pub struct ExternalOutputEndpointStatus {
 }
 
 /// Global controller metrics.
-#[derive(Default, Serialize, ToSchema)]
+#[derive(Default, Serialize, Deserialize, ToSchema)]
 #[schema(as = GlobalControllerMetrics)]
 pub struct ExternalGlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
@@ -261,7 +231,7 @@ pub struct ExternalGlobalControllerMetrics {
     /// The pipeline has been resumed from a checkpoint and is currently bootstrapping new and modified views.
     pub bootstrap_in_progress: bool,
     /// Status of the current transaction.
-    pub transaction_status: String,
+    pub transaction_status: TransactionStatus,
     /// ID of the current transaction or 0 if no transaction is in progress.
     #[schema(value_type = i64)]
     pub transaction_id: TransactionId,
@@ -315,7 +285,7 @@ pub struct ExternalGlobalControllerMetrics {
 /// atomics and mutexes lives in the adapters crate, which uses ExternalControllerStatus to
 /// register this OpenAPI schema, making it available to pipeline-manager
 /// without requiring a direct dependency on the adapters crate.
-#[derive(Serialize, ToSchema)]
+#[derive(Deserialize, Serialize, ToSchema, Default)]
 #[schema(as = ControllerStatus)]
 pub struct ExternalControllerStatus {
     /// Global controller metrics.
