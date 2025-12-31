@@ -759,9 +759,9 @@ public class ToRustVisitor extends CircuitVisitor {
         }
 
         if (!this.useHandles) {
-            this.generateNestedStructs(new DBSPStructItem(type, null), false);
+            this.generateNestedStructs(new DBSPStructItem(type, operator.getMetadata()), false);
             this.generateNestedStructs(new DBSPStructItem(keyStructType, null), false);
-            this.generateNestedStructs(new DBSPStructItem(upsertStruct, null), false);
+            this.generateNestedStructs(new DBSPStructItem(upsertStruct, operator.getMetadata()), false);
 
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.getTableName());
             JsonNode j = tableDescription.asJson(true);
