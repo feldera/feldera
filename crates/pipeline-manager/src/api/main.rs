@@ -440,6 +440,7 @@ It contains the following fields:
         feldera_types::adapter_stats::ExternalConnectorTransactionPhase,
         feldera_types::adapter_stats::PipelineState,
         feldera_types::adapter_stats::ShortEndpointConfig,
+        feldera_types::adapter_stats::TransactionStatus,
 
         // Telemetry & License
         feldera_cloud1_client::license::DisplaySchedule,

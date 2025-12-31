@@ -22,7 +22,7 @@ use crate::controller::checkpoint::{
     CheckpointInputEndpointMetrics, CheckpointOffsets, CheckpointOutputEndpointMetrics,
 };
 use crate::controller::journal::Journal;
-use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, TransactionStatus};
+use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics};
 use crate::controller::sync::{
     CHECKPOINT_SYNC_PULL_DURATION_SECONDS, CHECKPOINT_SYNC_PULL_FAILURES,
     CHECKPOINT_SYNC_PULL_SUCCESS, CHECKPOINT_SYNC_PULL_TRANSFER_SPEED,
@@ -78,6 +78,9 @@ use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
     WRITE_LATENCY_MICROSECONDS,
 };
+use feldera_types::adapter_stats::{
+    ExternalInputEndpointStatus, ExternalOutputEndpointStatus, TransactionStatus,
+};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::format::json::JsonLines;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -93,7 +96,6 @@ use journal::StepMetadata;
 use memory_stats::memory_stats;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
-use serde::Serialize;
 use serde_json::Value as JsonValue;
 use stats::StepResults;
 use std::borrow::Cow;
@@ -698,7 +700,10 @@ impl Controller {
         self.inner.is_input_endpoint_paused(endpoint_name)
     }
 
-    pub fn input_endpoint_status(&self, endpoint_name: &str) -> Result<JsonValue, ControllerError> {
+    pub fn input_endpoint_status(
+        &self,
+        endpoint_name: &str,
+    ) -> Result<ExternalInputEndpointStatus, ControllerError> {
         self.inner.input_endpoint_status(endpoint_name)
     }
 
@@ -718,7 +723,7 @@ impl Controller {
     pub fn output_endpoint_status(
         &self,
         endpoint_name: &str,
-    ) -> Result<JsonValue, ControllerError> {
+    ) -> Result<ExternalOutputEndpointStatus, ControllerError> {
         self.inner.output_endpoint_status(endpoint_name)
     }
 
@@ -4018,7 +4023,7 @@ impl TransactionState {
 ///
 /// The initiator cannot start another transaction until the current transaction is committed.
 // Keep in sync with feldera_types::ExternalTransactionPhase
-#[derive(Clone, PartialEq, Eq, Copy, Debug, Serialize)]
+#[derive(Clone, PartialEq, Eq, Copy, Debug)]
 enum TransactionPhase {
     /// The initiator can push more data as part of the transaction.
     Started,
@@ -4040,7 +4045,7 @@ impl TransactionPhase {
 
 /// Connection phase with an additional label used for debugging.
 // Keep in sync with feldera_types::ExternalConnectorTransactionPhase
-#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 struct ConnectorTransactionPhase {
     phase: TransactionPhase,
     label: Option<String>,
@@ -4063,7 +4068,7 @@ impl ConnectorTransactionPhase {
 /// All simultaneous transaction initiation requests are grouped into a single transaction,
 /// which starts when the first initiator requests the transaction, and commits when the last
 /// initiator commits the transaction.
-#[derive(Clone, Default, Debug, Serialize)]
+#[derive(Clone, Debug, Default)]
 pub struct TransactionInitiators {
     /// ID assigned to the transaction.
     ///
@@ -5209,14 +5214,20 @@ impl ControllerInner {
             .ok_or_else(|| ControllerError::unknown_input_endpoint(endpoint_name))
     }
 
-    fn input_endpoint_status(&self, endpoint_name: &str) -> Result<JsonValue, ControllerError> {
+    fn input_endpoint_status(
+        &self,
+        endpoint_name: &str,
+    ) -> Result<ExternalInputEndpointStatus, ControllerError> {
         let endpoint_id = self.input_endpoint_id_by_name(endpoint_name)?;
-        Ok(serde_json::to_value(&self.status.input_status()[&endpoint_id]).unwrap())
+        Ok(self.status.input_status()[&endpoint_id].to_api_type())
     }
 
-    fn output_endpoint_status(&self, endpoint_name: &str) -> Result<JsonValue, ControllerError> {
+    fn output_endpoint_status(
+        &self,
+        endpoint_name: &str,
+    ) -> Result<ExternalOutputEndpointStatus, ControllerError> {
         let endpoint_id = self.output_endpoint_id_by_name(endpoint_name)?;
-        Ok(serde_json::to_value(&self.status.output_status()[&endpoint_id]).unwrap())
+        Ok(self.status.output_status()[&endpoint_id].to_api_type())
     }
 
     fn send_command(&self, command: Command) {

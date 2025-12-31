@@ -975,20 +975,7 @@ async fn test_follow(
         .await;
 
         let status = pipeline.input_endpoint_status("test_input1").unwrap();
-
-        assert!(
-            status
-                .as_object()
-                .unwrap()
-                .get("metrics")
-                .unwrap()
-                .as_object()
-                .unwrap()
-                .get("end_of_input")
-                .unwrap()
-                .as_bool()
-                .unwrap()
-        );
+        assert!(status.metrics.end_of_input);
     }
 
     // TODO: this does not currently work because our output delta connector doesn't support
