@@ -3,7 +3,7 @@ use crate::format::{get_input_format, get_output_format};
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
 };
-use crate::util::{RateLimitCheckResult, TokenBucketRateLimiter};
+use crate::util::{LongOperationWarning, RateLimitCheckResult, TokenBucketRateLimiter};
 use crate::{Catalog, dyn_event};
 use crate::{
     CircuitCatalog, Controller, ControllerError, FormatConfig, InputEndpointConfig, OutputEndpoint,
@@ -16,6 +16,7 @@ use crate::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
 };
+use actix_web::HttpResponseBuilder;
 use actix_web::body::MessageBody;
 use actix_web::dev::Service;
 use actix_web::http::KeepAlive;
@@ -30,13 +31,17 @@ use actix_web::{
 };
 use async_stream;
 use atomic::Atomic;
+use bytes::Bytes;
 use chrono::Utc;
 use clap::Parser;
 use colored::Colorize;
+use dbsp::circuit::Layout;
+use dbsp::circuit::checkpointer::Checkpointer;
 use dbsp::{DBSPHandle, circuit::CircuitConfig};
 use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
 use feldera_adapterlib::PipelineState;
+use feldera_adapterlib::errors::controller::ConfigError;
 use feldera_observability as observability;
 use feldera_observability::json_logging::init_pipeline_logging_with_id;
 use feldera_storage::{StorageBackend, StoragePath};
@@ -52,6 +57,7 @@ use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
 use feldera_types::constants::STATUS_FILE;
+use feldera_types::coordination::{CoordinationActivate, StepRequest};
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::query_params::{
     ActivateParams, MetricsFormat, MetricsParameters, SamplyProfileParams,
@@ -68,6 +74,8 @@ use feldera_types::{
     transport::http::HttpInputConfig,
 };
 use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
+use futures::StreamExt;
+use futures::stream::unfold;
 use futures_util::FutureExt;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -75,23 +83,26 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::ffi::OsStr;
 use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::io::ErrorKind;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::{
     borrow::Cow,
     net::TcpListener,
-    sync::{Arc, Mutex, Weak, atomic::Ordering},
+    sync::{Arc, Mutex, Weak},
     thread,
 };
 use tokio::spawn;
 use tokio::sync::Notify;
 use tokio::task::spawn_blocking;
 use tokio::time::sleep;
-use tokio_stream::{StreamExt, wrappers::BroadcastStream};
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::wrappers::WatchStream;
 use tracing::{Instrument, Level, debug, error, info, info_span, warn};
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
@@ -225,7 +236,7 @@ pub(crate) struct ServerState {
     /// Bootstrap policy.
     bootstrap_policy: Atomic<BootstrapPolicy>,
 
-    /// Notified when `desired_status` changes.
+    /// Notified when `desired_status` or `phase` changes.
     desired_status_change: Arc<Notify>,
 
     /// `phase` nests inside `controller`.
@@ -257,10 +268,14 @@ pub(crate) struct ServerState {
 
     metadata: String,
 
+    storage: Option<Arc<dyn StorageBackend>>,
+
     // rate limiter based on tags
     // NOTE: we assume that there are a finite small number
     // of tags, so using String is fine.
     rate_limiter: TokenBucketRateLimiter<String>,
+
+    coordination_activate: Mutex<Option<CoordinationActivate>>,
 }
 
 impl ServerState {
@@ -270,6 +285,7 @@ impl ServerState {
         desired_status: RuntimeDesiredStatus,
         bootstrap_policy: BootstrapPolicy,
         deployment_id: Uuid,
+        storage: Option<Arc<dyn StorageBackend>>,
     ) -> Self {
         // Max 10 errors per minute
         let rate_limiter = TokenBucketRateLimiter::new(10, Duration::from_secs(60));
@@ -283,8 +299,10 @@ impl ServerState {
             desired_status: Mutex::new(desired_status),
             bootstrap_policy: Atomic::new(bootstrap_policy),
             deployment_id,
+            storage,
             rate_limiter,
             samply_profile: Default::default(),
+            coordination_activate: Default::default(),
         }
     }
 
@@ -295,6 +313,7 @@ impl ServerState {
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             deployment_id,
+            None,
         )
     }
 
@@ -371,6 +390,7 @@ impl ServerState {
 
     pub fn set_phase(&self, phase: PipelinePhase) {
         *self.phase.lock().unwrap() = phase;
+        self.desired_status_change.notify_waiters();
     }
 }
 
@@ -606,6 +626,10 @@ pub fn run_server(
                 );
                 info!("Desired status from storage: {:?}", stored.desired_status);
             }) {
+            _ if args.initial == RuntimeDesiredStatus::Coordination => {
+                // Always defer to the coordinator if there is one.
+                (args.initial, args.bootstrap_policy)
+            }
             Some(stored) if stored.deployment_id == args.deployment_id => {
                 // This is an automatic restart (otherwise the deployment ID would
                 // have changed).  Use the stored desired status.
@@ -654,7 +678,8 @@ pub fn run_server(
 
         if !matches!(
             initial_status,
-            RuntimeDesiredStatus::Running
+            RuntimeDesiredStatus::Coordination
+                | RuntimeDesiredStatus::Running
                 | RuntimeDesiredStatus::Paused
                 | RuntimeDesiredStatus::Standby,
         ) {
@@ -667,6 +692,7 @@ pub fn run_server(
             initial_status,
             bootstrap_policy,
             args.deployment_id,
+            builder.storage().clone(),
         ));
 
         // Initialize the pipeline in a separate thread.  On success, this thread
@@ -982,54 +1008,100 @@ fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
         }
     }
 
-    // Otherwise, fall back to `INFO`.
-    EnvFilter::try_new("info").unwrap()
+    // Otherwise, fall back to `INFO`, except for `tarpc`, which is too verbose
+    // at that level.
+    EnvFilter::try_new("tarpc=warn, info").unwrap()
 }
 
 fn do_bootstrap(
-    builder: ControllerBuilder,
+    mut builder: ControllerBuilder,
     circuit_factory: CircuitFactoryFunc,
     state: &WebData<ServerState>,
 ) -> Result<(), ControllerError> {
-    let weak_state_ref = Arc::downgrade(state);
-    match state.desired_status() {
-        RuntimeDesiredStatus::Unavailable => unreachable!(),
-        RuntimeDesiredStatus::Running
-        | RuntimeDesiredStatus::Paused
-        | RuntimeDesiredStatus::Suspended => {
-            // First, if necessary, download the latest checkpoint from S3.
-            if let Some(sync) = builder.is_pull_necessary() {
-                builder.pull_once(sync)?;
+    let mut activation_warning = LongOperationWarning::new(Duration::from_secs(1));
+    let controller_init = loop {
+        match state.desired_status() {
+            RuntimeDesiredStatus::Unavailable => unreachable!(),
+            RuntimeDesiredStatus::Coordination => {
+                if let Some(mut ca) = state.coordination_activate.lock().unwrap().take() {
+                    builder = builder.with_layout(
+                        Layout::new_multihost(&ca.exchanges, ca.local_address).map_err(|e| {
+                            ControllerError::Config {
+                                config_error: Box::new(ConfigError::InvalidLayout(e)),
+                            }
+                        })?,
+                    );
+
+                    match ca.desired_status {
+                        RuntimeDesiredStatus::Coordination
+                        | RuntimeDesiredStatus::Unavailable
+                        | RuntimeDesiredStatus::Suspended => {
+                            return Err(ControllerError::InvalidInitialStatus(ca.desired_status));
+                        }
+                        RuntimeDesiredStatus::Paused
+                        | RuntimeDesiredStatus::Running
+                        | RuntimeDesiredStatus::Standby => (),
+                    }
+                    builder.config.inputs = std::mem::take(&mut ca.inputs);
+                    builder.config.outputs = std::mem::take(&mut ca.outputs);
+                    *state.desired_status.lock().unwrap() = ca.desired_status;
+                    match ca.checkpoint {
+                        Some(checkpoint_uuid) => {
+                            break builder.open_checkpoint(checkpoint_uuid);
+                        }
+                        None => break builder.open_without_checkpoint(),
+                    }
+                }
+                activation_warning.check(|elapsed| {
+                    warn!(
+                        "Still waiting for activation from coordinator after {} seconds.",
+                        elapsed.as_secs()
+                    );
+                });
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            RuntimeDesiredStatus::Running
+            | RuntimeDesiredStatus::Paused
+            | RuntimeDesiredStatus::Suspended => {
+                // First, if necessary, download the latest checkpoint from S3.
+                if let Some(sync) = builder.is_pull_necessary() {
+                    builder.pull_once(sync)?;
+                }
+                break builder.open_latest_checkpoint();
+            }
+            RuntimeDesiredStatus::Standby => {
+                state.set_phase(PipelinePhase::Initializing(InitializationState::Standby));
+
+                builder
+                    .continuous_pull(|| state.desired_status() != RuntimeDesiredStatus::Standby)?;
+
+                let mut desired_status = state.desired_status.lock().unwrap();
+                if *desired_status == RuntimeDesiredStatus::Standby {
+                    warn!(
+                        "Exited standby mode without specifying a new desired state, defaulting to paused"
+                    );
+                    *desired_status = RuntimeDesiredStatus::Paused;
+                    state.desired_status_change.notify_waiters();
+                }
+                break builder.open_latest_checkpoint();
             }
         }
-        RuntimeDesiredStatus::Standby => {
-            state.set_phase(PipelinePhase::Initializing(InitializationState::Standby));
-
-            builder.continuous_pull(|| state.desired_status() != RuntimeDesiredStatus::Standby)?;
-
-            let mut desired_status = state.desired_status.lock().unwrap();
-            if *desired_status == RuntimeDesiredStatus::Standby {
-                warn!(
-                    "Exited standby mode without specifying a new desired state, defaulting to paused"
-                );
-                *desired_status = RuntimeDesiredStatus::Paused;
-                state.desired_status_change.notify_waiters();
-            }
-        }
-    }
-
-    let controller_init = builder.open_checkpoint()?;
+    }?;
 
     let controller = controller_init.init(
         Some((**state).clone()),
         circuit_factory,
-        Box::new(move |e, t| error_handler(&weak_state_ref, e, t))
-            as Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
+        Box::new({
+            let weak_state_ref = Arc::downgrade(state);
+            move |e, t| error_handler(&weak_state_ref, e, t)
+        }) as Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     )?;
 
     let desired_status = state.desired_status.lock().unwrap();
     match *desired_status {
-        RuntimeDesiredStatus::Unavailable | RuntimeDesiredStatus::Standby => unreachable!(),
+        RuntimeDesiredStatus::Unavailable
+        | RuntimeDesiredStatus::Standby
+        | RuntimeDesiredStatus::Coordination => unreachable!(),
         RuntimeDesiredStatus::Paused | RuntimeDesiredStatus::Suspended => controller.pause(),
         RuntimeDesiredStatus::Running => controller.start(),
     };
@@ -1059,7 +1131,6 @@ where
                 HttpResponse::Ok().body("<html><head><title>DBSP server</title></head></html>")
             }),
         )
-        .service(checkpoint_sync)
         .service(start)
         .service(pause)
         .service(activate)
@@ -1085,6 +1156,8 @@ where
         .service(lir)
         .service(checkpoint)
         .service(checkpoint_status)
+        .service(checkpoint_list)
+        .service(checkpoint_sync)
         .service(sync_checkpoint_status)
         .service(suspend)
         .service(input_endpoint)
@@ -1094,6 +1167,14 @@ where
         .service(input_endpoint_status)
         .service(output_endpoint_status)
         .service(rebalance)
+        .service(coordination_activate_handler)
+        .service(coordination_status)
+        .service(coordination_step_request)
+        .service(coordination_step_status)
+        .service(coordination_checkpoint_status)
+        .service(coordination_checkpoint_prepare)
+        .service(coordination_checkpoint_release)
+        .service(coordination_transaction_status)
 }
 
 /// Implements `/start`, `/pause`, `/activate`:
@@ -1197,6 +1278,11 @@ async fn approve(state: WebData<ServerState>) -> Result<HttpResponse, PipelineEr
 async fn status_handler(
     state: WebData<ServerState>,
 ) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
+    get_status(&state)
+}
+
+#[allow(clippy::result_large_err)]
+fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
     let runtime_desired_status = state.desired_status();
     match state.controller() {
         Ok(controller) => {
@@ -1670,6 +1756,17 @@ async fn checkpoint_status(state: WebData<ServerState>) -> impl Responder {
     HttpResponse::Ok().json(state.checkpoint_state.lock().unwrap().status.clone())
 }
 
+#[get("/checkpoint_list")]
+async fn checkpoint_list(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let checkpoints = match &state.storage {
+        Some(backend) => {
+            Checkpointer::read_checkpoints(&**backend).map_err(ControllerError::dbsp_error)?
+        }
+        None => Default::default(),
+    };
+    Ok(HttpResponse::Ok().json(checkpoints))
+}
+
 #[get("/checkpoint/sync_status")]
 async fn sync_checkpoint_status(
     state: WebData<ServerState>,
@@ -1696,7 +1793,9 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
         RuntimeDesiredStatus::Standby => {
             return Err(PipelineError::InvalidTransition("suspend", *desired_status));
         }
-        RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
+        RuntimeDesiredStatus::Coordination
+        | RuntimeDesiredStatus::Running
+        | RuntimeDesiredStatus::Paused => {
             info!("suspend: Transitioning from {desired_status:?} to Suspended");
             *desired_status = RuntimeDesiredStatus::Suspended;
             state.desired_status_change.notify_waiters();
@@ -2081,6 +2180,98 @@ async fn rebalance(state: WebData<ServerState>) -> Result<HttpResponse, Pipeline
     Ok(HttpResponse::Ok().into())
 }
 
+#[post("/coordination/activate")]
+async fn coordination_activate_handler(
+    state: WebData<ServerState>,
+    args: web::Json<CoordinationActivate>,
+) -> Result<HttpResponse, PipelineError> {
+    *state.coordination_activate.lock().unwrap() = Some(args.into_inner());
+    state.desired_status_change.notify_waiters();
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[get("/coordination/status")]
+async fn coordination_status(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let stream = unfold((state, None), |(state, prev)| async move {
+        let status = match prev {
+            None => get_status(&state),
+            Some(prev) => loop {
+                let status = get_status(&state);
+                if status != prev {
+                    break status;
+                }
+                state.desired_status_change.notified().await;
+            },
+        };
+        Some((status.clone(), (state, Some(status))))
+    });
+    Ok(
+        HttpResponseBuilder::new(StatusCode::OK).streaming(stream.map(|value| {
+            Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
+        })),
+    )
+}
+
+#[post("/coordination/step/request")]
+async fn coordination_step_request(
+    state: WebData<ServerState>,
+    args: web::Json<StepRequest>,
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.set_coordination_request(args.clone());
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[get("/coordination/step/status")]
+async fn coordination_step_status(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
+        WatchStream::new(state.controller()?.step_watcher()).map(|value| {
+            Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
+        }),
+    ))
+}
+
+#[get("/coordination/checkpoint/status")]
+async fn coordination_checkpoint_status(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
+        WatchStream::new(state.controller()?.checkpoint_watcher()).filter_map(|value| async {
+            value.map(|value| {
+                Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
+            })
+        }),
+    ))
+}
+
+#[post("/coordination/checkpoint/prepare")]
+async fn coordination_checkpoint_prepare(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.prepare_checkpoint();
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[post("/coordination/checkpoint/release")]
+async fn coordination_checkpoint_release(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.release_checkpoint();
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[get("/coordination/transaction/status")]
+async fn coordination_transaction_status(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
+        WatchStream::new(state.controller()?.transaction_watcher()).map(|value| {
+            Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
+        }),
+    ))
+}
+
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 struct StoredStatus {
     /// Desired status.
@@ -2228,6 +2419,7 @@ outputs:
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             Uuid::new_v4(),
+            None,
         ));
         let state_clone = state.clone();
 
@@ -2519,6 +2711,7 @@ outputs:
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             Uuid::default(),
+            None,
         ));
         let state_clone = state.clone();
 

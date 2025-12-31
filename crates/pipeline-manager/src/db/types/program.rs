@@ -5,7 +5,7 @@ use crate::has_unstable_feature;
 use clap::Parser;
 use feldera_ir::Dataflow;
 use feldera_types::config::{
-    ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
+    ConnectorConfig, InputEndpointConfig, MultihostConfig, OutputEndpointConfig, PipelineConfig,
     PipelineConfigProgramInfo, ProgramIr, RuntimeConfig, TransportConfig,
 };
 use feldera_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition, SqlIdentifier};
@@ -780,7 +780,7 @@ pub fn generate_pipeline_config(
     runtime_config: &RuntimeConfig,
     program_info: Option<&ProgramInfo>,
 ) -> PipelineConfig {
-    if let Some(program_info) = program_info {
+    let (inputs, outputs, program_ir) = if let Some(program_info) = program_info {
         // Only keep tables and views, ignoring intermediate nodes.
         // These are currently the only nodes used by the pipeline
         // (to compute pipeline diffs). Including all nodes can cause the IR
@@ -817,27 +817,33 @@ pub fn generate_pipeline_config(
             program_schema,
         };
 
-        PipelineConfig {
-            name: Some(format!("pipeline-{pipeline_id}")),
-            given_name: Some(pipeline_name.to_string()),
-            global: runtime_config.clone(),
-            storage_config: None, // Set by the runner based on global field
-            secrets_dir: None,
-            inputs: program_info.input_connectors.clone(),
-            outputs: program_info.output_connectors.clone(),
-            program_ir: Some(program_ir),
-        }
+        (
+            program_info.input_connectors.clone(),
+            program_info.output_connectors.clone(),
+            Some(program_ir),
+        )
     } else {
-        PipelineConfig {
-            name: Some(format!("pipeline-{pipeline_id}")),
-            given_name: Some(pipeline_name.to_string()),
-            global: runtime_config.clone(),
-            storage_config: None, // Set by the runner based on global field
-            secrets_dir: None,
-            inputs: BTreeMap::new(),
-            outputs: BTreeMap::new(),
-            program_ir: None,
-        }
+        Default::default()
+    };
+
+    PipelineConfig {
+        name: Some(format!("pipeline-{pipeline_id}")),
+        given_name: Some(pipeline_name.to_string()),
+        global: runtime_config.clone(),
+        storage_config: None, // Set by the runner based on global field
+        secrets_dir: None,
+        multihost: if runtime_config.hosts > 1
+            || runtime_config.dev_tweaks.contains_key("multihost")
+        {
+            Some(MultihostConfig {
+                hosts: runtime_config.hosts,
+            })
+        } else {
+            None
+        },
+        inputs,
+        outputs,
+        program_ir,
     }
 }
 

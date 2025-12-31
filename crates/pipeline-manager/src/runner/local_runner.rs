@@ -425,6 +425,14 @@ impl PipelineExecutor for LocalRunner {
         program_version: Version,
         _suspend_info: Option<serde_json::Value>,
     ) -> Result<(), ManagerError> {
+        // Local runner does not support multihost.
+        if deployment_config.multihost.is_some() {
+            return Err(RunnerError::RunnerProvisionError {
+                error: String::from("Local runner does not support multihost deployment"),
+            }
+            .into());
+        }
+
         // (Re-)create pipeline working directory (which will contain storage directory)
         let pipeline_dir = self.config.pipeline_dir(self.pipeline_id);
         create_dir_all(&pipeline_dir).await.map_err(|e| {

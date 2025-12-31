@@ -82,6 +82,9 @@ use feldera_types::adapter_stats::{
     ExternalInputEndpointStatus, ExternalOutputEndpointStatus, TransactionStatus,
 };
 use feldera_types::checkpoint::CheckpointMetadata;
+use feldera_types::coordination::{
+    CheckpointCoordination, StepAction, StepRequest, StepStatus, TransactionCoordination,
+};
 use feldera_types::format::json::JsonLines;
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::runtime_status::BootstrapPolicy;
@@ -92,6 +95,7 @@ use feldera_types::transaction::{StartTransactionResponse, TransactionId};
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;
+use itertools::Itertools;
 use journal::StepMetadata;
 use memory_stats::memory_stats;
 use nonzero_ext::nonzero;
@@ -129,6 +133,7 @@ use tokio::{
     task::spawn_blocking,
 };
 use tracing::{debug, debug_span, error, info, trace, warn};
+use uuid::Uuid;
 use validate::validate_config;
 
 mod checkpoint;
@@ -189,7 +194,15 @@ static COMMIT_UPDATE_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Creates a [Controller].
 pub struct ControllerBuilder {
-    config: PipelineConfig,
+    pub config: PipelineConfig,
+
+    /// Optionally, specifies a [Layout] to use for the circuit.  In the
+    /// single-host case, `config.global.workers` is enough to create a layout,
+    /// so this isn't necessary.  This is for the multihost case, where each
+    /// host has a different layout (each host has a different subset of the
+    /// workers).
+    layout: Option<Layout>,
+
     storage: Option<CircuitStorageConfig>,
 }
 
@@ -235,6 +248,7 @@ impl ControllerBuilder {
         }
         Ok(Self {
             config: config.clone(),
+            layout: None,
             storage,
         })
     }
@@ -281,8 +295,41 @@ impl ControllerBuilder {
         Err(ControllerError::EnterpriseFeature("standby"))
     }
 
-    pub(crate) fn open_checkpoint(&self) -> Result<ControllerInit, ControllerError> {
-        ControllerInit::new(self.config.clone(), self.storage.clone())
+    pub(crate) fn with_layout(self, layout: Layout) -> Self {
+        Self {
+            layout: Some(layout),
+            ..self
+        }
+    }
+
+    /// Creates a [ControllerInit] that will open the specific
+    /// `checkpoint_uuid`.
+    pub(crate) fn open_checkpoint(
+        self,
+        checkpoint_uuid: Uuid,
+    ) -> Result<ControllerInit, ControllerError> {
+        ControllerInit::with_checkpoint(
+            self.layout,
+            self.config.clone(),
+            self.storage.clone().unwrap(),
+            checkpoint_uuid,
+        )
+    }
+
+    /// Creates a [ControllerInit] that will start fresh without using a
+    /// checkpoint.
+    pub(crate) fn open_without_checkpoint(self) -> Result<ControllerInit, ControllerError> {
+        ControllerInit::without_checkpoint(self.layout, self.config.clone(), self.storage.clone())
+    }
+
+    /// Creates a [ControllerInit] that will start from the latest checkpoint,
+    /// if there is one, or start fresh without a checkpoint otherwise.
+    pub(crate) fn open_latest_checkpoint(self) -> Result<ControllerInit, ControllerError> {
+        ControllerInit::with_latest_checkpoint(
+            self.layout,
+            self.config.clone(),
+            self.storage.clone(),
+        )
     }
 
     pub(crate) fn storage(&self) -> Option<Arc<dyn StorageBackend>> {
@@ -450,7 +497,7 @@ impl Controller {
             + 'static,
     {
         let builder = ControllerBuilder::new(config)?;
-        let mut init = builder.open_checkpoint()?;
+        let mut init = builder.open_latest_checkpoint()?;
         if let Some(diff) = init.pipeline_diff.as_mut() {
             diff.clear_program_diff()
         }
@@ -469,7 +516,7 @@ impl Controller {
             + 'static,
     {
         let builder = ControllerBuilder::new(config)?;
-        let init = builder.open_checkpoint()?;
+        let init = builder.open_latest_checkpoint()?;
         init.init(None, circuit_factory, error_cb)
     }
 
@@ -802,6 +849,34 @@ impl Controller {
     /// asynchronous contexts.
     pub fn start_checkpoint(&self, cb: CheckpointCallbackFn) {
         self.inner.send_command(Command::Checkpoint(cb));
+    }
+
+    /// Prepares for a checkpoint operation.  The checkpoint will not actually
+    /// start until it is later released with [Self::release_checkpoint].
+    pub fn prepare_checkpoint(&self) {
+        self.inner
+            .coordination_prepare_checkpoint
+            .store(true, Ordering::Release);
+        self.start_checkpoint(Box::new(|_| ()));
+    }
+
+    /// Returns an object for monitoring progress of [Self::prepare_checkpoint].
+    pub fn checkpoint_watcher(
+        &self,
+    ) -> tokio::sync::watch::Receiver<Option<CheckpointCoordination>> {
+        self.inner.checkpoint_receiver.clone()
+    }
+
+    /// Returns an object for monitoring progress of transactions.
+    pub fn transaction_watcher(&self) -> tokio::sync::watch::Receiver<TransactionCoordination> {
+        self.inner.transaction_receiver.clone()
+    }
+
+    pub fn release_checkpoint(&self) {
+        self.inner
+            .coordination_prepare_checkpoint
+            .store(false, Ordering::Release);
+        self.inner.unpark_circuit();
     }
 
     pub async fn async_checkpoint(&self) -> Result<Checkpoint, Arc<ControllerError>> {
@@ -1624,6 +1699,17 @@ impl Controller {
         self.inner.request_step();
         Ok(())
     }
+
+    /// Returns an object for monitoring the step that the controller has
+    /// completed.
+    pub fn step_watcher(&self) -> tokio::sync::watch::Receiver<StepStatus> {
+        self.inner.step_receiver.clone()
+    }
+
+    pub fn set_coordination_request(&self, coordination_request: StepRequest) {
+        *self.inner.coordination_request.lock().unwrap() = Some(coordination_request);
+        self.inner.unpark_circuit();
+    }
 }
 
 /// Represents a background thread that pushes checkpoints to object storage.
@@ -1820,6 +1906,14 @@ struct CircuitThread {
 
     /// The step currently running or replaying.
     step: Step,
+
+    /// Used to notify watchers when a step has been completed.
+    ///
+    /// This is updated to match `step` whenever it changes.
+    step_sender: tokio::sync::watch::Sender<StepStatus>,
+
+    /// Used to notify watchers of checkpoint status for coordination.
+    checkpoint_sender: tokio::sync::watch::Sender<Option<CheckpointCoordination>>,
 
     /// Metadata for `step - 1`; that is, the metadata that would be part of a
     /// [Checkpoint] for `step`, to allow the input endpoints to seek to the
@@ -2038,6 +2132,9 @@ impl CircuitThread {
             HashMap::new()
         };
 
+        let (step_sender, step_receiver) =
+            tokio::sync::watch::channel(StepStatus::new(step, StepAction::Idle));
+        let (checkpoint_sender, checkpoint_receiver) = tokio::sync::watch::channel(None);
         let (parker, backpressure_thread, command_receiver, controller) = ControllerInner::new(
             pipeline_config,
             circuit.runtime(),
@@ -2048,6 +2145,8 @@ impl CircuitThread {
             initial_start_time,
             &resume_info,
             &output_statistics,
+            step_receiver,
+            checkpoint_receiver,
         )?;
 
         controller
@@ -2116,6 +2215,8 @@ impl CircuitThread {
             running_checkpoint_sync: None,
             sync_checkpoint_requests: Vec::new(),
             step,
+            step_sender,
+            checkpoint_sender,
             input_metadata: input_metadata.unwrap_or_default(),
             last_commit_progress_update: Instant::now(),
         })
@@ -2196,6 +2297,7 @@ impl CircuitThread {
             }
             output_backpressure_warning = None;
 
+            let coordination_request = self.controller.coordination_request.lock().unwrap().clone();
             match trigger.trigger(
                 self.last_checkpoint(),
                 self.last_checkpoint_sync(),
@@ -2203,6 +2305,8 @@ impl CircuitThread {
                 self.circuit.bootstrap_in_progress(),
                 self.checkpoint_requested(),
                 self.sync_checkpoint_requested(),
+                coordination_request,
+                self.step,
             ) {
                 Action::Step => {
                     if !self.step()? {
@@ -2232,6 +2336,8 @@ impl CircuitThread {
     }
 
     fn step(&mut self) -> Result<bool, ControllerError> {
+        self.step_sender
+            .send_replace(StepStatus::new(self.step, StepAction::Step));
         let total_consumed =
             match SamplySpan::new(debug_span!("input")).in_scope(|| self.input_step())? {
                 Some(total_consumed) => total_consumed,
@@ -2239,6 +2345,8 @@ impl CircuitThread {
             };
 
         self.step += 1;
+        self.step_sender
+            .send_replace(StepStatus::new(self.step, StepAction::Idle));
 
         // Wake up the backpressure thread to unpause endpoints blocked due to
         // backpressure.
@@ -2420,35 +2528,86 @@ impl CircuitThread {
         };
     }
 
+    /// Sets the value in `self.checkpoint_sender` to `checkpoint_coordination`,
+    /// but only if that's a real change.  This suppresses lots of duplicate
+    /// sends.
+    fn set_checkpoint_coordination(
+        &mut self,
+        checkpoint_coordination: Option<CheckpointCoordination>,
+    ) {
+        if *self.checkpoint_sender.borrow() != checkpoint_coordination {
+            self.checkpoint_sender.send_replace(checkpoint_coordination);
+        }
+    }
+
     fn checkpoint(&mut self) {
+        // Take the currently running checkpoint, or start a new one if there
+        // isn't any yet.
         let mut running_checkpoint = self
             .running_checkpoint
             .take()
             .unwrap_or_else(|| RunningCheckpoint::new(self));
+
+        // Poll the running checkpoint.  If it's not finished, return;
+        // otherwise, `result` is its success or failure.
         let Some(result) = running_checkpoint.poll(self) else {
+            self.set_checkpoint_coordination(Some(CheckpointCoordination::InProgress));
             self.running_checkpoint = Some(running_checkpoint);
             return;
         };
 
-        let result = match result {
-            Err(error @ ControllerError::SuspendError(SuspendError::Temporary(_))) => {
-                self.checkpoint_delay_warning
-                    .get_or_insert_with(|| LongOperationWarning::new(Duration::from_secs(1)))
-                    .check(|elapsed| {
-                        info!(
-                            "checkpoint delayed {} seconds because of: {error}",
-                            elapsed.as_secs()
-                        )
-                    });
-                return;
-            }
-            Err(error) => {
-                warn!("checkpoint failed: {error}");
-                Err(error)
-            }
-            Ok(checkpoint) => Ok(checkpoint),
-        };
+        // If the checkpoint failed for some temporary reason, then just defer
+        // it instead of canceling it.  (We don't clear
+        // `self.checkpoint_requests`, so we'll try again the next time through
+        // the main loop.)
+        if let Err(ControllerError::SuspendError(SuspendError::Temporary(reasons))) = result {
+            // "Temporary" reasons can take an indefinite amount of time to resolve,
+            // so log warnings after some time.
+            self.checkpoint_delay_warning
+                .get_or_insert_with(|| LongOperationWarning::new(Duration::from_secs(1)))
+                .check(|elapsed| {
+                    info!(
+                        "checkpoint delayed {} seconds because of: {}",
+                        elapsed.as_secs(),
+                        reasons.iter().format(", ")
+                    )
+                });
+
+            // Let the coordinator know what's going on.
+            let barrier = reasons
+                .iter()
+                .any(|r| matches!(r, TemporarySuspendError::InputEndpointBarrier(_)));
+            let other = reasons.iter().any(|r| {
+                !matches!(
+                    r,
+                    TemporarySuspendError::InputEndpointBarrier(_)
+                        | TemporarySuspendError::Coordination,
+                )
+            });
+            let checkpoint_coordination = Some(if other {
+                CheckpointCoordination::Delayed(reasons)
+            } else if barrier {
+                CheckpointCoordination::Barriers(reasons)
+            } else {
+                // [TemporarySuspendError::Coordination] must be the holdup.
+                CheckpointCoordination::Ready
+            });
+            self.set_checkpoint_coordination(checkpoint_coordination);
+
+            return;
+        }
         self.checkpoint_delay_warning = None;
+
+        // Log a warning if the checkpoint failed permanently.
+        if let Err(error) = &result {
+            warn!("checkpoint failed: {error}");
+        }
+
+        // Update the coordinator.
+        self.set_checkpoint_coordination(Some(match &result {
+            Ok(_) => CheckpointCoordination::Done,
+            Err(error) => CheckpointCoordination::Error(error.to_string()),
+        }));
 
         // Update the last checkpoint time *after* executing the checkpoint, so
         // that if the checkpoint takes a long time and we have a short
@@ -2459,6 +2618,7 @@ impl CircuitThread {
         // a problem and a short checkpoint interval.
         self.update_last_checkpoint(&result);
 
+        // Apply the result to all the requests.
         let result = result.map_err(Arc::new);
         for request in self.checkpoint_requests.drain(..) {
             match request {
@@ -2623,6 +2783,7 @@ impl CircuitThread {
         // exist when we start flushing input. New ones will be processed in
         // future steps.
         let statuses = self.controller.status.input_status();
+        let coordination_request = self.controller.coordination_request.lock().unwrap();
         let mut waiting = HashMap::with_capacity(statuses.len());
 
         // Connectors that have committed the transaction and should not be queried
@@ -2637,7 +2798,12 @@ impl CircuitThread {
             .committed_connectors();
 
         for (&endpoint_id, status) in statuses.iter() {
-            if barriers_only && !status.is_barrier() || committing.contains(&status.endpoint_name) {
+            if barriers_only && !status.is_barrier()
+                || committing.contains(&status.endpoint_name)
+                || coordination_request
+                    .as_ref()
+                    .is_some_and(|cr| !cr.input_connectors.contains(&status.endpoint_name))
+            {
                 if let Some(resume) = self.input_metadata.remove(&status.endpoint_name) {
                     step_metadata.insert(
                         endpoint_id,
@@ -2651,11 +2817,12 @@ impl CircuitThread {
                     );
                 }
             } else {
-                // Don't request a checkpoint if we're processing a transaction. The `checkpoint_requested`
-                // flag requires the connector to get to a checkpointable state as fast as
-                // possible, which may cause connector's performance to drop, e.g., some connectors may return 1 record
-                // per step.
                 if !self.replaying() {
+                    // Don't request a checkpoint if we're processing a
+                    // transaction. The `checkpoint_requested` flag requires the
+                    // connector to get to a checkpointable state as fast as
+                    // possible, which may cause connector's performance to
+                    // drop, e.g., some connectors may return 1 record per step.
                     if let Some(reader) = status.reader.as_ref() {
                         reader.queue(
                             self.checkpoint_requested()
@@ -3255,7 +3422,7 @@ struct StepTrigger {
 }
 
 /// Action for the controller to take.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum Action {
     /// Park until time `.0`, or forever if `None`.
     Park(Option<Instant>),
@@ -3303,8 +3470,8 @@ impl StepTrigger {
     /// - The metadata about the last sync checkpoint.
     /// - Whether we're currently `replaying`.
     /// - Whether the pipeline is currently `bootstrapping`.
-    /// - Whether the pipeline is currently `running`.
     /// - Whether a checkpoint has already been requested.
+    /// - The current [CoordinationRequest] and the current step.
     ///
     /// Returns the action for the controller to take.
     fn trigger(
@@ -3315,9 +3482,13 @@ impl StepTrigger {
         bootstrapping: bool,
         checkpoint_requested: bool,
         sync_checkpoint_requested: bool,
+        coordination_request: Option<StepRequest>,
+        step: Step,
     ) -> Action {
         // Time of the next checkpoint.
-        let next_checkpoint = if let Some(checkpoint_interval) = self.checkpoint_interval {
+        let next_checkpoint = if let Some(checkpoint_interval) = self.checkpoint_interval
+            && coordination_request.is_none()
+        {
             Some(last_checkpoint.timestamp + checkpoint_interval)
         } else {
             None
@@ -3336,7 +3507,25 @@ impl StepTrigger {
 
         // Decide what to do, or choose `None` to trigger a step based on
         // whether there is buffered data.
-        let result = if replaying
+        let result = if let Some(request) = &coordination_request {
+            match request.action {
+                StepAction::Idle => Some(Action::Park(None)),
+                StepAction::Step => {
+                    if request.step >= step {
+                        Some(Action::Step)
+                    } else {
+                        Some(Action::Park(None))
+                    }
+                }
+                StepAction::Trigger => {
+                    if request.step < step {
+                        Some(Action::Park(None))
+                    } else {
+                        None
+                    }
+                }
+            }
+        } else if replaying
             || self.controller.transaction_commit_requested()
             || bootstrapping
             || self.bootstrapping
@@ -3371,8 +3560,18 @@ impl StepTrigger {
             // only ones that we count; otherwise, count all of them.  An input
             // endpoint is blocking suspend if it has a barrier and a checkpoint
             // has been requested.
+            //
+            // If we're running under a coordinator, then we only consider input
+            // endpoints that the coordinator told us to.
             let mut buffered_records = EnumMap::<bool, u64>::default();
             for status in self.controller.status.input_status().values() {
+                if let Some(coordination_request) = &coordination_request
+                    && !coordination_request
+                        .input_connectors
+                        .contains(&status.endpoint_name)
+                {
+                    continue;
+                }
                 buffered_records[checkpoint_requested && status.is_barrier()] +=
                     status.metrics.buffered_records.load(Ordering::Relaxed);
             }
@@ -3460,12 +3659,13 @@ pub struct ControllerInit {
 }
 
 impl ControllerInit {
-    fn without_resume(
+    fn without_checkpoint(
+        layout: Option<Layout>,
         config: PipelineConfig,
         storage: Option<CircuitStorageConfig>,
     ) -> Result<Self, ControllerError> {
         Ok(Self {
-            circuit_config: Self::circuit_config(&config, storage)?,
+            circuit_config: Self::circuit_config(layout, &config, storage)?,
             pipeline_config: config,
             processed_records: 0,
             initial_start_time: None,
@@ -3477,26 +3677,48 @@ impl ControllerInit {
         })
     }
 
-    /// Open the latest checkpoint in `storage`, if any, and compute the final pipeline config to use based
-    /// on the new `config` supplied by the user and the checkpotinted config.
-    fn new(
-        mut config: PipelineConfig,
+    fn with_checkpoint(
+        layout: Option<Layout>,
+        config: PipelineConfig,
+        storage: CircuitStorageConfig,
+        checkpoint_uuid: Uuid,
+    ) -> Result<Self, ControllerError> {
+        let checkpoint = Checkpoint::read(
+            &*storage.backend,
+            &StoragePath::from(checkpoint_uuid.to_string()).child(STATE_FILE),
+        )?;
+        Self::with_checkpoint_inner(layout, config, storage, checkpoint)
+    }
+
+    /// Open the latest checkpoint in `storage`, if any, and compute the final
+    /// pipeline config to use based on the new `config` supplied by the user
+    /// and the checkpointed config.
+    fn with_latest_checkpoint(
+        layout: Option<Layout>,
+        config: PipelineConfig,
         storage: Option<CircuitStorageConfig>,
     ) -> Result<Self, ControllerError> {
         let Some(storage) = storage else {
-            return Self::without_resume(config, None);
+            return Self::without_checkpoint(layout, config, None);
         };
 
         // Try to read a checkpoint.
         let checkpoint = match Checkpoint::read(&*storage.backend, &StoragePath::from(STATE_FILE)) {
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 info!("starting fresh pipeline without resuming from checkpoint");
-                return Self::without_resume(config, Some(storage));
+                return Self::without_checkpoint(layout, config, Some(storage));
             }
-            Err(error) => return Err(error),
-            Ok(checkpoint) => checkpoint,
+            other => other?,
         };
+        Self::with_checkpoint_inner(layout, config, storage, checkpoint)
+    }
 
+    fn with_checkpoint_inner(
+        layout: Option<Layout>,
+        mut config: PipelineConfig,
+        storage: CircuitStorageConfig,
+        checkpoint: Checkpoint,
+    ) -> Result<Self, ControllerError> {
         let Checkpoint {
             circuit,
             step,
@@ -3551,7 +3773,8 @@ impl ControllerInit {
         // without change elsewhere.
         let config = PipelineConfig {
             global: RuntimeConfig {
-                // Can't change number of workers yet.
+                // Can't change number of workers or hosts yet.
+                hosts: checkpoint_config.global.hosts,
                 workers: checkpoint_config.global.workers,
 
                 // The checkpoint determines the fault tolerance model, but the
@@ -3602,6 +3825,7 @@ impl ControllerInit {
             },
 
             // Other settings from the pipeline manager.
+            multihost: config.multihost,
             secrets_dir: config.secrets_dir,
             name: config.name,
             given_name: config.given_name,
@@ -3610,7 +3834,7 @@ impl ControllerInit {
         };
 
         Ok(Self {
-            circuit_config: Self::circuit_config(&config, Some(storage))?,
+            circuit_config: Self::circuit_config(layout, &config, Some(storage))?,
             pipeline_config: config,
             step,
             input_metadata: Some(input_metadata.0),
@@ -3623,11 +3847,13 @@ impl ControllerInit {
     }
 
     fn circuit_config(
+        layout: Option<Layout>,
         pipeline_config: &PipelineConfig,
         storage: Option<CircuitStorageConfig>,
     ) -> Result<CircuitConfig, ControllerError> {
         Ok(CircuitConfig {
-            layout: Layout::new_solo(pipeline_config.global.workers as usize),
+            layout: layout
+                .unwrap_or_else(|| Layout::new_solo(pipeline_config.global.workers as usize)),
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
             storage,
             mode: Mode::Persistent,
@@ -4215,18 +4441,19 @@ impl TransactionInitiators {
 
     /// At least one participant has not committed the transaction and
     /// can push more data as part of the transaction.
-    fn is_ongoing(&self) -> bool {
+    fn is_ongoing(&self, is_multihost: bool) -> bool {
         self.initiated_by_api == Some(TransactionPhase::Started)
-            || self
-                .initiated_by_connectors
-                .values()
-                .any(|ConnectorTransactionPhase { phase, .. }| *phase == TransactionPhase::Started)
+            || (!is_multihost
+                && self.initiated_by_connectors.values().any(
+                    |ConnectorTransactionPhase { phase, .. }| *phase == TransactionPhase::Started,
+                ))
     }
 
     /// Transaction has been initiated and is ready to commit.
-    fn is_ready_to_commit(&self) -> bool {
-        let active = self.initiated_by_api.is_some() || !self.initiated_by_connectors.is_empty();
-        active && !self.is_ongoing()
+    fn is_ready_to_commit(&self, is_multihost: bool) -> bool {
+        let active = self.initiated_by_api.is_some()
+            || (!is_multihost && !self.initiated_by_connectors.is_empty());
+        active && !self.is_ongoing(is_multihost)
     }
 
     /// Number of active participants in the transaction.
@@ -4250,6 +4477,15 @@ impl TransactionInitiators {
 
 #[derive(Default, Clone)]
 struct TransactionInfo {
+    /// Is this a multihost pipeline?
+    ///
+    /// In a single-host pipeline, connectors can initiate and commit
+    /// transactions directly.  In a multihost pipelines, when a connector tries
+    /// to initiate or commit a transaction, the pipeline passes this
+    /// information up to the coordinator, which initiates and commits
+    /// transactions, using the API, across all the hosts.
+    is_multihost: bool,
+
     /// Used to assign the next transaction id.
     last_transaction_id: TransactionId,
 
@@ -4263,8 +4499,9 @@ struct TransactionInfo {
 }
 
 impl TransactionInfo {
-    fn new() -> Self {
+    fn new(is_multihost: bool) -> Self {
         TransactionInfo {
+            is_multihost,
             last_transaction_id: 0,
             initiators: TransactionInitiators::default(),
             transaction_state: TransactionState::None,
@@ -4312,8 +4549,8 @@ impl TransactionInfo {
             return Err(ControllerError::TransactionInProgress);
         }
 
-        if self.initiators.transaction_id.is_none() {
-            assert!(!self.initiators.is_ongoing());
+        if self.initiators.transaction_id.is_none() && !self.is_multihost {
+            assert!(!self.initiators.is_ongoing(self.is_multihost));
             self.last_transaction_id += 1;
             self.initiators.transaction_id = Some(self.last_transaction_id);
             initiated = true;
@@ -4367,7 +4604,7 @@ impl TransactionInfo {
                 return Err(ControllerError::NoTransactionInProgress);
             }
             Entry::Occupied(mut entry) => {
-                assert!(self.initiators.transaction_id.is_some());
+                assert!(self.is_multihost || self.initiators.transaction_id.is_some());
                 if entry.get().phase != TransactionPhase::Started {
                     return Err(ControllerError::NoTransactionInProgress);
                 }
@@ -4430,6 +4667,12 @@ pub struct ControllerInner {
     error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     session_ctxt: SessionContext,
     fault_tolerance: Option<FtModel>,
+    step_receiver: tokio::sync::watch::Receiver<StepStatus>,
+    checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
+    transaction_receiver: tokio::sync::watch::Receiver<TransactionCoordination>,
+    transaction_sender: tokio::sync::watch::Sender<TransactionCoordination>,
+    coordination_request: Mutex<Option<StepRequest>>,
+    coordination_prepare_checkpoint: AtomicBool,
     // The mutex is acquired from async context by actix and
     // from the sync context by the circuit thread.
     transaction_info: Mutex<TransactionInfo>,
@@ -4465,6 +4708,8 @@ impl ControllerInner {
         initial_start_time: Option<DateTime<Utc>>,
         resume_info: &HashMap<String, (JsonValue, CheckpointInputEndpointMetrics)>,
         output_statistics: &HashMap<String, CheckpointOutputEndpointMetrics>,
+        step_receiver: tokio::sync::watch::Receiver<StepStatus>,
+        checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(
             config.clone(),
@@ -4473,7 +4718,10 @@ impl ControllerInner {
         ));
         let circuit_thread_parker = Parker::new();
         let backpressure_thread_parker = Parker::new();
+        let is_multihost = config.multihost.is_some();
         let (command_sender, command_receiver) = channel();
+        let (transaction_sender, transaction_receiver) =
+            tokio::sync::watch::channel(TransactionCoordination::default());
         let session_ctxt = create_session_context(&config)?;
         let controller = Arc::new(Self {
             status,
@@ -4494,9 +4742,15 @@ impl ControllerInner {
             error_cb,
             session_ctxt,
             fault_tolerance: config.global.fault_tolerance.model,
-            transaction_info: Mutex::new(TransactionInfo::new()),
+            transaction_info: Mutex::new(TransactionInfo::new(is_multihost)),
             restoring: AtomicBool::new(config.global.fault_tolerance.is_enabled()),
             transaction_number: AtomicU64::new(0),
+            step_receiver,
+            checkpoint_receiver,
+            transaction_sender,
+            transaction_receiver,
+            coordination_request: Mutex::new(is_multihost.then_some(StepRequest::new_idle(0))),
+            coordination_prepare_checkpoint: AtomicBool::new(false),
         });
         controller.initialize_adhoc_queries();
 
@@ -5546,6 +5800,9 @@ impl ControllerInner {
                 ));
             }
         }
+        if self.coordination_prepare_checkpoint.load(Ordering::Acquire) {
+            temporary.push(TemporarySuspendError::Coordination);
+        }
         if !temporary.is_empty() {
             Err(SuspendError::Temporary(temporary))
         } else {
@@ -5555,76 +5812,66 @@ impl ControllerInner {
 
     /// Update transaction status in GlobalControllerMetrics given the current value of TransactionInfo.
     fn update_transaction_status(&self, transaction_info: &TransactionInfo) {
-        match (
+        let tid_status = match (
             transaction_info.transaction_state,
-            transaction_info.initiators.is_ongoing(),
+            transaction_info
+                .initiators
+                .is_ongoing(transaction_info.is_multihost),
         ) {
-            (TransactionState::None, false) => {
-                self.status
-                    .global_metrics
-                    .transaction_id
-                    .store(0, Ordering::Release);
-                self.status
-                    .global_metrics
-                    .transaction_status
-                    .store(TransactionStatus::NoTransaction, Ordering::Release);
+            (TransactionState::None, false) => Some((0, TransactionStatus::NoTransaction)),
+            (TransactionState::Started(tid), false)
+            | (TransactionState::Committing(tid), false) => {
+                Some((tid, TransactionStatus::CommitInProgress))
             }
-            (TransactionState::Started(tid), false) => {
-                assert_ne!(tid, 0);
-
-                self.status
-                    .global_metrics
-                    .transaction_id
-                    .store(tid, Ordering::Release);
-                self.status
-                    .global_metrics
-                    .transaction_status
-                    .store(TransactionStatus::CommitInProgress, Ordering::Release);
-            }
-            (TransactionState::Committing(tid), false) => {
-                assert_ne!(tid, 0);
-
-                self.status
-                    .global_metrics
-                    .transaction_id
-                    .store(tid, Ordering::Release);
-                self.status
-                    .global_metrics
-                    .transaction_status
-                    .store(TransactionStatus::CommitInProgress, Ordering::Release);
-            }
-            (TransactionState::None, true) => {
-                assert!(transaction_info.initiators.transaction_id.is_some());
-                let tid = transaction_info.initiators.transaction_id.unwrap();
-                assert_ne!(tid, 0);
-
-                self.status
-                    .global_metrics
-                    .transaction_id
-                    .store(tid, Ordering::Release);
-                self.status
-                    .global_metrics
-                    .transaction_status
-                    .store(TransactionStatus::TransactionInProgress, Ordering::Release);
-            }
+            (TransactionState::None, true) => Some((
+                transaction_info.initiators.transaction_id.unwrap(),
+                TransactionStatus::TransactionInProgress,
+            )),
             (TransactionState::Started(tid), true) => {
-                assert_ne!(tid, 0);
-                assert_eq!(transaction_info.initiators.transaction_id, Some(tid));
-
-                self.status
-                    .global_metrics
-                    .transaction_id
-                    .store(tid, Ordering::Release);
-                self.status
-                    .global_metrics
-                    .transaction_status
-                    .store(TransactionStatus::TransactionInProgress, Ordering::Release);
+                Some((tid, TransactionStatus::TransactionInProgress))
             }
             (TransactionState::Committing(_), true) => {
                 error!(
                     "Invalid transaction state: actual state: {:?}; desired state {:?}",
                     transaction_info.transaction_state, transaction_info.initiators
-                )
+                );
+                None
+            }
+        };
+        if let Some((tid, status)) = tid_status {
+            if status != TransactionStatus::NoTransaction {
+                assert!(tid != 0);
+            }
+
+            self.status
+                .global_metrics
+                .transaction_id
+                .store(tid, Ordering::Release);
+            self.status
+                .global_metrics
+                .transaction_status
+                .store(status, Ordering::Release);
+
+            let coordination = TransactionCoordination {
+                status: match status {
+                    TransactionStatus::NoTransaction => None,
+                    TransactionStatus::TransactionInProgress => Some(true),
+                    TransactionStatus::CommitInProgress => Some(false),
+                },
+                requests: transaction_info
+                    .initiators
+                    .initiated_by_connectors
+                    .iter()
+                    .filter_map(
+                        |(name, phase)| match phase.phase == TransactionPhase::Started {
+                            true => Some((name.clone(), phase.label.clone())),
+                            false => None,
+                        },
+                    )
+                    .collect(),
+            };
+            if *self.transaction_sender.borrow() != coordination {
+                self.transaction_sender.send_replace(coordination);
             }
         }
 
@@ -5660,7 +5907,9 @@ impl ControllerInner {
         transaction_info.start_commit_transaction_from_api()?;
 
         // All initiators have committed the transaction before it even started.
-        if transaction_info.initiators.is_ready_to_commit()
+        if transaction_info
+            .initiators
+            .is_ready_to_commit(transaction_info.is_multihost)
             && transaction_info.transaction_state == TransactionState::None
         {
             transaction_info.initiators.clear();
@@ -5695,7 +5944,9 @@ impl ControllerInner {
         transaction_info.commit_transaction_from_connector(endpoint_name)?;
 
         // All initiators have committed the transaction before it even started.
-        if transaction_info.initiators.is_ready_to_commit()
+        if transaction_info
+            .initiators
+            .is_ready_to_commit(transaction_info.is_multihost)
             && transaction_info.transaction_state == TransactionState::None
         {
             transaction_info.initiators.clear();
@@ -5727,12 +5978,14 @@ impl ControllerInner {
     /// commit processing.
     pub fn transaction_commit_requested(&self) -> bool {
         let TransactionInfo {
+            is_multihost,
             initiators: transaction_requested,
             transaction_state,
             ..
         } = &mut *self.transaction_info.lock().unwrap();
 
-        *transaction_state != TransactionState::None && !transaction_requested.is_ongoing()
+        *transaction_state != TransactionState::None
+            && !transaction_requested.is_ongoing(*is_multihost)
     }
 
     /// Returns true if (transaction_state == Committing).
@@ -5754,7 +6007,9 @@ impl ControllerInner {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
         let result = match (
-            transaction_info.initiators.is_ongoing(),
+            transaction_info
+                .initiators
+                .is_ongoing(transaction_info.is_multihost),
             transaction_info.transaction_state,
         ) {
             (true, TransactionState::None) => {
@@ -6087,6 +6342,11 @@ enum RunningCheckpoint {
 }
 
 impl RunningCheckpoint {
+    /// Starts checkpointing `circuit`, and returns a [RunningCheckpoint].  The
+    /// caller should use [RunningCheckpoint::poll] to find out the result,
+    /// which can be available immediately (e.g. if we know right away that we
+    /// can't checkpoint) or after a long time (e.g. if it takes a long time to
+    /// write out the checkpoint).
     fn new(circuit: &mut CircuitThread) -> Self {
         SamplySpan::new(debug_span!("fg-checkpoint"))
             .in_scope(|| Self::start(circuit))
@@ -6221,6 +6481,13 @@ impl RunningCheckpoint {
         Ok(checkpoint)
     }
 
+    /// Polls the checkpoint to see if it's finished.  Returns:
+    ///
+    /// - `None`, if the checkpoint is not finished.
+    ///
+    /// - `Some(Ok(checkpoint))` if the checkpoint finished successfully.
+    ///
+    /// - `Some(Err(error))` if the checkpoint failed.
     fn poll(&mut self, circuit: &mut CircuitThread) -> Option<Result<Checkpoint, ControllerError>> {
         match replace(self, Self::Done) {
             Self::Error(error) => Some(Err(error)),

@@ -5069,6 +5069,7 @@ dependencies = [
  "async-nats",
  "bytemuck",
  "chrono",
+ "clap",
  "csv",
  "enum-map",
  "erased-serde",
@@ -5084,6 +5085,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.17",
  "time",
+ "url",
  "utoipa",
  "uuid",
 ]

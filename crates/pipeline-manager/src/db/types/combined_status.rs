@@ -42,6 +42,7 @@ impl CombinedStatus {
                 if let Some(runtime_status) = runtime_status {
                     match runtime_status {
                         RuntimeStatus::Unavailable => Self::Unavailable,
+                        RuntimeStatus::Coordination => todo!(),
                         RuntimeStatus::AwaitingApproval => Self::AwaitingApproval,
                         RuntimeStatus::Standby => Self::Standby,
                         RuntimeStatus::Initializing => Self::Initializing,
@@ -89,6 +90,7 @@ impl CombinedDesiredStatus {
                 if let Some(runtime_desired_status) = runtime_desired_status {
                     match runtime_desired_status {
                         RuntimeDesiredStatus::Unavailable => Self::Unavailable,
+                        RuntimeDesiredStatus::Coordination => todo!(),
                         RuntimeDesiredStatus::Standby => Self::Standby,
                         RuntimeDesiredStatus::Paused => Self::Paused,
                         RuntimeDesiredStatus::Running => Self::Running,
@@ -97,6 +99,7 @@ impl CombinedDesiredStatus {
                 } else if let Some(initial) = initial {
                     match initial {
                         RuntimeDesiredStatus::Unavailable => Self::Unavailable,
+                        RuntimeDesiredStatus::Coordination => todo!(),
                         RuntimeDesiredStatus::Standby => Self::Standby,
                         RuntimeDesiredStatus::Paused => Self::Paused,
                         RuntimeDesiredStatus::Running => Self::Running,
