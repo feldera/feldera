@@ -351,6 +351,7 @@ It contains the following fields:
         feldera_types::config::ResourceConfig,
         feldera_types::config::ObjectStorageConfig,
         feldera_types::config::FtModel,
+        feldera_types::config::PipelineTemplateConfig,
         feldera_types::transport::adhoc::AdHocInputConfig,
         feldera_types::transport::clock::ClockConfig,
         feldera_types::transport::file::FileInputConfig,

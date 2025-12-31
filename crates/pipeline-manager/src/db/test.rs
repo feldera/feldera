@@ -319,6 +319,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             io_workers: val.val19,
             dev_tweaks: BTreeMap::new(),
             logging: None,
+            pipeline_template_configmap: None,
         })
         .unwrap()
     }
@@ -1194,6 +1195,7 @@ async fn pipeline_versioning() {
         io_workers: None,
         dev_tweaks: BTreeMap::new(),
         logging: None,
+        pipeline_template_configmap: None,
     })
     .unwrap();
     handle
@@ -1877,6 +1879,7 @@ async fn pipeline_provision_version_guard() {
                     http_workers: None,
                     io_workers: None,
                     logging: None,
+                    pipeline_template_configmap: None,
                 })
                 .unwrap(),
             ),
