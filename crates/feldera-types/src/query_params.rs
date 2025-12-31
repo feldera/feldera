@@ -3,6 +3,8 @@
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 
+use crate::runtime_status::RuntimeDesiredStatus;
+
 /// Circuit metrics output format.
 /// - `prometheus`: [format](https://github.com/prometheus/docs/blob/4b1b80f5f660a2f8dc25a54f52a65a502f31879a/docs/instrumenting/exposition_formats.md) expected by Prometheus
 /// - `json`: JSON format
@@ -25,15 +27,19 @@ pub struct MetricsParameters {
     pub format: MetricsFormat,
 }
 
-/// Default for the `initial` query parameter when POST a pipeline activate.
-fn default_pipeline_activate_initial() -> String {
-    "running".to_string()
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+#[serde(default)]
+pub struct ActivateParams {
+    #[serde(with = "crate::runtime_status::snake_case_runtime_desired_status")]
+    pub initial: RuntimeDesiredStatus,
 }
 
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
-pub struct ActivateParams {
-    #[serde(default = "default_pipeline_activate_initial")]
-    pub initial: String,
+impl Default for ActivateParams {
+    fn default() -> Self {
+        Self {
+            initial: RuntimeDesiredStatus::Running,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]

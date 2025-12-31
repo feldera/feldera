@@ -3,6 +3,7 @@ use actix_web::body::BoxBody;
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder, Responder, ResponseError};
 use bytemuck::NoUninit;
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
@@ -54,7 +55,7 @@ pub enum RuntimeStatus {
     Suspended,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema, ValueEnum)]
 pub enum RuntimeDesiredStatus {
     Unavailable,
     Standby,
@@ -87,16 +88,64 @@ impl RuntimeDesiredStatus {
     }
 }
 
-impl From<String> for RuntimeDesiredStatus {
-    fn from(value: String) -> Self {
-        match value.as_str() {
-            "unavailable" => Self::Unavailable,
-            "standby" => Self::Standby,
-            "paused" => Self::Paused,
-            "running" => Self::Running,
-            "suspended" => Self::Suspended,
-            _ => panic!("Invalid runtime desired status: {value}"),
+/// Some of our JSON interface uses capitalized status names, like `Paused`, but
+/// other parts use snake-case names, like `paused`.  To support the latter with
+/// `serde`, use this module in the field declaration, e.g.:
+///
+/// ```ignore
+/// #[serde(with = "feldera_types::runtime_status::snake_case_runtime_desired_status")]
+/// ```
+pub mod snake_case_runtime_desired_status {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use crate::runtime_status::RuntimeDesiredStatus;
+
+    #[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize)]
+    #[serde(rename_all = "snake_case")]
+    enum SnakeRuntimeDesiredStatus {
+        Unavailable,
+        Standby,
+        Paused,
+        Running,
+        Suspended,
+    }
+
+    impl From<RuntimeDesiredStatus> for SnakeRuntimeDesiredStatus {
+        fn from(value: RuntimeDesiredStatus) -> Self {
+            match value {
+                RuntimeDesiredStatus::Unavailable => SnakeRuntimeDesiredStatus::Unavailable,
+                RuntimeDesiredStatus::Standby => SnakeRuntimeDesiredStatus::Standby,
+                RuntimeDesiredStatus::Paused => SnakeRuntimeDesiredStatus::Paused,
+                RuntimeDesiredStatus::Running => SnakeRuntimeDesiredStatus::Running,
+                RuntimeDesiredStatus::Suspended => SnakeRuntimeDesiredStatus::Suspended,
+            }
         }
+    }
+
+    impl From<SnakeRuntimeDesiredStatus> for RuntimeDesiredStatus {
+        fn from(value: SnakeRuntimeDesiredStatus) -> Self {
+            match value {
+                SnakeRuntimeDesiredStatus::Unavailable => RuntimeDesiredStatus::Unavailable,
+                SnakeRuntimeDesiredStatus::Standby => RuntimeDesiredStatus::Standby,
+                SnakeRuntimeDesiredStatus::Paused => RuntimeDesiredStatus::Paused,
+                SnakeRuntimeDesiredStatus::Running => RuntimeDesiredStatus::Running,
+                SnakeRuntimeDesiredStatus::Suspended => RuntimeDesiredStatus::Suspended,
+            }
+        }
+    }
+
+    pub fn serialize<S>(value: &RuntimeDesiredStatus, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        SnakeRuntimeDesiredStatus::from(*value).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<RuntimeDesiredStatus, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        SnakeRuntimeDesiredStatus::deserialize(deserializer).map(|status| status.into())
     }
 }
 
