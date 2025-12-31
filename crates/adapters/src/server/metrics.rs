@@ -65,13 +65,7 @@ impl MetricsFormatter for PrometheusFormatter {
                     self.output.write_char(',').unwrap();
                 }
                 index += 1;
-                write!(
-                    &mut self.output,
-                    "{}=\"{}\"",
-                    EscapedName(name),
-                    EscapedValue(value)
-                )
-                .unwrap();
+                write!(&mut self.output, "{}", EscapedLabel { name, value }).unwrap();
             });
             self.output.write_char('}').unwrap();
         }
@@ -511,6 +505,23 @@ where
     /// Consumes this metrics writer and returns the output.
     pub fn into_output(self) -> String {
         self.formatter.into_output()
+    }
+}
+
+/// Transforms a label into the form used for formatting a Prometheus label.
+struct EscapedLabel<'a> {
+    name: &'a str,
+    value: &'a str,
+}
+
+impl<'a> Display for EscapedLabel<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}=\"{}\"",
+            EscapedName(self.name),
+            EscapedValue(self.value)
+        )
     }
 }
 
