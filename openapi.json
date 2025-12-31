@@ -583,6 +583,7 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 16,
+                      "hosts": 1,
                       "storage": {
                         "backend": {
                           "name": "default"
@@ -667,6 +668,7 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 10,
+                      "hosts": 1,
                       "storage": {
                         "backend": {
                           "name": "default"
@@ -781,6 +783,7 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
+                  "hosts": 1,
                   "storage": {
                     "backend": {
                       "name": "default"
@@ -850,6 +853,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
@@ -1026,6 +1030,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
@@ -1167,6 +1172,7 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
+                  "hosts": 1,
                   "storage": {
                     "backend": {
                       "name": "default"
@@ -1236,6 +1242,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
@@ -1329,6 +1336,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
@@ -1591,6 +1599,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
@@ -1769,7 +1778,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/RuntimeDesiredStatus"
             }
           }
         ],
@@ -5824,6 +5833,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
@@ -8661,6 +8671,20 @@
           "Healthy"
         ]
       },
+      "MultihostConfig": {
+        "type": "object",
+        "description": "Configuration for a multihost Feldera pipeline.\n\nThis configuration is primarily for the coordinator.",
+        "required": [
+          "hosts"
+        ],
+        "properties": {
+          "hosts": {
+            "type": "integer",
+            "description": "Number of hosts to launch.\n\nFor the configuration to be truly multihost, this should be at least 2.\nA value of 1 still runs the multihost coordinator but it only\ncoordinates a single host.",
+            "minimum": 0
+          }
+        }
+      },
       "NatsInputConfig": {
         "type": "object",
         "required": [
@@ -9121,6 +9145,12 @@
                   "checkpoint_interval_secs": 60
                 }
               },
+              "hosts": {
+                "type": "integer",
+                "description": "Number of DBSP hosts.\n\nThe worker threads are evenly divided among the hosts.",
+                "default": 1,
+                "minimum": 0
+              },
               "http_workers": {
                 "type": "integer",
                 "format": "int64",
@@ -9253,6 +9283,14 @@
                 "additionalProperties": {
                   "$ref": "#/components/schemas/InputEndpointConfig"
                 }
+              },
+              "multihost": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/MultihostConfig"
+                  }
+                ],
+                "nullable": true
               },
               "name": {
                 "type": "string",
@@ -10625,6 +10663,12 @@
               "checkpoint_interval_secs": 60
             }
           },
+          "hosts": {
+            "type": "integer",
+            "description": "Number of DBSP hosts.\n\nThe worker threads are evenly divided among the hosts.",
+            "default": 1,
+            "minimum": 0
+          },
           "http_workers": {
             "type": "integer",
             "format": "int64",
@@ -10747,6 +10791,7 @@
         "type": "string",
         "enum": [
           "Unavailable",
+          "Coordination",
           "Standby",
           "Paused",
           "Running",
@@ -10758,6 +10803,7 @@
         "description": "Runtime status of the pipeline.\n\nOf the statuses, only `Unavailable` is determined by the runner. All other statuses are\ndetermined by the pipeline and taken over by the runner.",
         "enum": [
           "Unavailable",
+          "Coordination",
           "Standby",
           "Initializing",
           "AwaitingApproval",
@@ -11600,6 +11646,12 @@
                 "type": "string"
               }
             }
+          },
+          {
+            "type": "string",
+            "enum": [
+              "Coordination"
+            ]
           }
         ],
         "description": "Reasons why a pipeline cannot be suspended at this time."

@@ -84,6 +84,9 @@ pub enum TemporarySuspendError {
 
     #[error("Input endpoint {0:?} is blocking suspend")]
     InputEndpointBarrier(String),
+
+    #[error("Coordinator is blocking checkpoint")]
+    Coordination,
 }
 
 /// Response to a `/suspendable` request.

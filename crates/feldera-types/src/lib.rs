@@ -3,6 +3,7 @@ pub mod checkpoint;
 pub mod completion_token;
 pub mod config;
 pub mod constants;
+pub mod coordination;
 pub mod error;
 pub mod format;
 pub mod pipeline_diff;

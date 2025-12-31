@@ -72,7 +72,7 @@ base58 = "0.2.0"
 binrw = "0.13.3"
 blake3 = "1.8.2"
 bstr = "0.2.1"
-bytemuck = "1.16.3"
+bytemuck = { version = "1.16.3", features = ["derive"] }
 bytes = "1.10.1"
 bytestring = "1.4.0"
 change-detection = "1.2"

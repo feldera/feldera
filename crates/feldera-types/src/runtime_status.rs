@@ -27,6 +27,10 @@ pub enum RuntimeStatus {
     ///    determine whether it is in any of the other runtime statuses.
     Unavailable,
 
+    /// The pipeline is waiting for initialization instructions from the
+    /// coordinator.
+    Coordination,
+
     /// The pipeline is constantly pulling the latest checkpoint from S3 but not processing any inputs.
     Standby,
 
@@ -72,6 +76,7 @@ impl From<RuntimeDesiredStatus> for RuntimeStatus {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema, ValueEnum)]
 pub enum RuntimeDesiredStatus {
     Unavailable,
+    Coordination,
     Standby,
     Paused,
     Running,
@@ -91,6 +96,7 @@ impl RuntimeDesiredStatus {
 
     pub fn may_transition_to_at_startup(&self, target: Self) -> bool {
         match (*self, target) {
+            (_, Self::Coordination) => true,
             (Self::Suspended, _) => {
                 // A suspended pipeline must transition to "paused" or
                 // "running".
@@ -118,6 +124,7 @@ pub mod snake_case_runtime_desired_status {
     #[serde(rename_all = "snake_case")]
     enum SnakeRuntimeDesiredStatus {
         Unavailable,
+        Coordination,
         Standby,
         Paused,
         Running,
@@ -128,6 +135,7 @@ pub mod snake_case_runtime_desired_status {
         fn from(value: RuntimeDesiredStatus) -> Self {
             match value {
                 RuntimeDesiredStatus::Unavailable => SnakeRuntimeDesiredStatus::Unavailable,
+                RuntimeDesiredStatus::Coordination => SnakeRuntimeDesiredStatus::Coordination,
                 RuntimeDesiredStatus::Standby => SnakeRuntimeDesiredStatus::Standby,
                 RuntimeDesiredStatus::Paused => SnakeRuntimeDesiredStatus::Paused,
                 RuntimeDesiredStatus::Running => SnakeRuntimeDesiredStatus::Running,
@@ -140,6 +148,7 @@ pub mod snake_case_runtime_desired_status {
         fn from(value: SnakeRuntimeDesiredStatus) -> Self {
             match value {
                 SnakeRuntimeDesiredStatus::Unavailable => RuntimeDesiredStatus::Unavailable,
+                SnakeRuntimeDesiredStatus::Coordination => RuntimeDesiredStatus::Coordination,
                 SnakeRuntimeDesiredStatus::Standby => RuntimeDesiredStatus::Standby,
                 SnakeRuntimeDesiredStatus::Paused => RuntimeDesiredStatus::Paused,
                 SnakeRuntimeDesiredStatus::Running => RuntimeDesiredStatus::Running,

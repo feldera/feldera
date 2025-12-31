@@ -332,6 +332,7 @@ It contains the following fields:
 
         // From the feldera-types crate
         feldera_types::config::PipelineConfig,
+        feldera_types::config::MultihostConfig,
         feldera_types::config::StorageConfig,
         feldera_types::config::StorageCacheConfig,
         feldera_types::config::StorageOptions,

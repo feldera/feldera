@@ -144,6 +144,8 @@ impl Checkpointer {
                 in_use_paths.insert(batch);
             }
         }
+        // Give the coordinator a namespace for persistent files.
+        in_use_paths.insert("coordinator".into());
 
         /// True if `path` is a name that we might have created ourselves.
         fn is_feldera_filename(path: &StoragePath) -> bool {
