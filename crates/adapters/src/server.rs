@@ -1065,7 +1065,7 @@ where
         .service(pause)
         .service(activate)
         .service(approve)
-        .service(status)
+        .service(status_handler)
         .service(suspendable)
         .service(start_transaction)
         .service(commit_transaction)
@@ -1204,7 +1204,7 @@ async fn approve(state: WebData<ServerState>) -> Result<HttpResponse, PipelineEr
 ///
 /// This endpoint is designed to be non-blocking.
 #[get("/status")]
-async fn status(
+async fn status_handler(
     state: WebData<ServerState>,
 ) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
     let runtime_desired_status = state.desired_status();
