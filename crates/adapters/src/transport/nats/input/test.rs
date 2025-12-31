@@ -311,7 +311,7 @@ outputs:
         if let Err(()) = result {
             println!(
                 "Controller status:\n{}",
-                serde_json::to_string_pretty(controller.status()).unwrap()
+                serde_json::to_string_pretty(&controller.status().to_api_type()).unwrap()
             );
             panic!("Failed to receive expected records within timeout");
         }
