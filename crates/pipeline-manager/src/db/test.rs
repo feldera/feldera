@@ -271,6 +271,7 @@ struct RuntimeConfigPropVal {
     val17: bool,
     val18: Option<u64>,
     val19: Option<u64>,
+    val20: usize,
 }
 type ProgramConfigPropVal = (u8, bool, bool, bool);
 type ProgramInfoPropVal = (u8, u8, u8);
@@ -292,6 +293,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
     } else {
         serde_json::to_value(RuntimeConfig {
             workers: val.val0,
+            hosts: val.val20,
             cpu_profiler: val.val1,
             min_batch_size_records: val.val2,
             max_buffering_delay_usecs: val.val3,
@@ -483,6 +485,7 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
                 serde_json::from_value(map_val_to_limited_program_info(val.3)).unwrap();
             serde_json::to_value(PipelineConfig {
                 global: serde_json::from_value(runtime_config).unwrap(),
+                multihost: None,
                 name: Some(format!("pipeline-{}", val.1)),
                 given_name: Some(format!("given-name-{}", val.4)),
                 storage_config: None,
@@ -1173,6 +1176,7 @@ async fn pipeline_versioning() {
     // Edit runtime configuration -> increment version and refresh_version
     let new_runtime_config = serde_json::to_value(RuntimeConfig {
         workers: 100,
+        hosts: 1,
         storage: None,
         fault_tolerance: FtConfig::default(),
         cpu_profiler: false,
@@ -1868,6 +1872,7 @@ async fn pipeline_provision_version_guard() {
             &Some(
                 serde_json::to_value(RuntimeConfig {
                     workers: 10,
+                    hosts: 1,
                     storage: None,
                     fault_tolerance: FtConfig::default(),
                     cpu_profiler: false,

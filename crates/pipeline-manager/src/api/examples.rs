@@ -95,6 +95,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         platform_version: "v0".to_string(),
         runtime_config: serde_json::to_value(RuntimeConfig {
             workers: 10,
+            hosts: 1,
             storage: Some(StorageOptions::default()),
             fault_tolerance: FtConfig::default(),
             cpu_profiler: false,

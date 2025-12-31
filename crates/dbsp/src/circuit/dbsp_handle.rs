@@ -114,7 +114,7 @@ impl Layout {
     /// host must pass its own `local_address`.  The `Runtime` on each host
     /// listens on its own address and connects to all the other addresses.
     pub fn new_multihost(
-        params: &Vec<(SocketAddr, usize)>,
+        params: &[(SocketAddr, usize)],
         local_address: SocketAddr,
     ) -> Result<Layout, LayoutError> {
         // Check that the addresses are unique.
@@ -209,7 +209,7 @@ impl Layout {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub enum LayoutError {
     /// The socket address passed to `new_multihost()` isn't in the list of
     /// hosts.
@@ -1503,6 +1503,7 @@ impl DBSPHandle {
         )?;
         Ok(GraphProfile {
             elapsed_time: self.start_time.elapsed(),
+            worker_offset: self.runtime().layout().local_workers().start,
             worker_graphs,
         })
     }

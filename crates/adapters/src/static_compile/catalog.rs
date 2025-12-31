@@ -1,6 +1,7 @@
 use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
 use crate::catalog::{InputCollectionHandle, SerBatchReaderHandle};
 use crate::{Catalog, ControllerError, catalog::OutputCollectionHandles};
+use dbsp::circuit::Layout;
 use dbsp::circuit::circuit_builder::CircuitBase;
 use dbsp::trace::spine_async::WithSnapshot;
 use dbsp::typed_batch::TypedBatch;
@@ -11,6 +12,7 @@ use dbsp::{
     operator::{MapHandle, SetHandle, ZSetHandle},
     typed_batch::BatchReader,
 };
+use dbsp::{OrdZSet, Runtime};
 use feldera_adapterlib::catalog::CircuitCatalog;
 use feldera_sqllib::{SqlString, Variant, build_string_interner};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
@@ -381,6 +383,33 @@ impl Catalog {
                 build_string_interner(stream, None)
             }
         }
+
+        let stream = if let Some(runtime) = Runtime::runtime()
+            && let layout = runtime.layout()
+            && let Layout::Multihost { hosts, .. } = layout
+        {
+            // For multihost pipelines, we need to gather output data to the
+            // same node as the output connector(s) for that data.  This is a
+            // bit tricky.
+            //
+            // First, suppose we allowed output connectors to be placed on
+            // arbitrary hosts.  We'd need to make sure that the output
+            // connectors for a given handle are placed on the same host we
+            // gather the output to.  However, at this point in the code, we
+            // don't have access to the output connectors or their placements.
+            // (Also, connectors could get added later.)
+            //
+            // > One solution is to gather to a host chosen based on the hash of
+            // the name of the stream.  (This is not ideal since we're likely to
+            // have only a small number of hosts and output handles, meaning
+            // that the statistics could easily work out rather skewed.)
+            //
+            // For now, just gather to the first host.  It should work, at
+            // least.
+            stream.shard_workers(hosts.first().unwrap().workers.clone())
+        } else {
+            stream
+        };
 
         // Create handle for the stream itself.
         let (delta_handle, enable_count, delta_gid) =
