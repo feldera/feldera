@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state'
+  import FelderaModernLogomarkBlack from '$assets/images/feldera-modern/Feldera Logomark Black.svg?component'
   import { Popover } from '$lib/components/common/Popover.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
@@ -14,14 +15,18 @@
   )
 </script>
 
-<div class="relative hr flex justify-between pt-4 text-surface-500">
-  <span>{versionText}</span>
+{#snippet logo(className: string)}
+  <FelderaModernLogomarkBlack class="inline w-5 {className}"></FelderaModernLogomarkBlack>
+{/snippet}
+
+<div class="relative text-surface-600-400">
+  <span class="flex gap-2">{@render logo('fill-surface-600-400')} {versionText}</span>
   {#if revisionText}
     <Popover
-      class="bg-white-dark z-10 mt-16 -mr-20 -ml-4 w-full max-w-[400px] pt-2 pl-2"
-      placement="top-start"
+      class="bg-white-dark z-10 -mt-11 -mr-20 ml-4 w-full max-w-[400px] pt-2 pl-2 text-surface-950-50"
+      placement="bottom-end"
     >
-      {versionText}
+      <span class="flex gap-2">{@render logo('fill-surface-950-50')} {versionText}</span>
       <ClipboardCopyButton class="absolute top-0 right-0 m-2" value={versionText + revisionText}
       ></ClipboardCopyButton>
       <br class="select-none" />
