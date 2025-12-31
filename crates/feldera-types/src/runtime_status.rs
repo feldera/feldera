@@ -13,7 +13,8 @@ use utoipa::ToSchema;
 ///
 /// Of the statuses, only `Unavailable` is determined by the runner. All other statuses are
 /// determined by the pipeline and taken over by the runner.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, ToSchema, NoUninit)]
+#[repr(u8)]
 pub enum RuntimeStatus {
     /// The runner was unable to determine the pipeline runtime status. This status is never
     /// returned by the pipeline endpoint itself, but only determined by the runner.
@@ -53,6 +54,19 @@ pub enum RuntimeStatus {
 
     /// The pipeline finished checkpointing and pausing.
     Suspended,
+}
+
+impl From<RuntimeDesiredStatus> for RuntimeStatus {
+    fn from(value: RuntimeDesiredStatus) -> Self {
+        match value {
+            RuntimeDesiredStatus::Unavailable => Self::Unavailable,
+            RuntimeDesiredStatus::Coordination => Self::Coordination,
+            RuntimeDesiredStatus::Standby => Self::Standby,
+            RuntimeDesiredStatus::Paused => Self::Paused,
+            RuntimeDesiredStatus::Running => Self::Running,
+            RuntimeDesiredStatus::Suspended => Self::Suspended,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema, ValueEnum)]
@@ -225,14 +239,35 @@ impl From<ExtendedRuntimeStatus> for HttpResponse<BoxBody> {
 }
 
 /// Error returned by the pipeline `/status` endpoint.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ExtendedRuntimeStatusError {
     /// Status code. Returning anything except `503 Service Unavailable` will cause the runner to
     /// forcefully stop the pipeline.
+    #[serde(with = "status_code")]
     pub status_code: StatusCode,
 
     /// Error response.
     pub error: ErrorResponse,
+}
+
+mod status_code {
+    use actix_web::http::StatusCode;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+
+    pub fn serialize<S>(value: &StatusCode, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        value.as_u16().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<StatusCode, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = u16::deserialize(deserializer)?;
+        StatusCode::from_u16(value).map_err(D::Error::custom)
+    }
 }
 
 impl Display for ExtendedRuntimeStatusError {
