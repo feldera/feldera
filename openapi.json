@@ -620,7 +620,8 @@
                       "http_workers": null,
                       "io_workers": null,
                       "dev_tweaks": {},
-                      "logging": null
+                      "logging": null,
+                      "pipeline_template_configmap": null
                     },
                     "program_code": "CREATE TABLE table1 ( col1 INT );",
                     "udf_rust": "",
@@ -704,7 +705,8 @@
                       "http_workers": null,
                       "io_workers": null,
                       "dev_tweaks": {},
-                      "logging": null
+                      "logging": null,
+                      "pipeline_template_configmap": null
                     },
                     "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
                     "udf_rust": "",
@@ -818,7 +820,8 @@
                   "http_workers": null,
                   "io_workers": null,
                   "dev_tweaks": {},
-                  "logging": null
+                  "logging": null,
+                  "pipeline_template_configmap": null
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -887,7 +890,8 @@
                     "http_workers": null,
                     "io_workers": null,
                     "dev_tweaks": {},
-                    "logging": null
+                    "logging": null,
+                    "pipeline_template_configmap": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1063,7 +1067,8 @@
                     "http_workers": null,
                     "io_workers": null,
                     "dev_tweaks": {},
-                    "logging": null
+                    "logging": null,
+                    "pipeline_template_configmap": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1204,7 +1209,8 @@
                   "http_workers": null,
                   "io_workers": null,
                   "dev_tweaks": {},
-                  "logging": null
+                  "logging": null,
+                  "pipeline_template_configmap": null
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -1273,7 +1279,8 @@
                     "http_workers": null,
                     "io_workers": null,
                     "dev_tweaks": {},
-                    "logging": null
+                    "logging": null,
+                    "pipeline_template_configmap": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1366,7 +1373,8 @@
                     "http_workers": null,
                     "io_workers": null,
                     "dev_tweaks": {},
-                    "logging": null
+                    "logging": null,
+                    "pipeline_template_configmap": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1628,7 +1636,8 @@
                     "http_workers": null,
                     "io_workers": null,
                     "dev_tweaks": {},
-                    "logging": null
+                    "logging": null,
+                    "pipeline_template_configmap": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -5861,7 +5870,8 @@
                     "http_workers": null,
                     "io_workers": null,
                     "dev_tweaks": {},
-                    "logging": null
+                    "logging": null,
+                    "pipeline_template_configmap": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -9179,6 +9189,15 @@
                 "description": "Optionally, a list of CPU numbers for CPUs to which the pipeline may pin\nits worker threads.  Specify at least twice as many CPU numbers as\nworkers.  CPUs are generally numbered starting from 0.  The pipeline\nmight not be able to honor CPU pinning requests.\n\nCPU pinning can make pipelines run faster and perform more consistently,\nas long as different pipelines running on the same machine are pinned to\ndifferent CPUs.",
                 "default": []
               },
+              "pipeline_template_configmap": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PipelineTemplateConfig"
+                  }
+                ],
+                "default": null,
+                "nullable": true
+              },
               "provisioning_timeout_secs": {
                 "type": "integer",
                 "format": "int64",
@@ -9737,6 +9756,24 @@
           "Running",
           "Terminated"
         ]
+      },
+      "PipelineTemplateConfig": {
+        "type": "object",
+        "description": "Configuration for supplying a custom pipeline StatefulSet template via a Kubernetes ConfigMap.\n\nOperators can provide a custom StatefulSet YAML that the Kubernetes runner will use when\ncreating pipeline StatefulSets for a pipeline. The custom template must be stored as the\nvalue of a key in a ConfigMap in the same namespace as the pipeline; set `name` to the\nConfigMap name and `key` to the entry that contains the template.\n\nRecommendations and requirements:\n- **Start from the default template and modify it as needed.** The default template is present\nin ConfigMap named as `<release-name>-pipeline-template`, with key `pipelineTemplate` in the release\nnamespace and should be used as a reference.\n- The template must contain a valid Kubernetes `StatefulSet` manifest in YAML form. The\nrunner substitutes variables in the template before parsing; therefore the final YAML\nmust be syntactically valid.\n- The runner performs simple string substitution for the following placeholders. Please ensure these\nplaceholders are placed at appropriate location for their semantics:\n- `{id}`: pipeline Kubernetes name (used for object names and labels)\n- `{namespace}`: Kubernetes namespace where the pipeline runs\n- `{pipeline_executor_image}`: container image used to run the pipeline executor\n- `{binary_ref}`: program binary reference passed as an argument\n- `{program_info_ref}`: program info reference passed as an argument\n- `{pipeline_storage_path}`: mount path for persistent pipeline storage\n- `{storage_class_name}`: storage class name to use for PVCs (if applicable)\n- `{deployment_id}`: UUID identifying the deployment instance\n- `{deployment_initial}`: initial desired runtime status (e.g., `provisioning`)\n- `{bootstrap_policy}`: bootstrap policy value when applicable",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Key in the ConfigMap containing the pipeline template.\n\nIf not set, defaults to `pipelineTemplate`.",
+            "default": "pipelineTemplate"
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the ConfigMap containing the pipeline template."
+          }
+        }
       },
       "PostPutPipeline": {
         "type": "object",
@@ -10682,6 +10719,15 @@
             },
             "description": "Optionally, a list of CPU numbers for CPUs to which the pipeline may pin\nits worker threads.  Specify at least twice as many CPU numbers as\nworkers.  CPUs are generally numbered starting from 0.  The pipeline\nmight not be able to honor CPU pinning requests.\n\nCPU pinning can make pipelines run faster and perform more consistently,\nas long as different pipelines running on the same machine are pinned to\ndifferent CPUs.",
             "default": []
+          },
+          "pipeline_template_configmap": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PipelineTemplateConfig"
+              }
+            ],
+            "default": null,
+            "nullable": true
           },
           "provisioning_timeout_secs": {
             "type": "integer",

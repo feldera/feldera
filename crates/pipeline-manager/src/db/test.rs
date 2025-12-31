@@ -319,6 +319,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             io_workers: val.val19,
             dev_tweaks: BTreeMap::new(),
             logging: None,
+            pipeline_template_configmap: None,
         })
         .unwrap()
     }
