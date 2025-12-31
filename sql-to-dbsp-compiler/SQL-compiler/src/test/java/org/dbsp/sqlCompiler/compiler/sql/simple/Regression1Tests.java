@@ -1589,7 +1589,6 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void issue5345() {
-        this.showPlan();
         var ccs = this.getCCS("""
                 CREATE MATERIALIZED VIEW t1 AS
                     SELECT DISTINCT
@@ -1607,5 +1606,84 @@ public class Regression1Tests extends SqlIoTest {
                 -------------------------------
                  a| 1 | { by} | true  | 1
                  b| 1 | {}    | false | 1""");
+    }
+
+    @Test
+    public void issue5352() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(str VARCHAR);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                str::BOOLEAN IS FALSE AS arr,
+                str::BOOLEAN IS TRUE AS arr1
+                FROM tbl;""");
+        ccs.step("INSERT INTO TBL values('TRUE')", """
+                 arr | arr1 | weight
+                ---------------------
+                 false | true | 1""");
+    }
+
+    @Test
+    public void issue5352_a() {
+        this.qs("""
+             SELECT 'TRUE'::BOOLEAN;
+              r
+             ---
+              true
+             (1 row)
+             
+             SELECT 'true'::BOOLEAN;
+              r
+             ---
+              true
+             (1 row)
+             
+             SELECT 'TrUe'::BOOLEAN;
+              r
+             ---
+              true
+             (1 row)
+             
+             SELECT 't'::BOOLEAN;
+              r
+             ---
+              false
+             (1 row)
+             
+             SELECT '1'::BOOLEAN;
+              r
+             ---
+              false
+             (1 row)
+             
+             SELECT '0'::BOOLEAN;
+              r
+             ---
+              false
+             (1 row)
+             
+             SELECT 'yes'::BOOLEAN;
+              r
+             ---
+              false
+             (1 row)
+             
+             SELECT ''::BOOLEAN;
+              r
+             ---
+              false
+             (1 row)
+             
+             SELECT 'NULL'::BOOLEAN;
+              r
+             ---
+              false
+             (1 row)
+             
+             SELECT NULL::BOOLEAN;
+              r
+             ---
+             NULL
+             (1 row)""");
     }
 }

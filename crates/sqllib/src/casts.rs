@@ -314,7 +314,7 @@ cast_to_b!(u, usize);
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_b_s(value: SqlString) -> SqlResult<bool> {
-    Ok(value.str().trim().parse().unwrap_or(false))
+    Ok(value.str().to_lowercase().trim().parse().unwrap_or(false))
 }
 
 #[doc(hidden)]

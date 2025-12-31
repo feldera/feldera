@@ -161,6 +161,9 @@ The following table defines the `IS NOT TRUE` operator:
   </tr>
 </table>
 
+Casting a string to a Boolean value produces the result *true* for any
+string which spells 'true' when converted to lowercase.  Any other
+non-null string produces the result *false*.
 
 :::info
 
