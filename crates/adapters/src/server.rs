@@ -1158,21 +1158,11 @@ async fn activate(
     state: WebData<ServerState>,
     args: Query<ActivateParams>,
 ) -> Result<HttpResponse, PipelineError> {
-    let desired_status = match args.initial.as_str() {
-        "paused" => RuntimeDesiredStatus::Paused,
-        "running" => RuntimeDesiredStatus::Running,
-        _ => {
-            return Err(PipelineError::InvalidActivateStatusString(
-                args.initial.clone(),
-            ));
-        }
-    };
-
-    match desired_status {
+    match args.initial {
         RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
-            state_transition(state, "activate", desired_status, true).await
+            state_transition(state, "activate", args.initial, true).await
         }
-        _ => Err(PipelineError::InvalidActivateStatus(desired_status)),
+        _ => Err(PipelineError::InvalidActivateStatus(args.initial)),
     }
 }
 
