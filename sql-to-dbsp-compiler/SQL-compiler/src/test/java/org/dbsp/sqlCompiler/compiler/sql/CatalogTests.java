@@ -37,6 +37,38 @@ public class CatalogTests extends BaseSQLTests {
         return result;
     }
 
+
+    @Test
+    public void issue5350() {
+        this.getCCS("""
+                CREATE TABLE test_data (
+                    username VARCHAR NOT NULL,
+                    kafka_timestamp VARIANT DEFAULT CONNECTOR_METADATA()
+                ) WITH ('connectors' = '[
+                    {
+                        "format":{
+                            "name":"avro",
+                            "config": {
+                                "update_format":"raw",
+                                "registry_urls": ["http://localhost:18081/"]
+                            }
+                        },
+                        "transport":{
+                            "name":"kafka_input",
+                            "config": {
+                                "topic":"test_topic",
+                                "start_from":"latest",
+                                "bootstrap.servers":"localhost:19092",
+                                "include_timestamp": true
+                            }
+                        }
+                    }
+                    ]',
+                    'append_only'='false',
+                    'materialized' = 'true'
+                );""");
+    }
+
     @Test
     public void issue4019a() {
         this.getCCS("""

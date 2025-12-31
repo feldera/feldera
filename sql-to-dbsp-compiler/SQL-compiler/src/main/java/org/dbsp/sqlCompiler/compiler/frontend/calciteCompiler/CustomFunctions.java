@@ -540,7 +540,7 @@ public class CustomFunctions {
         public static final String NAME = "CONNECTOR_METADATA";
 
         private ConnectorMetadataFunction() {
-            super(NAME, ReturnTypes.VARIANT.andThen(SqlTypeTransforms.TO_NULLABLE),
+            super(NAME, ReturnTypes.VARIANT.andThen(SqlTypeTransforms.FORCE_NULLABLE),
                     OperandTypes.NILADIC,
                     SqlFunctionCategory.USER_DEFINED_FUNCTION, "grammar#connector_metadata",
                     FunctionDocumentation.NO_FILE);
