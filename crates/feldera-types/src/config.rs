@@ -74,6 +74,15 @@ pub struct PipelineConfig {
     #[schema(inline)]
     pub global: RuntimeConfig,
 
+    /// Configuration for multihost pipelines.
+    ///
+    /// The presence of this field indicates that the pipeline is running in
+    /// multihost mode.  In the pod with ordinal 0, this triggers starting the
+    /// coordinator process.  In all pods, this tells the pipeline process to
+    /// await a connection from the coordinator instead of initializing the
+    /// pipeline immediately.
+    pub multihost: Option<MultihostConfig>,
+
     /// Unique system-generated name of the pipeline (format: `pipeline-<uuid>`).
     /// It is unique across all tenants and cannot be changed.
     ///
@@ -186,6 +195,25 @@ pub struct PipelineConfigProgramInfo {
     /// Program information.
     #[serde(default)]
     pub program_ir: Option<ProgramIr>,
+}
+
+/// Configuration for a multihost Feldera pipeline.
+///
+/// This configuration is primarily for the coordinator.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct MultihostConfig {
+    /// Number of hosts to launch.
+    ///
+    /// For the configuration to be truly multihost, this should be at least 2.
+    /// A value of 1 still runs the multihost coordinator but it only
+    /// coordinates a single host.
+    pub hosts: usize,
+}
+
+impl Default for MultihostConfig {
+    fn default() -> Self {
+        Self { hosts: 1 }
+    }
 }
 
 /// Configuration for persistent storage in a [`PipelineConfig`].
@@ -683,6 +711,12 @@ pub struct RuntimeConfig {
     /// used during a step.
     pub workers: u16,
 
+    /// Number of DBSP hosts.
+    ///
+    /// The worker threads are evenly divided among the hosts.  For single-host
+    /// deployments, this should be 1 (the default).
+    pub hosts: usize,
+
     /// Storage configuration.
     ///
     /// - If this is `None`, the default, the pipeline's state is kept in
@@ -922,6 +956,7 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             workers: 8,
+            hosts: 1,
             storage: Some(StorageOptions::default()),
             fault_tolerance: FtConfig::default(),
             cpu_profiler: true,

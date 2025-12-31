@@ -257,6 +257,7 @@ mod tests {
         // PipelineConfig -> JSON -> PipelineConfig is the same as original
         let deployment_config = PipelineConfig {
             global: Default::default(),
+            multihost: None,
             name: None,
             given_name: None,
             storage_config: None,

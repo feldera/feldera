@@ -194,6 +194,11 @@ impl WorkerProfile {
 #[derive(Debug)]
 pub struct GraphProfile {
     pub elapsed_time: Duration,
+
+    /// Worker number of the first worker in `worker_graphs`.
+    ///
+    /// This will be 0 in single-host profiles.
+    pub worker_offset: usize,
     pub worker_graphs: Vec<Graph>,
 }
 
@@ -225,7 +230,7 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
             .as_ref()
             .join(self.elapsed_time.as_micros().to_string());
         create_dir_all(&dir_path)?;
-        for (worker, graph) in self.worker_graphs.iter().enumerate() {
+        for (graph, worker) in self.worker_graphs.iter().zip(self.worker_offset..) {
             fs::write(dir_path.join(format!("{worker}.dot")), graph.to_dot())?;
             fs::write(dir_path.join(format!("{worker}.txt")), graph.to_string())?;
         }
@@ -236,7 +241,7 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
     /// Returns a Zip archive containing all the profile `.dot` files.
     pub fn as_zip(&self) -> Vec<u8> {
         let mut zip = ZipWriter::new(IoCursor::new(Vec::with_capacity(65536)));
-        for (worker, graph) in self.worker_graphs.iter().enumerate() {
+        for (graph, worker) in self.worker_graphs.iter().zip(self.worker_offset..) {
             zip.start_file(format!("{worker}.dot"), SimpleFileOptions::default())
                 .unwrap();
             zip.write_all(graph.to_dot().as_bytes()).unwrap();
