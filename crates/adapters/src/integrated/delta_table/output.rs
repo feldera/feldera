@@ -539,7 +539,7 @@ impl Encoder for DeltaTableWriter {
         self
     }
 
-    fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
+    fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
         let micros = Utc::now().timestamp_micros();
         let mut insert_builder = ArrayBuilder::new(self.inner.serde_arrow_schema.clone())?;
 

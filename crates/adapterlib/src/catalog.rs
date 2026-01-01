@@ -337,6 +337,8 @@ pub trait SerBatch: SyncSerBatchReader {
 
     fn as_batch_reader(&self) -> &dyn SerBatchReader;
 
+    fn arc_as_batch_reader(self: Arc<Self>) -> Arc<dyn SerBatchReader>;
+
     /// Convert batch into a trace with identical contents.
     fn into_trace(self: Arc<Self>) -> Box<dyn SerTrace>;
 }
