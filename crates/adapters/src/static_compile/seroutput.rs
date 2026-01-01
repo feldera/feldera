@@ -511,6 +511,10 @@ where
     fn as_batch_reader(&self) -> &dyn SerBatchReader {
         self
     }
+
+    fn arc_as_batch_reader(self: Arc<Self>) -> Arc<dyn SerBatchReader> {
+        self
+    }
 }
 
 impl<T, KD, VD> SerTrace for SerBatchImpl<T, KD, VD>
