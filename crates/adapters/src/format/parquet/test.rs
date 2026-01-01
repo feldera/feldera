@@ -155,7 +155,7 @@ fn parquet_output() {
         vec![Tup2(test_data[0].clone(), 2), Tup2(test_data[1].clone(), 1)],
     );
 
-    let zset = &SerBatchImpl::<_, TestStruct2, ()>::new(zset) as &dyn SerBatchReader;
+    let zset = Arc::new(SerBatchImpl::<_, TestStruct2, ()>::new(zset)) as Arc<dyn SerBatchReader>;
     encoder.consumer().batch_start(0);
     encoder.encode(zset).unwrap();
     encoder.consumer().batch_end();

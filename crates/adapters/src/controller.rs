@@ -5519,7 +5519,7 @@ impl ControllerInner {
     }
 
     fn push_batch_to_encoder(
-        batch: &dyn SerBatchReader,
+        batch: Arc<dyn SerBatchReader>,
         endpoint_id: EndpointId,
         endpoint_name: &str,
         encoder: &mut dyn Encoder,
@@ -5566,7 +5566,7 @@ impl ControllerInner {
                 // so we convert the spine to a snapshot to avoid wasting CPU, I/O, and memory on
                 // background merging.
                 Self::push_batch_to_encoder(
-                    output_buffer.take_buffer().unwrap().snapshot().as_ref(),
+                    output_buffer.take_buffer().unwrap().snapshot(),
                     endpoint_id,
                     &endpoint_name,
                     encoder.as_mut(),
@@ -5607,7 +5607,7 @@ impl ControllerInner {
                 } else {
                     if let Some(data) = data {
                         Self::push_batch_to_encoder(
-                            data.as_ref(),
+                            data,
                             endpoint_id,
                             &endpoint_name,
                             encoder.as_mut(),

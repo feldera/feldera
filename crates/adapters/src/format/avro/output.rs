@@ -22,6 +22,7 @@ use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::debug;
 
 // TODOs:
@@ -485,7 +486,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
     /// Encode a non-indexed batch.
     ///
     /// Generates inserts and deletes, but not updates.
-    fn encode_plain(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
+    fn encode_plain(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
         let mut cursor = CursorWithPolarity::new(batch.cursor(RecordFormat::Avro)?);
 
         while cursor.key_valid() {
@@ -653,7 +654,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
     }
 
     /// Encode an indexed batch.
-    fn encode_indexed(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
+    fn encode_indexed(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
         let mut cursor = batch.cursor(RecordFormat::Avro)?;
 
         while cursor.key_valid() {
@@ -720,7 +721,7 @@ impl Encoder for AvroEncoder {
         self.output_consumer.as_mut()
     }
 
-    fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
+    fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
         if self.key_sql_schema.is_some() {
             self.encode_indexed(batch)
         } else {
