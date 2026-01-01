@@ -14,6 +14,7 @@ use apache_avro::{
 };
 use arrow::record_batch::RecordBatch;
 use dbsp::circuit::NodeId;
+use dbsp::dynamic::{DynData, DynVec};
 use dbsp::operator::StagedBuffers;
 use dyn_clone::DynClone;
 use feldera_sqllib::Variant;
@@ -279,6 +280,10 @@ pub trait SerBatchReader: 'static {
     fn batches(&self) -> Vec<Arc<dyn SerBatch>>;
 
     fn snapshot(&self) -> Arc<dyn SerBatchReader>;
+
+    fn sample_keys(&self, sample_size: usize, sample: &mut DynVec<DynData>);
+
+    fn partition_keys(&self, num_partitions: usize, bounds: &mut DynVec<DynData>);
 }
 
 impl Debug for dyn SerBatchReader {
@@ -367,6 +372,10 @@ pub trait SerCursor: Send {
     /// for this key.
     fn val_valid(&self) -> bool;
 
+    fn key(&self) -> &DynData;
+
+    fn get_key(&self) -> Option<&DynData>;
+
     /// Serialize current key. Panics if invalid.
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
 
@@ -449,6 +458,8 @@ pub trait SerCursor: Send {
 
         count
     }
+
+    fn seek_key_exact(&mut self, key: &DynData) -> bool;
 }
 
 /// A handle to an output stream of a circuit that yields type-erased
@@ -520,6 +531,14 @@ impl SerCursor for CursorWithPolarity<'_> {
 
     fn val_valid(&self) -> bool {
         self.cursor.val_valid()
+    }
+
+    fn key(&self) -> &DynData {
+        self.cursor.key()
+    }
+
+    fn get_key(&self) -> Option<&DynData> {
+        self.cursor.get_key()
     }
 
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
@@ -618,6 +637,10 @@ impl SerCursor for CursorWithPolarity<'_> {
     fn rewind_vals(&mut self) {
         self.cursor.rewind_vals();
         self.advance_val();
+    }
+
+    fn seek_key_exact(&mut self, key: &DynData) -> bool {
+        self.cursor.seek_key_exact(key)
     }
 }
 
