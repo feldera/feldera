@@ -39,7 +39,7 @@ use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use enum_map::Enum;
 use feldera_storage::{FileCommitter, FileReader, StoragePath};
-use rand::Rng;
+use rand::{Rng, thread_rng};
 use rkyv::ser::Serializer as _;
 use size_of::SizeOf;
 use std::any::TypeId;
@@ -534,6 +534,52 @@ where
     where
         Self::Time: PartialEq<()>,
         RG: Rng;
+
+    /// Returns num_partitions-1 keys from the batch that partition the batch into num_partitions
+    /// approximately equal size ranges 0..key1, key1..key2, ... , key_num_partitions-1..last_key_in_the_batch.
+    ///
+    /// The default implementation uses the sample_keys method to sample num_partitions^2 keys and
+    /// picks keys num_partitions, 2*num_partitions, ..,num_partitions-1*num_partitions as boundaries.
+    ///
+    /// # Arguments
+    ///
+    /// * `num_partitions` - number of partitions to create.
+    /// * `bounds` - output vector to store the partition boundaries.
+    fn partition_keys(&self, num_partitions: usize, bounds: &mut DynVec<Self::Key>)
+    where
+        Self::Time: PartialEq<()>,
+    {
+        bounds.clear();
+        if num_partitions <= 1 {
+            return;
+        }
+
+        let sample_size = num_partitions * num_partitions;
+
+        let mut sample = self.factories().keys_factory().default_box();
+        self.sample_keys(&mut thread_rng(), sample_size, sample.as_mut());
+
+        // Pick evenly distributed keys as boundaries
+        let sample_len = sample.len();
+        if sample_len == 0 {
+            return;
+        }
+
+        if sample_len >= num_partitions {
+            // Pick num_bounds evenly distributed indices from the sample
+            // These divide the sample into num_bounds + 1 roughly equal parts
+            for i in 0..num_partitions - 1 {
+                let idx = ((i + 1) * sample_len) / num_partitions;
+                let idx = idx.min(sample_len - 1);
+                bounds.push_ref(sample.index(idx));
+            }
+        } else {
+            // If we have fewer samples than needed, use what we have
+            for i in 0..sample_len {
+                bounds.push_ref(sample.index(i));
+            }
+        }
+    }
 
     /// Creates and returns a new batch that is a subset of this one, containing
     /// only the key-value pairs whose keys are in `keys`. May also return
