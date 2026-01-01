@@ -18,7 +18,10 @@ use dbsp::{
     DBData,
     trace::{WithSnapshot, merge_batches},
 };
-use dbsp::{DBWeight, dynamic::DowncastTrait};
+use dbsp::{
+    DBWeight,
+    dynamic::{DowncastTrait, DynData, DynVec},
+};
 use dbsp::{
     dynamic::Erase,
     typed_batch::{DynBatchReader, DynSpine, DynTrace, Spine, TypedBatch},
@@ -31,6 +34,7 @@ use feldera_types::{
     format::csv::CsvParserConfig,
     serde_with_context::{SerializeWithContext, SqlSerdeConfig},
 };
+use rand::thread_rng;
 use serde::Serialize;
 use serde_arrow::ArrayBuilder;
 use std::{any::Any, collections::HashSet, fmt::Debug};
@@ -312,7 +316,7 @@ impl<B, KD, VD> SerCollectionHandleImpl<B, KD, VD> {
 impl<K, V, R, B, KD, VD> SerBatchReaderHandle
     for SerCollectionHandleImpl<TypedBatch<K, V, R, B>, KD, VD>
 where
-    B: DynBatchReader<Time = ()> + WithSnapshot + Send + Clone + Sync,
+    B: DynBatchReader<Time = (), Key = DynData> + WithSnapshot + Send + Clone + Sync,
     B::Batch: DynBatchReader<Key = B::Key, Val = B::Val, R = B::R, Time = ()>,
     K: DBData + Erase<<B::Batch as DynBatchReader>::Key>,
     V: DBData + Erase<<B::Batch as DynBatchReader>::Val>,
@@ -389,7 +393,7 @@ where
 
 impl<B, KD, VD> SerBatchReader for SerBatchImpl<B, KD, VD>
 where
-    B: BatchReader<Time = ()>,
+    B: BatchReader<Time = (), DynK = DynData>,
     B::R: Into<i64>,
     KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
     VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
@@ -457,11 +461,21 @@ where
             self.batch.dyn_snapshot()
         )))
     }
+
+    fn sample_keys(&self, sample_size: usize, sample: &mut DynVec<DynData>) {
+        self.batch
+            .inner()
+            .sample_keys(&mut thread_rng(), sample_size, sample);
+    }
+
+    fn partition_keys(&self, num_partitions: usize, bounds: &mut DynVec<DynData>) {
+        self.batch.inner().partition_keys(num_partitions, bounds);
+    }
 }
 
 impl<B, KD, VD> SyncSerBatchReader for SerBatchImpl<B, KD, VD>
 where
-    B: BatchReader<Time = ()> + Send + Sync,
+    B: BatchReader<Time = (), DynK = DynData> + Send + Sync,
     B::R: Into<i64>,
     KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
     VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
@@ -470,7 +484,7 @@ where
 
 impl<B, KD, VD> SerBatch for SerBatchImpl<B, KD, VD>
 where
-    B: Batch<Time = ()> + Send + Sync,
+    B: Batch<Time = (), DynK = DynData> + Send + Sync,
     B::R: Into<i64>,
     KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
     VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
@@ -519,7 +533,7 @@ where
 
 impl<T, KD, VD> SerTrace for SerBatchImpl<T, KD, VD>
 where
-    T: Trace<Time = ()>,
+    T: Trace<Time = (), DynK = DynData>,
     //TypedBatch<T::Key, T::Val, T::R, <T::InnerTrace as DynTrace>::Batch>: Send + Sync,
     T::R: Into<i64>,
     KD: From<T::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
@@ -560,7 +574,7 @@ where
 impl<'a, Ser, B, KD, VD> SerCursorImpl<'a, Ser, B, KD, VD>
 where
     Ser: BytesSerializer,
-    B: BatchReader<Time = ()>,
+    B: BatchReader<Time = (), DynK = DynData>,
     B::R: Into<i64>,
     KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,
     VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,
@@ -609,7 +623,7 @@ where
 impl<'a, Ser, B, KD, VD> SerCursor for SerCursorImpl<'a, Ser, B, KD, VD>
 where
     Ser: BytesSerializer,
-    B: BatchReader<Time = ()>,
+    B: BatchReader<Time = (), DynK = DynData>,
     B::R: Into<i64>,
     KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,
     VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,
@@ -621,6 +635,14 @@ where
 
     fn val_valid(&self) -> bool {
         self.cursor.val_valid()
+    }
+
+    fn key(&self) -> &DynData {
+        self.cursor.key()
+    }
+
+    fn get_key(&self) -> Option<&DynData> {
+        self.cursor.get_key()
     }
 
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
@@ -769,5 +791,9 @@ where
         self.cursor.rewind_vals();
         debug_assert!(!self.cursor.val_valid() || self.weight() != 0);
         self.update_val();
+    }
+
+    fn seek_key_exact(&mut self, key: &DynData) -> bool {
+        self.cursor.seek_key_exact(key, None)
     }
 }
