@@ -44,7 +44,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Oouter visitor which rewrites the graph to convert string types to interned strings */
+/** Outer visitor which rewrites the graph to convert string types to interned strings */
 public class RewriteInternedFields extends CircuitCloneVisitor {
     /** Operators that collect all interned strings */
     private final List<OutputPort> dynamicStrings;
@@ -530,9 +530,14 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
             return source;
         DBSPVariablePath var = sourceType.getKVRefType().var();
         DBSPExpression convertKey = this.unintern(var.field(0).deref(), commonKeyType);
+        DBSPExpression right = DBSPTupleExpression.flatten(var.field(1).deref());
+        if (sourceType.elementType.mayBeNull) {
+            right = new DBSPIfExpression(right.getNode(), var.field(1).is_null(),
+                    sourceType.elementType.nullValue(),
+                    new DBSPTupleExpression(right.allFields(), true));
+        }
         DBSPClosureExpression converter = new DBSPRawTupleExpression(
-                convertKey,
-                DBSPTupleExpression.flatten(var.field(1).deref())).closure(var);
+                convertKey, right).closure(var);
         DBSPMapIndexOperator result = new DBSPMapIndexOperator(
                 source.operator.getRelNode(),
                 converter, source);
