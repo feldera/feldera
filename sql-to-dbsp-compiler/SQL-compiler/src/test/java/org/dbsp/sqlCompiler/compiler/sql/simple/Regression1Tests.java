@@ -1686,4 +1686,35 @@ public class Regression1Tests extends SqlIoTest {
              NULL
              (1 row)""");
     }
+
+    @Test
+    public void issue5359() {
+        this.getCCS("""
+                CREATE TABLE source (
+                    id VARCHAR NOT NULL,
+                    key VARCHAR NOT NULL INTERNED,
+                    version BIGINT
+                ) WITH ('append_only' = 'true');
+                
+                CREATE TABLE lookup (
+                    key VARCHAR NOT NULL INTERNED PRIMARY KEY,
+                    metadata VARCHAR
+                );
+                
+                CREATE LOCAL VIEW v
+                AS
+                SELECT
+                    id,
+                    MAX(key) as key
+                FROM source
+                GROUP BY id;
+                
+                CREATE VIEW result
+                AS
+                SELECT
+                    a.key,
+                    l.metadata
+                FROM v a
+                LEFT JOIN lookup l ON a.key = l.key;""");
+    }
 }
