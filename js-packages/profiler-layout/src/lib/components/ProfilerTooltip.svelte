@@ -2,7 +2,7 @@
   import type { MeasurementCategory, NodeAttributes, TooltipRow } from 'profiler-lib'
   import { measurementCategory, shadeOfRed } from 'profiler-lib'
   import { SvelteSet } from 'svelte/reactivity'
-  import { groupBy } from '$lib/functions/common/array'
+  import { groupBy } from '$lib/functions/array'
 
   export type TooltipData =
     | { nodeAttributes: NodeAttributes }

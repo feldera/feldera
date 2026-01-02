@@ -119,18 +119,25 @@ Python SDK providing programmatic control over the complete IVM system lifecycle
 - **Incremental Error Handling**: Error recovery mechanisms aware of circuit state and incremental computation semantics
 - **Change Stream APIs**: Native support for change-oriented data manipulation optimized for incremental computation patterns
 
-### **IVM Development Console (`packages/web-console/`)**
-Interactive web application for visual IVM system development and monitoring:
+### **Frontend Ecosystem (`js-packages/`)**
+TypeScript/JavaScript packages providing user-facing interfaces and visualization tools for the Feldera platform. See `js-packages/CLAUDE.md` for comprehensive documentation of the frontend monorepo.
 
-#### **IVM-Focused Technology Stack**
+#### **IVM Development Console (`js-packages/web-console/`)**
+Production web application for visual IVM system development and monitoring:
 - **SvelteKit 2.x**: Reactive framework enabling real-time circuit state visualization with Svelte 5 runes for efficient incremental UI updates
 - **Circuit Monitoring**: WebSocket integration providing live DBSP circuit execution metrics, operator throughput, and incremental computation performance
 - **Secure Circuit Access**: OIDC/OAuth2 authentication protecting access to production IVM deployments
-
-#### **Incremental Computation UX**
 - **Visual Circuit Builder**: Interactive SQL-to-DBSP compilation with real-time circuit graph visualization showing operator connections and data flow
 - **IVM-Aware SQL Editor**: Syntax highlighting with incremental computation hints, circuit compilation previews, and optimization suggestions
 - **Circuit Performance Dashboard**: Real-time visualization of incremental computation metrics including change propagation latency, operator memory usage, and throughput analysis
+
+#### **Profiler Visualization Stack**
+- **`profiler-lib`**: Core visualization engine using Cytoscape.js for DBSP circuit graph rendering with callback-based API for UI integration
+- **`profiler-layout`**: Reusable Svelte component library implementing common UI layout elements around the profiler diagram - ProfilerLayout, ProfilerTooltip, ProfileTimestampSelector and shared bundle processing utilities
+- **`profiler-app`**: Standalone single-page application for offline profile analysis, building to a self-contained HTML file to be included with the support bundle
+
+#### Profile processing
+- Unzip-once bundle processing enabling quick timestamp switching across profile snapshots without repeated decompression
 
 ### **Documentation (`docs.feldera.com/`)**
 Comprehensive documentation ecosystem built with Docusaurus:
@@ -8210,9 +8217,256 @@ This documentation site serves as the primary resource for Feldera users, provid
 
 ---
 
+## Context: js-packages/CLAUDE.md
+<!-- SECTION:js-packages/CLAUDE.md START -->
+# js-packages
+
+## Overview
+
+The `js-packages/` directory contains TypeScript/JavaScript packages for the Feldera platform's user-facing interfaces and visualization tools. These packages form the frontend ecosystem for interacting with Feldera's incremental view maintenance system.
+
+All packages use **Bun** as the package manager and are organized as a monorepo workspace.
+
+## Package Organization
+
+### **web-console**
+Production web application for managing Feldera pipelines and data processing workflows.
+
+**Purpose**: Complete dashboard UI for pipeline management, SQL editing, real-time monitoring, and profiling
+**Technology**: SvelteKit 2.x with Svelte 5, TailwindCSS, Skeleton UI
+**Deployment**: Static site served by pipeline-manager service
+**Key Features**:
+- Pipeline lifecycle management (create, configure, start, stop)
+- SQL editor with Monaco integration
+- Real-time metrics and performance monitoring
+- Connector configuration for data sources/sinks
+- Integrated profiler with circuit visualization
+- OIDC/OAuth2 authentication
+
+See `web-console/CLAUDE.md` for detailed documentation.
+
+### **profiler-app**
+Standalone single-page application for offline profile visualization.
+
+**Purpose**: Development tool for analyzing DBSP circuit profiles without backend dependencies
+**Technology**: Svelte 5 with Vite single-file plugin
+**Deployment**: Single self-contained HTML file
+**Key Features**:
+- Browser-based support bundle upload
+- Profile timestamp selection
+- Offline circuit visualization
+- Shareable HTML output for team collaboration
+
+See `profiler-app/CLAUDE.md` for detailed documentation.
+
+### **profiler-layout**
+Reusable Svelte component library for circuit profile visualization.
+
+**Purpose**: Shared UI components and utilities for profiler features across web-console and profiler-app
+**Technology**: Svelte 5 component library with SvelteKit packaging
+**Deployment**: NPM workspace package
+**Key Components**:
+- `ProfilerLayout` - Main visualization container
+- `ProfilerDiagram` - Circuit graph renderer
+- `ProfilerTooltip` - Node detail display
+- `ProfileTimestampSelector` - Timestamp navigation
+**Key Utilities**:
+- `getSuitableProfiles()` - Efficient zip bundle extraction
+- `processProfileFiles()` - Profile data parsing
+
+See `profiler-layout/CLAUDE.md` for detailed documentation.
+
+### **profiler-lib**
+Core visualization engine for DBSP circuit profiling.
+
+**Purpose**: Low-level profiler implementation with Cytoscape graph visualization
+**Technology**: TypeScript with Cytoscape.js and ELK layout
+**Deployment**: NPM workspace package
+**Key Features**:
+- Callback-based API for UI integration
+- Incremental circuit graph rendering
+- Performance metric visualization
+- Worker-based filtering
+- Node search and highlighting
+
+See `profiler-lib/CLAUDE.md` for detailed documentation.
+
+### **feldera-theme**
+CSS theme package for consistent branding across applications.
+
+**Purpose**: Reusable Feldera Modern theme CSS
+**Technology**: Pure CSS theme configuration
+**Deployment**: NPM workspace package
+**Contents**: Skeleton UI theme customization with Feldera branding (purple gradients, DM Sans fonts)
+
+## Monorepo Dependency Graph
+
+```
+web-console
+├── profiler-layout
+├── feldera-theme
+└── ...
+
+profiler-app
+├── profiler-layout
+├── feldera-theme
+└── ...
+
+profiler-layout
+├── profiler-lib
+└── ...
+
+profiler-lib
+└── [Cytoscape, ELK]
+```
+
+## Key Architectural Patterns
+
+### **Incremental Computation Awareness**
+All packages are designed around DBSP's incremental computation model:
+- Profile data represents circuit execution snapshots at specific timestamps
+- Visualization focuses on operator performance and change propagation
+- UI supports comparing profiles across time
+
+### **Component Reusability**
+profiler-layout serves as the presentation layer between profiler-lib (engine) and applications (web-console, profiler-app):
+- Prevents code duplication
+- Ensures consistent UX across applications
+- Allows independent testing and development
+
+### **Efficient Bundle Processing**
+Shared unzip-once pattern across consuming applications:
+1. Call `getSuitableProfiles(zipData)` once when bundle is uploaded
+2. Store [Date, ZipItem[]][] array in application state
+3. Switch timestamps by calling `processProfileFiles()` with cached files
+4. No redundant unzipping - efficient navigation
+
+### **Svelte 5 Runes**
+All Svelte packages use Svelte 5's runes-based reactivity:
+- `$state()` - Reactive state variables
+- `$derived()` - Computed values
+- `$effect()` - Side effects that run when dependencies change
+- `$bindable` - Two-way binding for component props
+
+## Development Workflow
+
+### **Package Manager**
+All packages use **Bun** as the package manager.
+
+### **Workspace Commands**
+From repository root:
+- `bun install` - Install dependencies for all packages
+- `bun run -r build` - Build all packages
+- `bun run -r check` - Type check all packages
+
+### **Package-Specific Commands**
+Navigate to individual package directories and run:
+- `bun install` - Install package dependencies
+- `bun run dev` - Development server
+- `bun run build` - Build package
+- `bun run check` - Type checking
+
+### **Build Dependencies**
+Some packages have build-time dependencies:
+- **profiler-layout** builds profiler-lib before its own build (prebuild script)
+- **web-console** requires profiler-layout to be built first
+- **profiler-app** requires profiler-layout to be built first
+
+## Shared Technologies
+
+### **UI Framework**
+- **Svelte 5**: Component framework with runes-based reactivity
+- **SvelteKit**: Build tooling and app framework (web-console)
+- **Vite**: Build tool and dev server
+
+### **Styling**
+- **TailwindCSS**: Utility-first CSS framework
+- **Skeleton UI**: Component library for consistent design
+- **feldera-theme**: Custom Feldera branding
+
+### **TypeScript**
+All packages use TypeScript with strict type checking enabled.
+
+### **Profiler Stack**
+- **profiler-lib**: Core visualization engine (Cytoscape + ELK)
+- **profiler-layout**: Reusable UI components
+- **but-unzip**: Browser-based zip extraction
+
+## Integration Points
+
+### **web-console ↔ pipeline-manager**
+- OpenAPI-generated TypeScript client for type-safe API communication
+- WebSocket connections for real-time logs and metrics
+- Support bundle downloads for profiler integration
+
+### **profiler-app ↔ filesystem**
+- Browser file picker for manual bundle uploads
+- No server communication - fully offline operation
+
+### **profiler-layout ↔ applications**
+- Svelte component composition via props and snippets
+- Two-way binding for interactive controls
+- Shared utilities for bundle processing
+
+## Testing Strategy
+
+### **web-console**
+- End-to-end tests with Playwright
+- Component tests for isolated UI validation
+- Integration tests against local pipeline-manager
+
+### **profiler-app**
+- Manual testing with support bundles
+- Visual regression testing of visualizations
+
+### **profiler-layout**
+- Integration testing through consuming applications
+- Component composition testing
+
+### **profiler-lib**
+- Unit tests for core visualization logic
+- Integration tests with mock data
+
+## Build Outputs
+
+### **web-console**
+Static site output in `build/`:
+- Client-side rendered pages
+- Optimized assets (JS, CSS, images)
+- Served as static files by pipeline-manager in production
+
+### **profiler-app**
+Single HTML file in `dist/`:
+- All JavaScript, CSS, and assets inlined
+- Self-contained for offline use
+- Can be opened directly in browser
+
+### **profiler-layout**
+Library package in `dist/`:
+- ESM module with TypeScript definitions
+- Svelte components for consumption by other packages
+
+### **profiler-lib**
+Library package in `dist/`:
+- Compiled TypeScript
+- Type definitions for TypeScript consumers
+
+### **feldera-theme**
+CSS file:
+- `feldera-modern.css` - Theme stylesheet
+
+## Related Documentation
+
+For comprehensive repository context and IVM architecture, see `feldera/CLAUDE.md`.
+
+For package-specific details, see individual `CLAUDE.md` files in each package directory.
+<!-- SECTION:js-packages/CLAUDE.md END -->
+
+---
+
 ## Context: js-packages/profiler-app/CLAUDE.md
 <!-- SECTION:js-packages/profiler-app/CLAUDE.md START -->
-# CLAUDE.md - profiler-app
+# profiler-app
 
 ## Overview
 
@@ -8220,17 +8474,10 @@ This documentation site serves as the primary resource for Feldera users, provid
 
 This is a **development/debugging tool**, not intended for production use. In production, use the web-console's integrated profiler with real-time API data.
 
-**Architecture:** Uses profiler-lib's callback-based API to render visualizations. The app manages UI controls and responds to profiler callbacks for tooltip rendering and control state updates.
-
 ## Purpose
 
-Enable local, offline development and testing of profiler visualizations:
-- Load profiles from support bundles via browser file picker
-- Iterate on visualization features without backend dependencies
-- Debug circuit performance issues with saved profile snapshots
-- Test profiler-lib integration before web-console deployment
-- Develop new profiler features in isolation
-- Share profile visualizations as a single HTML file
+Have a lightweight, standalone profile visualizer that can be used independently of web-console
+and be distributed as a part of the support bundle.
 
 ## Architecture
 
@@ -8241,312 +8488,362 @@ profiler-app builds to a completely self-contained HTML file with all JavaScript
 - Served by any static web server
 - Shared via email, cloud storage, or version control
 
+### Technology Stack
+
+- **Framework**: Svelte 5 with runes-based reactivity
+- **Build Tool**: Vite with single-file plugin
+- **Styling**: TailwindCSS with Skeleton UI components
+
 ### What It Does
 
 1. **Bundle processing** - Extract profiles from support bundles in the browser
-2. **File picker UI** - Manual bundle selection through "Load Bundle" button
-3. **Visualization** - Render circuit profiles using profiler-lib
-4. **Error handling** - Display loading and parsing errors
+2. **Visualization** - Render circuit profiles
+3. **File picker UI** - Manual bundle selection through "Load Bundle" button
+4. **Timestamp selection** - Switch between multiple profile snapshots
+5. **Error handling** - Display loading and parsing errors
 
-### What It Does NOT Do
-
-- ❌ Server-side processing or HTTP APIs
-- ❌ JSON file fetching or pre-processing
-- ❌ SQL compilation (expects dataflow already in bundles)
-- ❌ Authentication or authorization
-- ❌ Routing or navigation
-- ❌ Real-time updates or WebSocket connections
-
-### Module Structure
+## Module Structure
 
 ```
 profiler-app/
 ├── src/
-│   ├── index.ts                  # Entry point
-│   ├── fileLoader.ts             # Profiler lifecycle manager
-│   ├── browserBundleProcessor.ts # Browser-based bundle extraction (but-unzip)
-│   └── bundleUpload.ts           # UI handler for file picker
-├── data/
-│   ├── rec.zip                   # Sample profile bundle
-│   └── README.md                 # Data directory documentation
-├── index.html                    # HTML shell with embedded styles
-├── package.json                  # Dependencies and build scripts
-├── vite.config.ts                # Vite config with singlefile plugin
-└── tsconfig.json                 # TypeScript configuration
+│   ├── main.ts              # Entry point - mounts Svelte app
+│   ├── App.svelte           # Main component with state management
+│   ├── app.css              # Global styles and theme imports
+│   ├── app.d.ts             # TypeScript definitions
+│   └── assets/              # Fonts and static assets
+├── index.html               # HTML shell
+├── package.json             # Dependencies and build scripts
+├── vite.config.ts           # Vite config with singlefile plugin
+├── svelte.config.js         # Svelte configuration
+└── tsconfig.json            # TypeScript configuration
 ```
 
 ## Key Components
 
-### Entry Point (`index.ts`)
+### Entry Point (`main.ts`)
 
-Handles application initialization with callback-based profiler integration:
+Minimal entry point that mounts the Svelte application:
+- Uses Svelte 5's `mount()` API
+- Targets the `#app` div in index.html
+- Imports global styles
 
-```typescript
-// Define callbacks for profiler UI updates
-const callbacks: ProfilerCallbacks = {
-    onTooltipUpdate: (data, visible) => {
-        // Render tooltip from structured data
-    },
-    onMetricsChanged: (metrics, selectedId) => {
-        // Populate metric dropdown
-    },
-    onWorkersChanged: (workers) => {
-        // Render worker checkboxes
-    },
-    onMessage: (msg) => { /* Show status */ },
-    onMessageClear: () => { /* Hide status */ },
-    onError: (err) => { /* Display error */ }
-};
+### Main Application (`App.svelte`)
 
-// Wire up UI event handlers
-metricSelector.addEventListener('change', (e) => {
-    loader.selectMetric(e.target.value);
-});
+Single-component application managing all state and UI with Svelte 5 runes:
 
-toggleWorkersButton.addEventListener('click', () => {
-    loader.toggleAllWorkers();
-});
+**UI Structure:**
+- Welcome screen with upload instructions (shown when no profile loaded)
+- ProfilerLayout with visualization (shown when profile loaded)
+- ProfileTimestampSelector for switching between snapshots
+- Hidden file input for bundle selection
+- Error and loading state displays
 
-searchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') loader.search(searchInput.value);
-});
-```
+### HTML Shell (`index.html`)
 
-**Key Features:**
-- Callback-based architecture for UI updates
-- Structured tooltip data rendering
-- Event handlers wire UI controls to profiler methods
-- All bundle processing happens in the browser
-
-### Profiler Lifecycle Manager (`fileLoader.ts`)
-
-Simplified manager that handles profiler lifecycle and proxies profiler methods:
-
-```typescript
-export class ProfileLoader {
-    private profiler: Profiler;
-
-    renderCircuit(circuit: CircuitProfile): void {
-        // Dispose old profiler and create new one
-        this.profiler.dispose();
-        this.profiler = new Profiler(this.config);
-        this.profiler.render(circuit);
-    }
-
-    // Proxy methods to profiler
-    selectMetric(metricId: string): void {
-        this.profiler.selectMetric(metricId);
-    }
-
-    toggleWorker(workerId: string): void {
-        this.profiler.toggleWorker(workerId);
-    }
-
-    toggleAllWorkers(): void {
-        this.profiler.toggleAllWorkers();
-    }
-
-    search(query: string): void {
-        this.profiler.search(query);
-    }
-}
-```
-
-**Architecture:**
-- Uses callback-based profiler-lib API
-- Proxies profiler methods to UI event handlers
-- Manages profiler lifecycle (create, render, dispose)
-- No direct UI manipulation (done via callbacks)
-
-### Browser Bundle Processing (`browserBundleProcessor.ts`)
-
-Extracts profile files from support bundles entirely in the browser:
-
-```typescript
-export async function processBundleInBrowser(file: File): Promise<BundleFiles> {
-    const arrayBuffer = await file.arrayBuffer();
-    const { entries } = await unzip(new Uint8Array(arrayBuffer));
-
-    // Find profile, dataflow, and config files by pattern matching
-    const profileEntry = entries.find(e => e.name.endsWith('_circuit_profile.json'));
-    const dataflowEntry = entries.find(e => e.name.endsWith('_dataflow_graph.json'));
-    const configEntry = entries.find(e => e.name.endsWith('_pipeline_config.json'));
-
-    return {
-        profile: JSON.parse(decode(profileEntry)),
-        dataflow: JSON.parse(decode(dataflowEntry)),
-        programCode: configEntry ? JSON.parse(decode(configEntry)).program_code : undefined
-    };
-}
-```
-
-**Technology:** Uses `but-unzip` library for browser-based zip extraction
-
-**Advantages:**
-- No server round-trip needed
-- Works with any support bundle
-- Fast extraction and parsing
-- Suitable for offline use
-
-**Limitations:**
-- No SQL compilation (expects dataflow already in bundle)
-- No gzip decompression support (bundles must be uncompressed or pre-extracted)
-
-### Bundle Upload UI (`bundleUpload.ts`)
-
-Handles the "Load Bundle" button interaction:
-
-```typescript
-export function setupBundleUpload(loader: ProfileLoader) {
-    const uploadInput = document.getElementById('bundle-upload') as HTMLInputElement;
-    const loadButton = document.getElementById('load-bundle-btn') as HTMLButtonElement;
-
-    loadButton.addEventListener('click', () => uploadInput.click());
-
-    uploadInput.addEventListener('change', async (event) => {
-        const file = (event.target as HTMLInputElement).files?.[0];
-        if (!file) return;
-
-        const { profile, dataflow, programCode } = await processBundleInBrowser(file);
-        const circuit = CircuitProfile.fromJson(profile);
-        circuit.setDataflow(dataflow, programCode);
-        loader.renderCircuit(circuit);
-    });
-}
-```
-
-### HTML Structure (`index.html`)
-
-Single-page HTML with inline styles, header toolbar, and profiler containers:
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8" />
-    <title>Feldera Profiler</title>
-    <script type="module" src="src/index.ts"></script>
-    <style>
-        /* Gradient header with controls */
-        #header { /* Purple gradient toolbar */ }
-        /* Tooltip styling (black background, no opacity) */
-        #tooltip-container > div { background-color: black; }
-    </style>
-</head>
-<body>
-    <!-- Header with all controls -->
-    <header id="header">
-        <div id="header-title">Feldera Profiler</div>
-        <div id="header-controls">
-            <select id="metric-selector"></select>
-            <button id="toggle-workers-btn">Toggle All</button>
-            <div id="worker-checkboxes"></div>
-            <input id="search" placeholder="Node ID" />
-            <button id="load-bundle-btn">📁 Load Bundle</button>
-        </div>
-    </header>
-
-    <!-- Main content area -->
-    <div id="main-content">
-        <div id="visualizer"></div>
-        <div id="navigator-parent"></div>
-        <div id="tooltip-container"></div>
-    </div>
-
-    <div id="message"></div>
-    <div id="error-message"></div>
-</body>
-</html>
-```
-
-**Key Elements:**
-- `#header` - Top toolbar with purple gradient containing all controls
-- `#visualizer` - Main Cytoscape graph canvas
-- `#metric-selector` - Metric dropdown (populated via callbacks)
-- `#worker-checkboxes` - Worker checkboxes container (populated via callbacks)
-- `#toggle-workers-btn` - Toggle all workers button
-- `#search` - Node search input
-- `#load-bundle-btn` - Bundle file picker trigger
-- `#navigator-parent` - Minimap widget container (top-left)
-- `#tooltip-container` - Tooltip display (top-right, fixed position)
-- `#message` - Welcome/instruction message overlay
-- `#error-message` - Error display banner
+Minimal HTML template:
+- Sets Feldera Modern theme via data attribute
+- Provides mounting point for Svelte app
+- Vite injects all assets during build
 
 ## Build Configuration
 
 ### Vite Configuration (`vite.config.ts`)
 
 Configured to produce a single HTML file with all assets inlined:
-
-```typescript
-import { defineConfig } from 'vite'
-import { viteSingleFile } from 'vite-plugin-singlefile'
-
-export default defineConfig({
-    plugins: [viteSingleFile()],
-    build: {
-        target: 'esnext',
-        assetsInlineLimit: 100000000, // Inline all assets
-        cssCodeSplit: false,
-        rollupOptions: {
-            output: {
-                inlineDynamicImports: true
-            }
-        }
-    }
-})
-```
+- **Plugins**: TailwindCSS, Svelte, SVG component loader, single-file bundler
+- **Aliases**: $assets for asset imports
+- **Server**: Runs on port 5174
+- **Build**: Target esnext with full asset inlining
 
 **Key Configuration:**
-- `viteSingleFile()` - Plugin that inlines all JS/CSS into HTML
-- `assetsInlineLimit` - Set very high to force inlining of all assets
-- `cssCodeSplit: false` - Prevent CSS splitting
-- `inlineDynamicImports: true` - Inline all dynamic imports
+- `viteSingleFile()` - Inlines all JS/CSS into HTML
+- `assetsInlineLimit: 100000000` - Forces inlining of all assets
+- `cssCodeSplit: false` - Prevents CSS splitting
+- `inlineDynamicImports: true` - Inlines all dynamic imports
 
-### Dependencies (`package.json`)
+### Monorepo Dependencies
 
-Minimal dependency set focused on browser-only operation:
+- `profiler-layout` - Reusable profiler components and utilities
+- `profiler-lib` - Core visualization engine
 
-```json
-{
-    "scripts": {
-        "dev": "vite dev --host",
-        "build": "vite build"
-    },
-    "dependencies": {
-        "but-unzip": "^0.1.7",           // Browser zip extraction
-        "cytoscape": "^3.33.1",          // Graph visualization
-        "cytoscape-dblclick": "^0.3.1",  // Double-click handler
-        "cytoscape-elk": "^2.3.0",       // Layout algorithm
-        "elkjs": "^0.11.0"               // ELK kernel
-    },
-    "devDependencies": {
-        "profiler-lib": "workspace:*",    // Callback-based profiler library
-        "typescript": "^5.9.2",
-        "vite": "^5.4.20",
-        "vite-plugin-singlefile": "^2.0.2"
-    }
-}
-```
+## Key Patterns
 
-**Key Points:**
-- Uses profiler-lib's callback-based API (no UI element injection)
-- All Cytoscape dependencies are direct dependencies (not peer deps)
-- Browser-only operation via `but-unzip` for zip extraction
-- Single HTML file output via `vite-plugin-singlefile`
+### Efficient Bundle Processing
 
-**Development Flow:**
+Follows the unzip-once pattern from profiler-layout:
+1. Upload triggers `getSuitableProfiles(zipData)` - unzips once
+2. Store [Date, ZipItem[]][] pairs in state
+3. User switches timestamps via ProfileTimestampSelector
+4. `$effect()` watches selectedTimestamp and calls `processProfileFiles()`
+5. No re-unzipping - just reads from cached ZipItem array
+
+### Reactive State Management
+
+Uses Svelte 5 runes for clean reactivity:
+- `$state()` - Reactive state variables
+- `$effect()` - Side effects that run when dependencies change
+- `$derived()` - Computed values (used in child components)
+- `bind:` - Two-way binding with ProfileTimestampSelector
+
+### Component Composition
+
+Leverages profiler-layout components:
+- **ProfilerLayout** - Main visualization container
+- **ProfileTimestampSelector** - Timestamp dropdown with bindable selection
+- Uses snippets (`{#snippet}`) for toolbar customization
+
+## Development Workflow
+
+### Package Manager
+This project uses **Bun** as the package manager.
+
+### Key Commands
+- `bun install` - Install dependencies
+- `bun run dev` - Development server on port 5174
+- `bun run build` - Build to single HTML file in `dist/`
+- `bun run preview` - Preview production build
+- `bun run check` - Type checking
+
+### Build Output
+Produces `dist/index.html` - a single self-contained HTML file with all dependencies inlined.
+
+### Testing Strategy
+Manual testing with support bundle uploads. Use sample bundles from:
+- Feldera pipeline support bundle downloads
+- Saved bundles from previous profiler sessions
+
+## Bundle Format Requirements
+
+Support bundles must contain three required files per profile timestamp:
+- `{timestamp}_circuit_profile.json` - DBSP circuit performance metrics
+- `{timestamp}_dataflow_graph.json` - Circuit structure and operator graph
+- `{timestamp}_pipeline_config.json` - SQL source code and configuration
+
+Multiple timestamps can exist in a single bundle, enabling snapshot comparison.
+
+## Integration with profiler-layout
+
+This app is a thin wrapper around profiler-layout components:
+- Uses `getSuitableProfiles()` for bundle extraction
+- Uses `processProfileFiles()` for profile parsing
+- Uses `ProfilerLayout` for visualization
+- Uses `ProfileTimestampSelector` for UI controls
+
+Changes to profiler-layout automatically propagate to profiler-app on next build.
+
+## Distribution
+
+**Build Process:**
+1. Run `bun run build` to create `dist/index.html`
+2. Single HTML file contains all code, styles, and assets
+3. File can be opened directly in any modern browser
+
+**Sharing Profiles:**
+1. Download support bundle from Feldera pipeline
+2. Share `index.html` + bundle with team members
+3. Recipients open HTML and upload bundle locally
+4. No installation or server required
+
+## Development Flow
+
+**Feature Development:**
 1. Develop visualization features in profiler-lib
-2. Test quickly in profiler-app with sample bundles
-3. Integrate into web-console for production use
-4. Deploy web-console to users
+2. Create reusable components in profiler-layout
+3. Test quickly in profiler-app with sample bundles
+4. Integrate into web-console for production use
+5. Deploy web-console to users
 
-**Distribution Flow:**
-1. Build profiler-app to single HTML
-2. Share HTML file + bundle with team members
-3. Recipients open profile in browser without installation
-4. Everyone sees same visualization
+**Debugging:**
+1. Export support bundle from failing pipeline
+2. Load in profiler-app for offline analysis
+3. Iterate on visualization without backend connection
+4. Share findings via bundled HTML file
+
+## Styling
+
+Uses the Feldera Modern theme with:
+- **Primary color**: Purple gradient branding
+- **Font**: DM Sans for UI, DM Mono for code
+- **Components**: Skeleton UI for buttons, inputs, and containers
+- **Layout**: TailwindCSS utilities for responsive design
+
+Theme is applied via `data-theme="feldera-modern-theme"` on the html element.
+
+## Limitations
+
+- No SQL compilation support (requires pre-compiled dataflow graphs)
+- Browser-only - cannot access filesystem or make HTTP requests to Feldera instance
+- Single-user tool - no collaboration features
+- No persistent storage - reload requires re-uploading bundle
+
+## Related Documentation
+
+For profiler-layout component details, see `/workspaces/feldera/js-packages/profiler-layout/CLAUDE.md`.
+
+For web-console integration, see `/workspaces/feldera/js-packages/web-console/CLAUDE.md`.
+
+For repository overview, see `/workspaces/feldera/CLAUDE.md`.
 <!-- SECTION:js-packages/profiler-app/CLAUDE.md END -->
+
+---
+
+## Context: js-packages/profiler-layout/CLAUDE.md
+<!-- SECTION:js-packages/profiler-layout/CLAUDE.md START -->
+# profiler-layout
+
+## Overview
+
+**profiler-layout** is a reusable Svelte component library for visualizing Feldera DBSP circuit profiles. It provides shared UI components and utilities for displaying incremental computation performance metrics, circuit graphs, and profiling data across multiple applications.
+
+This package serves as the presentation layer between profiler-lib (the core visualization engine) and consuming applications (web-console, profiler-app).
+
+## Purpose
+
+Enable consistent profiler visualization across the Feldera ecosystem:
+- **Reusable Components**: Shared UI components for profile visualization
+- **Bundle Processing**: Common utilities for extracting and parsing profile data from support bundles
+- **Consistent UX**: Unified user experience across web-console and standalone profiler-app
+- **Separation of Concerns**: Decouples visualization logic from application-specific state management
+
+## Architecture
+
+### Component-Based Design
+
+This library follows Svelte 5 patterns with runes for reactive state management. Components are designed to be composable and accept data through props while exposing bindable properties for two-way communication.
+
+### Key Components
+
+#### **ProfilerLayout**
+The main layout component orchestrating the complete profiler visualization experience:
+- Combines diagram, tooltip, and control elements
+- Accepts profile data, dataflow graph, and program source code
+- Provides toolbar slots for application-specific controls
+- Handles layout and styling coordination
+
+#### **ProfilerDiagram**
+Wraps profiler-lib's Cytoscape-based circuit graph visualization:
+- Renders DBSP operator graphs with performance metrics
+- Manages interaction states and visual feedback
+- Integrates with profiler-lib's callback-based API
+
+#### **ProfilerTooltip**
+Displays detailed information about selected circuit nodes:
+- Shows operator metrics, source code references, and performance data
+- Positioned relative to diagram interactions
+- Receives structured data through profiler-lib callbacks
+
+#### **ProfileTimestampSelector**
+Reusable dropdown for switching between profile snapshots:
+- Accepts array of timestamp/files pairs
+- Exports bindable selectedTimestamp property
+- Conditionally renders when multiple profiles are available
+
+### Utility Functions
+
+#### **Bundle Processing** (`functions/processZipBundle.ts`)
+
+##### `getSuitableProfiles(zipData: Uint8Array): [Date, ZipItem[]][]`
+Unzips support bundle once and returns all valid profile timestamps with their associated files. Critical for efficient timestamp switching - ensures unzip only happens once per bundle upload.
+
+##### `processProfileFiles(files: ZipItem[]): Promise<ProcessedProfile>`
+Processes already-unzipped profile files into structured data. Works with files from getSuitableProfiles to avoid redundant unzipping.
+
+**Workflow Pattern:**
+1. Call getSuitableProfiles once when bundle is uploaded
+2. Store the returned [Date, ZipItem[]][] array
+3. When user switches timestamps, call processProfileFiles with the selected files
+4. No re-unzipping occurs - efficient timestamp navigation
+
+## Development Workflow
+
+### Package Manager
+This project uses **Bun** as the package manager.
+
+### Key Commands
+- `bun install` - Install dependencies
+- `bun run dev` - Development server
+- `bun run build` - Build library (also builds profiler-lib dependency)
+- `bun run check` - Type checking with svelte-check
+- `bun run prepack` - Package for distribution
+
+### Build Process
+The prebuild script automatically rebuilds profiler-lib before building this package, ensuring the latest profiler-lib changes are included.
+
+### Testing Strategy
+Components are tested through integration in consuming applications:
+- **profiler-app**: Standalone testing with manual bundle uploads
+- **web-console**: Integration testing with live pipeline data
+
+## Dependencies
+
+### Runtime Dependencies
+- **but-unzip**: Browser-based zip extraction for processing support bundles
+- **sort-on**: Utility for sorting profile timestamps
+
+### Peer Dependencies
+- **svelte ^5.0.0**: Component framework (runes-based reactivity)
+
+### Development Dependencies
+- **profiler-lib**: Core visualization engine (workspace dependency)
+- **@skeletonlabs/skeleton-svelte**: UI component library for consistent styling
+- **SvelteKit**: Build tooling and package publishing
+
+## Integration Points
+
+### web-console
+Integrated into TabProfileVisualizer for live pipeline profiling:
+- Downloads support bundles from pipeline-manager API
+- Allows timestamp selection for multi-snapshot bundles
+- Integrates with web-console's authentication and error handling
+
+### profiler-app
+Standalone single-page application for offline profile viewing:
+- File picker for manual bundle uploads
+- Self-contained profiler without backend dependencies
+- Builds to single HTML file for distribution
+
+## Key Patterns
+
+### State Management
+Components use Svelte 5 runes ($state, $derived, $props) for reactivity. Parent applications manage application-specific state while components handle presentation logic.
+
+### Two-Way Binding
+Components expose bindable properties (using $bindable) to allow parent applications to control and react to state changes without prop drilling.
+
+### Slot-Based Composition
+ProfilerLayout uses Svelte snippets for toolbar customization, allowing applications to inject their own controls while maintaining consistent layout.
+
+### Incremental Computation Awareness
+Components are designed around DBSP's incremental computation model - profile data represents snapshots of circuit execution state at specific timestamps.
+
+## Important Notes
+
+### Bundle Format Requirements
+Support bundles must contain three required files per profile timestamp:
+- `{timestamp}_circuit_profile.json` - DBSP circuit performance metrics
+- `{timestamp}_dataflow_graph.json` - Circuit structure and operator graph
+- `{timestamp}_pipeline_config.json` - SQL source code and configuration
+
+### Timestamp Extraction
+Profile timestamps are extracted from filename prefixes using regex pattern `/^(.*?)_/`. Files without matching prefixes or incomplete file sets are filtered out.
+
+### Build Output
+Package is published as ESM module with TypeScript definitions. The `dist/` directory contains compiled components and utilities ready for consumption by other packages.
+
+### Styling Dependencies
+Components assume Skeleton UI classes are available in the consuming application. Both web-console and profiler-app include the necessary Skeleton UI setup.
+
+## Related Documentation
+
+For comprehensive repository context and IVM architecture, see `/workspaces/feldera/CLAUDE.md`.
+
+For profiler-lib internals and visualization engine details, see `/workspaces/feldera/js-packages/profiler-lib/CLAUDE.md` (when created).
+
+For web-console integration patterns, see `/workspaces/feldera/js-packages/web-console/CLAUDE.md`.
+
+For profiler-app standalone usage, see `/workspaces/feldera/js-packages/profiler-app/CLAUDE.md`.
+<!-- SECTION:js-packages/profiler-layout/CLAUDE.md END -->
 
 ---
 

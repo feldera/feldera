@@ -12,21 +12,24 @@
 </script>
 
 <script lang="ts">
-  import ProfilerLayout from '$lib/components/profiler/ProfilerLayout.svelte'
+  import {
+    ProfilerLayout,
+    ProfileTimestampSelector,
+    getSuitableProfiles,
+    processProfileFiles,
+    type ZipItem
+  } from 'profiler-layout'
   import Popup from '$lib/components/common/Popup.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { groupBy } from '$lib/functions/common/array'
   import { enclosure, nonNull } from '$lib/functions/common/function'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
-  import { unzip, type ZipItem } from 'but-unzip'
-  import type { JsonProfiles, Dataflow } from 'profiler-lib'
-  import sortOn from 'sort-on'
+  import type { JsonProfiles, Dataflow, SourcePositionRange } from 'profiler-lib'
   import { untrack } from 'svelte'
   import { slide, fade } from 'svelte/transition'
   import { useToast } from '$lib/compositions/useToastNotification'
-  import { tuple } from '$lib/functions/common/tuple'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
+  import { goto } from '$app/navigation'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   const api = usePipelineManager()
@@ -42,56 +45,29 @@
       }
     })
   })
-  const circuitProfileRegex = /circuit_profile\.json$/
-  const dataflowGraphRegex = /dataflow_graph\.json$/
-  const pipelineConfigRegex = /pipeline_config\.json$/
-
-  const getSuitableProfiles = (profileFiles: ZipItem[]) => {
-    const profileTimestamps = groupBy(
-      profileFiles,
-      // group by file timestamp; all files in a bundle are named with names like TIMESTAMP_FILENAME
-      // where TIMESTAMP is a string encoding a timestamp
-      (file) => file.filename.match(/^(.*?)_/)?.[1] ?? ''
-    ).filter(
-      (group) => group[0] && group[1].some((file) => circuitProfileRegex.test(file.filename))
-      // Pipeline config or dataflow graph may be missing
-    )
-    return sortOn(
-      profileTimestamps.map(([timestamp, files]) => tuple(new Date(timestamp), files)),
-      (p) => p[0]
-    )
-  }
 
   const processZipBundle = async (zipData: Uint8Array, sourceName: string, message: string) => {
     downloadProgress.onProgress(1, 1)
-    const profiles = (() => {
-      try {
-        return unzip(zipData)
-      } catch (error) {
-        if (error instanceof Error) {
-          errorMessage = error.message
-          return null
-        }
+    try {
+      const suitableProfiles = getSuitableProfiles(zipData)
+      if (suitableProfiles.length === 0) {
+        errorMessage = message
+        return false
       }
-    })()
-    if (!profiles) {
-      return
-    }
-    const suitableProfiles = getSuitableProfiles(profiles)
 
-    if (suitableProfiles.length === 0) {
-      errorMessage = message
+      loadedPipelineName = sourceName
+      getProfileFiles = () => suitableProfiles
+      selectedProfile = suitableProfiles.at(-1)![0] // Select most recent
+      return true
+    } catch (error) {
+      if (error instanceof Error) {
+        errorMessage = error.message
+      }
       return false
     }
-
-    const profile = suitableProfiles.at(-1)!
-
-    loadedPipelineName = sourceName
-    getProfileFiles = () => suitableProfiles
-    selectedProfile = profile[0]
-    return true
   }
 
+  // Effect to load profile data when timestamp is selected
   $effect(() => {
     if (!selectedProfile) {
       return
@@ -106,31 +82,16 @@
     }
 
     ;(async () => {
-      const decoder = new TextDecoder()
-      const profile = JSON.parse(
-        decoder.decode(
-          await profileFiles[1].find((file) => circuitProfileRegex.test(file.filename))!.read()
-        )
-      ) as unknown as JsonProfiles
-      const dataflowFile = profileFiles[1].find((file) => dataflowGraphRegex.test(file.filename))
-      let dataflow = undefined
-      if (dataflowFile) {
-        dataflow = JSON.parse(decoder.decode(await dataflowFile.read())) as unknown as Dataflow
+      try {
+        const processedProfile = await processProfileFiles(profileFiles[1])
+        getProfileData = enclosure({
+          profile: processedProfile.profile,
+          dataflow: processedProfile.dataflow,
+          sources: processedProfile.sources
+        })
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : 'Failed to process profile'
       }
-      const configFile = profileFiles[1].find((file) => pipelineConfigRegex.test(file.filename))
-      let sources = undefined
-      if (configFile) {
-        const pipelineConfig = JSON.parse(decoder.decode(await configFile.read())) as unknown as {
-          program_code: string
-        }
-        sources = pipelineConfig.program_code.split('\n')
-      }
-
-      getProfileData = enclosure({
-        profile,
-        dataflow,
-        sources
-      })
     })()
   })
 
@@ -200,7 +161,7 @@
     const success = await processZipBundle(
       new Uint8Array(arrayBuffer),
       `uploaded-${file.name}`,
-      'No suitable profiles found in the uploaded support bundle. Check if it contains the circuit profile, dataflow graph and pipeline config.'
+      'No suitable profiles found in the uploaded support bundle. Check if it contains the circuit profile and dataflow graph.'
     )
     if (!success) {
       downloadProgress.reset()
@@ -225,6 +186,21 @@
       toast.toastError(new Error(errorMessage), 10000)
     }
   })
+
+  function highlightSourceRanges(sourceRanges: SourcePositionRange[]) {
+    // Build URL hash with multiple ranges
+    // Format: #program.sql:startLine:startColumn-endLine:endColumn,startLine2:startColumn2-endLine2:endColumn2
+    const rangeStrings = sourceRanges.map((range) => {
+      const startLine = range.start.line
+      const startColumn = range.start.column
+      const endLine = range.end.line
+      const endColumn = range.end.column
+      return `${startLine}:${startColumn}-${endLine}:${endColumn}`
+    })
+
+    const hash = `#program.sql:${rangeStrings.join(',')}`
+    goto(hash)
+  }
 </script>
 
 <div class="flex h-full flex-col">
@@ -252,7 +228,9 @@
       profileData={profile}
       dataflowData={dataflow}
       programCode={sources}
-      class="bg-white-dark rounded"
+      onHighlightSourceRanges={highlightSourceRanges}
+      toolbarClass="pb-2 sm:-mt-2"
+      diagramClass="bg-white-dark rounded"
     >
       {#snippet toolbarStart()}
         <!-- File Menu Popup -->
@@ -304,20 +282,10 @@
         </Popup>
 
         <!-- Profile Timestamp Selector -->
-        <label class="flex items-center gap-2 text-sm">
-          <span class="text-surface-600-400">Snapshot:</span>
-          <select
-            class="select w-40 md:ml-0"
-            value={selectedProfile?.getTime()}
-            onchange={(e) => {
-              selectedProfile = new Date(parseInt(e.currentTarget.value))
-            }}
-          >
-            {#each getProfileFiles().map((p) => p[0]) as timestamp (timestamp)}
-              <option value={timestamp.getTime()}>{timestamp.toLocaleTimeString()}</option>
-            {/each}
-          </select>
-        </label>
+        <ProfileTimestampSelector
+          profileFiles={getProfileFiles()}
+          bind:selectedTimestamp={selectedProfile}
+        />
       {/snippet}
     </ProfilerLayout>
   {:else}

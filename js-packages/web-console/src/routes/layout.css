@@ -4,11 +4,13 @@
 
 @import "tailwindcss";
 
+/* Scan profiler packages for Tailwind classes */
+@source "../../node_modules/profiler-layout/**/*.{svelte}";
+
 @import "@skeletonlabs/skeleton";
 @import "@skeletonlabs/skeleton-svelte";
 
-/* Add your theme import for your theme: "feldera-modern-theme" here */
-@import "../lib/functions/themes/feldera-modern.css";
+@import "feldera-theme/feldera-modern.css";
 
 @plugin "tailwind-scrollbar" {
   nocompatible: true;

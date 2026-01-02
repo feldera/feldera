@@ -8,8 +8,8 @@
     SourcePositionRange,
     WorkerOption
   } from 'profiler-lib'
-  import { goto } from '$app/navigation'
-  import ProfilerDiagram from './ProfilerDiagram.svelte'
+  import { default as ProfilerDiagram } from './ProfilerDiagram.svelte'
+  // import ProfilerDiagram from './ProfilerDiagram.svelte'
   import type { TooltipData } from './ProfilerTooltip.svelte'
   import ProfilerTooltip from './ProfilerTooltip.svelte'
 
@@ -20,13 +20,25 @@
     dataflowData: Dataflow | undefined
     /** Lines of user SQL code; may be missing */
     programCode: string[] | undefined
-    /** Optional class for styling the container */
-    class?: string
+    /** Optional class for styling the toolbar container */
+    toolbarClass?: string
+    /** Optional class for styling the diagram container */
+    diagramClass?: string
     /** Snippet for toolbar start (Load Profile button and snapshot selector) */
     toolbarStart?: import('svelte').Snippet
+    /** Called to highlight the range of code corresponding to the selected diagram node */
+    onHighlightSourceRanges?: (sourceRanges: SourcePositionRange[]) => void
   }
 
-  const { profileData, dataflowData, programCode, class: className, toolbarStart }: Props = $props()
+  const {
+    profileData,
+    dataflowData,
+    programCode,
+    toolbarClass,
+    diagramClass,
+    toolbarStart,
+    onHighlightSourceRanges
+  }: Props = $props()
 
   // UI state managed by this layout
   let tooltipData: TooltipData | null = $state(null)
@@ -127,22 +139,7 @@
       return
     }
 
-    highlightSourceRanges(sourceRanges)
-  }
-
-  function highlightSourceRanges(sourceRanges: SourcePositionRange[]) {
-    // Build URL hash with multiple ranges
-    // Format: #program.sql:startLine:startColumn-endLine:endColumn,startLine2:startColumn2-endLine2:endColumn2
-    const rangeStrings = sourceRanges.map((range) => {
-      const startLine = range.start.line
-      const startColumn = range.start.column
-      const endLine = range.end.line
-      const endColumn = range.end.column
-      return `${startLine}:${startColumn}-${endLine}:${endColumn}`
-    })
-
-    const hash = `#program.sql:${rangeStrings.join(',')}`
-    goto(hash)
+    onHighlightSourceRanges?.(sourceRanges)
   }
 
   // Public method for search (called by parent)
@@ -165,7 +162,7 @@
 {/snippet}
 
 <!-- Toolbar with controls -->
-<div class="flex flex-wrap items-center gap-2 pb-2 sm:-mt-2">
+<div class="flex flex-wrap items-center gap-2 {toolbarClass || ''}">
   <!-- Toolbar start snippet (Load Profile and Snapshot) -->
   <!-- <div class="toolbar-start"> -->
   {@render toolbarStart?.()}
@@ -208,9 +205,9 @@
     </div>
 
     <!-- Workers Control -->
-    <label class="flex items-center gap-2 text-sm">
+    <div class="flex items-center gap-2 text-sm">
       <span class="text-surface-600-400">Workers:</span>
-      <button onclick={handleToggleAllWorkers} class="btn bg-surface-100-900! btn-sm px-2 text-xs">
+      <button onclick={handleToggleAllWorkers} class="btn bg-surface-100-900! px-2">
         Toggle All
       </button>
       <div class="grid grid-flow-col grid-rows-2 gap-0.5">
@@ -224,7 +221,7 @@
           />
         {/each}
       </div>
-    </label>
+    </div>
 
     <!-- Search Input -->
     <label class="flex items-center gap-2 text-sm">
@@ -242,7 +239,7 @@
 </div>
 
 <div class="relative h-full w-full">
-  <div class="profiler-layout {className || ''}">
+  <div class="profiler-layout {diagramClass || ''}">
     {#if error}
       <div class="error-banner" role="alert">
         <strong>Error loading profiler:</strong>

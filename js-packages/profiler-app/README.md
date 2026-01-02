@@ -4,7 +4,7 @@ Standalone application for visualizing Feldera DBSP circuit profiles.
 
 ## Overview
 
-This is a Single-Page Application (SPA) web app for loading and visualizing circuit profiles using `profiler-lib`. Supports loading profiles from support bundle `.zip` files.
+This is a Single-Page Application (SPA) web app for loading and visualizing circuit profiles using `profiler-layout`. Supports loading profiles from support bundle `.zip` files.
 
 Provides the same functionality as the Web Console's integrated profiler.
 
@@ -20,10 +20,10 @@ The web app is available at `http://localhost:5174`.
 If you have a dev build running, run
 
 ```bash
-cd js-packages/profiler-lib && bun run build
+cd js-packages/profiler-layout && bun run build
 ```
 
-to update the app on the fly with the latest `profiler-lib` changes.
+to update the app on the fly with the latest `profiler-layout` changes.
 
 ## Build Production App
 
@@ -32,7 +32,7 @@ bun run build
 ```
 
 The app is compiled into a single dist/index.html. It can be served by a server or opened directly in the browser.
-`profiler-lib` is re-built automatically.
+`profiler-layout` is re-built automatically.
 
 ## Loading Profiles
 
@@ -45,7 +45,7 @@ Included in `data/`:
 
 ## Architecture
 
-Thin wrapper around `profiler-lib`:
+Thin wrapper around `profiler-layout`:
 - HTML structure for profiler UI
 - Browser-based .zip archive processing with `but-unzip`
 
