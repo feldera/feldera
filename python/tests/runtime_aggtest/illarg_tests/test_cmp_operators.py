@@ -434,6 +434,7 @@ class illarg_equality_null_legal(TstView):
                 "uuidd": True,
                 "arr": True,
                 "mapp": True,
+                "roww": True,
                 "udt": True,
             }
         ]
@@ -451,6 +452,7 @@ class illarg_equality_null_legal(TstView):
                       uuidd <=> NULL AS uuidd,
                       arr <=> NULL  AS arr,
                       mapp <=> NULL AS mapp,
+                      roww <=> NULL AS roww,
                       udt <=> NULL AS udt
                       FROM illegal_tbl
                       WHERE id = 2"""
@@ -1510,3 +1512,49 @@ class illarg_nullif_illegal(TstView):
                       FROM illegal_tbl
                       WHERE id = 0"""
         self.expected_error = "Cannot apply 'NULLIF' to arguments of type"
+
+
+# IS UNKNOWN
+class illarg_is_unknown_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"booll": False, "arr": False}]
+        self.sql = """CREATE MATERIALIZED VIEW is_unknown_legal AS SELECT
+                      booll IS UNKNOWN AS booll,
+                      arr[8]::BOOLEAN IS UNKNOWN AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_is_unknown_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW is_unknown_legal AS SELECT
+                      udt IS UNKNOWN AS udt
+                      FROM illegal_tbl
+                      WHERE id = 2"""
+        self.expected_error = " Cannot apply 'IS UNKNOWN' to arguments of type"
+
+
+# IS NOT UNKNOWN
+class illarg_is_not_unknown_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"booll": False, "arr": False}]
+        self.sql = """CREATE MATERIALIZED VIEW is_not_unknown_legal AS SELECT
+                      booll IS UNKNOWN AS booll,
+                      arr[8]::BOOLEAN IS UNKNOWN AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_is_not_unknown_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW is_not_unknown_legal AS SELECT
+                      roww IS NOT UNKNOWN AS roww
+                      FROM illegal_tbl
+                      WHERE id = 2"""
+        self.expected_error = " Cannot apply 'IS NOT UNKNOWN' to arguments of type"
