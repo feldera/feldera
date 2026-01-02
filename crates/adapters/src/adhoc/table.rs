@@ -4,7 +4,6 @@ use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::{Arc, Weak};
 
-use crate::catalog::SyncSerBatchReader;
 use crate::controller::{ConsistentSnapshots, ControllerInner};
 use crate::transport::adhoc::AdHocInputEndpoint;
 use crate::{DeCollectionHandle, RecordFormat, TransportInputEndpoint};
@@ -28,6 +27,7 @@ use datafusion::physical_plan::stream::{
 use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
 };
+use feldera_adapterlib::catalog::SerBatchReader;
 use feldera_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, TransportConfig, default_max_batch_size,
     default_max_queued_records,
@@ -337,7 +337,7 @@ struct AdHocQueryExecution {
     indexed: bool,
     table_schema: Arc<Schema>,
     projected_schema: Arc<Schema>,
-    readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
+    readers: Option<Vec<Arc<dyn SerBatchReader>>>,
     projection: Option<Vec<usize>>,
     limit: usize,
     plan_properties: PlanProperties,
@@ -352,7 +352,7 @@ impl AdHocQueryExecution {
         indexed: bool,
         table_schema: Arc<Schema>,
         projected_schema: Arc<Schema>,
-        readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
+        readers: Option<Vec<Arc<dyn SerBatchReader>>>,
         projection: Option<&Vec<usize>>,
         limit: Option<usize>,
     ) -> Self {
