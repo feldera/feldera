@@ -1,4 +1,4 @@
-use crate::catalog::{SerBatchReader, SerBatchReaderHandle, SerTrace, SyncSerBatchReader};
+use crate::catalog::{SerBatchReader, SerBatchReaderHandle, SerTrace};
 #[cfg(feature = "with-avro")]
 use crate::format::avro::serializer::{AvroSchemaSerializer, AvroSerializerError, avro_ser_config};
 use crate::{
@@ -324,10 +324,10 @@ where
     KD: From<K> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
     VD: From<V> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
 {
-    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SyncSerBatchReader>> {
+    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatchReader>> {
         self.handle.take_from_worker(worker).map(|batch| {
             Box::new(<SerBatchImpl<TypedBatch<K, V, R, B>, KD, VD>>::new(batch))
-                as Box<dyn SyncSerBatchReader>
+                as Box<dyn SerBatchReader>
         })
     }
 
@@ -335,21 +335,21 @@ where
         self.handle.num_nonempty_mailboxes()
     }
 
-    fn take_from_all(&self) -> Vec<Arc<dyn SyncSerBatchReader>> {
+    fn take_from_all(&self) -> Vec<Arc<dyn SerBatchReader>> {
         self.handle
             .take_from_all()
             .into_iter()
             .map(|batch| {
                 Arc::new(<SerBatchImpl<TypedBatch<K, V, R, B>, KD, VD>>::new(batch))
-                    as Arc<dyn SyncSerBatchReader>
+                    as Arc<dyn SerBatchReader>
             })
             .collect()
     }
 
-    fn concat(&self) -> Arc<dyn SyncSerBatchReader> {
+    fn concat(&self) -> Arc<dyn SerBatchReader> {
         Arc::new(<SerBatchImpl<TypedBatch<K, V, R, _>, KD, VD>>::new(
             self.handle.concat(),
-        )) as Arc<dyn SyncSerBatchReader>
+        )) as Arc<dyn SerBatchReader>
     }
 }
 
@@ -393,7 +393,7 @@ where
 
 impl<B, KD, VD> SerBatchReader for SerBatchImpl<B, KD, VD>
 where
-    B: BatchReader<Time = (), DynK = DynData>,
+    B: BatchReader<Time = (), DynK = DynData> + Send + Sync,
     B::R: Into<i64>,
     KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
     VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
@@ -473,15 +473,6 @@ where
     }
 }
 
-impl<B, KD, VD> SyncSerBatchReader for SerBatchImpl<B, KD, VD>
-where
-    B: BatchReader<Time = (), DynK = DynData> + Send + Sync,
-    B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
-    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
-{
-}
-
 impl<B, KD, VD> SerBatch for SerBatchImpl<B, KD, VD>
 where
     B: Batch<Time = (), DynK = DynData> + Send + Sync,
@@ -533,7 +524,7 @@ where
 
 impl<T, KD, VD> SerTrace for SerBatchImpl<T, KD, VD>
 where
-    T: Trace<Time = (), DynK = DynData>,
+    T: Trace<Time = (), DynK = DynData> + Send + Sync,
     //TypedBatch<T::Key, T::Val, T::R, <T::InnerTrace as DynTrace>::Batch>: Send + Sync,
     T::R: Into<i64>,
     KD: From<T::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
@@ -574,7 +565,7 @@ where
 impl<'a, Ser, B, KD, VD> SerCursorImpl<'a, Ser, B, KD, VD>
 where
     Ser: BytesSerializer,
-    B: BatchReader<Time = (), DynK = DynData>,
+    B: BatchReader<Time = (), DynK = DynData> + Send,
     B::R: Into<i64>,
     KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,
     VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,
@@ -623,7 +614,7 @@ where
 impl<'a, Ser, B, KD, VD> SerCursor for SerCursorImpl<'a, Ser, B, KD, VD>
 where
     Ser: BytesSerializer,
-    B: BatchReader<Time = (), DynK = DynData>,
+    B: BatchReader<Time = (), DynK = DynData> + Send,
     B::R: Into<i64>,
     KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,
     VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,

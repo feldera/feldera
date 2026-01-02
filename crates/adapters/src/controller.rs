@@ -149,7 +149,7 @@ mod validate;
 
 use crate::adhoc::table::AdHocTable;
 use crate::adhoc::{create_session_context, execute_sql};
-use crate::catalog::{SerBatchReader, SerTrace, SyncSerBatchReader};
+use crate::catalog::{SerBatchReader, SerTrace};
 use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::{get_input_format, get_output_format};
 use crate::integrated::create_integrated_input_endpoint;
@@ -4180,7 +4180,7 @@ impl Drop for StatisticsThread {
 /// that is equal to the number of input records fully processed by
 /// DBSP before emitting this batch of outputs or `None` if the circuit is
 /// executing a transaction.  The label increases monotonically over time.
-type BatchQueue = SegQueue<(Step, Option<Arc<dyn SyncSerBatchReader>>, Option<u64>)>;
+type BatchQueue = SegQueue<(Step, Option<Arc<dyn SerBatchReader>>, Option<u64>)>;
 
 /// State tracked by the controller for each output endpoint.
 struct OutputEndpointDescr {
@@ -4346,7 +4346,7 @@ impl OutputBuffer {
     /// before this batch was produced or `None` if the circuit is executing a transaction.
     fn insert(
         &mut self,
-        batch: Option<Arc<dyn SyncSerBatchReader>>,
+        batch: Option<Arc<dyn SerBatchReader>>,
         step: Step,
         processed_records: Option<u64>,
     ) {
@@ -4406,7 +4406,7 @@ impl OutputBuffer {
     }
 }
 
-pub type ConsistentSnapshot = Arc<BTreeMap<SqlIdentifier, Vec<Arc<dyn SyncSerBatchReader>>>>;
+pub type ConsistentSnapshot = Arc<BTreeMap<SqlIdentifier, Vec<Arc<dyn SerBatchReader>>>>;
 
 /// Current state of transaction processing.
 #[derive(Default, Debug, Clone, PartialEq, Eq, Copy)]
