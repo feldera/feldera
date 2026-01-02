@@ -255,7 +255,7 @@ pub trait DeCollectionHandle: Send + Sync {
 /// the contents of the batch without knowing its key and value types.
 // The reason we need the `Sync` trait below is so that we can wrap batches
 // in `Arc` and send the same batch to multiple output endpoint threads.
-pub trait SerBatchReader: 'static {
+pub trait SerBatchReader: 'static + Send + Sync {
     /// Number of keys in the batch.
     fn key_count(&self) -> usize;
 
@@ -329,10 +329,8 @@ impl Debug for dyn SerBatch {
     }
 }
 
-pub trait SyncSerBatchReader: SerBatchReader + Send + Sync {}
-
 /// A type-erased `Batch`.
-pub trait SerBatch: SyncSerBatchReader {
+pub trait SerBatch: SerBatchReader {
     /// Convert to `Arc<Any>`, which can then be downcast to a reference
     /// to a concrete batch type.
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Sync + Send>;
@@ -474,14 +472,14 @@ pub trait SerBatchReaderHandle: Send + Sync + DynClone {
 
     /// Like [`OutputHandle::take_from_worker`](`dbsp::OutputHandle::take_from_worker`),
     /// but returns output batch as a [`SyncSerBatchReader`] trait object.
-    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SyncSerBatchReader>>;
+    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatchReader>>;
 
     /// Like [`OutputHandle::take_from_all`](`dbsp::OutputHandle::take_from_all`),
     /// but returns output batches as [`SyncSerBatchReader`] trait objects.
-    fn take_from_all(&self) -> Vec<Arc<dyn SyncSerBatchReader>>;
+    fn take_from_all(&self) -> Vec<Arc<dyn SerBatchReader>>;
 
     /// Concatenate outputs from all workers into a single batch reader.
-    fn concat(&self) -> Arc<dyn SyncSerBatchReader>;
+    fn concat(&self) -> Arc<dyn SerBatchReader>;
 }
 
 dyn_clone::clone_trait_object!(SerBatchReaderHandle);
