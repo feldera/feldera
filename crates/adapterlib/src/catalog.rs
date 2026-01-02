@@ -13,6 +13,7 @@ use apache_avro::{
 };
 use arrow::record_batch::RecordBatch;
 use dbsp::circuit::NodeId;
+use dbsp::dynamic::{DynData, DynVec};
 use dbsp::operator::StagedBuffers;
 use dyn_clone::DynClone;
 use feldera_sqllib::Variant;
@@ -253,7 +254,7 @@ pub trait DeCollectionHandle: Send + Sync {
 /// the contents of the batch without knowing its key and value types.
 // The reason we need the `Sync` trait below is so that we can wrap batches
 // in `Arc` and send the same batch to multiple output endpoint threads.
-pub trait SerBatchReader: 'static {
+pub trait SerBatchReader: 'static + Send + Sync {
     /// Number of keys in the batch.
     fn key_count(&self) -> usize;
 
@@ -278,6 +279,10 @@ pub trait SerBatchReader: 'static {
     fn batches(&self) -> Vec<Arc<dyn SerBatch>>;
 
     fn snapshot(&self) -> Arc<dyn SerBatchReader>;
+
+    fn sample_keys(&self, sample_size: usize, sample: &mut DynVec<DynData>);
+
+    fn partition_keys(&self, num_partitions: usize, bounds: &mut DynVec<DynData>);
 }
 
 impl Debug for dyn SerBatchReader {
@@ -323,10 +328,8 @@ impl Debug for dyn SerBatch {
     }
 }
 
-pub trait SyncSerBatchReader: SerBatchReader + Send + Sync {}
-
 /// A type-erased `Batch`.
-pub trait SerBatch: SyncSerBatchReader {
+pub trait SerBatch: SerBatchReader {
     /// Convert to `Arc<Any>`, which can then be downcast to a reference
     /// to a concrete batch type.
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Sync + Send>;
@@ -335,6 +338,8 @@ pub trait SerBatch: SyncSerBatchReader {
     fn merge(self: Arc<Self>, other: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatch>;
 
     fn as_batch_reader(&self) -> &dyn SerBatchReader;
+
+    fn arc_as_batch_reader(self: Arc<Self>) -> Arc<dyn SerBatchReader>;
 
     /// Convert batch into a trace with identical contents.
     fn into_trace(self: Arc<Self>) -> Box<dyn SerTrace>;
@@ -363,6 +368,10 @@ pub trait SerCursor: Send {
     /// A value of `false` indicates that the cursor has exhausted all values
     /// for this key.
     fn val_valid(&self) -> bool;
+
+    fn key(&self) -> &DynData;
+
+    fn get_key(&self) -> Option<&DynData>;
 
     /// Serialize current key. Panics if invalid.
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
@@ -446,6 +455,8 @@ pub trait SerCursor: Send {
 
         count
     }
+
+    fn seek_key_exact(&mut self, key: &DynData) -> bool;
 }
 
 /// A handle to an output stream of a circuit that yields type-erased
@@ -460,14 +471,14 @@ pub trait SerBatchReaderHandle: Send + Sync + DynClone {
 
     /// Like [`OutputHandle::take_from_worker`](`dbsp::OutputHandle::take_from_worker`),
     /// but returns output batch as a [`SyncSerBatchReader`] trait object.
-    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SyncSerBatchReader>>;
+    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatchReader>>;
 
     /// Like [`OutputHandle::take_from_all`](`dbsp::OutputHandle::take_from_all`),
     /// but returns output batches as [`SyncSerBatchReader`] trait objects.
-    fn take_from_all(&self) -> Vec<Arc<dyn SyncSerBatchReader>>;
+    fn take_from_all(&self) -> Vec<Arc<dyn SerBatchReader>>;
 
     /// Concatenate outputs from all workers into a single batch reader.
-    fn concat(&self) -> Arc<dyn SyncSerBatchReader>;
+    fn concat(&self) -> Arc<dyn SerBatchReader>;
 }
 
 dyn_clone::clone_trait_object!(SerBatchReaderHandle);
@@ -517,6 +528,14 @@ impl SerCursor for CursorWithPolarity<'_> {
 
     fn val_valid(&self) -> bool {
         self.cursor.val_valid()
+    }
+
+    fn key(&self) -> &DynData {
+        self.cursor.key()
+    }
+
+    fn get_key(&self) -> Option<&DynData> {
+        self.cursor.get_key()
     }
 
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
@@ -615,6 +634,10 @@ impl SerCursor for CursorWithPolarity<'_> {
     fn rewind_vals(&mut self) {
         self.cursor.rewind_vals();
         self.advance_val();
+    }
+
+    fn seek_key_exact(&mut self, key: &DynData) -> bool {
+        self.cursor.seek_key_exact(key)
     }
 }
 

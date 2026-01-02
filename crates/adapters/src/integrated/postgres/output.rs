@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{
     io::Write, marker::PhantomPinned, path::PathBuf, str::FromStr, sync::Weak, time::Duration,
 };
@@ -651,7 +652,7 @@ impl Encoder for PostgresOutputEndpoint {
         self
     }
 
-    fn encode(&mut self, batch: &dyn SerBatchReader) -> anyhow::Result<()> {
+    fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> anyhow::Result<()> {
         let mut cursor = batch.cursor(RecordFormat::Json(JsonFlavor::Postgres))?;
 
         while cursor.key_valid() {
