@@ -1,29 +1,39 @@
 {
   "name": "profiler-app",
-  "version": "1.0.0",
+  "private": true,
+  "version": "0.0.0",
   "type": "module",
-  "keywords": ["feldera", "profiler"],
-  "author": "",
-  "license": "MIT",
-  "description": "Standalone single-page application for profiling Feldera pipelines",
   "scripts": {
-    "dev": "vite dev --host",
-    "prebuild": "cd ../profiler-lib && bun run build",
-    "build": "tsc --noEmit && vite build"
+    "dev": "vite --host",
+    "build": "svelte-check --threshold error && vite build",
+    "preview": "vite preview --host",
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "format": "biome check --write ."
   },
   "dependencies": {
-    "but-unzip": "^0.1.7",
-    "cytoscape": "^3.33.1",
-    "cytoscape-dblclick": "^0.3.1",
-    "cytoscape-elk": "^2.3.0",
-    "elkjs": "^0.11.0"
+    "profiler-layout": "workspace:*",
+    "profiler-lib": "workspace:*"
   },
   "devDependencies": {
-    "@types/cytoscape": "^3.21.9",
-    "@types/node": "^24.6.0",
-    "profiler-lib": "workspace:*",
-    "typescript": "^5.9.2",
-    "vite": "^5.4.20",
-    "vite-plugin-singlefile": "^2.0.2"
+    "@biomejs/biome": "^2.3.8",
+    "@fontsource-variable/dm-sans": "^5.2.8",
+    "@fontsource/dm-mono": "^5.2.7",
+    "@poppanator/sveltekit-svg": "^6.0.1",
+    "@skeletonlabs/skeleton": "^4.8.0",
+    "@skeletonlabs/skeleton-svelte": "^4.8.0",
+    "@sveltejs/vite-plugin-svelte": "^6.2.1",
+    "@tailwindcss/vite": "^4.1.17",
+    "@tsconfig/svelte": "^5.0.6",
+    "@types/node": "^24.10.1",
+    "feldera-theme": "workspace:*",
+    "svelte": "^5.43.8",
+    "svelte-check": "^4.3.4",
+    "tailwindcss": "^4.1.17",
+    "typescript": "~5.9.3",
+    "vite": "npm:rolldown-vite@7.2.5",
+    "vite-plugin-singlefile": "^2.3.0"
+  },
+  "overrides": {
+    "vite": "npm:rolldown-vite@7.2.5"
   }
 }

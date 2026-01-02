@@ -54,6 +54,7 @@
     "eslint-plugin-svelte": "3.13.1",
     "fancy-ansi": "0.1.3",
     "fast-deep-equal": "3.1.3",
+    "feldera-theme": "workspace:*",
     "flowbite-svelte": "1.29.1",
     "formsnap": "2.0.1",
     "globals": "16.5.0",
@@ -69,6 +70,7 @@
     "prettier": "3.7.4",
     "prettier-plugin-svelte": "3.4.0",
     "prettier-plugin-tailwindcss": "0.7.2",
+    "profiler-layout": "workspace:*",
     "profiler-lib": "workspace:*",
     "runed": "0.37.0",
     "sass-embedded": "1.93.3",
@@ -94,16 +96,19 @@
     "typescript-eslint": "8.48.1",
     "valibot": "1.2.0",
     "virtua": "0.48.2",
-    "vite": "7.2.6",
+    "vite": "npm:rolldown-vite@7.2.5",
     "vite-plugin-devtools-json": "1.0.0",
     "vite-plugin-virtual": "0.4.0",
     "worker-timers": "8.0.25"
+  },
+  "overrides": {
+    "vite": "npm:rolldown-vite@7.2.5"
   },
   "private": true,
   "scripts": {
     "clean-install": "bun ci",
     "dev": "vite dev --host",
-    "prebuild": "cd ../profiler-lib && bun run build",
+    "prebuild": "cd ../profiler-layout && bun run build",
     "build": "svelte-kit sync && svelte-check --threshold error && vite build",
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check",
