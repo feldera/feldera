@@ -332,6 +332,7 @@ It contains the following fields:
 
         // From the feldera-types crate
         feldera_types::config::PipelineConfig,
+        feldera_types::config::MultihostConfig,
         feldera_types::config::StorageConfig,
         feldera_types::config::StorageCacheConfig,
         feldera_types::config::StorageOptions,
@@ -440,6 +441,7 @@ It contains the following fields:
         feldera_types::adapter_stats::ExternalConnectorTransactionPhase,
         feldera_types::adapter_stats::PipelineState,
         feldera_types::adapter_stats::ShortEndpointConfig,
+        feldera_types::adapter_stats::TransactionStatus,
 
         // Telemetry & License
         feldera_cloud1_client::license::DisplaySchedule,

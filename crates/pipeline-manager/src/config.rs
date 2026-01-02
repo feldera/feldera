@@ -250,7 +250,6 @@ pub struct CommonConfig {
     pub enable_https: bool,
 
     /// Path to the TLS x509 certificate PEM file (e.g., `/path/to/tls.crt`).
-    /// The same TLS certificate is used by all HTTP servers.
     ///
     /// If the certificate is not self-signed, this PEM file should contain the complete bundle of
     /// the entire chain up until the root certificate authority (i.e., it should contain multiple

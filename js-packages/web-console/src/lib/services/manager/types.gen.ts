@@ -1366,10 +1366,7 @@ export type GlobalControllerMetrics = {
    */
   transaction_id: number
   transaction_initiators: TransactionInitiators
-  /**
-   * Status of the current transaction.
-   */
-  transaction_status: string
+  transaction_status: TransactionStatus
   /**
    * Time since the pipeline process started, in milliseconds.
    */
@@ -1615,7 +1612,7 @@ export type InputEndpointStatus = {
    */
   barrier: boolean
   completed_frontier?: CompletedWatermark | null
-  config: InputEndpointConfig
+  config: ShortEndpointConfig
   /**
    * Endpoint name.
    */
@@ -2054,6 +2051,22 @@ export type MirNode = {
 
 export type MonitorStatus = 'InitialUnhealthy' | 'Unhealthy' | 'Healthy'
 
+/**
+ * Configuration for a multihost Feldera pipeline.
+ *
+ * This configuration is primarily for the coordinator.
+ */
+export type MultihostConfig = {
+  /**
+   * Number of hosts to launch.
+   *
+   * For the configuration to be truly multihost, this should be at least 2.
+   * A value of 1 still runs the multihost coordinator but it only
+   * coordinates a single host.
+   */
+  hosts: number
+}
+
 export type NatsInputConfig = {
   connection_config: ConnectOptions
   consumer_config: ConsumerConfig
@@ -2300,7 +2313,7 @@ export type OutputEndpointMetrics = {
  * Output endpoint status information.
  */
 export type OutputEndpointStatus = {
-  config: OutputEndpointConfig
+  config: ShortEndpointConfig
   /**
    * Endpoint name.
    */
@@ -2404,6 +2417,12 @@ export type PipelineConfig = {
     [key: string]: unknown
   }
   fault_tolerance?: FtConfig
+  /**
+   * Number of DBSP hosts.
+   *
+   * The worker threads are evenly divided among the hosts.
+   */
+  hosts?: number
   /**
    * Sets the number of available runtime threads for the http server.
    *
@@ -2522,6 +2541,7 @@ export type PipelineConfig = {
   inputs?: {
     [key: string]: InputEndpointConfig
   }
+  multihost?: MultihostConfig | null
   /**
    * Unique system-generated name of the pipeline (format: `pipeline-<uuid>`).
    * It is unique across all tenants and cannot be changed.
@@ -2698,9 +2718,37 @@ export type PostgresReaderConfig = {
 }
 
 /**
+ * PostgreSQL write mode.
+ *
+ * Determines how the PostgreSQL output connector writes data to the target table.
+ */
+export type PostgresWriteMode = 'materialized' | 'cdc'
+
+/**
  * Postgres output connector configuration.
  */
 export type PostgresWriterConfig = {
+  /**
+   * Name of the operation metadata column in CDC mode.
+   *
+   * Only used when `mode = "cdc"`. This column will contain:
+   * - `"i"` for insert operations
+   * - `"u"` for upsert operations
+   * - `"d"` for delete operations
+   *
+   * Default: `"__feldera_op"`
+   */
+  cdc_op_column?: string
+  /**
+   * Name of the timestamp metadata column in CDC mode.
+   *
+   * Only used when `mode = "cdc"`. This column will contain the timestamp
+   * (in RFC 3339 format) when the batch of updates was output
+   * by the pipeline.
+   *
+   * Default: `"__feldera_ts"`
+   */
+  cdc_ts_column?: string
   /**
    * The maximum buffer size in for a single operation.
    * Note that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are
@@ -2712,6 +2760,7 @@ export type PostgresWriterConfig = {
    * The maximum number of records in a single buffer.
    */
   max_records_in_buffer?: number | null
+  mode?: PostgresWriteMode
   /**
    * Specifies how the connector handles conflicts when executing an `INSERT`
    * into a table with a primary key. By default, an existing row with the same
@@ -2720,6 +2769,10 @@ export type PostgresWriterConfig = {
    *
    * This setting does not affect `UPDATE` statements, which always replace the
    * value associated with the key.
+   *
+   * This setting is not supported when `mode = "cdc"`, since all operations
+   * are performed as append-only `INSERT`s into the target table.
+   * Any conflict in CDC mode will result in an error.
    *
    * Default: `false`
    */
@@ -3324,6 +3377,12 @@ export type RuntimeConfig = {
   }
   fault_tolerance?: FtConfig
   /**
+   * Number of DBSP hosts.
+   *
+   * The worker threads are evenly divided among the hosts.
+   */
+  hosts?: number
+  /**
    * Sets the number of available runtime threads for the http server.
    *
    * In most cases, this does not need to be set explicitly and
@@ -3429,7 +3488,13 @@ export type RuntimeConfig = {
   workers?: number
 }
 
-export type RuntimeDesiredStatus = 'Unavailable' | 'Standby' | 'Paused' | 'Running' | 'Suspended'
+export type RuntimeDesiredStatus =
+  | 'Unavailable'
+  | 'Coordination'
+  | 'Standby'
+  | 'Paused'
+  | 'Running'
+  | 'Suspended'
 
 /**
  * Runtime status of the pipeline.
@@ -3439,6 +3504,7 @@ export type RuntimeDesiredStatus = 'Unavailable' | 'Standby' | 'Paused' | 'Runni
  */
 export type RuntimeStatus =
   | 'Unavailable'
+  | 'Coordination'
   | 'Standby'
   | 'Initializing'
   | 'AwaitingApproval'
@@ -3555,6 +3621,16 @@ export type SessionInfo = {
    * Current user's tenant name
    */
   tenant_name: string
+}
+
+/**
+ * Schema definition for endpoint config that only includes the stream field.
+ */
+export type ShortEndpointConfig = {
+  /**
+   * The name of the stream.
+   */
+  stream: string
 }
 
 export type SourcePosition = {
@@ -3937,6 +4013,7 @@ export type TemporarySuspendError =
   | {
       InputEndpointBarrier: string
     }
+  | 'Coordination'
 
 export type TenantId = string
 
@@ -3977,6 +4054,11 @@ export type TransactionInitiators = {
  * Transaction phase.
  */
 export type TransactionPhase = 'Started' | 'Committed'
+
+/**
+ * Transaction status summarized as a single value.
+ */
+export type TransactionStatus = 'NoTransaction' | 'TransactionInProgress' | 'CommitInProgress'
 
 /**
  * Transport-specific endpoint configuration passed to
@@ -4623,7 +4705,7 @@ export type PostPipelineActivateData = {
     pipeline_name: string
   }
   query?: {
-    initial?: string
+    initial?: RuntimeDesiredStatus
   }
   url: '/v0/pipelines/{pipeline_name}/activate'
 }

@@ -5,6 +5,7 @@ use crate::{
     },
     transport::set_barrier,
 };
+use anyhow::anyhow;
 use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
 use feldera_types::{
     config::{InputEndpointConfig, OutputEndpointConfig},
@@ -2196,7 +2197,7 @@ fn test_external_controller_status_serialization() {
         kafka_endpoint
             .metrics
             .num_transport_errors
-            .store(5, Ordering::Relaxed);
+            .store(4, Ordering::Relaxed);
         kafka_endpoint
             .metrics
             .num_parse_errors
@@ -2205,9 +2206,11 @@ fn test_external_controller_status_serialization() {
             .metrics
             .end_of_input
             .store(false, Ordering::Relaxed);
-        kafka_endpoint.paused.store(true, Ordering::Relaxed);
-        *kafka_endpoint.fatal_error.lock().unwrap() =
-            Some("Connection refused: Unable to connect to Kafka broker".to_string());
+        kafka_endpoint.set_paused_by_user(true);
+        kafka_endpoint.transport_error(
+            true,
+            &anyhow!("Connection refused: Unable to connect to Kafka broker"),
+        );
         inputs.insert(0, kafka_endpoint);
 
         // Input 2: file_input with barrier and no errors
@@ -2312,22 +2315,12 @@ fn test_external_controller_status_serialization() {
     // Create ControllerStatus with mock values
     let controller_status = create_mock_status();
 
-    // Serialize the ControllerStatus to JSON
-    let controller_json =
-        serde_json::to_value(&controller_status).expect("Failed to serialize ControllerStatus");
-
     // Convert to ExternalControllerStatus using the to_api_type method
     let external_status = controller_status.to_api_type();
 
     // Serialize the ExternalControllerStatus to JSON
     let external_json = serde_json::to_value(&external_status)
         .expect("Failed to serialize ExternalControllerStatus");
-
-    // Both should serialize to the same JSON (excluding fields marked with skip_serializing)
-    assert_eq!(
-        controller_json, external_json,
-        "ControllerStatus and ExternalControllerStatus should serialize to the same JSON"
-    );
 
     // Verify specific fields to ensure they were properly converted
     assert_eq!(

@@ -35,6 +35,9 @@ chrono = { workspace = true, features = ["serde"] }
 feldera-ir = { workspace = true }
 async-nats = { workspace = true }
 time = { workspace = true }
+bytemuck = { workspace = true }
+clap = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 csv = { workspace = true }

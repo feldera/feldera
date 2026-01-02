@@ -1,13 +1,14 @@
 use crate::{
     Circuit, Runtime, Stream,
     circuit::{
-        OwnershipPreference, Scope,
+        GlobalNodeId, OwnershipPreference, Scope,
         circuit_builder::StreamId,
         metadata::OperatorLocation,
         operator_traits::{Operator, SinkOperator, SourceOperator},
     },
     circuit_cache_key,
-    trace::{Batch, merge_batches},
+    operator::communication::new_exchange_operators,
+    trace::{Batch, deserialize_indexed_wset, merge_batches, serialize_indexed_wset},
 };
 use arc_swap::ArcSwap;
 use crossbeam::atomic::AtomicConsume;
@@ -27,6 +28,7 @@ type NotifyCallback = dyn Fn() + Send + Sync + 'static;
 
 circuit_cache_key!(GatherId<C, D>((StreamId, usize) => Stream<C, D>));
 circuit_cache_key!(local GatherDataId<T>(usize => Arc<GatherData<(T, bool)>>));
+circuit_cache_key!(MultihostGatherId<C, D>((GlobalNodeId, usize) => Stream<C, D>));
 
 impl<C, B> Stream<C, B>
 where
@@ -40,59 +42,116 @@ where
         // FIXME: Remove `Time = ()` restriction currently imposed by `.consolidate()`
         B: Batch<Time = ()> + Send,
     {
-        let location = Location::caller();
-
-        match Runtime::runtime() {
-            None => self.clone(),
-            Some(runtime) => {
-                let workers = Runtime::num_workers();
-                assert!(receiver_worker < workers);
-
-                if workers == 1 {
-                    self.clone()
-                } else {
-                    self.circuit()
-                        .cache_get_or_insert_with(
-                            GatherId::new((self.stream_id(), receiver_worker)),
-                            move || {
-                                let current_worker = Runtime::worker_index();
-                                let gather_id = runtime.sequence_next();
-
-                                let gather = runtime
-                                    .local_store()
-                                    .entry(GatherDataId::new(gather_id))
-                                    .or_insert_with(|| Arc::new(GatherData::new(workers, location)))
-                                    .value()
-                                    .clone();
-
-                                // Safety: The current worker is unique
-                                let producer =
-                                    unsafe { GatherProducer::new(gather.clone(), current_worker) };
-
-                                if current_worker == receiver_worker {
-                                    self.circuit().add_exchange(
-                                        producer,
-                                        GatherConsumer::new(gather, factories),
-                                        self,
-                                    )
-                                } else {
-                                    self.circuit().add_exchange(
-                                        producer,
-                                        EmptyGatherConsumer::new(location, factories),
-                                        self,
-                                    )
-                                }
-                                .set_persistent_id(
-                                    self.get_persistent_id()
-                                        .map(|name| format!("{name}.gather-{receiver_worker}"))
-                                        .as_deref(),
-                                )
-                            },
-                        )
-                        .clone()
-                }
-            }
+        let workers = Runtime::num_workers();
+        assert!(receiver_worker < workers);
+        if workers == 1 {
+            return self.clone();
         }
+
+        let runtime = Runtime::runtime().unwrap();
+        if runtime.layout().is_solo() {
+            self.dyn_gather_single_host(workers, runtime, factories, receiver_worker)
+        } else {
+            self.dyn_gather_multihost(factories, receiver_worker)
+        }
+    }
+
+    #[track_caller]
+    fn dyn_gather_single_host(
+        &self,
+        workers: usize,
+        runtime: Runtime,
+        factories: &B::Factories,
+        receiver_worker: usize,
+    ) -> Stream<C, B>
+    where
+        B: Batch<Time = ()> + Send,
+    {
+        let location = Location::caller();
+        self.circuit()
+            .cache_get_or_insert_with(
+                GatherId::new((self.stream_id(), receiver_worker)),
+                move || {
+                    let current_worker = Runtime::worker_index();
+                    let gather_id = runtime.sequence_next();
+
+                    let gather = runtime
+                        .local_store()
+                        .entry(GatherDataId::new(gather_id))
+                        .or_insert_with(|| Arc::new(GatherData::new(workers, location)))
+                        .value()
+                        .clone();
+
+                    // Safety: The current worker is unique
+                    let producer = unsafe { GatherProducer::new(gather.clone(), current_worker) };
+
+                    if current_worker == receiver_worker {
+                        self.circuit().add_exchange(
+                            producer,
+                            GatherConsumer::new(gather, factories),
+                            self,
+                        )
+                    } else {
+                        self.circuit().add_exchange(
+                            producer,
+                            EmptyGatherConsumer::new(location, factories),
+                            self,
+                        )
+                    }
+                    .set_persistent_id(
+                        self.get_persistent_id()
+                            .map(|name| format!("{name}.gather-{receiver_worker}"))
+                            .as_deref(),
+                    )
+                },
+            )
+            .clone()
+    }
+
+    #[track_caller]
+    fn dyn_gather_multihost(&self, factories: &B::Factories, receiver_worker: usize) -> Stream<C, B>
+    where
+        B: Batch<Time = ()> + Send,
+    {
+        let location = Location::caller();
+        self.circuit()
+            .cache_get_or_insert_with(
+                MultihostGatherId::new((self.origin_node_id().clone(), receiver_worker)),
+                move || {
+                    let factories_clone = factories.clone();
+                    let factories_clone2 = factories.clone();
+                    let factories_clone3 = factories.clone();
+
+                    let output = self.circuit().region("gather", || {
+                        let (sender, receiver) = new_exchange_operators(
+                            Some(location),
+                            || Vec::new(),
+                            move |batch: B, batches: &mut Vec<B>| {
+                                for _ in 0..Runtime::num_workers() {
+                                    batches.push(B::dyn_empty(&factories_clone3));
+                                }
+                                batches[receiver_worker] = batch;
+                            },
+                            |batch| serialize_indexed_wset(&batch),
+                            move |data| deserialize_indexed_wset(&factories_clone, &data),
+                            |batches: &mut Vec<B>, batch: B| batches.push(batch),
+                        )
+                        .unwrap();
+
+                        self.circuit()
+                            .add_exchange(sender, receiver, self)
+                            .apply_owned_named("gather shards", move |batches| {
+                                merge_batches(&factories_clone2, batches, &None, &None)
+                            })
+                    });
+                    output.set_persistent_id(
+                        self.get_persistent_id()
+                            .map(|name| format!("{name}.gather"))
+                            .as_deref(),
+                    )
+                },
+            )
+            .clone()
     }
 }
 

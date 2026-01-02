@@ -31,6 +31,7 @@ impl Display for PipelineId {
 pub fn runtime_status_to_string(runtime_status: RuntimeStatus) -> String {
     match runtime_status {
         RuntimeStatus::Unavailable => "unavailable",
+        RuntimeStatus::Coordination => "coordination",
         RuntimeStatus::Standby => "standby",
         RuntimeStatus::AwaitingApproval => "awaiting_approval",
         RuntimeStatus::Initializing => "initializing",
@@ -66,6 +67,7 @@ pub fn parse_string_as_runtime_status(s: String) -> Result<RuntimeStatus, DBErro
 pub fn runtime_desired_status_to_string(runtime_desired_status: RuntimeDesiredStatus) -> String {
     match runtime_desired_status {
         RuntimeDesiredStatus::Unavailable => "unavailable",
+        RuntimeDesiredStatus::Coordination => "coordination",
         RuntimeDesiredStatus::Standby => "standby",
         RuntimeDesiredStatus::Paused => "paused",
         RuntimeDesiredStatus::Running => "running",

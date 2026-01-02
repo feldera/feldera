@@ -101,6 +101,12 @@ pub enum RunnerError {
         pipeline_name: String,
         error: String,
     },
+
+    /// Error using OpenSSL for certificate management
+    OpenSSL {
+        /// OpenSSL errors.
+        errors: String,
+    },
 }
 
 impl DetailedError for RunnerError {
@@ -173,6 +179,7 @@ impl DetailedError for RunnerError {
             RunnerError::PipelineInteractionInvalidResponse { .. } => {
                 Cow::from("PipelineInteractionInvalidResponse")
             }
+            RunnerError::OpenSSL { .. } => Cow::from("OpenSSL"),
         }
     }
 }
@@ -365,6 +372,12 @@ impl Display for RunnerError {
                     pipeline_suffix(pipeline_name)
                 )
             }
+            Self::OpenSSL { errors } => {
+                write!(
+                    f,
+                    "Error using OpenSSL for certificate management: {errors}"
+                )
+            }
         }
     }
 }
@@ -422,6 +435,7 @@ impl ResponseError for RunnerError {
             Self::PipelineMissingDeploymentLocation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineInteractionUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::PipelineInteractionInvalidResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::OpenSSL { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
