@@ -7,7 +7,7 @@ use crate::{
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
-        FileKeyBatchFactories, Filter, MergeCursor, VecKeyBatch, VecKeyBatchFactories,
+        FileKeyBatchFactories, Filter, GroupFilter, MergeCursor, VecKeyBatch, VecKeyBatchFactories,
         WeightedItem,
         cursor::{DelegatingCursor, PushCursor},
         ord::{
@@ -234,7 +234,7 @@ where
     fn merge_cursor(
         &self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         match &self.inner {
             Inner::Vec(vec) => vec.merge_cursor(key_filter, value_filter),

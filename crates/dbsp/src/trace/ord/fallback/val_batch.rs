@@ -5,7 +5,7 @@ use crate::storage::buffer_cache::CacheStats;
 use crate::trace::cursor::{DelegatingCursor, PushCursor};
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
-use crate::trace::{BatchLocation, MergeCursor};
+use crate::trace::{BatchLocation, GroupFilter, MergeCursor};
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
@@ -243,7 +243,7 @@ where
     fn merge_cursor(
         &self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         match &self.inner {
             Inner::Vec(vec) => vec.merge_cursor(key_filter, value_filter),

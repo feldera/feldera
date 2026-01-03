@@ -11,7 +11,7 @@ use crate::{
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, Filter,
-        Trace, cursor::Position,
+        GroupFilter, Trace, cursor::Position,
     },
 };
 use dyn_clone::clone_box;
@@ -163,19 +163,46 @@ where
         .collect::<Vec<_>>()
 }
 
-pub fn filter<T>(
-    mut tuples: Vec<((Box<T::Key>, Box<T::Val>, T::Time), Box<T::R>)>,
-    trace: &T,
-) -> Vec<((Box<T::Key>, Box<T::Val>, T::Time), Box<T::R>)>
-where
-    T: Trace,
-{
-    if let Some(filter) = trace.value_filter() {
-        tuples.retain(|((_k, v, _t), _r)| (filter.filter_func)(v.as_ref()));
+pub fn filter<K: DataTrait + ?Sized, V: DataTrait + ?Sized, T, R: WeightTrait + ?Sized>(
+    mut tuples: Vec<((Box<K>, Box<V>, T), Box<R>)>,
+    key_filter: &Option<Filter<K>>,
+    value_filter: &Option<GroupFilter<V>>,
+) -> Vec<((Box<K>, Box<V>, T), Box<R>)> {
+    if let Some(filter) = key_filter {
+        tuples.retain(|((k, _v, _t), _r)| (filter.filter_func())(k.as_ref()));
     }
 
-    if let Some(filter) = trace.key_filter() {
-        tuples.retain(|((k, _v, _t), _r)| (filter.filter_func)(k.as_ref()));
+    if let Some(filter) = value_filter {
+        match filter {
+            GroupFilter::Simple(filter) => {
+                tuples.retain(|((_k, v, _t), _r)| (filter.filter_func())(v.as_ref()));
+                return tuples;
+            }
+            GroupFilter::LastN(n, filter, _val_factory) => {
+                let mut tuples_by_key = BTreeMap::new();
+                for ((k, v, t), w) in tuples.into_iter() {
+                    tuples_by_key
+                        .entry(k)
+                        .or_insert_with(Vec::new)
+                        .push((v, t, w));
+                }
+
+                let mut result = Vec::new();
+
+                for (k, mut tuples) in tuples_by_key.into_iter() {
+                    let index = tuples
+                        .iter()
+                        .position(|(v, _t, _w)| (filter.filter_func())(v.as_ref()))
+                        .unwrap_or(tuples.len());
+                    let first_index = index.saturating_sub(*n);
+                    tuples
+                        .drain(first_index..)
+                        .for_each(|(v, t, w)| result.push(((clone_box(&*k), v, t), w)));
+                }
+
+                return result;
+            }
+        }
     }
 
     tuples
@@ -352,24 +379,48 @@ where
     T1: Trace,
     T2: Trace<Key = T1::Key, Val = T1::Val, Time = T1::Time, R = T1::R>,
 {
-    let tuples1 = filter(batch_to_tuples(trace1), trace1);
-    assert_eq!(
-        tuples1,
-        filter(batch_to_tuples_reverse_vals(trace1), trace1)
+    let tuples1 = filter(
+        batch_to_tuples(trace1),
+        trace1.key_filter(),
+        trace1.value_filter(),
     );
     assert_eq!(
         tuples1,
-        filter(batch_to_tuples_reverse_keys(trace1), trace1)
+        filter(
+            batch_to_tuples_reverse_vals(trace1),
+            trace1.key_filter(),
+            trace1.value_filter()
+        )
     );
     assert_eq!(
         tuples1,
-        filter(batch_to_tuples_reverse_keys_vals(trace1), trace1)
+        filter(
+            batch_to_tuples_reverse_keys(trace1),
+            trace1.key_filter(),
+            trace1.value_filter()
+        )
+    );
+    assert_eq!(
+        tuples1,
+        filter(
+            batch_to_tuples_reverse_keys_vals(trace1),
+            trace1.key_filter(),
+            trace1.value_filter()
+        )
     );
 
-    let tuples2 = filter(batch_to_tuples(trace2), trace2);
+    let tuples2 = filter(
+        batch_to_tuples(trace2),
+        trace2.key_filter(),
+        trace2.value_filter(),
+    );
     assert_eq!(
         tuples2,
-        filter(batch_to_tuples_reverse_vals(trace2), trace2)
+        filter(
+            batch_to_tuples_reverse_vals(trace2),
+            trace2.key_filter(),
+            trace2.value_filter()
+        )
     );
     assert_eq!(tuples1, tuples2);
 }
@@ -459,7 +510,7 @@ where
     #[size_of(skip)]
     key_filter: Option<Filter<K>>,
     #[size_of(skip)]
-    value_filter: Option<Filter<V>>,
+    value_filter: Option<GroupFilter<V>>,
 }
 
 unsafe impl<K, V, T, R> Send for TestBatch<K, V, T, R>
@@ -650,23 +701,12 @@ where
         source1: &Self,
         source2: &Self,
         key_filter: &Option<Filter<K>>,
-        value_filter: &Option<Filter<V>>,
+        value_filter: &Option<GroupFilter<V>>,
     ) -> Self {
         let data = source1
             .data
             .iter()
             .chain(source2.data.iter())
-            .filter(|((k, v, _t), _r)| {
-                #[allow(clippy::borrowed_box)]
-                fn include<K: ?Sized>(x: &Box<K>, filter: &Option<Filter<K>>) -> bool {
-                    match filter {
-                        Some(filter) => (filter.filter_func)(x),
-                        None => true,
-                    }
-                }
-
-                include(k, key_filter) && include(v, value_filter)
-            })
             .map(|((k, v, t), r)| {
                 (
                     (clone_box(k.as_ref()), clone_box(v.as_ref()), t.clone()),
@@ -674,7 +714,16 @@ where
                 )
             })
             .collect::<Vec<_>>();
-        Self::from_data(&data)
+
+        let mut result = Self::from_data(&data);
+
+        if let Some(key_filter) = key_filter {
+            result.retain_keys(key_filter.clone());
+        }
+        if let Some(value_filter) = value_filter {
+            result.retain_values(value_filter.clone());
+        }
+        result
     }
 }
 
@@ -1275,21 +1324,27 @@ where
 
     fn retain_keys(&mut self, filter: Filter<Self::Key>) {
         self.data
-            .retain(|(k, _v, _t), _r| (filter.filter_func)(k.as_ref()));
+            .retain(|(k, _v, _t), _r| (filter.filter_func())(k.as_ref()));
         self.key_filter = Some(filter);
     }
 
-    fn retain_values(&mut self, filter: Filter<Self::Val>) {
-        self.data
-            .retain(|(_k, v, _t), _r| (filter.filter_func)(v.as_ref()));
-        self.value_filter = Some(filter);
+    fn retain_values(&mut self, value_filter: GroupFilter<Self::Val>) {
+        self.data = filter(
+            std::mem::take(&mut self.data).into_iter().collect(),
+            &self.key_filter,
+            &Some(value_filter.clone()),
+        )
+        .into_iter()
+        .collect();
+
+        self.value_filter = Some(value_filter);
     }
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>> {
         &self.key_filter
     }
 
-    fn value_filter(&self) -> &Option<Filter<Self::Val>> {
+    fn value_filter(&self) -> &Option<GroupFilter<Self::Val>> {
         &self.value_filter
     }
 
