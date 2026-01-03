@@ -10,10 +10,12 @@ from feldera.runtime_config import RuntimeConfig, Storage
 from tests import enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
 
-DEFAULT_ENDPOINT = os.environ.get("DEFAULT_MINIO_ENDPOINT", "http://localhost:9000")
-DEFAULT_BUCKET = "default"
-ACCESS_KEY = "minioadmin"
-SECRET_KEY = "minioadmin"
+DEFAULT_ENDPOINT = os.environ.get(
+    "DEFAULT_MINIO_ENDPOINT", "http://minio.extra.svc.cluster.local:9000"
+)
+DEFAULT_BUCKET = os.environ.get("DEFAULT_MINIO_BUCKET", "default")
+ACCESS_KEY = os.environ.get("MINIO_ACCESS_KEY", "minio")
+SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "miniopasswd")
 
 
 def storage_cfg(
