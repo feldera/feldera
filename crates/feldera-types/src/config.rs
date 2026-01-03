@@ -584,6 +584,48 @@ Consider setting `start_from_checkpoint` to `"latest"`."#.to_owned());
     }
 }
 
+/// Configuration for supplying a custom pipeline StatefulSet template via a Kubernetes ConfigMap.
+///
+/// Operators can provide a custom StatefulSet YAML that the Kubernetes runner will use when
+/// creating pipeline StatefulSets for a pipeline. The custom template must be stored as the
+/// value of a key in a ConfigMap in the same namespace as the pipeline; set `name` to the
+/// ConfigMap name and `key` to the entry that contains the template.
+///
+/// Recommendations and requirements:
+/// - **Start from the default template and modify it as needed.** The default template is present
+///   in ConfigMap named as `<release-name>-pipeline-template`, with key `pipelineTemplate` in the release
+///   namespace and should be used as a reference.
+/// - The template must contain a valid Kubernetes `StatefulSet` manifest in YAML form. The
+///   runner substitutes variables in the template before parsing; therefore the final YAML
+///   must be syntactically valid.
+/// - The runner performs simple string substitution for the following placeholders. Please ensure these
+///   placeholders are placed at appropriate location for their semantics:
+///   - `{id}`: pipeline Kubernetes name (used for object names and labels)
+///   - `{namespace}`: Kubernetes namespace where the pipeline runs
+///   - `{pipeline_executor_image}`: container image used to run the pipeline executor
+///   - `{binary_ref}`: program binary reference passed as an argument
+///   - `{program_info_ref}`: program info reference passed as an argument
+///   - `{pipeline_storage_path}`: mount path for persistent pipeline storage
+///   - `{storage_class_name}`: storage class name to use for PVCs (if applicable)
+///   - `{deployment_id}`: UUID identifying the deployment instance
+///   - `{deployment_initial}`: initial desired runtime status (e.g., `provisioning`)
+///   - `{bootstrap_policy}`: bootstrap policy value when applicable
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PipelineTemplateConfig {
+    /// Name of the ConfigMap containing the pipeline template.
+    pub name: String,
+    /// Key in the ConfigMap containing the pipeline template.
+    ///
+    /// If not set, defaults to `pipelineTemplate`.
+    #[schema(default = default_pipeline_template_key)]
+    #[serde(default = "default_pipeline_template_key")]
+    pub key: String,
+}
+
+fn default_pipeline_template_key() -> String {
+    "pipelineTemplate".to_string()
+}
+
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ObjectStorageConfig {
     /// URL.
@@ -815,6 +857,15 @@ pub struct RuntimeConfig {
     ///
     /// [tracing-subscriber]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives
     pub logging: Option<String>,
+
+    /// ConfigMap containing a custom pipeline template (Enterprise only).
+    ///
+    /// This feature is only available in Feldera Enterprise. If set, the Kubernetes runner
+    /// will read the template from the specified ConfigMap and use it instead of the default
+    /// StatefulSet template for the configured pipeline.
+    ///
+    /// check [`PipelineTemplateConfig`] documentation for details.
+    pub pipeline_template_configmap: Option<PipelineTemplateConfig>,
 }
 
 /// Accepts "true" and "false" and converts them to the new format.
@@ -950,6 +1001,7 @@ impl Default for RuntimeConfig {
             http_workers: None,
             dev_tweaks: BTreeMap::default(),
             logging: None,
+            pipeline_template_configmap: None,
         }
     }
 }

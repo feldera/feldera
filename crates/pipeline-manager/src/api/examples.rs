@@ -121,6 +121,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             http_workers: None,
             dev_tweaks: BTreeMap::new(),
             logging: None,
+            pipeline_template_configmap: None,
         })
         .unwrap(),
         program_code: "CREATE TABLE table2 ( col2 VARCHAR );".to_string(),

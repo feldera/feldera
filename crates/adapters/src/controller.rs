@@ -3524,6 +3524,7 @@ impl ControllerInit {
                 io_workers: config.global.io_workers,
                 dev_tweaks: config.global.dev_tweaks.clone(),
                 logging: config.global.logging,
+                pipeline_template_configmap: config.global.pipeline_template_configmap.clone(),
             },
 
             // If pipeline is unmodified, we may need to replay journaled inputs.
