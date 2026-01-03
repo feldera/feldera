@@ -1,10 +1,10 @@
 use crate::Runtime;
 use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
 use crate::circuit::metadata::{NUM_ALLOCATIONS_LABEL, NUM_INPUTS_LABEL};
-use crate::dynamic::{Weight, WeightTrait};
+use crate::dynamic::{Factory, Weight, WeightTrait};
 use crate::operator::require_persistent_id;
 use crate::trace::spine_async::WithSnapshot;
-use crate::trace::{BatchReaderFactories, Builder, MergeCursor};
+use crate::trace::{BatchReaderFactories, Builder, GroupFilter, MergeCursor};
 use crate::{
     Error, Timestamp,
     circuit::{
@@ -111,7 +111,7 @@ impl<K: DataTrait + ?Sized> TraceBound<K> {
 
 /// Data structure that tracks key and value retainment policies for a
 /// trace.
-pub struct TraceBounds<K: ?Sized + 'static, V: ?Sized + 'static>(
+pub struct TraceBounds<K: ?Sized + 'static, V: DataTrait + ?Sized>(
     Rc<RefCell<TraceBoundsInner<K, V>>>,
 );
 
@@ -130,7 +130,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
         Self(Rc::new(RefCell::new(TraceBoundsInner {
             key_predicate: Predicate::Bounds(Vec::new()),
             unique_key_name: None,
-            val_predicate: Predicate::Bounds(Vec::new()),
+            val_predicate: GroupPredicate::Bounds(Vec::new()),
             unique_val_name: None,
         })))
     }
@@ -141,7 +141,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
         Self(Rc::new(RefCell::new(TraceBoundsInner {
             key_predicate: Predicate::Bounds(vec![TraceBound::new()]),
             unique_key_name: None,
-            val_predicate: Predicate::Bounds(vec![TraceBound::new()]),
+            val_predicate: GroupPredicate::Bounds(vec![TraceBound::new()]),
             unique_val_name: None,
         })))
     }
@@ -165,15 +165,15 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
 
     pub(crate) fn add_val_bound(&self, bound: TraceBound<V>) {
         match &mut self.0.borrow_mut().val_predicate {
-            Predicate::Bounds(bounds) => bounds.push(bound),
-            Predicate::Filter(_) => {}
+            GroupPredicate::Bounds(bounds) => bounds.push(bound),
+            GroupPredicate::Filter(_) => {}
         };
     }
 
     /// Set value retainment condition.  Disables any value bounds
     /// set using [`Self::add_val_bound`].
-    pub(crate) fn set_val_filter(&self, filter: Filter<V>) {
-        self.0.borrow_mut().val_predicate = Predicate::Filter(filter);
+    pub(crate) fn set_val_filter(&self, filter: GroupFilter<V>) {
+        self.0.borrow_mut().val_predicate = GroupPredicate::Filter(filter);
     }
 
     pub(crate) fn set_unique_val_bound_name(&self, unique_name: Option<&str>) {
@@ -209,9 +209,9 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
     /// minimum bound installed using [`Self::add_val_bound`] or as the
     /// condition installed using [`Self::set_val_filter`] (the latter
     /// takes precedence).
-    pub(crate) fn effective_val_filter(&self) -> Option<Filter<V>> {
+    pub(crate) fn effective_val_filter(&self) -> Option<GroupFilter<V>> {
         match &(*self.0).borrow().val_predicate {
-            Predicate::Bounds(bounds) => bounds
+            GroupPredicate::Bounds(bounds) => bounds
                 .iter()
                 .min()
                 .expect("At least one trace bound must be set")
@@ -221,12 +221,14 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
                 .map(|bx| Arc::from(clone_box(bx.as_ref())))
                 .map(|bound: Arc<V>| {
                     let metadata = MetaItem::String(format!("{bound:?}"));
-                    Filter::new(Box::new(move |v: &V| {
-                        bound.as_ref().cmp(v) != Ordering::Greater
-                    }))
-                    .with_metadata(metadata)
+                    GroupFilter::Simple(
+                        Filter::new(Box::new(move |v: &V| {
+                            bound.as_ref().cmp(v) != Ordering::Greater
+                        }))
+                        .with_metadata(metadata),
+                    )
                 }),
-            Predicate::Filter(filter) => Some(filter.clone()),
+            GroupPredicate::Filter(filter) => Some(filter.clone()),
         }
     }
 
@@ -258,16 +260,37 @@ impl<V: Debug + ?Sized> Predicate<V> {
     }
 }
 
-struct TraceBoundsInner<K: ?Sized + 'static, V: ?Sized + 'static> {
+enum GroupPredicate<V: DataTrait + ?Sized> {
+    /// Discard values that are less than at least one of the bounds in the vector.
+    Bounds(Vec<TraceBound<V>>),
+    /// Discard values that don't satisfy the filter.
+    Filter(GroupFilter<V>),
+}
+
+impl<V: DataTrait + ?Sized> GroupPredicate<V> {
+    pub fn metadata(&self) -> MetaItem {
+        match self {
+            Self::Bounds(bounds) => MetaItem::Array(
+                bounds
+                    .iter()
+                    .map(|b| MetaItem::String(format!("{b:?}")))
+                    .collect(),
+            ),
+            Self::Filter(filter) => filter.metadata().clone(),
+        }
+    }
+}
+
+struct TraceBoundsInner<K: ?Sized + 'static, V: DataTrait + ?Sized> {
     /// Key bounds _or_ retainment condition.
     key_predicate: Predicate<K>,
     unique_key_name: Option<String>,
     /// Value bounds _or_ retainment condition.
-    val_predicate: Predicate<V>,
+    val_predicate: GroupPredicate<V>,
     unique_val_name: Option<String>,
 }
 
-impl<K: Debug + ?Sized + 'static, V: Debug + ?Sized + 'static> TraceBoundsInner<K, V> {
+impl<K: Debug + ?Sized + 'static, V: DataTrait + ?Sized> TraceBoundsInner<K, V> {
     pub fn metadata(&self) -> MetaItem {
         MetaItem::Map(
             metadata! {
@@ -399,7 +422,28 @@ where
         bounds.set_unique_val_bound_name(bounds_stream.get_persistent_id().as_deref());
 
         bounds_stream.inspect(move |ts| {
-            let filter = retain_val_func(ts.as_ref());
+            let filter = GroupFilter::Simple(retain_val_func(ts.as_ref()));
+            bounds.set_val_filter(filter);
+        });
+    }
+
+    #[track_caller]
+    pub fn dyn_integrate_trace_retain_values_last_n<TS>(
+        &self,
+        val_factory: &'static dyn Factory<B::Val>,
+        bounds_stream: &Stream<C, Box<TS>>,
+        retain_val_func: Box<dyn Fn(&TS) -> Filter<B::Val>>,
+        n: usize,
+    ) where
+        B: Batch<Time = ()>,
+        TS: DataTrait + ?Sized,
+        Box<TS>: Clone,
+    {
+        let bounds = self.trace_bounds();
+        bounds.set_unique_val_bound_name(bounds_stream.get_persistent_id().as_deref());
+
+        bounds_stream.inspect(move |ts| {
+            let filter = GroupFilter::LastN(n, retain_val_func(ts.as_ref()), val_factory);
             bounds.set_val_filter(filter);
         });
     }
@@ -424,7 +468,6 @@ where
         B: BatchReader,
     {
         // We handle moving from the sharded to unsharded stream directly here.
-        // Moving from spilled to unspilled is handled by `spill()`.
         let stream_id = self.try_unsharded_version().stream_id();
 
         self.circuit()
@@ -1216,9 +1259,17 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::cmp::max;
+    use std::{
+        cmp::max,
+        collections::{BTreeMap, BTreeSet},
+    };
 
-    use crate::{Runtime, Stream, TypedBox, ZWeight, dynamic::DynData, utils::Tup2};
+    use crate::{
+        OrdIndexedZSet, Runtime, Stream, TypedBox, ZWeight,
+        dynamic::DynData,
+        typed_batch::{self, Spine},
+        utils::Tup2,
+    };
     use proptest::{collection::vec, prelude::*};
     use size_of::SizeOf;
 
@@ -1250,8 +1301,13 @@ mod test {
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(16))]
+
+        /// Test that `integrate_trace_retain_XXX` functions don't discard more than
+        /// they are supposed to.
+        //
+        // TODO: this test used to also check that the memory footprint of the collection
+        // is bounded, but this check was flaky, since GC is lazy.
         #[test]
-        #[ignore = "this test can be flaky especially on aarch64"]
         fn test_integrate_trace_retain(batches in quasi_monotone_batches(100, 20, 1000, 200, 100, 200)) {
             let (mut dbsp, input_handle) = Runtime::init_circuit(4, move |circuit| {
                 let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
@@ -1265,13 +1321,20 @@ mod test {
                         },
                     );
 
+                // Track all records in `stream` (this integral is not GC'd).
                 let trace = stream.integrate_trace();
-                stream.integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0.saturating_sub(100));
-                trace.apply(|trace| {
-                    // println!("retain_keys: {}bytes", trace.size_of().total_bytes());
-                    assert!(trace.size_of().total_bytes() < 100_000);
-                });
 
+                // Test integrate_trace_retain_keys.
+                let stream1 = stream.map_index(|(k, v)| (*k, *v)).shard();
+                let trace1 = stream.integrate_trace();
+                stream1.integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0.saturating_sub(100));
+
+                // trace1.apply(|trace| {
+                //     // println!("retain_keys: {}bytes", trace.size_of().total_bytes());
+                //     assert!(trace.size_of().total_bytes() < 100_000);
+                // });
+
+                // Test `integrate_trace_retain_values`.
                 let stream2 = stream.map_index(|(k, v)| (*k, *v)).shard();
 
                 let trace2 = stream2.integrate_trace();
@@ -1280,6 +1343,76 @@ mod test {
                 trace2.apply(|trace| {
                     // println!("retain_vals: {}bytes", trace.size_of().total_bytes());
                     assert!(trace.size_of().total_bytes() < 100_000);
+                });
+
+                // Test `integrate_trace_retain_values_last_n(1)`.
+                let stream3 = stream.map_index(|(k, v)| (*k, *v)).shard();
+
+                let trace3 = stream3.integrate_trace();
+                stream3.integrate_trace_retain_values_last_n(&watermark, |val, ts| *val >= ts.1.saturating_sub(1000), 1);
+
+                // Test `integrate_trace_retain_values_last_n(3)`.
+                let stream4 = stream.map_index(|(k, v)| (*k, *v)).shard();
+
+                let trace4 = stream4.integrate_trace();
+                stream4.integrate_trace_retain_values_last_n(&watermark, |val, ts| *val >= ts.1.saturating_sub(1000), 3);
+
+                // Validate outputs.
+                trace.apply3(&trace1, &watermark, |trace, trace1, ts| {
+                    let expected = typed_batch::IndexedZSetReader::iter(trace.as_ref()).filter(|(k, _v, _w)| *k >= ts.0.saturating_sub(100)).collect::<BTreeSet<_>>();
+                    let actual = typed_batch::IndexedZSetReader::iter(trace1.as_ref()).collect::<BTreeSet<_>>();
+
+                    let missing = expected.difference(&actual).collect::<Vec<_>>();
+                    assert!(missing.is_empty(), "missing tuples in trace1: {:?}", missing);
+                });
+
+                trace.apply3(&trace2, &watermark, |trace, trace2, ts| {
+                    let expected = typed_batch::IndexedZSetReader::iter(trace.as_ref()).filter(|(_k, v, _w)| *v >= ts.1.saturating_sub(1000)).collect::<BTreeSet<_>>();
+                    let actual = typed_batch::IndexedZSetReader::iter(trace2.as_ref()).collect::<BTreeSet<_>>();
+
+                    let missing = expected.difference(&actual).collect::<Vec<_>>();
+                    assert!(missing.is_empty(), "missing tuples in trace2: {:?}", missing);
+                });
+
+                fn test_retain_values_last_n(trace: &Spine<OrdIndexedZSet<i32, i32>>, watermark: &TypedBox<(i32, i32), DynData>, n: usize) -> BTreeSet<(i32, i32, ZWeight)> {
+                    let mut all_tuples = BTreeMap::new();
+                    typed_batch::IndexedZSetReader::iter(trace).for_each(|(k, v, w)| all_tuples.entry(k).or_insert_with(|| Vec::new()).push((v, w)));
+                    let mut expected = BTreeSet::new();
+                    for (k, mut tuples) in all_tuples.into_iter() {
+                        let index = tuples
+                            .iter()
+                            .position(|(v, _w)| *v >= watermark.1.saturating_sub(1000))
+                            .unwrap_or(tuples.len());
+                            let first_index = index.saturating_sub(n);
+                            tuples
+                                .drain(first_index..)
+                                .for_each(|(v, w)| {let _ = expected.insert((k, v, w));});
+                    }
+                    expected
+                }
+
+                trace.apply3(&trace3, &watermark, |trace, trace3, ts| {
+                    let mut all_tuples = BTreeMap::new();
+                    typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| all_tuples.entry(k).or_insert_with(|| Vec::new()).push((v, w)));
+
+                    let expected = test_retain_values_last_n(trace.as_ref(), ts.as_ref(), 1);
+
+                    let actual = typed_batch::IndexedZSetReader::iter(trace3.as_ref()).collect::<BTreeSet<_>>();
+
+                    let missing = expected.difference(&actual).collect::<Vec<_>>();
+                    assert!(missing.is_empty(), "missing tuples in trace3: {:?}", missing);
+                });
+
+                trace.apply3(&trace4, &watermark, |trace, trace4, ts| {
+                    let mut all_tuples = BTreeMap::new();
+                    typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| all_tuples.entry(k).or_insert_with(|| Vec::new()).push((v, w)));
+
+                    let expected = test_retain_values_last_n(trace.as_ref(), ts.as_ref(), 3);
+
+                    let actual = typed_batch::IndexedZSetReader::iter(trace4.as_ref()).collect::<BTreeSet<_>>();
+
+                    let missing = expected.difference(&actual).collect::<Vec<_>>();
+                    assert!(missing.is_empty(), "missing tuples in trace4: {:?}", missing);
                 });
 
                 Ok(handle)

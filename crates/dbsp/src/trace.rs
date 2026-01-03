@@ -26,7 +26,7 @@
 //! time: reading a trace might obtain out of order and duplicate times among
 //! the `(time, diff)` pairs associated with a key and value.
 
-use crate::circuit::metadata::{MetaItem, OperatorMeta};
+use crate::circuit::metadata::OperatorMeta;
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
@@ -35,7 +35,6 @@ use crate::trace::cursor::{
 };
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
-use dyn_clone::DynClone;
 use enum_map::Enum;
 use feldera_storage::{FileCommitter, FileReader, StoragePath};
 use rand::Rng;
@@ -46,6 +45,7 @@ use std::sync::Arc;
 use std::{fmt::Debug, hash::Hash};
 
 pub mod cursor;
+pub mod filter;
 pub mod layers;
 pub mod ord;
 pub mod spine_async;
@@ -77,6 +77,7 @@ use crate::{
     storage::file::reader::Error as ReaderError,
 };
 pub use cursor::{Cursor, MergeCursor};
+pub use filter::{Filter, GroupFilter};
 pub use layers::Trie;
 
 /// Trait for data stored in batches.
@@ -140,52 +141,6 @@ pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
 /// `B: BatchReader` implies `B::R: DBWeight`.
 pub trait DBWeight: DBData + MonoidValue {}
 impl<T> DBWeight for T where T: DBData + MonoidValue {}
-
-pub trait FilterFunc<V: ?Sized>: Fn(&V) -> bool + DynClone + Send + Sync {}
-
-impl<V: ?Sized, F> FilterFunc<V> for F where F: Fn(&V) -> bool + Clone + Send + Sync + 'static {}
-
-dyn_clone::clone_trait_object! {<V: ?Sized> FilterFunc<V>}
-
-pub struct Filter<V: ?Sized> {
-    filter_func: Box<dyn FilterFunc<V>>,
-    metadata: MetaItem,
-}
-
-impl<V: ?Sized> Filter<V> {
-    pub fn new(filter_func: Box<dyn FilterFunc<V>>) -> Self {
-        Self {
-            filter_func,
-            metadata: MetaItem::String(String::new()),
-        }
-    }
-
-    pub fn with_metadata(mut self, metadata: MetaItem) -> Self {
-        self.metadata = metadata;
-        self
-    }
-
-    pub fn filter_func(&self) -> &dyn FilterFunc<V> {
-        self.filter_func.as_ref()
-    }
-
-    pub fn metadata(&self) -> &MetaItem {
-        &self.metadata
-    }
-
-    pub fn include(this: &Option<Filter<V>>, value: &V) -> bool {
-        this.as_ref().is_none_or(|f| (f.filter_func)(value))
-    }
-}
-
-impl<V: ?Sized> Clone for Filter<V> {
-    fn clone(&self) -> Self {
-        Self {
-            filter_func: self.filter_func.clone(),
-            metadata: self.metadata.clone(),
-        }
-    }
-}
 
 pub trait BatchReaderFactories<
     K: DataTrait + ?Sized,
@@ -305,10 +260,10 @@ pub trait Trace: BatchReader {
     /// or at all.  This method is just a hint that values that don't pass the
     /// filter are no longer of interest to the consumer of the trace and
     /// can be garbage collected.
-    fn retain_values(&mut self, filter: Filter<Self::Val>);
+    fn retain_values(&mut self, filter: GroupFilter<Self::Val>);
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
-    fn value_filter(&self) -> &Option<Filter<Self::Val>>;
+    fn value_filter(&self) -> &Option<GroupFilter<Self::Val>>;
 
     /// Writes this trace to storage beneath `base`, using `pid` as a file name
     /// prefix.  Adds the files that were written to `files` so that they can be
@@ -403,11 +358,13 @@ where
     fn merge_cursor(
         &self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
+        // println!("unfiltered merge_cursor");
         if key_filter.is_none() && value_filter.is_none() {
             Box::new(UnfilteredMergeCursor::new(self.cursor()))
         } else {
+            // println!("merge_cursor");
             Box::new(FilteredMergeCursor::new(
                 self.cursor(),
                 key_filter,
@@ -420,7 +377,7 @@ where
     fn consuming_cursor(
         &mut self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         self.merge_cursor(key_filter, value_filter)
     }
@@ -574,7 +531,7 @@ where
     fn merge_cursor(
         &self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         (**self).merge_cursor(key_filter, value_filter)
     }
@@ -612,7 +569,7 @@ where
     fn consuming_cursor(
         &mut self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         (**self).merge_cursor(key_filter, value_filter)
     }
@@ -1131,7 +1088,7 @@ pub fn merge_batches<B, T>(
     factories: &B::Factories,
     batches: T,
     key_filter: &Option<Filter<B::Key>>,
-    value_filter: &Option<Filter<B::Val>>,
+    value_filter: &Option<GroupFilter<B::Val>>,
 ) -> B
 where
     T: IntoIterator<Item = B>,
@@ -1175,7 +1132,7 @@ pub fn merge_batches_by_reference<'a, B, T>(
     factories: &B::Factories,
     batches: T,
     key_filter: &Option<Filter<B::Key>>,
-    value_filter: &Option<Filter<B::Val>>,
+    value_filter: &Option<GroupFilter<B::Val>>,
 ) -> B
 where
     T: IntoIterator<Item = &'a B> + Clone,

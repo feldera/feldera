@@ -7,7 +7,7 @@ use crate::{
     dynamic::{DynDataTyped, DynWeightedPairs, Weight, WeightTrait},
     time::Timestamp,
     trace::{
-        Batch, BatchFactories, BatchReaderFactories, Builder, Filter, MergeCursor,
+        Batch, BatchFactories, BatchReaderFactories, Builder, Filter, GroupFilter, MergeCursor,
         spine_async::index_set::IndexSet,
     },
 };
@@ -35,7 +35,7 @@ where
         factories: &B::Factories,
         batches: Vec<Arc<B>>,
         key_filter: &Option<Filter<B::Key>>,
-        value_filter: &Option<Filter<B::Val>>,
+        value_filter: &Option<GroupFilter<B::Val>>,
     ) -> Self {
         Self(
             ArcMergerInnerBuilder {
@@ -61,6 +61,11 @@ where
 }
 
 /// Merger that merges up to 64 batches at a time.
+// FIXME: can we apply GC to the output of the merger instead of individual cursors?
+// Specifically, when a LastN filter over values, we want to discard all but the last N
+// values below the waterline from the output of the merger. Instead we currently apply
+// the filter to each cursor individually, meaning that we may end up preserving upto N
+// values below the waterline per input cursor.
 pub struct ListMerger<C, B>
 where
     C: MergeCursor<B::Key, B::Val, B::Time, B::R>,

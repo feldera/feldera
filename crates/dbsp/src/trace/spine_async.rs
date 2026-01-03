@@ -16,7 +16,7 @@ use crate::{
     storage::buffer_cache::CacheStats,
     time::Timestamp,
     trace::{
-        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Trace,
+        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, GroupFilter, Trace,
         cursor::{CursorList, Position},
         merge_batches,
         ord::fallback::pick_merge_destination,
@@ -187,7 +187,7 @@ where
     #[size_of(skip)]
     key_filter: Option<Filter<B::Key>>,
     #[size_of(skip)]
-    value_filter: Option<Filter<B::Val>>,
+    value_filter: Option<GroupFilter<B::Val>>,
     #[size_of(skip)]
     frontier: B::Time,
     slots: [Slot<B>; MAX_LEVELS],
@@ -248,7 +248,7 @@ where
             <= LOWER_THRESHOLD
     }
 
-    fn get_filters(&self) -> (Option<Filter<B::Key>>, Option<Filter<B::Val>>) {
+    fn get_filters(&self) -> (Option<Filter<B::Key>>, Option<GroupFilter<B::Val>>) {
         (self.key_filter.clone(), self.value_filter.clone())
     }
 
@@ -422,7 +422,7 @@ where
     fn set_key_filter(&self, key_filter: &Filter<B::Key>) {
         self.state.lock().unwrap().key_filter = Some(key_filter.clone());
     }
-    fn set_value_filter(&self, value_filter: &Filter<B::Val>) {
+    fn set_value_filter(&self, value_filter: &GroupFilter<B::Val>) {
         self.state.lock().unwrap().value_filter = Some(value_filter.clone());
     }
 
@@ -786,7 +786,7 @@ where
         merger_type: MergerType,
         batches: Vec<Arc<B>>,
         key_filter: &Option<Filter<B::Key>>,
-        value_filter: &Option<Filter<B::Val>>,
+        value_filter: &Option<GroupFilter<B::Val>>,
     ) -> Self {
         let factories = batches[0].factories();
         let builder = B::Builder::for_merge(&factories, &batches, None);
@@ -891,7 +891,7 @@ where
 
     dirty: bool,
     key_filter: Option<Filter<B::Key>>,
-    value_filter: Option<Filter<B::Val>>,
+    value_filter: Option<GroupFilter<B::Val>>,
 
     /// The asynchronous merger.
     merger: AsyncMerger<B>,
@@ -1425,7 +1425,7 @@ where
         self.key_filter = Some(filter);
     }
 
-    fn retain_values(&mut self, filter: Filter<Self::Val>) {
+    fn retain_values(&mut self, filter: GroupFilter<Self::Val>) {
         self.merger.set_value_filter(&filter);
         self.value_filter = Some(filter);
     }
@@ -1434,7 +1434,7 @@ where
         &self.key_filter
     }
 
-    fn value_filter(&self) -> &Option<Filter<Self::Val>> {
+    fn value_filter(&self) -> &Option<GroupFilter<Self::Val>> {
         &self.value_filter
     }
 

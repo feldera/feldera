@@ -6,7 +6,7 @@ use crate::{
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
         Batch, BatchLocation, BatchReader, Builder, FallbackKeyBatch, FileWSet, FileWSetFactories,
-        Filter, MergeCursor,
+        Filter, GroupFilter, MergeCursor,
         cursor::{CursorFactory, DelegatingCursor, PushCursor},
         deserialize_wset, merge_batches_by_reference,
         ord::{
@@ -230,7 +230,7 @@ where
     fn merge_cursor(
         &self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         match &self.inner {
             Inner::Vec(vec) => vec.merge_cursor(key_filter, value_filter),
@@ -241,7 +241,7 @@ where
     fn consuming_cursor(
         &mut self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         match &mut self.inner {
             Inner::Vec(vec) => vec.consuming_cursor(key_filter, value_filter),

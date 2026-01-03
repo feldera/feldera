@@ -386,7 +386,7 @@ where
             B::Builder::with_capacity(&self.batch_factories, updates.len(), updates.len() * 2);
         let mut builder = TupleBuilder::new(&self.batch_factories, builder);
 
-        let val_filter = self.bounds.effective_val_filter();
+        // let val_filter = self.bounds.effective_val_filter();
         let key_filter = self.bounds.effective_key_filter();
 
         for kv in updates.dyn_iter() {
@@ -399,11 +399,14 @@ where
             }
 
             if let Some(val) = val.get() {
-                if let Some(val_filter) = &val_filter
-                    && !(val_filter.filter_func())(val)
-                {
-                    continue;
-                }
+                // We used to have this check to filter out records before inserting them.
+                // It doesn't work for LastN filters, plus I'm not sure it's useful anyway,
+                // since GC normally happens in the background.
+                // if let Some(val_filter) = &val_filter
+                //     && !(val_filter.filter_func())(val)
+                // {
+                //     continue;
+                // }
 
                 let (kv, weight) = item.split_mut();
                 let (k, v) = kv.split_mut();

@@ -8,7 +8,7 @@ use crate::{
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Filter, MergeCursor, Serializer, VecValBatch, WeightedItem,
+        Filter, GroupFilter, MergeCursor, Serializer, VecValBatch, WeightedItem,
         cursor::Position,
         deserialize_indexed_wset,
         layers::{
@@ -412,7 +412,7 @@ where
     fn consuming_cursor(
         &mut self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn crate::trace::MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_>
     {
         if key_filter.is_none() && value_filter.is_none() {

@@ -717,10 +717,14 @@ where
 
 #[cfg(test)]
 mod test {
+    use std::cmp::{max, min};
+
     use crate::{
-        DBData, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime, ZSetHandle, ZWeight,
+        DBData, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime, TypedBox, ZSetHandle,
+        ZWeight,
         algebra::F32,
         circuit::CircuitConfig,
+        dynamic::DowncastTrait,
         typed_batch::IndexedZSetReader,
         utils::{Tup2, Tup3, Tup4},
         zset,
@@ -761,6 +765,111 @@ mod test {
             let ts_func2 = |user: &User| user.0;
 
             let result = transactions.asof_join(&users, join, ts_func1, ts_func2);
+
+            let expected_result = transactions
+                .shard()
+                .integrate()
+                .apply2(&users.shard().integrate(), move |t, u| {
+                    asof_join_reference(t, u, join, ts_func1, ts_func2)
+                });
+
+            result
+                .integrate()
+                .apply2(&expected_result, |actual, expected| {
+                    assert_eq!(actual, expected)
+                });
+
+            let output_handle = result.output();
+
+            Ok((transactions_handle, users_handle, output_handle))
+        })
+        .unwrap()
+    }
+
+    /// Like `test_circuit`, but additionally garbage collects both sides of the ASOF join.
+    fn test_circuit_with_waterline() -> (
+        DBSPHandle,
+        (
+            ZSetHandle<Transaction>,
+            ZSetHandle<User>,
+            OutputHandle<OrdZSet<Output>>,
+        ),
+    ) {
+        Runtime::init_circuit(CircuitConfig::with_workers(2), |circuit| {
+            let (transactions, transactions_handle) = circuit.add_input_zset::<Transaction>();
+            let (users, users_handle) = circuit.add_input_zset::<User>();
+
+            let transactions = transactions.map_index(|transaction| (transaction.1, *transaction));
+            let users = users.map_index(|user| (user.1, user.clone()));
+
+            let user_waterline = users
+                .waterline(
+                    || u64::MIN,
+                    |_k, Tup3(ts, _, _)| {
+                        // println!("{} ts: {:?}", Runtime::worker_index(), *ts);
+                        (*ts).saturating_sub(LATENESS)
+                    },
+                    |ts1, ts2| {
+                        // println!("{} max({:?}, {:?})", Runtime::worker_index(), ts1, ts2);
+                        max(*ts1, *ts2)
+                    },
+                )
+                /*.inspect(move |waterline: &TypedBox<u64, DynData>| {
+                    println!(
+                        "user waterline: {:?}",
+                        waterline.inner().downcast_checked::<u64>()
+                    );
+                })*/;
+
+            let transaction_waterline = transactions
+                .waterline(
+                    || u64::MIN,
+                    |_k, Tup3(ts, _, _)| (*ts).saturating_sub(LATENESS),
+                    |ts1, ts2| max(*ts1, *ts2),
+                )
+                /*.inspect(move |waterline: &TypedBox<u64, DynData>| {
+                    println!(
+                        "transaction waterline: {:?}",
+                        waterline.inner().downcast_checked::<u64>()
+                    );
+                })*/;
+
+            let waterline = transaction_waterline
+                .apply2(&user_waterline, |ts1, ts2| {
+                    TypedBox::new(min(unsafe { *ts1.inner().downcast::<u64>() }, unsafe {
+                        *ts2.inner().downcast::<u64>()
+                    }))
+                })
+                /*.inspect(move |waterline: &TypedBox<u64, DynData>| {
+                    println!(
+                        "waterline: {:?}",
+                        waterline.inner().downcast_checked::<u64>()
+                    );
+                })*/;
+
+            let join = |_key: &CCNum, transaction: &Transaction, user: Option<&User>| {
+                Tup4(
+                    transaction.0,
+                    transaction.1,
+                    transaction.2,
+                    user.map(|u| u.2.clone()),
+                )
+            };
+            let ts_func1 = |transaction: &Transaction| transaction.0;
+            let ts_func2 = |user: &User| user.0;
+
+            let result = transactions.asof_join(&users, join, ts_func1, ts_func2);
+
+            transactions.accumulate_integrate_trace_retain_values(
+                &waterline,
+                |transaction: &Transaction, ts: &u64| transaction.0 >= *ts,
+            );
+
+            users.accumulate_integrate_trace_retain_values_last_n(
+                &waterline,
+                |user: &User, ts: &u64| user.0 >= *ts,
+                1,
+            );
 
             let expected_result = transactions
                 .shard()
@@ -1011,43 +1120,53 @@ mod test {
         OrdZSet::from_keys((), result)
     }
 
+    /// We generate both input streams to the asof join to have this lateness.
+    const LATENESS: u64 = 20;
+
+    // Generate a transaction for step `step`. Adds the value of `step` to
+    // a randomly generated timestamp in order to make sure that the waterline
+    // of the stream moves forward.
     prop_compose! {
-        fn transaction()
-            (time in 0..100u64,
+        fn transaction(step: usize)
+            (time in 0..LATENESS,
             cc_num in 0..10u64,
             amt in 0..100i32,
             w in 1..=2 as ZWeight)
             -> Tup2<Transaction, ZWeight> {
-            Tup2(Tup3(time, cc_num, F32::new(amt as f32)), w)
+            Tup2(Tup3(step as u64 + time, cc_num, F32::new(amt as f32)), w)
         }
     }
 
+    // Generate a random user for step `step`. Adds the value of `step` to
+    // a randomly generated timestamp in order to make sure that the waterline
+    // of the stream moves forward.
     prop_compose! {
-        fn user()
-            (time in 0..100u64,
+        fn user(step: usize)
+            (time in 0..LATENESS,
             cc_num in 0..5u64,
             name in "[A-Z][a-z]{5}",
             w in 1..=2 as ZWeight)
             -> Tup2<User, ZWeight> {
-            Tup2(Tup3(time, cc_num, name), w)
+            Tup2(Tup3(step as u64 + time, cc_num, name), w)
         }
     }
 
+    // Generates an array of transactions and an array of users to feed to the circuit during step `step`.
     prop_compose! {
-        fn input()
-            (transactions in vec(transaction(), 0..20),
-            users in vec(user(), 0..10))
+        fn input(step: usize)
+            (transactions in vec(transaction(step), 0..20),
+            users in vec(user(step), 0..10))
             -> (Vec<Tup2<Transaction, ZWeight>>, Vec<Tup2<User, ZWeight>>) {
             (transactions, users)
         }
     }
 
-    prop_compose! {
-        fn inputs(steps: usize)
-            (inputs in vec(input(), 0..=steps))
-        -> Vec<(Vec<Tup2<Transaction,ZWeight>>, Vec<Tup2<User, ZWeight>>)> {
-            inputs
-        }
+    /// Generate inputs to the test circuit for `steps` steps.
+    fn inputs(
+        steps: usize,
+    ) -> impl Strategy<Value = Vec<(Vec<Tup2<Transaction, ZWeight>>, Vec<Tup2<User, ZWeight>>)>>
+    {
+        (0..steps).map(input).collect::<Vec<_>>().prop_map(|v| v)
     }
 
     proptest! {
@@ -1061,7 +1180,7 @@ mod test {
                     *w = -*w;
                 }
                 for Tup2(_u, w) in us.iter_mut() {
-                     *w = -*w;
+                        *w = -*w;
                 }
             }
 
@@ -1073,6 +1192,18 @@ mod test {
             }
 
             for (mut transactions, mut users) in deletions {
+                htransactions.append(&mut transactions);
+                husers.append(&mut users);
+
+                dbsp.transaction().unwrap();
+            }
+        }
+
+        #[test]
+        fn asof_join_with_waterline_proptest(inputs in inputs(100)) {
+            let (mut dbsp, (htransactions, husers, _hresult)) = test_circuit_with_waterline();
+
+            for (mut transactions, mut users) in inputs {
                 htransactions.append(&mut transactions);
                 husers.append(&mut users);
 

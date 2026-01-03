@@ -8,7 +8,7 @@ use crate::{
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Filter, MergeCursor, Serializer, VecKeyBatch, WeightedItem,
+        Filter, GroupFilter, MergeCursor, Serializer, VecKeyBatch, WeightedItem,
         cursor::Position,
         deserialize_wset,
         layers::{Cursor as _, Leaf, LeafCursor, LeafFactories, Trie},
@@ -325,7 +325,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
     fn consuming_cursor(
         &mut self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn crate::trace::MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_>
     {
         if key_filter.is_none() && value_filter.is_none() {
