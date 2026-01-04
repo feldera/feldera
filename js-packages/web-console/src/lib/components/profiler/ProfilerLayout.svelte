@@ -152,7 +152,7 @@
 
   // Export state for parent to render controls
   export { metrics, selectedMetricId, workers, message, error }
-  export { handleMetricChange, handleWorkerChange, handleToggleAllWorkers }
+  export { handleWorkerChange, handleToggleAllWorkers }
 </script>
 
 {#snippet pseudoNode({text, ...props}: {onmouseenter: () => void, onmouseleave: () => void, onclick: () => void, text: string})}
