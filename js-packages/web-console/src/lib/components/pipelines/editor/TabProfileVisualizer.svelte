@@ -3,8 +3,8 @@
   let getProfileData:
     | (() => {
         profile: JsonProfiles
-        dataflow: Dataflow
-        sources: string[]
+        dataflow: Dataflow | undefined
+        sources: string[] | undefined
       })
     | null = $state(null)
   let getProfileFiles: () => [Date, ZipItem[]][] = $state(() => [])
@@ -46,16 +46,17 @@
   const dataflowGraphRegex = /dataflow_graph\.json$/
   const pipelineConfigRegex = /pipeline_config\.json$/
 
-  const getSuitableProfiles = (profiles: ZipItem[]) => {
+  const getSuitableProfiles = (profileFiles: ZipItem[]) => {
     const profileTimestamps = groupBy(
-      profiles,
+      profileFiles,
+      // group by file timestamp; all files in a bundle are named with names like TIMESTAMP_FILENAME
+      // where TIMESTAMP is a string encoding a timestamp
       (file) => file.filename.match(/^(.*?)_/)?.[1] ?? ''
     ).filter(
       (group) =>
         group[0] &&
-        group[1].some((file) => circuitProfileRegex.test(file.filename)) &&
-        group[1].some((file) => dataflowGraphRegex.test(file.filename)) &&
-        group[1].some((file) => pipelineConfigRegex.test(file.filename))
+        group[1].some((file) => circuitProfileRegex.test(file.filename))
+      // Pipeline config or dataflow graph may be missing
     )
     return sortOn(
       profileTimestamps.map(([timestamp, files]) => tuple(new Date(timestamp), files)),
@@ -106,26 +107,26 @@
       return
     }
 
-    ;(async () => {
+    (async () => {
       const decoder = new TextDecoder()
       const profile = JSON.parse(
         decoder.decode(
           await profileFiles[1].find((file) => circuitProfileRegex.test(file.filename))!.read()
         )
       ) as unknown as JsonProfiles
-      const dataflow = JSON.parse(
-        decoder.decode(
-          await profileFiles[1].find((file) => dataflowGraphRegex.test(file.filename))!.read()
-        )
-      ) as unknown as Dataflow
-      const pipelineConfig = JSON.parse(
-        decoder.decode(
-          await profileFiles[1].find((file) => pipelineConfigRegex.test(file.filename))!.read()
-        )
-      ) as unknown as {
-        program_code: string
+      const dataflowFile = profileFiles[1].find((file) => dataflowGraphRegex.test(file.filename))
+      let dataflow = undefined
+      if (dataflowFile) {
+        dataflow = JSON.parse(decoder.decode(await dataflowFile.read())) as unknown as Dataflow
       }
-      const sources = pipelineConfig.program_code.split('\n')
+      const configFile = profileFiles[1].find((file) => pipelineConfigRegex.test(file.filename))
+      let sources = undefined
+      if (configFile) {
+        const pipelineConfig = JSON.parse(decoder.decode(await configFile.read())) as unknown as {
+          program_code: string
+        }
+        sources = pipelineConfig.program_code.split('\n')
+      }
 
       getProfileData = enclosure({
         profile,

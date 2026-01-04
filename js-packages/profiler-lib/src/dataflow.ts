@@ -50,25 +50,33 @@ export class Sources {
         this.lines = lines;
     }
 
-    prefix(line: number): string {
+    static prefix(line: number): string {
         return line.toString().padStart(5, " ") + "| ";
     }
 
-    truncate(s: string): string {
+    static truncate(s: string): string {
         if (s.length > 100) {
             return s.substring(0, 97) + "...";
         }
         return s;
     }
 
+    getLine(lineNo: number): string {
+        // Sources may be missing
+        return this.lines[lineNo] || "";
+    }
+
     /** Given a position range, generate a string with the relevant source fragment.
      * Currently only full lines are generated, ignoring the column information. */
     public toStringFromPositionRange(range: SourcePositionRange): string {
+        if (this.lines.length === 0) {
+            return "";
+        }
         if (range.is_empty()) return "";
         let result = "";
         for (let line = range.start.line; line <= range.end.line; line++) {
-            let l = this.truncate(this.lines[line - 1]!);
-            result += this.prefix(line) + l + "\n";
+            let l = Sources.truncate(this.getLine(line - 1));
+            result += Sources.prefix(line) + l + "\n";
         }
         return result;
     }
@@ -77,6 +85,9 @@ export class Sources {
      * Since the source fragment includes only full lines, we do not really currently
      * use the column information in any way. */
     public toString(positions: SourcePositionRanges): string {
+        if (this.lines.length === 0) {
+            return "";
+        }
         let result = "";
         let lastLine = 0;
         for (const range of positions.sort()) {
