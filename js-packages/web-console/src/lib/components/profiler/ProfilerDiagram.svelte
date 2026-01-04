@@ -15,7 +15,7 @@
     /** Dataflow graph data from the SQL compiler */
     dataflowData: Dataflow
     /** Lines of user SQL code */
-    programCode: string[]
+    programCode: string[] | undefined
     /** Callbacks from ProfilerLayout */
     callbacks: ProfilerCallbacks
     /** Optional class for styling the container */
