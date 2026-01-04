@@ -151,17 +151,13 @@
           </div>
         </div>
         <div class="flex flex-col">
-          <div class="text-start text-sm text-nowrap">
-            Records Processed
-          </div>
+          <div class="text-start text-sm text-nowrap">Records Processed</div>
           <div class="pt-2">
             {formatQty(global.total_processed_records)}
           </div>
         </div>
         <div class="flex flex-col">
-          <div class="text-start text-sm text-nowrap">
-            Records Buffered
-          </div>
+          <div class="text-start text-sm text-nowrap">Records Buffered</div>
           <div class="pt-2">
             {formatQty(global.buffered_input_records)}
           </div>

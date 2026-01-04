@@ -13,9 +13,9 @@
     /** Profile data from the pipeline manager */
     profileData: JsonProfiles
     /** Dataflow graph data from the SQL compiler */
-    dataflowData: Dataflow
+    dataflowData: Dataflow | undefined
     /** Lines of user SQL code */
-    programCode: string[]
+    programCode: string[] | undefined
     /** Callbacks from ProfilerLayout */
     callbacks: ProfilerCallbacks
     /** Optional class for styling the container */
@@ -44,7 +44,7 @@
     }
 
     // Wait for data to be available
-    if (!profileData || !dataflowData) {
+    if (!profileData) {
       return
     }
 

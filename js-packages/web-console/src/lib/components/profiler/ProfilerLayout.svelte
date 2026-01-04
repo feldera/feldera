@@ -17,9 +17,9 @@
     /** Profile data from the pipeline manager */
     profileData: JsonProfiles
     /** Dataflow graph data from the SQL compiler */
-    dataflowData: Dataflow
-    /** Lines of user SQL code */
-    programCode: string[]
+    dataflowData: Dataflow | undefined
+    /** Lines of user SQL code; may be missing */
+    programCode: string[] | undefined
     /** Optional class for styling the container */
     class?: string
     /** Snippet for toolbar start (Load Profile button and snapshot selector) */
