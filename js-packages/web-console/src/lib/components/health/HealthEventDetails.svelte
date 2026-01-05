@@ -1,10 +1,10 @@
 <script lang="ts">
+  import { Progress } from '@skeletonlabs/skeleton-svelte'
+  import { untrack } from 'svelte'
   import { match } from 'ts-pattern'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { formatDateTime } from '$lib/functions/format'
   import type { HealthEventParts } from '$lib/functions/pipelines/health'
-  import { untrack } from 'svelte'
-  import { Progress } from '@skeletonlabs/skeleton-svelte'
 
   let { eventParts, onClose }: { eventParts: HealthEventParts; onClose: () => void } = $props()
   let fullEvents: (null | {
@@ -113,10 +113,7 @@
       {fullEvent.description}
     </span>
   {:else}
-    <Progress
-      class="h-1"
-      value={null}
-    >
+    <Progress class="h-1" value={null}>
       <Progress.Track>
         <Progress.Range class="bg-primary-500" />
       </Progress.Track>

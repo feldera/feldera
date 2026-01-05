@@ -15,11 +15,10 @@
   import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { partition } from '$lib/functions/common/array'
+  import { ceilToHour } from '$lib/functions/common/date'
   import {
     groupHealthEvents,
     type HealthEventParts,
-    type RawHealthEvent,
-    toEventType,
     unpackCombinedEvent
   } from '$lib/functions/pipelines/health'
   import { resolve } from '$lib/functions/svelte'
@@ -27,7 +26,7 @@
 
   let {}: {} = $props()
 
-  let tabs = ['all', 'api', 'runner', 'compiler'] as const
+  let tabs = ['all', 'api', 'compiler', 'runner'] as const
   let tabLabels = {
     all: 'All',
     api: 'API',
@@ -51,22 +50,25 @@
     events?./*filter(e => !e.all_healthy).*/ flatMap(unpackCombinedEvent)
   )
 
+  const healthWindowHours = 72
+
   const firstTimestamp = (events: ClusterMonitorEventSelectedInfo[]) =>
-    new Date(events.at(-1)!.recorded_at)
+    new Date(lastTimestamp(events).getTime() - healthWindowHours * 60 * 60 * 1000)
   const lastTimestamp = (events: ClusterMonitorEventSelectedInfo[]) =>
-    new Date(events.at(0)!.recorded_at)
+    ceilToHour(new Date(events.at(0)!.recorded_at))
 
   const groupedClusterEvents = $derived.by(() =>
-    events && rawClusterEvents ? groupHealthEvents(rawClusterEvents).filter((es) => currentTab === 'all' || es.tag === currentTab) : undefined
+    events && rawClusterEvents
+      ? groupHealthEvents(rawClusterEvents).filter(
+          (es) => currentTab === 'all' || es.tag === currentTab
+        )
+      : undefined
   )
 
   const contextDrawer = useContextDrawer()
 
   const splitClusterEvents = $derived.by(() => {
-    const [unresolved, previous] = partition(
-      groupedClusterEvents ?? [],
-      (es) => es.active
-    )
+    const [unresolved, previous] = partition(groupedClusterEvents ?? [], (es) => es.active)
     return { unresolved, previous }
   })
 
@@ -141,11 +143,11 @@
   {/snippet}
 </AppHeader>
 
-<div class="px-2 pb-5 md:px-8">
+<div class="h-full px-2 pb-5 md:px-8">
   <Tabs
     value={currentTab}
     onValueChange={(e) => (currentTab = e.value as typeof currentTab)}
-    class="flex flex-1 flex-col gap-8 space-y-0! rounded-container p-4"
+    class="flex h-full flex-1 flex-col gap-8 space-y-0! rounded-container p-4"
   >
     <Tabs.List class="flex w-full flex-wrap-reverse gap-0 pb-0 text-nowrap lg:flex-nowrap">
       {#each tabs as tabName}
@@ -167,7 +169,7 @@
         startAt={firstTimestamp(events)}
         endAt={lastTimestamp(events)}
         unitDurationMs={60 * 60 * 1000}
-        class="flex flex-col gap-2"
+        class="-mt-4! flex flex-col gap-2"
         onBarClick={handleBarClick}
       ></StatusTimeline>
     {:else}

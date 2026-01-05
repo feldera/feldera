@@ -1,6 +1,7 @@
 <script lang="ts">
   import Dayjs from 'dayjs'
   import { invalidateAll } from '$app/navigation'
+  import { page } from '$app/state'
   import SvelteKitTopLoader from '$lib/components/common/SvelteKitTopLoader.svelte'
   import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
   import LineBanner, { BannerButton } from '$lib/components/layout/LineBanner.svelte'
@@ -9,6 +10,7 @@
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
+  import { useClusterHealth } from '$lib/compositions/health/useClusterHealth.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
@@ -32,6 +34,7 @@
   const contextDrawer = useContextDrawer()
 
   const systemMessages = useSystemMessages()
+  const clusterHealth = useClusterHealth()
   const now = useInterval(() => new Date(), 3600000, 3600000 - (Date.now() % 3600000))
 
   // Check for backend version changes every 30 seconds
@@ -86,6 +89,15 @@
       return { ...message, text }
     })
   )
+  const healthMessage = $derived(
+    clusterHealth.current.api !== 'healthy'
+      ? 'There is an issue with the API server.'
+      : clusterHealth.current.compiler !== 'healthy'
+        ? 'There is an issue with the program compiler.'
+        : clusterHealth.current.runner !== 'healthy'
+          ? 'There is an issue with the Kubernetes runner.'
+          : null
+  )
 
   const api = usePipelineManager()
   const { toastMain, dismissMain } = useToast()
@@ -113,6 +125,17 @@
     : 'disabled pointer-events-auto select-text [&_.monaco-editor-background]:pointer-events-none [&_[role="button"]]:pointer-events-none [&_[role="separator"]]:pointer-events-none [&_a]:pointer-events-none [&_button]:pointer-events-none'}"
   style={api.isNetworkHealthy ? '' : ''}
 >
+  {#if healthMessage && !page.url.pathname.startsWith('/health')}
+    <LineBanner variant="error">
+      {#snippet start()}
+        <span>{healthMessage}</span>
+        {@render BannerButton({
+          text: 'See details',
+          href: '/health/'
+        })}
+      {/snippet}
+    </LineBanner>
+  {/if}
   {#each displayedMessages as message}
     {#if message.id.startsWith('expiring_license_')}
       <LineBanner
@@ -170,9 +193,7 @@
       <PipelinesList bind:pipelines={pipelines.pipelines}></PipelinesList>
     </div>
   </Drawer> -->
-  <div class="flex h-full w-full flex-col">
-    {@render children()}
-  </div>
+  {@render children()}
 
   <OverlayDrawer
     width="w-72"

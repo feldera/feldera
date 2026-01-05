@@ -40,21 +40,30 @@ export function unpackCombinedEvent(e: ClusterMonitorEventSelectedInfo): RawHeal
     {
       timestamp,
       type: toEventType(e.api_status),
-      description: 'There was an issue with the API server.',
+      description:
+        e.api_status === 'Healthy'
+          ? 'The API server is healthy.'
+          : 'There was an issue with the API server.',
       tag: 'api' as const,
       id: e.id
     },
     {
       timestamp,
       type: toEventType(e.compiler_status),
-      description: 'There was an issue with the program compiler.',
+      description:
+        e.compiler_status === 'Healthy'
+          ? 'The program compiler is healthy.'
+          : 'There was an issue with the program compiler.',
       tag: 'compiler' as const,
       id: e.id
     },
     {
       timestamp,
       type: toEventType(e.runner_status),
-      description: 'There was an issue with the Kubernetes runner.',
+      description:
+        e.runner_status === 'Healthy'
+          ? 'The Kubernetes runner is healthy.'
+          : 'There was an issue with the Kubernetes runner.',
       tag: 'runner' as const,
       id: e.id
     }

@@ -17,18 +17,8 @@
     compactBreakpoint = '',
     healthStatus
   }: { compactBreakpoint?: string; healthStatus: ClusterHealthStatus } = $props()
-  // const auth = page.data.auth as AuthDetails | undefined
-  const auth: AuthDetails | undefined = {
-    logout: async () => {},
-    userInfo: undefined!,
-    profile: {
-      name: 'Heorhii Bulakh',
-      email: 'bulakh.g6@gmail.com',
-      picture:
-        'https://img.freepik.com/premium-vector/man-avatar-profile-picture-isolated-background-avatar-profile-picture-man_1293239-4855.jpg'
-    },
-    accessToken: 'sss'
-  }
+  const auth = page.data.auth as AuthDetails | undefined
+
   const globalDialog = useGlobalDialog()
 
   let combinedStatus: HealthEventType = $derived.by(() => {
@@ -79,13 +69,16 @@
         {#snippet apiKeysIcon()}
           <div class="fd fd-key text-[20px]"></div>
         {/snippet}
-        {@render profileItemButton(
-          'Manage API keys',
-          apiKeysIcon,
-          () => (globalDialog.dialog = apiKeyDialog)
-        )}
 
-        <div class="hr"></div>
+        {#if typeof auth === 'object' && 'logout' in auth}
+          {@render profileItemButton(
+            'Manage API keys',
+            apiKeysIcon,
+            () => (globalDialog.dialog = apiKeyDialog)
+          )}
+
+          <div class="hr"></div>
+        {/if}
         <DarkModeSwitch class="pl-7"></DarkModeSwitch>
         <div class="hr"></div>
         {#if typeof auth === 'object' && 'logout' in auth}
