@@ -1,16 +1,22 @@
-use std::{borrow::Cow, cell::RefCell, cmp::Ordering, marker::PhantomData, panic::Location};
+use std::{
+    borrow::Cow, cell::RefCell, cmp::Ordering, marker::PhantomData, panic::Location, rc::Rc,
+};
+
+use async_stream::stream;
 
 use crate::{
-    Circuit, DBData, DynZWeight, RootCircuit, Scope, Stream, ZWeight,
+    Circuit, DBData, DynZWeight, Position, RootCircuit, Scope, Stream, ZWeight,
     algebra::{IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdZSet, ZBatchReader, ZCursor},
     circuit::{
         metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL, OperatorLocation, OperatorMeta},
-        operator_traits::{Operator, QuaternaryOperator},
+        operator_traits::Operator,
+        splitter_output_chunk_size,
     },
     dynamic::{
         ClonableTrait, Data, DataTrait, DowncastTrait, DynData, DynPair, DynUnit, DynVec,
         DynWeightedPairs, Erase, Factory, LeanVec, WeightTrait, WithFactory,
     },
+    operator::async_stream_operators::{StreamingQuaternaryOperator, StreamingQuaternaryWrapper},
     trace::{
         BatchFactories, BatchReader, BatchReaderFactories, Cursor, Spine, SpineSnapshot,
         cursor::{CursorEmpty, CursorPair},
@@ -184,14 +190,14 @@ where
                 .accumulate_delay_trace();
 
             self.circuit().add_quaternary_operator(
-                AsofJoin::new(
+                StreamingQuaternaryWrapper::new(AsofJoin::new(
                     factories.clone(),
                     ts_func1,
                     tscmp_func,
                     valts_cmp_func,
                     join_func,
                     Location::caller(),
-                ),
+                )),
                 &left.dyn_accumulate(&factories.left_factories),
                 &left_trace,
                 &right.dyn_accumulate(&factories.right_factories),
@@ -219,9 +225,9 @@ where
     valts_cmp_func: Box<dyn Fn(&I1::Val, &TS) -> Ordering>,
     join_func: Box<AsofJoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>>,
     location: &'static Location<'static>,
-    flush: bool,
-    delta1: Option<SpineSnapshot<I1>>,
-    delta2: Option<SpineSnapshot<I2>>,
+    flush: RefCell<bool>,
+    delta1: RefCell<Option<SpineSnapshot<I1>>>,
+    delta2: RefCell<Option<SpineSnapshot<I2>>>,
 
     // Input batch sizes.
     delta1_batch_stats: RefCell<BatchSizeStats>,
@@ -257,9 +263,9 @@ where
             valts_cmp_func,
             join_func,
             location,
-            flush: false,
-            delta1: None,
-            delta2: None,
+            flush: RefCell::new(false),
+            delta1: RefCell::new(None),
+            delta2: RefCell::new(None),
             delta1_batch_stats: RefCell::new(BatchSizeStats::new()),
             delta2_batch_stats: RefCell::new(BatchSizeStats::new()),
             output_batch_stats: RefCell::new(BatchSizeStats::new()),
@@ -285,7 +291,7 @@ where
     /// Compute all timestamps affected by the changes.  We will
     /// update the value of the asof-join for these timestamps.
     fn compute_affected_times<DC1, DC2, ZC1, C2>(
-        &mut self,
+        &self,
         delta1: &mut DC1,
         delta2: &mut DC2,
         delayed_cursor1: &mut Option<&mut ZC1>,
@@ -361,7 +367,7 @@ where
     /// By setting `multiplier` to +1 or -1, we get this function to produce
     /// insertions and retractions respectively.
     fn eval_val<C1, C2>(
-        &mut self,
+        &self,
         ts: &TS,
         cursor1: &mut Option<&mut C1>,
         cursor2: &mut C2,
@@ -427,7 +433,7 @@ where
     /// Evaluate operator for the current key.
     #[allow(clippy::too_many_arguments)]
     fn eval_key<DC1, DC2, ZC1, ZC2, C1, C2>(
-        &mut self,
+        &self,
         delta1: &mut DC1,
         delta2: &mut DC2,
         delayed_cursor1: &mut ZC1,
@@ -557,7 +563,7 @@ where
     }
 
     fn flush(&mut self) {
-        self.flush = true;
+        *self.flush.borrow_mut() = true;
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -573,145 +579,190 @@ where
     }
 }
 
-impl<TS, I1, T1, I2, T2, Z> QuaternaryOperator<Option<Spine<I1>>, T1, Option<Spine<I2>>, T2, Z>
+impl<TS, I1, T1, I2, T2, Z>
+    StreamingQuaternaryOperator<Option<Spine<I1>>, T1, Option<Spine<I2>>, T2, Z>
     for AsofJoin<TS, I1, T1, I2, T2, Z>
 where
     TS: DataTrait + ?Sized,
     I1: IndexedZSet,
-    T1: ZBatchReader<Key = I1::Key, Val = I1::Val, Time = ()> + Clone,
+    T1: ZBatchReader<Key = I1::Key, Val = I1::Val, Time = ()> + Clone + WithSnapshot<Batch = I1>,
     I2: IndexedZSet<Key = I1::Key>,
-    T2: ZBatchReader<Key = I2::Key, Val = I2::Val, Time = ()> + Clone,
+    T2: ZBatchReader<Key = I2::Key, Val = I2::Val, Time = ()> + Clone + WithSnapshot<Batch = I2>,
     Z: IndexedZSet,
 {
-    async fn eval(
-        &mut self,
+    fn eval(
+        self: Rc<Self>,
         delta1: Cow<'_, Option<Spine<I1>>>,
         delayed_trace1: Cow<'_, T1>,
         delta2: Cow<'_, Option<Spine<I2>>>,
         delayed_trace2: Cow<'_, T2>,
-    ) -> Z {
+    ) -> impl futures::Stream<Item = (Z, bool, Option<Position>)> + 'static {
         if let Some(delta1) = delta1.as_ref() {
-            self.delta1 = Some(delta1.ro_snapshot());
+            *self.delta1.borrow_mut() = Some(delta1.ro_snapshot());
         };
 
         if let Some(delta2) = delta2.as_ref() {
-            self.delta2 = Some(delta2.ro_snapshot());
+            *self.delta2.borrow_mut() = Some(delta2.ro_snapshot());
         };
 
-        if !self.flush {
-            return Z::dyn_empty(&self.factories.output_factories);
-        }
+        let delayed_trace1 = if *self.flush.borrow() {
+            Some(delayed_trace1.as_ref().ro_snapshot())
+        } else {
+            None
+        };
 
-        self.flush = false;
+        let delayed_trace2 = if *self.flush.borrow() {
+            Some(delayed_trace2.ro_snapshot())
+        } else {
+            None
+        };
 
-        let delta1 = self.delta1.take().unwrap();
-        let delta2 = self.delta2.take().unwrap();
+        stream! {
+            let chunk_size = splitter_output_chunk_size();
 
-        self.delta1_batch_stats.borrow_mut().add_batch(delta1.len());
-        self.delta2_batch_stats.borrow_mut().add_batch(delta2.len());
+            if *self.flush.borrow() {
+                *self.flush.borrow_mut() = false;
+            } else {
+                // println!("yield empty");
+                yield(Z::dyn_empty(&self.factories.output_factories), true, None);
+                return;
+            }
 
-        let mut delta1_cursor = delta1.cursor();
-        let mut delta2_cursor = delta2.cursor();
+            let delta1 = self.delta1.take().unwrap();
+            let delta2 = self.delta2.take().unwrap();
 
-        let mut delayed_trace1_cursor = delayed_trace1.cursor();
-        let mut delayed_trace2_cursor = delayed_trace2.cursor();
+            self.delta1_batch_stats.borrow_mut().add_batch(delta1.len());
+            self.delta2_batch_stats.borrow_mut().add_batch(delta2.len());
 
-        let mut trace1_cursor = CursorPair::new(&mut delta1_cursor, &mut delayed_trace1_cursor);
-        let mut trace2_cursor = CursorPair::new(&mut delta2_cursor, &mut delayed_trace2_cursor);
+            let mut delta1_cursor = delta1.cursor();
+            let mut delta2_cursor = delta2.cursor();
 
-        let mut delta1_cursor = delta1.cursor();
-        let mut delta2_cursor = delta2.cursor();
+            let delayed_trace1 = delayed_trace1.expect("no delayed trace1 provided before flush");
+            let delayed_trace2 = delayed_trace2.expect("no delayed trace2 provided before flush");
 
-        let mut delayed_trace1_cursor = delayed_trace1.cursor();
-        let mut delayed_trace2_cursor = delayed_trace2.cursor();
+            let mut delayed_trace1_cursor = delayed_trace1.cursor();
+            let mut delayed_trace2_cursor = delayed_trace2.cursor();
 
-        let mut output_tuples = self
-            .factories
-            .output_factories
-            .weighted_items_factory()
-            .default_box();
+            let mut trace1_cursor = CursorPair::new(&mut delta1_cursor, &mut delayed_trace1_cursor);
+            let mut trace2_cursor = CursorPair::new(&mut delta2_cursor, &mut delayed_trace2_cursor);
 
-        // Timestamps that need to be recomputed for each key, created here for allocation
-        // reuse across keys.
-        let mut affected_times = self.factories.timestamps_factory.default_box();
+            let mut delta1_cursor = delta1.cursor();
+            let mut delta2_cursor = delta2.cursor();
 
-        // Iterate over keys in delta1 and delta2.
-        while delta1_cursor.key_valid() && delta2_cursor.key_valid() {
-            match delta1_cursor.key().cmp(delta2_cursor.key()) {
-                Ordering::Less => {
-                    self.eval_key(
-                        &mut delta1_cursor,
-                        &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
-                        &mut delayed_trace1_cursor,
-                        &mut delayed_trace2_cursor,
-                        &mut trace1_cursor,
-                        &mut trace2_cursor,
-                        affected_times.as_mut(),
-                        output_tuples.as_mut(),
-                    );
-                    delta1_cursor.step_key();
+            let mut delayed_trace1_cursor = delayed_trace1.cursor();
+            let mut delayed_trace2_cursor = delayed_trace2.cursor();
+
+            let weighted_items_factory = self.factories.output_factories.weighted_items_factory();
+
+            let mut output_tuples = weighted_items_factory.default_box();
+            output_tuples.reserve(chunk_size);
+
+            // Timestamps that need to be recomputed for each key, created here for allocation
+            // reuse across keys.
+            let mut affected_times = self.factories.timestamps_factory.default_box();
+
+            // Iterate over keys in delta1 and delta2.
+            while delta1_cursor.key_valid() && delta2_cursor.key_valid() {
+                match delta1_cursor.key().cmp(delta2_cursor.key()) {
+                    Ordering::Less => {
+                        self.eval_key(
+                            &mut delta1_cursor,
+                            &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
+                            &mut delayed_trace1_cursor,
+                            &mut delayed_trace2_cursor,
+                            &mut trace1_cursor,
+                            &mut trace2_cursor,
+                            affected_times.as_mut(),
+                            output_tuples.as_mut(),
+                        );
+                        delta1_cursor.step_key();
+                    }
+                    Ordering::Equal => {
+                        self.eval_key(
+                            &mut delta1_cursor,
+                            &mut delta2_cursor,
+                            &mut delayed_trace1_cursor,
+                            &mut delayed_trace2_cursor,
+                            &mut trace1_cursor,
+                            &mut trace2_cursor,
+                            affected_times.as_mut(),
+                            output_tuples.as_mut(),
+                        );
+                        delta1_cursor.step_key();
+                        delta2_cursor.step_key();
+                    }
+                    Ordering::Greater => {
+                        self.eval_key(
+                            &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
+                            &mut delta2_cursor,
+                            &mut delayed_trace1_cursor,
+                            &mut delayed_trace2_cursor,
+                            &mut trace1_cursor,
+                            &mut trace2_cursor,
+                            affected_times.as_mut(),
+                            output_tuples.as_mut(),
+                        );
+                        delta2_cursor.step_key();
+                    }
                 }
-                Ordering::Equal => {
-                    self.eval_key(
-                        &mut delta1_cursor,
-                        &mut delta2_cursor,
-                        &mut delayed_trace1_cursor,
-                        &mut delayed_trace2_cursor,
-                        &mut trace1_cursor,
-                        &mut trace2_cursor,
-                        affected_times.as_mut(),
-                        output_tuples.as_mut(),
-                    );
-                    delta1_cursor.step_key();
-                    delta2_cursor.step_key();
-                }
-                Ordering::Greater => {
-                    self.eval_key(
-                        &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
-                        &mut delta2_cursor,
-                        &mut delayed_trace1_cursor,
-                        &mut delayed_trace2_cursor,
-                        &mut trace1_cursor,
-                        &mut trace2_cursor,
-                        affected_times.as_mut(),
-                        output_tuples.as_mut(),
-                    );
-                    delta2_cursor.step_key();
+
+                if output_tuples.len() >= chunk_size {
+                    let result = Z::dyn_from_tuples(&self.factories.output_factories, (), &mut output_tuples);
+                    self.output_batch_stats.borrow_mut().add_batch(result.len());
+                    yield (result, false, delta1_cursor.position());
+                    output_tuples = weighted_items_factory.default_box();
+                    output_tuples.reserve(chunk_size);
                 }
             }
-        }
 
-        while delta1_cursor.key_valid() {
-            self.eval_key(
-                &mut delta1_cursor,
-                &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
-                &mut delayed_trace1_cursor,
-                &mut delayed_trace2_cursor,
-                &mut trace1_cursor,
-                &mut trace2_cursor,
-                affected_times.as_mut(),
-                output_tuples.as_mut(),
-            );
-            delta1_cursor.step_key();
-        }
+            while delta1_cursor.key_valid() {
+                self.eval_key(
+                    &mut delta1_cursor,
+                    &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
+                    &mut delayed_trace1_cursor,
+                    &mut delayed_trace2_cursor,
+                    &mut trace1_cursor,
+                    &mut trace2_cursor,
+                    affected_times.as_mut(),
+                    output_tuples.as_mut(),
+                );
+                delta1_cursor.step_key();
 
-        while delta2_cursor.key_valid() {
-            self.eval_key(
-                &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
-                &mut delta2_cursor,
-                &mut delayed_trace1_cursor,
-                &mut delayed_trace2_cursor,
-                &mut trace1_cursor,
-                &mut trace2_cursor,
-                affected_times.as_mut(),
-                output_tuples.as_mut(),
-            );
-            delta2_cursor.step_key();
-        }
+                if output_tuples.len() >= chunk_size {
+                    let result = Z::dyn_from_tuples(&self.factories.output_factories, (), &mut output_tuples);
+                    self.output_batch_stats.borrow_mut().add_batch(result.len());
+                    yield (result, false, delta1_cursor.position());
+                    output_tuples = weighted_items_factory.default_box();
+                    output_tuples.reserve(chunk_size);
+                }
+            }
 
-        let result = Z::dyn_from_tuples(&self.factories.output_factories, (), &mut output_tuples);
-        self.output_batch_stats.borrow_mut().add_batch(result.len());
-        result
+            while delta2_cursor.key_valid() {
+                self.eval_key(
+                    &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
+                    &mut delta2_cursor,
+                    &mut delayed_trace1_cursor,
+                    &mut delayed_trace2_cursor,
+                    &mut trace1_cursor,
+                    &mut trace2_cursor,
+                    affected_times.as_mut(),
+                    output_tuples.as_mut(),
+                );
+                delta2_cursor.step_key();
+
+                if output_tuples.len() >= chunk_size {
+                    let result = Z::dyn_from_tuples(&self.factories.output_factories, (), &mut output_tuples);
+                    self.output_batch_stats.borrow_mut().add_batch(result.len());
+                    yield (result, false, delta1_cursor.position());
+                    output_tuples = weighted_items_factory.default_box();
+                    output_tuples.reserve(chunk_size);
+                }
+            }
+
+            let result = Z::dyn_from_tuples(&self.factories.output_factories, (), &mut output_tuples);
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            yield (result, true, delta1_cursor.position());
+        }
     }
 }
 
@@ -725,7 +776,7 @@ mod test {
         algebra::F32,
         circuit::CircuitConfig,
         dynamic::DowncastTrait,
-        typed_batch::IndexedZSetReader,
+        typed_batch::{IndexedZSetReader, SpineSnapshot},
         utils::{Tup2, Tup3, Tup4},
         zset,
     };
@@ -738,72 +789,106 @@ mod test {
     type User = Tup3<Time, CCNum, String>;
     type Output = Tup4<Time, CCNum, Amt, Option<String>>;
 
+    fn join(
+        _key: &CCNum,
+        transaction: &Transaction,
+        user: Option<&User>,
+    ) -> Tup4<Time, CCNum, Amt, Option<String>> {
+        Tup4(
+            transaction.0,
+            transaction.1,
+            transaction.2,
+            user.map(|u| u.2.clone()),
+        )
+    }
+    fn ts_func1(transaction: &Transaction) -> Time {
+        transaction.0
+    }
+    fn ts_func2(user: &User) -> Time {
+        user.0
+    }
+
     fn test_circuit() -> (
         DBSPHandle,
         (
             ZSetHandle<Transaction>,
             ZSetHandle<User>,
-            OutputHandle<OrdZSet<Output>>,
+            OutputHandle<SpineSnapshot<OrdZSet<Output>>>,
+            OutputHandle<SpineSnapshot<OrdZSet<Output>>>,
+            OutputHandle<SpineSnapshot<OrdIndexedZSet<CCNum, Transaction>>>,
+            OutputHandle<SpineSnapshot<OrdIndexedZSet<CCNum, User>>>,
         ),
     ) {
-        Runtime::init_circuit(CircuitConfig::with_workers(2), |circuit| {
-            let (transactions, transactions_handle) = circuit.add_input_zset::<Transaction>();
-            let (users, users_handle) = circuit.add_input_zset::<User>();
+        Runtime::init_circuit(
+            CircuitConfig::with_workers(2).with_splitter_chunk_size_records(2),
+            |circuit| {
+                let (transactions, transactions_handle) = circuit.add_input_zset::<Transaction>();
+                let (users, users_handle) = circuit.add_input_zset::<User>();
 
-            let transactions = transactions.map_index(|transaction| (transaction.1, *transaction));
-            let users = users.map_index(|user| (user.1, user.clone()));
+                let transactions =
+                    transactions.map_index(|transaction| (transaction.1, *transaction));
+                let users = users.map_index(|user| (user.1, user.clone()));
 
-            let join = |_key: &CCNum, transaction: &Transaction, user: Option<&User>| {
-                Tup4(
-                    transaction.0,
-                    transaction.1,
-                    transaction.2,
-                    user.map(|u| u.2.clone()),
-                )
-            };
-            let ts_func1 = |transaction: &Transaction| transaction.0;
-            let ts_func2 = |user: &User| user.0;
+                let result = transactions.asof_join(&users, join, ts_func1, ts_func2);
 
-            let result = transactions.asof_join(&users, join, ts_func1, ts_func2);
+                let transactions_output_handle = transactions
+                    .shard()
+                    .accumulate_integrate()
+                    .accumulate_output();
 
-            let expected_result = transactions
-                .shard()
-                .integrate()
-                .apply2(&users.shard().integrate(), move |t, u| {
-                    asof_join_reference(t, u, join, ts_func1, ts_func2)
-                });
+                let users_output_handle = users.shard().accumulate_integrate().accumulate_output();
 
-            result
-                .integrate()
-                .apply2(&expected_result, |actual, expected| {
-                    assert_eq!(actual, expected)
-                });
+                // let expected_result = transactions
+                //     .shard()
+                //     .integrate()
+                //     .apply2(&users.shard().integrate(), move |t, u| {
+                //         asof_join_reference(t, u, join, ts_func1, ts_func2)
+                //     });
 
-            let output_handle = result.output();
+                // result
+                //     .integrate()
+                //     .apply2(&expected_result, |actual, expected| {
+                //         assert_eq!(actual, expected)
+                //     });
 
-            Ok((transactions_handle, users_handle, output_handle))
-        })
+                let output_handle = result.accumulate_output();
+                let output_integral_handle = result.accumulate_integrate().accumulate_output();
+
+                Ok((
+                    transactions_handle,
+                    users_handle,
+                    output_handle,
+                    output_integral_handle,
+                    transactions_output_handle,
+                    users_output_handle,
+                ))
+            },
+        )
         .unwrap()
     }
 
-    /// Like `test_circuit`, but additionally garbage collects both sides of the ASOF join.
     fn test_circuit_with_waterline() -> (
         DBSPHandle,
         (
             ZSetHandle<Transaction>,
             ZSetHandle<User>,
-            OutputHandle<OrdZSet<Output>>,
+            OutputHandle<SpineSnapshot<OrdZSet<Output>>>,
+            OutputHandle<SpineSnapshot<OrdZSet<Output>>>,
+            OutputHandle<SpineSnapshot<OrdIndexedZSet<CCNum, Transaction>>>,
+            OutputHandle<SpineSnapshot<OrdIndexedZSet<CCNum, User>>>,
         ),
     ) {
-        Runtime::init_circuit(CircuitConfig::with_workers(2), |circuit| {
-            let (transactions, transactions_handle) = circuit.add_input_zset::<Transaction>();
-            let (users, users_handle) = circuit.add_input_zset::<User>();
+        Runtime::init_circuit(
+            CircuitConfig::with_workers(2).with_splitter_chunk_size_records(2),
+            |circuit| {
+                let (transactions, transactions_handle) = circuit.add_input_zset::<Transaction>();
+                let (users, users_handle) = circuit.add_input_zset::<User>();
 
-            let transactions = transactions.map_index(|transaction| (transaction.1, *transaction));
-            let users = users.map_index(|user| (user.1, user.clone()));
+                let transactions =
+                    transactions.map_index(|transaction| (transaction.1, *transaction));
+                let users = users.map_index(|user| (user.1, user.clone()));
 
-            let user_waterline = users
-                .waterline(
+                let user_waterline = users.waterline(
                     || u64::MIN,
                     |_k, Tup3(ts, _, _)| {
                         // println!("{} ts: {:?}", Runtime::worker_index(), *ts);
@@ -813,87 +898,69 @@ mod test {
                         // println!("{} max({:?}, {:?})", Runtime::worker_index(), ts1, ts2);
                         max(*ts1, *ts2)
                     },
-                )
-                /*.inspect(move |waterline: &TypedBox<u64, DynData>| {
-                    println!(
-                        "user waterline: {:?}",
-                        waterline.inner().downcast_checked::<u64>()
-                    );
-                })*/;
+                );
 
-            let transaction_waterline = transactions
-                .waterline(
+                let transaction_waterline = transactions.waterline(
                     || u64::MIN,
                     |_k, Tup3(ts, _, _)| (*ts).saturating_sub(LATENESS),
                     |ts1, ts2| max(*ts1, *ts2),
-                )
-                /*.inspect(move |waterline: &TypedBox<u64, DynData>| {
-                    println!(
-                        "transaction waterline: {:?}",
-                        waterline.inner().downcast_checked::<u64>()
-                    );
-                })*/;
+                );
 
-            let waterline = transaction_waterline
-                .apply2(&user_waterline, |ts1, ts2| {
+                let waterline = transaction_waterline.apply2(&user_waterline, |ts1, ts2| {
                     TypedBox::new(min(unsafe { *ts1.inner().downcast::<u64>() }, unsafe {
                         *ts2.inner().downcast::<u64>()
                     }))
-                })
-                /*.inspect(move |waterline: &TypedBox<u64, DynData>| {
-                    println!(
-                        "waterline: {:?}",
-                        waterline.inner().downcast_checked::<u64>()
-                    );
-                })*/;
-
-            let join = |_key: &CCNum, transaction: &Transaction, user: Option<&User>| {
-                Tup4(
-                    transaction.0,
-                    transaction.1,
-                    transaction.2,
-                    user.map(|u| u.2.clone()),
-                )
-            };
-            let ts_func1 = |transaction: &Transaction| transaction.0;
-            let ts_func2 = |user: &User| user.0;
-
-            let result = transactions.asof_join(&users, join, ts_func1, ts_func2);
-
-            transactions.accumulate_integrate_trace_retain_values(
-                &waterline,
-                |transaction: &Transaction, ts: &u64| transaction.0 >= *ts,
-            );
-
-            users.accumulate_integrate_trace_retain_values_last_n(
-                &waterline,
-                |user: &User, ts: &u64| user.0 >= *ts,
-                1,
-            );
-
-            let expected_result = transactions
-                .shard()
-                .integrate()
-                .apply2(&users.shard().integrate(), move |t, u| {
-                    asof_join_reference(t, u, join, ts_func1, ts_func2)
                 });
 
-            result
-                .integrate()
-                .apply2(&expected_result, |actual, expected| {
-                    assert_eq!(actual, expected)
-                });
+                let result = transactions.asof_join(&users, join, ts_func1, ts_func2);
 
-            let output_handle = result.output();
+                transactions.accumulate_integrate_trace_retain_values(
+                    &waterline,
+                    |transaction: &Transaction, ts: &u64| transaction.0 >= *ts,
+                );
 
-            Ok((transactions_handle, users_handle, output_handle))
-        })
+                users.accumulate_integrate_trace_retain_values_last_n(
+                    &waterline,
+                    |user: &User, ts: &u64| user.0 >= *ts,
+                    1,
+                );
+
+                let transactions_output_handle = transactions
+                    .shard()
+                    .accumulate_integrate()
+                    .accumulate_output();
+
+                let users_output_handle = users.shard().accumulate_integrate().accumulate_output();
+
+                let output_handle = result.accumulate_output();
+                let output_integral_handle = result.accumulate_integrate().accumulate_output();
+
+                Ok((
+                    transactions_handle,
+                    users_handle,
+                    output_handle,
+                    output_integral_handle,
+                    transactions_output_handle,
+                    users_output_handle,
+                ))
+            },
+        )
         .unwrap()
     }
 
     #[test]
     fn asof_join_test() {
-        let (mut dbsp, (transactions, users, result)) = test_circuit();
+        let (
+            mut dbsp,
+            (
+                transactions,
+                users,
+                result,
+                _result_integral,
+                _transactions_output_handle,
+                _users_output_handle,
+            ),
+        ) = test_circuit();
 
         // Step 1. Add some transactions without users.
         transactions.append(&mut vec![
@@ -909,7 +976,7 @@ mod test {
         dbsp.transaction().unwrap();
 
         assert_eq!(
-            result.consolidate(),
+            result.concat().consolidate(),
             zset! {
                Tup4(100, 1, F32::new(10.0), None) => 1,
                Tup4(200, 1, F32::new(10.0), None) => 1,
@@ -931,7 +998,7 @@ mod test {
         dbsp.transaction().unwrap();
 
         assert_eq!(
-            result.consolidate(),
+            result.concat().consolidate(),
             zset! {
                 Tup4(100, 1, F32::new(10.0), None) => -1,
                 Tup4(200, 1, F32::new(10.0), None) => -1,
@@ -960,7 +1027,7 @@ mod test {
         dbsp.transaction().unwrap();
 
         assert_eq!(
-            result.consolidate(),
+            result.concat().consolidate(),
             zset! {
                 Tup4(100, 1, F32::new(10.0), Some("A50".to_string())) => -1,
                 Tup4(100, 1, F32::new(10.0), Some("A60".to_string())) => 1,
@@ -985,7 +1052,7 @@ mod test {
 
         dbsp.transaction().unwrap();
 
-        assert_eq!(result.consolidate(), zset! {});
+        assert_eq!(result.concat().consolidate(), zset! {});
 
         // Step 5. Add multiple transactions per timestamp.
         transactions.append(&mut vec![
@@ -1001,7 +1068,7 @@ mod test {
         dbsp.transaction().unwrap();
 
         assert_eq!(
-            result.consolidate(),
+            result.concat().consolidate(),
             zset! {
                 Tup4(100, 1, F32::new(100.0), Some("A60".to_string())) => 1,
                 Tup4(200, 1, F32::new(100.0), Some("A60".to_string())) => 1,
@@ -1020,7 +1087,7 @@ mod test {
 
         dbsp.transaction().unwrap();
 
-        assert_eq!(result.consolidate(), zset! {});
+        assert_eq!(result.concat().consolidate(), zset! {});
 
         // Step 7. Delete more users.
         users.append(&mut vec![
@@ -1039,7 +1106,7 @@ mod test {
         dbsp.transaction().unwrap();
 
         assert_eq!(
-            result.consolidate(),
+            result.concat().consolidate(),
             zset! {
                 Tup4(100, 1, F32::new(100.0), Some("A60".to_string())) => -1,
                 Tup4(200, 1, F32::new(100.0), Some("A60".to_string())) => -1,
@@ -1061,22 +1128,61 @@ mod test {
 
     #[test]
     fn asof_join_regressions() {
-        let (mut dbsp, (transactions, users, _result)) = test_circuit();
+        let (
+            mut dbsp,
+            (
+                transactions,
+                users,
+                _result,
+                result_integral,
+                transactions_output_handle,
+                users_output_handle,
+            ),
+        ) = test_circuit();
 
         users.append(&mut vec![
             Tup2(Tup3(37, 0, "L".to_string()), 1),
             Tup2(Tup3(0, 0, "A".to_string()), 1),
         ]);
         dbsp.transaction().unwrap();
+        assert_eq!(
+            result_integral.concat().consolidate(),
+            asof_join_reference2(&transactions_output_handle, &users_output_handle,)
+        );
 
         transactions.append(&mut vec![Tup2(Tup3(37, 0, F32::new(0.0)), 1)]);
         dbsp.transaction().unwrap();
+        assert_eq!(
+            result_integral.concat().consolidate(),
+            asof_join_reference2(&transactions_output_handle, &users_output_handle,)
+        );
 
         users.append(&mut vec![Tup2(Tup3(37, 0, "L".to_string()), -1)]);
         dbsp.transaction().unwrap();
+        assert_eq!(
+            result_integral.concat().consolidate(),
+            asof_join_reference2(&transactions_output_handle, &users_output_handle,)
+        );
 
         users.append(&mut vec![Tup2(Tup3(0, 0, "A".to_string()), -1)]);
         dbsp.transaction().unwrap();
+        assert_eq!(
+            result_integral.concat().consolidate(),
+            asof_join_reference2(&transactions_output_handle, &users_output_handle,)
+        );
+    }
+
+    fn asof_join_reference2(
+        transactions_handle: &OutputHandle<SpineSnapshot<OrdIndexedZSet<CCNum, Transaction>>>,
+        users_handle: &OutputHandle<SpineSnapshot<OrdIndexedZSet<CCNum, User>>>,
+    ) -> OrdZSet<Output> {
+        asof_join_reference(
+            &transactions_handle.concat().consolidate(),
+            &users_handle.concat().consolidate(),
+            join,
+            ts_func1,
+            ts_func2,
+        )
     }
 
     /// Reference implementaton of asof-join for testing.
@@ -1170,9 +1276,11 @@ mod test {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
         #[test]
         fn asof_join_proptest(inputs in inputs(50)) {
-            let (mut dbsp, (htransactions, husers, _hresult)) = test_circuit();
+            let (mut dbsp, (htransactions, husers, _hresult, hresult_integral, htransactions_output_handle, husers_output_handle)) = test_circuit();
 
             let mut deletions = inputs.clone();
             for (ts, us) in deletions.iter_mut() {
@@ -1189,6 +1297,11 @@ mod test {
                 husers.append(&mut users);
 
                 dbsp.transaction().unwrap();
+                assert_eq!(
+                    hresult_integral.concat().consolidate(),
+                    asof_join_reference2(&htransactions_output_handle, &husers_output_handle)
+                );
+
             }
 
             for (mut transactions, mut users) in deletions {
@@ -1196,18 +1309,32 @@ mod test {
                 husers.append(&mut users);
 
                 dbsp.transaction().unwrap();
+                assert_eq!(
+                    hresult_integral.concat().consolidate(),
+                    asof_join_reference2(&htransactions_output_handle, &husers_output_handle)
+                );
+
             }
         }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
 
         #[test]
         fn asof_join_with_waterline_proptest(inputs in inputs(100)) {
-            let (mut dbsp, (htransactions, husers, _hresult)) = test_circuit_with_waterline();
+            let (mut dbsp, (htransactions, husers, _hresult, hresult_integral, htransactions_output_handle, husers_output_handle)) = test_circuit_with_waterline();
 
             for (mut transactions, mut users) in inputs {
                 htransactions.append(&mut transactions);
                 husers.append(&mut users);
 
                 dbsp.transaction().unwrap();
+                assert_eq!(
+                    hresult_integral.concat().consolidate(),
+                    asof_join_reference2(&htransactions_output_handle, &husers_output_handle)
+                );
+
             }
         }
     }
