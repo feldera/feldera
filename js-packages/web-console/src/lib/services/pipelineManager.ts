@@ -771,4 +771,3 @@ export interface PipelineEvent {
 export interface PipelineEventDetail extends PipelineEvent {
   description: string
 }
-

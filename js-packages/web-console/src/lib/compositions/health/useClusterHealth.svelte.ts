@@ -16,8 +16,8 @@ export const useClusterHealth = () => {
     const event = await api.getClusterEvent('latest')
     status = {
       api: toEventType(event.api_status),
-      compiler: toEventType(event.api_status),
-      runner: toEventType(event.api_status)
+      compiler: toEventType(event.compiler_status),
+      runner: toEventType(event.runner_status)
     }
   }, 10000)
   return {

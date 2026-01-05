@@ -6,8 +6,10 @@
   import type { Snippet } from '$lib/types/svelte'
 
   const variants = {
-    formal: 'bg-primary-900 dark:bg-primary-600 text-surface-50',
-    aether: 'bg-gradient-to-r from-orange-100 to-purple-100 dark:from-orange-800 dark:to-purple-900'
+    formal: 'bg-primary-900 dark:bg-primary-600 text-surface-50 justify-between',
+    aether:
+      'bg-gradient-to-r from-orange-100 to-purple-100 dark:from-orange-800 dark:to-purple-900 justify-between',
+    error: 'preset-tonal-error justify-center'
   }
 
   const {
@@ -41,7 +43,7 @@
   {#if onclick}
     <button
       {onclick}
-      class="rounded bg-surface-50 px-2 py-1 text-sm text-dark hover:brightness-90 {_class}"
+      class="-my-1 rounded bg-surface-50 px-2 py-1 text-sm text-dark hover:brightness-90 {_class}"
       aria-label={ariaLabel}
     >
       {text}
@@ -51,7 +53,7 @@
       {href}
       target="_blank"
       rel="noreferrer"
-      class="rounded bg-surface-50 px-2 py-1 text-sm text-dark hover:brightness-90 {_class}"
+      class="-my-1 rounded bg-surface-50 px-2 py-1 text-sm text-dark hover:brightness-90 {_class}"
     >
       {text}
     </a>
@@ -61,7 +63,7 @@
 <div
   class="{variants[
     variant
-  ]} flex min-h-12 flex-nowrap items-center justify-between gap-1 px-2 py-2 text-base font-medium sm:px-8"
+  ]} flex min-h-9 flex-nowrap items-center gap-1 px-2 py-2 text-base font-medium sm:px-8"
 >
   <div class="flex flex-nowrap items-center gap-2 sm:gap-6">
     {@render start?.()}

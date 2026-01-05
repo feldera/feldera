@@ -31,14 +31,6 @@
       element.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
   }
-
-  // const startOfHour = (events: HealthEventParts[]) => {
-  //   const MS_PER_HOUR = 60 * 60 * 1000
-  //   const ms = events[0].timestampFrom.getTime()
-  //   // Floor to UTC hour boundary
-  //   const hourStartMs = Math.floor(ms / MS_PER_HOUR) * MS_PER_HOUR
-  //   return new Date(hourStartMs)
-  // }
 </script>
 
 {#snippet eventItem(event: HealthEventParts, iconClass: string = '')}
@@ -83,44 +75,48 @@
   </div>
 {/snippet}
 
-<div bind:this={containerElement} class="flex max-h-[calc(100vh-300px)] flex-col gap-3 overflow-y-auto">
-  {#if unresolvedEvents.length > 0}
-    <div class="flex flex-col gap-3">
-      <InlineDropdown bind:open={showUnresolved}>
-        {#snippet header(open, toggle)}
-          {#snippet title()}
-            <span class="text-xl font-semibold">
-              {#if unresolvedEvents.length > 1}
-                {unresolvedEvents.length} unresolved issues
-              {:else}
-                1 unresolved issue
-              {/if}
-            </span>
+<div class="relative scrollbar h-full overflow-y-auto">
+  <div bind:this={containerElement} class="absolute flex flex-col gap-3">
+    {#if unresolvedEvents.length > 0}
+      <div class="flex flex-col gap-3">
+        <InlineDropdown bind:open={showUnresolved}>
+          {#snippet header(open, toggle)}
+            {#snippet title()}
+              <span class="text-xl font-semibold">
+                {#if unresolvedEvents.length > 1}
+                  {unresolvedEvents.length} unresolved issues
+                {:else}
+                  1 unresolved issue
+                {/if}
+              </span>
+            {/snippet}
+            {@render dropdownHeader(open, toggle, title)}
           {/snippet}
-          {@render dropdownHeader(open, toggle, title)}
-        {/snippet}
-        {#snippet content()}
-          <div transition:slide={{ duration: 150 }} class="flex flex-col gap-5">
-            {#each unresolvedEvents as events, i}
-              {@render eventGroup(events)}
-            {/each}
-          </div>
-        {/snippet}
-      </InlineDropdown>
-    </div>
-  {/if}
-
-  <div class="flex flex-col gap-3">
-    {#if previousEvents.length}
-      <span class="text-xl font-semibold"> Previous incidents </span>
-
-      <div class="flex flex-col gap-5">
-        {#each previousEvents as events, i}
-          {@render eventGroup(events, 'text-surface-900-100')}
-        {/each}
+          {#snippet content()}
+            <div transition:slide={{ duration: 150 }} class="flex flex-col gap-5">
+              {#each unresolvedEvents as events, i}
+                {@render eventGroup(events)}
+              {/each}
+            </div>
+          {/snippet}
+        </InlineDropdown>
       </div>
-    {:else if !unresolvedEvents.length}
-      {@render noIssues()}
     {/if}
+
+    <div class="flex flex-col gap-3">
+      {#if previousEvents.length}
+        <span class="bg-white-dark sticky top-0 py-1 text-xl font-semibold">
+          Previous incidents
+        </span>
+
+        <div class="flex flex-col-reverse gap-5">
+          {#each previousEvents as events, i}
+            {@render eventGroup(events, 'text-surface-900-100')}
+          {/each}
+        </div>
+      {:else if !unresolvedEvents.length}
+        {@render noIssues()}
+      {/if}
+    </div>
   </div>
 </div>
