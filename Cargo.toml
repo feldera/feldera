@@ -144,7 +144,7 @@ inventory = "0.3"
 itertools = "0.14.0"
 jemalloc_pprof = "0.7.0"
 json_to_table = "0.9.0"
-jsonwebtoken = "8"
+jsonwebtoken = { version = "10.2.0", features = ["aws_lc_rs"] }
 lexical-core = "1.0.5"
 libc = "0.2.153"
 like = "0.3.1"

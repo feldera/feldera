@@ -920,18 +920,8 @@ mod test {
 
     async fn setup(claim: OidcClaim) -> (String, DecodingKey) {
         let rsa = openssl::rsa::Rsa::generate(2048).unwrap();
-        let header = Header {
-            typ: Some("JWT".to_owned()),
-            alg: Algorithm::RS256,
-            cty: None,
-            jku: None,
-            jwk: None,
-            kid: Some("rsa01".to_owned()),
-            x5u: None,
-            x5c: None,
-            x5t: None,
-            x5t_s256: None,
-        };
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some("rsa01".to_owned());
 
         let token_encoded = encode(
             &header,
