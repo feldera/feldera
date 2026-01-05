@@ -3432,7 +3432,6 @@ impl StepTrigger {
             || self.controller.transaction_commit_requested()
             || bootstrapping
             || self.bootstrapping
-            || self.controller.status.unset_step_requested()
         {
             // The `self.bootstrapping` condition above detects a transition
             // from bootstrapping to normal operation and makes sure that the
@@ -3442,6 +3441,10 @@ impl StepTrigger {
             Some(Action::Step)
         } else if timer_expired(next_checkpoint, now) && !checkpoint_requested {
             Some(Action::Checkpoint)
+        } else if self.controller.status.unset_step_requested() {
+            // This is after checking the checkpoint timer so that step requests
+            // can't indefinitely delay a checkpoint.
+            Some(Action::Step)
         } else {
             None
         };
