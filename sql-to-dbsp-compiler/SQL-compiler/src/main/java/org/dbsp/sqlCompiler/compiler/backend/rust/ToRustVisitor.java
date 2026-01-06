@@ -40,6 +40,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesLastNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
@@ -896,12 +897,12 @@ public class ToRustVisitor extends CircuitVisitor {
 
         this.builder.append(".");
         this.operationCall(operator);
+        this.innerVisitor.setOperatorContext(operator);
         this.builder.append("&")
                 .append(this.getInputName(operator, 1))
                 // FIXME: temporary workaround until the compiler learns about TypedBox
                 .append(".apply(|bound| TypedBox::<_, DynData>::new(bound.clone()))")
                 .append(", ");
-        this.innerVisitor.setOperatorContext(operator);
         operator.getFunction().accept(this.innerVisitor);
         this.innerVisitor.setOperatorContext(null);
         this.builder.append(");");
@@ -931,6 +932,30 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPIntegrateTraceRetainValuesOperator operator) {
         return this.retainOperator(operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegrateTraceRetainValuesLastNOperator operator) {
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getNodeName(this.preferHash));
+        this.builder.append(" = ")
+                .append(this.getInputName(operator, 0));
+
+        this.builder.append(".");
+        this.operationCall(operator);
+        this.innerVisitor.setOperatorContext(operator);
+        this.builder.append("&")
+                .append(this.getInputName(operator, 1))
+                // FIXME: temporary workaround until the compiler learns about TypedBox
+                .append(".apply(|bound| TypedBox::<_, DynData>::new(bound.clone()))")
+                .append(", ");
+        operator.getFunction().accept(this.innerVisitor);
+        this.builder.append(", ")
+                .append(operator.n);
+        this.builder.append(");");
+        this.innerVisitor.setOperatorContext(null);
+        return VisitDecision.STOP;
     }
 
     @Override

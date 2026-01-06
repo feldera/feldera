@@ -20,6 +20,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesLastNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
@@ -1012,7 +1013,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         PartiallyMonotoneTuple keyPart = PartiallyMonotoneTuple.noMonotoneFields(keyType);
 
         DBSPTypeTupleBase leftValueType = join.getLeftInputValueType().to(DBSPTypeTupleBase.class);
-        List<IMaybeMonotoneType> value = new ArrayList<>();
+        List<IMaybeMonotoneType> leftValueFields = new ArrayList<>();
         for (int i = 0; i < leftValueType.size(); i++) {
             DBSPType field = leftValueType.getFieldType(i);
             IMaybeMonotoneType mono;
@@ -1021,16 +1022,37 @@ public class InsertLimiters extends CircuitCloneVisitor {
             } else {
                 mono = NonMonotoneType.nonMonotone(field);
             }
-            value.add(mono);
+            leftValueFields.add(mono);
         }
-        PartiallyMonotoneTuple valuePart = new PartiallyMonotoneTuple(value, false, false);
-        PartiallyMonotoneTuple dataProjection = new PartiallyMonotoneTuple(
-                Linq.list(keyPart, valuePart), true, false);
+        PartiallyMonotoneTuple leftValuePart = new PartiallyMonotoneTuple(leftValueFields, false, false);
+        PartiallyMonotoneTuple leftDataProjection = new PartiallyMonotoneTuple(
+                Linq.list(keyPart, leftValuePart), true, false);
+
+        DBSPTypeTupleBase rightValueType = join.getRightInputValueType().to(DBSPTypeTupleBase.class);
+        List<IMaybeMonotoneType> rightValueFields = new ArrayList<>();
+        for (int i = 0; i < rightValueType.size(); i++) {
+            DBSPType field = rightValueType.getFieldType(i);
+            IMaybeMonotoneType mono;
+            if (i == join.rightTimestampIndex) {
+                mono = new MonotoneType(field);
+            } else {
+                mono = NonMonotoneType.nonMonotone(field);
+            }
+            rightValueFields.add(mono);
+        }
+        PartiallyMonotoneTuple rightValuePart = new PartiallyMonotoneTuple(rightValueFields, false, false);
+        PartiallyMonotoneTuple rightDataProjection = new PartiallyMonotoneTuple(
+                Linq.list(keyPart, rightValuePart), true, false);
+
 
         if (INSERT_RETAIN_VALUES) {
-            DBSPSimpleOperator retain = DBSPIntegrateTraceRetainValuesOperator.create(
-                    join.getRelNode(), this.mapped(join.left()), dataProjection, this.createDelay(minOperator));
-            this.addOperator(retain);
+            DBSPSimpleOperator retainLeft = DBSPIntegrateTraceRetainValuesOperator.create(
+                    join.getRelNode(), this.mapped(join.left()), leftDataProjection, this.createDelay(minOperator));
+            this.addOperator(retainLeft);
+
+            DBSPSimpleOperator retainRight = DBSPIntegrateTraceRetainValuesLastNOperator.create(
+                    join.getRelNode(), this.mapped(join.right()), rightDataProjection, this.createDelay(minOperator), 1);
+            this.addOperator(retainRight);
         }
 
         super.postorder(join);
@@ -1518,6 +1540,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     List.of(NonMonotoneType.nonMonotone(indexedOutputType.keyType), projection), true, false);
             DBSPSimpleOperator retain = DBSPIntegrateTraceRetainValuesOperator.create(
                     operator.getRelNode(), newSource.getOutput(0),
+                    // For inputs "accumulate" is 'false'.
                     projection, extend.outputPort(), false);
             this.addOperator(retain);
         }

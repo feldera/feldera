@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesLastNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
@@ -669,15 +670,15 @@ public class StreamingTests extends StreamingTestBase {
                     id bigint NOT NULL,
                     unix_time BIGINT LATENESS 100
                 );
-
+                
                 create table FEEDBACK (
                     id bigint,
                     status int,
                     unix_time bigint NOT NULL LATENESS 100
                 );
-
+                
                 CREATE VIEW TRANSACT AS
-                    SELECT transaction.*, feedback.status
+                    SELECT feedback.*, transaction.*
                     FROM
                     feedback LEFT ASOF JOIN transaction
                     MATCH_CONDITION(transaction.unix_time <= feedback.unix_time)
@@ -686,6 +687,7 @@ public class StreamingTests extends StreamingTestBase {
         CompilerCircuitStream ccs = this.getCCS(sql);
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
+            int integrate_trace_last = 0;
 
             @Override
             public void postorder(DBSPIntegrateTraceRetainValuesOperator operator) {
@@ -693,11 +695,65 @@ public class StreamingTests extends StreamingTestBase {
             }
 
             @Override
+            public void postorder(DBSPIntegrateTraceRetainValuesLastNOperator operator) {
+                this.integrate_trace_last++;
+            }
+
+            @Override
             public void endVisit() {
                 Assert.assertEquals(1, this.integrate_trace);
+                Assert.assertEquals(1, this.integrate_trace_last);
             }
         };
         ccs.visit(visitor);
+
+        // waterline for ASOF is -100
+        ccs.step("""
+                INSERT INTO TRANSACTION VALUES(1, 0), (2, 1);
+                INSERT INTO FEEDBACK VALUES(1, 1, 0), (2, 1, 0);
+                """, """
+                 id | status | time | tid | ttime | weight
+                ---------------------------------------------
+                  1 |      1 |    0 |   1 |     0 | 1
+                  2 |      1 |    0 |     |       | 1""");
+        ccs.step("""
+                INSERT INTO TRANSACTION VALUES(2, 0)""", """
+                 id | status | time | tid | ttime | weight
+                ---------------------------------------------
+                  2 |      1 |    0 |     |       | -1
+                  2 |      1 |    0 |   2 |     0 | 1""");
+        ccs.step("""
+                INSERT INTO TRANSACTION VALUES(2, 200)""", """
+                 id | status | time | tid | ttime | weight
+                ---------------------------------------------""");
+        // waterline moves to 100 = min(200-100, 300-100)
+        ccs.step("""
+                INSERT INTO FEEDBACK VALUES(2, 2, 300)""", """
+                 id | status | time | tid | ttime | weight
+                ---------------------------------------------
+                  2 |      2 |  300 |   2 |   200 | 1""");
+        ccs.step("""
+                INSERT INTO FEEDBACK VALUES(2, 2, 250)""", """
+                 id | status | time | tid | ttime | weight
+                ---------------------------------------------
+                  2 |      2 |  250 |   2 |   200 | 1""");
+        // waterline moves to 200 = min(300-100, 400-100)
+        ccs.step("""
+                INSERT INTO TRANSACTION VALUES(2, 400)""", """
+                 id | status | time | tid | ttime | weight
+                ---------------------------------------------""");
+        // LATE value in FEEDBACK is ignored
+        ccs.step("""
+                INSERT INTO FEEDBACK VALUES(2, 10, 100)""", """
+                 id | status | time | tid | ttime | weight
+                ---------------------------------------------""");
+        // Remove a value from FEEDBACK, retracts the corresponding output
+        ccs.step("""
+                REMOVE FROM FEEDBACK VALUES(2, 2, 250)""", """
+                 id | status | time | tid | ttime | weight
+                ---------------------------------------------
+                  2 |      2 |  250 |   2 |   200 | -1""");
+
     }
 
     @Test
