@@ -4,12 +4,11 @@ import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.IMultiOutput;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.GCOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.util.Logger;
 import org.dbsp.util.graph.Port;
@@ -69,8 +68,7 @@ public class CSE extends Repeat {
 
         boolean hasGcSuccessor(DBSPOperator operator) {
             for (Port<DBSPOperator> succ: this.getGraph().getSuccessors(operator)) {
-                if (succ.node().is(DBSPIntegrateTraceRetainKeysOperator.class) ||
-                        succ.node().is(DBSPIntegrateTraceRetainValuesOperator.class))
+                if (succ.node().is(GCOperator.class))
                     // only input 0 of these operators affects the GC
                     return succ.port() == 0;
             }

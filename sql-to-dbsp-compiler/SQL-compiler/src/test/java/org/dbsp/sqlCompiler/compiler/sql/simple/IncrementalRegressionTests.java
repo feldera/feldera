@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesLastNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
@@ -304,6 +305,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrateTraceKeys = 0;
             int integrateTraceValues = 0;
+            int integrateTraceValuesLastN = 0;
 
             @Override
             public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
@@ -316,9 +318,15 @@ public class IncrementalRegressionTests extends SqlIoTest {
             }
 
             @Override
+            public void postorder(DBSPIntegrateTraceRetainValuesLastNOperator operator) {
+                this.integrateTraceValuesLastN++;
+            }
+
+            @Override
             public void endVisit() {
                 Assert.assertEquals(2, this.integrateTraceKeys);
                 Assert.assertEquals(1, this.integrateTraceValues);
+                Assert.assertEquals(1, this.integrateTraceValuesLastN);
             }
         };
         ccs.visit(visitor);

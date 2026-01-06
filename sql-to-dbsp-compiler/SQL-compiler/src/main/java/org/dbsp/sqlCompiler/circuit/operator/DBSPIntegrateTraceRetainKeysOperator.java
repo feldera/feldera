@@ -34,6 +34,11 @@ public final class DBSPIntegrateTraceRetainKeysOperator
                 data.outputType(), data.isMultiset(), data, control, false);
     }
 
+    @Override
+    public DBSPSimpleOperator asOperator() {
+        return this;
+    }
+
     /** Create an operator to retain keys and returns it.  May return null if the keys contain no fields. */
     @Nullable
     public static DBSPIntegrateTraceRetainKeysOperator create(

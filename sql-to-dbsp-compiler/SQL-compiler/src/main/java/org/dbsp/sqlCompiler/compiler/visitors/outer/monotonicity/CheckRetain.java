@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesLastNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
@@ -20,12 +21,12 @@ public class CheckRetain extends CircuitWithGraphsVisitor {
     @Override
     public void postorder(DBSPIntegrateTraceRetainKeysOperator retain) {
         OutputPort left = retain.left();
-        for (Port<DBSPOperator> dest: this.getGraph().getSuccessors(left.node())) {
-            if (dest.node() == retain)
+        for (Port<DBSPOperator> destination: this.getGraph().getSuccessors(left.node())) {
+            if (destination.node() == retain)
                 continue;
-            if (dest.node().is(DBSPIntegrateTraceRetainKeysOperator.class)) {
+            if (destination.node().is(DBSPIntegrateTraceRetainKeysOperator.class)) {
                 throw new InternalCompilerError("Operator " + left + " has two RetainKeys policies:"
-                + retain + " and " + dest.node());
+                + retain + " and " + destination.node());
             }
         }
     }
@@ -33,12 +34,25 @@ public class CheckRetain extends CircuitWithGraphsVisitor {
     @Override
     public void postorder(DBSPIntegrateTraceRetainValuesOperator retain) {
         OutputPort left = retain.left();
-        for (Port<DBSPOperator> dest: this.getGraph().getSuccessors(left.node())) {
-            if (dest.node() == retain)
+        for (Port<DBSPOperator> destination: this.getGraph().getSuccessors(left.node())) {
+            if (destination.node() == retain)
                 continue;
-            if (dest.node().is(DBSPIntegrateTraceRetainValuesOperator.class)) {
+            if (destination.node().is(DBSPIntegrateTraceRetainValuesOperator.class)) {
                 throw new InternalCompilerError("Operator " + left + " has two RetainValues policies"
-                + retain + " and " + dest.node());
+                + retain + " and " + destination.node());
+            }
+        }
+    }
+
+    @Override
+    public void postorder(DBSPIntegrateTraceRetainValuesLastNOperator retain) {
+        OutputPort left = retain.left();
+        for (Port<DBSPOperator> destination: this.getGraph().getSuccessors(left.node())) {
+            if (destination.node() == retain)
+                continue;
+            if (destination.node().is(DBSPIntegrateTraceRetainValuesLastNOperator.class)) {
+                throw new InternalCompilerError("Operator " + left + " has two RetainValues policies"
+                        + retain + " and " + destination.node());
             }
         }
     }

@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesLastNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
@@ -320,6 +321,17 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
             return VisitDecision.STOP;
         this.property("accumulate");
         this.stream.append(operator.accumulate);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegrateTraceRetainValuesLastNOperator operator) {
+        if (this.preorder(operator.to(DBSPBinaryOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("accumulate");
+        this.stream.append(operator.accumulate);
+        this.property("n");
+        this.stream.append(operator.n);
         return VisitDecision.CONTINUE;
     }
 

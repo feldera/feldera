@@ -2,8 +2,6 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
@@ -13,6 +11,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.GCOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.util.Linq;
 import org.dbsp.util.graph.Port;
@@ -27,8 +26,7 @@ public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
 
     private boolean hasGcSuccessor(DBSPOperator operator) {
         for (Port<DBSPOperator> succ: this.getGraph().getSuccessors(operator)) {
-            if (succ.node().is(DBSPIntegrateTraceRetainKeysOperator.class) ||
-                    succ.node().is(DBSPIntegrateTraceRetainValuesOperator.class))
+            if (succ.node().is(GCOperator.class))
                 // only input 0 of these operators affects the GC
                 return succ.port() == 0;
         }
