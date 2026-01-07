@@ -44,6 +44,7 @@ use actix_web::{
     HttpResponse, HttpResponseBuilder, ResponseError, body::BoxBody, http::StatusCode,
 };
 use anyhow::Error as AnyError;
+use arrow::error::ArrowError;
 use datafusion::error::DataFusionError;
 use dbsp::DetailedError;
 use feldera_types::runtime_status::RuntimeDesiredStatus;
@@ -206,6 +207,15 @@ impl From<DataFusionError> for PipelineError {
             // Tracking issue: https://github.com/feldera/feldera/issues/3215
             error: error.to_string().replace("External error: ", ""),
             df: Some(Box::new(error)),
+        }
+    }
+}
+
+impl From<ArrowError> for PipelineError {
+    fn from(error: ArrowError) -> Self {
+        Self::AdHocQueryError {
+            error: error.to_string(),
+            df: None,
         }
     }
 }

@@ -57,12 +57,14 @@ use std::{
     net::SocketAddr,
 };
 
+use arrow_schema::Schema;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
     config::{InputEndpointConfig, OutputEndpointConfig},
+    program_schema::SqlIdentifier,
     runtime_status::RuntimeDesiredStatus,
     suspend::TemporarySuspendError,
 };
@@ -228,4 +230,38 @@ pub struct TransactionCoordination {
 
     /// Endpoints that want to join a transaction, with their optional labels.
     pub requests: HashMap<String, Option<String>>,
+}
+
+/// `/coordination/adhoc/catalog` reply.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdHocCatalog {
+    pub tables: Vec<AdHocTable>,
+}
+
+/// One table in an [AdHocCatalog].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdHocTable {
+    pub name: SqlIdentifier,
+    pub materialized: bool,
+    pub indexed: bool,
+    pub schema: Schema,
+}
+
+/// `/coordination/adhoc/scan` request.
+///
+/// The reply is a stream of undelimited Arrow IPC record batches.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdHocScan {
+    /// The step whose data is to be scanned.  The client must hold a lease on
+    /// the step.
+    pub step: Step,
+
+    /// The worker within the step whose data is to be scanned.
+    pub worker: usize,
+
+    /// Table to scan.
+    pub table: SqlIdentifier,
+
+    /// Columnar projection.
+    pub projection: Option<Vec<usize>>,
 }
