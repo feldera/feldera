@@ -151,7 +151,7 @@ impl TableProvider for AdHocTable {
         _state: &dyn Session,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
-        limit: Option<usize>,
+        _limit: Option<usize>,
     ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
         // This holds because we don't enable filter push-down for now.
         assert!(filters.is_empty(), "AdHocTable does not support filters");
@@ -170,7 +170,6 @@ impl TableProvider for AdHocTable {
             projected_schema,
             self.snapshots.lock().await.get(&self.name).cloned(),
             projection,
-            limit,
         )))
     }
 
@@ -339,7 +338,6 @@ struct AdHocQueryExecution {
     projected_schema: Arc<Schema>,
     readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
     projection: Option<Vec<usize>>,
-    limit: usize,
     plan_properties: PlanProperties,
     children: Vec<Arc<dyn ExecutionPlan>>,
 }
@@ -354,7 +352,6 @@ impl AdHocQueryExecution {
         projected_schema: Arc<Schema>,
         readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
         projection: Option<&Vec<usize>>,
-        limit: Option<usize>,
     ) -> Self {
         // TODO: we could do much better here by encoding our data partitioning schema
         // and using the correct equivalence properties.
@@ -376,7 +373,6 @@ impl AdHocQueryExecution {
             projected_schema,
             readers,
             projection: projection.cloned(),
-            limit: limit.unwrap_or(usize::MAX),
             plan_properties,
             children: vec![],
         }
@@ -431,7 +427,6 @@ impl ExecutionPlan for AdHocQueryExecution {
             projected_schema: self.projected_schema.clone(),
             readers: self.readers.clone(),
             projection: self.projection.clone(),
-            limit: self.limit,
             plan_properties: self.plan_properties.clone(),
             children,
         }))
