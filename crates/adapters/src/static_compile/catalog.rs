@@ -1,6 +1,7 @@
 use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
 use crate::catalog::{InputCollectionHandle, SerBatchReaderHandle};
 use crate::{Catalog, ControllerError, catalog::OutputCollectionHandles};
+use dbsp::Runtime;
 use dbsp::circuit::Layout;
 use dbsp::circuit::circuit_builder::CircuitBase;
 use dbsp::trace::spine_async::WithSnapshot;
@@ -12,7 +13,6 @@ use dbsp::{
     operator::{MapHandle, SetHandle, ZSetHandle},
     typed_batch::BatchReader,
 };
-use dbsp::{OrdZSet, Runtime};
 use feldera_adapterlib::catalog::CircuitCatalog;
 use feldera_sqllib::{SqlString, Variant, build_string_interner};
 use feldera_types::program_schema::{Relation, SqlIdentifier};

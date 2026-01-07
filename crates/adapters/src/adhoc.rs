@@ -1,10 +1,11 @@
+use crate::controller::ConsistentSnapshot;
 use crate::{Controller, PipelineError};
 use actix_web::{HttpRequest, HttpResponse, http::header, web::Payload};
 use actix_ws::{AggregatedMessage, CloseCode, CloseReason, Closed, Session as WsSession};
 use datafusion::common::ScalarValue;
-use datafusion::execution::SessionStateBuilder;
 use datafusion::execution::memory_pool::FairSpillPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
+use datafusion::execution::{SessionState, SessionStateBuilder};
 use datafusion::prelude::*;
 use executor::{
     hash_query_result, infallible_from_bytestring, stream_arrow_query, stream_json_query,
@@ -269,14 +270,22 @@ pub async fn adhoc_websocket(
     Ok(res)
 }
 
+pub(crate) fn set_snapshot(session_state: &mut SessionState, snapshot: ConsistentSnapshot) {
+    session_state.config_mut().set_extension(snapshot);
+}
+
 pub(crate) async fn execute_sql(
     controller: &Controller,
     sql: &str,
 ) -> Result<DataFrame, PipelineError> {
     let mut state = controller.session_context()?.state();
-    state
-        .config_mut()
-        .set_extension(controller.consistent_snapshot().await);
+    set_snapshot(
+        &mut state,
+        controller
+            .latest_consistent_snapshot()
+            .await
+            .ok_or_else(|| PipelineError::Initializing)?,
+    );
     let logical_plan = state.create_logical_plan(sql).await?;
     SQLOptions::new()
         .with_allow_ddl(false)
