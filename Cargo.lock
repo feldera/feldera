@@ -5069,6 +5069,7 @@ version = "0.217.0"
 dependencies = [
  "actix-web",
  "anyhow",
+ "arrow-schema",
  "async-nats",
  "bytemuck",
  "chrono",

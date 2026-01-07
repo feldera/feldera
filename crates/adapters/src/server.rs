@@ -1,4 +1,5 @@
-use crate::controller::{CompletionToken, ControllerBuilder};
+use crate::adhoc::set_snapshot;
+use crate::controller::{CompletionToken, ConsistentSnapshot, ControllerBuilder};
 use crate::format::{get_input_format, get_output_format};
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
@@ -29,6 +30,7 @@ use actix_web::{
     post, rt,
     web::{self, Data as WebData, Payload, Query},
 };
+use arrow::ipc::writer::StreamWriter;
 use async_stream;
 use atomic::Atomic;
 use bytes::Bytes;
@@ -57,7 +59,7 @@ use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
 use feldera_types::constants::STATUS_FILE;
-use feldera_types::coordination::{CoordinationActivate, StepRequest};
+use feldera_types::coordination::{AdHocScan, CoordinationActivate, Step, StepRequest};
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::query_params::{
     ActivateParams, MetricsFormat, MetricsParameters, SamplyProfileParams,
@@ -77,12 +79,14 @@ use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
 use futures::StreamExt;
 use futures::stream::unfold;
 use futures_util::FutureExt;
+use futures_util::stream::once;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::convert::Infallible;
 use std::ffi::OsStr;
 use std::hash::{BuildHasherDefault, DefaultHasher};
@@ -272,6 +276,21 @@ pub(crate) struct ServerState {
     rate_limiter: TokenBucketRateLimiter<String>,
 
     coordination_activate: Mutex<Option<CoordinationActivate>>,
+
+    /// Current collection of leases.
+    leases: Mutex<HashMap<Step, Lease>>,
+}
+
+/// Leases on snapshots of particular steps.
+///
+/// A lease gives the coordinator the ability to read tables within a step with
+/// `/coordination/adhoc/scan`, to enable multihost ad-hoc queries.
+struct Lease {
+    /// Number of leaseholders (usually 1).
+    reference_count: usize,
+
+    /// The snapshot held by the lease.
+    snapshot: ConsistentSnapshot,
 }
 
 impl ServerState {
@@ -299,6 +318,7 @@ impl ServerState {
             rate_limiter,
             samply_profile: Default::default(),
             coordination_activate: Default::default(),
+            leases: Default::default(),
         }
     }
 
@@ -1170,6 +1190,9 @@ where
         .service(coordination_checkpoint_prepare)
         .service(coordination_checkpoint_release)
         .service(coordination_transaction_status)
+        .service(coordination_adhoc_catalog)
+        .service(coordination_adhoc_lease)
+        .service(coordination_adhoc_scan)
 }
 
 /// Implements `/start`, `/pause`, `/activate`:
@@ -1679,7 +1702,7 @@ async fn get_samply_profile(state: WebData<ServerState>) -> Result<HttpResponse,
 
     Ok(match profile.clone() {
         SamplyProfile::Success(bytes) => {
-            let byte_stream = futures_util::stream::once(async move { Ok::<_, PipelineError>(web::Bytes::from(bytes)) });
+            let byte_stream = once(async move { Ok::<_, PipelineError>(web::Bytes::from(bytes)) });
 
             HttpResponse::Ok()
                 .content_type("application/gzip")
@@ -2248,6 +2271,147 @@ async fn coordination_transaction_status(
         WatchStream::new(state.controller()?.transaction_watcher()).map(|value| {
             Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
         }),
+    ))
+}
+
+#[get("/coordination/adhoc/catalog")]
+async fn coordination_adhoc_catalog(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponse::Ok().json(state.controller()?.adhoc_catalog()))
+}
+
+#[post("/coordination/adhoc/lease")]
+async fn coordination_adhoc_lease(
+    state: WebData<ServerState>,
+    step: web::Json<Step>,
+) -> Result<HttpResponse, PipelineError> {
+    let step = *step;
+
+    // Grab the snapshot for the step.
+    let controller = state.controller()?;
+    let snapshot = controller.consistent_snapshot(step).await.ok_or_else(|| {
+        PipelineError::AdHocQueryError {
+            error: format!("snapshot for step {step} is not available"),
+            df: None,
+        }
+    })?;
+
+    // Add the snapshot to the table of leases.
+    state
+        .leases
+        .lock()
+        .unwrap()
+        .entry(step)
+        .or_insert(Lease {
+            reference_count: 0,
+            snapshot,
+        })
+        .reference_count += 1;
+
+    // Prepare a drop guard to remove the snapshot from the table when the
+    // client closes the connection.
+    struct DropGuard {
+        state: WebData<ServerState>,
+        step: Step,
+    }
+    impl Drop for DropGuard {
+        fn drop(&mut self) {
+            if let Entry::Occupied(mut occupied) =
+                self.state.leases.lock().unwrap().entry(self.step)
+            {
+                occupied.get_mut().reference_count -= 1;
+                if occupied.get().reference_count == 0 {
+                    occupied.remove();
+                }
+            } else {
+                unreachable!()
+            }
+        }
+    }
+    let drop_guard = DropGuard {
+        state: state.clone(),
+        step,
+    };
+
+    // Prepare a stream to send the client.
+    //
+    // Really, we should only have to send a single response, then hang.
+    // However, actix-web doesn't like that; it seems that it only checks for
+    // connection drop when there is some data to send, which might be related
+    // to [bug 1313].
+    //
+    // We do get prompt enough dropping if we send something once a second or
+    // so.  There's not much reason to try to drop the leases faster than that,
+    // since not much in the way of changes can accumulate in just a second.
+    //
+    // [bug 1313]: https://github.com/actix/actix-web/issues/1313
+    let stream = once(async { Ok::<_, PipelineError>(Bytes::from("OK\n")) }).chain(unfold(
+        drop_guard,
+        move |drop_guard| async move {
+            sleep(Duration::from_secs(1)).await;
+            Some((Ok(Bytes::from(format!("Leased step {step}\n"))), drop_guard))
+        },
+    ));
+
+    // Return a streaming response.  The client can close the stream to drop the
+    // lease.
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(stream))
+}
+
+#[post("/coordination/adhoc/scan")]
+async fn coordination_adhoc_scan(
+    state: WebData<ServerState>,
+    scan: web::Json<AdHocScan>,
+) -> Result<HttpResponse, PipelineError> {
+    // Get the snapshot for the specified step.
+    let snapshot = state
+        .leases
+        .lock()
+        .unwrap()
+        .get(&scan.step)
+        .ok_or_else(|| PipelineError::AdHocQueryError {
+            error: format!("no lease for step {}", scan.step),
+            df: None,
+        })?
+        .snapshot
+        .clone();
+
+    // Get the scan results as a stream.
+    let controller = state.controller()?;
+    let session_context = controller.session_context()?;
+    let mut session_state = session_context.state();
+    set_snapshot(&mut session_state, snapshot);
+    let table = session_context
+        .table_provider(scan.table.sql_name())
+        .await?;
+    let execution = table
+        .scan(&session_state, scan.projection.as_ref(), &[], None)
+        .await?;
+    let mut stream = execution.execute(
+        scan.worker - controller.workers().start,
+        session_state.task_ctx(),
+    )?;
+
+    // Take the first batch out of the stream and report an error if there was
+    // one.  After the first batch, there is no way to properly report an error,
+    // so this at least allows us to report errors at the point they are most
+    // likely.
+    let first_batch = match stream.next().await {
+        Some(Err(error)) => return Err(error.into()),
+        other => other,
+    }
+    .into_iter();
+
+    let schema = stream.schema();
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
+        futures_util::stream::iter(first_batch).chain(stream).map(
+            move |batch| -> Result<Bytes, PipelineError> {
+                let mut writer = StreamWriter::try_new(Vec::new(), &schema)?;
+                writer.write(&batch?)?;
+                Ok(writer.into_inner()?.into())
+            },
+        ),
     ))
 }
 

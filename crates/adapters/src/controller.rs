@@ -83,7 +83,8 @@ use feldera_types::adapter_stats::{
 };
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::coordination::{
-    CheckpointCoordination, StepAction, StepRequest, StepStatus, TransactionCoordination,
+    self, AdHocCatalog, CheckpointCoordination, StepAction, StepRequest, StepStatus,
+    TransactionCoordination,
 };
 use feldera_types::format::json::JsonLines;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -108,10 +109,11 @@ use std::collections::HashSet;
 use std::collections::btree_map::Entry;
 use std::io::ErrorKind;
 use std::mem::replace;
+use std::ops::Range;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, SendError, Sender, SyncSender, channel, sync_channel};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, Weak};
 use std::thread::{self, sleep};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -1683,8 +1685,38 @@ impl Controller {
         self.inner.unpark_circuit();
     }
 
-    pub async fn consistent_snapshot(&self) -> ConsistentSnapshot {
-        self.inner.trace_snapshot.lock().await.clone()
+    pub async fn consistent_snapshot(&self, step: Step) -> Option<ConsistentSnapshot> {
+        self.inner.trace_snapshots.lock().await.get(&step).cloned()
+    }
+
+    pub async fn latest_consistent_snapshot(&self) -> Option<ConsistentSnapshot> {
+        self.inner
+            .trace_snapshots
+            .lock()
+            .await
+            .last_key_value()
+            .map(|(_step, snapshot)| snapshot.clone())
+    }
+
+    pub fn adhoc_catalog(&self) -> AdHocCatalog {
+        let mut tables = Vec::new();
+        for (name, clh) in self.inner.catalog.output_iter() {
+            tables.push(coordination::AdHocTable {
+                name: name.clone(),
+                materialized: clh.integrate_handle.is_some(),
+                indexed: clh.integrate_handle_is_indexed,
+                schema: Schema::new(relation_to_arrow_fields(&clh.value_schema.fields, false)),
+            });
+        }
+        AdHocCatalog { tables }
+    }
+
+    pub fn adhoc_table(&self, name: &SqlIdentifier) -> Option<Arc<AdHocTable>> {
+        self.inner.adhoc_tables.get(name).cloned()
+    }
+
+    pub fn workers(&self) -> Range<usize> {
+        self.inner.workers.clone()
     }
 }
 
@@ -2441,10 +2473,25 @@ impl CircuitThread {
         }
 
         // Install the new snapshot.
-        let old_snapshot = replace(
-            &mut *self.controller.trace_snapshot.blocking_lock(),
-            Arc::new(snapshot),
-        );
+        let mut snapshots = self.controller.trace_snapshots.blocking_lock();
+        snapshots.insert(self.step, Arc::new(snapshot));
+        let max_snapshots = if self
+            .controller
+            .coordination_request
+            .lock()
+            .unwrap()
+            .is_some()
+        {
+            2
+        } else {
+            1
+        };
+        let old_snapshot = if snapshots.len() > max_snapshots {
+            snapshots.pop_first()
+        } else {
+            None
+        };
+        drop(snapshots);
 
         // Drop the old snapshot.  The old values are often final references,
         // because they're snapshots of data that is now obsolete.  Dropping
@@ -4563,7 +4610,7 @@ pub struct ControllerInner {
     catalog: Arc<Box<dyn CircuitCatalog>>,
     lir: LirCircuit,
     // Always lock this after the catalog is locked to avoid deadlocks
-    trace_snapshot: TokioMutex<ConsistentSnapshot>,
+    trace_snapshots: TokioMutex<BTreeMap<Step, ConsistentSnapshot>>,
     next_input_id: Atomic<EndpointId>,
     outputs: ShardedLock<OutputEndpoints>,
     next_output_id: Atomic<EndpointId>,
@@ -4574,6 +4621,7 @@ pub struct ControllerInner {
     backpressure_thread_unparker: Unparker,
     error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     session_ctxt: SessionContext,
+    adhoc_tables: HashMap<SqlIdentifier, Arc<AdHocTable>>,
     fault_tolerance: Option<FtModel>,
     step_receiver: tokio::sync::watch::Receiver<StepStatus>,
     checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
@@ -4584,6 +4632,7 @@ pub struct ControllerInner {
     // The mutex is acquired from async context by actix and
     // from the sync context by the circuit thread.
     transaction_info: Mutex<TransactionInfo>,
+    workers: Range<usize>,
 
     /// Current transaction number.
     ///
@@ -4631,35 +4680,39 @@ impl ControllerInner {
         let (transaction_sender, transaction_receiver) =
             tokio::sync::watch::channel(TransactionCoordination::default());
         let session_ctxt = create_session_context(&config)?;
-        let controller = Arc::new(Self {
-            status,
-            secrets_dir: config.secrets_dir().to_path_buf(),
-            num_api_connections: AtomicU64::new(0),
-            command_sender,
-            catalog: Arc::new(catalog),
-            last_checkpoint: Default::default(),
-            lir,
-            trace_snapshot: Default::default(),
-            next_input_id: Atomic::new(0),
-            outputs: ShardedLock::new(OutputEndpoints::new()),
-            next_output_id: Atomic::new(0),
-            runtime: runtime.downgrade(),
-            circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
-            backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
-            error_cb,
-            session_ctxt,
-            fault_tolerance: config.global.fault_tolerance.model,
-            transaction_info: Mutex::new(TransactionInfo::new(is_multihost)),
-            restoring: AtomicBool::new(config.global.fault_tolerance.is_enabled()),
-            transaction_number: AtomicU64::new(0),
-            step_receiver,
-            checkpoint_receiver,
-            transaction_sender,
-            transaction_receiver,
-            coordination_request: Mutex::new(is_multihost.then_some(StepRequest::new_idle(0))),
-            coordination_prepare_checkpoint: AtomicBool::new(false),
+        let controller = Arc::new_cyclic(|weak| {
+            let adhoc_tables = Self::initialize_adhoc_queries(&session_ctxt, &*catalog, weak);
+            Self {
+                status,
+                secrets_dir: config.secrets_dir().to_path_buf(),
+                num_api_connections: AtomicU64::new(0),
+                command_sender,
+                catalog: Arc::new(catalog),
+                last_checkpoint: Default::default(),
+                lir,
+                trace_snapshots: Default::default(),
+                next_input_id: Atomic::new(0),
+                outputs: ShardedLock::new(OutputEndpoints::new()),
+                next_output_id: Atomic::new(0),
+                workers: runtime.layout().local_workers(),
+                runtime: runtime.downgrade(),
+                circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
+                backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
+                error_cb,
+                session_ctxt,
+                adhoc_tables,
+                fault_tolerance: config.global.fault_tolerance.model,
+                transaction_info: Mutex::new(TransactionInfo::new(is_multihost)),
+                restoring: AtomicBool::new(config.global.fault_tolerance.is_enabled()),
+                transaction_number: AtomicU64::new(0),
+                step_receiver,
+                checkpoint_receiver,
+                transaction_sender,
+                transaction_receiver,
+                coordination_request: Mutex::new(is_multihost.then_some(StepRequest::new_idle(0))),
+                coordination_prepare_checkpoint: AtomicBool::new(false),
+            }
         });
-        controller.initialize_adhoc_queries();
 
         // Initialize input and output endpoints using a thread pool to initialize multiple connectors in parallel.
         let source_tasks =
@@ -4763,31 +4816,36 @@ impl ControllerInner {
         self.status.output_endpoint_id_by_name(endpoint_name)
     }
 
-    fn initialize_adhoc_queries(self: &Arc<Self>) {
+    fn initialize_adhoc_queries(
+        session_ctxt: &SessionContext,
+        catalog: &dyn CircuitCatalog,
+        weak: &Weak<Self>,
+    ) -> HashMap<SqlIdentifier, Arc<AdHocTable>> {
         // Sync feldera catalog with datafusion catalog
-        for (name, clh) in self.catalog.output_iter() {
+        let mut tables = HashMap::new();
+        for (name, clh) in catalog.output_iter() {
             let arrow_fields = relation_to_arrow_fields(&clh.value_schema.fields, false);
-            let input_handle = self
-                .catalog
+            let input_handle = catalog
                 .input_collection_handle(name)
                 .map(|ich| ich.handle.fork());
 
             let adhoc_tbl = Arc::new(AdHocTable::new(
                 clh.integrate_handle.is_some(),
                 clh.integrate_handle_is_indexed,
-                Arc::downgrade(self),
+                weak.clone(),
                 input_handle,
                 name.clone(),
                 Arc::new(Schema::new(arrow_fields)),
             ));
+            tables.insert(name.clone(), adhoc_tbl.clone());
 
             // This should never fail (we're not registering the same table twice).
-            let r = self
-                .session_ctxt
+            let r = session_ctxt
                 .register_table(name.sql_name(), adhoc_tbl)
                 .expect("table registration failed");
             assert!(r.is_none(), "table {name} already registered");
         }
+        tables
     }
 
     fn connect_input(

@@ -16,6 +16,7 @@ rust-version = { workspace = true }
 testing = ["proptest", "proptest-derive", "feldera-ir/testing"]
 
 [dependencies]
+arrow-schema = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_yaml = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
