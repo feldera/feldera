@@ -346,22 +346,14 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     public static final RelDataTypeSystem TYPE_SYSTEM = new RelDataTypeSystemImpl() {
         @Override
-        public int getMaxNumericPrecision() {
-            return DBSPTypeDecimal.MAX_PRECISION;
-        }
-
-        @Override
-        public int getMaxNumericScale() {
-            return DBSPTypeDecimal.MAX_SCALE;
-        }
-
-        @Override
         public int getMaxPrecision(SqlTypeName typeName) {
-            if (typeName == SqlTypeName.TIME)
+            if (typeName == SqlTypeName.DECIMAL)
+                return DBSPTypeDecimal.MAX_PRECISION;
+            else if (typeName == SqlTypeName.TIME)
                 return DBSPTypeTime.PRECISION;
-            if (typeName == SqlTypeName.TIMESTAMP)
+            else if (typeName == SqlTypeName.TIMESTAMP)
                 return DBSPTypeTimestamp.PRECISION;
-            return super.getMaxPrecision(typeName);
+            else return super.getMaxPrecision(typeName);
         }
 
         @Override
@@ -371,6 +363,13 @@ public class SqlToRelCompiler implements IWritesLogs {
             if (typeName == SqlTypeName.TIME)
                 return DBSPTypeTime.PRECISION;
             return super.getDefaultPrecision(typeName);
+        }
+
+        @Override
+        public int getMaxScale(SqlTypeName typeName) {
+            if (typeName == SqlTypeName.DECIMAL)
+                return DBSPTypeDecimal.MAX_SCALE;
+            return super.getMaxScale(typeName);
         }
 
         @Override
