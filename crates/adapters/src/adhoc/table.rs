@@ -330,6 +330,7 @@ impl DataSink for AdHocTableSink {
     }
 }
 
+#[derive(Clone)]
 struct AdHocQueryExecution {
     name: SqlIdentifier,
     materialized: bool,
@@ -412,23 +413,16 @@ impl ExecutionPlan for AdHocQueryExecution {
     }
 
     fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
-        self.children.iter().map(|c| c as _).collect()
+        self.children.iter().collect()
     }
 
     fn with_new_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
-        Ok(Arc::new(AdHocQueryExecution {
-            name: self.name.clone(),
-            materialized: self.materialized,
-            indexed: self.indexed,
-            table_schema: self.table_schema.clone(),
-            projected_schema: self.projected_schema.clone(),
-            readers: self.readers.clone(),
-            projection: self.projection.clone(),
-            plan_properties: self.plan_properties.clone(),
+        Ok(Arc::new(Self {
             children,
+            ..Arc::unwrap_or_clone(self)
         }))
     }
 
