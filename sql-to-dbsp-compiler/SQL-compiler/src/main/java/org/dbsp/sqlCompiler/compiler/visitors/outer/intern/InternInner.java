@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
@@ -325,6 +326,16 @@ public class InternInner extends ExpressionTranslator {
         DBSPExpression[] newArgs = this.uninternIfNecessary(expression.arguments);
         DBSPExpression result = new DBSPApplyMethodExpression(function, expression.getType(), self, newArgs);
         this.map(expression, result);
+    }
+
+    @Override
+    public void postorder(DBSPSomeExpression expression) {
+        DBSPExpression source = this.getE(expression.expression);
+        if (source.getType().is(DBSPTypeInterned.class))
+            // The interned type is always nullable; we cannot apply Some to a nullable value.
+            this.map(expression, source);
+        else
+            this.map(expression, new DBSPSomeExpression(expression.getNode(), source));
     }
 
     @Override

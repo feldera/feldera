@@ -113,6 +113,24 @@ public class InternTests extends SqlIoTest {
     }
 
     @Test
+    public void testLeftJoin() {
+        // Validated on Postgres by removing "INTERNED"
+        var ccs = this.getCCS("""
+            CREATE TABLE T(x VARCHAR NOT NULL INTERNED, y VARCHAR NOT NULL INTERNED);
+            CREATE TABLE S(z VARCHAR INTERNED, w VARCHAR INTERNED, a INT);
+            CREATE VIEW V AS SELECT T.x, S.a FROM T LEFT JOIN S ON T.x = S.z AND T.y = S.w;""");
+        ccs.step("""
+                INSERT INTO T VALUES('a', 'b'), ('a', 'c');
+                INSERT INTO S VALUES('a', 'b', 1), ('a', 'd', 2), ('b', 'c', 3), ('a', 'b', 4);
+                """, """
+                 x | a | weight
+                ----------------
+                 a|  1 | 1
+                 a|  4 | 1
+                 a|NULL| 1""");
+    }
+
+    @Test
     public void testCastExpansions() {
         DBSPType i = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true);
         DBSPType tuple = new DBSPTypeTuple(i, i);
