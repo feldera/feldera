@@ -1717,4 +1717,15 @@ public class Regression1Tests extends SqlIoTest {
                 FROM v a
                 LEFT JOIN lookup l ON a.key = l.key;""");
     }
+    
+    @Test
+    public void issue5386() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT UNSIGNED);
+                CREATE VIEW V AS SELECT -x FROM T;""",
+                "Unary minus cannot be applied");
+        this.statementsFailingInCompilation(
+                "CREATE VIEW V AS SELECT - CAST(1 AS INT UNSIGNED)",
+                "Unary minus cannot be applied");
+    }
 }
