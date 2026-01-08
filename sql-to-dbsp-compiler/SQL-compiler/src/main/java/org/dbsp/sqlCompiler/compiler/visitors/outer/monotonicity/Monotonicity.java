@@ -56,6 +56,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -672,7 +673,7 @@ public class Monotonicity extends CircuitVisitor {
         DBSPType rightTsType = rightTsField.getType();
         if (rightTsType.mayBeNull) {
             // The function takes non-nullable timestamps
-            rightTsField = rightTsField.nullabilityCast(rightTsType.withMayBeNull(false), false);
+            rightTsField = rightTsField.nullabilityCast(rightTsType.withMayBeNull(false), DBSPCastExpression.CastType.Unsafe);
         }
         // We know the right timestamp is not nullable, so the result type is from the left timestamp
         DBSPExpression min = ExpressionCompiler.makeBinaryExpression(node.getNode(), leftTsField.getType(),

@@ -78,6 +78,7 @@ where
     }
 }
 
+// Convert a map to another map
 #[doc(hidden)]
 pub fn map_map__<K0, K1, V0, V1, F, G>(map: Map<K0, V0>, f: (F, G)) -> Map<K1, V1>
 where

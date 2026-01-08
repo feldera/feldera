@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.circuit.operator.GCOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
@@ -259,10 +260,10 @@ public class LowerAsof implements CircuitTransform {
             DBSPType commonTSType = leftTSType.withMayBeNull(nullable);
             Utilities.enforce(commonTSType.sameType(rightTSType.withMayBeNull(nullable)));
 
-            DBSPClosureExpression leftTimestamp = leftTS.cast(leftTS.getNode(), commonTSType, false)
+            DBSPClosureExpression leftTimestamp = leftTS.cast(leftTS.getNode(), commonTSType, DBSPCastExpression.CastType.Unsafe)
                     .applyCloneIfNeeded()
                     .closure(leftVar);
-            DBSPClosureExpression rightTimestamp = rightTS.cast(rightTS.getNode(), commonTSType, false)
+            DBSPClosureExpression rightTimestamp = rightTS.cast(rightTS.getNode(), commonTSType, DBSPCastExpression.CastType.Unsafe)
                     .applyCloneIfNeeded()
                     .closure(rightVar);
 

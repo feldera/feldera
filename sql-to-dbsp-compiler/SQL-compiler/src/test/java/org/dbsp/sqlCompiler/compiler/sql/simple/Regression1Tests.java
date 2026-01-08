@@ -1754,15 +1754,101 @@ public class Regression1Tests extends SqlIoTest {
                 FROM v a
                 LEFT JOIN lookup l ON a.key = l.key;""");
     }
-    
+
     @Test
     public void issue5386() {
         this.statementsFailingInCompilation("""
-                CREATE TABLE T(x INT UNSIGNED);
-                CREATE VIEW V AS SELECT -x FROM T;""",
+                        CREATE TABLE T(x INT UNSIGNED);
+                        CREATE VIEW V AS SELECT -x FROM T;""",
                 "Unary minus cannot be applied");
         this.statementsFailingInCompilation(
                 "CREATE VIEW V AS SELECT - CAST(1 AS INT UNSIGNED)",
                 "Unary minus cannot be applied");
+    }
+
+    @Test
+    public void issue5375() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(str VARCHAR );
+                CREATE MATERIALIZED VIEW v AS SELECT
+                SAFE_CAST(str AS UUID) AS str_uuid
+                FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES('h');", """
+                 str_uuid | weight
+                -------------------
+                NULL      | 1""");
+    }
+
+    @Test
+    public void issue5378() {
+        this.getCC("""
+                CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                SAFE_CAST(mapp AS MAP<INT, INT>) AS to_map
+                FROM tbl;""");
+    }
+
+    @Test
+    public void issue5379() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                CAST(mapp AS MAP<VARCHAR, ROW(v VARCHAR)>) AS to_map,
+                SAFE_CAST(mapp AS MAP<VARCHAR, ROW(v VARCHAR)>) AS to_map1
+                FROM tbl;""", "Cast from MAP<VARCHAR, INT> to MAP<VARCHAR, ROW(VARCHAR)> is not supported");
+    }
+
+    @Test
+    public void issue5380() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                CAST(mapp AS MAP<VARCHAR, INT ARRAY>) AS to_map
+                FROM tbl;""", "Cast from MAP<VARCHAR, INT> to MAP<VARCHAR, INT ARRAY> is not supported");
+    }
+
+    @Test
+    public void safeArrayCast() {
+        this.getCCS("CREATE VIEW V AS SELECT SAFE_CAST(ARRAY['a'] AS INT ARRAY)");
+    }
+
+    @Test
+    public void issue5389() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(roww ROW(v1 VARCHAR NULL) NULL);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                SAFE_CAST(roww AS ROW(i1 INT)) AS to_row
+                FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(ROW(ROW('cat')))", """
+                 to_row | weight
+                -----------------
+                NULL    | 1""");
+    }
+
+    @Test
+    public void issue5390() {
+        this.getCCS("""
+                CREATE TYPE user_def AS(i1 INT, v1 VARCHAR NULL);
+                CREATE TYPE user_def_array AS (val VARCHAR ARRAY);
+                CREATE TYPE user_def_row AS (val ROW(i1 INT, v1 VARCHAR NULL));
+                CREATE TYPE user_def_udt AS (val user_def);
+                
+                CREATE TABLE tbl(arr VARCHAR ARRAY, mapp MAP<VARCHAR, INT>,
+                                 roww ROW(i1 INT, v1 VARCHAR NULL) NULL, udt user_def);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                    SAFE_CAST(NULL AS user_def_row) AS to_row,
+                    SAFE_CAST(NULL AS user_def_udt) AS to_udt
+                FROM tbl;""");
+    }
+
+    @Test
+    public void issue5391() {
+        this.getCCS("""
+                CREATE TYPE user_def_row AS (val ROW(i1 INT, v1 VARCHAR NULL));
+                CREATE MATERIALIZED VIEW v AS SELECT
+                SAFE_CAST(NULL AS user_def_row) AS to_roww;""");
     }
 }

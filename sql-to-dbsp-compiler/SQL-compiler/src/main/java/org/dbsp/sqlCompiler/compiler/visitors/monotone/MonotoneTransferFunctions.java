@@ -632,10 +632,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             if (!lm) {
                 reduced = right.getReducedExpression()
                         // must preserve type
-                        .cast(expression.getNode(), expression.getType(), false);
+                        .cast(expression.getNode(), expression.getType(), DBSPCastExpression.CastType.Unsafe);
             } else if (!rm) {
                 reduced = left.getReducedExpression()
-                        .cast(expression.getNode(), expression.getType(), false);
+                        .cast(expression.getNode(), expression.getType(), DBSPCastExpression.CastType.Unsafe);
             } else {
                 reduced = expression.replaceSources(
                         left.getReducedExpression(),

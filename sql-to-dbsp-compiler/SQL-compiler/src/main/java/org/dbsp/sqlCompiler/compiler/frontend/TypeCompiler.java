@@ -41,6 +41,7 @@ import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
@@ -413,7 +414,7 @@ public class TypeCompiler implements ICompilerComponent {
                     RelDataType kt = Objects.requireNonNull(dt.getKeyType());
                     DBSPType keyType = this.convertType(context, kt, asStruct);
                     if (keyType.code == DBSPTypeCode.NULL) {
-                        throw new CompilationError("MAP key type cannot be NULL");
+                        throw new CompilationError("MAP key type cannot be NULL", context);
                     }
                     RelDataType vt = Objects.requireNonNull(dt.getValueType());
                     DBSPType valueType = this.convertType(context, vt, asStruct);

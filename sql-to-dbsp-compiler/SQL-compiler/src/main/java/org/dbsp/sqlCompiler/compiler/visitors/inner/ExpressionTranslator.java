@@ -381,6 +381,13 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     }
 
     @Override
+    public void postorder(DBSPResultQuestionExpression node) {
+        DBSPExpression source = this.getE(node.source);
+        this.map(node, new DBSPResultQuestionExpression(source));
+    }
+
+
+    @Override
     public void postorder(DBSPRawTupleExpression node) {
         if (node.fields != null) {
             DBSPExpression[] fields = this.get(node.fields);

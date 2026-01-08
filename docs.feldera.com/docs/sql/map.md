@@ -16,6 +16,9 @@ Table `T` will have a single column `m` whose values are nullable
 maps, the map's keys are non-nullable `VARCHAR` values, while the
 maps's values are nullable `INT` values.
 
+Currently only scalar types are supported for `MAP` keys; i.e., types
+such as `ROW`, `ARRAY`, or `MAP` are illegal for `MAP` keys.
+
 ## Map literals
 
 Map literals have the syntax `MAP[`key `,` value ( `,` key `,` value )* `]`.

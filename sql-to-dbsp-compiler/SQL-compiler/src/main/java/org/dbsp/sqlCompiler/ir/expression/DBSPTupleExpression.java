@@ -136,7 +136,8 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
                     + " to " + destType + " with " + destType.size() + " fields", this);
         return new DBSPTupleExpression(
                 Linq.zip(Objects.requireNonNull(this.fields), destType.tupFields,
-                        (e, t) -> e.cast(e.getNode(), t, false), DBSPExpression.class));
+                        (e, t) -> e.cast(e.getNode(), t, DBSPCastExpression.CastType.Unsafe),
+                        DBSPExpression.class));
     }
 
     public DBSPTupleExpression slice(int start, int endExclusive) {

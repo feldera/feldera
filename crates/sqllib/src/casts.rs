@@ -3779,7 +3779,7 @@ where
 
 #[doc(hidden)]
 pub fn cast_to_Uuid_s(value: SqlString) -> SqlResult<Uuid> {
-    Ok(Uuid::from_ref(value.str()))
+    Uuid::try_from_ref(value.str())
 }
 
 cast_function!(Uuid, Uuid, s, SqlString);
@@ -3876,7 +3876,7 @@ mod tests {
         );
         assert_eq!(
             cast_to_s_Uuid(
-                Uuid::from_string(&String::from("6bc89d6d-5e0d-4c1b-9b57-787bfde2c30d")),
+                Uuid::try_from_ref(&String::from("6bc89d6d-5e0d-4c1b-9b57-787bfde2c30d")).unwrap(),
                 -1,
                 false
             )

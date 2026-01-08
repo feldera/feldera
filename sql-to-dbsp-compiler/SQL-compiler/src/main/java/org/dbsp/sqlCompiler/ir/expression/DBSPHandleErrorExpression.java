@@ -39,7 +39,12 @@ public class DBSPHandleErrorExpression extends DBSPExpression {
         this.hasSourcePosition = hasSourcePosition;
 
         RuntimeBehavior behavior;
-        if (source.is(DBSPCastExpression.class) && source.to(DBSPCastExpression.class).safe) {
+        if (source.is(DBSPCastExpression.class) &&
+                source.to(DBSPCastExpression.class).safe == DBSPCastExpression.CastType.Safe) {
+            index = 0;
+            behavior = RuntimeBehavior.ReturnNone;
+        } else if (source.is(DBSPBinaryExpression.class)) {
+            // A conversion function
             index = 0;
             behavior = RuntimeBehavior.ReturnNone;
         } else if (source.getSourcePosition().isValid() && hasSourcePosition) {

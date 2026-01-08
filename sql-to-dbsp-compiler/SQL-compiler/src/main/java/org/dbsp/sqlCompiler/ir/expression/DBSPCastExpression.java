@@ -35,6 +35,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -43,20 +45,32 @@ import org.dbsp.util.Utilities;
  * It represents a cast of an expression to a given type. */
 public final class DBSPCastExpression extends DBSPExpression {
     public final DBSPExpression source;
-    /** If true this is a safe cast */
-    public final boolean safe;
+    public enum CastType {
+        /** An unsafe cast */
+        Unsafe,
+        /** A call to SAFE_CAST */
+        Safe,
+        /** A call to SAFE_CAST synthesized by the compiler to implement a SAFE_CAST on a structured
+         * data type, e.g., an ARRAY.  The return type of this cast is Result[type] */
+        SafeInner
+    }
 
-    public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to, boolean safe) {
+    public final CastType safe;
+
+    public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to, CastType safe) {
         super(node, to);
         this.source = source;
         this.safe = safe;
+        // SafeInner must produce a sqllib SqlResult type
+        Utilities.enforce(safe != CastType.SafeInner || to.is(DBSPTypeSqlResult.class));
+        // Safe must produce a Rust Option type
+        Utilities.enforce(safe != CastType.Safe || to.mayBeNull);
         Utilities.enforce(source.getType().is(DBSPTypeNull.class)
                         || source.getType().is(DBSPTypeTupleBase.class) == to.is(DBSPTypeTupleBase.class)
                         || source.getType().is(DBSPTypeVariant.class) || to.is(DBSPTypeVariant.class),
                 () -> "Cast to/from tuple from/to non-tuple " + source.getType() + " to " + to);
         Utilities.enforce(to.code != DBSPTypeCode.INTERNED_STRING, () -> "Cast to INTERNED");
         Utilities.enforce(source.getType().code != DBSPTypeCode.INTERNED_STRING, () -> "Cast from INTERNED");
-        Utilities.enforce(!safe || to.mayBeNull);
     }
 
     public DBSPCastExpression replaceSource(DBSPExpression source) {
@@ -114,7 +128,7 @@ public final class DBSPCastExpression extends DBSPExpression {
     @SuppressWarnings("unused")
     public static DBSPCastExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression source = fromJsonInner(node, "source", decoder, DBSPExpression.class);
-        boolean safe = Utilities.getBooleanProperty(node, "safe");
+        CastType safe = CastType.valueOf(Utilities.getStringProperty(node, "safe"));
         DBSPType type = getJsonType(node, decoder);
         return new DBSPCastExpression(CalciteObject.EMPTY, source, type, safe);
     }

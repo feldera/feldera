@@ -26,6 +26,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQuestionExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPResultQuestionExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
@@ -87,6 +88,12 @@ public class ConstantExpressions extends InnerVisitor {
 
     @Override
     public void postorder(DBSPQuestionExpression expression) {
+        if (this.isConstant(expression.source))
+            this.setConstant(expression);
+    }
+
+    @Override
+    public void postorder(DBSPResultQuestionExpression expression) {
         if (this.isConstant(expression.source))
             this.setConstant(expression);
     }

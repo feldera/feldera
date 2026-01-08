@@ -3,9 +3,11 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.util.Utilities;
 
@@ -61,6 +63,16 @@ public class CreateRuntimeErrorWrappers extends ExpressionTranslator {
         this.translationMap.putNew(node, translation);
     }
 
+    boolean needsWrap() {
+        for (var c : this.context) {
+            if (c.is(DBSPBinaryExpression.class) && c.to(DBSPBinaryExpression.class).opcode == DBSPOpcode.ARRAY_CONVERT_SAFE)
+                return false;
+            if (c.is(DBSPCastExpression.class) && c.to(DBSPCastExpression.class).safe != DBSPCastExpression.CastType.Unsafe)
+                return false;
+        }
+        return true;
+    }
+
     @Override
     public void postorder(DBSPCastExpression expression) {
         if (this.translationMap.containsKey(expression))
@@ -68,9 +80,33 @@ public class CreateRuntimeErrorWrappers extends ExpressionTranslator {
         DBSPExpression source = this.getE(expression.source);
         DBSPExpression cast = new DBSPCastExpression(expression.getNode(), source, expression.getType(), expression.safe);
         // Wrap the cast into an error handler
+        if (this.needsWrap()) {
+            DBSPHandleErrorExpression handler = new DBSPHandleErrorExpression(
+                    expression.getNode(), this.getIndex(expression.getSourcePosition().start), cast,
+                    // source code may not be available outside an operator
+                    true);
+            this.map(expression, handler);
+        } else {
+            this.map(expression, cast);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPBinaryExpression expression) {
+        if (this.translationMap.containsKey(expression))
+            return;
+        if (expression.opcode != DBSPOpcode.ARRAY_CONVERT_SAFE) {
+            super.postorder(expression);
+            return;
+        }
+
+        DBSPExpression left = this.getE(expression.left);
+        DBSPExpression right = this.getE(expression.right);
+        DBSPExpression converted = new DBSPBinaryExpression(expression.getNode(),
+                expression.getType(), expression.opcode, left, right);
+        // Wrap the cast into an error handler
         DBSPHandleErrorExpression handler = new DBSPHandleErrorExpression(
-                expression.getNode(), this.getIndex(expression.getSourcePosition().start), cast,
-                // source code may not be available outside an operator
+                expression.getNode(), this.getIndex(expression.getSourcePosition().start), converted,
                 true);
         this.map(expression, handler);
     }
