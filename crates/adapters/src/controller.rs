@@ -1710,6 +1710,10 @@ impl Controller {
         *self.inner.coordination_request.lock().unwrap() = Some(coordination_request);
         self.inner.unpark_circuit();
     }
+
+    pub async fn consistent_snapshot(&self) -> ConsistentSnapshot {
+        self.inner.trace_snapshot.lock().await.clone()
+    }
 }
 
 /// Represents a background thread that pushes checkpoints to object storage.
