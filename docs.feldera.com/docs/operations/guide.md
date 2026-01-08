@@ -2,6 +2,43 @@
 
 This guide covers issues Feldera Enterprise users and operators might run into in production, and steps to remedy them.
 
+## Pipelines with no input produce no outputs
+
+Today the progress of a pipeline is mediated by the input connectors.
+A pipeline without any input connectors will actually produce no
+outputs.  In consequence, a SQL program that contains no tables and
+which does not call the `NOW()` function will never produce an output.
+
+Unfortunately this makes it impossible to run simple SQL testing
+code such as:
+
+```sql
+CREATE MATERIALIZED VIEW V AS SELECT 1 + 2;
+```
+
+The workaround this limitation is to have at least one table in each
+SQL program; inserting a row in this table will trigger the production
+of an output.  You can use the [datagen
+connector](/connectors/sources/datagen.md) to populate this table:
+
+```sql
+CREATE TABLE T(c BOOLEAN) WITH (
+  'connectors' = '[{
+    "name": "dummy",
+    "transport": {
+      "name": "datagen",
+      "config": {
+        "plan": [{
+          "limit": 1
+        }]
+      }
+    }
+  }]'
+);
+
+CREATE MATERIALIZED VIEW V AS SELECT 1 + 2 FROM T;
+```
+
 ## Diagnosing Performance Issues
 
 When investigating pipeline performance, Feldera support will typically request a
