@@ -9,7 +9,7 @@ import org.dbsp.util.Logger;
 
 /** Applies a CircuitTransform until the circuit stops changing. */
 public class Repeat implements IWritesLogs, CircuitTransform, ICompilerComponent {
-    final DBSPCompiler compiler;
+    public final DBSPCompiler compiler;
     public final CircuitTransform transform;
     public final long id;
     public final int repeats;

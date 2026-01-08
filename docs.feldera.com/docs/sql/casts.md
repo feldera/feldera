@@ -65,3 +65,6 @@ The `SAFE_CAST` function has the same syntax as `CAST`.  `SAFE_CAST`
 produces the same result as `CAST` for all legal inputs.  The main
 difference is that `SAFE_CAST` never produces a runtime error,
 producing a `NULL` value when a conversion is illegal.
+
+Currently `SAFE_CAST` is not supported when the target type is a `ROW`
+or user-defined type.

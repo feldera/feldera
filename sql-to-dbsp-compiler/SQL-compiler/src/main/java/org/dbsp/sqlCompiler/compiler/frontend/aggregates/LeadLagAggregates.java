@@ -10,17 +10,14 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -107,7 +104,8 @@ public class LeadLagAggregates extends WindowAggregates {
                     .field(field)
                     // cast the results to whatever Calcite says they will be.
                     .applyCloneIfNeeded()
-                    .cast(this.node, this.windowResultType.getFieldType(this.windowFieldIndex + i), false);
+                    .cast(this.node, this.windowResultType.getFieldType(this.windowFieldIndex + i),
+                            DBSPCastExpression.CastType.SqlUnsafe);
             lagColumnExpressions.add(expression);
         }
         DBSPTupleExpression lagTuple = new DBSPTupleExpression(
@@ -125,7 +123,7 @@ public class LeadLagAggregates extends WindowAggregates {
                         // Same type as field i
                         window.getRowType().getFieldList().get(i).getType());
                 // a default argument is present
-                defaultValues[i] = eComp.compile(ri).cast(this.node, resultType, false);
+                defaultValues[i] = eComp.compile(ri).cast(this.node, resultType, DBSPCastExpression.CastType.SqlUnsafe);
             } else {
                 defaultValues[i] = resultType.none();
             }

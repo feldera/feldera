@@ -237,7 +237,7 @@ public class MultiCrateTests extends BaseSQLTests {
                 CREATE TABLE row_tbl(
                 c1 INT NOT NULL,
                 c2 VARCHAR,
-                c3 VARCHAR)WITH ('append_only' = 'true');
+                c3 VARCHAR) WITH ('append_only' = 'true');
                 CREATE MATERIALIZED VIEW row_max AS SELECT
                 MAX(ROW(c1, c2, c3)) AS c1
                 FROM row_tbl;""";

@@ -37,8 +37,6 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.IIndentStream;
 
-import javax.annotation.Nullable;
-
 /**
  * Represents a closure that sorts an IndexedZSet with empty keys and
  * a Vector of tuples as a value.

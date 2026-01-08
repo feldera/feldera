@@ -94,7 +94,7 @@ public final class DBSPBinaryLiteral extends DBSPLiteral {
                     .append(this.type)
                     .append(")null");
         else
-            return builder.append(Arrays.toString(Objects.requireNonNull(this.value)));
+            return builder.append(this.wrapSome(Arrays.toString(Objects.requireNonNull(this.value))));
     }
 
     @Override

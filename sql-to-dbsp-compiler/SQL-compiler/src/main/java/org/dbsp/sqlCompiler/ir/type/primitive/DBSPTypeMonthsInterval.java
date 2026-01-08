@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
 import java.util.Objects;
@@ -56,6 +57,14 @@ public class DBSPTypeMonthsInterval
     public DBSPTypeMonthsInterval(CalciteObject node, Units units, boolean mayBeNull) {
         super(node, DBSPTypeCode.INTERVAL_LONG, mayBeNull);
         this.units = units;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return super.toString(builder)
+                .append("(")
+                .append(this.units.toString())
+                .append(")");
     }
 
     @Override

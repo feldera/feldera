@@ -23,10 +23,21 @@ public class DBSPTypeBinary extends DBSPTypeBaseType implements IHasPrecision {
     /** Number of bytes; this may be UNLIMITED_PRECISION */
     public final int precision;
 
+    private static final DBSPTypeBinary VARBINARY = new DBSPTypeBinary(CalciteObject.EMPTY, UNLIMITED_PRECISION, false, false);
+    private static final DBSPTypeBinary VARBINARY_NULLABLE = new DBSPTypeBinary(CalciteObject.EMPTY, UNLIMITED_PRECISION, false, true);
+
+
     public DBSPTypeBinary(CalciteObject node, int precision, boolean fixed, boolean mayBeNull) {
         super(node, BYTES, mayBeNull);
         this.fixed = fixed;
         this.precision = precision;
+    }
+
+    /** A representation of the VARBINARY type without limited precision */
+    public static DBSPTypeBinary varbinary(boolean mayBeNull) {
+        if (mayBeNull)
+            return VARBINARY_NULLABLE;
+        return VARBINARY;
     }
 
     public DBSPTypeBinary(CalciteObject node, boolean fixed, boolean mayBeNull) {

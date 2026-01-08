@@ -162,6 +162,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
@@ -739,7 +740,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         .deref()
                         .field(index)
                         .applyCloneIfNeeded()
-                        .cast(node, slice.getFieldType(groupSetIndex), false);
+                        .cast(node, slice.getFieldType(groupSetIndex), DBSPCastExpression.CastType.SqlUnsafe);
                 keyFieldIndex++;
             }
             groupSetIndex++;
@@ -895,14 +896,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression[] flattenFields = new DBSPExpression[aggregate.getGroupCount() + aggType.size()];
         for (int i = 0; i < aggregate.getGroupCount(); i++) {
             DBSPExpression cast = kv.field(0).deref().field(i).applyCloneIfNeeded()
-                    .cast(node, tuple.getFieldType(i), false);
+                    .cast(node, tuple.getFieldType(i), DBSPCastExpression.CastType.SqlUnsafe);
             flattenFields[i] = cast;
         }
         for (int i = 0; i < aggType.size(); i++) {
             DBSPExpression flattenField = kv.field(1).deref().field(i).applyCloneIfNeeded();
             // Here we correct from the type produced by the Folder (typeFromAggregate) to the
             // actual expected type aggType (which is the tuple of aggTypes).
-            DBSPExpression cast = flattenField.cast(node, aggTypes[i], false);
+            DBSPExpression cast = flattenField.cast(node, aggTypes[i], DBSPCastExpression.CastType.SqlUnsafe);
             flattenFields[aggregate.getGroupCount() + i] = cast;
         }
 
@@ -1068,7 +1069,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType inputElementType = operator.getOutputZSetElementType();
         if (inputElementType.sameType(outputElementType))
             return operator;
-        DBSPExpression function = inputElementType.caster(outputElementType, false).reduce(this.compiler);
+        DBSPExpression function = inputElementType.caster(outputElementType, DBSPCastExpression.CastType.SqlUnsafe)
+                .reduce(this.compiler);
         DBSPSimpleOperator map = new DBSPMapOperator(
                 node, function, TypeCompiler.makeZSet(outputElementType), operator.outputPort());
         this.addOperator(map);
@@ -1341,7 +1343,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     continue;
                 fields.add(e.field(i)
                         .applyCloneIfNeeded()
-                        .nullabilityCast(desiredType.getFieldType(i), false));
+                        .nullabilityCast(desiredType.getFieldType(i), DBSPCastExpression.CastType.SqlUnsafe));
             }
             return new DBSPTupleExpression(fields, false);
         }
@@ -1360,7 +1362,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             for (int kf: this.keyFields) {
                 fields.add(e.field(kf)
                         .applyCloneIfNeeded()
-                        .nullabilityCast(keyType.getFieldType(index), false));
+                        .nullabilityCast(keyType.getFieldType(index), DBSPCastExpression.CastType.SqlUnsafe));
                 index++;
             }
             return new DBSPTupleExpression(fields, false);
@@ -1508,7 +1510,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression[] casts = new DBSPExpression[lrType.size()];
         for (int index = 0; index < lrType.size(); index++) {
             casts[index] = t.deref().field(index).applyCloneIfNeeded()
-                    .cast(node, resultType.getFieldType(index), false);
+                    .cast(node, resultType.getFieldType(index), DBSPCastExpression.CastType.SqlUnsafe);
         }
         DBSPTupleExpression allFields = new DBSPTupleExpression(casts);
         this.addOperator(operator);
@@ -1607,12 +1609,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     decomposition.comparisons,
                     c -> l.deref().field(c.node(), c.leftColumn())
                             .applyCloneIfNeeded()
-                            .cast(c.node(), c.commonType(), false));
+                            .cast(c.node(), c.commonType(), DBSPCastExpression.CastType.SqlUnsafe));
             final List<DBSPExpression> rightKeyFields = Linq.map(
                     decomposition.comparisons,
                     c -> r.deref().field(c.node(), c.rightColumn())
                             .applyCloneIfNeeded()
-                            .cast(c.node(), c.commonType(), false));
+                            .cast(c.node(), c.commonType(), DBSPCastExpression.CastType.SqlUnsafe));
             final DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
             keyType = leftKey.getType().to(DBSPTypeTupleBase.class);
 
@@ -1952,7 +1954,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     int index = extendedRight.keyFields.get(i);
                     rightKeyFields.add(joinRightVar.deref().field(leftColumns + index)
                             .applyCloneIfNeeded()
-                            .cast(node, rightResultType.getFieldType(index), false));
+                            .cast(node, rightResultType.getFieldType(index), DBSPCastExpression.CastType.SqlUnsafe));
                 }
 
                 final DBSPRawTupleExpression projectJoinRight = new DBSPRawTupleExpression(
@@ -2129,11 +2131,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
             List<DBSPExpression> leftKeyFields = Linq.map(
                     comparisons,
                     c -> l.deref().field(c.leftColumn()).applyCloneIfNeeded()
-                            .cast(c.node(), c.commonType(), false));
+                            .cast(c.node(), c.commonType(), DBSPCastExpression.CastType.SqlUnsafe));
             List<DBSPExpression> rightKeyFields = Linq.map(
                     comparisons,
                     c -> r.deref().field(c.rightColumn()).applyCloneIfNeeded()
-                            .cast(c.node(), c.commonType(), false));
+                            .cast(c.node(), c.commonType(), DBSPCastExpression.CastType.SqlUnsafe));
             DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
             keyType = leftKey.getType().to(DBSPTypeTuple.class);
             DBSPExpression rightKey = new DBSPTupleExpression(node, rightKeyFields);
@@ -2352,7 +2354,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         expr = DBSPLiteral.none(resultFieldType);
                 }
                 if (!expr.getType().sameType(resultFieldType)) {
-                    DBSPExpression cast = expr.cast(expr.getNode(), resultFieldType, false);
+                    DBSPExpression cast = expr.cast(expr.getNode(), resultFieldType, DBSPCastExpression.CastType.SqlUnsafe);
                     expressions.add(cast);
                 } else {
                     expressions.add(expr);
@@ -2711,7 +2713,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPVariablePath var = lastOperator.getOutputZSetElementType().ref().var();
             List<DBSPExpression> fields = new ArrayList<>();
             for (int i = 0; i < tuple.size(); i++) {
-                fields.add(var.deref().field(i).applyCloneIfNeeded().nullabilityCast(tuple.tupFields[i], false));
+                fields.add(var.deref().field(i).applyCloneIfNeeded()
+                        .nullabilityCast(tuple.tupFields[i], DBSPCastExpression.CastType.SqlUnsafe));
             }
             DBSPClosureExpression convert = new DBSPTupleExpression(fields, false).closure(var);
             this.addOperator(lastOperator);
@@ -2754,13 +2757,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (sort.fetch != null) {
             ExpressionCompiler expressionCompiler = new ExpressionCompiler(sort, null, this.compiler);
             limit = expressionCompiler.compile(sort.fetch);
-            limit = limit.cast(limit.getNode(), DBSPTypeUSize.create(limit.getType().mayBeNull), false);
+            limit = limit.cast(limit.getNode(), DBSPTypeUSize.create(limit.getType().mayBeNull),
+                    DBSPCastExpression.CastType.SqlUnsafe);
         }
         DBSPExpression offset = null;
         if (sort.offset != null) {
             ExpressionCompiler expressionCompiler = new ExpressionCompiler(sort, null, this.compiler);
             offset = expressionCompiler.compile(sort.offset);
-            offset = offset.cast(offset.getNode(), DBSPTypeUSize.create(offset.getType().mayBeNull), false);
+            offset = offset.cast(offset.getNode(), DBSPTypeUSize.create(offset.getType().mayBeNull),
+                    DBSPCastExpression.CastType.SqlUnsafe);
         }
 
         DBSPType inputRowType = this.convertType(node.getPositionRange(), input.getRowType(), false);
@@ -2963,7 +2968,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.compiler.reportError(defaultValue.getSourcePosition(), "Illegal value",
                         "Nullable default value assigned to non-null column " +
                                 metadata.getName().singleQuote());
-            defaultValue = defaultValue.cast(defaultValue.getNode(), type, false);
+            defaultValue = defaultValue.cast(defaultValue.getNode(), type, DBSPCastExpression.CastType.SqlUnsafe);
         }
         if (metadata.interned) {
             if (!type.is(DBSPTypeString.class))
@@ -3380,7 +3385,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPType expectedType = tuple.getFieldType(index);
             if (!exp.getType().sameType(expectedType)) {
                 // Calcite's optimizations do not preserve types!
-                exp = exp.applyCloneIfNeeded().cast(exp.getNode(), expectedType, false);
+                exp = exp.applyCloneIfNeeded().cast(exp.getNode(), expectedType, DBSPCastExpression.CastType.SqlUnsafe);
             }
             resultColumns.add(exp);
             index++;

@@ -110,9 +110,10 @@ public final class DBSPIntervalMonthsLiteral
         builder.append("(")
                 .append(this.type)
                 .append(")");
-        if (this.value != null)
-            return builder.append(this.value.toString());
-        return builder.append(DBSPNullLiteral.NULL);
+        if (this.value == null)
+            return builder.append("null");
+        else
+            return builder.append(this.wrapSome(this.value.toString()));
     }
 
     @Override

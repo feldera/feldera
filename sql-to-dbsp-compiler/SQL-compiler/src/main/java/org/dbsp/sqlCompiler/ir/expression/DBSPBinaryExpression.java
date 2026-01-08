@@ -94,16 +94,27 @@ public final class DBSPBinaryExpression extends DBSPExpression {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder
-                .append("(")
-                .append(this.left)
-                .append(" ")
-                .append(this.left.getType().mayBeNull ? "?" : "")
-                .append(this.opcode.toString())
-                .append(this.right.getType().mayBeNull ? "?" : "")
-                .append(" ")
-                .append(this.right)
-                .append(")");
+        if (opcode == DBSPOpcode.ARRAY_CONVERT || opcode == DBSPOpcode.ARRAY_CONVERT_SAFE ||
+                opcode == DBSPOpcode.MAP_CONVERT || opcode == DBSPOpcode.MAP_CONVERT_SAFE) {
+            return builder.append(opcode.toString())
+                    .append("(").increase()
+                    .append(this.left)
+                    .append(",").newline()
+                    .append(this.right)
+                    .decrease().newline()
+                    .append(")");
+        } else {
+            return builder
+                    .append("(")
+                    .append(this.left)
+                    .append(" ")
+                    .append(this.left.getType().mayBeNull ? "?" : "")
+                    .append(this.opcode.toString())
+                    .append(this.right.getType().mayBeNull ? "?" : "")
+                    .append(" ")
+                    .append(this.right)
+                    .append(")");
+        }
     }
 
     @Override

@@ -1689,7 +1689,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     // Keeps track of tables that have to be materialized at a different point in the circuit.
-    Bijection<DBSPSourceMultisetOperator, DBSPControlledKeyFilterOperator> materialization = new Bijection<>();
+    final Bijection<DBSPSourceMultisetOperator, DBSPControlledKeyFilterOperator> materialization = new Bijection<>();
 
     void discoverLateMaterializations(DBSPCircuit circuit) {
         // Discover input nodes that immediately feed the left input of a controlled_key_filter operator.

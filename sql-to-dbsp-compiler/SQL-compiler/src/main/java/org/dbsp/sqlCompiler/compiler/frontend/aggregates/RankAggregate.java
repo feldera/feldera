@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.frontend.aggregates;
 
-import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.Window;
 import org.apache.calcite.sql.SqlKind;

@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
-import org.dbsp.util.NameGen;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;

@@ -3,6 +3,8 @@
 A MAP type can be created using the syntax `MAP<type, type>`.
 For example `MAP<VARCHAR, INT>` is a map from strings to integers.
 
+`MAP` keys of type `NULL` or `MAP` are not supported.
+
 In `CREATE TABLE` and `CREATE TYPE` declarations there is no way to
 specify the nullability of the values of a `MAP`.  The compiler will
 always assume that map keys are *not* nullable, while values elements

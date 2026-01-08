@@ -119,7 +119,7 @@ public final class DBSPISizeLiteral extends DBSPLiteral implements IsNumericLite
                     .append(this.type)
                     .append(")null");
         else
-            return builder.append(this.value.toString());
+            return builder.append(this.wrapSome(this.value.toString()));
     }
 
     @Override

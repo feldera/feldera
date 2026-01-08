@@ -230,7 +230,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         writer.add(tester);
         writer.write(compiler);
         stream.close();
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
     }
 
     @Test
@@ -263,7 +263,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         writer.add(tester);
         writer.write(compiler);
         outputStream.close();
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
     }
 
     @Test
@@ -512,7 +512,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
             fr.write(rustHandlesTest);
         }
         if (!BaseSQLTests.skipRust)
-            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, true);
+            BaseSQLTests.compileAndTestRust(true);
 
         // Second test
         message = CompilerMain.execute(
@@ -525,7 +525,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
             fr.write(rustCatalogTest);
         }
         if (!BaseSQLTests.skipRust)
-            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, true);
+            BaseSQLTests.compileAndTestRust(true);
     }
 
     @Test
@@ -592,7 +592,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
             fr.write(rustCatalogTest);
         }
         if (!BaseSQLTests.skipRust)
-            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, true);
+            BaseSQLTests.compileAndTestRust(true);
     }
 
     @Test
@@ -666,9 +666,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 REMOVE FROM T VALUES(3, 'Z');""").simplify(compiler);
         String set = change.getSet(0).toString();
         Assert.assertEquals("""
-                TableData[name=t, data=zset!(Tup2::new(Some(1), "x", ) => 1i64,
-                Tup2::new(Some(2), "Y", ) => -1i64,
-                Tup2::new(Some(3), "Z", ) => -1i64,), primaryKeys=[]]""", set);
+                TableData[name=t, data=zset!(Tup2::new(Some(1), Some("x"), ) => 1i64,
+                Tup2::new(Some(2), Some("Y"), ) => -1i64,
+                Tup2::new(Some(3), Some("Z"), ) => -1i64,), primaryKeys=[]]""", set);
     }
 
     @Test

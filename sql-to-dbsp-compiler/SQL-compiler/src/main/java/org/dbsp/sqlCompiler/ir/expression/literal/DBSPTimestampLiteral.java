@@ -122,7 +122,7 @@ public final class DBSPTimestampLiteral extends DBSPLiteral {
                     .append(this.type)
                     .append(")null");
         else
-            return builder.append(TimestampString.fromMillisSinceEpoch(this.value).toString());
+            return builder.append(this.wrapSome(TimestampString.fromMillisSinceEpoch(this.value).toString()));
     }
 
     @Override

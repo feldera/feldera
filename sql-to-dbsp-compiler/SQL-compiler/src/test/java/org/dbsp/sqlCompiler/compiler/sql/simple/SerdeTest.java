@@ -20,7 +20,7 @@ import java.sql.SQLException;
 
 public class SerdeTest extends SqlIoTest {
     @Test
-    public void testJsonString() throws IOException, SQLException, InterruptedException {
+    public void testJsonString() {
         String sql = """
                 CREATE TYPE T0 AS (n VARCHAR, u VARCHAR);
                 CREATE FUNCTION jsonstring_as_t0(line VARCHAR) RETURNS T0;

@@ -8,7 +8,7 @@ import java.util.Set;
 /** A class that tracks objects that have been already analyzed */
 public class AnalyzedSet<T extends IHasId> implements IHasId {
     static long crtId = 0;
-    long id;
+    final long id;
 
     final Set<Long> operationsAnalyzed;
 

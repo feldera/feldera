@@ -484,7 +484,14 @@ public class CastTests extends SqlIoTest {
                 "Cast function cannot convert value of type DATE NOT NULL to type INTEGER");
 
         this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(X'01' AS TIME)",
-                "Cast function cannot convert BINARY value to ");
+                "CAST cannot be used to convert BINARY(1) to TIME");
+    }
+
+    @Test
+    public void testIntervalCast() {
+        this.getCCS("CREATE VIEW V AS SELECT " +
+                "CAST(CAST('3:4' AS INTERVAL MINUTES TO SECONDS) AS INTERVAL HOURS TO MINUTES)," +
+                "CAST(CAST('3:4' AS INTERVAL MINUTES TO SECONDS) AS INTERVAL HOURS);");
     }
 
     @Test
@@ -656,7 +663,9 @@ public class CastTests extends SqlIoTest {
                 if (ok == CanConvert.F) {
                     if (!value.equals("NULL") && !from.equals("NULL") && !to.equals("NULL")) {
                         String statement = "CREATE VIEW V AS SELECT CAST(CAST(" + value + " AS " + from + ") AS " + to + ")";
-                        this.statementsFailingInCompilation(statement, "Cast function cannot convert");
+                        // Calcite and our extra validator produce different error messages,
+                        // but they both include the string 'convert'
+                        this.statementsFailingInCompilation(statement, "convert");
                     }
                     continue;
                 }

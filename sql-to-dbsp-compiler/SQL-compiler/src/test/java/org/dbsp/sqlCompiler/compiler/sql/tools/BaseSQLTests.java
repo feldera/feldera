@@ -167,6 +167,11 @@ public class BaseSQLTests {
         this.statementsFailingInCompilation(statements, substring, false);
     }
 
+    public static void compileAndTestRust(boolean quiet) throws IOException, InterruptedException {
+        if (!BaseSQLTests.skipRust)
+            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, quiet);
+    }
+
     /** Compile a set of statements that are expected to give a warning at compile time.
      * @param statements  Statement to run.
      * @param regex       This regular expression should match the warning message. */

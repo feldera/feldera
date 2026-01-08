@@ -252,7 +252,7 @@ public class InternInner extends ExpressionTranslator {
     public static DBSPExpression callUnintern(DBSPExpression interned, DBSPType originalType) {
         return new DBSPApplyExpression(
                 interned.getNode(), uninternFunction, InternInner.nullableString, interned)
-                .cast(interned.getNode(), originalType, false);
+                .cast(interned.getNode(), originalType, DBSPCastExpression.CastType.SqlUnsafe);
     }
 
     public DBSPExpression callUninternRecursive(DBSPExpression interned, DBSPType originalType) {
@@ -297,7 +297,7 @@ public class InternInner extends ExpressionTranslator {
     }
 
     public static DBSPExpression callIntern(DBSPExpression argument) {
-        argument = argument.cast(argument.getNode(), nullableString, false);
+        argument = argument.cast(argument.getNode(), nullableString, DBSPCastExpression.CastType.SqlUnsafe);
         return new DBSPApplyExpression(internFunction, DBSPTypeInterned.INSTANCE, argument);
     }
 

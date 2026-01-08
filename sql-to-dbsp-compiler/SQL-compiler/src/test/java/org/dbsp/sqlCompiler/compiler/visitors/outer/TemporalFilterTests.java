@@ -120,48 +120,48 @@ public class TemporalFilterTests extends SqlIoTest {
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE ts > NOW() - INTERVAL 5 MINUTES AND TS < NOW() - INTERVAL 10 MINUTES";
         this.test(sql, Linq.list("TemporalFilter[" + param + 
-                        ", noNow=((*p0).3), withNow=(now() - ShortInterval::new(300000)), opcode=>]",
-                "TemporalFilter[" + param + ", noNow=((*p0).3), withNow=(now() - ShortInterval::new(600000)), opcode=<]"));
+                        ", noNow=((*p0).3), withNow=(now() - (ShortInterval(MINUTES))300000), opcode=>]",
+                "TemporalFilter[" + param + ", noNow=((*p0).3), withNow=(now() - (ShortInterval(MINUTES))600000), opcode=<]"));
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE ts > NOW() - INTERVAL 5 MINUTES " +
                 "AND TS < NOW() - INTERVAL 10 MINUTES " +
                 "AND a > 2";
         this.test(sql, Linq.list("TemporalFilter[" + param + 
-                        ", noNow=((*p0).3), withNow=(now() - ShortInterval::new(300000)), opcode=>]",
+                        ", noNow=((*p0).3), withNow=(now() - (ShortInterval(MINUTES))300000), opcode=>]",
                 "TemporalFilter[" + param + 
-                        ", noNow=((*p0).3), withNow=(now() - ShortInterval::new(600000)), opcode=<]",
+                        ", noNow=((*p0).3), withNow=(now() - (ShortInterval(MINUTES))600000), opcode=<]",
                 aComp));
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE ts > NOW() - INTERVAL 5 MINUTES " +
                 "AND TS < NOW() - INTERVAL 10 MINUTES " +
                 "AND a > 2 AND b = 5";
         this.test(sql, Linq.list("TemporalFilter[" + param + 
-                        ", noNow=((*p0).3), withNow=(now() - ShortInterval::new(300000)), opcode=>]",
+                        ", noNow=((*p0).3), withNow=(now() - (ShortInterval(MINUTES))300000), opcode=>]",
                 "TemporalFilter[" + param + 
-                        ", noNow=((*p0).3), withNow=(now() - ShortInterval::new(600000)), opcode=<]",
+                        ", noNow=((*p0).3), withNow=(now() - (ShortInterval(MINUTES))600000), opcode=<]",
                 aComp, bComp));
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE ts > NOW() - INTERVAL 5 MINUTES " +
                 "AND TS < NOW() - INTERVAL 10 MINUTES " +
                 "AND a > 2 AND b = 5 AND a IS NOT NULL";  // Calcite removes last check
         this.test(sql, Linq.list("TemporalFilter[" + param + 
-                        ", noNow=((*p0).3), withNow=(now() - ShortInterval::new(300000)), opcode=>]",
+                        ", noNow=((*p0).3), withNow=(now() - (ShortInterval(MINUTES))300000), opcode=>]",
                 "TemporalFilter[" + param + 
-                        ", noNow=((*p0).3), withNow=(now() - ShortInterval::new(600000)), opcode=<]",
+                        ", noNow=((*p0).3), withNow=(now() - (ShortInterval(MINUTES))600000), opcode=<]",
                 aComp, bComp));
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE ts > NOW() - INTERVAL 5 MINUTES " +
                 "AND TS < TIMESTAMP '2020-01-01 00:00:00' + CAST(a AS INTERVAL DAYS)";
         this.test(sql, Linq.list("TemporalFilter[" + param + 
-                        ", noNow=((*p0).3), withNow=(now() - ShortInterval::new(300000)), opcode=>]",
-                "NoNow[noNow=(((*p0).3) ?<? (2020-01-01 00:00:00 +? ((ShortInterval?)((*p0).0))))]"));
+                        ", noNow=((*p0).3), withNow=(now() - (ShortInterval(MINUTES))300000), opcode=>]",
+                "NoNow[noNow=(((*p0).3) ?<? (2020-01-01 00:00:00 +? ((ShortInterval?(DAYS))((*p0).0))))]"));
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE ts > NOW() - INTERVAL 5 MINUTES " +
                 "AND NOW() < TIMESTAMP '2020-01-01 00:00:00' + CAST(a AS INTERVAL DAYS)";
         this.test(sql, Linq.list("TemporalFilter[" + param +
-                        ", noNow=((*p0).3), withNow=(now() - ShortInterval::new(300000)), opcode=>]",
+                        ", noNow=((*p0).3), withNow=(now() - (ShortInterval(MINUTES))300000), opcode=>]",
                 "TemporalFilter[" + param +
-                        ", noNow=(2020-01-01 00:00:00 +? ((ShortInterval?)((*p0).0))), withNow=now(), opcode=>=]"));
+                        ", noNow=(2020-01-01 00:00:00 +? ((ShortInterval?(DAYS))((*p0).0))), withNow=now(), opcode=>=]"));
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE EXTRACT(DAY FROM ts) > EXTRACT(DAY FROM NOW());";
         this.test(sql, Linq.list("NonTemporalFilter[expression=(extract_day_TimestampN(((*p0).3)) ?> extract_day_Timestamp(now()))]"));

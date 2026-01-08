@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -158,7 +157,7 @@ public final class DBSPZSetExpression extends DBSPExpression
 
     public DBSPExpression castRecursive(DBSPExpression expression, DBSPType type) {
         if (type.is(DBSPTypeBaseType.class)) {
-            return expression.cast(expression.getNode(), type, false);
+            return expression.cast(expression.getNode(), type, DBSPCastExpression.CastType.SqlUnsafe);
         } else if (type.is(DBSPTypeArray.class)) {
             DBSPTypeArray array = type.to(DBSPTypeArray.class);
             DBSPArrayExpression vecLit = expression.to(DBSPArrayExpression.class);

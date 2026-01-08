@@ -13,7 +13,7 @@ import org.dbsp.util.Bijection;
  * to be the output of the controlled_key_filter operator. */
 public class LateMaterializations extends CircuitVisitor {
     // Keeps track of tables that have to be materialized at a different point in the circuit.
-    Bijection<DBSPSourceMultisetOperator, DBSPControlledKeyFilterOperator> materialization = new Bijection<>();
+    final Bijection<DBSPSourceMultisetOperator, DBSPControlledKeyFilterOperator> materialization = new Bijection<>();
 
     public LateMaterializations(DBSPCompiler compiler) {
         super(compiler);
