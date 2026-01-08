@@ -274,8 +274,8 @@ public class CalciteOptimizer implements IWritesLogs {
         this.addStep(joinOrder);
 
         this.addStep(new SimpleOptimizerStep("Decorrelate UNNEST", 2,
-                new DecorrelateUnnest(),
-                new DecorrelateProjectedUnnest()));
+                CoreRules.UNNEST_DECORRELATE,
+                CoreRules.UNNEST_PROJECT_DECORRELATE));
         this.addStep(new SimpleOptimizerStep("Decorrelate inner queries 1", 2,
                 new InnerDecorrelator()));
         this.addStep(new SimpleOptimizerStep("Correlate/Union", 2,

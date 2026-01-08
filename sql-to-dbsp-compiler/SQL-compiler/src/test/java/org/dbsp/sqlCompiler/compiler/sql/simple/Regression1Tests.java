@@ -1688,6 +1688,43 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
+    public void issue5215() {
+        var ccs = this.getCCS("""
+                  CREATE TABLE T(x INT, y INT);
+                  CREATE LOCAL VIEW V AS SELECT ROW(*) as R FROM T;
+                  CREATE VIEW W AS SELECT R[1], R[2] FROM V;""");
+        ccs.step("INSERT INTO T VALUES(10, 20);", """
+                 r1 | r2 | weight
+                ------------------
+                 10 | 20 | 1""");
+    }
+
+    @Test
+    public void issue5331() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE asof_tbl1(intt INT, arr VARCHAR ARRAY);
+                CREATE TABLE asof_tbl2(intt INT, arr VARCHAR ARRAY);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT *
+                FROM asof_tbl1 t1
+                LEFT ASOF JOIN asof_tbl2 t2
+                MATCH_CONDITION (t1.intt >= t2.intt)
+                ON t1.arr[2] = t2.arr[2] ;""",
+                "ASOF JOIN condition must be a conjunction of equality comparisons of columns from both sides");
+    }
+
+    @Test
+    public void issue5384() {
+        this.statementsFailingInCompilation("""
+                CREATE TYPE user_def AS(i1 INT, v1 VARCHAR NULL);
+                CREATE TABLE tbl(mapp1 MAP<user_def, ROW(v VARCHAR NULL)>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                CAST(mapp1 AS MAP<VARCHAR, INT>) AS to_map
+                FROM tbl;""", "Cast function cannot convert value of type ");
+    }
+
+    @Test
     public void issue5359() {
         this.getCCS("""
                 CREATE TABLE source (
