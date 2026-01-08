@@ -1,4 +1,4 @@
-use crate::PipelineError;
+use crate::{Controller, PipelineError};
 use actix_web::{HttpRequest, HttpResponse, http::header, web::Payload};
 use actix_ws::{AggregatedMessage, CloseCode, CloseReason, Closed, Session as WsSession};
 use datafusion::common::ScalarValue;
@@ -185,7 +185,7 @@ async fn adhoc_query_handler(
 }
 
 pub async fn adhoc_websocket(
-    df_session: SessionContext,
+    controller: Controller,
     req: HttpRequest,
     stream: Payload,
 ) -> Result<HttpResponse, PipelineError> {
@@ -214,16 +214,7 @@ pub async fn adhoc_websocket(
 
                     match maybe_args {
                         Ok(args) => {
-                            let df = df_session
-                                .sql_with_options(
-                                    &args.sql,
-                                    SQLOptions::new().with_allow_ddl(false),
-                                )
-                                .await
-                                .map_err(|e| PipelineError::AdHocQueryError {
-                                    error: format!("Unable to execute SQL query: {}", e),
-                                    df: Some(Box::new(e)),
-                                });
+                            let df = execute_sql(&controller, &args.sql).await;
                             match df {
                                 Ok(df) => {
                                     // If the query is successful, we handle it based on the format.
@@ -278,12 +269,28 @@ pub async fn adhoc_websocket(
     Ok(res)
 }
 
+pub(crate) async fn execute_sql(
+    controller: &Controller,
+    sql: &str,
+) -> Result<DataFrame, PipelineError> {
+    let mut state = controller.session_context()?.state();
+    state
+        .config_mut()
+        .set_extension(controller.consistent_snapshot().await);
+    let logical_plan = state.create_logical_plan(sql).await?;
+    SQLOptions::new()
+        .with_allow_ddl(false)
+        .verify_plan(&logical_plan)?;
+    Ok(DataFrame::new(state, logical_plan))
+}
+
 /// Stream the result of an ad-hoc query using a HTTP streaming response.
 pub(crate) async fn stream_adhoc_result(
-    args: AdhocQueryArgs,
-    session: SessionContext,
+    controller: &Controller,
+    args: &AdhocQueryArgs,
 ) -> Result<HttpResponse, PipelineError> {
-    let df = session.sql(&args.sql).await?;
+    let df = execute_sql(controller, &args.sql).await?;
+
     // Note that once we are in the stream!{} macros any error that occurs will lead to the connection
     // in the manager being terminated and a 500 error being returned to the client.
     // We can't return an error in a stream that is already Response::Ok.

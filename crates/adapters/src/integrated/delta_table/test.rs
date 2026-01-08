@@ -1,4 +1,5 @@
 use crate::Controller;
+use crate::adhoc::execute_sql;
 use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::parquet::test::load_parquet_file;
 use crate::integrated::delta_table::delta_input_serde_config;
@@ -18,7 +19,6 @@ use deltalake::kernel::{DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaOps, DeltaTable, DeltaTableBuilder};
-use feldera_adapterlib::utils::datafusion::execute_query_collect;
 use feldera_sqllib::Variant;
 use feldera_types::config::PipelineConfig;
 use feldera_types::format::json::JsonFlavor;
@@ -173,12 +173,12 @@ async fn wait_for_records_materialized<T>(
 {
     let start = Instant::now();
     loop {
-        let data = execute_query_collect(
-            &pipeline.session_context().unwrap(),
-            &format!("select * from {table}"),
-        )
-        .await
-        .unwrap();
+        let data = execute_sql(pipeline, &format!("select * from {table}"))
+            .await
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
 
         let mut result = Vec::new();
 
