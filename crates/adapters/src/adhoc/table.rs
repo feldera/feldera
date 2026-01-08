@@ -5,7 +5,7 @@ use std::fmt::{Debug, Formatter};
 use std::sync::{Arc, Weak};
 
 use crate::catalog::SyncSerBatchReader;
-use crate::controller::{ConsistentSnapshots, ControllerInner};
+use crate::controller::{ConsistentSnapshot, ControllerInner};
 use crate::transport::adhoc::AdHocInputEndpoint;
 use crate::{DeCollectionHandle, RecordFormat, TransportInputEndpoint};
 use arrow::datatypes::{Schema, SchemaRef};
@@ -85,14 +85,6 @@ pub struct AdHocTable {
     /// When true, table records are stored as values; otherwise, they are stored as keys.
     indexed: bool,
     schema: Arc<Schema>,
-    /// Contains the current snapshots for tables.
-    ///
-    /// Note that not finding a snapshot in `snapshots` doesn't imply
-    /// that the table isn't materialized just that the table might have
-    /// never received any input. One is supposed to check `materialized` to
-    /// determine if the table is materialized and return an error on
-    /// scans if not.
-    snapshots: ConsistentSnapshots,
 }
 
 impl Debug for AdHocTable {
@@ -114,7 +106,6 @@ impl AdHocTable {
         input_handle: Option<Box<dyn DeCollectionHandle>>,
         name: SqlIdentifier,
         schema: Arc<Schema>,
-        snapshots: ConsistentSnapshots,
     ) -> Self {
         Self {
             materialized,
@@ -123,7 +114,6 @@ impl AdHocTable {
             input_handle,
             name,
             schema,
-            snapshots,
         }
     }
 }
@@ -148,7 +138,7 @@ impl TableProvider for AdHocTable {
 
     async fn scan(
         &self,
-        _state: &dyn Session,
+        state: &dyn Session,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
         _limit: Option<usize>,
@@ -162,13 +152,18 @@ impl TableProvider for AdHocTable {
             self.schema.clone()
         };
 
+        let snapshot: ConsistentSnapshot = state
+            .config()
+            .get_extension()
+            .expect("session should contain consistent snapshot of table data");
+
         Ok(Arc::new(AdHocQueryExecution::new(
             self.name.clone(),
             self.materialized,
             self.indexed,
             self.schema.clone(),
             projected_schema,
-            self.snapshots.lock().await.get(&self.name).cloned(),
+            snapshot.get(&self.name).cloned(),
             projection,
         )))
     }

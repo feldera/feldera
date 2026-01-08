@@ -1441,11 +1441,11 @@ async fn query(
 ) -> impl Responder {
     let args = args.into_inner();
     tracing::debug!("processing adhoc query: {:?}", args.sql);
-    let session_ctxt = state.controller()?.session_context()?;
+    let controller = state.controller()?;
     if !request_is_websocket(&request) {
-        stream_adhoc_result(args, session_ctxt).await
+        stream_adhoc_result(&controller, &args).await
     } else {
-        adhoc_websocket(session_ctxt, request, stream).await
+        adhoc_websocket(controller, request, stream).await
     }
 }
 
