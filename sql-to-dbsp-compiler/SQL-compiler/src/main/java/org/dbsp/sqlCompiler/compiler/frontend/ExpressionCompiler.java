@@ -908,6 +908,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return makeUnaryExpression(node, type, DBSPOpcode.UNARY_PLUS, ops);
             case CHECKED_MINUS_PREFIX:
             case MINUS_PREFIX:
+                Utilities.enforce(ops.size() == 1);
+                DBSPType op0type = ops.get(0).getType();
+                if (op0type.is(DBSPTypeInteger.class) && !op0type.to(DBSPTypeInteger.class).signed) {
+                    throw new CompilationError("Unary minus cannot be applied to unsigned values", node);
+                }
                 return makeUnaryExpression(node, type, DBSPOpcode.NEG, ops);
             case BIT_AND:
                 return makeBinaryExpressions(node, type, DBSPOpcode.BW_AND, ops);

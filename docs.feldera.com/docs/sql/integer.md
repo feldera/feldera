@@ -6,7 +6,8 @@ bits).
 
 The legal operations are `+` (plus, unary and binary), `-` (minus,
 unary and binary), `*` (multiplication), `/` (division), `%`
-(modulus).
+(modulus).  Unary minus (negation) cannot be applied to unsigned
+values.
 
 Modulus involving negative numbers happens as follows:
 
