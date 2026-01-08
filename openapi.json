@@ -650,6 +650,7 @@
                     "deployment_desired_status": "Stopped",
                     "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                     "deployment_resources_status": "Stopped",
+                    "deployment_resources_status_details": null,
                     "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                     "deployment_resources_desired_status": "Stopped",
                     "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
@@ -735,6 +736,7 @@
                     "deployment_desired_status": "Stopped",
                     "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                     "deployment_resources_status": "Stopped",
+                    "deployment_resources_status_details": null,
                     "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                     "deployment_resources_desired_status": "Stopped",
                     "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
@@ -920,10 +922,12 @@
                   "deployment_desired_status": "Stopped",
                   "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_status": "Stopped",
+                  "deployment_resources_status_details": null,
                   "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_runtime_status": null,
+                  "deployment_runtime_status_details": null,
                   "deployment_runtime_status_since": null,
                   "deployment_runtime_desired_status": null,
                   "deployment_runtime_desired_status_since": null
@@ -1097,6 +1101,7 @@
                   "deployment_desired_status": "Stopped",
                   "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_status": "Stopped",
+                  "deployment_resources_status_details": null,
                   "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
@@ -1309,10 +1314,12 @@
                   "deployment_desired_status": "Stopped",
                   "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_status": "Stopped",
+                  "deployment_resources_status_details": null,
                   "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_runtime_status": null,
+                  "deployment_runtime_status_details": null,
                   "deployment_runtime_status_since": null,
                   "deployment_runtime_desired_status": null,
                   "deployment_runtime_desired_status_since": null
@@ -1403,10 +1410,12 @@
                   "deployment_desired_status": "Stopped",
                   "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_status": "Stopped",
+                  "deployment_resources_status_details": null,
                   "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_runtime_status": null,
+                  "deployment_runtime_status_details": null,
                   "deployment_runtime_status_since": null,
                   "deployment_runtime_desired_status": null,
                   "deployment_runtime_desired_status_since": null
@@ -1666,10 +1675,12 @@
                   "deployment_desired_status": "Stopped",
                   "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_status": "Stopped",
+                  "deployment_resources_status_details": null,
                   "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_runtime_status": null,
+                  "deployment_runtime_status_details": null,
                   "deployment_runtime_status_since": null,
                   "deployment_runtime_desired_status": null,
                   "deployment_runtime_desired_status_since": null
@@ -5900,10 +5911,12 @@
                   "deployment_desired_status": "Stopped",
                   "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_status": "Stopped",
+                  "deployment_resources_status_details": null,
                   "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_runtime_status": null,
+                  "deployment_runtime_status_details": null,
                   "deployment_runtime_status_since": null,
                   "deployment_runtime_desired_status": null,
                   "deployment_runtime_desired_status_since": null
@@ -9460,6 +9473,9 @@
           "deployment_resources_status": {
             "$ref": "#/components/schemas/ResourcesStatus"
           },
+          "deployment_resources_status_details": {
+            "nullable": true
+          },
           "deployment_resources_status_since": {
             "type": "string",
             "format": "date-time"
@@ -9483,6 +9499,9 @@
                 "$ref": "#/components/schemas/RuntimeStatus"
               }
             ],
+            "nullable": true
+          },
+          "deployment_runtime_status_details": {
             "nullable": true
           },
           "deployment_runtime_status_since": {
@@ -9630,6 +9649,9 @@
           },
           "deployment_resources_status": {
             "$ref": "#/components/schemas/ResourcesStatus"
+          },
+          "deployment_resources_status_details": {
+            "nullable": true
           },
           "deployment_resources_status_since": {
             "type": "string",

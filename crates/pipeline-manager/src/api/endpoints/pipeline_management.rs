@@ -115,10 +115,12 @@ pub struct PipelineInfo {
     pub deployment_desired_status: CombinedDesiredStatus,
     pub deployment_desired_status_since: DateTime<Utc>,
     pub deployment_resources_status: ResourcesStatus,
+    pub deployment_resources_status_details: Option<serde_json::Value>,
     pub deployment_resources_status_since: DateTime<Utc>,
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
     pub deployment_runtime_status: Option<RuntimeStatus>,
+    pub deployment_runtime_status_details: Option<serde_json::Value>,
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
@@ -161,10 +163,12 @@ pub struct PipelineInfoInternal {
     pub deployment_desired_status: CombinedDesiredStatus,
     pub deployment_desired_status_since: DateTime<Utc>,
     pub deployment_resources_status: ResourcesStatus,
+    pub deployment_resources_status_details: Option<serde_json::Value>,
     pub deployment_resources_status_since: DateTime<Utc>,
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
     pub deployment_runtime_status: Option<RuntimeStatus>,
+    pub deployment_runtime_status_details: Option<serde_json::Value>,
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
@@ -212,12 +216,15 @@ impl PipelineInfoInternal {
                 extended_pipeline.deployment_runtime_desired_status_since,
             ),
             deployment_resources_status: extended_pipeline.deployment_resources_status,
+            deployment_resources_status_details: extended_pipeline
+                .deployment_resources_status_details,
             deployment_resources_status_since: extended_pipeline.deployment_resources_status_since,
             deployment_resources_desired_status: extended_pipeline
                 .deployment_resources_desired_status,
             deployment_resources_desired_status_since: extended_pipeline
                 .deployment_resources_desired_status_since,
             deployment_runtime_status: extended_pipeline.deployment_runtime_status,
+            deployment_runtime_status_details: extended_pipeline.deployment_runtime_status_details,
             deployment_runtime_status_since: extended_pipeline.deployment_runtime_status_since,
             deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
             deployment_runtime_desired_status_since: extended_pipeline
@@ -264,6 +271,8 @@ pub struct PipelineSelectedInfo {
     pub deployment_desired_status: CombinedDesiredStatus,
     pub deployment_desired_status_since: DateTime<Utc>,
     pub deployment_resources_status: ResourcesStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deployment_resources_status_details: Option<Option<serde_json::Value>>,
     pub deployment_resources_status_since: DateTime<Utc>,
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
@@ -318,6 +327,8 @@ pub struct PipelineSelectedInfoInternal {
     pub deployment_desired_status: CombinedDesiredStatus,
     pub deployment_desired_status_since: DateTime<Utc>,
     pub deployment_resources_status: ResourcesStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deployment_resources_status_details: Option<Option<serde_json::Value>>,
     pub deployment_resources_status_since: DateTime<Utc>,
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
@@ -375,6 +386,9 @@ impl PipelineSelectedInfoInternal {
                 extended_pipeline.deployment_runtime_desired_status_since,
             ),
             deployment_resources_status: extended_pipeline.deployment_resources_status,
+            deployment_resources_status_details: Some(
+                extended_pipeline.deployment_resources_status_details,
+            ),
             deployment_resources_status_since: extended_pipeline.deployment_resources_status_since,
             deployment_resources_desired_status: extended_pipeline
                 .deployment_resources_desired_status,
@@ -432,6 +446,7 @@ impl PipelineSelectedInfoInternal {
                 extended_pipeline.deployment_runtime_desired_status_since,
             ),
             deployment_resources_status: extended_pipeline.deployment_resources_status,
+            deployment_resources_status_details: None,
             deployment_resources_status_since: extended_pipeline.deployment_resources_status_since,
             deployment_resources_desired_status: extended_pipeline
                 .deployment_resources_desired_status,

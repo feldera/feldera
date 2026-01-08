@@ -1486,6 +1486,7 @@ mod tests {
                 pipeline_id,
                 Version(1),
                 "test-location",
+                json!({}),
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Initializing,
                     runtime_status_details: json!(""),
@@ -1501,6 +1502,7 @@ mod tests {
                 pipeline_id,
                 Version(1),
                 "test-location",
+                json!({}),
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Running,
                     runtime_status_details: json!(""),
@@ -1684,6 +1686,7 @@ mod tests {
                 pipeline_id,
                 Version(1),
                 "test-location",
+                json!({}),
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Initializing,
                     runtime_status_details: json!(""),
@@ -1699,6 +1702,7 @@ mod tests {
                 pipeline_id,
                 Version(1),
                 "test-location",
+                json!({}),
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Running,
                     runtime_status_details: json!(""),
@@ -1873,6 +1877,7 @@ mod tests {
                 pipeline_id,
                 Version(1),
                 "test-location",
+                json!({}),
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Initializing,
                     runtime_status_details: json!(""),
@@ -1893,6 +1898,7 @@ mod tests {
                 pipeline_id,
                 Version(1),
                 "test-location",
+                json!({}),
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Running,
                     runtime_status_details: json!(""),
@@ -1972,6 +1978,7 @@ mod tests {
                 pipeline_id,
                 Version(1),
                 "test-location",
+                json!({}),
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Initializing,
                     runtime_status_details: json!(""),
@@ -1987,6 +1994,7 @@ mod tests {
                 pipeline_id,
                 Version(1),
                 "test-location",
+                json!({}),
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Running,
                     runtime_status_details: json!(""),

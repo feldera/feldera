@@ -51,6 +51,7 @@ state is tracked by the storage status.
 - `deployment_initial` (set when desired status becomes `Provisioned`, unset becoming `Stopping`
   or desired status becomes `Stopped` while status is still `Stopped`)
 - `deployment_resources_status`
+- `deployment_resources_status_details` (unset becoming `Stopped`)
 - `deployment_resources_status_since`
 - `deployment_resources_desired_status`
 - `deployment_resources_desired_status_since`
@@ -146,6 +147,7 @@ The one exception to this is `/stop?force=false`, which will result in a forcefu
 
 **Relevant API fields:**
 - `deployment_runtime_status`
+- `deployment_runtime_status_details`
 - `deployment_runtime_status_since`
 - `deployment_runtime_desired_status`
 - `deployment_runtime_desired_status_since`
