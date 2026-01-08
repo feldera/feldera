@@ -175,6 +175,7 @@ pub fn validate_resources_status_transition(
         (storage_status, current_status, new_status),
         (StorageStatus::Cleared | StorageStatus::InUse,  ResourcesStatus::Stopped, ResourcesStatus::Provisioning)
         | (StorageStatus::Cleared | StorageStatus::InUse, ResourcesStatus::Stopped, ResourcesStatus::Stopping)
+        | (StorageStatus::InUse, ResourcesStatus::Provisioning, ResourcesStatus::Provisioning)
         | (StorageStatus::InUse, ResourcesStatus::Provisioning, ResourcesStatus::Provisioned)
         | (StorageStatus::InUse, ResourcesStatus::Provisioned, ResourcesStatus::Provisioned)
         | (StorageStatus::InUse, ResourcesStatus::Provisioning, ResourcesStatus::Stopping)

@@ -165,6 +165,10 @@ pub enum DBError {
         current_status: ResourcesStatus,
         new_status: ResourcesStatus,
     },
+    InvalidResourcesStatusRemain {
+        current_status: ResourcesStatus,
+        new_status: ResourcesStatus,
+    },
     InvalidStorageStatusTransition {
         current_status: StorageStatus,
         new_status: StorageStatus,
@@ -561,6 +565,15 @@ impl Display for DBError {
                     "Cannot transition from deployment resources status '{current_status}' (storage status: '{storage_status}') to '{new_status}'"
                 )
             }
+            DBError::InvalidResourcesStatusRemain {
+                current_status,
+                new_status,
+            } => {
+                write!(
+                    f,
+                    "Invalid remain as current status '{current_status}' is not equal to '{new_status}'"
+                )
+            }
             DBError::InvalidStorageStatusTransition {
                 current_status,
                 new_status,
@@ -732,6 +745,7 @@ impl DetailedError for DBError {
             Self::InvalidResourcesStatusTransition { .. } => {
                 Cow::from("InvalidResourcesStatusTransition")
             }
+            Self::InvalidResourcesStatusRemain { .. } => Cow::from("InvalidResourcesStatusRemain"),
             Self::InvalidStorageStatusTransition { .. } => {
                 Cow::from("InvalidStorageStatusTransition")
             }
@@ -805,6 +819,7 @@ impl ResponseError for DBError {
             Self::TransitionRequiresCompiledProgram { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error
             Self::InvalidResourcesStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
+            Self::InvalidResourcesStatusRemain { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::StorageStatusImmutableUnlessStopped { .. } => StatusCode::BAD_REQUEST,
             Self::IllegalPipelineAction { .. } => StatusCode::BAD_REQUEST, // User trying to set a deployment desired status which cannot be performed currently
             Self::TlsConnection { .. } => StatusCode::INTERNAL_SERVER_ERROR,
@@ -829,5 +844,11 @@ impl ResponseError for DBError {
 
     fn error_response(&self) -> HttpResponse<BoxBody> {
         HttpResponseBuilder::new(self.status_code()).json(ErrorResponse::from_error(self))
+    }
+}
+
+impl From<DBError> for ErrorResponse {
+    fn from(val: DBError) -> Self {
+        ErrorResponse::from_error_nolog(&val)
     }
 }

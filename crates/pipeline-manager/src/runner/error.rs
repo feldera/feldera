@@ -376,7 +376,7 @@ fn pipeline_suffix(name: &str) -> String {
 
 impl From<RunnerError> for ErrorResponse {
     fn from(val: RunnerError) -> Self {
-        ErrorResponse::from(&val)
+        ErrorResponse::from_error_nolog(&val)
     }
 }
 
