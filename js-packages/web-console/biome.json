@@ -34,7 +34,8 @@
       "style": {
         "useConst": "off",
         "useExportType": "off",
-        "useImportType": "off"
+        "useImportType": "off",
+        "useBlockStatements": "on"
       },
       "suspicious": {
         "noAssignInExpressions": "info",

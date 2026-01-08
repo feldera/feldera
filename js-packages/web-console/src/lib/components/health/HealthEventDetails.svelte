@@ -4,9 +4,9 @@
   import { match } from 'ts-pattern'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { formatDateTime } from '$lib/functions/format'
-  import type { HealthEventParts } from '$lib/functions/pipelines/health'
+  import type { HealthEventBucket } from '$lib/functions/pipelines/health'
 
-  let { eventParts, onClose }: { eventParts: HealthEventParts; onClose: () => void } = $props()
+  let { eventParts, onClose }: { eventParts: HealthEventBucket; onClose: () => void } = $props()
   let fullEvents: (null | {
     timestamp: Date
     description: string

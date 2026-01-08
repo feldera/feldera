@@ -46,7 +46,7 @@
       <button
         onclick={() => (drawer.value = !drawer.value)}
         class="fd fd-book-open btn-icon flex preset-tonal-surface text-[20px]"
-        aria-label="Open extras drawer"
+        aria-label="Open the right navigation drawer"
       >
       </button>
     {:else}

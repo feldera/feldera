@@ -18,7 +18,7 @@
   import { ceilToHour } from '$lib/functions/common/date'
   import {
     groupHealthEvents,
-    type HealthEventParts,
+    type HealthEventBucket,
     unpackCombinedEvent
   } from '$lib/functions/pipelines/health'
   import { resolve } from '$lib/functions/svelte'
@@ -88,7 +88,7 @@
     }
   ])
 
-  let selectedEvent: HealthEventParts | null = $state(null)
+  let selectedEvent: HealthEventBucket | null = $state(null)
   let eventLogListRef: EventLogList | undefined = $state()
 
   $effect(() => {
@@ -129,7 +129,7 @@
       <button
         onclick={() => (drawer.value = !drawer.value)}
         class="fd fd-book-open btn-icon flex preset-tonal-surface text-[20px]"
-        aria-label="Open extras drawer"
+        aria-label="Open the right navigation drawer"
       >
       </button>
     {:else}

@@ -18,11 +18,29 @@
   }
 
   interface Props {
+    /**
+     * The list of events to display
+     */
     events: TimelineEvent[]
+    /**
+     * The timestamp of the beginning of the timeline
+     */
     startAt: Date
+    /**
+     * The timestamp of the end of the timeline
+     */
     endAt: Date
-    unitDurationMs: number // milliseconds
+    /**
+     * The duration of a single timeline item in milliseconds
+     */
+    unitDurationMs: number
+    /**
+     * Container element CSS class
+     */
     class?: string
+    /**
+     * Callback of a timeline item being clicked, which includes information about all events that are relevant to the item
+     */
     onBarClick?: (group: TimelineGroup) => void
   }
 
@@ -35,7 +53,7 @@
     onBarClick
   }: Props = $props()
 
-  // Timeline configuration
+  // Timeline display configuration
   const TIMELINE_HEIGHT = 24
   const TOP_PADDING = 16 // Reserved space for bar expansion
   const BAR_TO_GAP_RATIO = 4 // bars are 2x wider than gaps
@@ -88,12 +106,6 @@
   const barWidth = $derived.by(() => {
     const totalGroups = groups.length
     if (totalGroups === 0) return 0
-    // If bar_width = BAR_TO_GAP_RATIO * gap_width, then gap_width = bar_width / BAR_TO_GAP_RATIO
-    // Total width = groups * bar_width + (groups - 1) * gap_width
-    // Total width = groups * bar_width + (groups - 1) * bar_width / BAR_TO_GAP_RATIO
-    // Total width = bar_width * (groups + (groups - 1) / BAR_TO_GAP_RATIO)
-    // Total width = bar_width * (groups * BAR_TO_GAP_RATIO + groups - 1) / BAR_TO_GAP_RATIO
-    // bar_width = Total width * BAR_TO_GAP_RATIO / (groups * (BAR_TO_GAP_RATIO + 1) - 1)
     const barWidthCalc = (100 * BAR_TO_GAP_RATIO) / (totalGroups * (BAR_TO_GAP_RATIO + 1) - 1)
     return barWidthCalc
   })

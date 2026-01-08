@@ -325,3 +325,38 @@ export function findSplice<T>(
   // splice: at idx, remove exactly 1 element, then insert any insertItems
   return arr.splice(idx, 1, ...insertItems) as [T]
 }
+
+/**
+ * Inserts each element from `subarray` into `targetArray` in sorted order
+ * based on the provided comparator. This mutates `targetArray` in place.
+ *
+ * Uses binary search to find the insertion point for each element, maintaining
+ * the sorted order.
+ *
+ * @param targetArray - The array to insert into (will be mutated)
+ * @param subarray - The elements to insert
+ * @param comparator - Comparison function returning negative if a < b, positive if a > b, 0 if equal
+ */
+export function pushSortedOn<T>(
+  targetArray: T[],
+  subarray: readonly T[],
+  comparator: (a: T, b: T) => number
+): void {
+  for (const item of subarray) {
+    // Binary search to find the insertion index
+    let left = 0
+    let right = targetArray.length
+
+    while (left < right) {
+      const mid = Math.floor((left + right) / 2)
+      if (comparator(targetArray[mid], item) < 0) {
+        left = mid + 1
+      } else {
+        right = mid
+      }
+    }
+
+    // Insert at the found position
+    targetArray.splice(left, 0, item)
+  }
+}
