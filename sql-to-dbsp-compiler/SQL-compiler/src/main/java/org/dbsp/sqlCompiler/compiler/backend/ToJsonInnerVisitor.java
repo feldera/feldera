@@ -598,7 +598,7 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     @Override
     public void postorder(DBSPCastExpression node) {
         this.property("safe");
-        this.stream.append(node.safe);
+        this.stream.append(node.safe.name());
         super.postorder(node);
     }
 

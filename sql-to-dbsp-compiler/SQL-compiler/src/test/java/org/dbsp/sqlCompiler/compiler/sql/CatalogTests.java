@@ -37,7 +37,6 @@ public class CatalogTests extends BaseSQLTests {
         return result;
     }
 
-
     @Test
     public void issue5350() {
         this.getCCS("""

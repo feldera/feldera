@@ -84,7 +84,7 @@ public final class DBSPI16Literal extends DBSPIntLiteral implements IsNumericLit
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DBSPI16Literal that = (DBSPI16Literal) o;
-        return Objects.equals(value, that.value);
+        return Objects.equals(this.value, that.value);
     }
 
     @Override
@@ -94,7 +94,7 @@ public final class DBSPI16Literal extends DBSPIntLiteral implements IsNumericLit
                     .append(this.type)
                     .append(")null");
         else
-            return builder.append(this.value.toString());
+            return builder.append(this.wrapSome(this.value.toString()));
     }
 
     @Override

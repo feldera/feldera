@@ -186,14 +186,16 @@ public class ProfilingTests extends StreamingTestBase {
         }
 
         try {
-            Utilities.compileAndTestRust(RUST_DIRECTORY, true);
-            String outFile = "profile.zip";
-            Path outFilePath = Paths.get(RUST_DIRECTORY, "..", outFile);
-            byte[] data = Utilities.extractFileFromZip(outFilePath.toString(), "profile.json");
-            String str = new String(data, StandardCharsets.UTF_8);
-            JsonNode jsonNode = Utilities.deterministicObjectMapper().readTree(str);
-            Assert.assertNotNull(jsonNode);
-            Utilities.deleteFile(outFilePath.toFile(), true);
+            BaseSQLTests.compileAndTestRust(true);
+            if (!BaseSQLTests.skipRust) {
+                String outFile = "profile.zip";
+                Path outFilePath = Paths.get(RUST_DIRECTORY, "..", outFile);
+                byte[] data = Utilities.extractFileFromZip(outFilePath.toString(), "profile.json");
+                String str = new String(data, StandardCharsets.UTF_8);
+                JsonNode jsonNode = Utilities.deterministicObjectMapper().readTree(str);
+                Assert.assertNotNull(jsonNode);
+                Utilities.deleteFile(outFilePath.toFile(), true);
+            }
         } finally {
             File mainFile = new File(mainFilePath);
             Utilities.deleteFile(mainFile, true);
@@ -234,7 +236,7 @@ public class ProfilingTests extends StreamingTestBase {
         }
 
         try {
-            Utilities.compileAndTestRust(RUST_DIRECTORY, true);
+            BaseSQLTests.compileAndTestRust(true);
             String outFile = "profile.zip";
             Path outFilePath = Paths.get(RUST_DIRECTORY, "..", outFile);
             byte[] data = Utilities.extractFileFromZip(outFilePath.toString(), "profile.json");

@@ -5,8 +5,8 @@ import java.util.Map;
 
 /** A Bijection is a pair of one-to-one maps */
 public class Bijection<L, R> {
-    Map<L, R> left;
-    Map<R, L> right;
+    final Map<L, R> left;
+    final Map<R, L> right;
 
     public Bijection() {
         this.left = new HashMap<>();

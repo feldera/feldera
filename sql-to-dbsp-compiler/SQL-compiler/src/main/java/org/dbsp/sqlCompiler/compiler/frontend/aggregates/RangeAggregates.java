@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -108,7 +109,7 @@ public class RangeAggregates extends WindowAggregates {
                 throw new UnsupportedException("Window bounds must be positive: " + literal.toSqlString(), node);
             }
             if (literal.getType().is(DBSPTypeInteger.class)) {
-                numericBound = value.cast(node, unsignedType, false);
+                numericBound = value.cast(node, unsignedType, DBSPCastExpression.CastType.SqlUnsafe);
             } else {
                 RustSqlRuntimeLibrary.FunctionDescription desc =
                         RustSqlRuntimeLibrary.getWindowBound(node, unsignedType, sortType, literal.getType());
@@ -157,7 +158,8 @@ public class RangeAggregates extends WindowAggregates {
                     // directly build the expression, no casts are needed
                     originalOrderField = new DBSPUnaryExpression(
                             this.node, i128, DBSPOpcode.DECIMAL_TO_INTEGER, originalOrderField);
-                    originalOrderField = originalOrderField.cast(CalciteObject.EMPTY, intType, false);
+                    originalOrderField = originalOrderField.cast(
+                            CalciteObject.EMPTY, intType, DBSPCastExpression.CastType.SqlUnsafe);
                     sortType = intType;
                 }
             }
@@ -253,7 +255,7 @@ public class RangeAggregates extends WindowAggregates {
             if (originalSortType.is(DBSPTypeDecimal.class)) {
                 // convert back to decimal and rescale
                 DBSPType i128 = DBSPTypeInteger.getType(this.node, INT128, originalSortType.mayBeNull);
-                unwrap = unwrap.cast(this.node, i128, false);
+                unwrap = unwrap.cast(this.node, i128, DBSPCastExpression.CastType.SqlUnsafe);
                 unwrap = new DBSPUnaryExpression(this.node, originalSortType,
                         DBSPOpcode.INTEGER_TO_DECIMAL, unwrap);
             }
@@ -340,7 +342,8 @@ public class RangeAggregates extends WindowAggregates {
                 // for these aggregates.  So we have to cast the results to whatever
                 // Calcite says they will be.
                 allFields[i + lastTupleType.size()] = right.deref().field(i).applyCloneIfNeeded().cast(
-                        this.node, this.windowResultType.getFieldType(this.windowFieldIndex + i), false);
+                        this.node, this.windowResultType.getFieldType(this.windowFieldIndex + i),
+                        DBSPCastExpression.CastType.SqlUnsafe);
             }
             DBSPTupleExpression addExtraFieldBody = new DBSPTupleExpression(allFields);
             DBSPClosureExpression addExtraField =

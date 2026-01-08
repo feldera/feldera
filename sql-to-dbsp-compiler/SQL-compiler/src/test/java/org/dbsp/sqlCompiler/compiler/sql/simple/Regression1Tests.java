@@ -69,6 +69,12 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
+    public void mapMapTest() {
+        this.statementsFailingInCompilation("CREATE TABLE TBL(x MAP<MAP<INT, INT>, INT>)",
+                "MAP key type cannot be MAP");
+    }
+
+    @Test
     public void issue3952() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(t0 TIMESTAMP, t1 TIMESTAMP NOT NULL);
@@ -134,8 +140,8 @@ public class Regression1Tests extends SqlIoTest {
                                     -------------------------------------------""");
         for (var c : Linq.list("NULL", "0")) {
             for (var ad : Linq.list("NULL", "0")) {
-                for (var av: Linq.list("NULL", "'a'")) {
-                    for (var bg: Linq.list("NULL", "0", "1")) {
+                for (var av : Linq.list("NULL", "'a'")) {
+                    for (var bg : Linq.list("NULL", "0", "1")) {
                         for (var bk : Linq.list("NULL", "0")) {
                             String result = "";
                             if (nn(ad) && nn(av) && nn(bg) && nn(bk) && !bg.equals("0")) {
@@ -1290,6 +1296,7 @@ public class Regression1Tests extends SqlIoTest {
                 """);
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             int lagCount = 0;
+
             @Override
             public void postorder(DBSPLagOperator node) {
                 this.lagCount++;
@@ -1754,7 +1761,7 @@ public class Regression1Tests extends SqlIoTest {
                 FROM v a
                 LEFT JOIN lookup l ON a.key = l.key;""");
     }
-    
+
     @Test
     public void issue5386() {
         this.statementsFailingInCompilation("""
@@ -1795,6 +1802,25 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
+    public void issue5378() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                MAP_KEYS(SAFE_CAST(mapp AS MAP<INT, INT>)),
+                MAP_VALUES(SAFE_CAST(mapp AS MAP<INT, INT>))
+                FROM tbl;""");
+        ccs.step("INSERT INTO TBL VALUES(MAP['1', 1])", """
+                 keys | values | weight
+                ------------------------
+                 { 1 } | { 1 } | 1""");
+        ccs.step("INSERT INTO TBL VALUES(MAP['a', 2])", """
+                 keys | values | weight
+                ------------------------
+                      |        | 1""");
+    }
+
+    @Test
     public void issue5379() {
         this.statementsFailingInCompilation("""
                 CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
@@ -1814,5 +1840,85 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW v AS SELECT
                 CAST(mapp AS MAP<VARCHAR, INT ARRAY>) AS to_map
                 FROM tbl;""", "Cast function cannot convert value of type (VARCHAR CHARACTER SET \"UTF-8\" NOT NULL, INTEGER) MAP");
+    }
+
+    @Test
+    public void safeArrayCast() {
+        this.qs("""
+                SELECT SAFE_CAST(ARRAY['a'] AS INT ARRAY);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT SAFE_CAST(ARRAY['1'] AS INT ARRAY);
+                 r
+                ---
+                 { 1 }
+                (1 row)""");
+    }
+
+    @Test
+    public void safeNestedArrayCast() {
+        this.qs("""
+                SELECT SAFE_CAST(ARRAY[ARRAY['a']] AS INT ARRAY ARRAY);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT ELEMENT(SAFE_CAST(ARRAY[ARRAY['1']] AS INT ARRAY ARRAY));
+                 r
+                ---
+                { 1 }
+                (1 row)""");
+    }
+
+    @Test
+    public void issue5389() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(roww ROW(v1 VARCHAR NULL) NULL);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                SAFE_CAST(roww AS ROW(i1 INT)) AS to_row
+                FROM tbl;""", "SAFE_CAST cannot be used to convert ROW(VARCHAR) to ROW(INT)");
+    }
+
+    @Test
+    public void issue5390() {
+        this.getCCS("""
+                CREATE TYPE user_def AS(i1 INT, v1 VARCHAR NULL);
+                CREATE TYPE user_def_array AS (val VARCHAR ARRAY);
+                CREATE TYPE user_def_row AS (val ROW(i1 INT, v1 VARCHAR NULL));
+                CREATE TYPE user_def_udt AS (val user_def);
+                
+                CREATE TABLE tbl(arr VARCHAR ARRAY, mapp MAP<VARCHAR, INT>,
+                                 roww ROW(i1 INT, v1 VARCHAR NULL) NULL, udt user_def);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                    SAFE_CAST(NULL AS user_def_row) AS to_row,
+                    SAFE_CAST(NULL AS user_def_udt) AS to_udt
+                FROM tbl;""");
+    }
+
+    @Test
+    public void issue5391() {
+        this.getCCS("""
+                CREATE TYPE user_def_row AS (val ROW(i1 INT, v1 VARCHAR NULL));
+                CREATE MATERIALIZED VIEW v AS SELECT
+                SAFE_CAST(NULL AS user_def_row) AS to_roww;""");
+    }
+
+    @Test
+    public void mapCast() {
+        this.getCCS("""
+                CREATE TABLE varnt_cmpx_tbl(
+                roww ROW(int INT, var VARCHAR));
+                
+                CREATE MATERIALIZED VIEW cmpx_to_variant AS SELECT
+                CAST(roww AS VARIANT) AS roww_varnt
+                FROM varnt_cmpx_tbl;
+                
+                CREATE MATERIALIZED VIEW variant_to_cmpx AS SELECT
+                CAST(roww_varnt AS ROW(int INT, var VARCHAR)) AS roww
+                FROM cmpx_to_variant;""");
     }
 }

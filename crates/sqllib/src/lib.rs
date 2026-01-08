@@ -1319,3 +1319,18 @@ impl<T> Deref for StaticLazy<T> {
         self.get()
     }
 }
+
+#[doc(hidden)]
+// If the data is Ok(None), convert it to Err, other leave it unchanged
+pub fn unwrap_sql_result<T>(data: SqlResult<Option<T>>) -> SqlResult<T> {
+    match data {
+        Err(e) => Err(e),
+        Ok(None) => Err(SqlRuntimeError::from_strng("NULL result produced")),
+        Ok(Some(data)) => Ok(data),
+    }
+}
+
+#[doc(hidden)]
+pub fn wrap_sql_result<T>(data: T) -> SqlResult<T> {
+    Ok(data)
+}

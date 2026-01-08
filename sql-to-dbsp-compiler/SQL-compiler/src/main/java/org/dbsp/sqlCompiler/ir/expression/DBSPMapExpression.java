@@ -184,18 +184,20 @@ public final class DBSPMapExpression extends DBSPExpression implements ISameValu
                     .append(this.type)
                     .append(")")
                     .append("null");
-        builder.append("Map::from([")
-                .increase();
+        builder.append("Map::from([");
+        if (this.size() > 0)
+            builder.increase();
         Utilities.enforce(this.values != null);
         for (int i = 0; i < keys.size(); i++) {
             builder.append(this.keys.get(i))
                     .append(" => ")
                     .append(this.values.get(i))
-                    .append(",");
+                    .append(",").newline();
         }
-        return builder.append("])")
-                .decrease()
-                .newline();
+        builder.append("])");
+        if (this.size() > 0)
+            builder.decrease();
+        return builder.newline();
     }
 
     @Override

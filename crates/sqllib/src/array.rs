@@ -1,5 +1,6 @@
 // Array operations
 
+use crate::error::{SqlResult, SqlRuntimeError};
 use crate::{ConcatSemigroup, Semigroup, Weight, some_function2};
 use dbsp::CmpFunc;
 use itertools::Itertools;
@@ -84,6 +85,30 @@ where
     F: Fn(&T) -> S,
 {
     vec.as_ref().map(|vec| array_map__(vec.clone(), f))
+}
+
+#[doc(hidden)]
+pub fn array_map_safe__<T, S, F>(vec: Array<T>, f: F) -> SqlResult<Option<Array<S>>>
+where
+    F: Fn(&T) -> SqlResult<S>,
+{
+    (*vec)
+        .iter()
+        .map(f)
+        .collect::<SqlResult<Vec<S>>>()
+        .map(|x| Some(x.into()))
+}
+
+#[doc(hidden)]
+pub fn array_map_safeN_<T, S, F>(vec: Option<Array<T>>, f: F) -> SqlResult<Option<Array<S>>>
+where
+    F: Fn(&T) -> SqlResult<S>,
+{
+    match vec {
+        // Treat like an error; the result will be unwrapped to None anyway
+        None => Err(SqlRuntimeError::from_strng("")),
+        Some(vec) => array_map_safe__(vec.clone(), f),
+    }
 }
 
 #[doc(hidden)]

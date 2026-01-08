@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.IndentStreamBuilder;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -118,6 +119,23 @@ public class TranslateVisitor<T> extends InnerVisitor {
     protected T analyze(IDBSPInnerNode node) {
         node.accept(this);
         return this.get(node);
+    }
+
+    @Override
+    public IDBSPInnerNode apply(IDBSPInnerNode node) {
+        IDBSPInnerNode result = super.apply(node);
+        if (result != node) {
+            Logger.INSTANCE.belowLevel(this, 3)
+                    .appendSupplier(this::toString)
+                    .append(" applied ")
+                    .append(node.getId())
+                    .append(" ")
+                    .append(node)
+                    .append(" produced ")
+                    .append(result.toString())
+                    .newline();
+        }
+        return result;
     }
 
     @Nullable

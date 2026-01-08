@@ -110,6 +110,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
@@ -140,7 +141,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
     int visitingChild;
     @Nullable
     final SourcePositionResource sourcePositionResource;
-    final CreateRuntimeErrorWrappers createErrorWrappers;
 
     public ToRustInnerVisitor(DBSPCompiler compiler, IIndentStream builder,
                               @Nullable SourcePositionResource sourcePositionResource, boolean compact) {
@@ -150,7 +150,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.options = compiler.options;
         this.sourcePositionResource = sourcePositionResource;
         this.visitingChild = 0;
-        this.createErrorWrappers = new CreateRuntimeErrorWrappers(compiler);
     }
 
     @SuppressWarnings("SameReturnValue")
@@ -1049,7 +1048,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
         public void postorder(DBSPHandleErrorExpression expression) {
             // Strip source positions from these initializers for now
             DBSPExpression source = this.getE(expression.source);
-            DBSPExpression result = new DBSPHandleErrorExpression(expression.getNode(), expression.index, source, false);
+            DBSPExpression result = new DBSPHandleErrorExpression(expression.getNode(), expression.index,
+                    expression.runtimeBehavior, source, false);
             this.map(expression, result);
         }
 
@@ -1118,7 +1118,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append("|")
                         .append(RewriteConnectorMetadata.variableName())
                         .append(": &Option<Variant>| Some(");
-                IDBSPInnerNode defaultValue = this.createErrorWrappers.apply(meta.defaultValue);
+                IDBSPInnerNode defaultValue = CreateRuntimeErrorWrappers.wrapCasts(this.compiler, meta.defaultValue);
                 defaultValue = rw.apply(defaultValue);
                 defaultValue.accept(this);
                 this.builder.append(".into())");
@@ -1294,10 +1294,24 @@ public class ToRustInnerVisitor extends InnerVisitor {
          * the function called will be cast_to_b_i16N. */
         this.push(expression);
         DBSPType destType = expression.getType();
-        DBSPTypeCode code = destType.code;
-        DBSPType sourceType = expression.source.getType();
-        DBSPTypeArray sourceVecType = sourceType.as(DBSPTypeArray.class);
-        DBSPTypeArray destVecType = destType.as(DBSPTypeArray.class);
+        if (this.compact) {
+            this.builder.append("((")
+                    .append(expression.getType())
+                    .append(")");
+            expression.source.accept(this);
+            this.builder.append(")");
+            this.pop(expression);
+            return VisitDecision.STOP;
+        }
+        Utilities.enforce(!expression.safe.isSql(), () -> "SQL cast leftover " + expression);
+        Utilities.enforce(!expression.safe.isUnwrap(), () -> "unwrap cast leftover " + expression);
+        Utilities.enforce(destType.is(DBSPTypeSqlResult.class), () -> "cast type should be SqlResult " + expression);
+
+        destType = destType.to(DBSPTypeSqlResult.class).getWrappedType();
+        final DBSPTypeCode code = destType.code;
+        final DBSPType sourceType = expression.source.getType();
+        final DBSPTypeArray sourceVecType = sourceType.as(DBSPTypeArray.class);
+        final DBSPTypeArray destVecType = destType.as(DBSPTypeArray.class);
         String functionName;
 
         if (destVecType != null) {
@@ -1680,17 +1694,17 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(")");
                 break;
             }
-            case ARRAY_CONVERT, MAP_CONVERT, DIV_NULL: {
+            case ARRAY_CONVERT_SAFE, ARRAY_CONVERT, MAP_CONVERT, MAP_CONVERT_SAFE, DIV_NULL: {
                 this.builder.append(expression.opcode.toString())
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
-                        .append("(");
+                        .append("(").increase();
                 this.visitingChild = 0;
                 expression.left.accept(this);
                 this.builder.append(", ");
                 this.visitingChild = 1;
                 expression.right.accept(this);
-                this.builder.append(")");
+                this.builder.newline().decrease().append(")");
                 break;
             }
             case OR:
@@ -2123,6 +2137,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPUnwrapExpression expression) {
+        if (this.compact) {
+            expression.expression.accept(this);
+            this.builder.append(".unwrap()");
+            return VisitDecision.STOP;
+        }
         this.push(expression);
         this.builder.append("(");
         this.builder.append("unwrap_value(");

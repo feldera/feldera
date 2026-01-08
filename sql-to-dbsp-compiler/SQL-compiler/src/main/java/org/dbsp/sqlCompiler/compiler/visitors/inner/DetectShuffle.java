@@ -36,7 +36,7 @@ import java.util.List;
  * |&a| (2, (*a).3, (*a.3).2) is not, for two reasons: constant 2, nested field a.3.2
  * Only makes sense for functions with a single parameter. */
 public class DetectShuffle extends SymbolicInterpreter<DetectShuffle.AbstractValue> {
-    ResolveReferences resolver;
+    final ResolveReferences resolver;
     @Nullable ParameterValue parameter;
 
     public DetectShuffle(DBSPCompiler compiler) {

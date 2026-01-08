@@ -65,7 +65,6 @@ public class ToDot {
 
     /** Returns a circuit transform which can be inserted in the CircuitOptimizer to dump the
      * circuit at some point.
-     *
      * details < 2: just graph topology
      * details = 2: dump edge types, abbreviated if too large
      * details = 3: dump source positions

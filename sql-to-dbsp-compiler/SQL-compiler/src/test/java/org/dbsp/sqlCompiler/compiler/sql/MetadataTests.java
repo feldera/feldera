@@ -104,7 +104,7 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
     }
 
     @Test
@@ -624,7 +624,7 @@ public class MetadataTests extends BaseSQLTests {
                 "-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, true);
+        BaseSQLTests.compileAndTestRust(true);
     }
 
     // Test that schema for a table can be retrieved from a JDBC data source
@@ -699,7 +699,7 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
 
         // Truncate file to 0 bytes
         FileWriter writer = new FileWriter(udf);
@@ -745,7 +745,7 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
 
         // Truncate file to 0 bytes
         FileWriter writer = new FileWriter(udf);
@@ -902,7 +902,7 @@ public class MetadataTests extends BaseSQLTests {
             CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
             if (messages.errorCount() > 0)
                 throw new RuntimeException(messages.toString());
-            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+            BaseSQLTests.compileAndTestRust(false);
             // Truncate udf file to 0 bytes
             FileWriter writer = new FileWriter(udf);
             writer.close();
@@ -938,7 +938,7 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
 
         Path protos = Paths.get(BaseSQLTests.RUST_DIRECTORY, DBSPCompiler.STUBS_FILE_NAME);
         Assert.assertTrue(protos.toFile().exists());
@@ -981,7 +981,7 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
     }
 
     @Test
@@ -993,7 +993,7 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
     }
 
     @Test

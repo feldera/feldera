@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
 import java.util.Objects;
@@ -78,6 +79,14 @@ public class DBSPTypeMillisInterval
     @Override
     public String toString() {
         return super.toString() + "(" + this.units + ")";
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return super.toString(builder)
+                .append("(")
+                .append(this.units.toString())
+                .append(")");
     }
 
     @Override

@@ -107,12 +107,13 @@ public final class DBSPIntervalMillisLiteral
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        builder.append(this.type)
-                .append("::new(");
-        if (this.value != null)
-            return builder.append(this.value.toString())
-                    .append(")");
-        return builder.append("null)");
+        builder.append("(")
+                .append(this.type)
+                .append(")");
+        if (this.value == null)
+            return builder.append("null");
+        else
+            return builder.append(this.wrapSome(this.value.toString()));
     }
 
     @Override

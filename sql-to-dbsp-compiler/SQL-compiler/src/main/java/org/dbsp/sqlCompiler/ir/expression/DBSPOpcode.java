@@ -85,9 +85,17 @@ public enum DBSPOpcode {
     // Otherwise, this returns left >= right.
     CONTROLLED_FILTER_GTE("cf_compare_gte", true),
     // Higher order operation: apply a function to every element of an array
+    // Only used to implement casts on arrays, which recursively cast elements
     ARRAY_CONVERT("array_map", false),
+    // Same as ARRAY_CONVERT, except the function applied returns SqlResult, and
+    // the map function returns None in case any partial result is Error.
+    ARRAY_CONVERT_SAFE("array_map_safe", false),
     // Apply a function to every key-value element of a map
+    // Only used to implement casts on maps, which recursively cast keys and values
     MAP_CONVERT("map_map", false),
+    // Same as MAP_CONVERT, except the function applied returns SqlResult, and
+    // the map function returns None in case any partial result is Error.
+    MAP_CONVERT_SAFE("map_map_safe", false),
     ;
 
     private final String text;

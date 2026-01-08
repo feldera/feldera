@@ -129,6 +129,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
@@ -219,8 +220,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         Logger.INSTANCE.belowLevel(this, 4)
                 .append("Starting ")
                 .appendSupplier(this::toString)
-                .append(" at ")
-                .append(node);
+                .append(" on ")
+                .append(node.getId())
+                .append(" ")
+                .append(node)
+                .newline();
         profiles.start(this);
     }
 
@@ -471,6 +475,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPTypeArray node) {
+        return this.preorder((DBSPTypeUser) node);
+    }
+
+    public VisitDecision preorder(DBSPTypeSqlResult node) {
         return this.preorder((DBSPTypeUser) node);
     }
 
@@ -1113,6 +1121,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPTypeArray node) {
+        this.postorder((DBSPTypeUser) node);
+    }
+
+    public void postorder(DBSPTypeSqlResult node) {
         this.postorder((DBSPTypeUser) node);
     }
 

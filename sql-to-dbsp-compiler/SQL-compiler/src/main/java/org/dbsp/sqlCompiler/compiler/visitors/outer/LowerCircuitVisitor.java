@@ -21,6 +21,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
@@ -102,7 +103,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                     DBSPTypeUSize.INSTANCE, DBSPOpcode.ADD,
                     e.field(0),
                     new DBSPUSizeLiteral(1))
-                    .cast(flatmap.getNode(), flatmap.ordinalityIndexType, false);
+                    .cast(flatmap.getNode(), flatmap.ordinalityIndexType, DBSPCastExpression.CastType.SqlUnsafe);
         }
 
         if (flatmap.rightProjections != null) {

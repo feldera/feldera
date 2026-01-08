@@ -225,14 +225,14 @@ public class ValuesReduceRule
         }
     }
 
-    static DefaultOptRuleConfig<ValuesReduceRule> FILTER = DefaultOptRuleConfig.<ValuesReduceRule>create()
+    static final DefaultOptRuleConfig<ValuesReduceRule> FILTER = DefaultOptRuleConfig.<ValuesReduceRule>create()
             .withOperandSupplier(b0 ->
                     b0.operand(LogicalFilter.class).oneInput(b1 ->
                             b1.operand(LogicalValues.class)
                                     .predicate(Values::isNotEmpty).noInputs()))
             .withMatchHandler(ValuesReduceRule::matchFilter);
 
-    static DefaultOptRuleConfig<ValuesReduceRule> PROJECT = DefaultOptRuleConfig.<ValuesReduceRule>create()
+    static final DefaultOptRuleConfig<ValuesReduceRule> PROJECT = DefaultOptRuleConfig.<ValuesReduceRule>create()
             .withDescription("ValuesReduceRule(Project)")
             .withOperandSupplier(b0 ->
                     b0.operand(LogicalProject.class).oneInput(b1 ->
@@ -240,7 +240,7 @@ public class ValuesReduceRule
                                     .predicate(Values::isNotEmpty).noInputs()))
             .withMatchHandler(ValuesReduceRule::matchProject);
 
-    static DefaultOptRuleConfig<ValuesReduceRule> PROJECT_FILTER = DefaultOptRuleConfig.<ValuesReduceRule>create()
+    static final DefaultOptRuleConfig<ValuesReduceRule> PROJECT_FILTER = DefaultOptRuleConfig.<ValuesReduceRule>create()
             .withDescription("ValuesReduceRule(Project-Filter)")
             .withOperandSupplier(b0 ->
                     b0.operand(LogicalProject.class).oneInput(b1 ->

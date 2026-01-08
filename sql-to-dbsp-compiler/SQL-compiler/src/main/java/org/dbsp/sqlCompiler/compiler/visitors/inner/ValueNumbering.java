@@ -223,7 +223,8 @@ public class ValueNumbering extends InnerVisitor {
     }
 
     @Override public void postorder(DBSPCastExpression expression) {
-        Representation repr = new Representation("(" + expression.type + "," + expression.safe + ")", false)
+        Representation repr = new Representation(
+                expression.safe.name() + "(" + expression.type + "," + expression.safe.name() + ")", false)
                 .add(this.getId(expression.source, expression, 0));
         boolean expensive = expression.type.is(DBSPTypeString.class)
                 || expression.source.type.is(DBSPTypeString.class);

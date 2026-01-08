@@ -599,7 +599,7 @@ public class Simplify extends ExpressionTranslator {
                 result = new DBSPBoolLiteral(expression.getNode(), expression.getType(), r);
             }
         }
-        this.map(expression, result.cast(expression.getNode(), expression.getType(), false));
+        this.map(expression, result.cast(expression.getNode(), expression.getType(), DBSPCastExpression.CastType.SqlUnsafe));
     }
 
     @Override
@@ -721,7 +721,7 @@ public class Simplify extends ExpressionTranslator {
                     IsNumericType iLeftType = leftType.to(IsNumericType.class);
                     if (iLeftType.isOne(leftLit)) {
                         // This works even for null
-                        result = right.cast(expression.getNode(), expression.getType(), false);
+                        result = right.cast(expression.getNode(), expression.getType(), DBSPCastExpression.CastType.SqlUnsafe);
                     } else if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
                         // This is not true for null values
                         result = left;
@@ -791,6 +791,7 @@ public class Simplify extends ExpressionTranslator {
                         result = expression.type.none();
                     } else {
                         boolean same = leftLit.sameValue(rightLit);
+                        //noinspection SimplifiableConditionalExpression
                         result = new DBSPBoolLiteral(expression.getNode(), expression.type,
                                 opcode == DBSPOpcode.NEQ ? !same : same);
                     }
@@ -828,7 +829,7 @@ public class Simplify extends ExpressionTranslator {
         } catch (ArithmeticException unused) {
             // ignore, defer to runtime
         }
-        this.map(expression, result.cast(expression.getNode(), expression.getType(), false));
+        this.map(expression, result.cast(expression.getNode(), expression.getType(), DBSPCastExpression.CastType.SqlUnsafe));
     }
 
     @Override

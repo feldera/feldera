@@ -177,7 +177,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
             DBSPAggregateOperatorBase aggregate = node.to(DBSPAggregateOperatorBase.class);
             if (aggregate.aggregateList != null) {
                 if (this.details > 3) {
-                    return aggregate.aggregateList.toString();
+                    return escapeString(aggregate.aggregateList.toString());
                 } else if (details >= 3) {
                     return this.getPositions(aggregate.aggregateList);
                 }
@@ -187,7 +187,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                     node.to(DBSPPartitionedRollingAggregateWithWaterlineOperator.class);
             if (aggregate.aggregateList != null) {
                 if (this.details > 3) {
-                    return aggregate.aggregateList.toString();
+                    return escapeString(aggregate.aggregateList.toString());
                 } else if (this.details >= 3) {
                     return this.getPositions(aggregate.aggregateList);
                 }

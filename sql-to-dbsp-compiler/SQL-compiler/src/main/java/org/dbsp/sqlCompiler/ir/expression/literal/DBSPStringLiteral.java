@@ -109,7 +109,7 @@ public final class DBSPStringLiteral extends DBSPLiteral {
                     .append(this.type)
                     .append(")null");
         else
-            return builder.append(Utilities.doubleQuote(this.value, true));
+            return builder.append(this.wrapSome(Utilities.doubleQuote(this.value, true)));
     }
 
     @Override
