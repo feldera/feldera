@@ -759,15 +759,3 @@ export const getPipelineSupportBundleUrl = (
   }
   return `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/support_bundle?${query.toString()}`
 }
-
-// Mock event types for status timeline
-export type PipelineEventType = 'normal' | 'partial_issue' | 'major_issue'
-
-export interface PipelineEvent {
-  type: PipelineEventType
-  timestamp: string // ISO 8601 date string
-}
-
-export interface PipelineEventDetail extends PipelineEvent {
-  description: string
-}

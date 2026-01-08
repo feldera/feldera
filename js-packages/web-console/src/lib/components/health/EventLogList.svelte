@@ -2,7 +2,7 @@
   import { slide } from 'svelte/transition'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   import { formatDateTime } from '$lib/functions/format'
-  import type { HealthEventParts } from '$lib/functions/pipelines/health'
+  import type { HealthEventBucket } from '$lib/functions/pipelines/health'
   import type { Snippet } from '$lib/types/svelte'
 
   let {
@@ -11,20 +11,20 @@
     noIssues,
     onEventSelected
   }: {
-    previousEvents: HealthEventParts[]
-    unresolvedEvents: HealthEventParts[]
+    previousEvents: HealthEventBucket[]
+    unresolvedEvents: HealthEventBucket[]
     noIssues: Snippet
-    onEventSelected?: (eventParts: HealthEventParts) => void
+    onEventSelected?: (eventParts: HealthEventBucket) => void
   } = $props()
 
   let showUnresolved = $state(true)
   let containerElement: HTMLDivElement | undefined = $state()
 
-  function getEventId(event: HealthEventParts): string {
+  function getEventId(event: HealthEventBucket): string {
     return `event-${event.timestampFrom.getTime()}-${event.tag}`
   }
 
-  export function scrollToEvent(event: HealthEventParts) {
+  export function scrollToEvent(event: HealthEventBucket) {
     const eventId = getEventId(event)
     const element = containerElement?.querySelector(`#${CSS.escape(eventId)}`)
     if (element) {
@@ -33,7 +33,7 @@
   }
 </script>
 
-{#snippet eventItem(event: HealthEventParts, iconClass: string = '')}
+{#snippet eventItem(event: HealthEventBucket, iconClass: string = '')}
   <button
     id={getEventId(event)}
     class="flex flex-nowrap items-center gap-1"
@@ -48,7 +48,7 @@
   </button>
 {/snippet}
 
-{#snippet eventGroup(events: HealthEventParts, iconClass: string = '')}
+{#snippet eventGroup(events: HealthEventBucket, iconClass: string = '')}
   <div class="flex flex-nowrap gap-7">
     <span class="w-[180px] text-surface-800-200 sm:w-[320px]">
       <!-- {events[0].timestampFrom.toLocaleString(undefined, {

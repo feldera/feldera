@@ -1,5 +1,6 @@
 import { match } from 'ts-pattern'
 import type { ClusterMonitorEventSelectedInfo, MonitorStatus } from '$lib/services/manager'
+import { pushSortedOn } from '$lib/functions/common/array'
 
 export type HealthEventType = 'healthy' | 'unhealthy' | 'major_issue'
 
@@ -13,7 +14,7 @@ export type RawHealthEvent = {
   id: string
 }
 
-export type HealthEventParts = {
+export type HealthEventBucket = {
   timestampFrom: Date
   timestampTo: Date
   type: string
@@ -71,9 +72,9 @@ export function unpackCombinedEvent(e: ClusterMonitorEventSelectedInfo): RawHeal
 }
 
 /**
- * Groups sequential unhealthy events with the same tag as a single incident based on the abscence of healthy events between them
+ * Groups sequential unhealthy events with the same tag as a single incident based on the absence of healthy events between them
  */
-export function groupHealthEvents(events: readonly RawHealthEvent[]): HealthEventParts[] {
+export function groupHealthEvents(events: readonly RawHealthEvent[]): HealthEventBucket[] {
   // 1) Group by tag
   const byTag = new Map<EventTag, RawHealthEvent[]>()
   for (const e of events) {
@@ -82,7 +83,7 @@ export function groupHealthEvents(events: readonly RawHealthEvent[]): HealthEven
     else byTag.set(e.tag, [e])
   }
 
-  const allGroups: HealthEventParts[] = []
+  const allGroups: HealthEventBucket[] = []
 
   for (const [tag, tagEvents] of byTag.entries()) {
     // 2) Sort by timestamp asc (deterministic tie-breakers optional)
@@ -105,28 +106,32 @@ export function groupHealthEvents(events: readonly RawHealthEvent[]): HealthEven
 
       current.push(e)
     }
-    if (current.length) segments.push(current)
+    if (current.length) {
+      segments.push(current)
+    }
 
-    if (!segments.length) continue
+    if (!segments.length) {
+      continue
+    }
 
     // 4) Mark "active" ONLY for the last segment, but only if it is not closed by a later healthy.
     // Because we flush segments upon encountering healthy, the "current" leftover at the end is the only
     // segment that can be "open". So: active = (we ended with a non-empty current).
     //
-    // Implementation detail: we already pushed current if non-empty. To know if last segment is open,
-    // we can re-check whether the last event in sorted is non-healthy.
+    // Implementation detail: we already pushed the current event if it's non-empty. To know if the last segment is open,
+    // we can re-check whether the last event in the bucket is non-healthy.
     const lastIsHealthy = sorted[sorted.length - 1]?.type === 'healthy'
     const activeSegmentIndex = lastIsHealthy ? -1 : segments.length - 1
 
-    // 5) Fold each segment by consecutive (type, description) and set active on parts if segment is active
+    // 5) Fold each segment by consecutive (type, description) tuple and set "active" on the bucket if segment is active
+    // Insert each segment's events in sorted order to avoid a final sort
     for (let i = 0; i < segments.length; i++) {
       const isActive = i === activeSegmentIndex
-      allGroups.push(...foldConsecutive(segments[i], tag, isActive))
+      pushSortedOn(allGroups, foldConsecutive(segments[i], tag, isActive), (a, b) =>
+        a.timestampFrom.getTime() - b.timestampFrom.getTime()
+      )
     }
   }
-
-  // 6) Global sort by timestampFrom
-  allGroups.sort((a, b) => a.timestampFrom.getTime() - b.timestampFrom.getTime())
 
   return allGroups
 }
@@ -135,9 +140,9 @@ function foldConsecutive(
   eventsSortedByTime: readonly RawHealthEvent[],
   tag: EventTag,
   active: boolean
-): HealthEventParts[] {
-  const result: HealthEventParts[] = []
-  let current: HealthEventParts | null = null
+): HealthEventBucket[] {
+  const result: HealthEventBucket[] = []
+  let current: HealthEventBucket | null = null
 
   for (const e of eventsSortedByTime) {
     if (current && current.type === e.type && current.description === e.description) {
