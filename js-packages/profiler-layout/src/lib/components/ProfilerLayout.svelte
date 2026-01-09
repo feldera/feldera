@@ -57,6 +57,10 @@
       tooltipSticky = isSticky
     },
     displayTopNodes(data, isSticky) {
+      let cont = document.getElementById("profiler-tooltip-container")
+      if (cont) {
+        cont.scrollTop = 0
+      }
       tooltipData = data.match({
         some: (topNodes) => ({
           genericTable: {
