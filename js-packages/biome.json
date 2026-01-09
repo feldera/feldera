@@ -19,9 +19,14 @@
       "!**/package-lock.json",
       "!**/pnpm-lock.yaml",
       "!**/yarn.lock",
+      "!**/dist/",
       "!src/assets",
       "!**/tmp/",
-      "!**/dist/"
+      "!**/.svelte-kit/",
+      "!**/playwright-report-ct",
+      "!**/playwright-report-e2e",
+      "!**/test-results-ct",
+      "!**/test-results-e2e"
     ]
   },
   "linter": {
@@ -31,7 +36,8 @@
       "style": {
         "useConst": "off",
         "useExportType": "off",
-        "useImportType": "off"
+        "useImportType": "off",
+        "useBlockStatements": "on"
       },
       "suspicious": {
         "noAssignInExpressions": "info",

@@ -161,7 +161,7 @@
     const success = await processZipBundle(
       new Uint8Array(arrayBuffer),
       `uploaded-${file.name}`,
-      'No suitable profiles found in the uploaded support bundle. Check if it contains the circuit profile and dataflow graph.'
+      'No suitable profiles found in the uploaded support bundle. Check if it contains the circuit profile and dataflow graph (optional).'
     )
     if (!success) {
       downloadProgress.reset()
