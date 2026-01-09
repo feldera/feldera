@@ -53,9 +53,7 @@
       // where TIMESTAMP is a string encoding a timestamp
       (file) => file.filename.match(/^(.*?)_/)?.[1] ?? ''
     ).filter(
-      (group) =>
-        group[0] &&
-        group[1].some((file) => circuitProfileRegex.test(file.filename))
+      (group) => group[0] && group[1].some((file) => circuitProfileRegex.test(file.filename))
       // Pipeline config or dataflow graph may be missing
     )
     return sortOn(
@@ -107,7 +105,7 @@
       return
     }
 
-    (async () => {
+    ;(async () => {
       const decoder = new TextDecoder()
       const profile = JSON.parse(
         decoder.decode(

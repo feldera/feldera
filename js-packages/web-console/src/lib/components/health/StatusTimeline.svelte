@@ -244,6 +244,74 @@
     // Default: No specific range selected
     return null
   })
+
+  // Navigation methods for timeline buckets
+  export function selectPreviousBucket(): boolean {
+    if (!selectedBars || !onBarClick) return false
+
+    const startTime = startAt.getTime()
+    const currentIndex = Math.floor((selectedBars.from.getTime() - startTime) / unitDurationMs)
+
+    // Find previous bucket with events
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      const group = groups[i]
+      if (group !== null) {
+        onBarClick(group)
+        return true
+      }
+    }
+    return false
+  }
+
+  export function selectNextBucket(): boolean {
+    if (!selectedBars || !onBarClick) return false
+
+    const startTime = startAt.getTime()
+    const currentIndex = Math.floor((selectedBars.from.getTime() - startTime) / unitDurationMs)
+
+    // Find next bucket with events
+    for (let i = currentIndex + 1; i < groups.length; i++) {
+      const group = groups[i]
+      if (group !== null) {
+        onBarClick(group)
+        return true
+      }
+    }
+    return false
+  }
+
+  // Compute navigation state once
+  const navigationState = $derived.by((): 'start' | 'middle' | 'end' | null => {
+    if (!selectedBars) return null
+
+    const startTime = startAt.getTime()
+    const currentIndex = Math.floor((selectedBars.from.getTime() - startTime) / unitDurationMs)
+
+    // Find if there's a previous bucket with events
+    let hasPrevious = false
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      if (groups[i] !== null) {
+        hasPrevious = true
+        break
+      }
+    }
+
+    // Find if there's a next bucket with events
+    let hasNext = false
+    for (let i = currentIndex + 1; i < groups.length; i++) {
+      if (groups[i] !== null) {
+        hasNext = true
+        break
+      }
+    }
+
+    if (!hasPrevious && !hasNext) return null // Only one bucket
+    if (!hasPrevious) return 'start'
+    if (!hasNext) return 'end'
+    return 'middle'
+  })
+
+  export const getNavigationState = () => navigationState
 </script>
 
 {#snippet timelineBar(
@@ -333,7 +401,7 @@
           {/each}
           <div class="flex items-center gap-1.5">
             <div class="h-3 w-3 rounded-sm bg-surface-300-700"></div>
-            <span class="text-surface-600-300">No telemetry</span>
+            <span class="text-surface-600-300">No data</span>
           </div>
         </div>
       {/if}

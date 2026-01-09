@@ -7,7 +7,17 @@
   import { formatDateTime } from '$lib/functions/format'
   import type { HealthEventBucket } from '$lib/functions/pipelines/health'
 
-  let { eventParts, onClose }: { eventParts: HealthEventBucket; onClose: () => void } = $props()
+  let {
+    eventParts,
+    onClose,
+    onNavigatePrevious,
+    onNavigateNext
+  }: {
+    eventParts: HealthEventBucket
+    onClose: () => void
+    onNavigatePrevious?: () => void
+    onNavigateNext?: () => void
+  } = $props()
 
   const api = usePipelineManager()
 
@@ -100,6 +110,12 @@
     const handleKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose()
+      } else if (e.key === 'ArrowLeft' && onNavigatePrevious) {
+        e.preventDefault()
+        onNavigatePrevious()
+      } else if (e.key === 'ArrowRight' && onNavigateNext) {
+        e.preventDefault()
+        onNavigateNext()
       }
     }
     window.addEventListener('keydown', handleKeydown)
@@ -109,12 +125,8 @@
   })
 </script>
 
-<!-- TODO: add buttons to navigate forward and backward between time intervals -
-whether between hours when selected through StatusTimeline,
-or between incidents when selected through from EventLogList -->
-
 <div class="h-full overflow-hidden">
-  <div class="flex flex-col gap-4 overflow-y-auto overflow-x-hidden h-full scrollbar">
+  <div class="scrollbar flex h-full flex-col gap-4 overflow-x-hidden overflow-y-auto">
     <div class="bg-white-dark sticky -top-4 z-10 -mt-4 pt-4">
       <div class="flex w-full flex-nowrap items-center">
         <span class="text-2xl font-semibold">
@@ -127,8 +139,24 @@ or between incidents when selected through from EventLogList -->
         ></button>
       </div>
 
-      <div class="text-surface-600-300 pt-4 text-sm">
-        {formatDateTime(eventParts.timestampFrom)} - {formatDateTime(eventParts.timestampTo)}
+      <div class="flex flex-nowrap items-center gap-2">
+        <div class="text-surface-600-300 w-66 text-sm">
+          {formatDateTime(eventParts.timestampFrom)} - {formatDateTime(eventParts.timestampTo)}
+        </div>
+        <button
+          class="fd fd-chevron-left btn-icon hover:not-disabled:preset-tonal-surface"
+          onclick={onNavigatePrevious}
+          disabled={!onNavigatePrevious}
+          aria-label="Previous event"
+        >
+        </button>
+        <button
+          class="fd fd-chevron-right btn-icon hover:not-disabled:preset-tonal-surface"
+          onclick={onNavigateNext}
+          disabled={!onNavigateNext}
+          aria-label="Next event"
+        >
+        </button>
       </div>
     </div>
 
