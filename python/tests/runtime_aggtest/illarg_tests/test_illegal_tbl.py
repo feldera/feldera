@@ -38,7 +38,7 @@ class illarg_tbl(TstTable):
                 "tmestmp": "2020-06-21 14:23:44.123",
                 "datee": "2020-06-21",
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
-                "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello "],
+                "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello ", "TRUE"],
                 "mapp": {"a": 12, "b": 17},
                 "roww": {"i1": 4, "v1": "cat"},
                 "udt": {"i1": 4, "v1": "cat"},
