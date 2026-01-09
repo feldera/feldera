@@ -9,12 +9,14 @@
     previousEvents,
     unresolvedEvents,
     noIssues,
-    onEventSelected
+    onEventSelected,
+    selectedEvents = null
   }: {
     previousEvents: HealthEventBucket[]
     unresolvedEvents: HealthEventBucket[]
     noIssues: Snippet
     onEventSelected?: (eventParts: HealthEventBucket) => void
+    selectedEvents?: { tag: string; from: Date; to: Date } | null
   } = $props()
 
   let showUnresolved = $state(true)
@@ -23,6 +25,47 @@
   function getEventId(event: HealthEventBucket): string {
     return `event-${event.timestampFrom.getTime()}-${event.tag}`
   }
+
+  // Check if an event overlaps with the selected range for the same tag
+  function eventMatchesSelection(event: HealthEventBucket, selection: { tag: string; from: Date; to: Date }): boolean {
+    return (
+      selection.tag === event.tag &&
+      ((event.timestampFrom.getTime() >= selection.from.getTime() &&
+        event.timestampFrom.getTime() <= selection.to.getTime()) ||
+        (event.timestampTo.getTime() <= selection.to.getTime() &&
+          event.timestampTo.getTime() >= selection.from.getTime()))
+    )
+  }
+
+  // Compute all selected events once
+  const selectedEventBuckets = $derived.by(() => {
+    if (!selectedEvents) {
+      return new Set<HealthEventBucket>()
+    }
+    const selected = new Set<HealthEventBucket>()
+    for (const event of [...unresolvedEvents, ...previousEvents]) {
+      if (eventMatchesSelection(event, selectedEvents)) {
+        selected.add(event)
+      }
+    }
+    return selected
+  })
+
+  // Get the first selected event (for scrolling)
+  const firstSelectedEvent = $derived(
+    selectedEventBuckets.size > 0 ? [...selectedEventBuckets][0] : null
+  )
+
+  // Auto-scroll to first selected event when selection changes
+  $effect(() => {
+    if (firstSelectedEvent && containerElement) {
+      const eventId = getEventId(firstSelectedEvent)
+      const element = containerElement.querySelector(`#${CSS.escape(eventId)}`)
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }
+  })
 
   export function scrollToEvent(event: HealthEventBucket) {
     const eventId = getEventId(event)
@@ -36,7 +79,7 @@
 {#snippet eventItem(event: HealthEventBucket, iconClass: string = '')}
   <button
     id={getEventId(event)}
-    class="flex flex-nowrap items-center gap-1"
+    class="flex flex-nowrap items-center gap-1 outline-none"
     onclick={() => onEventSelected?.(event)}
   >
     <span
@@ -49,19 +92,16 @@
 {/snippet}
 
 {#snippet eventGroup(events: HealthEventBucket, iconClass: string = '')}
-  <div class="flex flex-nowrap gap-7">
-    <span class="w-[180px] text-surface-800-200 sm:w-[320px]">
-      <!-- {events[0].timestampFrom.toLocaleString(undefined, {
-        dateStyle: 'medium'
-      })} - {events.at(-1)!.timestampTo.toLocaleString(undefined, {
-        dateStyle: 'medium'
-      })} -->
+  <div
+    class="-m-1 flex flex-nowrap items-center gap-7 rounded p-1 py-2 {selectedEventBuckets.has(events)
+      ? 'bg-primary-50-950/50'
+      : ''}"
+  >
+    <span class="w-[180px] text-surface-600-400 sm:w-[320px]">
       {formatDateTime(events.timestampFrom)} - {formatDateTime(events.timestampTo)}
     </span>
     <div class="flex flex-col gap-4">
-      <!-- {#each events as event} -->
       {@render eventItem(events, iconClass)}
-      <!-- {/each} -->
     </div>
   </div>
 {/snippet}
@@ -75,8 +115,8 @@
   </div>
 {/snippet}
 
-<div class="relative scrollbar h-full overflow-y-auto">
-  <div bind:this={containerElement} class="absolute flex flex-col gap-3">
+<div class="relative -mx-2 scrollbar h-full overflow-y-auto px-2">
+  <div bind:this={containerElement} class="absolute flex flex-col gap-3 pb-2">
     {#if unresolvedEvents.length > 0}
       <div class="flex flex-col gap-3">
         <InlineDropdown bind:open={showUnresolved}>
@@ -84,16 +124,16 @@
             {#snippet title()}
               <span class="text-xl font-semibold">
                 {#if unresolvedEvents.length > 1}
-                  {unresolvedEvents.length} unresolved issues
+                  {unresolvedEvents.length} ongoing incidents
                 {:else}
-                  1 unresolved issue
+                  1 ongoing incident
                 {/if}
               </span>
             {/snippet}
             {@render dropdownHeader(open, toggle, title)}
           {/snippet}
           {#snippet content()}
-            <div transition:slide={{ duration: 150 }} class="flex flex-col gap-5">
+            <div transition:slide={{ duration: 150 }} class="flex flex-col gap-3">
               {#each unresolvedEvents as events, i}
                 {@render eventGroup(events)}
               {/each}
@@ -105,11 +145,11 @@
 
     <div class="flex flex-col gap-3">
       {#if previousEvents.length}
-        <span class="bg-white-dark sticky top-0 py-1 text-xl font-semibold">
+        <span class="bg-white-dark sticky top-0 -mx-1 px-1 py-1 text-xl font-semibold">
           Previous incidents
         </span>
 
-        <div class="flex flex-col-reverse gap-5">
+        <div class="flex flex-col gap-3">
           {#each previousEvents as events, i}
             {@render eventGroup(events, 'text-surface-900-100')}
           {/each}

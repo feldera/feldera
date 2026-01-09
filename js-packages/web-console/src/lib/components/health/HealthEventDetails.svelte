@@ -57,12 +57,6 @@
     })
   })
 
-  const tagLabel = {
-    api: 'API server incident',
-    compiler: 'Compiler server incident',
-    runner: 'Kubernetes runner incident'
-  }
-
   $effect(() => {
     const handleKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -79,7 +73,7 @@
 <div class="flex flex-col gap-4">
   <div class="flex w-full flex-nowrap">
     <span class="text-2xl font-semibold">
-      {tagLabel[eventParts.tag]}
+      {eventParts.title}
     </span>
     <button
       class="fd fd-x -m-1 ml-auto btn-icon text-[24px]"
