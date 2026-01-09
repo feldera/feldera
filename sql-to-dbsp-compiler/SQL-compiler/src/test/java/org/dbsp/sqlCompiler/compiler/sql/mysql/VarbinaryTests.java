@@ -185,6 +185,58 @@ public class VarbinaryTests extends SqlIoTest {
     }
 
     @Test
+    public void testIntToBinaryCasts() {
+        this.qs("""
+                SELECT CAST(10 AS BINARY(4));
+                 r
+                ---
+                 0000000A
+                (1 row)
+                
+                SELECT CAST(10 AS BINARY(2));
+                 r
+                ---
+                 000A
+                (1 row)
+                
+                SELECT CAST(10 AS VARBINARY(4));
+                 r
+                ---
+                 0000000A
+                (1 row)
+                
+                SELECT CAST(10 AS VARBINARY(8));
+                 r
+                ---
+                 0000000A
+                (1 row)
+                
+                SELECT CAST(10 AS VARBINARY(2));
+                 r
+                ---
+                 000A
+                (1 row)
+                
+                SELECT CAST(CAST(10 AS INT UNSIGNED) AS BINARY(4));
+                 r
+                ---
+                 0000000A
+                (1 row)
+                
+                SELECT CAST(-1 AS BINARY(4));
+                 r
+                ---
+                 FFFFFFFF
+                (1 row)
+                
+                SELECT CAST(-1 AS VARBINARY(8));
+                 r
+                ---
+                 FFFFFFFF
+                (1 row)""");
+    }
+
+    @Test
     public void testCast() {
         this.qs("""
                 SELECT CAST('abcd1234' AS VARBINARY);

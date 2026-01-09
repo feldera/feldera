@@ -251,6 +251,27 @@ impl ByteArray {
         }
     }
 
+    pub fn with_size_truncate_left(d: &[u8], size: i32, fixed: bool) -> Self {
+        if size < 0 {
+            ByteArray::new(d)
+        } else {
+            let size = size as usize;
+            match d.len().cmp(&size) {
+                Ordering::Equal => ByteArray::new(d),
+                Ordering::Greater => ByteArray::new(&d[d.len() - size..]),
+                Ordering::Less => {
+                    if fixed {
+                        let mut data: CompactVec = smallvec![0; size];
+                        data[d.len() - size..].copy_from_slice(d);
+                        ByteArray { data }
+                    } else {
+                        ByteArray::new(d)
+                    }
+                }
+            }
+        }
+    }
+
     pub fn zero(size: usize) -> Self {
         Self {
             data: smallvec![0; size],

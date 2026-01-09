@@ -16,12 +16,11 @@ The rules for implicit casts are complex; we [inherit these
 rules](https://calcite.apache.org/docs/reference.html#conversion-contexts-and-strategies)
 from Calcite.
 
-In general SQL casts may discard low order digits but never high order
-digits.  A cast form a wide to a narrow datatype which cannot
-represent the value in the target type will generate a runtime error.
-Note however that casts to floating point values never generate
-runtime errors, since they use "infinity" values to represent out of
-range values.
+In general SQL casts may discard low order digits.  A cast form a wide
+to a narrow datatype which cannot represent the value in the target
+type will generate a runtime error.  Note however that casts to
+floating point values never generate runtime errors, since they use
+"infinity" values to represent out of range values.
 
 Conversions from decimal and floating point types to integer types
 always truncate the decimal digits (round towards zero).  For example,
@@ -29,7 +28,8 @@ always truncate the decimal digits (round towards zero).  For example,
 returns -2.
 
 Casts of strings to numeric types produce a runtime error when the
-string cannot be interpreted as a number.
+string cannot be interpreted as a number.  Use `SAFE_CAST` if runtime
+errors are undesired.
 
 Casts of strings to `DATE`, `TIME`, `TIMESTAMP` produce the result
 `NULL` when the string does not have the correct format.
@@ -40,6 +40,15 @@ A value of type `VARIANT` can be cast to any type and will produce a
 nullable result; this kind of cast will never fail at runtime.
 
 A value of any type can be cast to a `VARIANT` type.
+
+A cast from an `INTEGER` or `INTEGER UNSIGNED` to a `BINARY` or
+`VARBINARY` value will produce a big-endian result, which is truncated
+or padded on the *left* if it is too large.  Casts between `BINARY`
+values truncate and pad on the *right*.  Casts of a string value to a
+`BINARY` of `VARBINARY` value will attempt to parse the string as a
+hexadecimal value, and it will truncate the value on the *right* if
+its too large.  Casts from `BINARY` to `INTEGER` types are not
+supported.
 
 A cast to a `ROW` type is only allowed for compatible `ROW` types, or
 for `VARIANT` types.  Such a cast will cast recursively each field of
