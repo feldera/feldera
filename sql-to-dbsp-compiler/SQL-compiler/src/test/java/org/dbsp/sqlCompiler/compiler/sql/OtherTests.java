@@ -329,7 +329,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     @Test
     public void testUnionWarning() throws SQLException {
-        final String script = "../../demo/packaged/sql/02-sec-ops.sql";
+        final String script = "../../crates/pipeline-manager/demos/sql/02-sec-ops.sql";
         CompilerMessages messages = CompilerMain.execute(
                 "-i", "--alltables", "-q", "--ignoreOrder", "-o", BaseSQLTests.TEST_FILE_PATH, script);
         for (int i = 0; i < messages.warningCount(); i++) {
@@ -340,7 +340,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     @Test
     public void testPackagedDemos() throws SQLException, IOException, InterruptedException {
-        final String projectsDirectory = "../../demo/packaged/sql";
+        final String projectsDirectory = "../../crates/pipeline-manager/demos/sql";
         final File dir = new File(projectsDirectory);
         FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
         String[] sqlFiles = dir.list(filter);

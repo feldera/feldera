@@ -8,9 +8,6 @@
 
 #!/bin/python3
 
-# Run locally with:
-#   uv run demo/all-packaged/run.py --api-url http://localhost:8080
-
 import time
 import requests
 import argparse
@@ -65,9 +62,9 @@ def main():
         pipeline.start()
         time.sleep(2)
         status = pipeline.status()
-        assert status == PipelineStatus.RUNNING, f"FAIL: demo {
-            demo['name']
-        }: expected pipeline to be RUNNING but instead is {status}"
+        assert status == PipelineStatus.RUNNING, (
+            f"""FAIL: demo {demo["name"]}: expected pipeline to be RUNNING but instead is {status}"""
+        )
         pipeline.stop(force=True)
         print(f"PASS: demo {demo['name']}")
 

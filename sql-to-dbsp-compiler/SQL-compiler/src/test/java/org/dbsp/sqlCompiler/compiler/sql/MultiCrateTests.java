@@ -247,7 +247,7 @@ public class MultiCrateTests extends BaseSQLTests {
     @Test
     public void testPackagedDemos() throws SQLException, IOException, InterruptedException {
         // Also tests issue 3903
-        final String projectsDirectory = "../../demo/packaged/sql";
+        final String projectsDirectory = "../../crates/pipeline-manager/demos/sql";
         final File dir = new File(projectsDirectory);
         FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
         String[] sqlFiles = dir.list(filter);
