@@ -79,8 +79,17 @@
   // Track selected time range (unified for both timeline bars and event list)
   let selectedEventTimestamp = $state<{ tag: EventTag; from: Date; to: Date } | null>(null)
 
+  // Component refs for navigation
+  let eventLogListRef: EventLogList | undefined = $state()
+  let timelineRefs: { [key in EventTag]?: StatusTimeline } = $state({})
+
+  // Track which component has the active selection
+  type ActiveComponent = { type: 'timeline'; tag: EventTag } | { type: 'incident' }
+  let activeComponent: ActiveComponent | null = $state(null)
+
   // Open drawer with all events (including healthy) from the clicked timeline bar for a specific component
   function handleBarClick(tag: EventTag, group: TimelineGroup) {
+    activeComponent = { type: 'timeline', tag }
     if (!rawClusterEvents) {
       return
     }
@@ -123,6 +132,7 @@
 
   // Open drawer when an event is selected from EventLogList
   function handleEventSelected(eventBucket: HealthEventBucket) {
+    activeComponent = { type: 'incident' }
     // Update selected event time range
     selectedEventTimestamp = {
       tag: eventBucket.tag,
@@ -132,6 +142,47 @@
 
     selectedEvent = eventBucket
   }
+
+  // Navigate to previous event by delegating to the active component
+  function navigatePrevious() {
+    if (!activeComponent) return
+
+    if (activeComponent.type === 'timeline') {
+      const timeline = timelineRefs[activeComponent.tag]
+      timeline?.selectPreviousBucket()
+    } else {
+      eventLogListRef?.selectPreviousIncident()
+    }
+  }
+
+  // Navigate to next event by delegating to the active component
+  function navigateNext() {
+    if (!activeComponent) return
+
+    if (activeComponent.type === 'timeline') {
+      const timeline = timelineRefs[activeComponent.tag]
+      timeline?.selectNextBucket()
+    } else {
+      eventLogListRef?.selectNextIncident()
+    }
+  }
+
+  // Get navigation state from the active component
+  const activeNavigationState = $derived.by(() => {
+    if (!activeComponent) return null
+
+    if (activeComponent.type === 'timeline') {
+      const timeline = timelineRefs[activeComponent.tag]
+      return timeline?.getNavigationState() ?? null
+    } else {
+      return eventLogListRef?.getNavigationState() ?? null
+    }
+  })
+
+  // Derive navigation capabilities from the single navigation state
+  const canNavigatePrevious = $derived(activeNavigationState && activeNavigationState !== 'start')
+
+  const canNavigateNext = $derived(activeNavigationState && activeNavigationState !== 'end')
 </script>
 
 <AppHeader>
@@ -164,6 +215,7 @@
       <div class="flex flex-col gap-2">
         {#each Object.entries(componentLabels) as [tag, label], i}
           <StatusTimeline
+            bind:this={timelineRefs[tag as EventTag]}
             {label}
             events={rawClusterEvents.filter((e) => e.tag === tag)}
             startAt={firstTimestamp(events)}
@@ -182,6 +234,7 @@
       <Progress value={null}></Progress>
     {/if}
     <EventLogList
+      bind:this={eventLogListRef}
       previousEvents={splitClusterEvents.previous}
       unresolvedEvents={splitClusterEvents.unresolved}
       onEventSelected={handleEventSelected}
@@ -201,6 +254,8 @@
           selectedEvent = null
           selectedEventTimestamp = null
         }}
+        onNavigatePrevious={canNavigatePrevious ? navigatePrevious : undefined}
+        onNavigateNext={canNavigateNext ? navigateNext : undefined}
       ></HealthEventList>
     {/if}
   </InlineDrawer>

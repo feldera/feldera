@@ -27,7 +27,10 @@
   }
 
   // Check if an event overlaps with the selected range for the same tag
-  function eventMatchesSelection(event: HealthEventBucket, selection: { tag: string; from: Date; to: Date }): boolean {
+  function eventMatchesSelection(
+    event: HealthEventBucket,
+    selection: { tag: string; from: Date; to: Date }
+  ): boolean {
     return (
       selection.tag === event.tag &&
       ((event.timestampFrom.getTime() >= selection.from.getTime() &&
@@ -74,6 +77,73 @@
       element.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
   }
+
+  // Navigation methods for incidents
+  export function selectNextIncident(): boolean {
+    if (!selectedEvents) return false
+
+    const tag = selectedEvents.tag
+    const allIncidents = [...unresolvedEvents, ...previousEvents].filter((e) => e.tag === tag)
+
+    // Find current incident
+    const currentIndex = allIncidents.findIndex(
+      (e) =>
+        e.timestampFrom.getTime() === selectedEvents.from.getTime() &&
+        e.timestampTo.getTime() === selectedEvents.to.getTime()
+    )
+
+    if (currentIndex > 0) {
+      onEventSelected?.(allIncidents[currentIndex - 1])
+      return true
+    }
+    return false
+  }
+
+  export function selectPreviousIncident(): boolean {
+    if (!selectedEvents) return false
+
+    const tag = selectedEvents.tag
+    const allIncidents = [...unresolvedEvents, ...previousEvents].filter((e) => e.tag === tag)
+
+    // Find current incident
+    const currentIndex = allIncidents.findIndex(
+      (e) =>
+        e.timestampFrom.getTime() === selectedEvents.from.getTime() &&
+        e.timestampTo.getTime() === selectedEvents.to.getTime()
+    )
+
+    if (currentIndex >= 0 && currentIndex < allIncidents.length - 1) {
+      onEventSelected?.(allIncidents[currentIndex + 1])
+      return true
+    }
+    return false
+  }
+
+  // Compute navigation state once
+  const navigationState = $derived.by((): 'start' | 'middle' | 'end' | null => {
+    if (!selectedEvents) return null
+
+    const tag = selectedEvents.tag
+    const allIncidents = [...unresolvedEvents, ...previousEvents].filter((e) => e.tag === tag)
+
+    const currentIndex = allIncidents.findIndex(
+      (e) =>
+        e.timestampFrom.getTime() === selectedEvents.from.getTime() &&
+        e.timestampTo.getTime() === selectedEvents.to.getTime()
+    )
+
+    if (currentIndex < 0) return null
+
+    const isAtEnd = currentIndex === 0
+    const isAtStart = currentIndex === allIncidents.length - 1
+
+    if (isAtStart && isAtEnd) return null // Only one item
+    if (isAtStart) return 'start'
+    if (isAtEnd) return 'end'
+    return 'middle'
+  })
+
+  export const getNavigationState = () => navigationState
 </script>
 
 {#snippet eventItem(event: HealthEventBucket, iconClass: string = '')}
@@ -93,7 +163,9 @@
 
 {#snippet eventGroup(events: HealthEventBucket, iconClass: string = '')}
   <div
-    class="-m-1 flex flex-nowrap items-center gap-7 rounded p-1 py-2 {selectedEventBuckets.has(events)
+    class="-m-1 flex flex-nowrap items-center gap-7 rounded p-1 py-2 {selectedEventBuckets.has(
+      events
+    )
       ? 'bg-primary-50-950/50'
       : ''}"
   >
@@ -106,8 +178,12 @@
   </div>
 {/snippet}
 
-{#snippet dropdownHeader(open: boolean, toggle: () => void, title: Snippet)}
-  <div class="flex w-fit cursor-pointer items-center gap-2" onclick={toggle} role="presentation">
+{#snippet dropdownHeader(open: boolean, toggle: () => void, title: Snippet, className = '')}
+  <div
+    class="flex cursor-pointer items-center gap-2 {className}"
+    onclick={toggle}
+    role="presentation"
+  >
     <div
       class={'fd fd-chevron-down text-[20px] transition-transform ' + (open ? 'rotate-180' : '')}
     ></div>
@@ -122,15 +198,20 @@
         <InlineDropdown bind:open={showUnresolved}>
           {#snippet header(open, toggle)}
             {#snippet title()}
-              <span class="text-xl font-semibold">
+              <div class="w-full text-xl font-semibold">
                 {#if unresolvedEvents.length > 1}
                   {unresolvedEvents.length} ongoing incidents
                 {:else}
                   1 ongoing incident
                 {/if}
-              </span>
+              </div>
             {/snippet}
-            {@render dropdownHeader(open, toggle, title)}
+            {@render dropdownHeader(
+              open,
+              toggle,
+              title,
+              'bg-white-dark sticky top-0 -mx-1 px-1 py-1 flex-1'
+            )}
           {/snippet}
           {#snippet content()}
             <div transition:slide={{ duration: 150 }} class="flex flex-col gap-3">
