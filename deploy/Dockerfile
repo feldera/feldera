@@ -13,6 +13,8 @@ RUN apt update --fix-missing && apt install \
   # pkg-config is required for cargo to find libssl
   libssl-dev pkg-config \
   cmake \
+  # Go is required to build aws-lc-fips-sys when rustls is built with FIPS
+  golang-go \
   # rdkafka dependency needs libsasl2-dev zlib and a CXX compiler
   libsasl2-dev zlib1g-dev build-essential \
   # To install rust

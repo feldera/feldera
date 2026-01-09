@@ -25,6 +25,7 @@ default = [
     "with-redis",
     "with-nats",
 ]
+fips = ["rustls/fips"]
 with-kafka = ["rdkafka"]
 with-deltalake = ["deltalake", "deltalake-catalog-unity"]
 with-iceberg = ["feldera-iceberg"]

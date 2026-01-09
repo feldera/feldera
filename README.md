@@ -113,6 +113,7 @@ To run Feldera from sources, ensure at least 6 GB of free space in the sources d
 - cmake
 - libssl-dev
 - libsasl2-dev
+- golang-go (required to build aws-lc-fips-sys when using rustls FIPS)
 - pkg-config
 - libzstd-dev
 - clang
