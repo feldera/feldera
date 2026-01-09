@@ -89,7 +89,7 @@ fn default_db_connection_string() -> String {
 
 /// Default demos directory used by the API server.
 fn default_demos_dir() -> Vec<String> {
-    vec!["demo/packaged/sql".to_string()]
+    vec!["crates/pipeline-manager/demos/sql".to_string()]
 }
 
 /// Default value for individual_tenant flag.

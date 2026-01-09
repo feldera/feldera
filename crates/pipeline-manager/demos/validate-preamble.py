@@ -1,3 +1,9 @@
+# /// script
+# requires-python = ">=3.12"
+# ///
+
+#!/bin/python3
+
 import re
 import sys
 
