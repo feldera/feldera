@@ -7,9 +7,9 @@
     processProfileFiles,
     type ZipItem
   } from 'profiler-layout'
+  import faviconDataUrl from '$assets/favicon.svg?dataurl=enc'
   import FelderaModernLogoColorDark from '$assets/images/feldera-modern/Feldera Logo Color Dark.svg?component'
   import FelderaModernLogomarkColorDark from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
-  import faviconDataUrl from '$assets/favicon.svg?dataurl=enc'
 
   let profileData = $state<ProcessedProfile | null>(null)
   let errorMessage = $state('')
@@ -40,7 +40,7 @@
 
       if (suitableProfiles.length === 0) {
         errorMessage =
-          'No suitable profiles found in the uploaded support bundle. Check if it contains the circuit profile and dataflow graph.'
+          'No suitable profiles found in the uploaded support bundle. Check if it contains the circuit profile and dataflow graph (optional).'
       } else {
         // Store the profile files for efficient timestamp switching
         profileFiles = suitableProfiles

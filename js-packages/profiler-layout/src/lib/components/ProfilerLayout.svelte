@@ -2,14 +2,12 @@
   import type {
     Dataflow,
     JsonProfiles,
-    MeasurementCategory,
     MetricOption,
     ProfilerCallbacks,
     SourcePositionRange,
     WorkerOption
   } from 'profiler-lib'
   import { default as ProfilerDiagram } from './ProfilerDiagram.svelte'
-  // import ProfilerDiagram from './ProfilerDiagram.svelte'
   import type { TooltipData } from './ProfilerTooltip.svelte'
   import ProfilerTooltip from './ProfilerTooltip.svelte'
 
