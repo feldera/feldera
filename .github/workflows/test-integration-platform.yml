@@ -167,7 +167,7 @@ jobs:
       OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-c99ee1dff61dfd425fe2955fe4e63dea7ecdaec6
+      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
     services:
       pipeline-manager:
         image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}

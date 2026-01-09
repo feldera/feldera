@@ -28,7 +28,7 @@ jobs:
       FELDERA_API_KEY: ${{ secrets[matrix.feldera_api_key] }}
       FELDERA_RUNTIME_VERSION: ${{ github.sha }}
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-c99ee1dff61dfd425fe2955fe4e63dea7ecdaec6
+      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
     steps:
       - name: Show Kubernetes node
         if: always()
