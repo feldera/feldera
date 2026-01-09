@@ -35,7 +35,7 @@
 </script>
 
 {#if value}
-  <div class="profiler-tooltip-container {sticky ? '' : 'pointer-events-none'}">
+  <div class="profiler-tooltip-container {sticky ? '' : 'pointer-events-none'}" id="profiler-tooltip-container">
     <div class="profiler-tooltip">
       {#if 'nodeAttributes' in value}
         {@const { nodeAttributes } = value}
