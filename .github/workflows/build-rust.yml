@@ -4,7 +4,8 @@ on:
   workflow_call:
 
 env:
-  CARGO_FLAGS: "--release --locked --all-targets --features pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue"
+  CARGO_FLAGS: "--release --locked --all-targets"
+  CARGO_FEATURES_BASE: "pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue"
   FELDERA_PLATFORM_VERSION_SUFFIX: ${{ github.sha }}
   RUSTC_WRAPPER: sccache
   SCCACHE_CACHE_SIZE: ${{ vars.SCCACHE_CACHE_SIZE }}
@@ -67,7 +68,12 @@ jobs:
 
       - name: Build Rust binaries
         run: |
-          cargo build ${{ env.CARGO_FLAGS }} --target=${{ matrix.target }}
+          FEATURES="${{ env.CARGO_FEATURES_BASE }}"
+          case "${{ matrix.target }}" in
+            *musl*) ;; # OpenSSL’s FIPS mode is implemented as a dynamically loaded provider (fips.so)
+            *) FEATURES="$FEATURES,fips" ;;
+          esac
+          cargo build ${{ env.CARGO_FLAGS }} --features "$FEATURES" --target=${{ matrix.target }}
 
       - name: Print sccache stats
         run: |
@@ -77,10 +83,15 @@ jobs:
       - name: Collect executables
         id: collect
         run: |
+          FEATURES="${{ env.CARGO_FEATURES_BASE }}"
+          case "${{ matrix.target }}" in
+            *musl*) ;; # OpenSSL’s FIPS mode is implemented as a dynamically loaded provider (fips.so)
+            *) FEATURES="$FEATURES,fips" ;;
+          esac
           # Run again with --message-format=json to list out executables
           # (No real recompile since nothing has changed).
           # Then transform newlines to spaces for the artifact step.
-          EXES=$(cargo build ${{ env.CARGO_FLAGS }} --target=${{ matrix.target }} --message-format=json \
+          EXES=$(cargo build ${{ env.CARGO_FLAGS }} --features "$FEATURES" --target=${{ matrix.target }} --message-format=json \
             | jq -r '.executable | select(. != null)' | tr '\n' ' ')
           echo "Found executables: $EXES"
           # Save it as an output variable for subsequent steps
