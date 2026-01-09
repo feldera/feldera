@@ -231,7 +231,7 @@
         </span>
 
         <div class="flex flex-col gap-3">
-          {#each previousEvents as events, i}
+          {#each previousEvents as events}
             {@render eventGroup(events, 'text-surface-900-100')}
           {/each}
         </div>

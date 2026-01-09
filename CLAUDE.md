@@ -10122,6 +10122,3 @@ This SQL-to-DBSP compiler represents a sophisticated piece of compiler engineeri
 <!-- SECTION:sql-to-dbsp-compiler/SQL-compiler/CLAUDE.md END -->
 
 ---
-<!-- SECTION:CLAUDE.md END -->
-
----

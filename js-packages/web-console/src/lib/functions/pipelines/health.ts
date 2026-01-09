@@ -100,8 +100,8 @@ export function groupHealthEvents(
     // 2) Sort by timestamp asc (deterministic tie-breakers optional)
     const sorted = [...tagEvents].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
 
-    // 3) Split into segments - alternating "islands" of healthy vs non-healthy events
-    // Each segment contains either all healthy or all non-healthy events
+    // 3) Split into buckets of incidents separated by "healthy" events
+    // Each bucket contains only NON-healthy events.
     const segments: RawHealthEvent[][] = []
     let current: RawHealthEvent[] = []
 
@@ -116,22 +116,6 @@ export function groupHealthEvents(
       }
 
       current.push(e)
-      // ================================
-      // if (current.length === 0) {
-      //   // First event
-      //   current.push(e)
-      // } else {
-      //   const prevIsHealthy = current[0].type === 'healthy'
-      //   const currIsHealthy = e.type === 'healthy'
-      //   if (prevIsHealthy === currIsHealthy) {
-      //     // Same island type (both healthy or both non-healthy), continue
-      //     current.push(e)
-      //   } else {
-      //     // Switch to different island type
-      //     segments.push(current)
-      //     current = [e]
-      //   }
-      // }
     }
     if (current.length) {
       segments.push(current)

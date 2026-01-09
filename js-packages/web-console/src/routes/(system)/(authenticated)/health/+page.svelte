@@ -34,27 +34,25 @@
   let api = usePipelineManager()
   let events: ClusterMonitorEventSelectedInfo[] | null = $state(null)
   let refreshEvents = async () => {
-    events = (await api.getClusterEvents()) as typeof events
+    events = await api.getClusterEvents()
   }
 
-  const rawClusterEvents = $derived.by(() =>
-    events?./*filter(e => !e.all_healthy).*/ flatMap(unpackCombinedEvent)
-  )
+  const rawClusterEvents = $derived.by(() => events?.flatMap(unpackCombinedEvent) ?? [])
 
   const healthWindowHours = 72
 
-  const firstTimestamp = (events: ClusterMonitorEventSelectedInfo[]) =>
+  const firstTimestamp = (events: ClusterMonitorEventSelectedInfo[] | null) =>
     new Date(lastTimestamp(events).getTime() - healthWindowHours * 60 * 60 * 1000)
-  const lastTimestamp = (events: ClusterMonitorEventSelectedInfo[]) =>
-    ceilToHour(new Date(events.at(0)!.recorded_at))
+  const lastTimestamp = (events: ClusterMonitorEventSelectedInfo[] | null) =>
+    ceilToHour(events?.length ? new Date(events.at(0)!.recorded_at) : new Date())
 
   // Group events for EventLogList
   const groupedClusterEvents = $derived.by(() =>
-    events && rawClusterEvents ? groupHealthEvents(rawClusterEvents, 60 * 60 * 1000) : undefined
+    rawClusterEvents.length ? groupHealthEvents(rawClusterEvents, 60 * 60 * 1000) : []
   )
 
   const splitClusterEvents = $derived.by(() => {
-    const [unresolved, previous] = partition(groupedClusterEvents ?? [], (es) => es.active)
+    const [unresolved, previous] = partition(groupedClusterEvents, (es) => es.active)
     return { unresolved, previous }
   })
 
@@ -90,7 +88,7 @@
   // Open drawer with all events (including healthy) from the clicked timeline bar for a specific component
   function handleBarClick(tag: EventTag, group: TimelineGroup) {
     activeComponent = { type: 'timeline', tag }
-    if (!rawClusterEvents) {
+    if (!rawClusterEvents.length) {
       return
     }
 
@@ -210,28 +208,31 @@
 
 <div class="flex h-full flex-nowrap px-2 pb-5 md:px-8">
   <div class="flex h-full flex-1 flex-col gap-8 rounded-container">
-    {#if events && rawClusterEvents}
-      <!-- Status Timelines for each component -->
-      <div class="flex flex-col gap-2">
-        {#each Object.entries(componentLabels) as [tag, label], i}
-          <StatusTimeline
-            bind:this={timelineRefs[tag as EventTag]}
-            {label}
-            events={rawClusterEvents.filter((e) => e.tag === tag)}
-            startAt={firstTimestamp(events)}
-            endAt={lastTimestamp(events)}
-            unitDurationMs={60 * 60 * 1000}
-            class="flex flex-col gap-2"
-            onBarClick={(group) => handleBarClick(tag as EventTag, group)}
-            legend={i === 2}
-            selectedBars={selectedEventTimestamp?.tag === tag
-              ? { from: selectedEventTimestamp.from, to: selectedEventTimestamp.to }
-              : null}
-          ></StatusTimeline>
-        {/each}
-      </div>
-    {:else}
-      <Progress value={null}></Progress>
+    <!-- Status Timelines for each Feldera service -->
+    <div class="flex flex-col gap-2">
+      {#each Object.entries(componentLabels) as [tag, label], i}
+        <StatusTimeline
+          bind:this={timelineRefs[tag as EventTag]}
+          {label}
+          events={rawClusterEvents.filter((e) => e.tag === tag)}
+          startAt={firstTimestamp(events)}
+          endAt={lastTimestamp(events)}
+          unitDurationMs={60 * 60 * 1000}
+          class="flex flex-col gap-2"
+          onBarClick={(group) => handleBarClick(tag as EventTag, group)}
+          legend={i === 2}
+          selectedBars={selectedEventTimestamp?.tag === tag
+            ? { from: selectedEventTimestamp.from, to: selectedEventTimestamp.to }
+            : null}
+        ></StatusTimeline>
+      {/each}
+    </div>
+    {#if !events}
+      <Progress class="h-1" value={null} max={100}>
+        <Progress.Track>
+          <Progress.Range class="bg-primary-500" />
+        </Progress.Track>
+      </Progress>
     {/if}
     <EventLogList
       bind:this={eventLogListRef}
@@ -241,7 +242,9 @@
       selectedEvents={selectedEventTimestamp}
     >
       {#snippet noIssues()}
-        <span>The cluster experienced no issues in the observed period.</span>
+        {#if events}
+          <span>The cluster experienced no issues in the observed period.</span>
+        {/if}
       {/snippet}
     </EventLogList>
   </div>
