@@ -17,10 +17,7 @@ will go through the following steps of building the application:
   seamlessly on streaming data for real-time inference.**
 
 The entire use case is implemented as a Python script written using the Feldera
-[Python SDK](pathname:///python/). It is available from our [github
-repository](https://github.com/feldera/feldera/blob/main/demo/project_demo10-FraudDetectionDeltaLake/run.py)
-and can be run from the command line or from your favorite Python notebook
-environment.
+[Python SDK](pathname:///python/).
 
 ## Credit card fraud detection
 
@@ -308,12 +305,9 @@ See [instructions](/get-started/docker) for running Feldera in Docker.
 
 :::note
 
-The full
-[Python script](https://github.com/feldera/feldera/blob/main/demo/project_demo10-FraudDetectionDeltaLake/run.py)
-for this use case also contains the code to write computed features
-to a Delta Lake, which might be preferrable when working with larger
-datasets. This functionality requires write credentials to an S3 bucket
-or some other object store and is therefore disabled by default.
+When working with larger datasets, it might be preferable to write computed
+features to a Delta Lake. This functionality requires write credentials to an S3 bucket
+or some other object store.
 
 :::
 

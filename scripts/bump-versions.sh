@@ -60,7 +60,6 @@ release() {
     # Patch the docker-compose.yml file with the new version. Check this
     # change in only after we confirm the new containers are available.
     sed -i.backup "s/\:\-${old_version}/\:\-${new_version}/g" ../deploy/docker-compose.yml
-    sed -i.backup "s/\:\-${old_version}/\:\-${new_version}/g" ../deploy/docker-compose-extra.yml
 
     # Patch the latest stable pipeline manager version in the documentation and README
     sed -i.backup "s/pipeline-manager\:${old_version}/pipeline-manager\:${new_version}/g" ../docs/docker.md
