@@ -47,6 +47,18 @@
 //!   [`IndexBlockHeader::bound_map_offset`] and the format in
 //!   [`IndexBlockHeader::bound_map_varint`].
 //!
+//!   <a name="omitted-bounds">Omitted bounds</a>: Columns 1 and greater may
+//!   omit bounds, in which case those bounds are set to 0.  A min-bound (the
+//!   first in each pair) may be omitted for a given child if the first row in
+//!   that child is the first row in its row group.  A max-bound (the second in
+//!   each pair) may be omitted for a given child if the last row in that child
+//!   is the last row in its row group.  If any bounds are omitted then
+//!   [FileTrailer::incompatible_features] must include
+//!   [FileTrailer::OMITTED_BOUNDS].
+//!
+//!   Column 0 may not omit bounds (it consists of a single row group so it
+//!   could only omit the very first and very last bound in any case).
+//!
 //! * An array of "row totals", one for each of
 //!   [`IndexBlockHeader::n_children`].  The first row total is the total number
 //!   of rows in the first child tree, the second row total is that plus the
@@ -181,9 +193,21 @@ pub struct FileTrailer {
     ///
     /// If any of these bits are set, the version number must be at least 3.
     ///
-    /// No incompatible features are currently defined.  This bitmap is for
-    /// future expansion.
+    /// [FileTrailer::OMITTED_BOUNDS] and [FileTrailer::EMPTY_ROW_GROUP] are the
+    /// only current incompatible features.
     pub incompatible_features: u64,
+}
+
+impl FileTrailer {
+    /// Must be set in [FileTrailer::incompatible_features] if any bounds are
+    /// [omitted].
+    ///
+    /// [omitted]: crate::storage::file::format#omitted-bounds
+    pub const OMITTED_BOUNDS: u64 = 1;
+
+    /// Must be set in [FileTrailer::incompatible_features] if any row group
+    /// (other than column 0) contains zero rows.
+    pub const EMPTY_ROW_GROUP: u64 = 2;
 }
 
 /// Information about a column.
@@ -207,8 +231,7 @@ pub struct FileTrailerColumn {
     #[brw(align_after = 4)]
     pub node_type: NodeType,
 
-    /// Number of rows in the column.  Column 0 may have any number of rows;
-    /// subsequent columns must each have more rows than the previous.
+    /// Number of rows in the column.
     pub n_rows: u64,
 }
 
