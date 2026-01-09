@@ -2,8 +2,8 @@
 
 The `BINARY` and `VARBINARY` data types allows storage of binary strings.
 
-A binary string is a sequence of octets (or bytes). Binary strings are
-distinguished from character strings in two ways. First, binary
+A binary string is a sequence of octets (or bytes).  Binary strings
+are distinguished from character strings in two ways.  First, binary
 strings specifically allow storing octets of value zero and other
 “non-printable” octets (usually, octets outside the decimal range 32
 to 126).  Character strings disallow zero octets, and also disallow
@@ -14,6 +14,9 @@ processing of character strings depends on locale settings. In short,
 binary strings are appropriate for storing data that the programmer
 thinks of as “raw bytes”, whereas character strings are appropriate
 for storing text.
+
+Beware that `BINARY` without a scale specified is the same as
+`BINARY(1)`.
 
 ## Binary literals
 

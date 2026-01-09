@@ -838,6 +838,44 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return null;
     }
 
+    private boolean validateCast(DBSPType from, DBSPType to) {
+        if (from.is(DBSPTypeBaseType.class) && to.is(DBSPTypeBaseType.class))
+            return true;
+        if (from.is(DBSPTypeVariant.class) || to.is(DBSPTypeVariant.class))
+            return true;
+        if (from.is(DBSPTypeAny.class) || to.is(DBSPTypeAny.class))
+            return true;
+
+        if (from.is(DBSPTypeArray.class)) {
+            if (!to.is(DBSPTypeArray.class))
+                return false;
+            return validateCast(from.to(DBSPTypeArray.class).getElementType(),
+                    to.to(DBSPTypeArray.class).getElementType());
+        }
+        if (from.is(DBSPTypeMap.class)) {
+            if (!to.is(DBSPTypeMap.class))
+                return false;
+            DBSPTypeMap fromMap = from.to(DBSPTypeMap.class);
+            DBSPTypeMap toMap = to.to(DBSPTypeMap.class);
+            return validateCast(fromMap.getValueType(), toMap.getValueType()) &&
+                    validateCast(fromMap.getKeyType(), toMap.getKeyType());
+        }
+        if (from.is(DBSPTypeTuple.class)) {
+            if (!to.is(DBSPTypeTuple.class))
+                return false;
+            DBSPTypeTuple fromTuple = from.to(DBSPTypeTuple.class);
+            DBSPTypeTuple toTuple = to.to(DBSPTypeTuple.class);
+            if (fromTuple.size() != toTuple.size())
+                return false;
+            for (int i = 0; i < fromTuple.size(); i++) {
+                if (!validateCast(fromTuple.getFieldType(i), toTuple.getFieldType(i)))
+                    return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
     @Override
     public DBSPExpression visitCall(RexCall call) {
         CalciteObject node = CalciteObject.create(this.context, call);
@@ -918,6 +956,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case CAST:
             case SAFE_CAST:
             case REINTERPRET:
+                if (!validateCast(ops.get(0).getType(), type)) {
+                    throw new CompilationError("Cast function cannot convert " +
+                            ops.get(0).getType().asSqlString() +
+                            " to " + type.asSqlString(), node);
+                }
                 return ops.get(0).applyCloneIfNeeded().cast(node, type, call.op.kind == SqlKind.SAFE_CAST);
             case IS_NULL:
             case IS_NOT_NULL: {
