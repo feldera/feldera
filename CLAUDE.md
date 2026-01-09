@@ -9858,7 +9858,7 @@ The token caching system is designed to work across multiple processes:
 
 This pattern is used by:
 - **Pytest Test Runs**: Master node fetches token, workers reuse it
-- **Demo Runners**: `demo/all-packaged/run.py` uses the same caching mechanism
+- **Demo Runners**: `crates/pipeline-manager/demos/run.py` uses the same caching mechanism
 - **CI Workflows**: Multiple demos in sequence reuse the same token
 <!-- SECTION:python/tests/CLAUDE.md END -->
 

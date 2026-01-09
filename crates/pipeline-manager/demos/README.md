@@ -8,21 +8,18 @@ All the SQL files in `sql/` are packaged demos with every Feldera release.
 
 - **Preamble validation:**
   ```bash
-  python3 validate-preamble.py sql/*.sql
+  uv run validate-preamble.py sql/*.sql
   ```
 
-- **Cargo run with demos:**
+- **Specify specific demos directory:**
   ```bash
   cargo run --bin pipeline-manager \
-            -- --demos-dir demo/packaged/sql
+            -- --demos-dir crates/pipeline-manager/demos/sql
   ```
 
-- **Docker:** in the Dockerfile, directory `demo/packaged/sql` was copied over to
-  `/home/feldera/demos`, and `--demos-dir /home/feldera/demos` has been added to
-  the entry point command. Bring it up for example with:
+- **Run all demos packaged on the Feldera instance:**
   ```bash
-  docker compose -f deploy/docker-compose.yml \
-                 -f deploy/docker-compose-dev.yml up --build
+  uv run run.py --api-url http://localhost:8080
   ```
 
 ## Specification
