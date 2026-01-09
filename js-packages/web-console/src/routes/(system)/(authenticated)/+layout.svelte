@@ -93,9 +93,9 @@
     clusterHealth.current.api !== 'healthy'
       ? 'There is an issue with the API server.'
       : clusterHealth.current.compiler !== 'healthy'
-        ? 'There is an issue with the program compiler.'
+        ? 'There is an issue with the compiler server.'
         : clusterHealth.current.runner !== 'healthy'
-          ? 'There is an issue with the Kubernetes runner.'
+          ? 'There is an issue with the runner.'
           : null
   )
 

@@ -14,7 +14,7 @@
     width
   }: {
     open: boolean
-    side: 'right' | 'left' | 'top' | 'bottom'
+    side: 'right' | 'left'
     children: Snippet
     width: string
   } = $props()

@@ -15,6 +15,7 @@ import {
   postPipeline as _postPipeline,
   postUpdateRuntime as _postUpdateRuntime,
   putPipeline as _putPipeline,
+  type ClusterMonitorEventSelectedInfo,
   type ControllerStatus,
   type ErrorResponse,
   type Field,
