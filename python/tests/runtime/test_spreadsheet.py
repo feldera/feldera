@@ -19,8 +19,8 @@ def make_value(id: int, raw: str, computed: str) -> dict:
 
 class TestUDF(unittest.TestCase):
     def test_local(self):
-        dir = "../demo/packaged/sql/"
-        # Read the file ../demo/packaged/sql/10-spreadsheet.sql
+        dir = "../crates/pipeline-manager/demos/sql/"
+        # Read the file ../crates/pipeline-manager/demos/sql/10-spreadsheet.sql
         with open(dir + "10-spreadsheet.sql", "r") as f:
             sql = f.read()
         with open(dir + "10-spreadsheet.udf.rs", "r") as f:
