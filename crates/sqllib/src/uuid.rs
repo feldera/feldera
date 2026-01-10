@@ -1,5 +1,6 @@
 //! Uuid operations
 
+use crate::error::{SqlResult, convert_error};
 use dbsp::NumEntries;
 use feldera_macros::IsNone;
 use feldera_types::serde_with_context::{
@@ -159,20 +160,9 @@ impl Uuid {
 
     /// Parse a string into a Uuid
     #[doc(hidden)]
-    pub fn from_string(value: &String) -> Self {
-        Self {
-            value: uuid::Uuid::parse_str(value)
-                .unwrap_or_else(|_| panic!("Cannot parse {value} into a UUID")),
-        }
-    }
-
-    /// Parse a string into a Uuid
-    #[doc(hidden)]
-    pub fn from_ref(value: &str) -> Self {
-        Self {
-            value: uuid::Uuid::parse_str(value)
-                .unwrap_or_else(|_| panic!("Cannot parse {value} into a UUID")),
-        }
+    pub fn try_from_ref(value: &str) -> SqlResult<Self> {
+        let uuid = convert_error(uuid::Uuid::parse_str(value))?;
+        Ok(Self { value: uuid })
     }
 }
 

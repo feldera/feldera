@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -126,7 +127,7 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
      * @return A closure that casts every member of a tuple to
      * generate a raw tuple of this type. */
     @Override
-    public DBSPClosureExpression caster(DBSPType to, boolean safe) {
+    public DBSPClosureExpression caster(DBSPType to, DBSPCastExpression.CastType safe) {
         if (!to.is(DBSPTypeRawTuple.class))
             return super.caster(to, safe);  // throw
         DBSPTypeRawTuple tuple = to.to(DBSPTypeRawTuple.class);

@@ -129,6 +129,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
@@ -474,6 +475,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPTypeUser) node);
     }
 
+    public VisitDecision preorder(DBSPTypeSqlResult node) {
+        return this.preorder((DBSPTypeUser) node);
+    }
+
     public VisitDecision preorder(DBSPTypeLazy node) {
         return this.preorder((DBSPTypeUser) node);
     }
@@ -695,6 +700,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPQuestionExpression node) {
+        return this.preorder((DBSPExpression) node);
+    }
+
+    public VisitDecision preorder(DBSPResultQuestionExpression node) {
         return this.preorder((DBSPExpression) node);
     }
 
@@ -1116,6 +1125,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPTypeUser) node);
     }
 
+    public void postorder(DBSPTypeSqlResult node) {
+        this.postorder((DBSPTypeUser) node);
+    }
+
     public void postorder(DBSPTypeLazy node) {
         this.postorder((DBSPTypeUser) node);
     }
@@ -1333,6 +1346,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPQuestionExpression node) {
+        this.postorder((DBSPExpression) node);
+    }
+
+    public void postorder(DBSPResultQuestionExpression node) {
         this.postorder((DBSPExpression) node);
     }
 

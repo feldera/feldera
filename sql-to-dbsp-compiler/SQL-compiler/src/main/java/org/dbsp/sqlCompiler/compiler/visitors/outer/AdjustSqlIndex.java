@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionTranslator;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -38,7 +39,7 @@ public class AdjustSqlIndex extends ExpressionTranslator {
                     expression.getNode(), indexType, DBSPOpcode.SUB,
                     right, indexType.to(IsNumericType.class).getOne());
         }
-        right = right.cast(expression.getNode(), DBSPTypeISize.create(indexType.mayBeNull), false);
+        right = right.cast(expression.getNode(), DBSPTypeISize.create(indexType.mayBeNull), DBSPCastExpression.CastType.Unsafe);
         Simplify simplify = new Simplify(this.compiler);
         DBSPExpression index = simplify.apply(right).to(DBSPExpression.class);
         DBSPExpression result = new DBSPBinaryExpression(

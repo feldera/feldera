@@ -581,8 +581,6 @@ public class CastTests extends SqlIoTest {
 
         final CanConvert T = CanConvert.T;
         final CanConvert F = CanConvert.F;
-        // TODO: https://issues.apache.org/jira/browse/CALCITE-6779
-        final CanConvert N = CanConvert.N;
 
         // Rows and columns match the array of types above.
         final CanConvert[][] legal = {
@@ -625,7 +623,7 @@ public class CastTests extends SqlIoTest {
 /* a */{ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F, T, F },
 /* m */{ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F },
 /* V */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T },
-/* U */{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, N, N, N, F, F, F, T, T },
+/* U */{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T },
         };
 
         Assert.assertEquals(types.length, legal.length);

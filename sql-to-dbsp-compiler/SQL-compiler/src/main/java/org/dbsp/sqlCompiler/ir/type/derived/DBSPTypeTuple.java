@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -150,7 +151,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     /** Returns a lambda which casts every field of a tuple
      * to the corresponding field of this type. */
     @Override
-    public DBSPClosureExpression caster(DBSPType to, boolean safe) {
+    public DBSPClosureExpression caster(DBSPType to, DBSPCastExpression.CastType safe) {
         if (!to.is(DBSPTypeTuple.class))
             return super.caster(to, safe);  // throw
         DBSPTypeTuple tuple = to.to(DBSPTypeTuple.class);

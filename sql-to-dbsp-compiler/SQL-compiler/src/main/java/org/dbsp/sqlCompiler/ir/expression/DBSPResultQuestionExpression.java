@@ -7,20 +7,20 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
-/** Describes an expression of the form e? where e has an Option type */
+/** Describes an expression of the form e? where e is a cast expression
+ * that will be expanded to have a SqlResult[T] type.  (In the IR the cast will have
+ * a type of T only, but in the generated Rust code it will have a SqlResult type). */
 @NonCoreIR
-public final class DBSPQuestionExpression extends DBSPExpression {
+public final class DBSPResultQuestionExpression extends DBSPExpression {
     public final DBSPExpression source;
 
-    DBSPQuestionExpression(DBSPExpression source) {
-        super(source.getNode(), source.getType().withMayBeNull(false));
+    public DBSPResultQuestionExpression(DBSPExpression source) {
+        super(source.getNode(), source.getType());
         this.source = source;
-        Utilities.enforce(source.getType().is(DBSPTypeAny.class) ||
-                source.getType().mayBeNull);
+        Utilities.enforce(source.is(DBSPCastExpression.class));
     }
 
     @Override
@@ -38,7 +38,7 @@ public final class DBSPQuestionExpression extends DBSPExpression {
 
     @Override
     public boolean sameFields(IDBSPInnerNode other) {
-        DBSPQuestionExpression o = other.as(DBSPQuestionExpression.class);
+        DBSPResultQuestionExpression o = other.as(DBSPResultQuestionExpression.class);
         if (o == null)
             return false;
         return this.source == o.source;
@@ -46,7 +46,7 @@ public final class DBSPQuestionExpression extends DBSPExpression {
 
     @Override
     public DBSPExpression deepCopy() {
-        return this.source.deepCopy().question();
+        return new DBSPResultQuestionExpression(this.source.deepCopy());
     }
 
     @Override
@@ -57,15 +57,15 @@ public final class DBSPQuestionExpression extends DBSPExpression {
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        DBSPQuestionExpression otherExpression = other.as(DBSPQuestionExpression.class);
+        DBSPResultQuestionExpression otherExpression = other.as(DBSPResultQuestionExpression.class);
         if (otherExpression == null)
             return false;
         return context.equivalent(this.source, otherExpression.source);
     }
 
     @SuppressWarnings("unused")
-    public static DBSPQuestionExpression fromJson(JsonNode node, JsonDecoder decoder) {
+    public static DBSPResultQuestionExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression source = fromJsonInner(node, "source", decoder, DBSPExpression.class);
-        return new DBSPQuestionExpression(source);
+        return new DBSPResultQuestionExpression(source);
     }
 }

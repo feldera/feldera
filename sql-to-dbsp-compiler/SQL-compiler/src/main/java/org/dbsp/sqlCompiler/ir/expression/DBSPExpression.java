@@ -236,10 +236,10 @@ public abstract class DBSPExpression
     public DBSPExpression castToNullable() {
         if (this.getType().mayBeNull)
             return this;
-        return this.cast(this.getNode(), this.getType().withMayBeNull(true), false);
+        return this.cast(this.getNode(), this.getType().withMayBeNull(true), DBSPCastExpression.CastType.Unsafe);
     }
 
-    public DBSPExpression cast(CalciteObject node, DBSPType to, boolean safe) {
+    public DBSPExpression cast(CalciteObject node, DBSPType to, DBSPCastExpression.CastType safe) {
         DBSPType fromType = this.getType();
         if (fromType.sameType(to)) {
             return this;
@@ -248,7 +248,7 @@ public abstract class DBSPExpression
     }
 
     /** Insert a cast which may only change nullability */
-    public DBSPExpression nullabilityCast(DBSPType to, boolean safe) {
+    public DBSPExpression nullabilityCast(DBSPType to, DBSPCastExpression.CastType safe) {
         DBSPType sourceType = this.getType();
         // We also accept casts of the form CHAR(4) TO VARCHAR
         boolean stringToString = sourceType.is(DBSPTypeString.class) && to.is(DBSPTypeString.class);

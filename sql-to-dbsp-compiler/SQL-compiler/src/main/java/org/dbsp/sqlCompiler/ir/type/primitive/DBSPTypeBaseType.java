@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.type.primitive;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -45,7 +46,7 @@ public abstract class DBSPTypeBaseType extends DBSPType {
     }
 
     @Override
-    public DBSPClosureExpression caster(DBSPType to, boolean safe) {
+    public DBSPClosureExpression caster(DBSPType to, DBSPCastExpression.CastType safe) {
         DBSPVariablePath var = this.ref().var();
         return var.deref().applyCloneIfNeeded().cast(this.getNode(), to, safe).closure(var);
     }

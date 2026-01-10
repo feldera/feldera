@@ -360,7 +360,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         public int getDefaultPrecision(SqlTypeName typeName) {
             if (typeName == SqlTypeName.TIMESTAMP)
                 return DBSPTypeTimestamp.PRECISION;
-            if (typeName == SqlTypeName.TIME)
+            else if (typeName == SqlTypeName.TIME)
                 return DBSPTypeTime.PRECISION;
             return super.getDefaultPrecision(typeName);
         }

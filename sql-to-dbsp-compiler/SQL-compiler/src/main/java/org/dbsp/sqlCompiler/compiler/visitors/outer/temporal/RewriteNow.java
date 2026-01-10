@@ -43,6 +43,7 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -759,7 +760,7 @@ public class RewriteNow extends CircuitCloneVisitor {
         // Index input by timestamp
         DBSPClosureExpression indexFunction =
                 new DBSPRawTupleExpression(
-                        bounds.common.cast(bounds.common.getNode(), commonType.withMayBeNull(false), false),
+                        bounds.common.cast(bounds.common.getNode(), commonType.withMayBeNull(false), DBSPCastExpression.CastType.Unsafe),
                         param.asVariable().deref().applyClone()).closure(param);
         DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(operator.getRelNode(),
                 commonType.withMayBeNull(false),

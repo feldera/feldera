@@ -20,6 +20,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -177,7 +178,7 @@ public class ExpandAggregates extends Passes {
                             DBSPVariablePath var = new DBSPTypeTuple(fields.tupFields[1]).ref().var();
                             postProcessing = new DBSPTupleExpression(
                                     var.deref().field(0)
-                                            .cast(mm.getNode(), resultType.tupFields[0], false)
+                                            .cast(mm.getNode(), resultType.tupFields[0], DBSPCastExpression.CastType.Unsafe)
                                             .applyCloneIfNeeded()
                             ).closure(var);
                         }
@@ -195,7 +196,7 @@ public class ExpandAggregates extends Passes {
                     (mm.operation == MinMaxAggregate.Operation.Max || mm.operation == MinMaxAggregate.Operation.Min)) {
                 // This is important when computing the min/max of a ROW type;
                 // this may insert casts to match the type expected
-                postProcessing = aggregatedValueType.caster(aggregationType, false)
+                postProcessing = aggregatedValueType.caster(aggregationType, DBSPCastExpression.CastType.Unsafe)
                         .reduce(this.compiler)
                         .to(DBSPClosureExpression.class);
             }
@@ -220,8 +221,8 @@ public class ExpandAggregates extends Passes {
             DBSPExpression comparedValue = var.deref().field(0);
             DBSPTypeTuple aggregationTuple = aggregationType.to(DBSPTypeTuple.class);  // Tup1<T>; extract T
             DBSPExpression pair = new DBSPRawTupleExpression(
-                    comparedValue.field(0).nullabilityCast(postProcessTuple.tupFields[0], false),
-                    comparedValue.field(1).cast(mm.getNode(), aggregationTuple.tupFields[0], false));
+                    comparedValue.field(0).nullabilityCast(postProcessTuple.tupFields[0], DBSPCastExpression.CastType.Unsafe),
+                    comparedValue.field(1).cast(mm.getNode(), aggregationTuple.tupFields[0], DBSPCastExpression.CastType.Unsafe));
             DBSPExpression body = mm.postProcess.call(pair).reduce(this.compiler);
             // The result of postProcess must also be wrapped in a Tup1.
             DBSPExpression tup1 = new DBSPTupleExpression(body);

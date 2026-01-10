@@ -65,6 +65,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeLazy;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -374,6 +375,16 @@ public abstract class InnerRewriteVisitor
         DBSPType elementType = this.transform(type.getElementType());
         this.pop(type);
         DBSPType result = new DBSPTypeArray(elementType, type.mayBeNull);
+        this.map(type, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTypeSqlResult type) {
+        this.push(type);
+        DBSPType elementType = this.transform(type.typeArgs[0]);
+        this.pop(type);
+        DBSPType result = new DBSPTypeSqlResult(elementType);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -816,6 +827,16 @@ public abstract class InnerRewriteVisitor
         DBSPExpression source = this.transform(expression.source);
         this.pop(expression);
         DBSPExpression result = source.question();
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPResultQuestionExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.source);
+        this.pop(expression);
+        DBSPExpression result = new DBSPResultQuestionExpression(source);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

@@ -110,6 +110,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
@@ -1294,6 +1295,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
          * the function called will be cast_to_b_i16N. */
         this.push(expression);
         DBSPType destType = expression.getType();
+        if (destType.is(DBSPTypeSqlResult.class)) {
+            destType = destType.to(DBSPTypeSqlResult.class).typeArgs[0];
+        }
         DBSPTypeCode code = destType.code;
         DBSPType sourceType = expression.source.getType();
         DBSPTypeArray sourceVecType = sourceType.as(DBSPTypeArray.class);
@@ -1680,17 +1684,17 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(")");
                 break;
             }
-            case ARRAY_CONVERT, MAP_CONVERT, DIV_NULL: {
+            case ARRAY_CONVERT_SAFE, ARRAY_CONVERT, MAP_CONVERT, DIV_NULL: {
                 this.builder.append(expression.opcode.toString())
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
-                        .append("(");
+                        .append("(").increase();
                 this.visitingChild = 0;
                 expression.left.accept(this);
                 this.builder.append(", ");
                 this.visitingChild = 1;
                 expression.right.accept(this);
-                this.builder.append(")");
+                this.builder.newline().decrease().append(")");
                 break;
             }
             case OR:
@@ -2018,6 +2022,16 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPQuestionExpression expression) {
+        this.push(expression);
+        this.builder.append("(");
+        expression.source.accept(this);
+        this.builder.append("?)");
+        this.pop(expression);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPResultQuestionExpression expression) {
         this.push(expression);
         this.builder.append("(");
         expression.source.accept(this);
