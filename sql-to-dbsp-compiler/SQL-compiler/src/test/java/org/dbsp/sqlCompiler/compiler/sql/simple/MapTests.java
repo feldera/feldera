@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
@@ -10,7 +11,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -26,6 +26,7 @@ public class MapTests extends BaseSQLTests {
     public DBSPCompiler compileQuery(String statements, String query) {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.optimizationLevel = 0;
+        compiler.options.ioOptions.quiet = false;
         compiler.submitStatementsForCompilation(statements);
         compiler.submitStatementForCompilation(query);
         return compiler;
@@ -41,6 +42,12 @@ public class MapTests extends BaseSQLTests {
         this.testQuery("", query,
                 new InputOutputChangeStream().addChange(
                         new InputOutputChange(new Change(), new Change("V", expression))));
+    }
+
+    @Test
+    public void testDuplicateKeys() {
+        var compiler = this.compileQuery("", "CREATE VIEW V AS SELECT MAP['hi', 1, 'hi', 2]");
+        TestUtil.assertMessagesContain(compiler, "Duplicate MAP key");
     }
 
     @Test

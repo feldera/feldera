@@ -1780,4 +1780,39 @@ public class Regression1Tests extends SqlIoTest {
                 --------------------------
                  1 |   |    |    | 1""");
     }
+
+    @Test
+    public void issue5375() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(str VARCHAR );
+                CREATE MATERIALIZED VIEW v AS SELECT
+                SAFE_CAST(str AS UUID) AS str_uuid
+                FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES('h');", """
+                 str_uuid | weight
+                -------------------
+                NULL      | 1""");
+    }
+
+    @Test
+    public void issue5379() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                CAST(mapp AS MAP<VARCHAR, ROW(v VARCHAR)>) AS to_map,
+                SAFE_CAST(mapp AS MAP<VARCHAR, ROW(v VARCHAR)>) AS to_map1
+                FROM tbl;""",
+                "Cast function cannot convert value of type (VARCHAR CHARACTER SET \"UTF-8\" NOT NULL, INTEGER) MAP");
+    }
+
+    @Test
+    public void issue5380() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                CAST(mapp AS MAP<VARCHAR, INT ARRAY>) AS to_map
+                FROM tbl;""", "Cast function cannot convert value of type (VARCHAR CHARACTER SET \"UTF-8\" NOT NULL, INTEGER) MAP");
+    }
 }

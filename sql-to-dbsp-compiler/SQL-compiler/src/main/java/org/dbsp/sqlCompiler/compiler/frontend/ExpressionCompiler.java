@@ -1624,6 +1624,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 keys = Linq.map(keys, o -> o.cast(node, map.getKeyType(), false));
                 List<DBSPExpression> values = DBSPMapExpression.getValues(ops);
                 values = Linq.map(values, o -> o.cast(node, map.getValueType(), false));
+                for (int i = 0; i < keys.size(); i++) {
+                    for (int j = i + 1; j < keys.size(); j++) {
+                        DBSPExpression ki = keys.get(i);
+                        DBSPExpression kj = keys.get(j);
+                        if (ki.equivalent(kj)) {
+                            String key = "";
+                            if (ki.is(DBSPLiteral.class))
+                                key = ": " + ki.to(DBSPLiteral.class).toSqlString();
+                            this.compiler.reportWarning(ki.getSourcePosition(), "Duplicate MAP key",
+                                    "MAP constructor contains two identical keys" + key);
+                        }
+                    }
+                }
                 return new DBSPMapExpression(map, keys, values);
             }
             case ITEM: {

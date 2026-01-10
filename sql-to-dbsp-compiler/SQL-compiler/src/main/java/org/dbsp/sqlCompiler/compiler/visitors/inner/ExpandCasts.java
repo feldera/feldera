@@ -217,7 +217,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             DBSPType fieldType = type.getFieldType(i);
             DBSPExpression index;
             if (sourceType.is(DBSPTypeTupleBase.class)) {
-                index = source.field(i);
+                index = source.field(i).simplify();
             } else if (sourceType.is(DBSPTypeVariant.class)) {
                 if (struct == null) {
                     index = new DBSPBinaryExpression(
@@ -266,7 +266,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
             throw new InternalCompilerError("Cast to RAW tuple from " + sourceType);
         for (int i = 0; i < type.size(); i++) {
             DBSPType fieldType = type.getFieldType(i);
-            DBSPExpression index = source.field(i);
+            DBSPExpression index = source.field(i).simplify();
             DBSPExpression expression;
             if (fieldType.is(DBSPTypeTuple.class)) {
                 expression = convertToStructOrTuple(node, index.applyClone(), fieldType.to(DBSPTypeTuple.class));
