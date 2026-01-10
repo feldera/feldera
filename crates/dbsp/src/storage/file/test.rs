@@ -32,6 +32,112 @@ use feldera_types::config::{StorageConfig, StorageOptions};
 use rand::{Rng, seq::SliceRandom, thread_rng};
 use tempfile::tempdir;
 
+feldera_macros::declare_tuple! {
+    Tup65<
+        T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18,
+        T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31, T32, T33, T34, T35,
+        T36, T37, T38, T39, T40, T41, T42, T43, T44, T45, T46, T47, T48, T49, T50, T51, T52,
+        T53, T54, T55, T56, T57, T58, T59, T60, T61, T62, T63, T64
+    >
+}
+
+type OptString = Option<String>;
+type Tup65OptString = Tup65<
+    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
+    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
+    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
+    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
+    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
+    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
+    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
+    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
+    OptString
+>;
+
+// Map bits to fields in MSB->LSB order so row indices remain lexicographically sorted.
+fn bit_set(bits: u128, idx: usize) -> bool {
+    debug_assert!(idx < 65);
+    ((bits >> (64 - idx)) & 1) != 0
+}
+
+fn opt_str(bit: bool) -> Option<String> {
+    if bit {
+        Some("abc".to_string())
+    } else {
+        None
+    }
+}
+
+fn tup65_from_bits(bits: u128) -> Tup65OptString {
+    Tup65(
+        opt_str(bit_set(bits, 0)),
+        opt_str(bit_set(bits, 1)),
+        opt_str(bit_set(bits, 2)),
+        opt_str(bit_set(bits, 3)),
+        opt_str(bit_set(bits, 4)),
+        opt_str(bit_set(bits, 5)),
+        opt_str(bit_set(bits, 6)),
+        opt_str(bit_set(bits, 7)),
+        opt_str(bit_set(bits, 8)),
+        opt_str(bit_set(bits, 9)),
+        opt_str(bit_set(bits, 10)),
+        opt_str(bit_set(bits, 11)),
+        opt_str(bit_set(bits, 12)),
+        opt_str(bit_set(bits, 13)),
+        opt_str(bit_set(bits, 14)),
+        opt_str(bit_set(bits, 15)),
+        opt_str(bit_set(bits, 16)),
+        opt_str(bit_set(bits, 17)),
+        opt_str(bit_set(bits, 18)),
+        opt_str(bit_set(bits, 19)),
+        opt_str(bit_set(bits, 20)),
+        opt_str(bit_set(bits, 21)),
+        opt_str(bit_set(bits, 22)),
+        opt_str(bit_set(bits, 23)),
+        opt_str(bit_set(bits, 24)),
+        opt_str(bit_set(bits, 25)),
+        opt_str(bit_set(bits, 26)),
+        opt_str(bit_set(bits, 27)),
+        opt_str(bit_set(bits, 28)),
+        opt_str(bit_set(bits, 29)),
+        opt_str(bit_set(bits, 30)),
+        opt_str(bit_set(bits, 31)),
+        opt_str(bit_set(bits, 32)),
+        opt_str(bit_set(bits, 33)),
+        opt_str(bit_set(bits, 34)),
+        opt_str(bit_set(bits, 35)),
+        opt_str(bit_set(bits, 36)),
+        opt_str(bit_set(bits, 37)),
+        opt_str(bit_set(bits, 38)),
+        opt_str(bit_set(bits, 39)),
+        opt_str(bit_set(bits, 40)),
+        opt_str(bit_set(bits, 41)),
+        opt_str(bit_set(bits, 42)),
+        opt_str(bit_set(bits, 43)),
+        opt_str(bit_set(bits, 44)),
+        opt_str(bit_set(bits, 45)),
+        opt_str(bit_set(bits, 46)),
+        opt_str(bit_set(bits, 47)),
+        opt_str(bit_set(bits, 48)),
+        opt_str(bit_set(bits, 49)),
+        opt_str(bit_set(bits, 50)),
+        opt_str(bit_set(bits, 51)),
+        opt_str(bit_set(bits, 52)),
+        opt_str(bit_set(bits, 53)),
+        opt_str(bit_set(bits, 54)),
+        opt_str(bit_set(bits, 55)),
+        opt_str(bit_set(bits, 56)),
+        opt_str(bit_set(bits, 57)),
+        opt_str(bit_set(bits, 58)),
+        opt_str(bit_set(bits, 59)),
+        opt_str(bit_set(bits, 60)),
+        opt_str(bit_set(bits, 61)),
+        opt_str(bit_set(bits, 62)),
+        opt_str(bit_set(bits, 63)),
+        opt_str(bit_set(bits, 64)),
+    )
+}
+
 fn test_buffer_cache() -> Arc<BufferCache> {
     thread_local! {
         static BUFFER_CACHE: Arc<BufferCache> = Arc::new(BufferCache::new(1024 * 1024));
@@ -926,6 +1032,21 @@ fn test_tuple() {
         };
         test_one_column(1000, &expected, parameters.clone());
         test_one_column_zset(1000, &expected, parameters);
+    });
+}
+
+#[test]
+fn test_tup65_option_string() {
+    init_test_logger();
+    let n = 10_000usize;
+    for_each_compression_type(Parameters::default(), |parameters| {
+        test_one_column(n, |row| {
+            let bits = row as u128 * 2 + 1;
+            let before = tup65_from_bits(bits - 1);
+            let key = tup65_from_bits(bits);
+            let after = tup65_from_bits(bits + 1);
+            (before, key, after, ())
+        }, parameters);
     });
 }
 
