@@ -39,7 +39,24 @@ pub trait DeserializableDyn {
     ///
     /// The offset must store a valid serialized value of the
     /// concrete type that `self` points to.
-    unsafe fn deserialize_from_bytes(&mut self, bytes: &[u8], pos: usize);
+    unsafe fn deserialize_from_bytes_with(
+        &mut self,
+        bytes: &[u8],
+        pos: usize,
+        deserializer: &mut Deserializer,
+    );
+
+    /// Deserialize `self` from the given slice and offset using the default
+    /// deserializer configuration.
+    ///
+    /// # Safety
+    ///
+    /// The offset must store a valid serialized value of the
+    /// concrete type that `self` points to.
+    unsafe fn deserialize_from_bytes(&mut self, bytes: &[u8], pos: usize) {
+        let mut deserializer = Deserializer::default();
+        unsafe { self.deserialize_from_bytes_with(bytes, pos, &mut deserializer) };
+    }
 }
 
 impl<T> SerializeDyn for T
@@ -57,13 +74,16 @@ impl<T> DeserializableDyn for T
 where
     T: ArchivedDBData,
 {
-    unsafe fn deserialize_from_bytes(&mut self, bytes: &[u8], pos: usize) {
+    unsafe fn deserialize_from_bytes_with(
+        &mut self,
+        bytes: &[u8],
+        pos: usize,
+        deserializer: &mut Deserializer,
+    ) {
         unsafe {
             let archived: &<Self as Archive>::Archived = archived_value::<Self>(bytes, pos);
 
-            *self = archived
-                .deserialize(&mut Deserializer::default())
-                .unwrap();
+            *self = archived.deserialize(deserializer).unwrap();
         }
     }
 }

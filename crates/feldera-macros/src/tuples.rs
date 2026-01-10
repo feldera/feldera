@@ -28,6 +28,7 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
     let bitmap_word_indexes = (0..bitmap_words).map(Index::from).collect::<Vec<_>>();
     let field_ptr_name = format_ident!("{}FieldPtr", name);
     let archived_name = format_ident!("Archived{}", name);
+    let archived_v3_name = format_ident!("Archived{}V3", name);
     let resolver_name = format_ident!("{}Resolver", name);
     let archived_none_ptr_name =
         format_ident!("__{}_archived_none_ptr", name.to_string().to_lowercase());
@@ -200,23 +201,51 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     };
 
+    let v3_archived_struct = quote! {
+        #[repr(C)]
+        pub struct #archived_v3_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive,)*
+        {
+            #(pub #fields: ::rkyv::Archived<#generics>),*
+        }
+    };
+
+    let v3_deserialize_impl = quote! {
+        impl<D, #(#generics),*> ::rkyv::Deserialize<#name<#(#generics),*>, D>
+            for #archived_v3_name<#(#generics),*>
+        where
+            D: ::rkyv::Fallible + ?Sized,
+            #(#generics: ::rkyv::Archive,)*
+            #(::rkyv::Archived<#generics>: ::rkyv::Deserialize<#generics, D>,)*
+        {
+            #[inline]
+            fn deserialize(
+                &self,
+                deserializer: &mut D,
+            ) -> Result<#name<#(#generics),*>, D::Error> {
+                Ok(#name( #(self.#fields.deserialize(deserializer)?),* ))
+            }
+        }
+    };
+
     let get_methods = fields
         .iter()
         .enumerate()
         .zip(generics.iter())
         .map(|((idx, _field), ty)| {
             let get_name = format_ident!("get_t{}", idx);
-            let idx_lit = Index::from(idx);
-            quote! {
-                #[inline]
-                pub fn #get_name(&self) -> &::rkyv::Archived<#ty> {
-                    if self.none_bit_set(#idx_lit) {
+                let idx_lit = Index::from(idx);
+                quote! {
+                    #[inline]
+                    pub fn #get_name(&self) -> &::rkyv::Archived<#ty> {
+                        if self.none_bit_set(#idx_lit) {
                         // SAFETY: The bitmap only marks `None` for types whose archived
                         // representation is `ArchivedOption<...>`; a zeroed archived
                         // option is valid for the `None` variant.
                         unsafe { &*#archived_none_ptr_name::<#ty>() }
                     } else {
-                        let ptr_idx = self.ptr_index(#idx_lit);
+                        let ptr_idx = self.idx_for_field(#idx_lit);
                         debug_assert!(ptr_idx < self.ptrs.len());
                         // SAFETY: `ptrs[ptr_idx]` points at the archived field when the bit is clear.
                         unsafe {
@@ -337,7 +366,7 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             #(#generics: ::rkyv::Archive,)*
         {
             // Bitmap layout: each bit marks a field that was `None` (per `IsNone`).
-            // `ptrs` stores only the non-`None` values in field order; `ptr_index`
+            // `ptrs` stores only the non-`None` values in field order; `idx_for_field`
             // computes the offset by counting unset bits before each field.
             bitmap: [u64; #bitmap_words],
             ptrs: ::rkyv::vec::ArchivedVec<::rkyv::RawRelPtr>,
@@ -357,7 +386,7 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             }
 
             #[inline]
-            fn ptr_index(&self, field_idx: usize) -> usize {
+            fn idx_for_field(&self, field_idx: usize) -> usize {
                 debug_assert!(field_idx < #num_elements);
                 let word = field_idx / 64;
                 let bit = field_idx % 64;
@@ -484,12 +513,23 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
 
         impl<D, #(#generics),*> ::rkyv::Deserialize<#name<#(#generics),*>, D> for #archived_name<#(#generics),*>
         where
-            D: ::rkyv::Fallible + ?Sized,
+            D: ::rkyv::Fallible + ::core::any::Any,
             #(#generics: ::rkyv::Archive + Default,)*
             #(::rkyv::Archived<#generics>: ::rkyv::Deserialize<#generics, D>,)*
         {
             #[inline]
             fn deserialize(&self, deserializer: &mut D) -> Result<#name<#(#generics),*>, D::Error> {
+                let version = (deserializer as &mut dyn ::core::any::Any)
+                    .downcast_mut::<::dbsp::storage::file::Deserializer>()
+                    .map(|deserializer| deserializer.version())
+                    .unwrap_or(::dbsp::storage::file::format::VERSION_NUMBER);
+                if version < ::dbsp::storage::file::format::VERSION_NUMBER {
+                    // SAFETY: V3 files store tuples with the old archived layout.
+                    let legacy = unsafe {
+                        &*(self as *const _ as *const #archived_v3_name<#(#generics),*>)
+                    };
+                    return legacy.deserialize(deserializer);
+                }
                 let mut ptr_idx = 0usize;
                 #(#deserialize_fields)*
                 Ok(#name( #(#fields),* ))
@@ -521,6 +561,8 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         #struct_def
         #constructor
         #getter_setter
+        #v3_archived_struct
+        #v3_deserialize_impl
         #rkyv_impls
         #algebra_traits
         #conversion_traits

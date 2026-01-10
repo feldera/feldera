@@ -130,6 +130,26 @@ impl<T0: core::fmt::Debug> core::fmt::Debug for Tup1<T0> {
 }
 impl<T0: Copy> Copy for Tup1<T0> {}
 
+#[repr(C)]
+pub struct ArchivedTup1V3<T0>
+where
+    T0: rkyv::Archive,
+{
+    pub t0: Archived<T0>,
+}
+
+impl<D, T0> rkyv::Deserialize<Tup1<T0>, D> for ArchivedTup1V3<T0>
+where
+    D: rkyv::Fallible + ?Sized,
+    T0: rkyv::Archive,
+    Archived<T0>: rkyv::Deserialize<T0, D>,
+{
+    #[inline]
+    fn deserialize(&self, deserializer: &mut D) -> Result<Tup1<T0>, D::Error> {
+        Ok(Tup1(self.t0.deserialize(deserializer)?))
+    }
+}
+
 #[derive(
     Default,
     Eq,
@@ -199,6 +219,12 @@ where
     fn none_bit_set(&self, idx: usize) -> bool {
         debug_assert!(idx < 8);
         (self.bitmap & (1u8 << idx)) != 0
+    }
+
+    #[inline]
+    fn idx_for_field(&self, field_idx: usize) -> usize {
+        debug_assert!(field_idx == 0);
+        0
     }
 
     #[inline]
@@ -348,12 +374,21 @@ where
 
 impl<D, T0> rkyv::Deserialize<Tup1<T0>, D> for ArchivedTup1<T0>
 where
-    D: rkyv::Fallible + ?Sized,
+    D: rkyv::Fallible + core::any::Any,
     T0: rkyv::Archive + Default,
     Archived<T0>: rkyv::Deserialize<T0, D>,
 {
     #[inline]
     fn deserialize(&self, deserializer: &mut D) -> Result<Tup1<T0>, D::Error> {
+        let version = (deserializer as &mut dyn core::any::Any)
+            .downcast_mut::<dbsp::storage::file::Deserializer>()
+            .map(|deserializer| deserializer.version())
+            .unwrap_or(dbsp::storage::file::format::VERSION_NUMBER);
+        if version < dbsp::storage::file::format::VERSION_NUMBER {
+            // SAFETY: V3 files store tuples with the old archived layout.
+            let v3 = unsafe { &*(self as *const _ as *const ArchivedTup1V3<T0>) };
+            return v3.deserialize(deserializer);
+        }
         if self.none_bit_set(0) {
             Ok(Tup1(T0::default()))
         } else {
@@ -367,6 +402,33 @@ where
             };
             Ok(Tup1(archived.deserialize(deserializer)?))
         }
+    }
+}
+
+#[repr(C)]
+pub struct ArchivedTup2V3<T0, T1>
+where
+    T0: rkyv::Archive,
+    T1: rkyv::Archive,
+{
+    pub t0: Archived<T0>,
+    pub t1: Archived<T1>,
+}
+
+impl<D, T0, T1> rkyv::Deserialize<Tup2<T0, T1>, D> for ArchivedTup2V3<T0, T1>
+where
+    D: rkyv::Fallible + ?Sized,
+    T0: rkyv::Archive,
+    T1: rkyv::Archive,
+    Archived<T0>: rkyv::Deserialize<T0, D>,
+    Archived<T1>: rkyv::Deserialize<T1, D>,
+{
+    #[inline]
+    fn deserialize(&self, deserializer: &mut D) -> Result<Tup2<T0, T1>, D::Error> {
+        Ok(Tup2(
+            self.t0.deserialize(deserializer)?,
+            self.t1.deserialize(deserializer)?,
+        ))
     }
 }
 
@@ -394,7 +456,7 @@ where
     T1: rkyv::Archive,
 {
     #[inline]
-    fn ptr_index(&self, field_idx: usize) -> usize {
+    fn idx_for_field(&self, field_idx: usize) -> usize {
         debug_assert!(field_idx <= 1);
         match field_idx {
             0 => 0,
@@ -439,7 +501,7 @@ where
             // SAFETY: See `ArchivedTup1::get_t0` for the `ArchivedOption` reasoning.
             unsafe { &*archived_none_ptr::<T1>() }
         } else {
-            let idx = self.ptr_index(1);
+            let idx = self.idx_for_field(1);
             debug_assert!(idx < self.ptrs.len());
             // SAFETY: `ptrs[idx]` points at the archived `T1` when its bit is clear.
             unsafe {
@@ -582,7 +644,7 @@ where
 
 impl<D, T0, T1> rkyv::Deserialize<Tup2<T0, T1>, D> for ArchivedTup2<T0, T1>
 where
-    D: rkyv::Fallible + ?Sized,
+    D: rkyv::Fallible + core::any::Any,
     T0: rkyv::Archive + Default,
     T1: rkyv::Archive + Default,
     Archived<T0>: rkyv::Deserialize<T0, D>,
@@ -590,6 +652,15 @@ where
 {
     #[inline]
     fn deserialize(&self, deserializer: &mut D) -> Result<Tup2<T0, T1>, D::Error> {
+        let version = (deserializer as &mut dyn core::any::Any)
+            .downcast_mut::<dbsp::storage::file::Deserializer>()
+            .map(|deserializer| deserializer.version())
+            .unwrap_or(dbsp::storage::file::format::VERSION_NUMBER);
+        if version < dbsp::storage::file::format::VERSION_NUMBER {
+            // SAFETY: V3 files store tuples with the old archived layout.
+            let v3 = unsafe { &*(self as *const _ as *const ArchivedTup2V3<T0, T1>) };
+            return v3.deserialize(deserializer);
+        }
         let mut idx = 0usize;
 
         let t0 = if self.none_bit_set(0) {

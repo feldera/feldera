@@ -849,7 +849,7 @@ where
                 raw, node, cache, file_id, version,
             )?)),
             NodeType::Index => Ok(Self::Index(IndexBlock::from_raw_with_cache(
-                raw, node, cache, file_id,
+                raw, node, cache, file_id, version,
             )?)),
         }
     }
@@ -884,6 +884,7 @@ where
     child_offsets: VarintReader,
     child_sizes: VarintReader,
     first_row: u64,
+    version: u32,
     _phantom: PhantomData<K>,
 }
 
@@ -904,6 +905,7 @@ where
         raw: Arc<FBuf>,
         location: BlockLocation,
         first_row: u64,
+        version: u32,
     ) -> Result<Self, Error> {
         let header =
             IndexBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice())).map_err(|e| {
@@ -960,6 +962,7 @@ where
             )?,
             raw,
             first_row,
+            version,
             _phantom: PhantomData,
         })
     }
@@ -969,8 +972,14 @@ where
         node: &TreeNode,
         cache: &BufferCache,
         file_id: FileId,
+        version: u32,
     ) -> Result<Arc<Self>, Error> {
-        let block = Arc::new(Self::from_raw(raw, node.location, node.rows.start)?);
+        let block = Arc::new(Self::from_raw(
+            raw,
+            node.location,
+            node.rows.start,
+            version,
+        )?);
         cache.insert(file_id, node.location.offset, block.clone());
         Ok(block)
     }
@@ -1001,8 +1010,13 @@ where
             }
             None => {
                 let block = file.read_block(node.location)?;
-                let entry =
-                    Self::from_raw_with_cache(block, node, &cache, file.file_handle.file_id())?;
+                let entry = Self::from_raw_with_cache(
+                    block,
+                    node,
+                    &cache,
+                    file.file_handle.file_id(),
+                    file.version,
+                )?;
                 (CacheAccess::Miss, entry)
             }
         };
@@ -1091,7 +1105,8 @@ where
     unsafe fn get_bound(&self, index: usize, bound: &mut K) {
         unsafe {
             let offset = self.bounds.get(&self.raw, index) as usize;
-            bound.deserialize_from_bytes(&self.raw, offset)
+            let mut deserializer = Deserializer::new(self.version);
+            bound.deserialize_from_bytes_with(&self.raw, offset, &mut deserializer)
         }
     }
 

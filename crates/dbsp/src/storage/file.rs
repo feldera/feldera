@@ -287,6 +287,7 @@ pub struct Deserializer {
 }
 
 impl Deserializer {
+    /// Create a deserializer configured for the given file format version.
     pub fn new(version: u32) -> Self {
         Self {
             version,
@@ -294,6 +295,7 @@ impl Deserializer {
         }
     }
 
+    /// Create a deserializer with a preallocated shared pointer map.
     pub fn with_capacity(version: u32, capacity: usize) -> Self {
         Self {
             version,
@@ -301,6 +303,7 @@ impl Deserializer {
         }
     }
 
+    /// Return the file format version this deserializer targets.
     pub fn version(&self) -> u32 {
         self.version
     }
