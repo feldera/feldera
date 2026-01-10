@@ -166,10 +166,7 @@ where
     Trait: DowncastTrait + ?Sized + 'static,
 {
     fn deserialize_with(&self, target: &mut Trait, deserializer: &mut Deserializer) {
-        *unsafe { target.downcast_mut::<T>() } = self
-            .archived
-            .deserialize(deserializer)
-            .unwrap()
+        *unsafe { target.downcast_mut::<T>() } = self.archived.deserialize(deserializer).unwrap()
     }
 
     fn eq_target(&self, other: &Trait) -> bool {

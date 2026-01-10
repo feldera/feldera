@@ -6,14 +6,14 @@ use std::path::PathBuf;
 
 use dbsp::dynamic::DynData;
 use dbsp::storage::backend::StorageBackend;
-use dbsp::storage::file::Factories;
 use dbsp::storage::file::format::Compression;
 use dbsp::storage::file::format::VERSION_NUMBER;
 use dbsp::storage::file::writer::{Parameters, Writer1};
+use dbsp::storage::file::Factories;
 use feldera_types::config::{StorageConfig, StorageOptions};
 
 use storage_test_compat::{
-    DEFAULT_ROWS, GoldenRow, buffer_cache, golden_row, storage_base_and_path,
+    buffer_cache, golden_row, storage_base_and_path, GoldenRow, DEFAULT_ROWS,
 };
 
 struct Config {
