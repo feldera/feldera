@@ -216,7 +216,13 @@ where
         {
             let raw = decompress(self.reader.file.compression, node.location, result?)?;
             let file_id = self.reader.file.file_handle.file_id();
-            let tree_block = TreeBlock::from_raw_with_cache(raw, &node, &self.cache, file_id)?;
+            let tree_block = TreeBlock::from_raw_with_cache(
+                raw,
+                &node,
+                &self.cache,
+                file_id,
+                self.reader.file.version,
+            )?;
             match tree_block {
                 TreeBlock::Data(data_block) => self.received_data(data_block),
                 TreeBlock::Index(index_block) => self.indexes[level].received(index_block),

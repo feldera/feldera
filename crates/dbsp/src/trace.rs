@@ -69,7 +69,7 @@ pub use ord::{
     VecWSetFactories,
 };
 
-use rkyv::{Deserialize, archived_root, de::deserializers::SharedDeserializeMap};
+use rkyv::{Deserialize, archived_root};
 
 use crate::{
     Error, NumEntries, Timestamp,
@@ -129,7 +129,7 @@ pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
     let mut aligned_bytes = FBuf::new();
     aligned_bytes.extend_from_slice(bytes);
     unsafe { archived_root::<T>(&aligned_bytes[..]) }
-        .deserialize(&mut SharedDeserializeMap::new())
+        .deserialize(&mut Deserializer::default())
         .unwrap()
 }
 
