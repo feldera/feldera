@@ -371,7 +371,9 @@ impl Inner {
             }
         }
 
-        circuit.balancer().prepare(circuit);
+        if circuit.root_scope() == 0 {
+            circuit.balancer().prepare(circuit);
+        }
 
         Ok(scheduler)
     }
@@ -444,7 +446,9 @@ impl Inner {
 
         circuit.notify_start_transaction();
 
-        circuit.balancer().start_transaction();
+        if circuit.root_scope() == 0 {
+            circuit.balancer().start_transaction();
+        }
     }
 
     fn start_commit_transaction(&mut self) -> Result<(), Error> {
@@ -488,6 +492,10 @@ impl Inner {
     where
         C: Circuit,
     {
+        if circuit.root_scope() != 0 {
+            return Ok(());
+        }
+
         let metadata = circuit.metadata_exchange().local_metadata().clone();
         let global_metadata = self.metadata_broadcast.collect(metadata).await?;
         circuit
@@ -509,14 +517,20 @@ impl Inner {
         if self.before_first_step {
             self.before_first_step = false;
             self.exchange_metadata(circuit).await?;
-            circuit.balancer().update_metadata();
+            if circuit.root_scope() == 0 {
+                circuit.balancer().update_metadata();
+            }
         }
-        circuit.balancer().start_step();
+        if circuit.root_scope() == 0 {
+            circuit.balancer().start_step();
+        }
         let result = self.do_step(circuit).await;
 
         // Exchange metadata with peers.
         self.exchange_metadata(circuit).await?;
-        circuit.balancer().update_metadata();
+        if circuit.root_scope() == 0 {
+            circuit.balancer().update_metadata();
+        }
 
         if let TransactionPhase::Committing(unflushed_operators) = &self.transaction_phase {
             let commit_complete = self
@@ -526,7 +540,9 @@ impl Inner {
 
             if commit_complete {
                 self.transaction_phase = TransactionPhase::CommitComplete;
-                circuit.balancer().transaction_committed();
+                if circuit.root_scope() == 0 {
+                    circuit.balancer().transaction_committed();
+                }
             }
         }
 
