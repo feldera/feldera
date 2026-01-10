@@ -11,7 +11,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
-/** Describes an expression of the form e? */
+/** Describes an expression of the form e? where e has an Option type */
 @NonCoreIR
 public final class DBSPQuestionExpression extends DBSPExpression {
     public final DBSPExpression source;

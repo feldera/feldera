@@ -64,7 +64,7 @@ public class MiscTests extends ScottBaseTests {
                 +--------+
                 (1 row)""");
         this.qf("SELECT CAST('123e' AS UUID)",
-                "Cannot parse", false);
+                "invalid length: expected length 32 for simple format, found 4", false);
         this.qf("SELECT CAST(x'00' AS UUID)",
                 "Need at least 16 bytes", false);
         this.queryFailingInCompilation("SELECT UUID NULL", "Incorrect syntax");
