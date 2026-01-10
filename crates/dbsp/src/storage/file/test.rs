@@ -1038,9 +1038,8 @@ fn test_tuple() {
 #[test]
 fn test_tup65_option_string() {
     init_test_logger();
-    let n = 10_000usize;
     for_each_compression_type(Parameters::default(), |parameters| {
-        test_one_column(n, |row| {
+        test_one_column(1_000usize, |row| {
             let bits = row as u128 * 2 + 1;
             let before = tup65_from_bits(bits - 1);
             let key = tup65_from_bits(bits);

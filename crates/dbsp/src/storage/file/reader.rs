@@ -1548,7 +1548,7 @@ where
                 warn!("{}: reading old format storage file, performance may be reduced due to incompatible Bloom filters", file.path());
                 Some(false)
             }
-            VERSION_NUMBER => Some(true),
+            x if x >= 3 => Some(true),
             _ => None,
         }
         .ok_or_else(|| CorruptionError::InvalidVersion {

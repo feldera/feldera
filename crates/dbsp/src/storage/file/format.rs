@@ -87,7 +87,11 @@ use num_traits::FromPrimitive;
 use size_of::SizeOf;
 
 /// Increment this on each incompatible change.
-pub const VERSION_NUMBER: u32 = 3;
+///
+/// When a new version is created, make sure to generate new golden
+/// files for it in crate `storage-test-compat` to check for
+/// backwards compatibility.
+pub const VERSION_NUMBER: u32 = 4;
 
 /// Magic number for data blocks.
 pub const DATA_BLOCK_MAGIC: [u8; 4] = *b"LFDB";
