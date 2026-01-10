@@ -1454,6 +1454,26 @@ extern crate sync_checkpoint;"#,
     // - The pipeline crate to compile (changed per compilation)
     // - The possible profiles (same for all compilations)
     // - The dependencies used the other crates (same for all compilations)
+    // Build adapter feature list (e.g., feldera-enterprise, fips) for the generated workspace.
+    let mut dbsp_adapter_features: Vec<&str> = Vec::new();
+    if cfg!(feature = "feldera-enterprise") {
+        dbsp_adapter_features.push("feldera-enterprise");
+    }
+    if cfg!(feature = "fips") {
+        dbsp_adapter_features.push("fips");
+    }
+    let dbsp_adapter_features = if dbsp_adapter_features.is_empty() {
+        "".to_string()
+    } else {
+        format!(
+            ", features = [{}] ",
+            dbsp_adapter_features
+                .iter()
+                .map(|f| format!("\"{f}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
     let cargo_toml = formatdoc! {r#"
         [workspace]
         members = [ "crates/{pipeline_main_crate}" ]
@@ -1489,12 +1509,7 @@ extern crate sync_checkpoint;"#,
     "#,
         runtime_sources, // Path: dbsp
         runtime_sources, // Path: dbsp_adapters
-        if cfg!(feature = "feldera-enterprise") {
-             // Enterprise features for: dbsp_adapters
-             ", features = [\"feldera-enterprise\"] ".to_string()
-        } else {
-            "".to_string()
-        },
+        dbsp_adapter_features, // Features for: dbsp_adapters (feldera-enterprise, fips)
         runtime_sources, // Path: feldera-types
         runtime_sources, // Path: feldera-sqllib
         if cfg!(feature = "feldera-enterprise") {
