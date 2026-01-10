@@ -202,7 +202,6 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
     };
 
     let v3_archived_struct = quote! {
-        #[repr(C)]
         pub struct #archived_v3_name<#(#generics),*>
         where
             #(#generics: ::rkyv::Archive,)*
@@ -235,8 +234,8 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         .zip(generics.iter())
         .map(|((idx, _field), ty)| {
             let get_name = format_ident!("get_t{}", idx);
-                let idx_lit = Index::from(idx);
-                quote! {
+            let idx_lit = Index::from(idx);
+            quote! {
                     #[inline]
                     pub fn #get_name(&self) -> &::rkyv::Archived<#ty> {
                         if self.none_bit_set(#idx_lit) {
@@ -328,12 +327,12 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
 
         impl ::rkyv::Archive for #field_ptr_name {
-            type Archived = ::rkyv::RawRelPtr;
+            type Archived = ::rkyv::rel_ptr::RawRelPtrI32;
             type Resolver = usize;
 
             #[inline]
             unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-                ::rkyv::RawRelPtr::emplace(pos, resolver, out);
+                ::rkyv::rel_ptr::RawRelPtrI32::emplace(pos, resolver, out);
             }
         }
 
@@ -360,7 +359,6 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             ptr as *const ::rkyv::Archived<T>
         }
 
-        #[repr(C)]
         pub struct #archived_name<#(#generics),*>
         where
             #(#generics: ::rkyv::Archive,)*
@@ -369,7 +367,7 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             // `ptrs` stores only the non-`None` values in field order; `idx_for_field`
             // computes the offset by counting unset bits before each field.
             bitmap: [u64; #bitmap_words],
-            ptrs: ::rkyv::vec::ArchivedVec<::rkyv::RawRelPtr>,
+            ptrs: ::rkyv::vec::ArchivedVec<::rkyv::rel_ptr::RawRelPtrI32>,
             _phantom: core::marker::PhantomData<fn() -> (#(#generics),*)>,
         }
 
@@ -472,7 +470,7 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
 
                 let (fp, fo) = ::rkyv::out_field!(out.ptrs);
                 let vec_pos = pos + fp;
-                ::rkyv::vec::ArchivedVec::<::rkyv::RawRelPtr>::resolve_from_len(
+                ::rkyv::vec::ArchivedVec::<::rkyv::rel_ptr::RawRelPtrI32>::resolve_from_len(
                     resolver.ptrs_len,
                     vec_pos,
                     resolver.ptrs_resolver,
@@ -498,7 +496,7 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
 
                 #(#serialize_fields)*
 
-                let ptrs_resolver = ::rkyv::vec::ArchivedVec::<::rkyv::RawRelPtr>::serialize_from_slice(
+                let ptrs_resolver = ::rkyv::vec::ArchivedVec::<::rkyv::rel_ptr::RawRelPtrI32>::serialize_from_slice(
                     &ptrs[..ptrs_len],
                     serializer,
                 )?;
@@ -522,9 +520,10 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
                 let version = (deserializer as &mut dyn ::core::any::Any)
                     .downcast_mut::<::dbsp::storage::file::Deserializer>()
                     .map(|deserializer| deserializer.version())
-                    .unwrap_or(::dbsp::storage::file::format::VERSION_NUMBER);
-                if version < ::dbsp::storage::file::format::VERSION_NUMBER {
-                    // SAFETY: V3 files store tuples with the old archived layout.
+                    .expect("passed wrong deserializer");
+                if version <= 3 {
+                    // SAFETY: Before V4 files store tuples in the naive (standard rkyv) form that
+                    // does not have a bitfield to optimize None values.
                     let legacy = unsafe {
                         &*(self as *const _ as *const #archived_v3_name<#(#generics),*>)
                     };
@@ -616,9 +615,14 @@ mod tests {
         let expanded = declare_tuple_impl(tuple);
         let parsed_file: syn::File = syn::parse2(expanded).expect("Failed to parse output");
         let formatted = prettyplease::unparse(&parsed_file);
-
         println!("{formatted}");
-
         assert!(formatted.contains("pub struct Tup1"));
+
+        let tuple: TupleDef = syn::parse2(quote!(Tup2<T0, T1>)).expect("Failed to parse TupleDef");
+        let expanded = declare_tuple_impl(tuple);
+        let parsed_file: syn::File = syn::parse2(expanded).expect("Failed to parse output");
+        let formatted = prettyplease::unparse(&parsed_file);
+        println!("{formatted}");
+        assert!(formatted.contains("pub struct Tup2"));
     }
 }
