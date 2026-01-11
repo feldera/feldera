@@ -64,7 +64,7 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
   const dataflowFile = files.find((file) => dataflowGraphRegex.test(file.filename))
   let dataflow: Dataflow | undefined
   if (dataflowFile) {
-    JSON.parse(decoder.decode(await dataflowFile.read()))
+    dataflow = JSON.parse(decoder.decode(await dataflowFile.read()))
   }
 
   const configFile = files.find((file) => pipelineConfigRegex.test(file.filename))
