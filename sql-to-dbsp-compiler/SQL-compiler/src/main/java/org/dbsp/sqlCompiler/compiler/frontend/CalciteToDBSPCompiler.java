@@ -2112,10 +2112,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         // We don't filter nulls in the left column, because this may be a left join,
         // and thus the resulting types may be nullable.
-        // The 'commonType' in 'comparisons' are never null.
+        // The 'commonType' in 'comparisons' are never null, so we adjust it if needed.
         for (int i = 0; i < comparisons.size(); i++) {
             JoinConditionAnalyzer.EqualityTest test = comparisons.get(i);
-            DBSPType leftType = leftElementType.tupFields[i];
+            DBSPType leftType = leftElementType.tupFields[test.leftColumn()];
             DBSPType useType = test.commonType().withMayBeNull(leftType.mayBeNull);
             comparisons.set(i, test.withType(useType));
         }
