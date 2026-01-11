@@ -311,6 +311,7 @@ impl ColumnWriter {
             },
             &block_writer.cache,
             block_writer.file_handle.file_id(),
+            VERSION_NUMBER,
         )
         .unwrap();
 
@@ -347,6 +348,7 @@ impl ColumnWriter {
                 },
                 &block_writer.cache,
                 block_writer.file_handle.file_id(),
+                VERSION_NUMBER,
             )
             .unwrap();
 

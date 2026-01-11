@@ -4947,8 +4947,10 @@ dependencies = [
 name = "feldera-macros"
 version = "0.221.0"
 dependencies = [
+ "dbsp",
  "derive_more 1.0.0",
  "feldera-size-of",
+ "feldera-sqllib",
  "prettyplease",
  "proc-macro2",
  "quote",
@@ -10904,6 +10906,21 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "storage-test-compat"
+version = "0.221.0"
+dependencies = [
+ "dbsp",
+ "derive_more 1.0.0",
+ "feldera-macros",
+ "feldera-size-of",
+ "feldera-sqllib",
+ "feldera-types",
+ "rkyv",
+ "serde",
+ "uuid",
+]
 
 [[package]]
 name = "str_stack"

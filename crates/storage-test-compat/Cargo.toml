@@ -1,0 +1,22 @@
+[package]
+name = "storage-test-compat"
+authors.workspace = true
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dbsp = { workspace = true }
+feldera-sqllib = { workspace = true }
+feldera-macros = { workspace = true }
+uuid = { workspace = true, features = ["v4", "std"] }
+serde = { workspace = true, features = ["derive"] }
+size-of = { workspace = true }
+rkyv = { workspace = true, features = ["std", "size_64", "validation", "smallvec"] }
+derive_more = { version = "1.0", features = ["add", "not", "from", "debug"] }
+feldera-types = { workspace = true }

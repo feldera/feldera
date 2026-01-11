@@ -1,0 +1,419 @@
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use dbsp::algebra::{F32, F64};
+use dbsp::storage::backend::StoragePath;
+use dbsp::storage::buffer_cache::BufferCache;
+use uuid::Uuid as RawUuid;
+
+use feldera_sqllib::{
+    to_array, to_map, Array, ByteArray, Date, GeoPoint, LongInterval, Map, ShortInterval,
+    SqlDecimal, SqlString, Time, Timestamp, Uuid, Variant,
+};
+
+type Opt<T> = Option<T>;
+type Dec12_2 = SqlDecimal<12, 2>;
+type Dec10_0 = SqlDecimal<10, 0>;
+type Dec18_4 = SqlDecimal<18, 4>;
+
+feldera_macros::declare_tuple! {
+    Tup65<
+        T0, T1, T2, T3, T4, T5, T6, T7, T8, T9,
+        T10, T11, T12, T13, T14, T15, T16, T17, T18, T19,
+        T20, T21, T22, T23, T24, T25, T26, T27, T28, T29,
+        T30, T31, T32, T33, T34, T35, T36, T37, T38, T39,
+        T40, T41, T42, T43, T44, T45, T46, T47, T48, T49,
+        T50, T51, T52, T53, T54, T55, T56, T57, T58, T59,
+        T60, T61, T62, T63, T64
+    >
+}
+
+pub type GoldenRow = Tup65<
+    u64,
+    bool,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    u8,
+    u16,
+    u32,
+    u128,
+    isize,
+    usize,
+    F32,
+    F64,
+    char,
+    String,
+    Opt<bool>,
+    Opt<i8>,
+    Opt<i16>,
+    Opt<i32>,
+    Opt<i64>,
+    Opt<i128>,
+    Opt<u8>,
+    Opt<u16>,
+    Opt<u32>,
+    Opt<u64>,
+    Opt<u128>,
+    Opt<isize>,
+    Opt<usize>,
+    Opt<F32>,
+    Opt<F64>,
+    Opt<char>,
+    Opt<String>,
+    SqlString,
+    ByteArray,
+    GeoPoint,
+    ShortInterval,
+    LongInterval,
+    Timestamp,
+    Date,
+    Time,
+    Uuid,
+    Variant,
+    Dec12_2,
+    Opt<SqlString>,
+    Opt<ByteArray>,
+    Opt<GeoPoint>,
+    Opt<ShortInterval>,
+    Opt<LongInterval>,
+    Opt<Timestamp>,
+    Opt<Date>,
+    Opt<Time>,
+    Opt<Uuid>,
+    Opt<Variant>,
+    Opt<Dec12_2>,
+    Dec10_0,
+    Opt<Dec10_0>,
+    Dec18_4,
+    Opt<Dec18_4>,
+    Array<SqlString>,
+    Opt<Array<SqlString>>,
+    Map<SqlString, SqlString>,
+    Opt<Map<SqlString, SqlString>>,
+    Vec<u8>,
+>;
+
+pub const DEFAULT_ROWS: usize = 256;
+
+pub fn golden_file_directory() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden-files")
+}
+
+pub fn storage_base_and_path(output: &Path) -> (PathBuf, StoragePath) {
+    let base = output
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+    let filename = output
+        .file_name()
+        .expect("output path must end with a file name");
+    (
+        base,
+        StoragePath::from(filename.to_string_lossy().to_string()),
+    )
+}
+
+pub fn buffer_cache() -> Arc<BufferCache> {
+    thread_local! {
+        static BUFFER_CACHE: Arc<BufferCache> = Arc::new(BufferCache::new(1024 * 1024));
+    }
+    BUFFER_CACHE.with(|cache| cache.clone())
+}
+
+fn maybe<T>(row: usize, value: T) -> Option<T> {
+    if row % 4 == 1 {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn chr(base: u32, row: usize) -> char {
+    char::from_u32(base + (row as u32 % 26)).unwrap()
+}
+
+pub fn golden_row(row: usize) -> GoldenRow {
+    let row_u64 = 0x0101_0000_0000_0000u64.wrapping_add(row as u64);
+
+    let bool_v = row.is_multiple_of(2);
+    let i8_v = 0x11i8.wrapping_add(row as i8);
+    let i16_v = 0x2222i16.wrapping_add(row as i16);
+    let i32_v = 0x3333_3333i32.wrapping_add(row as i32);
+    let i64_v = 0x4444_4444_4444_4444i64.wrapping_add(row as i64);
+    let i128_v = 0x5555_5555_5555_5555_5555_0000_0000_0000i128.wrapping_add(row as i128);
+    let u8_v = 0x66u8.wrapping_add(row as u8);
+    let u16_v = 0x7777u16.wrapping_add(row as u16);
+    let u32_v = 0x8888_8888u32.wrapping_add(row as u32);
+    let u128_v = 0x9999_9999_9999_9999_9999_9999_9999_0000u128.wrapping_add(row as u128);
+    let isize_v = (0x1357_9BDFisize).wrapping_add(row as isize);
+    let usize_v = (0x2468_ACE0usize).wrapping_add(row);
+    let f32_v = F32::from(1234.25 + row as f32);
+    let f64_v = F64::from(5678.75 + row as f64);
+    let char_v = chr(0x41, row);
+    let string_v = format!("string-{row:04x}");
+
+    let opt_bool_v = maybe(row, !bool_v);
+    let opt_i8_v = maybe(row, 0x51i8.wrapping_add(row as i8));
+    let opt_i16_v = maybe(row, 0x5222i16.wrapping_add(row as i16));
+    let opt_i32_v = maybe(row, 0x7333_3333i32.wrapping_add(row as i32));
+    let opt_i64_v = maybe(row, 0x7444_4444_4444_4444i64.wrapping_add(row as i64));
+    let opt_i128_v = maybe(
+        row,
+        0x6555_5555_5555_5555_5555_0000_0000_0000i128.wrapping_add(row as i128),
+    );
+    let opt_u8_v = maybe(row, 0xA6u8.wrapping_add(row as u8));
+    let opt_u16_v = maybe(row, 0xA777u16.wrapping_add(row as u16));
+    let opt_u32_v = maybe(row, 0xB888_8888u32.wrapping_add(row as u32));
+    let opt_u64_v = maybe(row, 0xC999_9999_9999_0000u64.wrapping_add(row as u64));
+    let opt_u128_v = maybe(
+        row,
+        0xB999_9999_9999_9999_9999_9999_9999_0000u128.wrapping_add(row as u128),
+    );
+    let opt_isize_v = maybe(row, (0x3579_BDF1isize).wrapping_add(row as isize));
+    let opt_usize_v = maybe(row, (0x468A_CE01usize).wrapping_add(row));
+    let opt_f32_v = maybe(row, F32::from(2234.75 + row as f32));
+    let opt_f64_v = maybe(row, F64::from(7678.875 + row as f64));
+    let opt_char_v = maybe(row, chr(0x61, row));
+    let opt_string_v = maybe(row, format!("opt-string-{row:04x}"));
+
+    let sql_string_v = SqlString::from(format!("sql-string-{row:04x}"));
+    let bytes = [0xBA, 0x5E, (row & 0xFF) as u8, ((row >> 8) & 0xFF) as u8];
+    let byte_array_v = ByteArray::new(&bytes);
+    let geo_point_v = GeoPoint::new(1000.25 + row as f64, -1000.75 - row as f64);
+    let short_interval_v = ShortInterval::new(0x1111_0000i64.wrapping_add(row as i64));
+    let long_interval_v = LongInterval::new(0x2222i32.wrapping_add(row as i32));
+    let timestamp_v = Timestamp::new(1_600_000_000_000i64.wrapping_add(row as i64));
+    let date_v = Date::new(18_000i32.wrapping_add(row as i32));
+    let time_v = Time::new(43_200_000_000_000u64.wrapping_add((row as u64) % 1_000_000));
+    let uuid_v = Uuid::from(RawUuid::from_u128(
+        0x1111_2222_3333_4444_5555_6666_0000_0000u128 | row as u128,
+    ));
+    let variant_v = Variant::Int(0x4242i32.wrapping_add(row as i32));
+    let dec12_2_v = Dec12_2::for_i32(12_345i32.wrapping_add(row as i32));
+
+    let opt_sql_string_v = maybe(row, SqlString::from(format!("opt-sql-string-{row:04x}")));
+    let opt_bytes = [0xCA, 0xFE, (row & 0xFF) as u8, ((row >> 8) & 0xFF) as u8];
+    let opt_byte_array_v = maybe(row, ByteArray::new(&opt_bytes));
+    let opt_geo_point_v = maybe(
+        row,
+        GeoPoint::new(2000.5 + row as f64, -2000.25 - row as f64),
+    );
+    let opt_short_interval_v = maybe(
+        row,
+        ShortInterval::new(0x2111_0000i64.wrapping_add(row as i64)),
+    );
+    let opt_long_interval_v = maybe(row, LongInterval::new(0x3222i32.wrapping_add(row as i32)));
+    let opt_timestamp_v = maybe(
+        row,
+        Timestamp::new(1_700_000_000_000i64.wrapping_add(row as i64)),
+    );
+    let opt_date_v = maybe(row, Date::new(19_000i32.wrapping_add(row as i32)));
+    let opt_time_v = maybe(
+        row,
+        Time::new(45_000_000_000_000u64.wrapping_add((row as u64) % 1_000_000)),
+    );
+    let opt_uuid_v = maybe(
+        row,
+        Uuid::from(RawUuid::from_u128(
+            0xAAAA_BBBB_CCCC_DDDD_EEEE_FFFF_0000_0000u128 | row as u128,
+        )),
+    );
+    let opt_variant_v = maybe(
+        row,
+        Variant::String(SqlString::from(format!("opt-variant-{row:04x}"))),
+    );
+    let opt_dec12_2_v = maybe(row, Dec12_2::for_i32(22_345i32.wrapping_add(row as i32)));
+
+    let dec10_0_v = Dec10_0::for_i32(3_456i32.wrapping_add(row as i32));
+    let opt_dec10_0_v = maybe(row, Dec10_0::for_i32(4_456i32.wrapping_add(row as i32)));
+    let dec18_4_v = Dec18_4::for_i32(5_678i32.wrapping_add(row as i32));
+    let opt_dec18_4_v = maybe(row, Dec18_4::for_i32(6_678i32.wrapping_add(row as i32)));
+
+    let array_v = to_array(vec![
+        SqlString::from("array-base"),
+        SqlString::from(format!("array-{row:04x}")),
+    ]);
+    let opt_array_v = maybe(
+        row,
+        to_array(vec![
+            SqlString::from("opt-array"),
+            SqlString::from(format!("opt-array-{row:04x}")),
+        ]),
+    );
+
+    let map_v = {
+        let mut map = BTreeMap::new();
+        map.insert(
+            SqlString::from("k1"),
+            SqlString::from(format!("v1-{row:04x}")),
+        );
+        map.insert(
+            SqlString::from("k2"),
+            SqlString::from(format!("v2-{row:04x}")),
+        );
+        to_map(map)
+    };
+    let opt_map_v = maybe(row, {
+        let mut map = BTreeMap::new();
+        map.insert(
+            SqlString::from("ok1"),
+            SqlString::from(format!("ov1-{row:04x}")),
+        );
+        map.insert(
+            SqlString::from("ok2"),
+            SqlString::from(format!("ov2-{row:04x}")),
+        );
+        to_map(map)
+    });
+
+    let vec_u8_v = vec![0xD0, 0x0D, (row & 0xFF) as u8, ((row >> 8) & 0xFF) as u8];
+
+    Tup65(
+        row_u64,
+        bool_v,
+        i8_v,
+        i16_v,
+        i32_v,
+        i64_v,
+        i128_v,
+        u8_v,
+        u16_v,
+        u32_v,
+        u128_v,
+        isize_v,
+        usize_v,
+        f32_v,
+        f64_v,
+        char_v,
+        string_v,
+        opt_bool_v,
+        opt_i8_v,
+        opt_i16_v,
+        opt_i32_v,
+        opt_i64_v,
+        opt_i128_v,
+        opt_u8_v,
+        opt_u16_v,
+        opt_u32_v,
+        opt_u64_v,
+        opt_u128_v,
+        opt_isize_v,
+        opt_usize_v,
+        opt_f32_v,
+        opt_f64_v,
+        opt_char_v,
+        opt_string_v,
+        sql_string_v,
+        byte_array_v,
+        geo_point_v,
+        short_interval_v,
+        long_interval_v,
+        timestamp_v,
+        date_v,
+        time_v,
+        uuid_v,
+        variant_v,
+        dec12_2_v,
+        opt_sql_string_v,
+        opt_byte_array_v,
+        opt_geo_point_v,
+        opt_short_interval_v,
+        opt_long_interval_v,
+        opt_timestamp_v,
+        opt_date_v,
+        opt_time_v,
+        opt_uuid_v,
+        opt_variant_v,
+        opt_dec12_2_v,
+        dec10_0_v,
+        opt_dec10_0_v,
+        dec18_4_v,
+        opt_dec18_4_v,
+        array_v,
+        opt_array_v,
+        map_v,
+        opt_map_v,
+        vec_u8_v,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::io;
+
+    use super::{buffer_cache, golden_file_directory, golden_row, GoldenRow};
+    use dbsp::dynamic::{DynData, Erase};
+    use dbsp::storage::backend::{StorageBackend, StoragePath};
+    use dbsp::storage::file::reader::Reader;
+    use dbsp::storage::file::Factories;
+    use feldera_types::config::{StorageConfig, StorageOptions};
+
+    #[test]
+    fn can_read_golden_files() -> io::Result<()> {
+        let golden_files = golden_file_directory();
+        if !golden_files.exists() {
+            panic!(
+                "missing golden storage file: {} (run the golden-writer binary)",
+                golden_files.display()
+            );
+        }
+
+        let storage_backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: golden_files.to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+
+        for file_path in fs::read_dir(golden_files)? {
+            let file_path = file_path?;
+            let file_name = file_path.file_name().to_string_lossy().to_string();
+            if !file_name.ends_with(".feldera") {
+                continue;
+            }
+            println!("processing {}", file_name);
+
+            let storage_path = StoragePath::from(file_name);
+
+            let factories = Factories::<DynData, DynData>::new::<GoldenRow, ()>();
+            let reader: Reader<(&'static DynData, &'static DynData, ())> = Reader::open(
+                &[&factories.any_factories()],
+                buffer_cache,
+                &*storage_backend,
+                &storage_path,
+            )
+            .unwrap();
+
+            let n_rows = reader.n_rows(0) as usize;
+            let mut bulk = reader.bulk_rows().unwrap();
+            let mut tmp_key = GoldenRow::default();
+            let mut tmp_aux = ();
+            let (tmp_key, tmp_aux): (&mut DynData, &mut DynData) =
+                (tmp_key.erase_mut(), tmp_aux.erase_mut());
+
+            for row in 0..n_rows {
+                bulk.wait().unwrap();
+                let mut expected_key = golden_row(row);
+                eprintln!("{expected_key:?}");
+
+                let mut expected_aux = ();
+                assert_eq!(
+                    unsafe { bulk.item((tmp_key, tmp_aux)) },
+                    Some((expected_key.erase_mut(), expected_aux.erase_mut()))
+                );
+                bulk.step();
+            }
+
+            assert!(bulk.at_eof());
+        }
+
+        Ok(())
+    }
+}

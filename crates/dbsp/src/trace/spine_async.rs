@@ -26,17 +26,14 @@ use crate::{
     },
 };
 
-use crate::storage::file::to_bytes;
+use crate::storage::file::{Deserializer, to_bytes};
 use crate::trace::CommittedSpine;
 use enum_map::EnumMap;
 use feldera_storage::{FileCommitter, StoragePath};
 use feldera_types::checkpoint::PSpineBatches;
 use ouroboros::self_referencing;
 use rand::Rng;
-use rkyv::{
-    Archive, Archived, Deserialize, Fallible, Serialize, de::deserializers::SharedDeserializeMap,
-    ser::Serializer,
-};
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::{Context, SizeOf};
 use std::sync::{Arc, MutexGuard};
 use std::time::{Duration, Instant};
@@ -1507,9 +1504,7 @@ where
         let content = Runtime::storage_backend().unwrap().read(&pspine_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedSpine>(&content) };
 
-        let committed: CommittedSpine = archived
-            .deserialize(&mut SharedDeserializeMap::new())
-            .unwrap();
+        let committed: CommittedSpine = archived.deserialize(&mut Deserializer::default()).unwrap();
         self.dirty = committed.dirty;
         self.key_filter = None;
         self.value_filter = None;
