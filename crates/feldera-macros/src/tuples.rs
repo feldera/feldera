@@ -1,4 +1,4 @@
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Literal, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{punctuated::Punctuated, Ident, Index, Token};
 
@@ -24,24 +24,43 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         .map(|(idx, _e)| Index::from(idx))
         .collect::<Vec<_>>();
     let num_elements = elements.len();
-    let bitmap_words = num_elements.div_ceil(64);
-    let bitmap_word_indexes = (0..bitmap_words).map(Index::from).collect::<Vec<_>>();
+    let use_legacy = num_elements < 8;
+    let bitmap_bytes = num_elements.div_ceil(8);
     let field_ptr_name = format_ident!("{}FieldPtr", name);
+    let bitmap_ty = quote!(::dbsp::utils::tuple::TupleBitmap<#bitmap_bytes>);
+    let bitmap_new = quote!(::dbsp::utils::tuple::TupleBitmap::<#bitmap_bytes>::new());
+    let format_ty = quote!(::dbsp::utils::tuple::TupleFormat);
     let archived_name = format_ident!("Archived{}", name);
+    let archived_sparse_name = format_ident!("Archived{}Sparse", name);
+    let archived_dense_name = format_ident!("Archived{}Dense", name);
     let archived_v3_name = format_ident!("Archived{}V3", name);
     let resolver_name = format_ident!("{}Resolver", name);
-    let archived_none_ptr_name =
-        format_ident!("__{}_archived_none_ptr", name.to_string().to_lowercase());
-
+    let sparse_data_name = format_ident!("{}SparseData", name);
+    let sparse_resolver_name = format_ident!("{}SparseResolver", name);
+    let dense_data_name = format_ident!("{}DenseData", name);
+    let dense_resolver_name = format_ident!("{}DenseResolver", name);
     // Struct definition
-    let struct_def = quote! {
-        #[derive(
-            Default, Eq, Ord, Clone, Hash, PartialEq, PartialOrd,
-            derive_more::Neg,
-            serde::Serialize, serde::Deserialize,
-            size_of::SizeOf
-        )]
-        pub struct #name<#(#generics),*>( #(pub #generics),* );
+    let struct_def = if use_legacy {
+        quote! {
+            #[derive(
+                Default, Eq, Ord, Clone, Hash, PartialEq, PartialOrd,
+                derive_more::Neg,
+                serde::Serialize, serde::Deserialize,
+                size_of::SizeOf,
+                rkyv::Archive, rkyv::Serialize, rkyv::Deserialize
+            )]
+            pub struct #name<#(#generics),*>( #(pub #generics),* );
+        }
+    } else {
+        quote! {
+            #[derive(
+                Default, Eq, Ord, Clone, Hash, PartialEq, PartialOrd,
+                derive_more::Neg,
+                serde::Serialize, serde::Deserialize,
+                size_of::SizeOf
+            )]
+            pub struct #name<#(#generics),*>( #(pub #generics),* );
+        }
     };
 
     // Constructor
@@ -74,6 +93,12 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             }
         });
     }
+
+    let num_elements_const = quote! {
+        impl<#(#generics),*> #name<#(#generics),*> {
+            pub const NUM_ELEMENTS: usize = #num_elements;
+        }
+    };
 
     // Trait implementations
     let algebra_traits = quote! {
@@ -181,7 +206,7 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             const CONST_NUM_ENTRIES: Option<usize> = None;//Some(#num_elements);
 
             fn num_entries_shallow(&self) -> usize {
-                #num_elements
+                Self::NUM_ELEMENTS
             }
 
             fn num_entries_deep(&self) -> usize {
@@ -197,7 +222,13 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
 
     let not_an_option = quote! {
         impl<#(#generics),*> ::dbsp::utils::IsNone for #name<#(#generics),*> {
+            type Inner = Self;
+
             fn is_none(&self) -> bool { false }
+
+            fn unwrap_or_self(&self) -> &Self::Inner { self }
+
+            fn from_inner(inner: Self::Inner) -> Self { inner }
         }
     };
 
@@ -228,7 +259,7 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     };
 
-    let get_methods = fields
+    let sparse_get_methods = fields
         .iter()
         .enumerate()
         .zip(generics.iter())
@@ -237,28 +268,70 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             let idx_lit = Index::from(idx);
             quote! {
                     #[inline]
-                    pub fn #get_name(&self) -> &::rkyv::Archived<#ty> {
+                    pub fn #get_name(
+                        &self,
+                    ) -> Option<&::rkyv::Archived<<#ty as ::dbsp::utils::IsNone>::Inner>> {
                         if self.none_bit_set(#idx_lit) {
-                        // SAFETY: The bitmap only marks `None` for types whose archived
-                        // representation is `ArchivedOption<...>`; a zeroed archived
-                        // option is valid for the `None` variant.
-                        unsafe { &*#archived_none_ptr_name::<#ty>() }
-                    } else {
-                        let ptr_idx = self.idx_for_field(#idx_lit);
-                        debug_assert!(ptr_idx < self.ptrs.len());
-                        // SAFETY: `ptrs[ptr_idx]` points at the archived field when the bit is clear.
-                        unsafe {
-                            &*self
-                                .ptrs
-                                .as_slice()
-                                .get_unchecked(ptr_idx)
-                                .as_ptr()
-                                .cast::<::rkyv::Archived<#ty>>()
+                            None
+                        } else {
+                            let ptr_idx = self.idx_for_field(#idx_lit);
+                            debug_assert!(ptr_idx < self.ptrs.len());
+                            // SAFETY: `ptrs[ptr_idx]` points at the archived field when the bit is clear.
+                            Some(unsafe {
+                                &*self
+                                    .ptrs
+                                    .as_slice()
+                                    .get_unchecked(ptr_idx)
+                                    .as_ptr()
+                                    .cast::<::rkyv::Archived<<#ty as ::dbsp::utils::IsNone>::Inner>>()
+                            })
                         }
-                    }
                 }
             }
         });
+
+    let dense_get_methods =
+        fields
+            .iter()
+            .enumerate()
+            .zip(generics.iter())
+            .map(|((idx, _field), ty)| {
+                let get_name = format_ident!("get_t{}", idx);
+                let idx_lit = Index::from(idx);
+                let field = format_ident!("t{}", idx);
+                quote! {
+                    #[inline]
+                    pub fn #get_name(
+                        &self,
+                    ) -> Option<&::rkyv::Archived<<#ty as ::dbsp::utils::IsNone>::Inner>> {
+                        if self.none_bit_set(#idx_lit) {
+                            None
+                        } else {
+                            Some(unsafe { &*self.#field.as_ptr() })
+                        }
+                    }
+                }
+            });
+
+    let archived_get_methods =
+        fields
+            .iter()
+            .enumerate()
+            .zip(generics.iter())
+            .map(|((idx, _field), ty)| {
+                let get_name = format_ident!("get_t{}", idx);
+                quote! {
+                    #[inline]
+                    pub fn #get_name(
+                        &self,
+                    ) -> Option<&::rkyv::Archived<<#ty as ::dbsp::utils::IsNone>::Inner>> {
+                        match self.format {
+                            #format_ty::Sparse => self.sparse().#get_name(),
+                            #format_ty::Dense => self.dense().#get_name(),
+                        }
+                    }
+                }
+            });
 
     let eq_checks = fields.iter().enumerate().map(|(idx, _)| {
         let get_name = format_ident!("get_t{}", idx);
@@ -268,140 +341,27 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
     let cmp_checks = fields.iter().enumerate().map(|(idx, _)| {
         let get_name = format_ident!("get_t{}", idx);
         quote! {
-            let cmp = self.#get_name().cmp(other.#get_name());
+            let cmp = self.#get_name().cmp(&other.#get_name());
             if cmp != core::cmp::Ordering::Equal {
                 return cmp;
             }
         }
     });
 
-    let serialize_fields =
-        fields
-            .iter()
-            .enumerate()
-            .zip(self_indexes.iter())
-            .map(|((idx, _), self_idx)| {
-                let word_idx = Index::from(idx / 64);
-                let bit_idx = idx % 64;
-                quote! {
-                    if ::dbsp::utils::IsNone::is_none(&self.#self_idx) {
-                        bitmap[#word_idx] |= 1u64 << #bit_idx;
-                    } else {
-                        let pos = serializer.serialize_value(&self.#self_idx)?;
-                        ptrs[ptrs_len] = #field_ptr_name { pos };
-                        ptrs_len += 1;
-                    }
-                }
-            });
+    let legacy_eq_checks = self_indexes
+        .iter()
+        .map(|idx| quote!(self.#idx == other.#idx));
 
-    let deserialize_fields =
-        fields
-            .iter()
-            .enumerate()
-            .zip(generics.iter())
-            .map(|((idx, _), ty)| {
-                let field_name = format_ident!("t{}", idx);
-                let idx_lit = Index::from(idx);
-                quote! {
-                    let #field_name = if self.none_bit_set(#idx_lit) {
-                        #ty::default()
-                    } else {
-                        let archived = unsafe {
-                            &*self
-                                .ptrs
-                                .as_slice()
-                                .get_unchecked(ptr_idx)
-                                .as_ptr()
-                                .cast::<::rkyv::Archived<#ty>>()
-                        };
-                        ptr_idx += 1;
-                        archived.deserialize(deserializer)?
-                    };
-                }
-            });
-
-    let rkyv_impls = quote! {
-        #[derive(Copy, Clone)]
-        struct #field_ptr_name {
-            pos: usize,
-        }
-
-        impl ::rkyv::Archive for #field_ptr_name {
-            type Archived = ::rkyv::rel_ptr::RawRelPtrI32;
-            type Resolver = usize;
-
-            #[inline]
-            unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-                ::rkyv::rel_ptr::RawRelPtrI32::emplace(pos, resolver, out);
+    let legacy_cmp_checks = self_indexes.iter().map(|idx| {
+        quote! {
+            let cmp = self.#idx.cmp(&other.#idx);
+            if cmp != core::cmp::Ordering::Equal {
+                return cmp;
             }
         }
+    });
 
-        impl<S> ::rkyv::Serialize<S> for #field_ptr_name
-        where
-            S: ::rkyv::ser::Serializer + ?Sized,
-        {
-            #[inline]
-            fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-                Ok(self.pos)
-            }
-        }
-
-        #[inline]
-        unsafe fn #archived_none_ptr_name<T: ::rkyv::Archive>() -> *const ::rkyv::Archived<T> {
-            static NONE: ::std::sync::OnceLock<usize> = ::std::sync::OnceLock::new();
-            let ptr = *NONE.get_or_init(|| {
-                // This keeps a per-type, properly aligned `Archived<T>` that we can
-                // reuse when the bitmap indicates a `None` value.
-                // SAFETY: This is only valid when `Archived<T>` is `ArchivedOption<...>`.
-                let boxed: Box<::rkyv::Archived<T>> = Box::new(unsafe { ::core::mem::zeroed() });
-                Box::into_raw(boxed) as usize
-            });
-            ptr as *const ::rkyv::Archived<T>
-        }
-
-        pub struct #archived_name<#(#generics),*>
-        where
-            #(#generics: ::rkyv::Archive,)*
-        {
-            // Bitmap layout: each bit marks a field that was `None` (per `IsNone`).
-            // `ptrs` stores only the non-`None` values in field order; `idx_for_field`
-            // computes the offset by counting unset bits before each field.
-            bitmap: [u64; #bitmap_words],
-            ptrs: ::rkyv::vec::ArchivedVec<::rkyv::rel_ptr::RawRelPtrI32>,
-            _phantom: core::marker::PhantomData<fn() -> (#(#generics),*)>,
-        }
-
-        impl<#(#generics),*> #archived_name<#(#generics),*>
-        where
-            #(#generics: ::rkyv::Archive,)*
-        {
-            #[inline]
-            fn none_bit_set(&self, idx: usize) -> bool {
-                debug_assert!(idx < #num_elements);
-                let word = idx / 64;
-                let bit = idx % 64;
-                (self.bitmap[word] & (1u64 << bit)) != 0
-            }
-
-            #[inline]
-            fn idx_for_field(&self, field_idx: usize) -> usize {
-                debug_assert!(field_idx < #num_elements);
-                let word = field_idx / 64;
-                let bit = field_idx % 64;
-                let mut idx = 0usize;
-                let mut w = 0usize;
-                while w < word {
-                    idx += 64usize - (self.bitmap[w].count_ones() as usize);
-                    w += 1;
-                }
-                let mask = if bit == 0 { 0 } else { (1u64 << bit) - 1 };
-                let none_before = (self.bitmap[word] & mask).count_ones() as usize;
-                idx + bit - none_before
-            }
-
-            #(#get_methods)*
-        }
-
+    let legacy_archived_ord_impls = quote! {
         impl<#(#generics),*> core::cmp::PartialEq for #archived_name<#(#generics),*>
         where
             #(#generics: ::rkyv::Archive,)*
@@ -409,7 +369,7 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         {
             #[inline]
             fn eq(&self, other: &Self) -> bool {
-                true #(&& #eq_checks)*
+                true #(&& #legacy_eq_checks)*
             }
         }
 
@@ -437,36 +397,359 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         {
             #[inline]
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+                #(#legacy_cmp_checks)*
+                core::cmp::Ordering::Equal
+            }
+        }
+    };
+
+    let choose_format_fields =
+        fields
+            .iter()
+            .enumerate()
+            .zip(self_indexes.iter())
+            .map(|((idx, _), self_idx)| {
+                let idx_lit = Index::from(idx);
+                quote! {
+                    if ::dbsp::utils::IsNone::is_none(&self.#self_idx) {
+                        bitmap.set_none(#idx_lit);
+                    }
+                }
+            });
+
+    let sparse_serialize_fields =
+        fields
+            .iter()
+            .enumerate()
+            .zip(self_indexes.iter())
+            .map(|((idx, _), self_idx)| {
+                let idx_lit = Index::from(idx);
+                quote! {
+                    if !self.bitmap.is_none(#idx_lit) {
+                        let pos = serializer.serialize_value(
+                            ::dbsp::utils::IsNone::unwrap_or_self(&self.value.#self_idx),
+                        )?;
+                        ptrs[ptrs_len] = #field_ptr_name { pos };
+                        ptrs_len += 1;
+                    }
+                }
+            });
+
+    let dense_serialize_fields =
+        fields
+            .iter()
+            .enumerate()
+            .zip(self_indexes.iter())
+            .map(|((idx, _), self_idx)| {
+                let idx_lit = Index::from(idx);
+                let field_name = format_ident!("t{}", idx);
+                quote! {
+                    let #field_name = if self.bitmap.is_none(#idx_lit) {
+                        None
+                    } else {
+                        Some(::rkyv::Serialize::serialize(
+                            ::dbsp::utils::IsNone::unwrap_or_self(&self.value.#self_idx),
+                            serializer,
+                        )?)
+                    };
+                }
+            });
+
+    let dense_resolve_fields =
+        fields
+            .iter()
+            .enumerate()
+            .zip(self_indexes.iter())
+            .zip(generics.iter())
+            .map(|(((idx, _), self_idx), ty)| {
+                let field_name = format_ident!("t{}", idx);
+                let field_out = format_ident!("{}_out", field_name);
+                quote! {
+                    let (fp, fo) = ::rkyv::out_field!(out.#field_name);
+                    let #field_out = fo
+                        .cast::<core::mem::MaybeUninit<::rkyv::Archived<<#ty as ::dbsp::utils::IsNone>::Inner>>>();
+                    if let Some(resolver) = resolver.#field_name {
+                        let inner = ::dbsp::utils::IsNone::unwrap_or_self(&self.value.#self_idx);
+                        <<#ty as ::dbsp::utils::IsNone>::Inner as ::rkyv::Archive>::resolve(
+                            inner,
+                            pos + fp,
+                            resolver,
+                            #field_out
+                                .cast::<::rkyv::Archived<<#ty as ::dbsp::utils::IsNone>::Inner>>(),
+                        );
+                    } else {
+                        core::ptr::write(#field_out, core::mem::MaybeUninit::zeroed());
+                    }
+                }
+            });
+
+    let sparse_deserialize_fields =
+        fields
+            .iter()
+            .enumerate()
+            .zip(generics.iter())
+            .map(|((idx, _), ty)| {
+                let field_name = format_ident!("t{}", idx);
+                let idx_lit = Index::from(idx);
+                quote! {
+                    let #field_name = if sparse.none_bit_set(#idx_lit) {
+                        #ty::default()
+                    } else {
+                        let archived: &::rkyv::Archived<<#ty as ::dbsp::utils::IsNone>::Inner> = unsafe {
+                            &*sparse
+                                .ptrs
+                                .as_slice()
+                                .get_unchecked(ptr_idx)
+                                .as_ptr()
+                                .cast::<::rkyv::Archived<<#ty as ::dbsp::utils::IsNone>::Inner>>()
+                        };
+                        ptr_idx += 1;
+                        let inner = archived.deserialize(deserializer)?;
+                        <#ty as ::dbsp::utils::IsNone>::from_inner(inner)
+                    };
+                }
+            });
+
+    let dense_deserialize_fields =
+        fields
+            .iter()
+            .enumerate()
+            .zip(generics.iter())
+            .map(|((idx, _), ty)| {
+                let field_name = format_ident!("t{}", idx);
+                let idx_lit = Index::from(idx);
+                let get_name = format_ident!("get_t{}", idx);
+                let expect_msg =
+                    Literal::string(&format!("{}: missing field {}", archived_dense_name, idx));
+                quote! {
+                    let #field_name = if dense.none_bit_set(#idx_lit) {
+                        #ty::default()
+                    } else {
+                        let archived = dense.#get_name().expect(#expect_msg);
+                        let inner = archived.deserialize(deserializer)?;
+                        <#ty as ::dbsp::utils::IsNone>::from_inner(inner)
+                    };
+                }
+            });
+
+    let dense_resolver_fields =
+        fields
+            .iter()
+            .enumerate()
+            .zip(generics.iter())
+            .map(|((idx, _), ty)| {
+                let field_name = format_ident!("t{}", idx);
+                quote! {
+                    #field_name: Option<<<#ty as ::dbsp::utils::IsNone>::Inner as ::rkyv::Archive>::Resolver>,
+                }
+            });
+
+    let dense_resolver_inits = fields.iter().enumerate().map(|(idx, _)| {
+        let field_name = format_ident!("t{}", idx);
+        quote!(#field_name)
+    });
+
+    let choose_format_impl = quote! {
+        impl<#(#generics),*> #name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+        {
+            #[inline]
+            fn choose_format(&self) -> (#bitmap_ty, #format_ty) {
+                let mut bitmap = #bitmap_new;
+                #(#choose_format_fields)*
+
+                let none_bits = bitmap.count_none(Self::NUM_ELEMENTS);
+                if none_bits * 3 > Self::NUM_ELEMENTS {
+                    (bitmap, #format_ty::Sparse)
+                } else {
+                    (bitmap, #format_ty::Dense)
+                }
+            }
+        }
+    };
+
+    let rkyv_impls = quote! {
+        #[derive(Copy, Clone)]
+        struct #field_ptr_name {
+            pos: usize,
+        }
+
+        impl ::rkyv::Archive for #field_ptr_name {
+            type Archived = ::rkyv::rel_ptr::RawRelPtrI32;
+            type Resolver = usize;
+
+            #[inline]
+            unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
+                ::rkyv::rel_ptr::RawRelPtrI32::emplace(pos, resolver, out);
+            }
+        }
+
+        impl<S> ::rkyv::Serialize<S> for #field_ptr_name
+        where
+            S: ::rkyv::ser::Serializer + ?Sized,
+        {
+            #[inline]
+            fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+                Ok(self.pos)
+            }
+        }
+
+        #[repr(C)]
+        pub struct #archived_sparse_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+        {
+            bitmap: #bitmap_ty,
+            ptrs: ::rkyv::vec::ArchivedVec<::rkyv::rel_ptr::RawRelPtrI32>,
+            _phantom: core::marker::PhantomData<fn() -> (#(#generics),*)>,
+        }
+
+        #[repr(C)]
+        pub struct #archived_dense_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+        {
+            bitmap: #bitmap_ty,
+            #(
+                #fields: core::mem::MaybeUninit<::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>>,
+            )*
+            _phantom: core::marker::PhantomData<fn() -> (#(#generics),*)>,
+        }
+
+        #[repr(C)]
+        pub struct #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+        {
+            format: #format_ty,
+            data: ::rkyv::rel_ptr::RawRelPtrI32,
+            _phantom: core::marker::PhantomData<fn() -> (#(#generics),*)>,
+        }
+
+        impl<#(#generics),*> #archived_sparse_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+        {
+            #[inline]
+            fn none_bit_set(&self, idx: usize) -> bool {
+                debug_assert!(idx < #num_elements);
+                self.bitmap.is_none(idx)
+            }
+
+            #[inline]
+            fn idx_for_field(&self, field_idx: usize) -> usize {
+                debug_assert!(field_idx < #num_elements);
+                field_idx - self.bitmap.count_none_before(field_idx)
+            }
+
+            #(#sparse_get_methods)*
+        }
+
+        impl<#(#generics),*> #archived_dense_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+        {
+            #[inline]
+            fn none_bit_set(&self, idx: usize) -> bool {
+                debug_assert!(idx < #num_elements);
+                self.bitmap.is_none(idx)
+            }
+
+            #(#dense_get_methods)*
+        }
+
+        impl<#(#generics),*> #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+        {
+            #[inline]
+            fn sparse(&self) -> &#archived_sparse_name<#(#generics),*> {
+                unsafe { &*self.data.as_ptr().cast::<#archived_sparse_name<#(#generics),*>>() }
+            }
+
+            #[inline]
+            fn dense(&self) -> &#archived_dense_name<#(#generics),*> {
+                unsafe { &*self.data.as_ptr().cast::<#archived_dense_name<#(#generics),*>>() }
+            }
+
+            #(#archived_get_methods)*
+        }
+
+        impl<#(#generics),*> core::cmp::PartialEq for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+            #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>: core::cmp::PartialEq,)*
+        {
+            #[inline]
+            fn eq(&self, other: &Self) -> bool {
+                true #(&& #eq_checks)*
+            }
+        }
+
+        impl<#(#generics),*> core::cmp::Eq for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+            #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>: core::cmp::Eq,)*
+        {}
+
+        impl<#(#generics),*> core::cmp::PartialOrd for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+            #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>: core::cmp::Ord,)*
+        {
+            #[inline]
+            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        impl<#(#generics),*> core::cmp::Ord for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+            #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>: core::cmp::Ord,)*
+        {
+            #[inline]
+            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 #(#cmp_checks)*
                 core::cmp::Ordering::Equal
             }
         }
 
-        pub struct #resolver_name {
-            bitmap: [u64; #bitmap_words],
+        struct #sparse_data_name<'a, #(#generics),*> {
+            bitmap: #bitmap_ty,
+            value: &'a #name<#(#generics),*>,
+        }
+
+        struct #sparse_resolver_name {
+            bitmap: #bitmap_ty,
             ptrs_resolver: ::rkyv::vec::VecResolver,
             ptrs_len: usize,
         }
 
-        impl<#(#generics),*> ::rkyv::Archive for #name<#(#generics),*>
+        impl<'a, #(#generics),*> ::rkyv::Archive for #sparse_data_name<'a, #(#generics),*>
         where
-            #(#generics: ::rkyv::Archive,)*
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
         {
-            type Archived = #archived_name<#(#generics),*>;
-            type Resolver = #resolver_name;
+            type Archived = #archived_sparse_name<#(#generics),*>;
+            type Resolver = #sparse_resolver_name;
 
             #[inline]
             unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-                let (fp, fo) = ::rkyv::out_field!(out.bitmap);
-                let bitmap_out = fo.cast::<u64>();
-                #(
-                    u64::resolve(
-                        &resolver.bitmap[#bitmap_word_indexes],
-                        pos + fp + (#bitmap_word_indexes * ::core::mem::size_of::<u64>()),
-                        (),
-                        bitmap_out.add(#bitmap_word_indexes),
-                    );
-                )*
+                let (_fp, fo) = ::rkyv::out_field!(out.bitmap);
+                fo.write(resolver.bitmap);
 
                 let (fp, fo) = ::rkyv::out_field!(out.ptrs);
                 let vec_pos = pos + fp;
@@ -482,38 +765,160 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             }
         }
 
-        impl<S, #(#generics),*> ::rkyv::Serialize<S> for #name<#(#generics),*>
+        impl<'a, S, #(#generics),*> ::rkyv::Serialize<S> for #sparse_data_name<'a, #(#generics),*>
         where
             S: ::rkyv::ser::Serializer + ::rkyv::ser::ScratchSpace + ?Sized,
-            #(#generics: ::rkyv::Archive + ::rkyv::Serialize<S> + ::dbsp::utils::IsNone,)*
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::rkyv::Serialize<S>,)*
         {
             #[inline]
             fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-                let mut bitmap = [0u64; #bitmap_words];
                 let mut ptrs: [#field_ptr_name; #num_elements] =
                     [#field_ptr_name { pos: 0 }; #num_elements];
                 let mut ptrs_len = 0usize;
 
-                #(#serialize_fields)*
+                #(#sparse_serialize_fields)*
 
-                let ptrs_resolver = ::rkyv::vec::ArchivedVec::<::rkyv::rel_ptr::RawRelPtrI32>::serialize_from_slice(
-                    &ptrs[..ptrs_len],
-                    serializer,
-                )?;
+                let ptrs_resolver =
+                    ::rkyv::vec::ArchivedVec::<::rkyv::rel_ptr::RawRelPtrI32>::serialize_from_slice(
+                        &ptrs[..ptrs_len],
+                        serializer,
+                    )?;
 
-                Ok(#resolver_name {
-                    bitmap,
+                Ok(#sparse_resolver_name {
+                    bitmap: self.bitmap,
                     ptrs_resolver,
                     ptrs_len,
                 })
             }
         }
 
-        impl<D, #(#generics),*> ::rkyv::Deserialize<#name<#(#generics),*>, D> for #archived_name<#(#generics),*>
+        struct #dense_data_name<'a, #(#generics),*> {
+            bitmap: #bitmap_ty,
+            value: &'a #name<#(#generics),*>,
+        }
+
+        struct #dense_resolver_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+        {
+            bitmap: #bitmap_ty,
+            #(#dense_resolver_fields)*
+        }
+
+        impl<'a, #(#generics),*> ::rkyv::Archive for #dense_data_name<'a, #(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+        {
+            type Archived = #archived_dense_name<#(#generics),*>;
+            type Resolver = #dense_resolver_name<#(#generics),*>;
+
+            #[inline]
+            unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
+                let (_fp, fo) = ::rkyv::out_field!(out.bitmap);
+                fo.write(resolver.bitmap);
+
+                #(#dense_resolve_fields)*
+
+                let (_fp, fo) = ::rkyv::out_field!(out._phantom);
+                fo.write(core::marker::PhantomData);
+            }
+        }
+
+        impl<'a, S, #(#generics),*> ::rkyv::Serialize<S> for #dense_data_name<'a, #(#generics),*>
+        where
+            S: ::rkyv::ser::Serializer + ::rkyv::ser::ScratchSpace + ?Sized,
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::rkyv::Serialize<S>,)*
+        {
+            #[inline]
+            fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+                #(#dense_serialize_fields)*
+                Ok(#dense_resolver_name {
+                    bitmap: self.bitmap,
+                    #(#dense_resolver_inits),*
+                })
+            }
+        }
+
+        pub enum #resolver_name<#(#generics),*> {
+            Sparse { data_pos: usize },
+            Dense { data_pos: usize },
+            _Phantom(core::marker::PhantomData<(#(#generics),*)>),
+        }
+
+        impl<#(#generics),*> ::rkyv::Archive for #name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+        {
+            type Archived = #archived_name<#(#generics),*>;
+            type Resolver = #resolver_name<#(#generics),*>;
+
+            #[inline]
+            unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
+                let (_fp, format_out) = ::rkyv::out_field!(out.format);
+                let (fp, data_out) = ::rkyv::out_field!(out.data);
+                let data_out = data_out.cast::<::rkyv::rel_ptr::RawRelPtrI32>();
+
+                match resolver {
+                    #resolver_name::Sparse { data_pos } => {
+                        format_out.write(#format_ty::Sparse);
+                        ::rkyv::rel_ptr::RawRelPtrI32::emplace(pos + fp, data_pos, data_out);
+                    }
+                    #resolver_name::Dense { data_pos } => {
+                        format_out.write(#format_ty::Dense);
+                        ::rkyv::rel_ptr::RawRelPtrI32::emplace(pos + fp, data_pos, data_out);
+                    }
+                    #resolver_name::_Phantom(_) => unreachable!(),
+                }
+
+                let (_fp, fo) = ::rkyv::out_field!(out._phantom);
+                fo.write(core::marker::PhantomData);
+            }
+        }
+
+        impl<S, #(#generics),*> ::rkyv::Serialize<S> for #name<#(#generics),*>
+        where
+            S: ::rkyv::ser::Serializer + ::rkyv::ser::ScratchSpace + ?Sized,
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::rkyv::Serialize<S>,)*
+        {
+            #[inline]
+            fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+                let (bitmap, format) = self.choose_format();
+                match format {
+                    #format_ty::Dense => {
+                        let data = #dense_data_name {
+                            bitmap,
+                            value: self,
+                        };
+                        let data_pos = serializer.serialize_value(&data)?;
+                        Ok(#resolver_name::Dense { data_pos })
+                    }
+                    #format_ty::Sparse => {
+                        let data = #sparse_data_name {
+                            bitmap,
+                            value: self,
+                        };
+                        let data_pos = serializer.serialize_value(&data)?;
+                        Ok(#resolver_name::Sparse { data_pos })
+                    }
+                }
+            }
+        }
+
+        impl<D, #(#generics),*> ::rkyv::Deserialize<#name<#(#generics),*>, D>
+            for #archived_name<#(#generics),*>
         where
             D: ::rkyv::Fallible + ::core::any::Any,
-            #(#generics: ::rkyv::Archive + Default,)*
+            #(#generics: ::rkyv::Archive + Default + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
             #(::rkyv::Archived<#generics>: ::rkyv::Deserialize<#generics, D>,)*
+            #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>:
+                ::rkyv::Deserialize<<#generics as ::dbsp::utils::IsNone>::Inner, D>,)*
         {
             #[inline]
             fn deserialize(&self, deserializer: &mut D) -> Result<#name<#(#generics),*>, D::Error> {
@@ -527,11 +932,24 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
                     let legacy = unsafe {
                         &*(self as *const _ as *const #archived_v3_name<#(#generics),*>)
                     };
-                    return legacy.deserialize(deserializer);
+                    return <#archived_v3_name<#(#generics),*> as ::rkyv::Deserialize<
+                        #name<#(#generics),*>,
+                        D,
+                    >>::deserialize(legacy, deserializer);
                 }
-                let mut ptr_idx = 0usize;
-                #(#deserialize_fields)*
-                Ok(#name( #(#fields),* ))
+                match self.format {
+                    #format_ty::Sparse => {
+                        let sparse = self.sparse();
+                        let mut ptr_idx = 0usize;
+                        #(#sparse_deserialize_fields)*
+                        Ok(#name( #(#fields),* ))
+                    }
+                    #format_ty::Dense => {
+                        let dense = self.dense();
+                        #(#dense_deserialize_fields)*
+                        Ok(#name( #(#fields),* ))
+                    }
+                }
             }
         }
     };
@@ -556,13 +974,25 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     };
 
+    let rkyv_blocks = if use_legacy {
+        quote! {
+            #legacy_archived_ord_impls
+        }
+    } else {
+        quote! {
+            #v3_archived_struct
+            #v3_deserialize_impl
+            #choose_format_impl
+            #rkyv_impls
+        }
+    };
+
     expanded.extend(quote! {
         #struct_def
         #constructor
         #getter_setter
-        #v3_archived_struct
-        #v3_deserialize_impl
-        #rkyv_impls
+        #num_elements_const
+        #rkyv_blocks
         #algebra_traits
         #conversion_traits
         #num_entries_impl

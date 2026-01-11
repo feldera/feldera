@@ -10,8 +10,18 @@ use std::fmt::Write;
 use crate::{DynamicDecimal, Fixed, FixedInteger};
 
 impl<const P: usize, const S: usize> IsNone for Fixed<P, S> {
+    type Inner = Self;
+
     fn is_none(&self) -> bool {
         false
+    }
+
+    fn unwrap_or_self(&self) -> &Self::Inner {
+        self
+    }
+
+    fn from_inner(inner: Self::Inner) -> Self {
+        inner
     }
 }
 

@@ -1024,3 +1024,24 @@ pub fn unintern(id: Option<InternedString>) -> Option<SqlString> {
         },
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::SqlString;
+    use rkyv::{option::ArchivedOption, string::ArchivedString};
+
+    #[test]
+    fn sql_string_size() {
+        // This is the same, the None is optimized away
+        assert_eq!(
+            std::mem::size_of::<SqlString>(),
+            std::mem::size_of::<Option<SqlString>>()
+        );
+
+        // This None isn't optimized away here, ideally it would be
+        assert!(
+            std::mem::size_of::<ArchivedString>()
+                < std::mem::size_of::<ArchivedOption<ArchivedString>>()
+        )
+    }
+}
