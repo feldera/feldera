@@ -1,14 +1,12 @@
 use std::mem::take;
 
 use crate::{
-    DBData, declare_trait_object_with_archived, derive_comparison_traits, dynamic::erase::Erase,
+    DBData, declare_trait_object,
+    dynamic::erase::Erase,
     utils::Tup2,
 };
 
-use super::{Data, DataTrait, DowncastTrait};
-use crate::utils::ArchivedTup2;
-
-use crate::dynamic::rkyv::{ArchivedDBData, DeserializeDyn, DeserializeImpl};
+use super::{Data, DataTrait};
 
 /// A dynamically typed interface to `Tup2`.
 pub trait Pair<T1: DataTrait + ?Sized, T2: DataTrait + ?Sized>: Data {
@@ -86,80 +84,8 @@ where
     }
 }
 
-pub trait ArchivedPair<T1: DataTrait + ?Sized, T2: DataTrait + ?Sized> {
-    fn fst(&self) -> &T1::Archived;
-    fn snd(&self) -> &T2::Archived;
-    fn split(&self) -> (&T1::Archived, &T2::Archived);
-}
-
-impl<T1, T2, Trait1, Trait2> ArchivedPair<Trait1, Trait2> for ArchivedTup2<T1, T2>
+declare_trait_object!(DynPair<T1, T2> = dyn Pair<T1, T2>
 where
-    T1: DBData + Erase<Trait1>,
-    T2: DBData + Erase<Trait2>,
-    Trait1: DataTrait + ?Sized,
-    Trait2: DataTrait + ?Sized,
-{
-    fn fst(&self) -> &Trait1::Archived {
-        <T1 as Erase<Trait1>>::erase_archived(self.get_t0())
-    }
-
-    fn snd(&self) -> &Trait2::Archived {
-        <T2 as Erase<Trait2>>::erase_archived(self.get_t1())
-    }
-
-    fn split(&self) -> (&Trait1::Archived, &Trait2::Archived) {
-        (
-            <T1 as Erase<Trait1>>::erase_archived(self.get_t0()),
-            <T2 as Erase<Trait2>>::erase_archived(self.get_t1()),
-        )
-    }
-}
-
-impl<T, Trait, Trait1, Trait2> ArchivedPair<Trait1, Trait2> for DeserializeImpl<T, Trait>
-where
-    T: ArchivedDBData + 'static,
-    T::Archived: ArchivedPair<Trait1, Trait2> + Ord + Eq,
-    Trait: Pair<Trait1, Trait2> + DowncastTrait + ?Sized + 'static,
-    Trait1: DataTrait + ?Sized,
-    Trait2: DataTrait + ?Sized,
-{
-    fn fst(&self) -> &Trait1::Archived {
-        self.archived.fst()
-    }
-
-    fn snd(&self) -> &Trait2::Archived {
-        self.archived.snd()
-    }
-
-    fn split(&self) -> (&Trait1::Archived, &Trait2::Archived) {
-        (self.archived.fst(), self.archived.snd())
-    }
-}
-
-pub trait ArchivedPairTrait<T1: DataTrait + ?Sized, T2: DataTrait + ?Sized>:
-    ArchivedPair<T1, T2> + DeserializeDyn<DynPair<T1, T2>>
-{
-}
-
-impl<Trait, T1, T2> ArchivedPairTrait<T1, T2> for Trait
-where
-    Trait: ArchivedPair<T1, T2> + DeserializeDyn<DynPair<T1, T2>> + ?Sized,
-    T1: DataTrait + ?Sized,
-    T2: DataTrait + ?Sized,
-{
-}
-
-type DynArchivedPair<Trait1, Trait2> = dyn ArchivedPairTrait<Trait1, Trait2>;
-
-derive_comparison_traits!(DynArchivedPair<Trait1, Trait2> where Trait1: DataTrait + ?Sized + 'static, Trait2: DataTrait + ?Sized + 'static);
-impl<Trait1: ?Sized + 'static, Trait2: ?Sized + 'static> DowncastTrait
-    for DynArchivedPair<Trait1, Trait2>
-{
-}
-
-declare_trait_object_with_archived!(DynPair<T1, T2> = dyn Pair<T1, T2>
-    { type Archived = dyn ArchivedPairTrait<T1, T2>}
-    where
     T1: DataTrait + ?Sized,
     T2: DataTrait + ?Sized,
 );

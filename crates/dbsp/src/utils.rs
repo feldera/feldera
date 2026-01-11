@@ -5,7 +5,7 @@ mod consolidation;
 mod graph;
 mod is_none;
 mod sort;
-mod tuple;
+pub mod tuple;
 
 #[cfg(test)]
 mod vec_ext;
@@ -42,7 +42,7 @@ pub use sort::{stable_sort, stable_sort_by};
 pub use tuple::{
     ArchivedTup0, ArchivedTup1, ArchivedTup2, ArchivedTup3, ArchivedTup4, ArchivedTup5,
     ArchivedTup6, ArchivedTup7, ArchivedTup8, ArchivedTup9, ArchivedTup10, Tup0, Tup1, Tup2, Tup3,
-    Tup4, Tup5, Tup6, Tup7, Tup8, Tup9, Tup10,
+    Tup4, Tup5, Tup6, Tup7, Tup8, Tup9, Tup10, TupleBitmap, TupleFormat,
 };
 
 // mod unstable_sort;

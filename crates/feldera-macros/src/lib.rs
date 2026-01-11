@@ -29,9 +29,21 @@ pub fn derive_not_none(item: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         impl #impl_generics ::dbsp::utils::IsNone for #ident #ty_generics #where_clause {
+            type Inner = Self;
+
             #[inline]
             fn is_none(&self) -> bool {
                 false
+            }
+
+            #[inline]
+            fn unwrap_or_self(&self) -> &Self::Inner {
+                self
+            }
+
+            #[inline]
+            fn from_inner(inner: Self::Inner) -> Self {
+                inner
             }
         }
     };

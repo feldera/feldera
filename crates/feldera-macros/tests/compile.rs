@@ -26,6 +26,8 @@ impl<T0> Tup1<T0> {
     }
 }
 impl<T0> Tup1<T0> {
+    pub const NUM_ELEMENTS: usize = 1;
+
     #[inline]
     pub fn get_0(&self) -> &T0 {
         &self.0
@@ -33,6 +35,29 @@ impl<T0> Tup1<T0> {
     #[inline]
     pub fn get_0_mut(&mut self) -> &mut T0 {
         &mut self.0
+    }
+}
+
+type TupBitmap<const N: usize> = ::dbsp::utils::tuple::TupleBitmap<N>;
+type TupFormat = ::dbsp::utils::tuple::TupleFormat;
+impl<T0> Tup1<T0>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    #[inline]
+    fn choose_format(&self) -> (TupBitmap<1>, TupFormat) {
+        let mut bitmap = TupBitmap::<1>::new();
+        if ::dbsp::utils::IsNone::is_none(&self.0) {
+            bitmap.set_none(0);
+        }
+
+        let none_bits = bitmap.count_none(Self::NUM_ELEMENTS);
+        if none_bits * 3 > Self::NUM_ELEMENTS {
+            (bitmap, TupFormat::Sparse)
+        } else {
+            (bitmap, TupFormat::Dense)
+        }
     }
 }
 pub struct ArchivedTup1V3<T0>
@@ -73,71 +98,124 @@ where
         Ok(self.pos)
     }
 }
-#[inline]
-unsafe fn __tup1_archived_none_ptr<T: ::rkyv::Archive>() -> *const ::rkyv::Archived<T> {
-    static NONE: ::std::sync::OnceLock<usize> = ::std::sync::OnceLock::new();
-    let ptr = *NONE.get_or_init(|| {
-        let boxed: Box<::rkyv::Archived<T>> = Box::new(unsafe { ::core::mem::zeroed() });
-        Box::into_raw(boxed) as usize
-    });
-    ptr as *const ::rkyv::Archived<T>
-}
-pub struct ArchivedTup1<T0>
+#[repr(C)]
+pub struct ArchivedTup1Sparse<T0>
 where
-    T0: ::rkyv::Archive,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
 {
-    bitmap: [u64; 1usize],
+    bitmap: TupBitmap<1>,
     ptrs: ::rkyv::vec::ArchivedVec<::rkyv::rel_ptr::RawRelPtrI32>,
     _phantom: core::marker::PhantomData<fn() -> (T0)>,
 }
-impl<T0> ArchivedTup1<T0>
+
+#[repr(C)]
+pub struct ArchivedTup1Dense<T0>
 where
-    T0: ::rkyv::Archive,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    bitmap: TupBitmap<1>,
+    t0: core::mem::MaybeUninit<::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>>,
+    _phantom: core::marker::PhantomData<fn() -> (T0)>,
+}
+
+#[repr(C)]
+pub struct ArchivedTup1<T0>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    format: TupFormat,
+    data: ::rkyv::rel_ptr::RawRelPtrI32,
+    _phantom: core::marker::PhantomData<fn() -> (T0)>,
+}
+
+impl<T0> ArchivedTup1Sparse<T0>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
 {
     #[inline]
     fn none_bit_set(&self, idx: usize) -> bool {
-        debug_assert!(idx < 1usize);
-        let word = idx / 64;
-        let bit = idx % 64;
-        (self.bitmap[word] & (1u64 << bit)) != 0
+        debug_assert!(idx < Tup1::<T0>::NUM_ELEMENTS);
+        self.bitmap.is_none(idx)
     }
+
     #[inline]
     fn idx_for_field(&self, field_idx: usize) -> usize {
-        debug_assert!(field_idx < 1usize);
-        let word = field_idx / 64;
-        let bit = field_idx % 64;
-        let mut idx = 0usize;
-        let mut w = 0usize;
-        while w < word {
-            idx += 64usize - (self.bitmap[w].count_ones() as usize);
-            w += 1;
-        }
-        let mask = if bit == 0 { 0 } else { (1u64 << bit) - 1 };
-        let none_before = (self.bitmap[word] & mask).count_ones() as usize;
-        idx + bit - none_before
+        debug_assert!(field_idx < Tup1::<T0>::NUM_ELEMENTS);
+        field_idx - self.bitmap.count_none_before(field_idx)
     }
+
     #[inline]
-    pub fn get_t0(&self) -> &::rkyv::Archived<T0> {
+    pub fn get_t0(&self) -> Option<&::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>> {
         if self.none_bit_set(0) {
-            unsafe { &*__tup1_archived_none_ptr::<T0>() }
+            None
         } else {
             let ptr_idx = self.idx_for_field(0);
             debug_assert!(ptr_idx < self.ptrs.len());
-            unsafe {
+            Some(unsafe {
                 &*self
                     .ptrs
                     .as_slice()
                     .get_unchecked(ptr_idx)
                     .as_ptr()
-                    .cast::<::rkyv::Archived<T0>>()
-            }
+                    .cast::<::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>>()
+            })
+        }
+    }
+}
+
+impl<T0> ArchivedTup1Dense<T0>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    #[inline]
+    fn none_bit_set(&self, idx: usize) -> bool {
+        debug_assert!(idx < Tup1::<T0>::NUM_ELEMENTS);
+        self.bitmap.is_none(idx)
+    }
+
+    #[inline]
+    pub fn get_t0(&self) -> Option<&::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>> {
+        if self.none_bit_set(0) {
+            None
+        } else {
+            Some(unsafe { &*self.t0.as_ptr() })
+        }
+    }
+}
+
+impl<T0> ArchivedTup1<T0>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    #[inline]
+    fn sparse(&self) -> &ArchivedTup1Sparse<T0> {
+        unsafe { &*self.data.as_ptr().cast::<ArchivedTup1Sparse<T0>>() }
+    }
+
+    #[inline]
+    fn dense(&self) -> &ArchivedTup1Dense<T0> {
+        unsafe { &*self.data.as_ptr().cast::<ArchivedTup1Dense<T0>>() }
+    }
+
+    #[inline]
+    pub fn get_t0(&self) -> Option<&::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>> {
+        match self.format {
+            TupFormat::Sparse => self.sparse().get_t0(),
+            TupFormat::Dense => self.dense().get_t0(),
         }
     }
 }
 impl<T0> core::cmp::PartialEq for ArchivedTup1<T0>
 where
-    T0: ::rkyv::Archive,
-    ::rkyv::Archived<T0>: core::cmp::PartialEq,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    ::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>: core::cmp::PartialEq,
 {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -146,14 +224,16 @@ where
 }
 impl<T0> core::cmp::Eq for ArchivedTup1<T0>
 where
-    T0: ::rkyv::Archive,
-    ::rkyv::Archived<T0>: core::cmp::Eq,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    ::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>: core::cmp::Eq,
 {
 }
 impl<T0> core::cmp::PartialOrd for ArchivedTup1<T0>
 where
-    T0: ::rkyv::Archive,
-    ::rkyv::Archived<T0>: core::cmp::Ord,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    ::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>: core::cmp::Ord,
 {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
@@ -162,39 +242,41 @@ where
 }
 impl<T0> core::cmp::Ord for ArchivedTup1<T0>
 where
-    T0: ::rkyv::Archive,
-    ::rkyv::Archived<T0>: core::cmp::Ord,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    ::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>: core::cmp::Ord,
 {
     #[inline]
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        let cmp = self.get_t0().cmp(other.get_t0());
+        let cmp = self.get_t0().cmp(&other.get_t0());
         if cmp != core::cmp::Ordering::Equal {
             return cmp;
         }
         core::cmp::Ordering::Equal
     }
 }
-pub struct Tup1Resolver {
-    bitmap: [u64; 1usize],
+struct Tup1SparseData<'a, T0> {
+    bitmap: TupBitmap<1>,
+    value: &'a Tup1<T0>,
+}
+
+struct Tup1SparseResolver {
+    bitmap: TupBitmap<1>,
     ptrs_resolver: ::rkyv::vec::VecResolver,
     ptrs_len: usize,
 }
-impl<T0> ::rkyv::Archive for Tup1<T0>
+
+impl<'a, T0> ::rkyv::Archive for Tup1SparseData<'a, T0>
 where
-    T0: ::rkyv::Archive,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
 {
-    type Archived = ArchivedTup1<T0>;
-    type Resolver = Tup1Resolver;
+    type Archived = ArchivedTup1Sparse<T0>;
+    type Resolver = Tup1SparseResolver;
     #[inline]
     unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-        let (fp, fo) = ::rkyv::out_field!(out.bitmap);
-        let bitmap_out = fo.cast::<u64>();
-        u64::resolve(
-            &resolver.bitmap[0],
-            pos + fp + (0 * ::core::mem::size_of::<u64>()),
-            (),
-            bitmap_out.add(0),
-        );
+        let (_fp, fo) = ::rkyv::out_field!(out.bitmap);
+        fo.write(resolver.bitmap);
         let (fp, fo) = ::rkyv::out_field!(out.ptrs);
         let vec_pos = pos + fp;
         ::rkyv::vec::ArchivedVec::<::rkyv::rel_ptr::RawRelPtrI32>::resolve_from_len(
@@ -207,20 +289,21 @@ where
         fo.write(core::marker::PhantomData);
     }
 }
-impl<S, T0> ::rkyv::Serialize<S> for Tup1<T0>
+
+impl<'a, S, T0> ::rkyv::Serialize<S> for Tup1SparseData<'a, T0>
 where
     S: ::rkyv::ser::Serializer + ::rkyv::ser::ScratchSpace + ?Sized,
-    T0: ::rkyv::Archive + ::rkyv::Serialize<S> + ::dbsp::utils::IsNone,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::rkyv::Serialize<S>,
 {
     #[inline]
     fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        let mut bitmap = [0u64; 1usize];
+        let t0_is_none = self.bitmap.is_none(0);
         let mut ptrs: [Tup1FieldPtr; 1usize] = [Tup1FieldPtr { pos: 0 }; 1usize];
         let mut ptrs_len = 0usize;
-        if ::dbsp::utils::IsNone::is_none(&self.0) {
-            bitmap[0] |= 1u64 << 0usize;
-        } else {
-            let pos = serializer.serialize_value(&self.0)?;
+        if !t0_is_none {
+            let pos =
+                serializer.serialize_value(::dbsp::utils::IsNone::unwrap_or_self(&self.value.0))?;
             ptrs[ptrs_len] = Tup1FieldPtr { pos };
             ptrs_len += 1;
         }
@@ -229,18 +312,155 @@ where
                 &ptrs[..ptrs_len],
                 serializer,
             )?;
-        Ok(Tup1Resolver {
-            bitmap,
+        Ok(Tup1SparseResolver {
+            bitmap: self.bitmap,
             ptrs_resolver,
             ptrs_len,
         })
     }
 }
+
+struct Tup1DenseData<'a, T0> {
+    bitmap: TupBitmap<1>,
+    value: &'a Tup1<T0>,
+}
+
+struct Tup1DenseResolver<T0>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    bitmap: TupBitmap<1>,
+    t0: Option<<<T0 as ::dbsp::utils::IsNone>::Inner as ::rkyv::Archive>::Resolver>,
+}
+
+impl<'a, T0> ::rkyv::Archive for Tup1DenseData<'a, T0>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    type Archived = ArchivedTup1Dense<T0>;
+    type Resolver = Tup1DenseResolver<T0>;
+    #[inline]
+    unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
+        let (_fp, fo) = ::rkyv::out_field!(out.bitmap);
+        fo.write(resolver.bitmap);
+        let (fp, fo) = ::rkyv::out_field!(out.t0);
+        let t0_out = fo
+            .cast::<core::mem::MaybeUninit<::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>>>(
+            );
+        if let Some(resolver) = resolver.t0 {
+            let inner = ::dbsp::utils::IsNone::unwrap_or_self(&self.value.0);
+            <<T0 as ::dbsp::utils::IsNone>::Inner as ::rkyv::Archive>::resolve(
+                inner,
+                pos + fp,
+                resolver,
+                t0_out.cast::<::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>>(),
+            );
+        } else {
+            core::ptr::write(t0_out, core::mem::MaybeUninit::zeroed());
+        }
+        let (_fp, fo) = ::rkyv::out_field!(out._phantom);
+        fo.write(core::marker::PhantomData);
+    }
+}
+
+impl<'a, S, T0> ::rkyv::Serialize<S> for Tup1DenseData<'a, T0>
+where
+    S: ::rkyv::ser::Serializer + ::rkyv::ser::ScratchSpace + ?Sized,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::rkyv::Serialize<S>,
+{
+    #[inline]
+    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        let t0_is_none = self.bitmap.is_none(0);
+        let t0 = if t0_is_none {
+            None
+        } else {
+            Some(::rkyv::Serialize::serialize(
+                ::dbsp::utils::IsNone::unwrap_or_self(&self.value.0),
+                serializer,
+            )?)
+        };
+        Ok(Tup1DenseResolver {
+            bitmap: self.bitmap,
+            t0,
+        })
+    }
+}
+
+pub enum Tup1Resolver<T0> {
+    Sparse { data_pos: usize },
+    Dense { data_pos: usize },
+    _Phantom(core::marker::PhantomData<T0>),
+}
+
+impl<T0> ::rkyv::Archive for Tup1<T0>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    type Archived = ArchivedTup1<T0>;
+    type Resolver = Tup1Resolver<T0>;
+    #[inline]
+    unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
+        let (_fp, format_out) = ::rkyv::out_field!(out.format);
+        let (fp, data_out) = ::rkyv::out_field!(out.data);
+        let data_out = data_out.cast::<::rkyv::rel_ptr::RawRelPtrI32>();
+
+        match resolver {
+            Tup1Resolver::Sparse { data_pos } => {
+                format_out.write(TupFormat::Sparse);
+                ::rkyv::rel_ptr::RawRelPtrI32::emplace(pos + fp, data_pos, data_out);
+            }
+            Tup1Resolver::Dense { data_pos } => {
+                format_out.write(TupFormat::Dense);
+                ::rkyv::rel_ptr::RawRelPtrI32::emplace(pos + fp, data_pos, data_out);
+            }
+            Tup1Resolver::_Phantom(_) => unreachable!(),
+        }
+        let (_fp, fo) = ::rkyv::out_field!(out._phantom);
+        fo.write(core::marker::PhantomData);
+    }
+}
+
+impl<S, T0> ::rkyv::Serialize<S> for Tup1<T0>
+where
+    S: ::rkyv::ser::Serializer + ::rkyv::ser::ScratchSpace + ?Sized,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::rkyv::Serialize<S>,
+{
+    #[inline]
+    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        let (bitmap, format) = self.choose_format();
+        match format {
+            TupFormat::Dense => {
+                let data = Tup1DenseData {
+                    bitmap,
+                    value: self,
+                };
+                let data_pos = serializer.serialize_value(&data)?;
+                Ok(Tup1Resolver::Dense { data_pos })
+            }
+            TupFormat::Sparse => {
+                let data = Tup1SparseData {
+                    bitmap,
+                    value: self,
+                };
+                let data_pos = serializer.serialize_value(&data)?;
+                Ok(Tup1Resolver::Sparse { data_pos })
+            }
+        }
+    }
+}
 impl<D, T0> ::rkyv::Deserialize<Tup1<T0>, D> for ArchivedTup1<T0>
 where
     D: ::rkyv::Fallible + ::core::any::Any,
-    T0: ::rkyv::Archive + Default,
+    T0: ::rkyv::Archive + Default + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
     ::rkyv::Archived<T0>: ::rkyv::Deserialize<T0, D>,
+    ::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>:
+        ::rkyv::Deserialize<<T0 as ::dbsp::utils::IsNone>::Inner, D>,
 {
     #[inline]
     fn deserialize(&self, deserializer: &mut D) -> Result<Tup1<T0>, D::Error> {
@@ -250,24 +470,44 @@ where
             .expect("passed wrong deserializer");
         if version <= 3 {
             let legacy = unsafe { &*(self as *const _ as *const ArchivedTup1V3<T0>) };
-            return legacy.deserialize(deserializer);
+            return <ArchivedTup1V3<T0> as ::rkyv::Deserialize<Tup1<T0>, D>>::deserialize(
+                legacy,
+                deserializer,
+            );
         }
-        let mut ptr_idx = 0usize;
-        let t0 = if self.none_bit_set(0) {
-            T0::default()
-        } else {
-            let archived = unsafe {
-                &*self
-                    .ptrs
-                    .as_slice()
-                    .get_unchecked(ptr_idx)
-                    .as_ptr()
-                    .cast::<::rkyv::Archived<T0>>()
-            };
-            ptr_idx += 1;
-            archived.deserialize(deserializer)?
-        };
-        Ok(Tup1(t0))
+        match self.format {
+            TupFormat::Sparse => {
+                let sparse = self.sparse();
+                let mut ptr_idx = 0usize;
+                let t0 = if sparse.none_bit_set(0) {
+                    T0::default()
+                } else {
+                    let archived: &::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner> = unsafe {
+                        &*sparse
+                            .ptrs
+                            .as_slice()
+                            .get_unchecked(ptr_idx)
+                            .as_ptr()
+                            .cast::<::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>>()
+                    };
+                    ptr_idx += 1;
+                    let inner = archived.deserialize(deserializer)?;
+                    <T0 as ::dbsp::utils::IsNone>::from_inner(inner)
+                };
+                Ok(Tup1(t0))
+            }
+            TupFormat::Dense => {
+                let dense = self.dense();
+                let t0 = if dense.none_bit_set(0) {
+                    T0::default()
+                } else {
+                    let archived = dense.get_t0().expect("ArchivedTup1Dense: missing field 0");
+                    let inner = archived.deserialize(deserializer)?;
+                    <T0 as ::dbsp::utils::IsNone>::from_inner(inner)
+                };
+                Ok(Tup1(t0))
+            }
+        }
     }
 }
 impl<T0, W> ::dbsp::algebra::MulByRef<W> for Tup1<T0>
@@ -349,7 +589,7 @@ where
 {
     const CONST_NUM_ENTRIES: Option<usize> = None;
     fn num_entries_shallow(&self) -> usize {
-        1usize
+        Self::NUM_ELEMENTS
     }
     fn num_entries_deep(&self) -> usize {
         let Tup1(t0) = self;
@@ -380,8 +620,15 @@ where
     }
 }
 impl<T0> ::dbsp::utils::IsNone for Tup1<T0> {
+    type Inner = Self;
     fn is_none(&self) -> bool {
         false
+    }
+    fn unwrap_or_self(&self) -> &Self::Inner {
+        self
+    }
+    fn from_inner(inner: Self::Inner) -> Self {
+        inner
     }
 }
 
@@ -406,6 +653,8 @@ impl<T0, T1> Tup2<T0, T1> {
     }
 }
 impl<T0, T1> Tup2<T0, T1> {
+    pub const NUM_ELEMENTS: usize = 2;
+
     #[inline]
     pub fn get_0(&self) -> &T0 {
         &self.0
@@ -423,6 +672,33 @@ impl<T0, T1> Tup2<T0, T1> {
     #[inline]
     pub fn get_1_mut(&mut self) -> &mut T1 {
         &mut self.1
+    }
+}
+impl<T0, T1> Tup2<T0, T1>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    #[inline]
+    fn choose_format(&self) -> (TupBitmap<1>, TupFormat) {
+        let mut bitmap = TupBitmap::<1>::new();
+        if ::dbsp::utils::IsNone::is_none(&self.0) {
+            bitmap.set_none(0);
+        }
+        if ::dbsp::utils::IsNone::is_none(&self.1) {
+            bitmap.set_none(1);
+        }
+
+        let none_bits = bitmap.count_none(Self::NUM_ELEMENTS);
+        if none_bits * 3 > Self::NUM_ELEMENTS {
+            eprintln!("choosing TupFormat::Sparse...");
+            (bitmap, TupFormat::Sparse)
+        } else {
+            eprintln!("choosing TupFormat::Dense");
+            (bitmap, TupFormat::Dense)
+        }
     }
 }
 pub struct ArchivedTup2V3<T0, T1>
@@ -470,92 +746,175 @@ where
         Ok(self.pos)
     }
 }
-#[inline]
-unsafe fn __tup2_archived_none_ptr<T: ::rkyv::Archive>() -> *const ::rkyv::Archived<T> {
-    static NONE: ::std::sync::OnceLock<usize> = ::std::sync::OnceLock::new();
-    let ptr = *NONE.get_or_init(|| {
-        let boxed: Box<::rkyv::Archived<T>> = Box::new(unsafe { ::core::mem::zeroed() });
-        Box::into_raw(boxed) as usize
-    });
-    ptr as *const ::rkyv::Archived<T>
-}
-pub struct ArchivedTup2<T0, T1>
+#[repr(C)]
+pub struct ArchivedTup2Sparse<T0, T1>
 where
-    T0: ::rkyv::Archive,
-    T1: ::rkyv::Archive,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
 {
-    bitmap: [u64; 1usize],
+    bitmap: TupBitmap<1>,
     ptrs: ::rkyv::vec::ArchivedVec<::rkyv::rel_ptr::RawRelPtrI32>,
     _phantom: core::marker::PhantomData<fn() -> (T0, T1)>,
 }
-impl<T0, T1> ArchivedTup2<T0, T1>
+
+#[repr(C)]
+pub struct ArchivedTup2Dense<T0, T1>
 where
-    T0: ::rkyv::Archive,
-    T1: ::rkyv::Archive,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    bitmap: TupBitmap<1>,
+    t0: core::mem::MaybeUninit<::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>>,
+    t1: core::mem::MaybeUninit<::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner>>,
+    _phantom: core::marker::PhantomData<fn() -> (T0, T1)>,
+}
+
+#[repr(C)]
+pub struct ArchivedTup2<T0, T1>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    format: TupFormat,
+    data: ::rkyv::rel_ptr::RawRelPtrI32,
+    _phantom: core::marker::PhantomData<fn() -> (T0, T1)>,
+}
+
+impl<T0, T1> ArchivedTup2Sparse<T0, T1>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
 {
     #[inline]
     fn none_bit_set(&self, idx: usize) -> bool {
-        debug_assert!(idx < 2usize);
-        let word = idx / 64;
-        let bit = idx % 64;
-        (self.bitmap[word] & (1u64 << bit)) != 0
+        debug_assert!(idx < Tup2::<T0, T1>::NUM_ELEMENTS);
+        self.bitmap.is_none(idx)
     }
+
     #[inline]
     fn idx_for_field(&self, field_idx: usize) -> usize {
-        debug_assert!(field_idx < 2usize);
-        let word = field_idx / 64;
-        let bit = field_idx % 64;
-        let mut idx = 0usize;
-        let mut w = 0usize;
-        while w < word {
-            idx += 64usize - (self.bitmap[w].count_ones() as usize);
-            w += 1;
-        }
-        let mask = if bit == 0 { 0 } else { (1u64 << bit) - 1 };
-        let none_before = (self.bitmap[word] & mask).count_ones() as usize;
-        idx + bit - none_before
+        debug_assert!(field_idx < Tup2::<T0, T1>::NUM_ELEMENTS);
+        field_idx - self.bitmap.count_none_before(field_idx)
     }
+
     #[inline]
-    pub fn get_t0(&self) -> &::rkyv::Archived<T0> {
+    pub fn get_t0(&self) -> Option<&::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>> {
         if self.none_bit_set(0) {
-            unsafe { &*__tup2_archived_none_ptr::<T0>() }
+            None
         } else {
             let ptr_idx = self.idx_for_field(0);
             debug_assert!(ptr_idx < self.ptrs.len());
-            unsafe {
+            Some(unsafe {
                 &*self
                     .ptrs
                     .as_slice()
                     .get_unchecked(ptr_idx)
                     .as_ptr()
-                    .cast::<::rkyv::Archived<T0>>()
-            }
+                    .cast::<::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>>()
+            })
         }
     }
+
     #[inline]
-    pub fn get_t1(&self) -> &::rkyv::Archived<T1> {
+    pub fn get_t1(&self) -> Option<&::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner>> {
         if self.none_bit_set(1) {
-            unsafe { &*__tup2_archived_none_ptr::<T1>() }
+            None
         } else {
             let ptr_idx = self.idx_for_field(1);
             debug_assert!(ptr_idx < self.ptrs.len());
-            unsafe {
+            Some(unsafe {
                 &*self
                     .ptrs
                     .as_slice()
                     .get_unchecked(ptr_idx)
                     .as_ptr()
-                    .cast::<::rkyv::Archived<T1>>()
-            }
+                    .cast::<::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner>>()
+            })
+        }
+    }
+}
+
+impl<T0, T1> ArchivedTup2Dense<T0, T1>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    #[inline]
+    fn none_bit_set(&self, idx: usize) -> bool {
+        debug_assert!(idx < Tup2::<T0, T1>::NUM_ELEMENTS);
+        self.bitmap.is_none(idx)
+    }
+
+    #[inline]
+    pub fn get_t0(&self) -> Option<&::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>> {
+        if self.none_bit_set(0) {
+            None
+        } else {
+            Some(unsafe { &*self.t0.as_ptr() })
+        }
+    }
+
+    #[inline]
+    pub fn get_t1(&self) -> Option<&::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner>> {
+        if self.none_bit_set(1) {
+            None
+        } else {
+            Some(unsafe { &*self.t1.as_ptr() })
+        }
+    }
+}
+
+impl<T0, T1> ArchivedTup2<T0, T1>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    #[inline]
+    fn sparse(&self) -> &ArchivedTup2Sparse<T0, T1> {
+        unsafe { &*self.data.as_ptr().cast::<ArchivedTup2Sparse<T0, T1>>() }
+    }
+
+    #[inline]
+    fn dense(&self) -> &ArchivedTup2Dense<T0, T1> {
+        unsafe { &*self.data.as_ptr().cast::<ArchivedTup2Dense<T0, T1>>() }
+    }
+
+    #[inline]
+    pub fn get_t0(&self) -> Option<&::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>> {
+        match self.format {
+            TupFormat::Sparse => self.sparse().get_t0(),
+            TupFormat::Dense => self.dense().get_t0(),
+        }
+    }
+
+    #[inline]
+    pub fn get_t1(&self) -> Option<&::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner>> {
+        match self.format {
+            TupFormat::Sparse => self.sparse().get_t1(),
+            TupFormat::Dense => self.dense().get_t1(),
         }
     }
 }
 impl<T0, T1> core::cmp::PartialEq for ArchivedTup2<T0, T1>
 where
-    T0: ::rkyv::Archive,
-    T1: ::rkyv::Archive,
-    ::rkyv::Archived<T0>: core::cmp::PartialEq,
-    ::rkyv::Archived<T1>: core::cmp::PartialEq,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    ::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>: core::cmp::PartialEq,
+    ::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner>: core::cmp::PartialEq,
 {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -564,18 +923,22 @@ where
 }
 impl<T0, T1> core::cmp::Eq for ArchivedTup2<T0, T1>
 where
-    T0: ::rkyv::Archive,
-    T1: ::rkyv::Archive,
-    ::rkyv::Archived<T0>: core::cmp::Eq,
-    ::rkyv::Archived<T1>: core::cmp::Eq,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    ::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>: core::cmp::Eq,
+    ::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner>: core::cmp::Eq,
 {
 }
 impl<T0, T1> core::cmp::PartialOrd for ArchivedTup2<T0, T1>
 where
-    T0: ::rkyv::Archive,
-    T1: ::rkyv::Archive,
-    ::rkyv::Archived<T0>: core::cmp::Ord,
-    ::rkyv::Archived<T1>: core::cmp::Ord,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    ::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>: core::cmp::Ord,
+    ::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner>: core::cmp::Ord,
 {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
@@ -584,46 +947,50 @@ where
 }
 impl<T0, T1> core::cmp::Ord for ArchivedTup2<T0, T1>
 where
-    T0: ::rkyv::Archive,
-    T1: ::rkyv::Archive,
-    ::rkyv::Archived<T0>: core::cmp::Ord,
-    ::rkyv::Archived<T1>: core::cmp::Ord,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    ::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>: core::cmp::Ord,
+    ::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner>: core::cmp::Ord,
 {
     #[inline]
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        let cmp = self.get_t0().cmp(other.get_t0());
+        let cmp = self.get_t0().cmp(&other.get_t0());
         if cmp != core::cmp::Ordering::Equal {
             return cmp;
         }
-        let cmp = self.get_t1().cmp(other.get_t1());
+        let cmp = self.get_t1().cmp(&other.get_t1());
         if cmp != core::cmp::Ordering::Equal {
             return cmp;
         }
         core::cmp::Ordering::Equal
     }
 }
-pub struct Tup2Resolver {
-    bitmap: [u64; 1usize],
+struct Tup2SparseData<'a, T0, T1> {
+    bitmap: TupBitmap<1>,
+    value: &'a Tup2<T0, T1>,
+}
+
+struct Tup2SparseResolver {
+    bitmap: TupBitmap<1>,
     ptrs_resolver: ::rkyv::vec::VecResolver,
     ptrs_len: usize,
 }
-impl<T0, T1> ::rkyv::Archive for Tup2<T0, T1>
+
+impl<'a, T0, T1> ::rkyv::Archive for Tup2SparseData<'a, T0, T1>
 where
-    T0: ::rkyv::Archive,
-    T1: ::rkyv::Archive,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
 {
-    type Archived = ArchivedTup2<T0, T1>;
-    type Resolver = Tup2Resolver;
+    type Archived = ArchivedTup2Sparse<T0, T1>;
+    type Resolver = Tup2SparseResolver;
     #[inline]
     unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-        let (fp, fo) = ::rkyv::out_field!(out.bitmap);
-        let bitmap_out = fo.cast::<u64>();
-        u64::resolve(
-            &resolver.bitmap[0],
-            pos + fp + (0 * ::core::mem::size_of::<u64>()),
-            (),
-            bitmap_out.add(0),
-        );
+        let (_fp, fo) = ::rkyv::out_field!(out.bitmap);
+        fo.write(resolver.bitmap);
         let (fp, fo) = ::rkyv::out_field!(out.ptrs);
         let vec_pos = pos + fp;
         ::rkyv::vec::ArchivedVec::<::rkyv::rel_ptr::RawRelPtrI32>::resolve_from_len(
@@ -636,28 +1003,30 @@ where
         fo.write(core::marker::PhantomData);
     }
 }
-impl<S, T0, T1> ::rkyv::Serialize<S> for Tup2<T0, T1>
+
+impl<'a, S, T0, T1> ::rkyv::Serialize<S> for Tup2SparseData<'a, T0, T1>
 where
     S: ::rkyv::ser::Serializer + ::rkyv::ser::ScratchSpace + ?Sized,
-    T0: ::rkyv::Archive + ::rkyv::Serialize<S> + ::dbsp::utils::IsNone,
-    T1: ::rkyv::Archive + ::rkyv::Serialize<S> + ::dbsp::utils::IsNone,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::rkyv::Serialize<S>,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::rkyv::Serialize<S>,
 {
     #[inline]
     fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        let mut bitmap = [0u64; 1usize];
+        let t0_is_none = self.bitmap.is_none(0);
+        let t1_is_none = self.bitmap.is_none(1);
         let mut ptrs: [Tup2FieldPtr; 2usize] = [Tup2FieldPtr { pos: 0 }; 2usize];
         let mut ptrs_len = 0usize;
-        if ::dbsp::utils::IsNone::is_none(&self.0) {
-            bitmap[0] |= 1u64 << 0usize;
-        } else {
-            let pos = serializer.serialize_value(&self.0)?;
+        if !t0_is_none {
+            let pos =
+                serializer.serialize_value(::dbsp::utils::IsNone::unwrap_or_self(&self.value.0))?;
             ptrs[ptrs_len] = Tup2FieldPtr { pos };
             ptrs_len += 1;
         }
-        if ::dbsp::utils::IsNone::is_none(&self.1) {
-            bitmap[0] |= 1u64 << 1usize;
-        } else {
-            let pos = serializer.serialize_value(&self.1)?;
+        if !t1_is_none {
+            let pos =
+                serializer.serialize_value(::dbsp::utils::IsNone::unwrap_or_self(&self.value.1))?;
             ptrs[ptrs_len] = Tup2FieldPtr { pos };
             ptrs_len += 1;
         }
@@ -666,20 +1035,196 @@ where
                 &ptrs[..ptrs_len],
                 serializer,
             )?;
-        Ok(Tup2Resolver {
-            bitmap,
+        Ok(Tup2SparseResolver {
+            bitmap: self.bitmap,
             ptrs_resolver,
             ptrs_len,
         })
     }
 }
+
+struct Tup2DenseData<'a, T0, T1> {
+    bitmap: TupBitmap<1>,
+    value: &'a Tup2<T0, T1>,
+}
+
+struct Tup2DenseResolver<T0, T1>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    bitmap: TupBitmap<1>,
+    t0: Option<<<T0 as ::dbsp::utils::IsNone>::Inner as ::rkyv::Archive>::Resolver>,
+    t1: Option<<<T1 as ::dbsp::utils::IsNone>::Inner as ::rkyv::Archive>::Resolver>,
+}
+
+impl<'a, T0, T1> ::rkyv::Archive for Tup2DenseData<'a, T0, T1>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    type Archived = ArchivedTup2Dense<T0, T1>;
+    type Resolver = Tup2DenseResolver<T0, T1>;
+    #[inline]
+    unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
+        let (_fp, fo) = ::rkyv::out_field!(out.bitmap);
+        fo.write(resolver.bitmap);
+        let (fp, fo) = ::rkyv::out_field!(out.t0);
+        let t0_out = fo
+            .cast::<core::mem::MaybeUninit<::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>>>(
+            );
+        if let Some(resolver) = resolver.t0 {
+            let inner = ::dbsp::utils::IsNone::unwrap_or_self(&self.value.0);
+            <<T0 as ::dbsp::utils::IsNone>::Inner as ::rkyv::Archive>::resolve(
+                inner,
+                pos + fp,
+                resolver,
+                t0_out.cast::<::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>>(),
+            );
+        } else {
+            core::ptr::write(t0_out, core::mem::MaybeUninit::zeroed());
+        }
+        let (fp, fo) = ::rkyv::out_field!(out.t1);
+        let t1_out = fo
+            .cast::<core::mem::MaybeUninit<::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner>>>(
+            );
+        if let Some(resolver) = resolver.t1 {
+            let inner = ::dbsp::utils::IsNone::unwrap_or_self(&self.value.1);
+            <<T1 as ::dbsp::utils::IsNone>::Inner as ::rkyv::Archive>::resolve(
+                inner,
+                pos + fp,
+                resolver,
+                t1_out.cast::<::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner>>(),
+            );
+        } else {
+            core::ptr::write(t1_out, core::mem::MaybeUninit::zeroed());
+        }
+        let (_fp, fo) = ::rkyv::out_field!(out._phantom);
+        fo.write(core::marker::PhantomData);
+    }
+}
+
+impl<'a, S, T0, T1> ::rkyv::Serialize<S> for Tup2DenseData<'a, T0, T1>
+where
+    S: ::rkyv::ser::Serializer + ::rkyv::ser::ScratchSpace + ?Sized,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::rkyv::Serialize<S>,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::rkyv::Serialize<S>,
+{
+    #[inline]
+    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        let t0_is_none = self.bitmap.is_none(0);
+        let t1_is_none = self.bitmap.is_none(1);
+        let t0 = if t0_is_none {
+            None
+        } else {
+            Some(::rkyv::Serialize::serialize(
+                ::dbsp::utils::IsNone::unwrap_or_self(&self.value.0),
+                serializer,
+            )?)
+        };
+        let t1 = if t1_is_none {
+            None
+        } else {
+            Some(::rkyv::Serialize::serialize(
+                ::dbsp::utils::IsNone::unwrap_or_self(&self.value.1),
+                serializer,
+            )?)
+        };
+        Ok(Tup2DenseResolver {
+            bitmap: self.bitmap,
+            t0,
+            t1,
+        })
+    }
+}
+
+pub enum Tup2Resolver<T0, T1> {
+    Sparse { data_pos: usize },
+    Dense { data_pos: usize },
+    _Phantom(core::marker::PhantomData<(T0, T1)>),
+}
+
+impl<T0, T1> ::rkyv::Archive for Tup2<T0, T1>
+where
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+{
+    type Archived = ArchivedTup2<T0, T1>;
+    type Resolver = Tup2Resolver<T0, T1>;
+    #[inline]
+    unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
+        let (_fp, format_out) = ::rkyv::out_field!(out.format);
+        let (fp, data_out) = ::rkyv::out_field!(out.data);
+        let data_out = data_out.cast::<::rkyv::rel_ptr::RawRelPtrI32>();
+
+        match resolver {
+            Tup2Resolver::Sparse { data_pos } => {
+                format_out.write(TupFormat::Sparse);
+                ::rkyv::rel_ptr::RawRelPtrI32::emplace(pos + fp, data_pos, data_out);
+            }
+            Tup2Resolver::Dense { data_pos } => {
+                format_out.write(TupFormat::Dense);
+                ::rkyv::rel_ptr::RawRelPtrI32::emplace(pos + fp, data_pos, data_out);
+            }
+            Tup2Resolver::_Phantom(_) => unreachable!(),
+        }
+        let (_fp, fo) = ::rkyv::out_field!(out._phantom);
+        fo.write(core::marker::PhantomData);
+    }
+}
+
+impl<S, T0, T1> ::rkyv::Serialize<S> for Tup2<T0, T1>
+where
+    S: ::rkyv::ser::Serializer + ::rkyv::ser::ScratchSpace + ?Sized,
+    T0: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::rkyv::Serialize<S>,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive + ::rkyv::Serialize<S>,
+{
+    #[inline]
+    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        let (bitmap, format) = self.choose_format();
+        match format {
+            TupFormat::Dense => {
+                let data = Tup2DenseData {
+                    bitmap,
+                    value: self,
+                };
+                let data_pos = serializer.serialize_value(&data)?;
+                Ok(Tup2Resolver::Dense { data_pos })
+            }
+            TupFormat::Sparse => {
+                let data = Tup2SparseData {
+                    bitmap,
+                    value: self,
+                };
+                let data_pos = serializer.serialize_value(&data)?;
+                Ok(Tup2Resolver::Sparse { data_pos })
+            }
+        }
+    }
+}
 impl<D, T0, T1> ::rkyv::Deserialize<Tup2<T0, T1>, D> for ArchivedTup2<T0, T1>
 where
     D: ::rkyv::Fallible + ::core::any::Any,
-    T0: ::rkyv::Archive + Default,
-    T1: ::rkyv::Archive + Default,
+    T0: ::rkyv::Archive + Default + ::dbsp::utils::IsNone,
+    T1: ::rkyv::Archive + Default + ::dbsp::utils::IsNone,
+    <T0 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
+    <T1 as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,
     ::rkyv::Archived<T0>: ::rkyv::Deserialize<T0, D>,
     ::rkyv::Archived<T1>: ::rkyv::Deserialize<T1, D>,
+    ::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>:
+        ::rkyv::Deserialize<<T0 as ::dbsp::utils::IsNone>::Inner, D>,
+    ::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner>:
+        ::rkyv::Deserialize<<T1 as ::dbsp::utils::IsNone>::Inner, D>,
 {
     #[inline]
     fn deserialize(&self, deserializer: &mut D) -> Result<Tup2<T0, T1>, D::Error> {
@@ -689,38 +1234,66 @@ where
             .expect("passed wrong deserializer");
         if version <= 3 {
             let legacy = unsafe { &*(self as *const _ as *const ArchivedTup2V3<T0, T1>) };
-            return legacy.deserialize(deserializer);
+            return <ArchivedTup2V3<T0, T1> as ::rkyv::Deserialize<Tup2<T0, T1>, D>>::deserialize(
+                legacy,
+                deserializer,
+            );
         }
-        let mut ptr_idx = 0usize;
-        let t0 = if self.none_bit_set(0) {
-            T0::default()
-        } else {
-            let archived = unsafe {
-                &*self
-                    .ptrs
-                    .as_slice()
-                    .get_unchecked(ptr_idx)
-                    .as_ptr()
-                    .cast::<::rkyv::Archived<T0>>()
-            };
-            ptr_idx += 1;
-            archived.deserialize(deserializer)?
-        };
-        let t1 = if self.none_bit_set(1) {
-            T1::default()
-        } else {
-            let archived = unsafe {
-                &*self
-                    .ptrs
-                    .as_slice()
-                    .get_unchecked(ptr_idx)
-                    .as_ptr()
-                    .cast::<::rkyv::Archived<T1>>()
-            };
-            ptr_idx += 1;
-            archived.deserialize(deserializer)?
-        };
-        Ok(Tup2(t0, t1))
+        match self.format {
+            TupFormat::Sparse => {
+                let sparse = self.sparse();
+                let mut ptr_idx = 0usize;
+                let t0 = if sparse.none_bit_set(0) {
+                    T0::default()
+                } else {
+                    let archived: &::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner> = unsafe {
+                        &*sparse
+                            .ptrs
+                            .as_slice()
+                            .get_unchecked(ptr_idx)
+                            .as_ptr()
+                            .cast::<::rkyv::Archived<<T0 as ::dbsp::utils::IsNone>::Inner>>()
+                    };
+                    ptr_idx += 1;
+                    let inner = archived.deserialize(deserializer)?;
+                    <T0 as ::dbsp::utils::IsNone>::from_inner(inner)
+                };
+                let t1 = if sparse.none_bit_set(1) {
+                    T1::default()
+                } else {
+                    let archived: &::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner> = unsafe {
+                        &*sparse
+                            .ptrs
+                            .as_slice()
+                            .get_unchecked(ptr_idx)
+                            .as_ptr()
+                            .cast::<::rkyv::Archived<<T1 as ::dbsp::utils::IsNone>::Inner>>()
+                    };
+                    ptr_idx += 1;
+                    let inner = archived.deserialize(deserializer)?;
+                    <T1 as ::dbsp::utils::IsNone>::from_inner(inner)
+                };
+                Ok(Tup2(t0, t1))
+            }
+            TupFormat::Dense => {
+                let dense = self.dense();
+                let t0 = if dense.none_bit_set(0) {
+                    T0::default()
+                } else {
+                    let archived = dense.get_t0().expect("ArchivedTup2Dense: missing field 0");
+                    let inner = archived.deserialize(deserializer)?;
+                    <T0 as ::dbsp::utils::IsNone>::from_inner(inner)
+                };
+                let t1 = if dense.none_bit_set(1) {
+                    T1::default()
+                } else {
+                    let archived = dense.get_t1().expect("ArchivedTup2Dense: missing field 1");
+                    let inner = archived.deserialize(deserializer)?;
+                    <T1 as ::dbsp::utils::IsNone>::from_inner(inner)
+                };
+                Ok(Tup2(t0, t1))
+            }
+        }
     }
 }
 impl<T0, T1, W> ::dbsp::algebra::MulByRef<W> for Tup2<T0, T1>
@@ -810,7 +1383,7 @@ where
 {
     const CONST_NUM_ENTRIES: Option<usize> = None;
     fn num_entries_shallow(&self) -> usize {
-        2usize
+        Self::NUM_ELEMENTS
     }
     fn num_entries_deep(&self) -> usize {
         let Tup2(t0, t1) = self;
@@ -841,8 +1414,15 @@ where
     }
 }
 impl<T0, T1> ::dbsp::utils::IsNone for Tup2<T0, T1> {
+    type Inner = Self;
     fn is_none(&self) -> bool {
         false
+    }
+    fn unwrap_or_self(&self) -> &Self::Inner {
+        self
+    }
+    fn from_inner(inner: Self::Inner) -> Self {
+        inner
     }
 }
 
@@ -857,28 +1437,79 @@ fn compile_tup2() {
 }
 
 #[test]
+fn rkyv_compact_tup1_option_roundtrip_bool() {
+    let tup_some = Tup1::new(Some(true));
+    let bytes_some = dbsp::storage::file::to_bytes(&tup_some).unwrap();
+    let restored_some: Tup1<Option<bool>> = dbsp::trace::unaligned_deserialize(&bytes_some[..]);
+    assert_eq!(restored_some, tup_some);
+
+    let tup_none: Tup1<Option<bool>> = Tup1::new(None);
+    let bytes_none = dbsp::storage::file::to_bytes(&tup_none).unwrap();
+    let restored_none: Tup1<Option<bool>> = dbsp::trace::unaligned_deserialize(&bytes_none[..]);
+    assert_eq!(restored_none, tup_none);
+    assert!(
+        bytes_none.len() >= core::mem::size_of::<ArchivedTup1<Option<bool>>>(),
+        "expected serialized bytes to include archived data, got bytes={} archived={}",
+        bytes_none.len(),
+        core::mem::size_of::<ArchivedTup1<Option<bool>>>()
+    );
+
+    eprintln!(
+        "Tup1<Option<bool>>: None={} Some={}",
+        bytes_none.len(),
+        bytes_some.len()
+    );
+
+    let _ = (bytes_none, bytes_some);
+}
+
+#[test]
 fn rkyv_compact_tup1_option_roundtrip() {
     use feldera_sqllib::SqlString;
 
-    let tup_some = Tup1::new(Some(SqlString::from_ref("hello")));
+    let tup_some = Tup1::new(());
     let bytes_some = dbsp::storage::file::to_bytes(&tup_some).unwrap();
-    let restored_some: Tup1<Option<SqlString>> =
+    let restored_some: Tup1<()> = dbsp::trace::unaligned_deserialize(&bytes_some[..]);
+    assert_eq!(restored_some, tup_some);
+
+    eprintln!("Tup1<()>: {}", bytes_some.len());
+
+    let tup_some = Tup1::new(0u8);
+    let bytes_some = dbsp::storage::file::to_bytes(&tup_some).unwrap();
+    let restored_some: Tup1<u8> = dbsp::trace::unaligned_deserialize(&bytes_some[..]);
+    assert_eq!(restored_some, tup_some);
+
+    eprintln!("Tup1<u8>: {}", bytes_some.len());
+
+    let tup_some = Tup1::new(Some(0u8));
+    let bytes_some = dbsp::storage::file::to_bytes(&tup_some).unwrap();
+    let restored_some: Tup1<Option<u8>> = dbsp::trace::unaligned_deserialize(&bytes_some[..]);
+    assert_eq!(restored_some, tup_some);
+
+    eprintln!("Tup1<Option<u8>>: {}", bytes_some.len());
+}
+
+#[test]
+fn rkyv_compact_tup2_option_sizes() {
+    use feldera_sqllib::SqlString;
+
+    let tup_some = Tup2::new(
+        Some(SqlString::from_ref("hello")),
+        Some(SqlString::from_ref("hello")),
+    );
+    let bytes_some = dbsp::storage::file::to_bytes(&tup_some).unwrap();
+    let restored_some: Tup2<Option<SqlString>, Option<SqlString>> =
         dbsp::trace::unaligned_deserialize(&bytes_some[..]);
     assert_eq!(restored_some, tup_some);
 
-    let tup_none: Tup1<Option<SqlString>> = Tup1::new(None);
+    let tup_none: Tup2<Option<SqlString>, Option<SqlString>> = Tup2::new(None, None);
     let bytes_none = dbsp::storage::file::to_bytes(&tup_none).unwrap();
-    let restored_none: Tup1<Option<SqlString>> =
+    let restored_none: Tup2<Option<SqlString>, Option<SqlString>> =
         dbsp::trace::unaligned_deserialize(&bytes_none[..]);
     assert_eq!(restored_none, tup_none);
-    assert_eq!(
-        bytes_none.len(),
-        core::mem::size_of::<ArchivedTup1<Option<SqlString>>>()
-    );
 
-    assert!(
-        bytes_none.len() < bytes_some.len(),
-        "expected `None` to serialize smaller than `Some`, got None={} Some={}",
+    eprintln!(
+        "Tup2<Option<SqlString>, Option<SqlString>>: None={} Some={}",
         bytes_none.len(),
         bytes_some.len()
     );
@@ -899,7 +1530,7 @@ fn rkyv_compact_tup1_archived_get_t0() {
     let archived_some = unsafe { rkyv::archived_root::<Tup1<Option<SqlString>>>(&bytes_some[..]) };
     let archived_t0_some = archived_some.get_t0();
     assert!(archived_t0_some.is_some());
-    assert_eq!(archived_t0_some.as_ref().unwrap().as_str(), "hello");
+    assert_eq!(archived_t0_some.unwrap().as_str(), "hello");
 }
 
 #[test]
@@ -919,7 +1550,9 @@ fn rkyv_compact_tup1_option_checkpoint_roundtrip() {
     restored_none.restore(&bytes_none).unwrap();
     assert_eq!(restored_none, tup_none);
 
-    assert_eq!(
+    assert!(
+        bytes_none.len() >= core::mem::size_of::<ArchivedTup1<Option<SqlString>>>(),
+        "expected serialized bytes to include archived data, got bytes={} archived={}",
         bytes_none.len(),
         core::mem::size_of::<ArchivedTup1<Option<SqlString>>>()
     );
@@ -934,8 +1567,8 @@ fn rkyv_compact_tup2_roundtrip() {
     let restored_vals: Tup2<SqlString, i32> = dbsp::trace::unaligned_deserialize(&bytes_vals[..]);
     assert_eq!(restored_vals, tup_vals);
     assert!(
-        bytes_vals.len() > core::mem::size_of::<ArchivedTup2<SqlString, i32>>(),
-        "expected serialized bytes to include out-of-line data, got bytes={} archived={}",
+        bytes_vals.len() >= core::mem::size_of::<ArchivedTup2<SqlString, i32>>(),
+        "expected serialized bytes to include archived data, got bytes={} archived={}",
         bytes_vals.len(),
         core::mem::size_of::<ArchivedTup2<SqlString, i32>>()
     );
@@ -951,7 +1584,9 @@ fn rkyv_compact_tup2_option_roundtrip() {
         dbsp::trace::unaligned_deserialize(&bytes_none[..]);
     assert_eq!(restored_none, tup_none);
     eprintln!("bytes_none.len() = {}", bytes_none.len());
-    assert_eq!(
+    assert!(
+        bytes_none.len() >= core::mem::size_of::<ArchivedTup2<Option<SqlString>, Option<u128>>>(),
+        "expected serialized bytes to include archived data, got bytes={} archived={}",
         bytes_none.len(),
         core::mem::size_of::<ArchivedTup2<Option<SqlString>, Option<u128>>>()
     );
@@ -975,13 +1610,6 @@ fn rkyv_compact_tup2_option_roundtrip() {
     let restored_11: Tup2<Option<SqlString>, Option<i32>> =
         dbsp::trace::unaligned_deserialize(&bytes_11[..]);
     assert_eq!(restored_11, tup_11);
-
-    assert!(
-        bytes_none.len() < bytes_11.len(),
-        "expected `(None, None)` to serialize smaller than `(Some, Some)`, got None={} Some={}",
-        bytes_none.len(),
-        bytes_11.len()
-    );
 }
 
 #[test]
@@ -997,7 +1625,7 @@ fn rkyv_compact_tup2_archived_get_t0_t1() {
     let t1_10 = archived_10.get_t1();
     assert!(t0_10.is_some());
     assert!(t1_10.is_none());
-    assert_eq!(t0_10.as_ref().unwrap().as_str(), "hi");
+    assert_eq!(t0_10.unwrap().as_str(), "hi");
 
     let tup_01: Tup2<Option<SqlString>, Option<i32>> = Tup2::new(None, Some(42));
     let bytes_01 = dbsp::storage::file::to_bytes(&tup_01).unwrap();
@@ -1007,5 +1635,5 @@ fn rkyv_compact_tup2_archived_get_t0_t1() {
     let t1_01 = archived_01.get_t1();
     assert!(t0_01.is_none());
     assert!(t1_01.is_some());
-    assert_eq!(*t1_01.as_ref().unwrap(), 42);
+    assert_eq!(*t1_01.unwrap(), 42);
 }

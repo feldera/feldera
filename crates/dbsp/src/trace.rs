@@ -90,7 +90,18 @@ pub use layers::Trie;
 /// `DBData` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::Key: DBData` and `B::Val: DBData`.
 pub trait DBData:
-    Default + Clone + Eq + Ord + Hash + SizeOf + Send + Sync + Debug + ArchivedDBData + IsNone + 'static
+    Default
+    + Clone
+    + Eq
+    + Ord
+    + Hash
+    + SizeOf
+    + Send
+    + Sync
+    + Debug
+    + ArchivedDBData
+    + IsNone<Inner: ArchivedDBData>
+    + 'static
 {
 }
 
@@ -106,8 +117,8 @@ impl<T> DBData for T where
         + Sync
         + Debug
         + ArchivedDBData
-        + IsNone
-        + 'static /* as ArchivedDBData>::Repr: Ord + PartialOrd<T>, */
+        + IsNone<Inner: ArchivedDBData>
+        + 'static,
 {
 }
 
