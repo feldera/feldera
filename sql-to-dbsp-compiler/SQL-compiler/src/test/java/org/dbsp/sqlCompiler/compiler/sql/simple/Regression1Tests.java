@@ -1765,4 +1765,19 @@ public class Regression1Tests extends SqlIoTest {
                 "CREATE VIEW V AS SELECT - CAST(1 AS INT UNSIGNED)",
                 "Unary minus cannot be applied");
     }
+
+    @Test
+    public void incorrectAsofNullabilityTest() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(X INT NOT NULL, Y INT);
+                CREATE TABLE S(X INT, Y INT);
+                CREATE VIEW V AS SELECT T.*, S.x as sx, S.y as sy FROM T LEFT ASOF JOIN S
+                MATCH_CONDITION(T.X >= S.X) ON T.Y = S.Y;""");
+        ccs.step("""
+                INSERT INTO T VALUES(1, NULL);
+                INSERT INTO S VALUES(1, 1);""", """
+                 X | Y | sx | sy | weight
+                --------------------------
+                 1 |   |    |    | 1""");
+    }
 }
