@@ -40,6 +40,9 @@
   // Reference to ProfilerDiagram for calling methods
   let profilerDiagram: ProfilerDiagram | undefined = $state()
 
+  // Reference to ProfilerTooltip for calling methods
+  let profilerTooltip: ProfilerTooltip = $state(undefined!)
+
   // Callbacks for profiler-lib
   const callbacks: ProfilerCallbacks = {
     displayNodeAttributes: (data, isSticky) => {
@@ -47,10 +50,7 @@
       tooltipSticky = isSticky
     },
     displayTopNodes(data, isSticky) {
-      let cont = document.getElementById("profiler-tooltip-container")
-      if (cont) {
-        cont.scrollTop = 0
-      }
+      profilerTooltip.resetScroll()
       tooltipData = data.match({
         some: (topNodes) => ({
           genericTable: {
@@ -285,7 +285,7 @@
       </div>
 
       <!-- Tooltip container (positioned in top-right) -->
-      <ProfilerTooltip value={tooltipData} sticky={tooltipSticky}></ProfilerTooltip>
+      <ProfilerTooltip bind:this={profilerTooltip} value={tooltipData} sticky={tooltipSticky}></ProfilerTooltip>
     </div>
   </div>
 </div>
