@@ -32,10 +32,18 @@
 
 <script lang="ts">
   let { value, sticky }: { value: TooltipData | null; sticky: boolean } = $props()
+
+  let containerRef: HTMLElement | undefined = $state()
+
+  export function resetScroll() {
+    if (containerRef) {
+      containerRef.scrollTop = 0
+    }
+  }
 </script>
 
 {#if value}
-  <div class="profiler-tooltip-container {sticky ? '' : 'pointer-events-none'}" id="profiler-tooltip-container">
+  <div class="profiler-tooltip-container {sticky ? '' : 'pointer-events-none'}" bind:this={containerRef}>
     <div class="profiler-tooltip">
       {#if 'nodeAttributes' in value}
         {@const { nodeAttributes } = value}
