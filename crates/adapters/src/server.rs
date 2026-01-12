@@ -4,6 +4,7 @@ use crate::format::{get_input_format, get_output_format};
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
 };
+use crate::static_compile::catalog::OUTPUT_MAPPING;
 use crate::util::{LongOperationWarning, RateLimitCheckResult, TokenBucketRateLimiter};
 use crate::{Catalog, dyn_event};
 use crate::{
@@ -91,6 +92,7 @@ use std::convert::Infallible;
 use std::ffi::OsStr;
 use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::io::ErrorKind;
+use std::mem::take;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -1044,6 +1046,8 @@ fn do_bootstrap(
             RuntimeDesiredStatus::Unavailable => unreachable!(),
             RuntimeDesiredStatus::Coordination => {
                 if let Some(mut ca) = state.coordination_activate.lock().unwrap().take() {
+                    *OUTPUT_MAPPING.lock().unwrap() = take(&mut ca.output_assignment);
+
                     builder = builder.with_layout(
                         Layout::new_multihost(&ca.exchanges, ca.local_address).map_err(|e| {
                             ControllerError::Config {
