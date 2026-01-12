@@ -6,12 +6,12 @@ use dbsp::circuit::circuit_builder::CircuitBase;
 use dbsp::trace::spine_async::WithSnapshot;
 use dbsp::typed_batch::TypedBatch;
 use dbsp::utils::Tup1;
+use dbsp::{Batch, OrdZSet, Runtime};
 use dbsp::{
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
     operator::{MapHandle, SetHandle, ZSetHandle},
     typed_batch::BatchReader,
 };
-use dbsp::{OrdZSet, Runtime};
 use feldera_adapterlib::catalog::CircuitCatalog;
 use feldera_sqllib::{SqlString, Variant, build_string_interner};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
@@ -22,9 +22,19 @@ use std::any::TypeId;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::mem::transmute;
-use std::sync::Arc;
+use std::ops::Range;
+use std::sync::{Arc, Mutex};
 
 const INTERNED_STRING_RELATION_NAME: &str = "feldera_interned_strings";
+
+pub type OutputMapping = BTreeMap<String, usize>;
+
+/// Global mapping from the name of a stream to the ordinal of the host for its
+/// output connectors.
+///
+/// It would be better if we could pass this in to the circuit instead of having
+/// a global.
+pub static OUTPUT_MAPPING: Mutex<OutputMapping> = Mutex::new(BTreeMap::new());
 
 impl Catalog {
     fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {
@@ -41,6 +51,35 @@ impl Catalog {
         stream
             .get_persistent_id()
             .map(|pid| format!("{pid}.output"))
+    }
+
+    fn gather_output_to_host<Z>(
+        &self,
+        name: &SqlIdentifier,
+        stream: Stream<RootCircuit, Z>,
+        shard: bool,
+    ) -> (Stream<RootCircuit, Z>, Option<Range<usize>>)
+    where
+        Z: Batch<Time = ()>,
+        Z::InnerBatch: Send,
+    {
+        if let Some(runtime) = Runtime::runtime()
+            && let layout = runtime.layout()
+            && let Layout::Multihost { hosts, .. } = layout
+        {
+            let ordinal = OUTPUT_MAPPING
+                .lock()
+                .unwrap()
+                .get(&name.name())
+                .copied()
+                .unwrap_or_default();
+            let workers = &hosts[ordinal].workers;
+            (stream.shard_workers(workers.clone()), Some(workers.clone()))
+        } else if shard {
+            (stream.shard(), None)
+        } else {
+            (stream, None)
+        }
     }
 
     /// Add an input stream of Z-sets to the catalog.
@@ -383,32 +422,7 @@ impl Catalog {
             }
         }
 
-        let stream = if let Some(runtime) = Runtime::runtime()
-            && let layout = runtime.layout()
-            && let Layout::Multihost { hosts, .. } = layout
-        {
-            // For multihost pipelines, we need to gather output data to the
-            // same node as the output connector(s) for that data.  This is a
-            // bit tricky.
-            //
-            // First, suppose we allowed output connectors to be placed on
-            // arbitrary hosts.  We'd need to make sure that the output
-            // connectors for a given handle are placed on the same host we
-            // gather the output to.  However, at this point in the code, we
-            // don't have access to the output connectors or their placements.
-            // (Also, connectors could get added later.)
-            //
-            // > One solution is to gather to a host chosen based on the hash of
-            // the name of the stream.  (This is not ideal since we're likely to
-            // have only a small number of hosts and output handles, meaning
-            // that the statistics could easily work out rather skewed.)
-            //
-            // For now, just gather to the first host.  It should work, at
-            // least.
-            stream.shard_workers(hosts.first().unwrap().workers.clone())
-        } else {
-            stream
-        };
+        let (stream, workers) = self.gather_output_to_host(&name, stream, false);
 
         // Create handle for the stream itself.
         let (delta_handle, enable_count, delta_gid) =
@@ -424,6 +438,7 @@ impl Catalog {
             enable_count,
             integrate_handle_is_indexed: false,
             integrate_handle: None,
+            workers,
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -475,7 +490,7 @@ impl Catalog {
         // negative weights, since datafusion cannot handle those.  Negative weights can arise from operators
         // like antijoin that can produce the same record with +1 and -1 weights in different workers.
         // To avoid this, we shard the stream, so that such records get canceled out.
-        let stream = stream.shard();
+        let (stream, workers) = self.gather_output_to_host(&name, stream, true);
 
         // Create handle for the stream itself.
         let (delta_handle, enable_count, delta_gid) =
@@ -503,6 +518,7 @@ impl Catalog {
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
             enable_count,
+            workers,
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -624,6 +640,7 @@ impl Catalog {
         let name = schema.name.clone();
 
         let stream = stream.try_sharded_version();
+        let (stream, workers) = self.gather_output_to_host(&name, stream, false);
 
         // Create handle for the stream itself.
         let delta = stream.map(|(_k, v)| v.clone()).set_persistent_id(
@@ -667,6 +684,7 @@ impl Catalog {
             enable_count,
             integrate_handle_is_indexed: true,
             integrate_handle,
+            workers,
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -731,6 +749,7 @@ impl Catalog {
             return None;
         }
 
+        let (stream, workers) = self.gather_output_to_host(&index_name, stream, false);
         let view_handles = self.output_handles(view_name)?;
 
         let (stream_handle, enable_count, stream_gid) =
@@ -750,6 +769,7 @@ impl Catalog {
             enable_count,
             integrate_handle_is_indexed: false,
             integrate_handle: None,
+            workers,
         };
 
         self.register_output_batch_handles(index_name, handles)
