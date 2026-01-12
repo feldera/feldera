@@ -1258,7 +1258,7 @@ impl Controller {
             &HistogramDiv::new(DBSP_STEP_LATENCY_MICROSECONDS.lock().unwrap().snapshot(), 1_000_000.0));
         metrics.histogram(
             "dbsp_operator_checkpoint_latency_seconds",
-            "Latency of individual operator checkpoint operations in seconds. (Because checkpoints run in parallel across workers, these will not add to `feldera_checkpoint_latency_seconds`.)",
+            "The time that individual operator checkpoint operations delayed the pipeline, in seconds. (Because checkpoints run in parallel across workers, these will add up to more than `feldera_checkpoint_delay_seconds`.)",
             labels,
             &HistogramDiv::new(DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS.snapshot(), 1_000_000.0),
         );

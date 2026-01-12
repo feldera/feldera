@@ -96,6 +96,9 @@ pub struct CoordinationActivate {
     /// Local output endpoint configuration.
     #[serde(default)]
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+
+    /// Global assignment of output streams to workers.
+    pub output_assignment: BTreeMap<String, usize>,
 }
 
 /// A step number.
