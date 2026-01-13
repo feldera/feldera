@@ -1012,12 +1012,6 @@ where
     }
 }
 
-/// State maintained by a `GroupFilter` for a cursor.
-enum GroupFilterCursor<V: ?Sized> {
-    Simple { filter: Filter<V> },
-    LastN { n: usize, filter: Filter<V> },
-}
-
 impl<V: DataTrait + ?Sized> GroupFilter<V> {
     fn new_cursor(&self) -> GroupFilterCursor<V> {
         match self {
@@ -1028,8 +1022,50 @@ impl<V: DataTrait + ?Sized> GroupFilter<V> {
                 n: *n,
                 filter: filter.clone(),
             },
+            Self::TopN(n, filter, val_factory) => GroupFilterCursor::TopN {
+                n: *n,
+                filter: filter.clone(),
+                min_val: val_factory.default_box(),
+                min_val_valid: false,
+            },
+            Self::BottomN(n, filter, val_factory) => GroupFilterCursor::BottomN {
+                n: *n,
+                filter: filter.clone(),
+                max_val: val_factory.default_box(),
+                max_val_valid: false,
+            },
         }
     }
+}
+
+/// State maintained by a `GroupFilter` for a cursor.
+enum GroupFilterCursor<V: ?Sized> {
+    Simple {
+        filter: Filter<V>,
+    },
+    LastN {
+        n: usize,
+        filter: Filter<V>,
+    },
+    TopN {
+        n: usize,
+        filter: Filter<V>,
+        /// The smallest of the top `n` values below the waterline.
+        min_val: Box<V>,
+        /// True if there are more than `n` values below the waterline.
+        /// If true, the cursor will skip values until reaching `min_val`.
+        min_val_valid: bool,
+    },
+    BottomN {
+        n: usize,
+        filter: Filter<V>,
+        /// The largest of the bottom `n` values below the waterline.
+        max_val: Box<V>,
+        /// True if there are more than `n` values below the waterline.
+        /// If true, the cursor will include values `<=min_val`. Otherwise,
+        /// it will include all values under the cursor.
+        max_val_valid: bool,
+    },
 }
 
 impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
@@ -1079,6 +1115,76 @@ impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
 
                 cursor.val_valid()
             }
+            Self::TopN {
+                n,
+                filter,
+                min_val,
+                min_val_valid,
+            } => {
+                trace_cursor.fast_forward_vals();
+
+                // Find n'th value below the waterline.
+                let mut above_waterline = 0;
+                let mut below_waterline = 0;
+                *min_val_valid = false;
+                while trace_cursor.val_valid() {
+                    if (filter.filter_func())(trace_cursor.val()) {
+                        above_waterline += 1;
+                    } else {
+                        below_waterline += 1;
+                        if below_waterline == *n {
+                            trace_cursor.val().clone_to(min_val);
+                            // There are at least `n` values below the waterline.
+                            // `on_step_val` will skip values until reaching `min_val`.
+                            *min_val_valid = true;
+                            break;
+                        }
+                    }
+
+                    trace_cursor.step_val_reverse();
+                }
+
+                if below_waterline + above_waterline > 0 {
+                    // Skip to the next value that belongs to the filtered cursor,
+                    // which is either the next value that satisfies the filter or `min_val`.
+                    if *min_val_valid {
+                        cursor
+                            .seek_val_with(&|val| (filter.filter_func())(val) || val >= &**min_val)
+                    }
+                    cursor.val_valid()
+                } else {
+                    false
+                }
+            }
+            Self::BottomN {
+                n,
+                filter,
+                max_val,
+                max_val_valid,
+            } => {
+                // Find n'th value below the waterline.
+                let mut above_waterline = 0;
+                let mut below_waterline = 0;
+                *max_val_valid = false;
+
+                while trace_cursor.val_valid() {
+                    if (filter.filter_func())(trace_cursor.val()) {
+                        above_waterline += 1;
+                    } else {
+                        below_waterline += 1;
+
+                        if below_waterline == *n {
+                            *max_val_valid = true;
+                            trace_cursor.val().clone_to(max_val);
+                            break;
+                        }
+                    }
+
+                    trace_cursor.step_val();
+                }
+
+                below_waterline + above_waterline > 0
+            }
         }
     }
 
@@ -1100,6 +1206,40 @@ impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
                 }
             }
             Self::LastN { .. } => {}
+            Self::TopN {
+                filter,
+                min_val,
+                min_val_valid,
+                ..
+            } => {
+                while let Some(val) = cursor.get_val() {
+                    if (filter.filter_func())(val) || !*min_val_valid {
+                        return;
+                    }
+                    if *val >= **min_val {
+                        *min_val_valid = false;
+                        return;
+                    }
+                    cursor.step_val();
+                }
+            }
+            Self::BottomN {
+                filter,
+                max_val,
+                max_val_valid,
+                ..
+            } => {
+                while let Some(val) = cursor.get_val() {
+                    if (filter.filter_func())(val) || !*max_val_valid {
+                        return;
+                    }
+                    if *val <= **max_val {
+                        return;
+                    }
+
+                    cursor.step_val();
+                }
+            }
         }
     }
 }

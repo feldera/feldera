@@ -202,6 +202,19 @@ pub fn filter<K: DataTrait + ?Sized, V: DataTrait + ?Sized, T, R: WeightTrait + 
 
                 return result;
             }
+            GroupFilter::TopN(n, filter, _val_factory) => {
+                tuples.retain(|((_k, v, _t), _r)| (filter.filter_func())(v.as_ref()));
+                // take the last n elements of tuples only
+                if tuples.len() > *n {
+                    tuples.drain(..tuples.len() - *n);
+                }
+                return tuples;
+            }
+            GroupFilter::BottomN(n, filter, _vals_factory) => {
+                tuples.retain(|((_k, v, _t), _r)| (filter.filter_func())(v.as_ref()));
+                tuples.truncate(*n);
+                return tuples;
+            }
         }
     }
 
