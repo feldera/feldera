@@ -6,12 +6,26 @@ use vergen_gitcl::*;
 
 // These are touched during the build, so it would re-build every time if we
 // don't exclude them from change detection:
-const EXCLUDE_LIST: [&str; 5] = [
+const EXCLUDE_LIST: [&str; 10] = [
     "../../js-packages/web-console/node_modules",
     "../../js-packages/web-console/build",
     "../../js-packages/web-console/.svelte-kit",
+    "../../js-packages/profiler-app/node_modules",
+    "../../js-packages/profiler-app/dist",
+    "../../js-packages/profiler-layout/node_modules",
+    "../../js-packages/profiler-layout/dist",
+    "../../js-packages/profiler-layout/.svelte-kit",
     "../../js-packages/profiler-lib/node_modules",
     "../../js-packages/profiler-lib/dist",
+];
+
+// Directories to include in change detection and build tracking:
+const INCLUDE_LIST: [&str; 5] = [
+    "../../js-packages/web-console/",
+    "../../js-packages/profiler-app/",
+    "../../js-packages/profiler-layout/",
+    "../../js-packages/feldera-theme/",
+    "../../js-packages/profiler-lib/",
 ];
 
 /// The build script has two modes:
@@ -37,18 +51,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build()
             .expect("Could not use WEBCONSOLE_BUILD_DIR as a website location")
     } else {
-        ChangeDetection::exclude(|path: &Path| {
+        let mut change_detection = ChangeDetection::exclude(|path: &Path| {
             EXCLUDE_LIST
             .iter()
             .any(|exclude| path.to_str().unwrap().starts_with(exclude))
-            // Exclude web-console and profiler-lib dirs themselves because we mutate ignored dirs inside of them
-            || path.to_str().unwrap() == "../../js-packages/web-console/"
-            || path.to_str().unwrap() == "../../js-packages/profiler-lib/"
-        })
-        .path("../../js-packages/web-console/")
-        .path("../../js-packages/profiler-lib/")
-        .path("build.rs")
-        .generate();
+            // Exclude js-packages project directories themselves because we mutate ignored dirs inside of them
+            || INCLUDE_LIST
+            .iter()
+            .any(|include| path.to_str().unwrap() == *include)
+        });
+
+        for include in INCLUDE_LIST.iter() {
+            change_detection = change_detection.path(*include);
+        }
+
+        change_detection.path("build.rs").generate();
 
         let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
         let out_dir_parts = out_dir.iter().collect::<Vec<_>>();
