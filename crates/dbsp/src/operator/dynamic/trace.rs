@@ -1,7 +1,7 @@
 use crate::Runtime;
 use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
 use crate::circuit::metadata::{NUM_ALLOCATIONS_LABEL, NUM_INPUTS_LABEL};
-use crate::dynamic::{Weight, WeightTrait};
+use crate::dynamic::{Factory, Weight, WeightTrait};
 use crate::operator::require_persistent_id;
 use crate::trace::spine_async::WithSnapshot;
 use crate::trace::{BatchReaderFactories, Builder, GroupFilter, MergeCursor};
@@ -443,6 +443,27 @@ where
 
         bounds_stream.inspect(move |ts| {
             let filter = GroupFilter::LastN(n, retain_val_func(ts.as_ref()));
+            bounds.set_val_filter(filter);
+        });
+    }
+
+    #[track_caller]
+    pub fn dyn_integrate_trace_retain_values_top_n<TS>(
+        &self,
+        val_factory: &'static dyn Factory<B::Val>,
+        bounds_stream: &Stream<C, Box<TS>>,
+        retain_val_func: Box<dyn Fn(&TS) -> Filter<B::Val>>,
+        n: usize,
+    ) where
+        B: Batch<Time = ()>,
+        TS: DataTrait + ?Sized,
+        Box<TS>: Clone,
+    {
+        let bounds = self.trace_bounds();
+        bounds.set_unique_val_bound_name(bounds_stream.get_persistent_id().as_deref());
+
+        bounds_stream.inspect(move |ts| {
+            let filter = GroupFilter::TopN(n, retain_val_func(ts.as_ref()), val_factory);
             bounds.set_val_filter(filter);
         });
     }
@@ -1367,6 +1388,26 @@ mod test {
                 3,
             );
 
+            // Test `integrate_trace_retain_values_top_n(1)`.
+            let stream5 = stream.map_index(|(k, v)| (*k, *v)).shard();
+
+            let trace5 = stream5.integrate_trace();
+            stream5.integrate_trace_retain_values_top_n(
+                &watermark,
+                move |val, ts| *val >= ts.1.saturating_sub(val_lateness),
+                1,
+            );
+
+            // Test `integrate_trace_retain_values_top_n(3)`.
+            let stream6 = stream.map_index(|(k, v)| (*k, *v)).shard();
+
+            let trace6 = stream6.integrate_trace();
+            stream6.integrate_trace_retain_values_top_n(
+                &watermark,
+                move |val, ts| *val >= ts.1.saturating_sub(val_lateness),
+                1,
+            );
+
             // Validate outputs.
             trace.apply3(&trace1, &watermark, move |trace, trace1, ts| {
                 let expected = typed_batch::IndexedZSetReader::iter(trace.as_ref())
@@ -1401,6 +1442,7 @@ mod test {
             fn test_retain_values_last_n(
                 trace: &Spine<OrdIndexedZSet<i32, i32>>,
                 watermark: &TypedBox<(i32, i32), DynData>,
+                val_lateness: i32,
                 n: usize,
             ) -> BTreeSet<(i32, i32, ZWeight)> {
                 let mut all_tuples = BTreeMap::new();
@@ -1414,7 +1456,7 @@ mod test {
                 for (k, mut tuples) in all_tuples.into_iter() {
                     let index = tuples
                         .iter()
-                        .position(|(v, _w)| *v >= watermark.1.saturating_sub(1000))
+                        .position(|(v, _w)| *v >= watermark.1.saturating_sub(val_lateness))
                         .unwrap_or(tuples.len());
                     let first_index = index.saturating_sub(n);
                     tuples.drain(first_index..).for_each(|(v, w)| {
@@ -1424,7 +1466,32 @@ mod test {
                 expected
             }
 
-            trace.apply3(&trace3, &watermark, |trace, trace3, ts| {
+            fn test_retain_values_top_n(
+                trace: &Spine<OrdIndexedZSet<i32, i32>>,
+                watermark: &TypedBox<(i32, i32), DynData>,
+                val_lateness: i32,
+                n: usize,
+            ) -> BTreeSet<(i32, i32, ZWeight)> {
+                let mut all_tuples = BTreeMap::new();
+                typed_batch::IndexedZSetReader::iter(trace).for_each(|(k, v, w)| {
+                    all_tuples
+                        .entry(k)
+                        .or_insert_with(|| Vec::new())
+                        .push((v, w))
+                });
+
+                let mut expected = BTreeSet::new();
+                for (k, mut tuples) in all_tuples.into_iter() {
+                    tuples.retain(|(v, _w)| *v >= watermark.1.saturating_sub(val_lateness));
+                    let first_index = tuples.len().saturating_sub(n);
+                    tuples.drain(first_index..).for_each(|(v, w)| {
+                        let _ = expected.insert((k, v, w));
+                    });
+                }
+                expected
+            }
+
+            trace.apply3(&trace3, &watermark, move |trace, trace3, ts| {
                 let mut all_tuples = BTreeMap::new();
                 typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| {
                     all_tuples
@@ -1433,7 +1500,8 @@ mod test {
                         .push((v, w))
                 });
 
-                let expected = test_retain_values_last_n(trace.as_ref(), ts.as_ref(), 1);
+                let expected =
+                    test_retain_values_last_n(trace.as_ref(), ts.as_ref(), val_lateness, 1);
 
                 let actual =
                     typed_batch::IndexedZSetReader::iter(trace3.as_ref()).collect::<BTreeSet<_>>();
@@ -1446,7 +1514,7 @@ mod test {
                 );
             });
 
-            trace.apply3(&trace4, &watermark, |trace, trace4, ts| {
+            trace.apply3(&trace4, &watermark, move |trace, trace4, ts| {
                 let mut all_tuples = BTreeMap::new();
                 typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| {
                     all_tuples
@@ -1455,7 +1523,8 @@ mod test {
                         .push((v, w))
                 });
 
-                let expected = test_retain_values_last_n(trace.as_ref(), ts.as_ref(), 3);
+                let expected =
+                    test_retain_values_last_n(trace.as_ref(), ts.as_ref(), val_lateness, 3);
 
                 let actual =
                     typed_batch::IndexedZSetReader::iter(trace4.as_ref()).collect::<BTreeSet<_>>();
@@ -1468,12 +1537,57 @@ mod test {
                 );
             });
 
+            trace.apply3(&trace5, &watermark, move |trace, trace5, ts| {
+                let mut all_tuples = BTreeMap::new();
+                typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| {
+                    all_tuples
+                        .entry(k)
+                        .or_insert_with(|| Vec::new())
+                        .push((v, w))
+                });
+
+                let expected =
+                    test_retain_values_top_n(trace.as_ref(), ts.as_ref(), val_lateness, 1);
+
+                let actual =
+                    typed_batch::IndexedZSetReader::iter(trace5.as_ref()).collect::<BTreeSet<_>>();
+
+                let missing = expected.difference(&actual).collect::<Vec<_>>();
+                assert!(
+                    missing.is_empty(),
+                    "missing tuples in trace5: {:?}",
+                    missing
+                );
+            });
+
+            trace.apply3(&trace6, &watermark, move |trace, trace6, ts| {
+                let mut all_tuples = BTreeMap::new();
+                typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| {
+                    all_tuples
+                        .entry(k)
+                        .or_insert_with(|| Vec::new())
+                        .push((v, w))
+                });
+
+                let expected =
+                    test_retain_values_top_n(trace.as_ref(), ts.as_ref(), val_lateness, 3);
+
+                let actual =
+                    typed_batch::IndexedZSetReader::iter(trace6.as_ref()).collect::<BTreeSet<_>>();
+
+                let missing = expected.difference(&actual).collect::<Vec<_>>();
+                assert!(
+                    missing.is_empty(),
+                    "missing tuples in trace6: {:?}",
+                    missing
+                );
+            });
+
             Ok(handle)
         })
         .unwrap();
 
-        for batch in batches.into_iter() {
-            //println!("step {i}");
+        for batch in batches {
             let mut tuples = batch
                 .into_iter()
                 .map(|((k, v), r)| Tup2(k, Tup2(v, r)))

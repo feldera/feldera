@@ -1647,7 +1647,7 @@ pub mod test {
             move |circuit| {
                 let (input_stream, input_handle) =
                     circuit.add_input_indexed_zset::<u64, Tup1<u64>>();
-                // Postprocessing ofren used in SQL: wrap result in Option.
+                // Postprocessing often used in SQL: wrap result in Option.
                 let output_handle = input_stream
                     .aggregate(Postprocess::new(Min, |x: &Tup1<u64>| Tup1(Some(x.0))))
                     .accumulate_integrate()
@@ -1999,5 +1999,138 @@ pub mod test {
         }
 
         dbsp.kill().unwrap()
+    }
+
+    /// Test that the `accumulate_integrate_trace_retain_values_top_n` with
+    /// Max aggregate and top-k transformers.
+    mod retain_values_test {
+        use proptest::{collection, prelude::*};
+
+        use crate::{Runtime, ZWeight, circuit::CircuitConfig, operator::Max, utils::Tup2};
+
+        const LATENESS: u32 = 10;
+
+        fn max_retain_values_test(inputs: Vec<Vec<Tup2<u32, Tup2<Tup2<u32, u32>, ZWeight>>>>) {
+            let (mut dbsp, input_handle) = Runtime::init_circuit(
+                CircuitConfig::from(2).with_splitter_chunk_size_records(2),
+                |circuit| {
+                    let (input, input_handle) =
+                        circuit.add_input_indexed_zset::<u32, Tup2<u32, u32>>();
+
+                    let waterline = input.waterline(
+                        || u32::MIN,
+                        |_k, Tup2(_val, ts)| {
+                            // println!("{} ts: {:?}", Runtime::worker_index(), *ts);
+                            (*ts).saturating_sub(LATENESS)
+                        },
+                        |ts1, ts2| {
+                            // println!("{} max({:?}, {:?})", Runtime::worker_index(), ts1, ts2);
+                            std::cmp::max(*ts1, *ts2)
+                        },
+                    );
+
+                    // Max aggregate.
+
+                    let max = input.aggregate(Max);
+                    input.accumulate_integrate_trace_retain_values_top_n(
+                        &waterline,
+                        |val, ts| val.1 >= ts.saturating_sub(LATENESS),
+                        1,
+                    );
+
+                    let input2 = input.map_index(|(k, v)| (*k, *v));
+                    let expected_max = input2.aggregate(Max);
+
+                    max.apply2(&expected_max, |val, expected_val| {
+                        //println!("val: {:?}, expected_val: {:?}", val, expected_val);
+                        assert_eq!(val, expected_val);
+                    });
+
+                    // Top-3 transformer.
+
+                    let input3 = input.map_index(|(k, v)| (*k, *v));
+                    let top3 = input3.topk_desc(3);
+
+                    input3.accumulate_integrate_trace_retain_values_top_n(
+                        &waterline,
+                        |val, ts| val.1 >= ts.saturating_sub(LATENESS),
+                        3,
+                    );
+
+                    let expected_top3 = input.map_index(|(k, v)| (*k, *v)).topk_desc(3);
+
+                    top3.apply2(&expected_top3, |val, expected_val| {
+                        //println!("val: {:?}, expected_val: {:?}", val, expected_val);
+                        assert_eq!(val, expected_val);
+                    });
+
+                    // Bottom-3 transformer.
+
+                    let input4 = input.map_index(|(k, v)| (*k, *v));
+                    let bottom3 = input4.topk_asc(3);
+
+                    input4.accumulate_integrate_trace_retain_values_bottom_n(
+                        &waterline,
+                        |val, ts| val.1 >= ts.saturating_sub(LATENESS),
+                        3,
+                    );
+
+                    let expected_bottom3 = input.map_index(|(k, v)| (*k, *v)).topk_asc(3);
+
+                    bottom3.apply2(&expected_bottom3, |val, expected_val| {
+                        //println!("val: {:?}, expected_val: {:?}", val, expected_val);
+                        assert_eq!(val, expected_val);
+                    });
+
+                    Ok(input_handle)
+                },
+            )
+            .unwrap();
+
+            for i in 0..inputs.len() {
+                // println!("input: {:?}", inputs[i]);
+                input_handle.append(&mut inputs[i].clone());
+                dbsp.transaction().unwrap();
+                //assert_eq!(max_handle.concat().consolidate(), todo!());
+            }
+
+            dbsp.kill().unwrap()
+        }
+
+        /// Generate inputs to the test circuit for `steps` steps.
+        fn input(
+            step: usize,
+            max_key: u32,
+            max_tuples: usize,
+        ) -> impl Strategy<Value = Vec<Tup2<u32, Tup2<Tup2<u32, u32>, ZWeight>>>> {
+            collection::vec(
+                (0..max_key, 0..LATENESS, 0..LATENESS, 0..2i64),
+                0..max_tuples,
+            )
+            .prop_map(move |v| {
+                v.into_iter()
+                    .map(|(k, v, ts, w)| Tup2(k, Tup2(Tup2(step as u32 + v, step as u32 + ts), w)))
+                    .collect()
+            })
+        }
+
+        /// Generate inputs to the test circuit for `steps` steps.
+        fn inputs(
+            steps: usize,
+            max_key: u32,
+            max_tuples: usize,
+        ) -> impl Strategy<Value = Vec<Vec<Tup2<u32, Tup2<Tup2<u32, u32>, ZWeight>>>>> {
+            (0..steps)
+                .map(|step| input(step, max_key, max_tuples))
+                .collect::<Vec<_>>()
+                .prop_map(|v| v)
+        }
+
+        proptest! {
+            #[test]
+            fn proptest_max_retain_values_test(inputs in inputs(100, 100, 20)) {
+                max_retain_values_test(inputs);
+            }
+        }
     }
 }
