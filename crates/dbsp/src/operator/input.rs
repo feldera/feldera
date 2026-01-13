@@ -70,11 +70,7 @@ pub struct ZSetStagedBuffers {
 
 impl StagedBuffers for ZSetStagedBuffers {
     fn flush(&mut self) {
-        for (vals, worker) in self
-            .vals
-            .drain(..)
-            .zip_eq(0..self.input_handle.0.mailbox.len())
-        {
+        for (vals, worker) in self.vals.drain(..).zip_eq(self.input_handle.workers()) {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });

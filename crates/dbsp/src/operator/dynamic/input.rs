@@ -1085,14 +1085,13 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
         // rest will receive `quotient`.
         let quotient = vals.len() / num_partitions;
         let remainder = vals.len() % num_partitions;
-        let worker_ofs = self.input_handle.workers().start;
         for i in 0..num_partitions {
             let mut partition_size = quotient;
             if i < remainder {
                 partition_size += 1;
             }
 
-            let worker = (*next_worker + i) % num_partitions + worker_ofs;
+            let worker = (*next_worker + i) % num_partitions;
             let len = vals.len();
             if partition_size == len && partitions[worker].is_empty() {
                 swap(&mut partitions[worker], vals);
