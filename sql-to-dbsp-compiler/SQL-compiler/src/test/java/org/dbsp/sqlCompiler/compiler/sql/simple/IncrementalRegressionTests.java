@@ -277,7 +277,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 create table r(
                     id BIGINT NOT NULL,
                     ts timestamp NOT NULL LATENESS INTERVAL 0 days
-                );
+                ) WITH ('append_only' = 'true');
 
                 create table l (
                     id BIGINT NOT NULL,

@@ -155,8 +155,8 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
                     stream -> new MonotoneDot(compiler, stream, details, monotonicity.info));
 
         InsertLimiters limiters = new InsertLimiters(
-                this.compiler, expanded, monotonicity.info, expander.expansion,
-                keyPropagation.joins::get, reachableFromError);
+                this.compiler, expanded, monotonicity.info, appendOnly.appendOnly::contains,
+                expander.expansion, keyPropagation.joins::get, reachableFromError);
 
         // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
         DBSPCircuit result = limiters.apply(circuit);

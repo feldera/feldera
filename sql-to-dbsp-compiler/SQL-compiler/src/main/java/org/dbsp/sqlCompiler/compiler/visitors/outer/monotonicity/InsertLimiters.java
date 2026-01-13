@@ -108,6 +108,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.NullableFunction;
+import org.dbsp.util.NullablePredicate;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -159,10 +160,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
     final List<OutputPort> errorStreams;
     /** These operators use the error view as a source */
     final Set<DBSPOperator> reachableFromError;
+    /** For each output port whether it represents an append-only stream. */
+    final NullablePredicate<OutputPort> appendOnly;
 
     public InsertLimiters(DBSPCompiler compiler,
                           DBSPCircuit expandedCircuit,
                           Monotonicity.MonotonicityInformation expansionMonotoneValues,
+                          NullablePredicate<OutputPort> appendOnly,
                           Map<DBSPSimpleOperator, OperatorExpansion> expandedInto,
                           NullableFunction<DBSPBinaryOperator, KeyPropagation.JoinDescription> joinInformation,
                           Set<DBSPOperator> reachableFromError) {
@@ -174,6 +178,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.bound = new HashMap<>();
         this.errorStreams = new ArrayList<>();
         this.reachableFromError = reachableFromError;
+        this.appendOnly = appendOnly;
     }
 
     void markBound(OutputPort operator, OutputPort bound) {
@@ -1050,9 +1055,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     join.getRelNode(), this.mapped(join.left()), leftDataProjection, this.createDelay(minOperator));
             this.addOperator(retainLeft);
 
-            DBSPSimpleOperator retainRight = DBSPIntegrateTraceRetainValuesLastNOperator.create(
-                    join.getRelNode(), this.mapped(join.right()), rightDataProjection, this.createDelay(minOperator), 1);
-            this.addOperator(retainRight);
+            Boolean rightIsAppendOnly = this.appendOnly.test(join.right());
+            if (rightIsAppendOnly != null && rightIsAppendOnly) {
+                DBSPSimpleOperator retainRight = DBSPIntegrateTraceRetainValuesLastNOperator.create(
+                        join.getRelNode(), this.mapped(join.right()), rightDataProjection, this.createDelay(minOperator), 1);
+                this.addOperator(retainRight);
+            }
         }
 
         super.postorder(join);
