@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
-    "build": "svelte-check --threshold error && vite build",
+    "build": "vite build",
     "preview": "vite preview --host",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "check": "svelte-check --threshold error --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "format": "biome check --write ."
   },
   "dependencies": {

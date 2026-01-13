@@ -58,6 +58,14 @@ Check that there are no type or syntax errors:
 bun run check
 ```
 
+### Build issues
+
+If you experience unexpected build issues, run `bun run clean` from the repository root and make sure you have the supported Node.js (v20) and Bun.js (1.3.3) versions installed:
+```bash
+bun run clean
+node --version && bun --version
+```
+
 ## OpenAPI bindings
 
 The bindings for OpenAPI (under $lib/services/manager) are generated using

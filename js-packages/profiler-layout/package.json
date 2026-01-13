@@ -4,12 +4,12 @@
   "scripts": {
     "dev": "vite dev",
     "prebuild": "cd ../profiler-lib && bun run build",
-    "build": "svelte-kit sync && svelte-check --threshold error && vite build && npm run prepack",
+    "build": "svelte-kit sync && vite build && npm run prepack",
     "preview": "vite preview",
-    "prepare": "svelte-kit sync || echo ''",
+    "prepare": "bun run prepack",
     "prepack": "svelte-kit sync && svelte-package && publint",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "check": "svelte-kit sync && svelte-check --threshold error",
+    "check:watch": "svelte-kit sync && svelte-check --threshold error --watch",
     "format": "biome check --write ."
   },
   "files": ["dist", "!dist/**/*.test.*", "!dist/**/*.spec.*"],

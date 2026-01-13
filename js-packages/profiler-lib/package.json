@@ -14,7 +14,8 @@
     "build": "tsc",
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
-    "prepare": "npm run clean && npm run build"
+    "prepare": "bun run clean && bun run build",
+    "check": "tsc --noEmit"
   },
   "keywords": ["feldera", "profiler", "visualization", "dbsp"],
   "author": "",

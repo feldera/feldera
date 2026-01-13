@@ -22,6 +22,8 @@ RUN apt-get update --fix-missing && \
    gnupg2 \
    sudo \
    build-essential \
+   # Go is required to build aws-lc-fips-sys when rustls is built with FIPS
+   golang-go \
    openssl \
    cmake \
    pkg-config \
