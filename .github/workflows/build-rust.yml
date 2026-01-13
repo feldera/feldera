@@ -69,10 +69,6 @@ jobs:
       - name: Build Rust binaries
         run: |
           FEATURES="${{ env.CARGO_FEATURES_BASE }}"
-          case "${{ matrix.target }}" in
-            *musl*) ;; # OpenSSL’s FIPS mode is implemented as a dynamically loaded provider (fips.so)
-            *) FEATURES="$FEATURES,fips" ;;
-          esac
           cargo build ${{ env.CARGO_FLAGS }} --features "$FEATURES" --target=${{ matrix.target }}
 
       - name: Print sccache stats
@@ -84,10 +80,6 @@ jobs:
         id: collect
         run: |
           FEATURES="${{ env.CARGO_FEATURES_BASE }}"
-          case "${{ matrix.target }}" in
-            *musl*) ;; # OpenSSL’s FIPS mode is implemented as a dynamically loaded provider (fips.so)
-            *) FEATURES="$FEATURES,fips" ;;
-          esac
           # Run again with --message-format=json to list out executables
           # (No real recompile since nothing has changed).
           # Then transform newlines to spaces for the artifact step.

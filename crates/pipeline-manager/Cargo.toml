@@ -23,10 +23,10 @@ feldera-types = { workspace = true }
 feldera-cloud1-client = { workspace = true }
 feldera-ir = { workspace = true }
 
-# Cryptography provider
+# Cryptography provider (FIPS enabled by default)
 # Make sure this is the same rustls version used by other crates in the dependency tree.
 # See the `ensure_default_crypto_provider` function at the root of this crate.
-rustls = { workspace = true }
+rustls = { workspace = true, features = ["fips"] }
 
 # Logging
 tracing = { workspace = true }
@@ -117,7 +117,6 @@ tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_mal
 default = ["postgresql_embedded"]
 feldera-enterprise = []
 runtime-version = []
-fips = ["rustls/fips"]
 
 [build-dependencies]
 change-detection = { workspace = true }

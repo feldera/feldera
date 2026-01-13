@@ -25,7 +25,6 @@ default = [
     "with-redis",
     "with-nats",
 ]
-fips = ["rustls/fips"]
 with-kafka = ["rdkafka"]
 with-deltalake = ["deltalake", "deltalake-catalog-unity"]
 with-iceberg = ["feldera-iceberg"]
@@ -110,7 +109,7 @@ utoipa = { workspace = true }
 chrono = { workspace = true, features = ["rkyv-64", "serde"] }
 colored = { workspace = true }
 uuid = { workspace = true, features = ["v4", "std"] }
-rustls = { workspace = true }
+rustls = { workspace = true, features = ["fips"] }
 rkyv = { workspace = true, features = ["std", "size_64"] }
 csv-core = { workspace = true }
 rand = { workspace = true, features = ["small_rng"] }
