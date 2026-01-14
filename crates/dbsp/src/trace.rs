@@ -118,7 +118,7 @@ impl<T> DBData for T where
         + Debug
         + ArchivedDBData
         + IsNone<Inner: ArchivedDBData>
-        + 'static,
+        + 'static
 {
 }
 

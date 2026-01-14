@@ -21,6 +21,7 @@ prettyplease = "0.2.29"
 
 [dev-dependencies]
 derive_more = { version = "1.0", features = ["not"] }
+proptest = { workspace = true }
 rkyv = { workspace = true, features = ["std", "size_64", "validation"] }
 serde = { workspace = true, features = ["derive"] }
 size-of = { workspace = true }

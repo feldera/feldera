@@ -43,15 +43,71 @@ feldera_macros::declare_tuple! {
 
 type OptString = Option<String>;
 type Tup65OptString = Tup65<
-    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
-    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
-    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
-    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
-    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
-    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
-    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
-    OptString, OptString, OptString, OptString, OptString, OptString, OptString, OptString,
-    OptString
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
+    OptString,
 >;
 
 // Map bits to fields in MSB->LSB order so row indices remain lexicographically sorted.
@@ -61,11 +117,7 @@ fn bit_set(bits: u128, idx: usize) -> bool {
 }
 
 fn opt_str(bit: bool) -> Option<String> {
-    if bit {
-        Some("abc".to_string())
-    } else {
-        None
-    }
+    if bit { Some("abc".to_string()) } else { None }
 }
 
 fn tup65_from_bits(bits: u128) -> Tup65OptString {
@@ -1039,13 +1091,17 @@ fn test_tuple() {
 fn test_tup65_option_string() {
     init_test_logger();
     for_each_compression_type(Parameters::default(), |parameters| {
-        test_one_column(1_000usize, |row| {
-            let bits = row as u128 * 2 + 1;
-            let before = tup65_from_bits(bits - 1);
-            let key = tup65_from_bits(bits);
-            let after = tup65_from_bits(bits + 1);
-            (before, key, after, ())
-        }, parameters);
+        test_one_column(
+            1_000usize,
+            |row| {
+                let bits = row as u128 * 2 + 1;
+                let before = tup65_from_bits(bits - 1);
+                let key = tup65_from_bits(bits);
+                let after = tup65_from_bits(bits + 1);
+                (before, key, after, ())
+            },
+            parameters,
+        );
     });
 }
 

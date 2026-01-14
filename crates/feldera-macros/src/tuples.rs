@@ -1,3 +1,13 @@
+//! Tuple code generation for Feldera storage formats.
+//!
+//! We support three tuple layouts:
+//! - Legacy/default rkyv layout used in storage v3.
+//! - Storage v4 dense layout (bitmap + inner values).
+//! - Storage v4 sparse layout (bitmap + offsets to present fields).
+//!
+//! For small tuples we keep the legacy layout. Larger tuples use the v4
+//! optimized dense/sparse format chosen at serialize time.
+
 use proc_macro2::{Literal, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{punctuated::Punctuated, Ident, Index, Token};
@@ -24,7 +34,13 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         .map(|(idx, _e)| Index::from(idx))
         .collect::<Vec<_>>();
     let num_elements = elements.len();
-    let use_legacy = num_elements < 8;
+    // Use the default rkyv format for Tup's that are small.
+    //
+    // The v4 format adds some overhead (to distinguish sparse/dense plus bitmaps)
+    // which get amortized with larger tuples. For smaller tuples it seems often
+    // better to just use the regular format.
+    // (note that changing this is requires a new storage format version)
+    let use_legacy = num_elements <= 8;
     let bitmap_bytes = num_elements.div_ceil(8);
     let field_ptr_name = format_ident!("{}FieldPtr", name);
     let bitmap_ty = quote!(::dbsp::utils::tuple::TupleBitmap<#bitmap_bytes>);
@@ -561,7 +577,8 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
                 #(#choose_format_fields)*
 
                 let none_bits = bitmap.count_none(Self::NUM_ELEMENTS);
-                if none_bits * 3 > Self::NUM_ELEMENTS {
+                // Choose sparse format if 40% is None
+                if none_bits * 10 >= Self::NUM_ELEMENTS * 4 {
                     (bitmap, #format_ty::Sparse)
                 } else {
                     (bitmap, #format_ty::Dense)
@@ -1039,20 +1056,21 @@ mod tests {
     #[test]
     /// A simple test to verify the code of Tup<> types, for manual invocation run this:
     ///
-    /// `cargo test -p feldera-macros -- --nocapture`
-    fn dump_tup1_expansion() {
-        let tuple: TupleDef = syn::parse2(quote!(Tup1<T0>)).expect("Failed to parse TupleDef");
-        let expanded = declare_tuple_impl(tuple);
-        let parsed_file: syn::File = syn::parse2(expanded).expect("Failed to parse output");
-        let formatted = prettyplease::unparse(&parsed_file);
-        println!("{formatted}");
-        assert!(formatted.contains("pub struct Tup1"));
-
+    /// `cargo test -p feldera-macros -- dump_tup_expansions --nocapture`
+    fn dump_tup_expansions() {
         let tuple: TupleDef = syn::parse2(quote!(Tup2<T0, T1>)).expect("Failed to parse TupleDef");
         let expanded = declare_tuple_impl(tuple);
         let parsed_file: syn::File = syn::parse2(expanded).expect("Failed to parse output");
         let formatted = prettyplease::unparse(&parsed_file);
         println!("{formatted}");
         assert!(formatted.contains("pub struct Tup2"));
+
+        let tuple: TupleDef = syn::parse2(quote!(Tup8<T0, T1, T2, T3, T4, T5, T6, T7>))
+            .expect("Failed to parse TupleDef");
+        let expanded = declare_tuple_impl(tuple);
+        let parsed_file: syn::File = syn::parse2(expanded).expect("Failed to parse output");
+        let formatted = prettyplease::unparse(&parsed_file);
+        println!("{formatted}");
+        assert!(formatted.contains("pub struct Tup8"));
     }
 }

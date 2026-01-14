@@ -72,6 +72,18 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/feldera_sqllib-*
 
+      - name: feldera-macros
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: |
+          ./build/feldera_macros-*
+          ./build/tuple_formats-*
+          ./build/tuple_proptest-*
+
+      - name: storage-test-compat
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: ./build/storage_test_compat-*
+        working-directory: crates/storage-test-compat
+
       - name: feldera-ir
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/feldera_ir-*

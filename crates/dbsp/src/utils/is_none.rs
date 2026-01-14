@@ -149,9 +149,13 @@ impl<K, V> IsNone for BTreeMap<K, V> {
         false
     }
 
-    fn unwrap_or_self(&self) -> &Self::Inner { self }
+    fn unwrap_or_self(&self) -> &Self::Inner {
+        self
+    }
 
-    fn from_inner(inner: Self::Inner) -> Self { inner }
+    fn from_inner(inner: Self::Inner) -> Self {
+        inner
+    }
 }
 
 #[cfg(test)]
