@@ -770,4 +770,94 @@ mod tests {
             ])
         );
     }
+
+    #[test]
+    fn real_world1() {
+        // Each of v1..v5 is joined with x and y.
+        // v4 and x are heavily skewed.
+
+        let mut maxsat = MaxSat::new();
+        let v1 = maxsat.add_variable(
+            "v1",
+            &BTreeMap::from([
+                (PartitioningPolicy::Shard, Cost(0)),
+                (PartitioningPolicy::Broadcast, Cost(0)),
+                (PartitioningPolicy::Balance, Cost(0)),
+            ]),
+        );
+        let v2 = maxsat.add_variable(
+            "v2",
+            &BTreeMap::from([
+                (PartitioningPolicy::Shard, Cost(0)),
+                (PartitioningPolicy::Broadcast, Cost(0)),
+                (PartitioningPolicy::Balance, Cost(0)),
+            ]),
+        );
+        let v3 = maxsat.add_variable(
+            "v3",
+            &BTreeMap::from([
+                (PartitioningPolicy::Shard, Cost(0)),
+                (PartitioningPolicy::Broadcast, Cost(0)),
+                (PartitioningPolicy::Balance, Cost(0)),
+            ]),
+        );
+        let v4 = maxsat.add_variable(
+            "v4",
+            &BTreeMap::from([
+                (PartitioningPolicy::Shard, Cost(100_000)),
+                (PartitioningPolicy::Broadcast, Cost(100_000)),
+                (PartitioningPolicy::Balance, Cost(13_000)),
+            ]),
+        );
+        let v5 = maxsat.add_variable(
+            "v5",
+            &BTreeMap::from([
+                (PartitioningPolicy::Shard, Cost(0)),
+                (PartitioningPolicy::Broadcast, Cost(0)),
+                (PartitioningPolicy::Balance, Cost(0)),
+            ]),
+        );
+
+        let x = maxsat.add_variable(
+            "x",
+            &BTreeMap::from([
+                (PartitioningPolicy::Shard, Cost(0)),
+                (PartitioningPolicy::Broadcast, Cost(0)),
+                (PartitioningPolicy::Balance, Cost(0)),
+            ]),
+        );
+        let y = maxsat.add_variable(
+            "y",
+            &BTreeMap::from([
+                (PartitioningPolicy::Shard, Cost(187_000)),
+                (PartitioningPolicy::Broadcast, Cost(187_000)),
+                (PartitioningPolicy::Balance, Cost(23_000)),
+            ]),
+        );
+
+        JoinConstraint::create_join_constraint(&mut maxsat, v1, x, false);
+        JoinConstraint::create_join_constraint(&mut maxsat, v1, y, false);
+        JoinConstraint::create_join_constraint(&mut maxsat, v2, x, false);
+        JoinConstraint::create_join_constraint(&mut maxsat, v2, y, false);
+        JoinConstraint::create_join_constraint(&mut maxsat, v3, x, false);
+        JoinConstraint::create_join_constraint(&mut maxsat, v3, y, false);
+        JoinConstraint::create_join_constraint(&mut maxsat, v4, x, false);
+        JoinConstraint::create_join_constraint(&mut maxsat, v4, y, false);
+        JoinConstraint::create_join_constraint(&mut maxsat, v5, x, false);
+        JoinConstraint::create_join_constraint(&mut maxsat, v5, y, false);
+
+        let solution = maxsat.solve().unwrap();
+        assert_eq!(
+            solution,
+            BTreeMap::from([
+                (v1, PartitioningPolicy::Broadcast.into()),
+                (v2, PartitioningPolicy::Broadcast.into()),
+                (v3, PartitioningPolicy::Broadcast.into()),
+                (v4, PartitioningPolicy::Broadcast.into()),
+                (v5, PartitioningPolicy::Broadcast.into()),
+                (x, PartitioningPolicy::Balance.into()),
+                (y, PartitioningPolicy::Balance.into()),
+            ])
+        );
+    }
 }
