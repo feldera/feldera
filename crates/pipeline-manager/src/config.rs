@@ -249,7 +249,9 @@ pub struct CommonConfig {
     #[arg(long, default_value_t = false)]
     pub enable_https: bool,
 
-    /// Path to the TLS x509 certificate PEM file (e.g., `/path/to/tls.crt`).
+    /// Path to the TLS x509 certificate PEM file (e.g., `/path/to/tls.crt`)
+    /// that the pipeline manager should use.  The pipeline manager will connect
+    /// to servers whose keys are signed by CAs along this chain.
     ///
     /// If the certificate is not self-signed, this PEM file should contain the complete bundle of
     /// the entire chain up until the root certificate authority (i.e., it should contain multiple
@@ -259,13 +261,41 @@ pub struct CommonConfig {
     pub https_tls_cert_path: Option<String>,
 
     /// Path to the TLS key PEM file corresponding to the x509 certificate (e.g.,
-    /// `/path/to/tls.key`).
+    /// `/path/to/tls.key`) that the pipeline manager should use.
     ///
     /// Even if the certificate is not self-signed and the entire chain is provided in
     /// `https_tls_cert_path`, this PEM file should only contain the single private key of the leaf
     /// certificate.
     #[arg(long)]
     pub https_tls_key_path: Option<String>,
+
+    /// Path to an additional TLS x509 certificate PEM file (e.g.,
+    /// `/path/to/tls.crt`).  The pipeline will connect to servers whose keys
+    /// are signed by CAs along this chain.
+    ///
+    /// The pipeline manager supports two separate CAs:
+    ///
+    /// * `--https-tls-cert-path` is the CA that signs the wildcard certificate
+    ///   that the pipeline manager itself, the compiler, and the runner use in
+    ///   common.  This could be a private CA or part of the public web's PKI.
+    ///   In deployments that lack a private CA, pipeline deployments also use
+    ///   the same wildcard certificate.
+    ///
+    /// * `--private-ca-cert-path` is, optionally, a private CA that is not part
+    ///   of the public web PKI and distinct from the former CA.  When it is
+    ///   present, it signs the certificates for pipeline deployments.
+    ///   Multihost pipeline deployments require a private CA to be provided
+    ///   because their DNS names are in a subdomain of the main Feldera domain,
+    ///   so the wildcard certificate that covers the pipeline manager (etc.)
+    ///   cannot cover the pipeline deployments since wildcards are for a single
+    ///   level only.
+    ///
+    /// If the certificate is not self-signed, this PEM file should contain the complete bundle of
+    /// the entire chain up until the root certificate authority (i.e., it should contain multiple
+    /// `-----BEGIN CERTIFICATE----- (...) -----END CERTIFICATE-----` sections, starting with the
+    /// leaf certificate and ending with the root certificate).
+    #[arg(long)]
+    pub private_ca_cert_path: Option<String>,
 }
 
 impl CommonConfig {
@@ -277,6 +307,9 @@ impl CommonConfig {
         }
         if let Some(https_tls_key_path) = self.https_tls_key_path {
             self.https_tls_key_path = Some(help_canonicalize_path(&https_tls_key_path)?);
+        }
+        if let Some(private_ca_cert_path) = self.private_ca_cert_path {
+            self.private_ca_cert_path = Some(help_canonicalize_path(&private_ca_cert_path)?);
         }
         Ok(self)
     }
@@ -339,6 +372,17 @@ impl CommonConfig {
         }
     }
 
+    fn ca_cert_paths(&self) -> Vec<&String> {
+        let mut paths = Vec::with_capacity(2);
+        if let Some(https_tls_cert_path) = &self.https_tls_cert_path {
+            paths.push(https_tls_cert_path);
+        }
+        if let Some(private_ca_cert_path) = &self.private_ca_cert_path {
+            paths.push(private_ca_cert_path);
+        }
+        paths
+    }
+
     /// Creates `awc` client.
     ///
     /// - If HTTPS is enabled for Feldera HTTP servers, the client will only have our root HTTPS
@@ -349,19 +393,21 @@ impl CommonConfig {
     /// - If HTTPS is not enabled for Feldera HTTP servers, it will return the default client which can
     ///   connect to both HTTP and HTTPS (for any valid system certificates).
     pub fn awc_client(&self) -> awc::Client {
-        if let Some((https_tls_cert_path, _)) = self.https_config() {
-            let cert_chain: Vec<_> = CertificateDer::pem_file_iter(https_tls_cert_path)
-                .expect("HTTPS TLS certificate should be read")
-                .flatten()
-                .collect();
-            let root_cert = cert_chain
-                .last()
-                .expect("At least one HTTPS TLS certificate should be present")
-                .clone();
+        if self.https_config().is_some() {
             let mut root_cert_store = RootCertStore::empty();
-            root_cert_store
-                .add(root_cert)
-                .expect("Root HTTPS TLS certificate should be parsed");
+            for path in self.ca_cert_paths() {
+                let cert_chain: Vec<_> = CertificateDer::pem_file_iter(path)
+                    .expect("HTTPS TLS certificate should be read")
+                    .flatten()
+                    .collect();
+                let root_cert = cert_chain
+                    .last()
+                    .expect("At least one HTTPS TLS certificate should be present")
+                    .clone();
+                root_cert_store
+                    .add(root_cert)
+                    .expect("Root HTTPS TLS certificate should be parsed");
+            }
             let config = ClientConfig::builder()
                 .with_root_certificates(root_cert_store)
                 .with_no_client_auth();
@@ -397,22 +443,23 @@ impl CommonConfig {
     /// - If HTTPS is not enabled for Feldera HTTP servers, it will return the default client which can
     ///   connect to both HTTP and HTTPS (for any valid system certificates).
     pub async fn reqwest_client(&self) -> reqwest::Client {
-        if let Some((https_tls_cert_path, _)) = self.https_config() {
-            let cert_pem = tokio::fs::read_to_string(https_tls_cert_path)
-                .await
-                .expect("HTTPS TLS certificate should be read");
-            let cert_chain = Certificate::from_pem_bundle(cert_pem.as_bytes())
-                .expect("HTTPS TLS certificate should be readable");
-            let root_cert = cert_chain
-                .last()
-                .expect("At least one HTTPS TLS certificate should be present")
-                .clone();
-            reqwest::ClientBuilder::new()
+        if self.https_config().is_some() {
+            let mut builder = reqwest::ClientBuilder::new()
                 .https_only(true) // Only connect to HTTPS
-                .add_root_certificate(root_cert) // Add our own TLS certificate which is used
-                .tls_built_in_root_certs(false) // Other TLS certificates are not used
-                .build()
-                .expect("HTTPS client should be built")
+                .tls_built_in_root_certs(false); // Other TLS certificates are not used
+            for path in self.ca_cert_paths() {
+                let cert_pem = tokio::fs::read_to_string(path)
+                    .await
+                    .expect("HTTPS TLS certificate should be read");
+                let cert_chain = Certificate::from_pem_bundle(cert_pem.as_bytes())
+                    .expect("HTTPS TLS certificate should be readable");
+                let root_cert = cert_chain
+                    .last()
+                    .expect("At least one HTTPS TLS certificate should be present")
+                    .clone();
+                builder = builder.add_root_certificate(root_cert);
+            }
+            builder.build().expect("HTTPS client should be built")
         } else {
             reqwest::Client::new()
         }
@@ -434,6 +481,7 @@ impl CommonConfig {
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
+            private_ca_cert_path: None,
         }
     }
 }
