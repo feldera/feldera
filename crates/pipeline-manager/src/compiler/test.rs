@@ -47,6 +47,7 @@ impl CompilerTest {
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
+            private_ca_cert_path: None,
         };
         let compiler_config = CompilerConfig {
             sql_compiler_path:
