@@ -31,7 +31,8 @@ use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::trace::cursor::{
-    DefaultPushCursor, FilteredMergeCursor, PushCursor, UnfilteredMergeCursor,
+    DefaultPushCursor, FilteredMergeCursor, FilteredMergeCursorWithSnapshot, PushCursor,
+    UnfilteredMergeCursor,
 };
 use crate::utils::IsNone;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
@@ -372,15 +373,51 @@ where
         key_filter: Option<Filter<Self::Key>>,
         value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
-        // println!("unfiltered merge_cursor");
         if key_filter.is_none() && value_filter.is_none() {
             Box::new(UnfilteredMergeCursor::new(self.cursor()))
-        } else {
-            // println!("merge_cursor");
+        } else if let Some(GroupFilter::Simple(filter)) = value_filter {
             Box::new(FilteredMergeCursor::new(
                 self.cursor(),
                 key_filter,
-                value_filter,
+                Some(filter),
+            ))
+        } else {
+            // Other forms of GroupFilters cannot be evaluated without a trace snapshot -- don't filter values
+            // in such cursors.
+            Box::new(FilteredMergeCursor::new(self.cursor(), key_filter, None))
+        }
+    }
+
+    /// Similar to `merge_cursor`, but invoked in the context of a spine merger.
+    /// Takes the current spine snapshot as an extra argument and uses it to evaluate `value_filter` precisely.
+    fn merge_cursor_with_snapshot<'a, S>(
+        &'a self,
+        key_filter: Option<Filter<Self::Key>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
+        snapshot: &'a Option<Arc<S>>,
+    ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + 'a>
+    where
+        S: BatchReader<Key = Self::Key, Val = Self::Val, Time = Self::Time, R = Self::R>,
+    {
+        let Some(snapshot) = snapshot else {
+            return self.merge_cursor(key_filter, value_filter);
+        };
+        if key_filter.is_none() && value_filter.is_none() {
+            Box::new(UnfilteredMergeCursor::new(self.cursor()))
+        } else if value_filter.is_none() {
+            Box::new(FilteredMergeCursor::new(self.cursor(), key_filter, None))
+        } else if let Some(GroupFilter::Simple(filter)) = value_filter {
+            Box::new(FilteredMergeCursor::new(
+                self.cursor(),
+                key_filter,
+                Some(filter),
+            ))
+        } else {
+            Box::new(FilteredMergeCursorWithSnapshot::new(
+                self.cursor(),
+                key_filter,
+                value_filter.unwrap(),
+                snapshot,
             ))
         }
     }

@@ -185,6 +185,8 @@ where
     B: Batch,
 {
     #[size_of(skip)]
+    factories: B::Factories,
+    #[size_of(skip)]
     key_filter: Option<Filter<B::Key>>,
     #[size_of(skip)]
     value_filter: Option<GroupFilter<B::Val>>,
@@ -201,8 +203,9 @@ impl<B> SharedState<B>
 where
     B: Batch,
 {
-    pub fn new() -> Self {
+    pub fn new(factories: &B::Factories) -> Self {
         Self {
+            factories: factories.clone(),
             key_filter: None,
             value_filter: None,
             frontier: B::Time::minimum(),
@@ -259,6 +262,10 @@ where
             batches.extend(slot.all_batches().cloned());
         }
         batches
+    }
+
+    fn get_snapshot(&self) -> SpineSnapshot<B> {
+        SpineSnapshot::with_batches(&self.factories, self.get_batches())
     }
 
     /// Removes the loose batches and returns them.  This ensures that the
@@ -390,10 +397,10 @@ impl<B> AsyncMerger<B>
 where
     B: Batch,
 {
-    fn new() -> Self {
+    fn new(factories: &B::Factories) -> Self {
         let idle = Arc::new(Condvar::new());
         let no_backpressure = Arc::new(Condvar::new());
-        let state = Arc::new(Mutex::new(SharedState::new()));
+        let state = Arc::new(Mutex::new(SharedState::new(factories)));
         BackgroundThread::add_worker({
             let state = Arc::clone(&state);
             let idle = Arc::clone(&idle);
@@ -679,8 +686,24 @@ where
             .enumerate()
             .filter_map(|(level, slot)| slot.try_start_merge(level).map(|batches| (level, batches)))
             .collect::<Vec<_>>();
+
+        let snapshot = if value_filter
+            .as_ref()
+            .map(|f| f.requires_snapshot())
+            .unwrap_or(false)
+        {
+            Some(Arc::new(state.lock().unwrap().get_snapshot()))
+        } else {
+            None
+        };
         for (level, batches) in start_merges {
-            mergers[level] = Some(Merge::new(merger_type, batches, &key_filter, &value_filter));
+            mergers[level] = Some(Merge::new(
+                merger_type,
+                batches,
+                &key_filter,
+                &value_filter,
+                snapshot.clone(),
+            ));
         }
 
         let state = state.lock().unwrap();
@@ -787,6 +810,7 @@ where
         batches: Vec<Arc<B>>,
         key_filter: &Option<Filter<B::Key>>,
         value_filter: &Option<GroupFilter<B::Val>>,
+        snapshot: Option<Arc<SpineSnapshot<B>>>,
     ) -> Self {
         let factories = batches[0].factories();
         let builder = B::Builder::for_merge(&factories, &batches, None);
@@ -802,6 +826,7 @@ where
                     batches,
                     key_filter,
                     value_filter,
+                    snapshot,
                 )),
                 MergerType::PushMerger => {
                     let mut inner =
@@ -1561,7 +1586,7 @@ where
             dirty: false,
             key_filter: None,
             value_filter: None,
-            merger: AsyncMerger::new(),
+            merger: AsyncMerger::new(factories),
         }
     }
 

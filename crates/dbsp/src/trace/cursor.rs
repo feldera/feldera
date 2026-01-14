@@ -799,6 +799,10 @@ where
     }
 }
 
+/// A cursor that filters keys and values based on a key filter and a value filter.
+///
+/// This cursor only support simple value filters. Use `FilteredMergeCursorWithSnapshot`
+/// to evaluate more complex filters, such as `GroupFilter::LastN`.
 pub struct FilteredMergeCursor<K, V, T, R, C>
 where
     K: ?Sized,
@@ -808,106 +812,8 @@ where
 {
     cursor: C,
     key_filter: Option<Filter<K>>,
-    value_filter: Option<GroupFilterCursor<V>>,
+    value_filter: Option<Filter<V>>,
     phantom: PhantomData<(T, Box<R>)>,
-}
-
-/// State maintained by a `GroupFilter` for a cursor.
-enum GroupFilterCursor<V: ?Sized> {
-    Simple {
-        filter: Filter<V>,
-    },
-    LastN {
-        n: usize,
-        filter: Filter<V>,
-        val: Box<V>,
-    },
-}
-
-impl<V: DataTrait + ?Sized> GroupFilter<V> {
-    fn new_cursor(&self) -> GroupFilterCursor<V> {
-        match self {
-            Self::Simple(filter) => GroupFilterCursor::Simple {
-                filter: filter.clone(),
-            },
-            Self::LastN(n, filter, val_factory) => GroupFilterCursor::LastN {
-                n: *n,
-                filter: filter.clone(),
-                val: val_factory.default_box(),
-            },
-        }
-    }
-}
-
-impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
-    /// Called after the cursor has advanced to a new key.
-    ///
-    /// Skip over values that don't satisfy the filter.
-    /// Return true if the cursor points to the valid values, false otherwise.
-    fn on_step_key<K: ?Sized, T, R: ?Sized>(
-        &mut self,
-        cursor: &mut dyn Cursor<K, V, T, R>,
-    ) -> bool {
-        match self {
-            Self::Simple { filter } => {
-                while let Some(val) = cursor.get_val() {
-                    if (filter.filter_func())(val) {
-                        return true;
-                    }
-                    cursor.step_val();
-                }
-                false
-            }
-            Self::LastN { n, filter, val } => {
-                // Find the last value below the waterline.
-                cursor.fast_forward_vals();
-                cursor.seek_val_with_reverse(&|val| !(filter.filter_func())(val));
-
-                // Find n'th value below the waterline.
-                let mut count = 1;
-                while count < *n && cursor.val_valid() {
-                    cursor.step_val_reverse();
-                    count += 1;
-                }
-
-                if cursor.val_valid() {
-                    // We need to discard everything below the current value.
-                    // Since cursors can't change direction, we need to remember
-                    // the value and rewind the cursor to the beginning.
-                    cursor.val().clone_to(val);
-                    cursor.rewind_vals();
-                    // Skip over values we discard.
-                    while cursor.val_valid() && cursor.val() != &**val {
-                        // println!("skipping: {:?}", cursor.val());
-                        cursor.step_val();
-                    }
-                    debug_assert_eq!(cursor.val(), &**val);
-                    true
-                } else {
-                    // Nothing to discard, rewind the cursor.
-                    cursor.rewind_vals();
-                    cursor.val_valid()
-                }
-            }
-        }
-    }
-
-    /// Called after the cursor has advanced to a new value.
-    ///
-    /// Skip over values that don't satisfy the filter.
-    fn on_step_val<K: ?Sized, T, R: ?Sized>(&mut self, cursor: &mut dyn Cursor<K, V, T, R>) {
-        match self {
-            Self::Simple { filter } => {
-                while let Some(val) = cursor.get_val() {
-                    if (filter.filter_func())(val) {
-                        return;
-                    }
-                    cursor.step_val();
-                }
-            }
-            Self::LastN { .. } => {}
-        }
-    }
 }
 
 impl<K, V, T, R, C> FilteredMergeCursor<K, V, T, R, C>
@@ -921,10 +827,9 @@ where
     pub fn new(
         mut cursor: C,
         key_filter: Option<Filter<K>>,
-        value_filter: Option<GroupFilter<V>>,
+        value_filter: Option<Filter<V>>,
     ) -> Self {
-        let mut value_filter = value_filter.map(|filter| filter.new_cursor());
-        Self::skip_filtered_keys(&mut cursor, &key_filter, &mut value_filter);
+        Self::skip_filtered_keys(&mut cursor, &key_filter, &value_filter);
         Self {
             cursor,
             key_filter,
@@ -936,14 +841,10 @@ where
     fn skip_filtered_keys(
         cursor: &mut C,
         key_filter: &Option<Filter<K>>,
-        value_filter: &mut Option<GroupFilterCursor<V>>,
+        value_filter: &Option<Filter<V>>,
     ) {
         while let Some(key) = cursor.get_key() {
-            if Filter::include(key_filter, key)
-                && value_filter
-                    .as_mut()
-                    .map(|filter| filter.on_step_key(cursor))
-                    .unwrap_or(true)
+            if Filter::include(key_filter, key) && Self::skip_filtered_values(cursor, value_filter)
             {
                 return;
             } else {
@@ -952,10 +853,14 @@ where
         }
     }
 
-    fn skip_filtered_values(cursor: &mut C, value_filter: &mut Option<GroupFilterCursor<V>>) {
-        if let Some(filter) = value_filter.as_mut() {
-            filter.on_step_val(cursor)
+    fn skip_filtered_values(cursor: &mut C, value_filter: &Option<Filter<V>>) -> bool {
+        while let Some(val) = cursor.get_val() {
+            if Filter::include(value_filter, val) {
+                return true;
+            }
+            cursor.step_val();
         }
+        false
     }
 }
 
@@ -981,11 +886,11 @@ where
     }
     fn step_key(&mut self) {
         self.cursor.step_key();
-        Self::skip_filtered_keys(&mut self.cursor, &self.key_filter, &mut self.value_filter);
+        Self::skip_filtered_keys(&mut self.cursor, &self.key_filter, &self.value_filter);
     }
     fn step_val(&mut self) {
         self.cursor.step_val();
-        Self::skip_filtered_values(&mut self.cursor, &mut self.value_filter);
+        Self::skip_filtered_values(&mut self.cursor, &self.value_filter);
     }
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
         self.cursor.map_times(logic);
@@ -995,6 +900,207 @@ where
         T: PartialEq<()>,
     {
         self.cursor.weight()
+    }
+}
+
+/// A cursor that filters keys and values based on a key filter and a value filter.
+///
+/// Uses a trace of the spine to evaluate `GroupFilter::LastN` filters.
+pub struct FilteredMergeCursorWithSnapshot<'a, K, V, T, R, C>
+where
+    K: ?Sized,
+    V: ?Sized + 'static,
+    R: ?Sized,
+    C: Cursor<K, V, T, R>,
+{
+    cursor: C,
+    trace_cursor: Box<dyn Cursor<K, V, T, R> + Send + 'a>,
+    key_filter: Option<Filter<K>>,
+    value_filter: GroupFilterCursor<V>,
+    phantom: PhantomData<(T, Box<R>)>,
+}
+
+impl<'a, K, V, T, R, C> FilteredMergeCursorWithSnapshot<'a, K, V, T, R, C>
+where
+    K: ?Sized + 'static,
+    V: DataTrait + ?Sized,
+    R: ?Sized + 'static,
+    C: Cursor<K, V, T, R>,
+    T: 'static,
+{
+    /// The `snapshot` argument must be the snapshot of the entire spine that the cursor is being created for.
+    pub fn new<S>(
+        cursor: C,
+        key_filter: Option<Filter<K>>,
+        value_filter: GroupFilter<V>,
+        snapshot: &'a S,
+    ) -> Self
+    where
+        S: BatchReader<Key = K, Val = V, Time = T, R = R>,
+    {
+        let trace_cursor = Box::new(snapshot.cursor());
+        let value_filter = value_filter.new_cursor();
+        let mut result = Self {
+            cursor,
+            trace_cursor,
+            key_filter,
+            value_filter,
+            phantom: PhantomData,
+        };
+        result.skip_filtered_keys();
+
+        result
+    }
+
+    fn skip_filtered_keys(&mut self) {
+        while let Some(key) = self.cursor.get_key() {
+            if Filter::include(&self.key_filter, key)
+                && self
+                    .value_filter
+                    .on_step_key(&mut self.cursor, &mut self.trace_cursor)
+            {
+                return;
+            } else {
+                self.cursor.step_key();
+            }
+        }
+    }
+
+    fn skip_filtered_values(&mut self) {
+        self.value_filter
+            .on_step_val(&mut self.cursor, &mut self.trace_cursor);
+    }
+}
+
+impl<'a, K, V, T, R, C> MergeCursor<K, V, T, R>
+    for FilteredMergeCursorWithSnapshot<'a, K, V, T, R, C>
+where
+    K: ?Sized + 'static,
+    V: DataTrait + ?Sized,
+    R: ?Sized + 'static,
+    T: 'static,
+    C: Cursor<K, V, T, R>,
+{
+    fn key_valid(&self) -> bool {
+        self.cursor.key_valid()
+    }
+    fn val_valid(&self) -> bool {
+        self.cursor.val_valid()
+    }
+    fn key(&self) -> &K {
+        self.cursor.key()
+    }
+    fn val(&self) -> &V {
+        self.cursor.val()
+    }
+    fn step_key(&mut self) {
+        self.cursor.step_key();
+        self.skip_filtered_keys();
+    }
+    fn step_val(&mut self) {
+        self.cursor.step_val();
+        self.skip_filtered_values();
+    }
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
+        self.cursor.map_times(logic);
+    }
+    fn weight(&mut self) -> &R
+    where
+        T: PartialEq<()>,
+    {
+        self.cursor.weight()
+    }
+}
+
+/// State maintained by a `GroupFilter` for a cursor.
+enum GroupFilterCursor<V: ?Sized> {
+    Simple { filter: Filter<V> },
+    LastN { n: usize, filter: Filter<V> },
+}
+
+impl<V: DataTrait + ?Sized> GroupFilter<V> {
+    fn new_cursor(&self) -> GroupFilterCursor<V> {
+        match self {
+            Self::Simple(filter) => GroupFilterCursor::Simple {
+                filter: filter.clone(),
+            },
+            Self::LastN(n, filter) => GroupFilterCursor::LastN {
+                n: *n,
+                filter: filter.clone(),
+            },
+        }
+    }
+}
+
+impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
+    /// Called after the cursor has advanced to a new key.
+    ///
+    /// Skip over values that don't satisfy the filter.
+    /// Return true if the cursor points to the valid values, false otherwise.
+    fn on_step_key<K: ?Sized, T, R: ?Sized>(
+        &mut self,
+        cursor: &mut dyn Cursor<K, V, T, R>,
+        trace_cursor: &mut dyn Cursor<K, V, T, R>,
+    ) -> bool {
+        if !trace_cursor.seek_key_exact(cursor.key(), None) {
+            return false;
+        }
+
+        match self {
+            Self::Simple { filter } => {
+                while let Some(val) = cursor.get_val() {
+                    if (filter.filter_func())(val) {
+                        return true;
+                    }
+                    cursor.step_val();
+                }
+                false
+            }
+            Self::LastN { n, filter } => {
+                // Find the last value below the waterline.
+                trace_cursor.fast_forward_vals();
+                trace_cursor.seek_val_with_reverse(&|val| !(filter.filter_func())(val));
+
+                // Find n'th value below the waterline.
+                let mut count = 1;
+                while count < *n && trace_cursor.val_valid() {
+                    trace_cursor.step_val_reverse();
+                    count += 1;
+                }
+
+                if trace_cursor.val_valid() {
+                    // `trace_cursor` points to the first value below the waterline.
+                    // Skip values up to this value.
+                    while cursor.val_valid() && cursor.val() < trace_cursor.val() {
+                        // println!("skipping: {:?}", cursor.val());
+                        cursor.step_val();
+                    }
+                }
+
+                cursor.val_valid()
+            }
+        }
+    }
+
+    /// Called after the cursor has advanced to a new value.
+    ///
+    /// Skip over values that don't satisfy the filter.
+    fn on_step_val<K: ?Sized, T, R: ?Sized>(
+        &mut self,
+        cursor: &mut dyn Cursor<K, V, T, R>,
+        _trace_cursor: &mut dyn Cursor<K, V, T, R>,
+    ) {
+        match self {
+            Self::Simple { filter } => {
+                while let Some(val) = cursor.get_val() {
+                    if (filter.filter_func())(val) {
+                        return;
+                    }
+                    cursor.step_val();
+                }
+            }
+            Self::LastN { .. } => {}
+        }
     }
 }
 
