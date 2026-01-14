@@ -1,7 +1,7 @@
 use crate::{
     Circuit, DBData, DBWeight, Stream,
     circuit::metadata::MetaItem,
-    dynamic::{DowncastTrait, DynData, Erase, WithFactory},
+    dynamic::{DowncastTrait, DynData, Erase},
     operator::TraceBound,
     trace::{BatchReaderFactories, Filter},
     typed_batch::{Batch, DynBatch, DynBatchReader, Spine, TypedBatch, TypedBox},
@@ -233,7 +233,6 @@ where
         RV: Fn(&B::Val, &TS) -> bool + Clone + Send + Sync + 'static,
     {
         self.inner().dyn_integrate_trace_retain_values_last_n(
-            WithFactory::<B::Val>::FACTORY,
             &bounds_stream.inner_data(),
             Box::new(move |ts: &DynData| {
                 let metadata = MetaItem::String(format!("{ts:?}"));

@@ -8,7 +8,7 @@ use crate::{
     time::Timestamp,
     trace::{
         Batch, BatchFactories, BatchReaderFactories, Builder, Filter, GroupFilter, MergeCursor,
-        spine_async::index_set::IndexSet,
+        SpineSnapshot, spine_async::index_set::IndexSet,
     },
 };
 
@@ -22,7 +22,8 @@ where
     B: Batch,
 {
     batches: Vec<Arc<B>>,
-    #[borrows(batches)]
+    snapshot: Option<Arc<SpineSnapshot<B>>>,
+    #[borrows(batches, snapshot)]
     #[not_covariant]
     merger: ListMerger<Box<dyn MergeCursor<B::Key, B::Val, B::Time, B::R> + Send + 'this>, B>,
 }
@@ -36,16 +37,24 @@ where
         batches: Vec<Arc<B>>,
         key_filter: &Option<Filter<B::Key>>,
         value_filter: &Option<GroupFilter<B::Val>>,
+        snapshot: Option<Arc<SpineSnapshot<B>>>,
     ) -> Self {
         Self(
             ArcMergerInnerBuilder {
                 batches,
-                merger_builder: |batches| {
+                snapshot,
+                merger_builder: |batches, snapshot| {
                     ListMerger::new(
                         factories,
                         batches
                             .iter()
-                            .map(|b| b.merge_cursor(key_filter.clone(), value_filter.clone()))
+                            .map(|b| {
+                                b.merge_cursor_with_snapshot(
+                                    key_filter.clone(),
+                                    value_filter.clone(),
+                                    snapshot,
+                                )
+                            })
                             .collect(),
                     )
                 },

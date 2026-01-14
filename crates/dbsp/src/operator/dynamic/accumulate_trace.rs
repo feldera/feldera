@@ -1,7 +1,7 @@
 use crate::Runtime;
 use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
 use crate::circuit::metadata::{NUM_ALLOCATIONS_LABEL, NUM_INPUTS_LABEL};
-use crate::dynamic::{Factory, Weight, WeightTrait};
+use crate::dynamic::{Weight, WeightTrait};
 use crate::operator::dynamic::trace::{DelayedTraceId, TraceBounds};
 use crate::operator::{TraceBound, require_persistent_id};
 use crate::trace::spine_async::WithSnapshot;
@@ -166,7 +166,6 @@ where
     #[track_caller]
     pub fn dyn_accumulate_integrate_trace_retain_values_last_n<TS>(
         &self,
-        val_factory: &'static dyn Factory<B::Val>,
         bounds_stream: &Stream<C, Box<TS>>,
         retain_val_func: Box<dyn Fn(&TS) -> Filter<B::Val>>,
         n: usize,
@@ -179,7 +178,7 @@ where
         bounds.set_unique_val_bound_name(bounds_stream.get_persistent_id().as_deref());
 
         bounds_stream.inspect(move |ts| {
-            let filter = GroupFilter::LastN(n, retain_val_func(ts.as_ref()), val_factory);
+            let filter = GroupFilter::LastN(n, retain_val_func(ts.as_ref()));
             bounds.set_val_filter(filter);
         });
     }

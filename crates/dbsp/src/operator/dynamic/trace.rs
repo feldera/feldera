@@ -1,7 +1,7 @@
 use crate::Runtime;
 use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
 use crate::circuit::metadata::{NUM_ALLOCATIONS_LABEL, NUM_INPUTS_LABEL};
-use crate::dynamic::{Factory, Weight, WeightTrait};
+use crate::dynamic::{Weight, WeightTrait};
 use crate::operator::require_persistent_id;
 use crate::trace::spine_async::WithSnapshot;
 use crate::trace::{BatchReaderFactories, Builder, GroupFilter, MergeCursor};
@@ -430,7 +430,6 @@ where
     #[track_caller]
     pub fn dyn_integrate_trace_retain_values_last_n<TS>(
         &self,
-        val_factory: &'static dyn Factory<B::Val>,
         bounds_stream: &Stream<C, Box<TS>>,
         retain_val_func: Box<dyn Fn(&TS) -> Filter<B::Val>>,
         n: usize,
@@ -443,7 +442,7 @@ where
         bounds.set_unique_val_bound_name(bounds_stream.get_persistent_id().as_deref());
 
         bounds_stream.inspect(move |ts| {
-            let filter = GroupFilter::LastN(n, retain_val_func(ts.as_ref()), val_factory);
+            let filter = GroupFilter::LastN(n, retain_val_func(ts.as_ref()));
             bounds.set_val_filter(filter);
         });
     }
@@ -1299,131 +1298,222 @@ mod test {
             .collect::<Vec<_>>()
     }
 
+    /// Test that `integrate_trace_retain_XXX` functions don't discard more than
+    /// they are supposed to.
+    //
+    // TODO: this test used to also check that the memory footprint of the collection
+    // is bounded, but this check was flaky, since GC is lazy.
+    fn test_integrate_trace_retain(
+        batches: Vec<Vec<((i32, i32), ZWeight)>>,
+        key_lateness: i32,
+        val_lateness: i32,
+    ) {
+        let (mut dbsp, input_handle) = Runtime::init_circuit(4, move |circuit| {
+            let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
+            let stream = stream.shard();
+            let watermark: Stream<_, TypedBox<(i32, i32), DynData>> = stream.waterline(
+                || (i32::MIN, i32::MIN),
+                |k, v| (*k, *v),
+                |(ts1_left, ts2_left), (ts1_right, ts2_right)| {
+                    (max(*ts1_left, *ts1_right), max(*ts2_left, *ts2_right))
+                },
+            );
+
+            // Track all records in `stream` (this integral is not GC'd).
+            let trace = stream.integrate_trace();
+
+            // Test integrate_trace_retain_keys.
+            let stream1 = stream.map_index(|(k, v)| (*k, *v)).shard();
+            let trace1 = stream.integrate_trace();
+            stream1.integrate_trace_retain_keys(&watermark, move |key, ts| {
+                *key >= ts.0.saturating_sub(key_lateness)
+            });
+
+            // trace1.apply(|trace| {
+            //     // println!("retain_keys: {}bytes", trace.size_of().total_bytes());
+            //     assert!(trace.size_of().total_bytes() < 100_000);
+            // });
+
+            // Test `integrate_trace_retain_values`.
+            let stream2 = stream.map_index(|(k, v)| (*k, *v)).shard();
+
+            let trace2 = stream2.integrate_trace();
+            stream2.integrate_trace_retain_values(&watermark, move |val, ts| {
+                *val >= ts.1.saturating_sub(val_lateness)
+            });
+
+            trace2.apply(|trace| {
+                // println!("retain_vals: {}bytes", trace.size_of().total_bytes());
+                assert!(trace.size_of().total_bytes() < 100_000);
+            });
+
+            // Test `integrate_trace_retain_values_last_n(1)`.
+            let stream3 = stream.map_index(|(k, v)| (*k, *v)).shard();
+
+            let trace3 = stream3.integrate_trace();
+            stream3.integrate_trace_retain_values_last_n(
+                &watermark,
+                move |val, ts| *val >= ts.1.saturating_sub(val_lateness),
+                1,
+            );
+
+            // Test `integrate_trace_retain_values_last_n(3)`.
+            let stream4 = stream.map_index(|(k, v)| (*k, *v)).shard();
+
+            let trace4 = stream4.integrate_trace();
+            stream4.integrate_trace_retain_values_last_n(
+                &watermark,
+                move |val, ts| *val >= ts.1.saturating_sub(val_lateness),
+                3,
+            );
+
+            // Validate outputs.
+            trace.apply3(&trace1, &watermark, move |trace, trace1, ts| {
+                let expected = typed_batch::IndexedZSetReader::iter(trace.as_ref())
+                    .filter(|(k, _v, _w)| *k >= ts.0.saturating_sub(key_lateness))
+                    .collect::<BTreeSet<_>>();
+                let actual =
+                    typed_batch::IndexedZSetReader::iter(trace1.as_ref()).collect::<BTreeSet<_>>();
+
+                let missing = expected.difference(&actual).collect::<Vec<_>>();
+                assert!(
+                    missing.is_empty(),
+                    "missing tuples in trace1: {:?}",
+                    missing
+                );
+            });
+
+            trace.apply3(&trace2, &watermark, move |trace, trace2, ts| {
+                let expected = typed_batch::IndexedZSetReader::iter(trace.as_ref())
+                    .filter(|(_k, v, _w)| *v >= ts.1.saturating_sub(val_lateness))
+                    .collect::<BTreeSet<_>>();
+                let actual =
+                    typed_batch::IndexedZSetReader::iter(trace2.as_ref()).collect::<BTreeSet<_>>();
+
+                let missing = expected.difference(&actual).collect::<Vec<_>>();
+                assert!(
+                    missing.is_empty(),
+                    "missing tuples in trace2: {:?}",
+                    missing
+                );
+            });
+
+            fn test_retain_values_last_n(
+                trace: &Spine<OrdIndexedZSet<i32, i32>>,
+                watermark: &TypedBox<(i32, i32), DynData>,
+                n: usize,
+            ) -> BTreeSet<(i32, i32, ZWeight)> {
+                let mut all_tuples = BTreeMap::new();
+                typed_batch::IndexedZSetReader::iter(trace).for_each(|(k, v, w)| {
+                    all_tuples
+                        .entry(k)
+                        .or_insert_with(|| Vec::new())
+                        .push((v, w))
+                });
+                let mut expected = BTreeSet::new();
+                for (k, mut tuples) in all_tuples.into_iter() {
+                    let index = tuples
+                        .iter()
+                        .position(|(v, _w)| *v >= watermark.1.saturating_sub(1000))
+                        .unwrap_or(tuples.len());
+                    let first_index = index.saturating_sub(n);
+                    tuples.drain(first_index..).for_each(|(v, w)| {
+                        let _ = expected.insert((k, v, w));
+                    });
+                }
+                expected
+            }
+
+            trace.apply3(&trace3, &watermark, |trace, trace3, ts| {
+                let mut all_tuples = BTreeMap::new();
+                typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| {
+                    all_tuples
+                        .entry(k)
+                        .or_insert_with(|| Vec::new())
+                        .push((v, w))
+                });
+
+                let expected = test_retain_values_last_n(trace.as_ref(), ts.as_ref(), 1);
+
+                let actual =
+                    typed_batch::IndexedZSetReader::iter(trace3.as_ref()).collect::<BTreeSet<_>>();
+
+                let missing = expected.difference(&actual).collect::<Vec<_>>();
+                assert!(
+                    missing.is_empty(),
+                    "missing tuples in trace3: {:?}",
+                    missing
+                );
+            });
+
+            trace.apply3(&trace4, &watermark, |trace, trace4, ts| {
+                let mut all_tuples = BTreeMap::new();
+                typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| {
+                    all_tuples
+                        .entry(k)
+                        .or_insert_with(|| Vec::new())
+                        .push((v, w))
+                });
+
+                let expected = test_retain_values_last_n(trace.as_ref(), ts.as_ref(), 3);
+
+                let actual =
+                    typed_batch::IndexedZSetReader::iter(trace4.as_ref()).collect::<BTreeSet<_>>();
+
+                let missing = expected.difference(&actual).collect::<Vec<_>>();
+                assert!(
+                    missing.is_empty(),
+                    "missing tuples in trace4: {:?}",
+                    missing
+                );
+            });
+
+            Ok(handle)
+        })
+        .unwrap();
+
+        for batch in batches.into_iter() {
+            //println!("step {i}");
+            let mut tuples = batch
+                .into_iter()
+                .map(|((k, v), r)| Tup2(k, Tup2(v, r)))
+                .collect::<Vec<_>>();
+            input_handle.append(&mut tuples);
+            dbsp.transaction().unwrap();
+        }
+    }
+
+    /// Deterministic input that inserts and retracts records in order to simulate a situation where
+    /// records present in a batch are not present in the trace because they were deleted in a subsequent batch.
+    /// This triggered a bug in the initial implementation of LastN filters.
+    #[test]
+    fn test_integrate_trace_retain_with_deletions() {
+        let mut batches: Vec<Vec<((i32, i32), ZWeight)>> = vec![];
+        for i in 0..1000 {
+            batches.push(vec![
+                ((i, i), 1), // Keep this value, delete subsequent values
+                ((i, i + 1), 1),
+                ((i, i + 2), 1),
+                ((i, i + 3), 1),
+                ((i, i + 4), 1),
+            ]);
+            batches.push(vec![
+                ((i, i + 1), -1),
+                ((i, i + 2), -1),
+                ((i, i + 3), -1),
+                ((i, i + 4), -1),
+            ]);
+        }
+
+        test_integrate_trace_retain(batches, 10, 10);
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(16))]
 
-        /// Test that `integrate_trace_retain_XXX` functions don't discard more than
-        /// they are supposed to.
-        //
-        // TODO: this test used to also check that the memory footprint of the collection
-        // is bounded, but this check was flaky, since GC is lazy.
         #[test]
-        fn test_integrate_trace_retain(batches in quasi_monotone_batches(100, 20, 1000, 200, 100, 200)) {
-            let (mut dbsp, input_handle) = Runtime::init_circuit(4, move |circuit| {
-                let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
-                let stream = stream.shard();
-                let watermark: Stream<_, TypedBox<(i32, i32), DynData>> = stream
-                    .waterline(
-                        || (i32::MIN, i32::MIN),
-                        |k, v| (*k, *v),
-                        |(ts1_left, ts2_left), (ts1_right, ts2_right)| {
-                            (max(*ts1_left, *ts1_right), max(*ts2_left, *ts2_right))
-                        },
-                    );
-
-                // Track all records in `stream` (this integral is not GC'd).
-                let trace = stream.integrate_trace();
-
-                // Test integrate_trace_retain_keys.
-                let stream1 = stream.map_index(|(k, v)| (*k, *v)).shard();
-                let trace1 = stream.integrate_trace();
-                stream1.integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0.saturating_sub(100));
-
-                // trace1.apply(|trace| {
-                //     // println!("retain_keys: {}bytes", trace.size_of().total_bytes());
-                //     assert!(trace.size_of().total_bytes() < 100_000);
-                // });
-
-                // Test `integrate_trace_retain_values`.
-                let stream2 = stream.map_index(|(k, v)| (*k, *v)).shard();
-
-                let trace2 = stream2.integrate_trace();
-                stream2.integrate_trace_retain_values(&watermark, |val, ts| *val >= ts.1.saturating_sub(1000));
-
-                trace2.apply(|trace| {
-                    // println!("retain_vals: {}bytes", trace.size_of().total_bytes());
-                    assert!(trace.size_of().total_bytes() < 100_000);
-                });
-
-                // Test `integrate_trace_retain_values_last_n(1)`.
-                let stream3 = stream.map_index(|(k, v)| (*k, *v)).shard();
-
-                let trace3 = stream3.integrate_trace();
-                stream3.integrate_trace_retain_values_last_n(&watermark, |val, ts| *val >= ts.1.saturating_sub(1000), 1);
-
-                // Test `integrate_trace_retain_values_last_n(3)`.
-                let stream4 = stream.map_index(|(k, v)| (*k, *v)).shard();
-
-                let trace4 = stream4.integrate_trace();
-                stream4.integrate_trace_retain_values_last_n(&watermark, |val, ts| *val >= ts.1.saturating_sub(1000), 3);
-
-                // Validate outputs.
-                trace.apply3(&trace1, &watermark, |trace, trace1, ts| {
-                    let expected = typed_batch::IndexedZSetReader::iter(trace.as_ref()).filter(|(k, _v, _w)| *k >= ts.0.saturating_sub(100)).collect::<BTreeSet<_>>();
-                    let actual = typed_batch::IndexedZSetReader::iter(trace1.as_ref()).collect::<BTreeSet<_>>();
-
-                    let missing = expected.difference(&actual).collect::<Vec<_>>();
-                    assert!(missing.is_empty(), "missing tuples in trace1: {:?}", missing);
-                });
-
-                trace.apply3(&trace2, &watermark, |trace, trace2, ts| {
-                    let expected = typed_batch::IndexedZSetReader::iter(trace.as_ref()).filter(|(_k, v, _w)| *v >= ts.1.saturating_sub(1000)).collect::<BTreeSet<_>>();
-                    let actual = typed_batch::IndexedZSetReader::iter(trace2.as_ref()).collect::<BTreeSet<_>>();
-
-                    let missing = expected.difference(&actual).collect::<Vec<_>>();
-                    assert!(missing.is_empty(), "missing tuples in trace2: {:?}", missing);
-                });
-
-                fn test_retain_values_last_n(trace: &Spine<OrdIndexedZSet<i32, i32>>, watermark: &TypedBox<(i32, i32), DynData>, n: usize) -> BTreeSet<(i32, i32, ZWeight)> {
-                    let mut all_tuples = BTreeMap::new();
-                    typed_batch::IndexedZSetReader::iter(trace).for_each(|(k, v, w)| all_tuples.entry(k).or_insert_with(|| Vec::new()).push((v, w)));
-                    let mut expected = BTreeSet::new();
-                    for (k, mut tuples) in all_tuples.into_iter() {
-                        let index = tuples
-                            .iter()
-                            .position(|(v, _w)| *v >= watermark.1.saturating_sub(1000))
-                            .unwrap_or(tuples.len());
-                            let first_index = index.saturating_sub(n);
-                            tuples
-                                .drain(first_index..)
-                                .for_each(|(v, w)| {let _ = expected.insert((k, v, w));});
-                    }
-                    expected
-                }
-
-                trace.apply3(&trace3, &watermark, |trace, trace3, ts| {
-                    let mut all_tuples = BTreeMap::new();
-                    typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| all_tuples.entry(k).or_insert_with(|| Vec::new()).push((v, w)));
-
-                    let expected = test_retain_values_last_n(trace.as_ref(), ts.as_ref(), 1);
-
-                    let actual = typed_batch::IndexedZSetReader::iter(trace3.as_ref()).collect::<BTreeSet<_>>();
-
-                    let missing = expected.difference(&actual).collect::<Vec<_>>();
-                    assert!(missing.is_empty(), "missing tuples in trace3: {:?}", missing);
-                });
-
-                trace.apply3(&trace4, &watermark, |trace, trace4, ts| {
-                    let mut all_tuples = BTreeMap::new();
-                    typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| all_tuples.entry(k).or_insert_with(|| Vec::new()).push((v, w)));
-
-                    let expected = test_retain_values_last_n(trace.as_ref(), ts.as_ref(), 3);
-
-                    let actual = typed_batch::IndexedZSetReader::iter(trace4.as_ref()).collect::<BTreeSet<_>>();
-
-                    let missing = expected.difference(&actual).collect::<Vec<_>>();
-                    assert!(missing.is_empty(), "missing tuples in trace4: {:?}", missing);
-                });
-
-                Ok(handle)
-            })
-            .unwrap();
-
-            for batch in batches {
-                let mut tuples = batch.into_iter().map(|((k, v), r)| Tup2(k, Tup2(v, r))).collect::<Vec<_>>();
-                input_handle.append(&mut tuples);
-                dbsp.transaction().unwrap();
-            }
+        fn test_integrate_trace_retain_proptest(batches in quasi_monotone_batches(100, 20, 1000, 200, 100, 200)) {
+            test_integrate_trace_retain(batches, 100, 1000);
         }
     }
 }

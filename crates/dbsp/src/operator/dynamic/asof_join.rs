@@ -1301,7 +1301,6 @@ mod test {
                     hresult_integral.concat().consolidate(),
                     asof_join_reference2(&htransactions_output_handle, &husers_output_handle)
                 );
-
             }
 
             for (mut transactions, mut users) in deletions {
@@ -1313,7 +1312,6 @@ mod test {
                     hresult_integral.concat().consolidate(),
                     asof_join_reference2(&htransactions_output_handle, &husers_output_handle)
                 );
-
             }
         }
     }
@@ -1334,7 +1332,6 @@ mod test {
                     hresult_integral.concat().consolidate(),
                     asof_join_reference2(&htransactions_output_handle, &husers_output_handle)
                 );
-
             }
         }
     }

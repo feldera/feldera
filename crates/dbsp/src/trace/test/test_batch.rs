@@ -178,7 +178,7 @@ pub fn filter<K: DataTrait + ?Sized, V: DataTrait + ?Sized, T, R: WeightTrait + 
                 tuples.retain(|((_k, v, _t), _r)| (filter.filter_func())(v.as_ref()));
                 return tuples;
             }
-            GroupFilter::LastN(n, filter, _val_factory) => {
+            GroupFilter::LastN(n, filter) => {
                 let mut tuples_by_key = BTreeMap::new();
                 for ((k, v, t), w) in tuples.into_iter() {
                     tuples_by_key
