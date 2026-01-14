@@ -18,7 +18,7 @@ pub struct ErrorResponse {
     pub error_code: Cow<'static, str>,
     /// Detailed error metadata.
     /// The contents of this field is determined by `error_code`.
-    #[schema(value_type = Object)]
+    #[schema(value_type = Value)]
     pub details: JsonValue,
 }
 

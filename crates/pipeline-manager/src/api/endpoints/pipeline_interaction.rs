@@ -15,7 +15,7 @@ use actix_web::{
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
-use feldera_types::query_params::{MetricsParameters, SamplyProfileParams};
+use feldera_types::query_params::{MetricsParameters, SamplyProfileGetParams, SamplyProfileParams};
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
 use std::time::Duration;
 use tracing::{debug, info};
@@ -1168,7 +1168,10 @@ pub(crate) async fn get_checkpoint_sync_status(
         SamplyProfileParams,
     ),
     responses(
-        (status = OK, description = "Started profiling the pipeline with the Samply tool"),
+        (status = ACCEPTED, description = "Started profiling the pipeline with the Samply tool"),
+        (status = CONFLICT
+            , description = "Samply profile collection is already in progress"
+            , body = ErrorResponse),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
@@ -1212,24 +1215,28 @@ pub(crate) async fn start_samply_profile(
 
 /// Get Samply Profile
 ///
-/// Retrieve the most recent samply profile of a running pipeline.
+/// Retrieve the last samply profile of a pipeline, regardless of whether profiling is currently in progress.
+/// If ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 307 with Retry-After header.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        SamplyProfileGetParams,
     ),
     responses(
         (status = OK
             , description = "Samply profile as a gzip containing the profile that can be inspected by the samply tool"
             , content_type = "application/gzip"
             , body = Vec<u8>),
+        (status = NO_CONTENT
+            , description = "Samply profile collection is in progress. Check the Retry-After header for expected completion time."),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
             , example = json!(examples::error_unknown_pipeline_name())),
         (status = BAD_REQUEST
-            , description = "No samply profile exists for the pipeline, create one by calling `POST /pipelines/{pipeline_name}/samply_profile/start?duration_secs=30`"
+            , description = "No samply profile exists for the pipeline, create one by calling `POST /pipelines/{pipeline_name}/samply_profile?duration_secs=30`"
             , body = ErrorResponse),
         (status = SERVICE_UNAVAILABLE
             , body = ErrorResponse

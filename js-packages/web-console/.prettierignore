@@ -6,6 +6,8 @@ yarn.lock
 .svelte-kit/
 /build/
 # Other files
+.svelte-kit/
+build/
 src/assets
 tmp/
 playwright-report-ct

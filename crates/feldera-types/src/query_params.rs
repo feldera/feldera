@@ -52,3 +52,12 @@ pub struct SamplyProfileParams {
 fn default_samply_profile_duration() -> u64 {
     30
 }
+
+/// Query parameters to retrieve samply profile.
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct SamplyProfileGetParams {
+    /// If true, returns 307 redirect if profile collection is in progress.
+    /// If false or not provided, returns the last collected profile.
+    #[serde(default)]
+    pub latest: bool,
+}

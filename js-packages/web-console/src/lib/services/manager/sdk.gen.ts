@@ -133,6 +133,9 @@ import type {
   PostPipelinePauseData,
   PostPipelinePauseErrors,
   PostPipelinePauseResponses,
+  PostPipelineRebalanceData,
+  PostPipelineRebalanceErrors,
+  PostPipelineRebalanceResponses,
   PostPipelineResponses,
   PostPipelineResumeData,
   PostPipelineResumeErrors,
@@ -857,6 +860,28 @@ export const pipelineAdhocSql = <ThrowOnError extends boolean = false>(
   })
 
 /**
+ * Initiate rebalancing.
+ *
+ * Initiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically
+ * when the drift in the size of joined relations exceeds a threshold. This endpoint forces the balancer
+ * to reevaluate and apply an optimal partitioning policy regardless of the threshold.
+ *
+ * This operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.
+ */
+export const postPipelineRebalance = <ThrowOnError extends boolean = false>(
+  options: Options<PostPipelineRebalanceData, ThrowOnError>
+) =>
+  (options.client ?? client).post<
+    PostPipelineRebalanceResponses,
+    PostPipelineRebalanceErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/rebalance',
+    ...options
+  })
+
+/**
  * Resume Pipeline
  *
  * Requests the pipeline to resume, which it will do asynchronously.
@@ -879,7 +904,8 @@ export const postPipelineResume = <ThrowOnError extends boolean = false>(
 /**
  * Get Samply Profile
  *
- * Retrieve the most recent samply profile of a running pipeline.
+ * Retrieve the last samply profile of a pipeline, regardless of whether profiling is currently in progress.
+ * If ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 307 with Retry-After header.
  */
 export const getPipelineSamplyProfile = <ThrowOnError extends boolean = false>(
   options: Options<GetPipelineSamplyProfileData, ThrowOnError>

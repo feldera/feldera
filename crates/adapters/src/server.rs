@@ -13,7 +13,7 @@ use crate::{
     adhoc::{adhoc_websocket, stream_adhoc_result},
     controller::ConnectorConfig,
     ensure_default_crypto_provider,
-    samply::SamplyProfile,
+    samply::{SamplyProfile, SamplyState, SamplyStatus},
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
@@ -63,7 +63,7 @@ use feldera_types::constants::STATUS_FILE;
 use feldera_types::coordination::{AdHocScan, CoordinationActivate, Labels, Step, StepRequest};
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::query_params::{
-    ActivateParams, MetricsFormat, MetricsParameters, SamplyProfileParams,
+    ActivateParams, MetricsFormat, MetricsParameters, SamplyProfileGetParams, SamplyProfileParams,
 };
 use feldera_types::runtime_status::{
     BootstrapPolicy, ExtendedRuntimeStatus, ExtendedRuntimeStatusError, RuntimeDesiredStatus,
@@ -266,8 +266,8 @@ pub(crate) struct ServerState {
     sync_checkpoint_state: Mutex<CheckpointSyncState>,
 
     /// Leaf lock.
-    /// Latest samply profile.
-    samply_profile: Arc<Mutex<SamplyProfile>>,
+    /// Samply profiling state.
+    samply_state: Arc<Mutex<SamplyState>>,
 
     /// Deployment ID.
     deployment_id: Uuid,
@@ -322,7 +322,7 @@ impl ServerState {
             deployment_id,
             storage,
             rate_limiter,
-            samply_profile: Default::default(),
+            samply_state: Default::default(),
             coordination_activate: Default::default(),
             leases: Default::default(),
         }
@@ -1720,22 +1720,92 @@ async fn samply_profile(
     let duration = query_params.duration_secs;
     let controller = state.controller()?;
 
-    let state_samply_profile = state.samply_profile.clone();
+    let state_samply_state = state.samply_state.clone();
+
+    // Check if profiling is already in progress
+    {
+        let samply_state = state_samply_state.lock().unwrap();
+        if matches!(samply_state.samply_status, SamplyStatus::InProgress { .. }) {
+            return Ok(HttpResponse::Conflict().json(ErrorResponse {
+                message: "samply profile collection is already in progress".to_string(),
+                error_code: "SamplyProfilingInProgress".into(),
+                details: serde_json::Value::Null,
+            }));
+        }
+    }
+
+    // Set the state to InProgress with expected completion time
+    let expected_after = chrono::Utc::now() + chrono::Duration::seconds(duration as i64);
+    state_samply_state
+        .lock()
+        .unwrap()
+        .start_profiling(expected_after);
 
     spawn(async move {
         let result = controller.async_samply_profile(duration).await;
-        state_samply_profile.lock().unwrap().update(result);
+        state_samply_state
+            .lock()
+            .unwrap()
+            .complete_profiling(result);
     });
 
-    Ok(HttpResponse::Ok().finish())
+    // Wait to check if it errored out immediately
+    sleep(Duration::from_millis(600)).await;
+
+    // Check if profiling is still running or failed immediately
+    let samply_state = state.samply_state.lock().unwrap();
+    Ok(match samply_state.samply_status {
+        // Profile is still running - return success
+        SamplyStatus::InProgress { .. } => HttpResponse::Accepted().finish(),
+        // Profile completed during wait - check if it failed
+        SamplyStatus::Idle => match &samply_state.last_profile {
+            Some(Err(error)) => samply_profile_error_response(error),
+            _ => HttpResponse::InternalServerError().json(ErrorResponse {
+                message: "samply profiling completed unexpectedly".to_string(),
+                error_code: "SamplyProfilingUnexpectedCompletion".into(),
+                details: serde_json::Value::Null,
+            }),
+        },
+    })
 }
 
 #[get("/samply_profile")]
-async fn get_samply_profile(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let profile = state.samply_profile.lock().unwrap();
+async fn get_samply_profile(
+    state: WebData<ServerState>,
+    query_params: web::Query<SamplyProfileGetParams>,
+) -> Result<HttpResponse, PipelineError> {
+    let samply_state = state.samply_state.lock().unwrap();
 
-    Ok(match profile.clone() {
-        SamplyProfile::Success(bytes) => {
+    // If latest=true, check if profiling is in progress and return 204 No Content
+    if query_params.latest {
+        if let SamplyStatus::InProgress { expected_after } = samply_state.samply_status {
+            let now = chrono::Utc::now();
+            let retry_after_secs = (expected_after - now).num_seconds().max(0);
+
+            return Ok(HttpResponse::NoContent()
+                .insert_header(("Retry-After", retry_after_secs.to_string()))
+                .finish());
+        }
+    }
+
+    // Return the last profile result
+    Ok(samply_profile_response(&samply_state.last_profile))
+}
+
+/// Helper function to construct error response for samply profiling failure
+fn samply_profile_error_response(error: &str) -> HttpResponse {
+    HttpResponse::InternalServerError().json(ErrorResponse {
+        message: "failed to profile the pipeline using samply".to_string(),
+        error_code: "SamplyProfilingFailure".into(),
+        details: serde_json::Value::String(error.to_string()),
+    })
+}
+
+/// Helper function to construct HttpResponse from SamplyProfile result
+fn samply_profile_response(last_profile: &SamplyProfile) -> HttpResponse {
+    match last_profile {
+        Some(Ok(bytes)) => {
+            let bytes = bytes.clone();
             let byte_stream = once(async move { Ok::<_, PipelineError>(web::Bytes::from(bytes)) });
 
             HttpResponse::Ok()
@@ -1749,17 +1819,13 @@ async fn get_samply_profile(state: WebData<ServerState>) -> Result<HttpResponse,
                 ))
                 .streaming(byte_stream)
         }
-        SamplyProfile::Failure(ref error) => HttpResponse::InternalServerError().json(ErrorResponse {
-            message: "failed to profile the pipeline using samply".to_string(),
-            error_code: "SamplyProfilingFailure".into(),
-            details: serde_json::Value::String(error.to_string()),
-        }),
-        SamplyProfile::None => HttpResponse::BadRequest().json(json!({
+        Some(Err(error)) => samply_profile_error_response(error),
+        None => HttpResponse::BadRequest().json(json!({
             "message": "no samply profile found; trigger a samply profile by making a POST request to `/samply_profile`",
             "error_code": "NoSamplyProfile",
             "details": null
         })),
-    })
+    }
 }
 
 #[post("/checkpoint/sync")]

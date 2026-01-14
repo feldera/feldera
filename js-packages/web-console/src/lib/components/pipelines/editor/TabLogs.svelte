@@ -141,7 +141,7 @@
       if (result instanceof Error) {
         streams[pipelineName].stream = { closed: {} }
         streams[pipelineName].rows.push(result.message)
-        const isServerOverloaded = (result.cause as any).status_code === 503
+        const isServerOverloaded = (result.cause as { response: Response }).response.status === 503
         tryRestartStream(pipelineName, isServerOverloaded ? attempts + 1 : 0)
         return
       }

@@ -67,7 +67,7 @@ export const extractPipelineStderr = (pipeline: ExtendedPipeline): string[] => {
   return [
     `Pipeline process returned an error code ${pipeline.deploymentError.error_code}:\n
 ${pipeline.deploymentError.message}
-${Object.entries(pipeline.deploymentError.details).map((k, v) => `${k}: ${v}\n`)}`
+${Object.entries(pipeline.deploymentError.details as Record<string, string>).map((k, v) => `${k}: ${v}\n`)}`
   ]
 }
 

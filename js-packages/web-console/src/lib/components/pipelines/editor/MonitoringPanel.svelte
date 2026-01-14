@@ -8,7 +8,8 @@
   import PanelChangeStream from '$lib/components/pipelines/editor/TabChangeStream.svelte'
   import PanelPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
   import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
-  import PanelProfileVisualizer from '$lib/components/pipelines/editor/TabProfileVisualizer.svelte'
+  import * as TabProfileVisualizer from '$lib/components/pipelines/editor/TabProfileVisualizer.svelte'
+  import * as TabSamplyProfile from '$lib/components/pipelines/editor/TabSamplyProfile.svelte'
   import PanelLogs from '$lib/components/pipelines/editor/TabLogs.svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
@@ -46,10 +47,11 @@
       tuple('Changes Stream' as const, TabControlChangeStream, PanelChangeStream, true),
       tuple(
         'Profile Visualizer' as const,
-        TabControlProfileVisualizer,
-        PanelProfileVisualizer,
+        TabProfileVisualizer.Label,
+        TabProfileVisualizer.default,
         true
       ),
+      tuple('Samply' as const, TabSamplyProfile.Label, TabSamplyProfile.default, false),
       tuple('Logs' as const, TabLogs, PanelLogs, false)
     ].filter((tab) => tab[0] !== currentInteractionTab)
   )
@@ -125,10 +127,6 @@
 {#snippet TabControlChangeStream()}
   <span class="inline sm:hidden"> Changes </span>
   <span class="hidden sm:inline"> Changes Stream </span>
-{/snippet}
-
-{#snippet TabControlProfileVisualizer()}
-  <span class=""> Profiler </span>
 {/snippet}
 
 {#snippet TabLogs()}

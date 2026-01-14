@@ -5,7 +5,6 @@
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { useToast } from '$lib/compositions/useToastNotification'
   import { humanSize } from '$lib/functions/common/string'
   import type { SupportBundleOptions } from '$lib/services/pipelineManager'
 
@@ -13,20 +12,26 @@
 
   const api = usePipelineManager()
   const globalDialog = useGlobalDialog()
-  const toast = useToast()
   let isDownloading = $state(false)
+  let cancelDownload: (() => void) | null = null
 
   const submitHandler = async () => {
-    try {
-      isDownloading = true
-      progress.reset()
-      await api.downloadPipelineSupportBundle(pipelineName, data, progress.onProgress)
-      globalDialog.dialog = null
-    } catch (error) {
-      toast.toastError(new Error(`Failed to download support bundle: ${error}`))
-    } finally {
-      isDownloading = false
+    isDownloading = true
+    progress.reset()
+    cancelDownload = null
+
+    {
+      const result = api.downloadPipelineSupportBundle(pipelineName, data, progress.onProgress)
+      cancelDownload = () => {
+        result.cancel()
+        isDownloading = false
+      }
+
+      await result.dataPromise
     }
+    isDownloading = false
+    cancelDownload = null
+    globalDialog.dialog = null
   }
 
   const defaultData: SupportBundleOptions = {
@@ -95,13 +100,14 @@
   Support bundle
 </button>
 <Tooltip placement="top" class="w-[204px] text-wrap">
-  Generate a bundle with logs, metrics, and configs to help troubleshoot issues
+  Generate a bundle with logs, metrics and configs to help troubleshoot issues
 </Tooltip>
 
 {#snippet supportBundleDialog()}
   <GenericDialog
     onApply={submitHandler}
     onClose={() => {
+      cancelDownload?.()
       globalDialog.dialog = null
     }}
     confirmLabel="Download"
@@ -124,7 +130,6 @@
             <span>{humanSize(progress.bytes.downloaded)} / {humanSize(progress.bytes.total)}</span>
           {/if}
         </div>
-        Close the popup to continue the download in the background.
       </div>
     {:else}
       Select the details you want to include in the bundle

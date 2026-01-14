@@ -4,7 +4,7 @@ export const useToast = () => {
   const toastError = (error: Error, durationMs?: number) => {
     try {
       toast.error(error.message, {
-        className: 'text-lg !max-w-[500px]',
+        className: 'text-lg !max-w-[500px] whitespace-pre-wrap',
         duration: durationMs
       })
     } catch (e) {
