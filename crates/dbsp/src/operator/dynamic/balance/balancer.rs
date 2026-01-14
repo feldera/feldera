@@ -26,7 +26,7 @@ use std::{
     fmt::{Display, Error as FmtError, Formatter},
     rc::Rc,
 };
-use tracing::info;
+use tracing::{debug, info};
 
 pub const MIN_RELATIVE_IMPROVEMENT_THRESHOLD: f64 = 1.2;
 pub const MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD: u64 = 10_000;
@@ -647,13 +647,21 @@ impl BalancerInner {
             }
 
             let cluster_solution = self.solve_cluster(i, false)?;
-            if cluster_solution != self.clusters[i].solution && Runtime::worker_index() == 0 {
-                info!(
-                    "Cluster {i} solution changed: {:?} -> {:?} (cluster: {})",
-                    &self.clusters[i].solution,
-                    cluster_solution,
-                    self.display_cluster(i)
-                );
+            if Runtime::worker_index() == 0 {
+                if cluster_solution != self.clusters[i].solution {
+                    info!(
+                        "Cluster {i} solution changed: {:?} -> {:?} (cluster: {})",
+                        &self.clusters[i].solution,
+                        cluster_solution,
+                        self.display_cluster(i)
+                    );
+                } else {
+                    debug!(
+                        "Cluster {i} solution UNchanged: {:?} (cluster: {})",
+                        cluster_solution,
+                        self.display_cluster(i)
+                    );
+                }
             }
             solutions.extend(cluster_solution);
             // println!("cluster {i}; solution: {:?}", self.clusters[i].solution);
