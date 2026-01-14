@@ -158,11 +158,7 @@ pub struct IndexedZSetStagedBuffers {
 
 impl StagedBuffers for IndexedZSetStagedBuffers {
     fn flush(&mut self) {
-        for (vals, worker) in self
-            .vals
-            .drain(..)
-            .zip_eq(0..self.input_handle.0.mailbox.len())
-        {
+        for (vals, worker) in self.vals.drain(..).zip_eq(self.input_handle.workers()) {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
@@ -206,11 +202,7 @@ pub struct SetStagedBuffers {
 
 impl StagedBuffers for SetStagedBuffers {
     fn flush(&mut self) {
-        for (vals, worker) in self
-            .vals
-            .drain(..)
-            .zip_eq(0..self.input_handle.0.mailbox.len())
-        {
+        for (vals, worker) in self.vals.drain(..).zip_eq(self.input_handle.workers()) {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
@@ -279,11 +271,7 @@ pub struct MapStagedBuffers {
 
 impl StagedBuffers for MapStagedBuffers {
     fn flush(&mut self) {
-        for (vals, worker) in self
-            .vals
-            .drain(..)
-            .zip_eq(0..self.input_handle.0.mailbox.len())
-        {
+        for (vals, worker) in self.vals.drain(..).zip_eq(self.input_handle.workers()) {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
