@@ -4252,7 +4252,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Get Samply Profile",
-        "description": "Retrieve the most recent samply profile of a running pipeline.",
+        "description": "Retrieve the last samply profile of a pipeline, regardless of whether profiling is currently in progress.\nIf ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 307 with Retry-After header.",
         "operationId": "get_pipeline_samply_profile",
         "parameters": [
           {
@@ -4262,6 +4262,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "latest",
+            "in": "path",
+            "description": "If true, returns 307 redirect if profile collection is in progress.\nIf false or not provided, returns the last collected profile.",
+            "required": true,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -4277,8 +4286,11 @@
               }
             }
           },
+          "204": {
+            "description": "Samply profile collection is in progress. Check the Retry-After header for expected completion time."
+          },
           "400": {
-            "description": "No samply profile exists for the pipeline, create one by calling `POST /pipelines/{pipeline_name}/samply_profile/start?duration_secs=30`",
+            "description": "No samply profile exists for the pipeline, create one by calling `POST /pipelines/{pipeline_name}/samply_profile?duration_secs=30`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4406,7 +4418,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "description": "Started profiling the pipeline with the Samply tool"
           },
           "404": {
@@ -4422,6 +4434,16 @@
                   "details": {
                     "pipeline_name": "non-existent-pipeline"
                   }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Samply profile collection is already in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -7592,7 +7614,6 @@
         ],
         "properties": {
           "details": {
-            "type": "object",
             "description": "Detailed error metadata.\nThe contents of this field is determined by `error_code`."
           },
           "error_code": {

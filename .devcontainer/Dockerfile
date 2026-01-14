@@ -81,4 +81,7 @@ RUN \
    rustup component add clippy && \
    cargo install cargo-make
 
+## Install Samply
+RUN echo "pass" | sudo curl --proto '=https' --tlsv1.2 -LsSf https://github.com/feldera/samply/releases/download/v0.13.2/samply-installer.sh | sh
+
 ENV PATH="$HOME/.local/bin:$PATH"

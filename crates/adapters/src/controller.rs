@@ -1012,12 +1012,8 @@ impl Controller {
             anyhow::bail!(
                 "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
                 output.status,
-                String::from_utf8_lossy(&output.stdout)
-                    .trim()
-                    .replace("\n", "\\n"),
-                String::from_utf8_lossy(&output.stderr)
-                    .trim()
-                    .replace("\n", "\\n"),
+                String::from_utf8_lossy(&output.stdout).trim(),
+                String::from_utf8_lossy(&output.stderr).trim(),
             );
         }
 

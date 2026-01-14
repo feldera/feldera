@@ -118,7 +118,7 @@
     "format": "prettier --write . && biome check --write .",
     "openapi": "openapi-ts -i path/to/openapi.json -o src/client",
     "generate-openapi": "openapi-ts && bun run format",
-    "build-openapi": "cd ../.. && cargo run --bin pipeline-manager -- --dump-openapi",
+    "build-openapi": "cd ../.. && cargo run -p pipeline-manager -- --dump-openapi",
     "test-e2e": "PLAYWRIGHT_API_ORIGIN=http://localhost:8080/ PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/ DISPLAY= bun playwright test",
     "test-e2e-ui": "PLAYWRIGHT_API_ORIGIN=http://localhost:8080/ PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/ DISPLAY= bun playwright test --ui-host=0.0.0.0",
     "test-ct": "DISPLAY= bun playwright test -c playwright-ct.config.ts",

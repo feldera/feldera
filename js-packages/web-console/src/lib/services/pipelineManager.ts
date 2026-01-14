@@ -15,40 +15,32 @@ import {
   postPipeline as _postPipeline,
   postUpdateRuntime as _postUpdateRuntime,
   putPipeline as _putPipeline,
-  type ClusterMonitorEventSelectedInfo,
   type ControllerStatus,
   type ErrorResponse,
-  type Field,
   type GetPipelineSupportBundleData,
   getConfigAuthentication,
   getConfigDemos,
-  getPipelineCircuitJsonProfile,
   httpInput,
-  httpOutput,
   listApiKeys,
   listClusterEvents,
   listPipelines,
-  type PatchPipeline,
-  type PipelineInfo,
   type PipelineSelectedInfo,
   type PostPutPipeline,
   type ProgramError,
-  type PutPipelineErrors,
   postPipelineActivate,
   postPipelineApprove,
   postPipelineClear,
   postPipelinePause,
   postPipelineResume,
   postPipelineStart,
-  postPipelineStop
+  postPipelineStop,
+  startSamplyProfile
 } from '$lib/services/manager'
 
 export type {
   InputEndpointConfig,
   OutputEndpointConfig,
   RuntimeConfig,
-  // PipelineDescr,
-  // ExtendedPipelineDescr,
   SqlCompilerMessage
 } from '$lib/services/manager'
 
@@ -540,29 +532,122 @@ export const getClusterEvent = (eventId: string) =>
   )
 
 /**
+ * Get samply profile stream with progress tracking support.
+ * Returns the stream and filename extracted from Content-Disposition header.
+ */
+const getSamplyProfileStream = (pipelineName: string, latest: boolean) => {
+  const result = streamingFetch(
+    getAuthenticatedFetch(),
+    `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/samply_profile${latest ? '?latest=true' : ''}`,
+    {
+      method: 'GET'
+    }
+  )
+  return {
+    cancel: result.cancel,
+    abortReason: result.abortReason,
+    response: result.response.then((response) => {
+      if (response instanceof Error) {
+        throw response
+      }
+      return response
+    })
+  }
+}
+
+/**
+ * Parse filename from Content-Disposition header
+ * Returns null if filename cannot be extracted
+ */
+const parseFilenameFromContentDisposition = (contentDisposition: string | null): string | null => {
+  if (!contentDisposition) {
+    return null
+  }
+
+  // Try to parse filename from Content-Disposition header
+  // Format: attachment; filename="filename.ext"
+  const match = contentDisposition.match(/filename="?([^"]+)"?/)
+  if (match && match[1]) {
+    return match[1]
+  }
+
+  return null
+}
+
+type BlobDownloadHandle = {
+  downloadPromise: Promise<{ dataPromise: Promise<Blob>; filename: string }>
+  cancel: () => void
+}
+
+/**
+ * Download samply profile with optional progress tracking.
+ * @param pipelineName - Name of the pipeline
+ * @param latest - If true and profiling is in progress, returns expectedInSeconds instead of the last profile
+ * @param onProgress - Optional callback for download progress (bytesDownloaded, bytesTotal)
+ * @returns Object with a promise to profile data blob and filename, or expectedInSeconds if in progress, plus cancel function
+ */
+export const getSamplyProfile = async (
+  pipelineName: string,
+  latest: boolean,
+  onProgress?: (bytesDownloaded: number, bytesTotal: number) => void
+): Promise<BlobDownloadHandle | { expectedInSeconds: number }> => {
+  const result = getSamplyProfileStream(pipelineName, latest)
+  const response = await result.response
+
+  // Check for 204 No Content (profile collection in progress)
+  if (response.status === 204) {
+    const expectedInSeconds = parseInt(response.headers.get('Retry-After') ?? '')
+    if (isNaN(expectedInSeconds)) {
+      throw new Error(`Profile collection is in progress, but estimated time is not known`)
+    }
+    return { expectedInSeconds }
+  }
+
+  return {
+    downloadPromise: Promise.resolve(streamToDownload(response, onProgress, result.abortReason)),
+    cancel: result.cancel
+  }
+}
+
+export const collectSamplyProfile = async (pipelineName: string, durationSeconds: number) => {
+  const result = await startSamplyProfile({
+    path: { pipeline_name: pipelineName },
+    query: { duration_secs: durationSeconds }
+  })
+  if (!result.error) {
+    return { data: result.data }
+  }
+  throw new Error(apiErrorText(result.error), { cause: result.error })
+}
+
+/**
  * Returns the raw stream for downloading a pipeline support bundle.
  * Use getPipelineSupportBundle wrapper for progress tracking.
  */
-export const getPipelineSupportBundleStream = async (
+export const getPipelineSupportBundleStream = (
   pipelineName: string,
   options: Partial<SupportBundleOptions>
 ) => {
   const query = new URLSearchParams(
     Object.fromEntries(Object.entries(options).map(([k, v]) => [k, String(v)]))
   )
-  const body = await streamingFetch(
+  const result = streamingFetch(
     getAuthenticatedFetch(),
     `${felderaEndpoint}/v0/pipelines/${pipelineName}/support_bundle?${query.toString()}`,
     {
       method: 'GET'
-    },
-    (msg) => new Error(`Failed to download profile for pipeline ${pipelineName}: \n${msg}`),
-    (e) => new Error(e.details?.error ?? e.message, { cause: e })
+    }
   )
-  if (body instanceof Error) {
-    throw body
+  return {
+    cancel: result.cancel,
+    abortReason: result.abortReason,
+    response: result.response.then((response) => {
+      if (response instanceof Error) {
+        throw response
+      }
+      return response
+    })
   }
-  return body
 }
 
 // Create a transform stream that tracks progress
@@ -581,26 +666,65 @@ const progressTransform = (
 }
 
 /**
+ * Convert a readable stream to a Blob with optional progress tracking.
+ * @param result - Stream result with optional content length
+ * @param onProgress - Optional callback for download progress (bytesDownloaded, bytesTotal)
+ * @param abortReason - Function to get the custom abort reason if cancelled
+ */
+const streamToDownload = (
+  response: Response,
+  onProgress?: (bytesDownloaded: number, bytesTotal: number) => void,
+  abortReason?: () => Error | undefined
+): { dataPromise: Promise<Blob>; filename: string } => {
+  const totalBytes = ((length) => (length ? parseInt(length) : undefined))(
+    response.headers.get('content-length')
+  )
+
+  const streamWithProgress =
+    nonNull(totalBytes) && onProgress
+      ? response.body!.pipeThrough(progressTransform(totalBytes, onProgress))
+      : response.body
+
+  // Extract filename from Content-Disposition header
+  const contentDisposition = response.headers.get('Content-Disposition')
+  const filename = parseFilenameFromContentDisposition(contentDisposition)
+  if (!filename) {
+    throw new Error('Server did not provide a filename in Content-Disposition header')
+  }
+
+  const responseWithProgress = new Response(streamWithProgress)
+  return {
+    filename,
+    dataPromise: responseWithProgress.blob().catch((e) => {
+      // If we have a custom abort reason and this looks like an abort error, throw the custom error
+      const customAbortReason = abortReason?.()
+      if (customAbortReason) {
+        throw customAbortReason
+      }
+      throw e
+    })
+  }
+}
+
+/**
  * Downloads a pipeline support bundle with optional progress tracking.
  * @param pipelineName - Name of the pipeline
  * @param options - Support bundle options (profiling, logs, etc.)
  * @param onProgress - Optional callback for download progress (bytesDownloaded, bytesTotal)
+ * @returns Object with promise to bundle data blob, filename from Content-Disposition header, and cancel function
  */
-export const getPipelineSupportBundle = async (
+export const getPipelineSupportBundle = (
   pipelineName: string,
   options: Partial<SupportBundleOptions>,
   onProgress?: (bytesDownloaded: number, bytesTotal: number) => void
-) => {
-  const result = await getPipelineSupportBundleStream(pipelineName, options)
-
-  const totalBytes = result.contentLength
-
-  const streamWithProgress =
-    nonNull(totalBytes) && onProgress
-      ? result.stream.pipeThrough(progressTransform(totalBytes, onProgress))
-      : result.stream
-  const response = new Response(streamWithProgress)
-  return response.blob()
+): BlobDownloadHandle => {
+  const result = getPipelineSupportBundleStream(pipelineName, options)
+  return {
+    downloadPromise: result.response.then((response) =>
+      streamToDownload(response, onProgress, result.abortReason)
+    ),
+    cancel: result.cancel
+  }
 }
 
 /**
@@ -621,31 +745,69 @@ const getAuthenticatedFetch = (options?: FetchOptions): typeof globalThis.fetch 
   return Object.assign(f, { preconnect: globalThis.fetch.preconnect })
 }
 
-const streamingFetch = async <E1, E2>(
+const apiErrorText = (error: ErrorResponse) => {
+  return `${error.message}${error.details ? `\n${error.details}` : ''}`
+}
+
+const streamingFetch = (
   fetch: typeof globalThis.fetch,
   input: RequestInfo | URL,
-  init: RequestInit,
-  handleRequestError: (msg: string) => E1,
-  handleResponseError: (json: any) => E2
-) => {
-  try {
-    const controller = new AbortController()
-    const result = await fetch(input, {
-      ...init,
-      signal: AbortSignal.any([controller.signal, ...singleton(init.signal)])
-    })
-    return result.status === 200 && result.body
-      ? {
-          stream: result.body,
-          contentLength: ((length) => (length ? parseInt(length) : undefined))(
-            result.headers.get('content-length')
-          ),
-          cancel: controller.abort.bind(controller)
+  init: RequestInit
+): {
+  response: Promise<Response | Error>
+  cancel: () => void
+  /**
+   * Enables downstream consumers of the body stream to know the original cause of the stream abort in the case of manual cancellation
+   * @returns
+   */
+  abortReason: () => Error | undefined
+} => {
+  const controller = new AbortController()
+  let abortReason: Error | undefined
+  const promise = fetch(input, {
+    ...init,
+    signal: AbortSignal.any([controller.signal, ...singleton(init.signal)])
+  })
+
+  return {
+    cancel: () => {
+      abortReason = new Error('cancelled', { cause: 'cancelled' })
+      controller.abort(abortReason)
+    },
+    abortReason: () => abortReason,
+    response: promise.then(
+      (response) => {
+        // Handle successful response with body
+        if (response.ok) {
+          return response
         }
-      : result.json().then((body) => handleResponseError({ ...body, status_code: result.status }))
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : JSON.stringify(e, undefined, '\t')
-    return handleRequestError(msg)
+        // For other non-2XX status codes, try to parse JSON error
+        return response.json().then((body) => {
+          return new Error(apiErrorText(body), { cause: body })
+        })
+      },
+      (e) => {
+        const msg = e instanceof Error ? e.message : JSON.stringify(e, undefined, '\t')
+        return new Error(msg, { cause: e.cause })
+      }
+    )
+  }
+}
+
+const streamResponse = async (request: {
+  response: Promise<Response | Error>
+  cancel: () => void
+  abortReason: () => Error | undefined
+}) => {
+  const response = await request.response
+  if (response instanceof Error) {
+    return response
+  }
+  return {
+    response,
+    stream: response.body!,
+    cancel: request.cancel,
+    abortReason: request.abortReason
   }
 }
 
@@ -654,16 +816,14 @@ export const relationEgressStream = async (
   relationName: string,
   options?: FetchOptions
 ) => {
-  // const result = await httpOutput({path: {pipeline_name: pipelineName, table_name: relationName}, query: {'format': 'json', 'mode': 'watch', 'array': false, 'query': 'table'}})
-  return streamingFetch(
-    getAuthenticatedFetch(options),
-    `${felderaEndpoint}/v0/pipelines/${pipelineName}/egress/${encodeURIComponent(relationName)}?format=json&array=false`,
-    {
-      method: 'POST'
-    },
-    (msg) =>
-      new Error(`Failed to connect to the egress stream of relation ${relationName}: \n${msg}`),
-    (e) => new Error(e.details?.error ?? e.message, { cause: e })
+  return streamResponse(
+    streamingFetch(
+      getAuthenticatedFetch(options),
+      `${felderaEndpoint}/v0/pipelines/${pipelineName}/egress/${encodeURIComponent(relationName)}?format=json&array=false`,
+      {
+        method: 'POST'
+      }
+    )
   )
 }
 
@@ -672,35 +832,32 @@ export const pipelineLogsStream = async (
   requestInit?: RequestInit,
   options?: FetchOptions
 ) => {
-  return streamingFetch(
-    getAuthenticatedFetch(options),
-    `${felderaEndpoint}/v0/pipelines/${pipelineName}/logs`,
-    requestInit ?? {},
-    (msg) => new Error(`Failed to connect to the log stream: \n${msg}`),
-    (e) => new Error(e.details?.error ?? e.message, { cause: e })
+  return streamResponse(
+    streamingFetch(
+      getAuthenticatedFetch(options),
+      `${felderaEndpoint}/v0/pipelines/${pipelineName}/logs`,
+      requestInit ?? {}
+    )
   )
 }
 
 export const adHocQuery = async (pipelineName: string, query: string, options?: FetchOptions) => {
-  return streamingFetch(
-    getAuthenticatedFetch(options),
-    `${felderaEndpoint}/v0/pipelines/${pipelineName}/query?sql=${encodeURIComponent(query)}&format=json`,
-    {},
-    (msg) => new Error(`Failed to invoke an ad-hoc query: \n${msg}`),
-    (e) => new Error(e.details?.error ?? e.message, { cause: e })
+  return streamResponse(
+    streamingFetch(
+      getAuthenticatedFetch(options),
+      `${felderaEndpoint}/v0/pipelines/${pipelineName}/query?sql=${encodeURIComponent(query)}&format=json`,
+      {}
+    )
   )
 }
 
 export const pipelineTimeSeriesStream = async (pipelineName: string, options?: FetchOptions) => {
-  return streamingFetch(
-    getAuthenticatedFetch(options),
-    `${felderaEndpoint}/v0/pipelines/${pipelineName}/time_series_stream`,
-    {},
-    (msg) =>
-      new Error(
-        `Failed to connect to the time series stream of pipeline ${pipelineName}: \n${msg}`
-      ),
-    (e) => new Error(e.details?.error ?? e.message, { cause: e })
+  return streamResponse(
+    streamingFetch(
+      getAuthenticatedFetch(options),
+      `${felderaEndpoint}/v0/pipelines/${pipelineName}/time_series_stream`,
+      {}
+    )
   )
 }
 

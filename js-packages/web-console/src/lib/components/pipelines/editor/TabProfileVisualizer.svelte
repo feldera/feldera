@@ -9,6 +9,8 @@
     | null = $state(null)
   let getProfileFiles: () => [Date, ZipItem[]][] = $state(() => [])
   let selectedProfile: Date | null = $state(null)
+
+  export { label as Label }
 </script>
 
 <script lang="ts">
@@ -58,7 +60,8 @@
       loadedPipelineName = sourceName
       getProfileFiles = () => suitableProfiles
       selectedProfile = suitableProfiles.at(-1)![0] // Select most recent
-      if (!selectedProfile || isNaN(selectedProfile.getTime())) { // Hopefully a redundant check for an obscure case where we did not pick a valid bundle
+      if (!selectedProfile || isNaN(selectedProfile.getTime())) {
+        // Hopefully a redundant check for an obscure case where we did not pick a valid bundle
         errorMessage = `Unexpected error: unable to pick the latest profile in a support bundle. Inspect the bundle archive for integrity.`
         selectedProfile = null
         return false
@@ -108,28 +111,28 @@
     errorMessage = ''
 
     downloadProgress.onProgress(0, 1)
-    const supportBundle = await api
-      .getPipelineSupportBundle(
-        pipelineName,
-        {
-          collect: collectNewData,
-          circuit_profile: true,
-          pipeline_config: true,
-          dataflow_graph: true
-        },
-        downloadProgress.onProgress
-      )
-      .catch((error) => {
-        errorMessage = error instanceof Error ? error.message : String(error)
-        downloadProgress.reset()
-        return null
-      })
+
+    const { downloadPromise } = api.getPipelineSupportBundle(
+      pipelineName,
+      {
+        collect: collectNewData,
+        circuit_profile: true,
+        pipeline_config: true,
+        dataflow_graph: true
+      },
+      downloadProgress.onProgress
+    )
+    const supportBundle = await downloadPromise.catch((error) => {
+      errorMessage = error instanceof Error ? error.message : String(error)
+      downloadProgress.reset()
+      return null
+    })
     if (!supportBundle) {
       return
     }
 
     const success = await processZipBundle(
-      new Uint8Array(await supportBundle.arrayBuffer()),
+      new Uint8Array(await (await supportBundle.dataPromise).arrayBuffer()),
       pipelineName,
       'No suitable profiles found. If you are trying to debug a pipeline of an older version try enabling "Collect new data" option.'
     )
@@ -207,6 +210,10 @@
     goto(hash)
   }
 </script>
+
+{#snippet label()}
+  <span class=""> Profiler </span>
+{/snippet}
 
 <div class="flex h-full flex-col">
   <input

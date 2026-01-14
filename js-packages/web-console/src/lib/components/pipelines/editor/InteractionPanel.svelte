@@ -1,12 +1,13 @@
 <script lang="ts">
   import PanelAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
-  import PanelProfileVisualizer from '$lib/components/pipelines/editor/TabProfileVisualizer.svelte'
+  import * as TabProfileVisualizer from '$lib/components/pipelines/editor/TabProfileVisualizer.svelte'
+  import * as TabSamplyProfile from '$lib/components/pipelines/editor/TabSamplyProfile.svelte'
+  import TabsPanel from '$lib/components/pipelines/editor/TabsPanel.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
-  import TabsPanel from './TabsPanel.svelte'
 
   let {
     pipeline,
@@ -23,7 +24,13 @@
 
   const tabs = $derived([
     tuple('Ad-Hoc Queries' as const, TabControlAdhoc, PanelAdHocQuery, false),
-    tuple('Profile Visualizer' as const, TabControlProfileVisualizer, PanelProfileVisualizer, true)
+    tuple(
+      'Profile Visualizer' as const,
+      TabProfileVisualizer.Label,
+      TabProfileVisualizer.default,
+      true
+    ),
+    tuple('Samply' as const, TabSamplyProfile.Label, TabSamplyProfile.default, false)
   ])
 
   const currentTab = $derived(
@@ -44,10 +51,6 @@
 {#snippet TabControlAdhoc()}
   <span class="inline sm:hidden"> Ad-Hoc </span>
   <span class="hidden sm:inline"> Ad-Hoc Queries </span>
-{/snippet}
-
-{#snippet TabControlProfileVisualizer()}
-  <span class=""> Profiler </span>
 {/snippet}
 
 <TabsPanel {tabs} bind:currentTab={currentTab.value} tabProps={{ pipeline }}>
