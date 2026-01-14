@@ -1,10 +1,6 @@
 use std::mem::take;
 
-use crate::{
-    DBData, declare_trait_object,
-    dynamic::erase::Erase,
-    utils::Tup2,
-};
+use crate::{DBData, declare_trait_object, dynamic::erase::Erase, utils::Tup2};
 
 use super::{Data, DataTrait};
 

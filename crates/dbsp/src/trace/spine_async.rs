@@ -1529,9 +1529,7 @@ where
         let content = Runtime::storage_backend().unwrap().read(&pspine_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedSpine>(&content) };
 
-        let committed: CommittedSpine = archived
-            .deserialize(&mut Deserializer::default())
-            .unwrap();
+        let committed: CommittedSpine = archived.deserialize(&mut Deserializer::default()).unwrap();
         self.dirty = committed.dirty;
         self.key_filter = None;
         self.value_filter = None;

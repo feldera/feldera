@@ -1,3 +1,8 @@
+//! Procedural macros for Feldera tuple types and `IsNone`.
+//!
+//! The `declare_tuple!` macro decides which layout to use based on tuple size
+//! and the active storage format rules.
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
