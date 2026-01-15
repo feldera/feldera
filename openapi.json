@@ -4101,6 +4101,64 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/rebalance": {
+      "post": {
+        "tags": [
+          "Pipeline Lifecycle"
+        ],
+        "summary": "Initiate rebalancing.",
+        "description": "Initiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically\nwhen the drift in the size of joined relations exceeds a threshold. This endpoint forces the balancer\nto reevaluate and apply an optimal partitioning policy regardless of the threshold.\n\nThis operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.",
+        "operationId": "post_pipeline_rebalance",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rebalancing started successfully"
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/resume": {
       "post": {
         "tags": [

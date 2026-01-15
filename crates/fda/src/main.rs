@@ -1849,6 +1849,20 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 }
             }
         }
+        PipelineAction::Rebalance { name } => {
+            client
+                .post_pipeline_rebalance()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to initiate rebalancing",
+                    1,
+                ))
+                .unwrap();
+            println!("Initiated rebalancing for pipeline {name}.");
+        }
         PipelineAction::Bench { args } => bench::bench(client, format, args).await,
     }
 }

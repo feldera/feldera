@@ -402,6 +402,9 @@ pub type SuspendCallbackFn = Box<dyn FnOnce(Result<(), Arc<ControllerError>>) + 
 /// Type of the callback argument to [`Controller::start_sync_checkpoint`].
 pub type SyncCheckpointCallbackFn = Box<dyn FnOnce(Result<(), Arc<ControllerError>>) + Send>;
 
+/// Rebalance callback argument to [`Controller::rebalance`].
+pub type RebalanceCallbackFn = Box<dyn FnOnce(Result<(), ControllerError>) + Send>;
+
 /// A command that [Controller] can send to [Controller::circuit_thread].
 ///
 /// There is no type for a command reply.  Instead, the command implementation
@@ -412,6 +415,7 @@ enum Command {
     Checkpoint(CheckpointCallbackFn),
     Suspend(SuspendCallbackFn),
     SyncCheckpoint((uuid::Uuid, SyncCheckpointCallbackFn)),
+    Rebalance(RebalanceCallbackFn),
 }
 
 impl Command {
@@ -426,6 +430,7 @@ impl Command {
             Command::SyncCheckpoint((_, callback)) => {
                 callback(Err(Arc::new(ControllerError::ControllerExit)))
             }
+            Command::Rebalance(callback) => callback(Err(ControllerError::ControllerExit)),
         }
     }
 }
@@ -1601,6 +1606,19 @@ impl Controller {
     pub async fn consistent_snapshot(&self) -> ConsistentSnapshot {
         self.inner.trace_snapshot.lock().await.clone()
     }
+
+    pub async fn rebalance(&self) -> Result<(), ControllerError> {
+        let (sender, receiver) = oneshot::channel();
+        self.inner
+            .send_command(Command::Rebalance(Box::new(move |result| {
+                if sender.send(result).is_err() {
+                    error!("`/rebalance` result could not be sent");
+                }
+            })));
+        receiver.await.unwrap()?;
+        self.inner.request_step();
+        Ok(())
+    }
 }
 
 /// Represents a background thread that pushes checkpoints to object storage.
@@ -2488,6 +2506,11 @@ impl CircuitThread {
                             cb: reply_callback,
                         });
                 }
+                Command::Rebalance(reply_callback) => reply_callback(
+                    self.circuit
+                        .rebalance()
+                        .map_err(ControllerError::dbsp_error),
+                ),
             }
         }
     }

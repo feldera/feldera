@@ -987,6 +987,12 @@ impl BalancerInner {
         // println!("additional_need_backfill: {:?}", additional_need_backfill);
         additional_need_backfill
     }
+
+    fn rebalance(&mut self) {
+        for cluster in self.clusters.iter_mut() {
+            cluster.refresh_requested = true;
+        }
+    }
 }
 
 /// The Balancer dynamically picks partitioning policies for all adaptive joins
@@ -1358,6 +1364,10 @@ impl Balancer {
             .key_distribution
             .get(&stream)
             .map(|distribution| distribution.sizes[Runtime::worker_index()])
+    }
+
+    pub fn rebalance(&self) {
+        self.inner.borrow_mut().rebalance();
     }
 
     pub fn display(&self) -> String {

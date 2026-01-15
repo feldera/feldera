@@ -1098,6 +1098,7 @@ where
         .service(start_input_endpoint)
         .service(input_endpoint_status)
         .service(output_endpoint_status)
+        .service(rebalance)
 }
 
 /// Implements `/start`, `/pause`, `/activate`:
@@ -2086,6 +2087,13 @@ async fn completion_status(
     } else {
         Ok(HttpResponse::Accepted().json(CompletionStatusResponse::inprogress()))
     }
+}
+
+#[post("/rebalance")]
+async fn rebalance(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.rebalance().await?;
+
+    Ok(HttpResponse::Ok().into())
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

@@ -870,6 +870,52 @@ pub(crate) async fn get_pipeline_dataflow_graph(
     Ok(HttpResponse::Ok().json(dataflow))
 }
 
+/// Initiate rebalancing.
+///
+/// Initiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically
+/// when the drift in the size of joined relations exceeds a threshold. This endpoint forces the balancer
+/// to reevaluate and apply an optimal partitioning policy regardless of the threshold.
+///
+/// This operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Rebalancing started successfully"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline Lifecycle"
+)]
+#[post("/pipelines/{pipeline_name}/rebalance")]
+pub(crate) async fn post_pipeline_rebalance(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::POST,
+            "rebalance",
+            "",
+            Some(Duration::from_secs(120)),
+        )
+        .await
+}
+
 /// Sync Checkpoints To S3
 ///
 /// Syncs latest checkpoints to the object store configured in pipeline config.

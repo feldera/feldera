@@ -1806,6 +1806,8 @@ pub trait CircuitBase: 'static {
 
     /// Get the current balancer policy for all streams managed by the balancer.
     fn get_current_balancer_policy(&self) -> BTreeMap<NodeId, PartitioningPolicy>;
+
+    fn rebalance(&self);
 }
 
 /// The circuit interface.  All DBSP computation takes place within a circuit.
@@ -3410,6 +3412,10 @@ where
 
     fn get_current_balancer_policy(&self) -> BTreeMap<NodeId, PartitioningPolicy> {
         self.inner().balancer.get_policy()
+    }
+
+    fn rebalance(&self) {
+        self.inner().balancer.rebalance()
     }
 }
 
@@ -7500,6 +7506,10 @@ impl CircuitHandle {
             .into_iter()
             .map(|(node_id, policy)| (GlobalNodeId::root().child(node_id), policy))
             .collect()
+    }
+
+    pub fn rebalance(&self) {
+        self.circuit.rebalance()
     }
 }
 
