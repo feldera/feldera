@@ -670,7 +670,6 @@ pub enum PipelineAction {
         no_wait: bool,
     },
     /// Initiate rebalancing.
-    #[clap(aliases = &["rebalance"])]
     Rebalance {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
