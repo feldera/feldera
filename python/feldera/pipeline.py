@@ -1453,6 +1453,19 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         return samply_profile_bytes
 
+    def rebalance(self):
+        """
+        Initiate rebalancing.
+
+        Initiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically
+        when the drift in the size of joined relations exceeds a threshold. This method forces the balancer
+        to reevaluate and apply an optimal partitioning policy regardless of the threshold.
+
+        This operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.
+        """
+
+        self.client.rebalance_pipeline(self.name)
+
     def generate_completion_token(self, table_name: str, connector_name: str) -> str:
         """
         Returns a completion token that can be passed to :meth:`.Pipeline.completion_token_status` to

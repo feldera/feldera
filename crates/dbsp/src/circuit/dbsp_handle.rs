@@ -809,6 +809,12 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::Rebalance) => {
+                        circuit.rebalance();
+                        if status_sender.send(Ok(Response::Unit)).is_err() {
+                            return;
+                        }
+                    }
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
                     Err(TryRecvError::Empty) => {
@@ -899,6 +905,7 @@ enum Command {
     Restore(StoragePath),
     SetBalancerHints(Vec<(GlobalNodeId, BalancerHint)>),
     GetCurrentBalancerPolicy,
+    Rebalance,
 }
 
 impl Debug for Command {
@@ -928,6 +935,7 @@ impl Debug for Command {
                 f.debug_tuple("SetBalancerHints").field(hints).finish()
             }
             Command::GetCurrentBalancerPolicy => write!(f, "GetCurrentBalancerPolicy"),
+            Command::Rebalance => write!(f, "Rebalance"),
         }
     }
 }
@@ -1587,6 +1595,11 @@ impl DBSPHandle {
             panic!("Expected GetCurrentBalancerPolicy policy response, got {resp:?}");
         };
         Ok(policy)
+    }
+
+    pub fn rebalance(&mut self) -> Result<(), DbspError> {
+        self.broadcast_command(Command::Rebalance, |_, _| {})?;
+        Ok(())
     }
 }
 

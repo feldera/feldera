@@ -669,6 +669,13 @@ pub enum PipelineAction {
         #[arg(long, short = 'n', default_value_t = false)]
         no_wait: bool,
     },
+    /// Initiate rebalancing.
+    #[clap(aliases = &["rebalance"])]
+    Rebalance {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
     /// Clear the storage resources of a pipeline.
     ///
     /// Note that the pipeline must be stopped before clearing its storage resources.

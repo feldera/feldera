@@ -1325,3 +1325,6 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         # Issue request and return response
         return self.http.get(path=f"/cluster/events/{event_id}?selector={selector}")
+
+    def rebalance_pipeline(self, pipeline_name: str):
+        self.http.post(path=f"/pipelines/{pipeline_name}/rebalance")
