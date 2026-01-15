@@ -697,6 +697,9 @@ pub(crate) async fn update_pipeline(
             if runtime_config.get("workers") != current.runtime_config.get("workers") {
                 not_allowed.push("`runtime_config.workers`");
             }
+            if runtime_config.get("hosts") != current.runtime_config.get("hosts") {
+                not_allowed.push("`runtime_config.hosts`");
+            }
             if runtime_config.get("fault_tolerance")
                 != current.runtime_config.get("fault_tolerance")
             {
