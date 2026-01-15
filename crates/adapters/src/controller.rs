@@ -2377,14 +2377,14 @@ impl CircuitThread {
             };
 
         self.step += 1;
-        self.step_sender
-            .send_replace(StepStatus::new(self.step, StepAction::Idle));
 
         // Wake up the backpressure thread to unpause endpoints blocked due to
         // backpressure.
         self.controller.unpark_backpressure();
         self.step_circuit();
 
+        self.step_sender
+            .send_replace(StepStatus::new(self.step, StepAction::Idle));
         // If bootstrapping has completed, update the status flag.
         self.controller
             .status
