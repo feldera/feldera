@@ -35,7 +35,7 @@ repos:
       - id: javascript-check
         name: JavaScript Check
         description: Run type checking on all JavaScript packages
-        entry: bash -c 'bun install && bun run check'
+        entry: bash -c 'bun ci && bun run check'
         language: system
         files: '^js-packages/.*\.(ts|tsx|js|jsx|svelte|css|json|html)$'
         pass_filenames: false

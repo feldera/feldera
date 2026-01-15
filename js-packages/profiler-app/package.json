@@ -20,20 +20,21 @@
     "@fontsource/dm-mono": "^5.2.7",
     "@poppanator/sveltekit-svg": "^6.0.1",
     "@skeletonlabs/skeleton": "^4.8.0",
-    "@skeletonlabs/skeleton-svelte": "^4.8.0",
-    "@sveltejs/vite-plugin-svelte": "^6.2.1",
+    "@skeletonlabs/skeleton-svelte": "^4.9.0",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tailwindcss/vite": "^4.1.17",
     "@tsconfig/svelte": "^5.0.6",
     "@types/node": "^24.10.1",
     "feldera-theme": "workspace:*",
-    "svelte": "^5.43.8",
-    "svelte-check": "^4.3.4",
+    "svelte": "^5.46.4",
+    "svelte-check": "^4.3.5",
     "tailwindcss": "^4.1.17",
     "typescript": "~5.9.3",
     "vite": "npm:rolldown-vite@7.2.5",
     "vite-plugin-singlefile": "^2.3.0"
   },
   "overrides": {
-    "vite": "npm:rolldown-vite@7.2.5"
+    "vite": "npm:rolldown-vite@7.2.5",
+    "devalue": "^5.6.2"
   }
 }

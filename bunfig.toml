@@ -3,4 +3,6 @@
 
 [install]
 # Only install package versions published at least 7 days ago
-minimumReleaseAge = 604800
+# minimumReleaseAge = 604800
+# Temporarily removed minimumReleaseAge restriction for a security patch; revert on or after 22.01.2026
+minimumReleaseAge = 0

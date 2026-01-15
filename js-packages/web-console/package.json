@@ -17,14 +17,14 @@
     "@poppanator/sveltekit-svg": "6.0.1",
     "@revolist/svelte-datagrid": "4.19.4",
     "@skeletonlabs/skeleton": "4.7.3",
-    "@skeletonlabs/skeleton-svelte": "4.7.3",
+    "@skeletonlabs/skeleton-svelte": "4.9.0",
     "@square/svelte-store": "1.0.18",
     "@streamparser/json": "0.0.22",
     "@svelte-bin/clipboard": "0.1.4",
     "@sveltejs/adapter-auto": "7.0.0",
     "@sveltejs/adapter-static": "3.0.10",
-    "@sveltejs/kit": "2.49.1",
-    "@sveltejs/vite-plugin-svelte": "6.2.1",
+    "@sveltejs/kit": "2.49.5",
+    "@sveltejs/vite-plugin-svelte": "6.2.4",
     "@tailwindcss/forms": "0.5.10",
     "@tailwindcss/typography": "0.5.19",
     "@tailwindcss/vite": "4.1.17",
@@ -79,9 +79,9 @@
     "sort-on": "7.0.0",
     "strip-ansi": "7.1.2",
     "style-to-object": "1.0.14",
-    "svelte": "5.45.5",
+    "svelte": "5.46.4",
     "svelte-attr": "0.0.2",
-    "svelte-check": "4.3.4",
+    "svelte-check": "4.3.5",
     "svelte-echarts": "1.0.0",
     "svelte-french-toast": "1.2.0",
     "svelte-virtuallists": "1.4.2",
@@ -102,7 +102,8 @@
     "worker-timers": "8.0.25"
   },
   "overrides": {
-    "vite": "npm:rolldown-vite@7.2.5"
+    "vite": "npm:rolldown-vite@7.2.5",
+    "devalue": "^5.6.2"
   },
   "private": true,
   "scripts": {
