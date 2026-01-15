@@ -262,7 +262,7 @@ impl ByteArray {
                 Ordering::Less => {
                     if fixed {
                         let mut data: CompactVec = smallvec![0; size];
-                        data[d.len() - size..].copy_from_slice(d);
+                        data[size - d.len()..].copy_from_slice(d);
                         ByteArray { data }
                     } else {
                         ByteArray::new(d)
