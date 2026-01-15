@@ -49,7 +49,7 @@ Here is a sample configuration:
 | `fail_if_no_checkpoint` | `boolean`       | `false`     | When `true` the pipeline will fail to initialize if fetching the specified checkpoint fails. <p> When `false`, the pipeline will start from scratch instead. Ignored if `start_from_checkpoint` is not set. </p>                                                                                              |
 | `standby`               | `boolean`       | `false`     | When `true`, the pipeline starts in **standby** mode. <p> To start processing the data the pipeline must be activated (`POST /activate`). </p> <p> If a previously activated pipeline is restarted without clearing storage, it auto-activates. </p> `start_from_checkpoint` must be set to use standby mode. |
 | `pull_interval`         | `integer(u64)`  | `10`        | Interval (in seconds) between fetch attempts for the latest checkpoint while standby.                                                                                                                                                                                                                         |
-| `push_interval`         | `integer(u64)`  |             | Interval (in seconds) between each push of checkpoint to object store. Disabled by default.                                                                                                                                                                                                                         |
+| `push_interval`         | `integer(u64)`  |             | Interval (in seconds) between [automatic sync](/pipelines/checkpoint-sync#automatic-checkpoint-synchronization) of a local checkpoint to object store measured from the completion of the previous sync attempt. Disabled by default.                                                                                                                                                                                                                         |
 | `transfers`             | `integer (u8)`  | `20`        | Number of concurrent file transfers.                                                                                                                                                                                                                                                                          |
 | `checkers`              | `integer (u8)`  | `20`        | Number of parallel checkers for verification.                                                                                                                                                                                                                                                                 |
 | `ignore_checksum`       | `boolean`       | `false`     | Skip checksum verification after transfer and only check the file size. Might improve throughput.                                                                                                                                                                                                             |
@@ -117,7 +117,8 @@ and `secret_key`. This loads credentials from the environment.
 Feldera can be configured to automatically synchronize checkpoints to the configured object store
 at regular intervals by setting the `push_interval` field in the `sync` configuration.
 
-When enabled, Feldera periodically pushes the latest **existing** checkpoint to the object store every `push_interval` seconds.
+When enabled, Feldera periodically pushes the latest **local** checkpoint to the object store every `push_interval` seconds
+after the previous sync operation completes.
 
 Automatic sync is **disabled by default**.
 
@@ -129,9 +130,18 @@ curl http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status | jq '
 
 The response includes the status of the last automatic sync under the `periodic` key.
 
-It is recommended to configure `push_interval` to greater than or equal to
+It is recommended to configure `push_interval` to greater than
 `fault_tolerance.checkpoint_interval_secs` to avoid attempting to sync checkpoints more frequently
 than they are created.
+
+### Automatic checkpoint synchronization trigger conditions
+
+An automatic checkpoint synchronization is only triggered when all of the following conditions are met:
+- The configured `push_interval` has elapsed.
+- No checkpoint sync is currently in progress.
+- Checkpoint sync has not been manually requested.
+- A valid checkpoint exists.
+- The checkpoint has not already been synced.
 
 ## Standby mode
 
