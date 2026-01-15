@@ -233,6 +233,24 @@ public class VarbinaryTests extends SqlIoTest {
                  r
                 ---
                  FFFFFFFF
+                (1 row)
+                
+                SELECT CAST(CAST(10 AS TINYINT) AS VARBINARY);
+                 r
+                ---
+                 0A
+                (1 row)
+                
+                SELECT CAST(CAST(-1 AS TINYINT) AS VARBINARY);
+                 r
+                ---
+                 FF
+                (1 row)
+                
+                SELECT CAST(CAST(-1 AS TINYINT) AS BINARY(4));
+                 r
+                ---
+                 000000FF
                 (1 row)""");
     }
 
