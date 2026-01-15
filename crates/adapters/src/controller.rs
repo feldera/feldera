@@ -3565,10 +3565,10 @@ impl StepTrigger {
                     }
                 }
                 StepAction::Trigger => {
-                    if request.step < step {
-                        Some(Action::Park(None))
-                    } else {
+                    if request.step >= step {
                         None
+                    } else {
+                        Some(Action::Park(None))
                     }
                 }
             }
