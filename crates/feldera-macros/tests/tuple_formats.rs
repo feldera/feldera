@@ -146,8 +146,9 @@ fn legacy_small_tuple_sizes() {
 
     // In comparison here is a Tup12 we have optimized:
     // the size is the header plus the sparse payload and doesn't include any fields.
-    let tup12_none: Tup12Opt =
-        Tup12Opt::new(None, None, None, None, None, None, None, None, None, None, None, None);
+    let tup12_none: Tup12Opt = Tup12Opt::new(
+        None, None, None, None, None, None, None, None, None, None, None, None,
+    );
     let bytes12 = serialize_bytes(&tup12_none);
     let archived_sparse_size = core::mem::size_of::<
         ArchivedTup12Sparse<

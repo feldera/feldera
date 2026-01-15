@@ -942,8 +942,9 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
                 let version = (deserializer as &mut dyn ::core::any::Any)
                     .downcast_mut::<::dbsp::storage::file::Deserializer>()
                     .map(|deserializer| deserializer.version())
-                    .expect("passed wrong deserializer");
-                if version <= 3 {
+                    .expect("Deserializer must be of type dbsp::storage::file::Deserializer for version tracking support");
+                const LAST_LEGACY_TUPLE_VERSION: u32 = 3;
+                if version <= LAST_LEGACY_TUPLE_VERSION {
                     // SAFETY: Before V4 files store tuples in the naive (standard rkyv) form that
                     // does not have a bitfield to optimize None values.
                     let legacy = unsafe {
