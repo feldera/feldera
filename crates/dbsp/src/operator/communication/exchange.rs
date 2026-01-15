@@ -19,7 +19,7 @@ use crate::{
     circuit_cache_key,
 };
 use crossbeam_utils::CachePadded;
-use futures::{future, prelude::*};
+use futures::{future, prelude::*, stream::FuturesUnordered};
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -573,7 +573,7 @@ where
         let this = self.clone();
         let runtime = Runtime::runtime().unwrap();
         TOKIO.spawn(async move {
-            let mut futures = Vec::new();
+            let mut futures = FuturesUnordered::new();
 
             // For each range of worker IDs `receivers` on a remote host,
             // accumulate all of the data from our local `senders` to all
@@ -610,9 +610,9 @@ where
                 ));
             }
 
-            // Wait for each send to complete.
-            for future in futures {
-                future.await.unwrap();
+            // Wait for all the sends to complete.
+            while let Some(result) = futures.next().await {
+                result.unwrap();
             }
 
             // Record that the sends completed.
