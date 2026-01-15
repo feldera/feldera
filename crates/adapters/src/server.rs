@@ -730,6 +730,7 @@ pub fn run_server(
             runtime.spawn(async move {
                 let mut prev_stored_status = None;
                 loop {
+                    let notify = state.desired_status_change.notified();
                     let desired_status = state.desired_status();
                     let bootstrap_policy = state.bootstrap_policy();
                     let stored_status = StoredStatus {
@@ -742,7 +743,7 @@ pub fn run_server(
                         spawn_blocking(move || stored_status.write(&*storage));
                     }
                     prev_stored_status = Some(stored_status);
-                    state.desired_status_change.notified().await;
+                    notify.await;
                 }
             });
         }
@@ -2202,11 +2203,12 @@ async fn coordination_status(state: WebData<ServerState>) -> Result<HttpResponse
         let status = match prev {
             None => get_status(&state),
             Some(prev) => loop {
+                let notify = state.desired_status_change.notified();
                 let status = get_status(&state);
                 if status != prev {
                     break status;
                 }
-                state.desired_status_change.notified().await;
+                notify.await;
             },
         };
         Some((status.clone(), (state, Some(status))))
