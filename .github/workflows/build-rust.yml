@@ -97,6 +97,18 @@ jobs:
           for exe in ${{ steps.collect.outputs.executables }}; do
             cp "$exe" build-artifacts/
           done
+          rm build-artifacts/tutorial*
+          rm build-artifacts/galen-*
+          rm build-artifacts/fraud-*
+          rm build-artifacts/degrees
+          rm build-artifacts/coord
+          rm build-artifacts/ldbc_graphalytics-*
+          rm build-artifacts/logging_demo-*
+          rm build-artifacts/nexmark_gen-*
+          rm build-artifacts/orgchart
+          rm build-artifacts/path-*
+          rm build-artifacts/pool
+
           mkdir -p build-release-artifacts
           # Move the executables we ship to users to a separate directory
           mv build-artifacts/fda build-release-artifacts/

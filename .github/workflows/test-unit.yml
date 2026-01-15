@@ -75,18 +75,29 @@ jobs:
       - name: feldera-macros
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: |
-          ./build/feldera_macros-*
           ./build/tuple_formats-*
           ./build/tuple_proptest-*
 
       - name: storage-test-compat
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: ./build/storage_test_compat-*
+        run: ../../build/storage_test_compat-*
         working-directory: crates/storage-test-compat
 
       - name: feldera-ir
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/feldera_ir-*
+
+      - name: fda
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: ./build/fda-*
+
+      - name: datagen
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: ./build/feldera_datagen-*
+
+      - name: feldera-storage
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: ./build/feldera_storge-*
 
       - name: readers
         if: ${{ vars.CI_DRY_RUN != 'true' }}

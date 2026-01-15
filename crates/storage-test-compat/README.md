@@ -10,8 +10,8 @@ Golden files live in `crates/storage-test-compat/golden-files/` and are named:
 - `golden-batch-v{VERSION}-small.feldera`
 - `golden-batch-v{VERSION}-snappy-small.feldera`
 
-The `large` files use the wide tuple format (Tup65) and the `small` files use
-a compact Tup10 format. Unit tests in this crate read these files and assert
+The `large` files use the wide tuple format (`Tup65`) and the `small` files use
+a compact `Tup8` format. Unit tests in this crate read these files and assert
 roundtrip compatibility.
 
 ## Regenerating golden files

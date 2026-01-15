@@ -88,6 +88,11 @@ use size_of::SizeOf;
 
 /// Increment this on each incompatible change.
 ///
+/// - v1: Initial version.
+/// - v2: TODO.
+/// - v3: Bloom filter format change.
+/// - v4: Tup None optimizations.
+///
 /// When a new version is created, make sure to generate new golden
 /// files for it in crate `storage-test-compat` to check for
 /// backwards compatibility.
