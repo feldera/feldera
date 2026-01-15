@@ -49,6 +49,7 @@ Here is a sample configuration:
 | `fail_if_no_checkpoint` | `boolean`       | `false`     | When `true` the pipeline will fail to initialize if fetching the specified checkpoint fails. <p> When `false`, the pipeline will start from scratch instead. Ignored if `start_from_checkpoint` is not set. </p>                                                                                              |
 | `standby`               | `boolean`       | `false`     | When `true`, the pipeline starts in **standby** mode. <p> To start processing the data the pipeline must be activated (`POST /activate`). </p> <p> If a previously activated pipeline is restarted without clearing storage, it auto-activates. </p> `start_from_checkpoint` must be set to use standby mode. |
 | `pull_interval`         | `integer(u64)`  | `10`        | Interval (in seconds) between fetch attempts for the latest checkpoint while standby.                                                                                                                                                                                                                         |
+| `push_interval`         | `integer(u64)`  |             | Interval (in seconds) between each push of checkpoint to object store. Disabled by default.                                                                                                                                                                                                                         |
 | `transfers`             | `integer (u8)`  | `20`        | Number of concurrent file transfers.                                                                                                                                                                                                                                                                          |
 | `checkers`              | `integer (u8)`  | `20`        | Number of parallel checkers for verification.                                                                                                                                                                                                                                                                 |
 | `ignore_checksum`       | `boolean`       | `false`     | Skip checksum verification after transfer and only check the file size. Might improve throughput.                                                                                                                                                                                                             |
@@ -110,6 +111,27 @@ For more details, refer to [rclone S3 permissions](https://rclone.org/s3/#s3-per
 
 To use **IRSA** (IAM Roles for Service Accounts) **omit** fields `access_key`
 and `secret_key`. This loads credentials from the environment.
+
+## Automatic checkpoint synchronization
+
+Feldera can be configured to automatically synchronize checkpoints to the configured object store
+at regular intervals by setting the `push_interval` field in the `sync` configuration.
+
+When enabled, Feldera periodically pushes the latest **existing** checkpoint to the object store every `push_interval` seconds.
+
+Automatic sync is **disabled by default**.
+
+The status of the most recent automatic sync operation can be queried by making a `GET` request to:
+
+```bash
+curl http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status | jq '.periodic'
+```
+
+The response includes the status of the last automatic sync under the `periodic` key.
+
+It is recommended to configure `push_interval` to greater than or equal to
+`fault_tolerance.checkpoint_interval_secs` to avoid attempting to sync checkpoints more frequently
+than they are created.
 
 ## Standby mode
 
