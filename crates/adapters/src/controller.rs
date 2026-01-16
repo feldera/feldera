@@ -125,6 +125,7 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
+use tokio::sync::Notify;
 use tokio::{
     fs::File,
     io::{AsyncReadExt, BufReader},
@@ -1696,6 +1697,20 @@ impl Controller {
             .await
             .last_key_value()
             .map(|(_step, snapshot)| snapshot.clone())
+    }
+
+    pub fn incomplete_labels(&self) -> HashSet<String> {
+        let mut incomplete_labels = HashSet::new();
+        for status in self.inner.status.inputs.read().values() {
+            if !status.metrics.end_of_input.load(Ordering::Relaxed) {
+                incomplete_labels.extend(status.config.connector_config.labels.iter().cloned());
+            }
+        }
+        incomplete_labels
+    }
+
+    pub fn input_completion_notify(&self) -> Arc<Notify> {
+        self.inner.input_completion_notify.clone()
     }
 
     pub fn adhoc_catalog(&self) -> AdHocCatalog {
@@ -4629,6 +4644,7 @@ pub struct ControllerInner {
     transaction_sender: tokio::sync::watch::Sender<TransactionCoordination>,
     coordination_request: Mutex<Option<StepRequest>>,
     coordination_prepare_checkpoint: AtomicBool,
+    input_completion_notify: Arc<Notify>,
     // The mutex is acquired from async context by actix and
     // from the sync context by the circuit thread.
     transaction_info: Mutex<TransactionInfo>,
@@ -4711,6 +4727,7 @@ impl ControllerInner {
                 transaction_receiver,
                 coordination_request: Mutex::new(is_multihost.then_some(StepRequest::new_idle(0))),
                 coordination_prepare_checkpoint: AtomicBool::new(false),
+                input_completion_notify: Arc::new(Notify::new()),
             }
         });
 
@@ -5673,7 +5690,8 @@ impl ControllerInner {
             endpoint_id,
             &self.circuit_thread_unparker,
             &self.backpressure_thread_unparker,
-        )
+        );
+        self.input_completion_notify.notify_waiters();
     }
 
     fn output_buffers_full(&self) -> bool {
