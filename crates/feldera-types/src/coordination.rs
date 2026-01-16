@@ -53,7 +53,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     net::SocketAddr,
 };
 
@@ -267,4 +267,11 @@ pub struct AdHocScan {
 
     /// Columnar projection.
     pub projection: Option<Vec<usize>>,
+}
+
+/// `/coordination/labels/incomplete` reply, streamed from pipeline to coordinator.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Labels {
+    /// All the labels on incomplete connectors.
+    pub incomplete: HashSet<String>,
 }
