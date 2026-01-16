@@ -278,10 +278,10 @@ pub(crate) async fn new_pipeline_monitor_event(
                    WHERE e1.id NOT IN ( \
                           SELECT e2.id \
                             FROM pipeline_monitor_event AS e2 \
-                        WHERE tenant_id = $1 AND pipeline_id = $2 
+                        WHERE tenant_id = $1 AND pipeline_id = $2
                         ORDER BY e2.recorded_at DESC, e2.id DESC \
                            LIMIT $3 \
-                   ) AND tenant_id = $1 AND pipeline_id = $2 
+                   ) AND tenant_id = $1 AND pipeline_id = $2
             ",
         )
         .await?;
