@@ -1,5 +1,6 @@
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
+use crate::db::operations::pipeline_monitor::new_pipeline_monitor_event;
 use crate::db::operations::utils::{
     maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
 };
@@ -34,7 +35,7 @@ use tracing::{error, warn};
 use uuid::Uuid;
 
 /// Parses string as a JSON value.
-fn deserialize_json_value(s: &str) -> Result<serde_json::Value, DBError> {
+pub fn deserialize_json_value(s: &str) -> Result<serde_json::Value, DBError> {
     serde_json::from_str::<serde_json::Value>(s).map_err(|e| DBError::InvalidJsonData {
         data: s.to_string(),
         error: format!("unable to deserialize data string as JSON due to: {e}"),
@@ -447,6 +448,26 @@ pub async fn get_pipeline_by_id_for_monitoring(
     row_to_extended_pipeline_descriptor_monitoring(&row)
 }
 
+pub async fn get_pipeline_by_name_for_monitoring(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_name: String,
+) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
+    let stmt = txn
+        .prepare_cached(&format!(
+            "SELECT {RETRIEVE_PIPELINE_MONITORING_COLUMNS}
+             FROM pipeline AS p
+             WHERE p.tenant_id = $1 AND p.name = $2
+            "
+        ))
+        .await?;
+    let row = txn
+        .query_opt(&stmt, &[&tenant_id.0, &pipeline_name])
+        .await?
+        .ok_or(DBError::UnknownPipelineName { pipeline_name })?;
+    row_to_extended_pipeline_descriptor_monitoring(&row)
+}
+
 pub(crate) async fn new_pipeline(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
@@ -542,6 +563,7 @@ pub(crate) async fn new_pipeline(
     .await
     .map_err(maybe_unique_violation)
     .map_err(|e| maybe_tenant_id_foreign_key_constraint_err(e, tenant_id))?;
+    new_pipeline_monitor_event(txn, tenant_id, PipelineId(new_id), Uuid::now_v7()).await?;
     Ok((PipelineId(new_id), Version(1)))
 }
 
@@ -816,7 +838,7 @@ pub(crate) async fn update_pipeline(
             .await?;
         assert_eq!(rows_affected, 1); // The row must exist as it has been retrieved before
     }
-
+    new_pipeline_monitor_event(txn, tenant_id, current.id, Uuid::now_v7()).await?;
     Ok(Version(current.version.0 + 1))
 }
 
@@ -1104,6 +1126,7 @@ pub(crate) async fn set_program_status(
             ],
         )
         .await?;
+    new_pipeline_monitor_event(txn, tenant_id, pipeline_id, Uuid::now_v7()).await?;
     if rows_affected > 0 {
         Ok(())
     } else {
@@ -1221,6 +1244,7 @@ pub(crate) async fn set_deployment_resources_desired_status(
             ],
         )
         .await?;
+    new_pipeline_monitor_event(txn, tenant_id, current.id, Uuid::now_v7()).await?;
     if modified_rows > 0 {
         Ok(current.id)
     } else {
@@ -1614,6 +1638,7 @@ async fn set_deployment_resources_status(
             ],
         )
         .await?;
+    new_pipeline_monitor_event(txn, tenant_id, pipeline_id, Uuid::now_v7()).await?;
     if rows_affected > 0 {
         Ok(())
     } else {
@@ -1652,15 +1677,20 @@ async fn remain_deployment_resources_status(
         .execute(
             &stmt,
             &[
-                &final_deployment_resources_status_details.map(|v| v.to_string()), // $1: deployment_resources_status_details,
+                &final_deployment_resources_status_details
+                    .as_ref()
+                    .map(|v| v.to_string()), // $1: deployment_resources_status_details,
                 &final_deployment_runtime_status.map(runtime_status_to_string), // $2: deployment_runtime_status,
-                &final_deployment_runtime_status_details.map(|v| v.to_string()), // $3: deployment_runtime_status_details,
+                &final_deployment_runtime_status_details
+                    .as_ref()
+                    .map(|v| v.to_string()), // $3: deployment_runtime_status_details,
                 &final_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $4: deployment_runtime_desired_status,
                 &tenant_id.0,   // $5: tenant_id
                 &pipeline_id.0, // $6: id
             ],
         )
         .await?;
+    new_pipeline_monitor_event(txn, tenant_id, pipeline_id, Uuid::now_v7()).await?;
     if rows_affected > 0 {
         Ok(())
     } else {
@@ -1702,6 +1732,7 @@ pub(crate) async fn set_storage_status(
             ],
         )
         .await?;
+    new_pipeline_monitor_event(txn, tenant_id, pipeline_id, Uuid::now_v7()).await?;
     if rows_affected > 0 {
         Ok(())
     } else {

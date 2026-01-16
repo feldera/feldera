@@ -196,6 +196,8 @@ It contains the following fields:
         endpoints::pipeline_management::post_pipeline_stop,
         endpoints::pipeline_management::post_pipeline_clear,
         endpoints::pipeline_management::get_pipeline_logs,
+        endpoints::pipeline_management::pipeline_events::list_pipeline_events,
+        endpoints::pipeline_management::pipeline_events::get_pipeline_event,
 
         // Pipeline interaction endpoints
         endpoints::pipeline_interaction::http_input,
@@ -283,6 +285,9 @@ It contains the following fields:
         crate::api::endpoints::pipeline_management::PostPutPipeline,
         crate::api::endpoints::pipeline_management::PatchPipeline,
         crate::api::endpoints::pipeline_management::PostStopPipelineParameters,
+        crate::api::endpoints::pipeline_management::pipeline_events::PipelineMonitorEventSelectedInfo,
+        crate::api::endpoints::pipeline_management::pipeline_events::PipelineMonitorEventFieldSelector,
+        crate::api::endpoints::pipeline_management::pipeline_events::GetPipelineEventParameters,
 
         // Dataflow IR
         feldera_ir::Dataflow,
@@ -539,6 +544,8 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_management::post_pipeline_stop)
         .service(endpoints::pipeline_management::post_pipeline_clear)
         .service(endpoints::pipeline_management::get_pipeline_logs)
+        .service(endpoints::pipeline_management::pipeline_events::list_pipeline_events)
+        .service(endpoints::pipeline_management::pipeline_events::get_pipeline_event)
         // Pipeline interaction endpoints
         .service(endpoints::pipeline_interaction::http_input)
         .service(endpoints::pipeline_interaction::http_output)

@@ -2,7 +2,9 @@ use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
 use crate::db::types::monitor::{
-    ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent, NewClusterMonitorEvent,
+    ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
+    ExtendedPipelineMonitorEvent, NewClusterMonitorEvent, PipelineMonitorEvent,
+    PipelineMonitorEventId,
 };
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
@@ -530,4 +532,36 @@ pub(crate) trait Storage {
         retention_hours: u16,
         retention_num: u16,
     ) -> Result<(u64, u64), DBError>;
+
+    async fn list_pipeline_monitor_events(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+    ) -> Result<Vec<PipelineMonitorEvent>, DBError>;
+
+    async fn get_pipeline_monitor_event_short(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+        event_id: PipelineMonitorEventId,
+    ) -> Result<PipelineMonitorEvent, DBError>;
+
+    async fn get_pipeline_monitor_event_extended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+        event_id: PipelineMonitorEventId,
+    ) -> Result<ExtendedPipelineMonitorEvent, DBError>;
+
+    async fn get_latest_pipeline_monitor_event_short(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+    ) -> Result<PipelineMonitorEvent, DBError>;
+
+    async fn get_latest_pipeline_monitor_event_extended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+    ) -> Result<ExtendedPipelineMonitorEvent, DBError>;
 }
