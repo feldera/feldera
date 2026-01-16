@@ -58,7 +58,7 @@ Feldera pipelines primarily use memory for the following purposes:
   batches in the background.  When a merged batch is large enough,
   it is written to storage.  The minimum size to write a batch to
   disk is configurable as `min_storage_bytes` under `storage` in the
-  pipeline [Runtime configuration].  The default is 1 MiB, which is
+  pipeline [Runtime configuration].  The default is 10 MiB, which is
   usually a good choice.  Configuring a smaller value may save memory
   but at a performance cost.
 
