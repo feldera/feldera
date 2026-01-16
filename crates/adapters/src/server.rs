@@ -1029,7 +1029,7 @@ fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
 
     // Otherwise, fall back to `INFO`, except for `tarpc`, which is too verbose
     // at that level.
-    EnvFilter::try_new("tarpc=warn, info").unwrap()
+    EnvFilter::try_new("tarpc=warn,info").unwrap()
 }
 
 fn do_bootstrap(
