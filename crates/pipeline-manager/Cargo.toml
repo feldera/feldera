@@ -23,11 +23,6 @@ feldera-types = { workspace = true }
 feldera-cloud1-client = { workspace = true }
 feldera-ir = { workspace = true }
 
-# Cryptography provider (FIPS enabled by default)
-# Make sure this is the same rustls version used by other crates in the dependency tree.
-# See the `ensure_default_crypto_provider` function at the root of this crate.
-rustls = { workspace = true, features = ["fips"] }
-
 # Logging
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
@@ -109,6 +104,15 @@ tempfile = { workspace = true }
 # Keep in-sync with `src/compiler/rust_compiler.rs`.
 compare = { workspace = true }
 sha2 = { workspace = true }
+
+# Cryptography provider (FIPS enabled by default)
+# Make sure this is the same rustls version used by other crates in the dependency tree.
+# See the `ensure_default_crypto_provider` function at the root of this crate.
+[target.'cfg(target_os = "linux")'.dependencies]
+rustls = { workspace = true, features = ["fips"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+rustls = { workspace = true, features = ["aws-lc-rs"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
