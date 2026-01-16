@@ -60,7 +60,7 @@ use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
 use feldera_types::constants::STATUS_FILE;
-use feldera_types::coordination::{AdHocScan, CoordinationActivate, Step, StepRequest};
+use feldera_types::coordination::{AdHocScan, CoordinationActivate, Labels, Step, StepRequest};
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::query_params::{
     ActivateParams, MetricsFormat, MetricsParameters, SamplyProfileParams,
@@ -1203,6 +1203,7 @@ where
         .service(coordination_adhoc_catalog)
         .service(coordination_adhoc_lease)
         .service(coordination_adhoc_scan)
+        .service(coordination_labels_incomplete)
 }
 
 /// Implements `/start`, `/pause`, `/activate`:
@@ -2440,6 +2441,30 @@ async fn coordination_adhoc_scan(
             },
         ),
     ))
+}
+
+/// Stream the set of incomplete labels.
+#[get("/coordination/labels/incomplete")]
+async fn coordination_labels_incomplete(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    let controller = state.controller()?;
+    let notify = controller.input_completion_notify();
+
+    let response_stream = async_stream::stream! {
+        loop {
+            let notify = notify.notified();
+            let labels = format!("{}\n", serde_json::to_string(&Labels {
+                incomplete: controller.incomplete_labels()
+            }).unwrap());
+            yield Ok::<_, actix_web::Error>(web::Bytes::from(labels));
+            notify.await;
+        }
+    };
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/x-ndjson")
+        .streaming(response_stream))
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
