@@ -15,9 +15,9 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
-        Prometheus metrics output now also contains pipeline names with a
-        "pipeline_name" label, in addition to the exist "pipeline" label,
-        which still contains the pipeline UUID.
+        The Delta Lake connector's `skip_unused_columns` property has been deprecated. Use
+        table-level [`skip_unused_colums`](https://docs.feldera.com/sql/grammar#skip-unused-columns)
+        instead.
 
         ## 0.201.0
 
@@ -36,7 +36,13 @@ import TabItem from '@theme/TabItem';
         for the monitoring, is configured with an additional RBAC permission needed for this
         feature (see `kubernetes-runner-rbac.yaml` for changes).
 
-        ## 0.186.00
+        ## 0.188.0
+
+        Prometheus metrics output now also contains pipeline names with a
+        "pipeline_name" label, in addition to the exist "pipeline" label,
+        which still contains the pipeline UUID.
+
+        ## 0.186.0
 
         The Kafka input connector will now start reading partitions added
         to a topic upon resuming from a checkpoint.  Previously, the

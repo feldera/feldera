@@ -207,6 +207,7 @@ The property `expected_size` can be used to pass information to the
 SQL compiler about the expected size of a table in steady state
 operation.  The value of this property should be an integer value.
 
+<a id="skip-unused-columns"></a>
 #### Ignoring unused columns
 
 The `skip_unused_columns` is an optional Boolean property that can be

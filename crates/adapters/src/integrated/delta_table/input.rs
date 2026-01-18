@@ -519,6 +519,13 @@ impl DeltaTableInputEndpointInner {
         }
     }
 
+    fn skip_unused_columns(&self) -> bool {
+        // Old-style: property in the connector configuration.
+        // New-style: property in the table definition.
+        self.config.skip_unused_columns
+            || self.schema.get_property("skip_unused_columns") == Some("true")
+    }
+
     fn allocate_follow_transaction_label(&self) -> Option<Option<String>> {
         if self.config.transaction_mode == DeltaTableTransactionMode::Always {
             Some(Some(format!(
@@ -604,7 +611,7 @@ impl DeltaTableInputEndpointInner {
     /// table declaration.
     fn used_columns(&self, table: &DeltaTable) -> Vec<String> {
         // Column names in the SQL schema.
-        let sql_columns = if self.config.skip_unused_columns {
+        let sql_columns = if self.skip_unused_columns() {
             self.schema
                 .fields
                 .iter()
