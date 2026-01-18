@@ -32,6 +32,8 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.IIndentStream;
 
+/** Equivalent to a Rust assignment expression.  This is the only expression with side effects in the IR.
+ * It is only used to implement aggregates, for updating the mutable accumulator. */
 public final class DBSPAssignmentExpression extends DBSPExpression {
     public final DBSPExpression left;
     public final DBSPExpression right;

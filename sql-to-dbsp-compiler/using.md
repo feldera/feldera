@@ -45,6 +45,14 @@ Usage: sql-to-dbsp [options] Input file to compile
       Generate an input for each CREATE TABLE, even if the table is not used
       by any view
       Default: false
+    --correlatedColumns
+      Dump information about the columns that are used in join equality
+      comparisons
+      Default: false
+    --crates
+      Followed by a program name. Generates code using multiple crates;
+      `outputFile` is interpreted as a directory.
+      Default: <empty string>
     --dataflow
       Emit the Dataflow graph of the program in the specified JSON file
     --enterprise
@@ -52,10 +60,6 @@ Usage: sql-to-dbsp [options] Input file to compile
       Default: false
     --errors
       Error output file; stderr if not specified
-      Default: <empty string>
-    --crates
-      Followed by a program name. Generates code using multiple crates;
-      `outputFile` is interpreted as a directory.
       Default: <empty string>
     --handles
       Use handles (true) or Catalog (false) in the emitted Rust code
@@ -129,6 +133,16 @@ Usage: sql-to-dbsp [options] Input file to compile
 ```
 
 Here is a description of the non-obvious command-line options:
+
+--correlatedColumns: Runs a compiler analysis over the input program which
+     detects table columns that are directly compared in equijoin comparisons.
+     This produces an output of the form:
+
+     [Correlated:] [table0.column1, table2.column0, table3.column4]
+
+     Note that a list of columns may contain more than two
+     table.column pairs, when some columns are used in sequences of
+     joins.
 
 --handles: The Rust generated code can expose the input tables and
      output views in two ways: through explicit handles, and through a

@@ -1061,6 +1061,10 @@ public class MetadataTests extends BaseSQLTests {
                       Generate an input for each CREATE TABLE, even if the table is not used\s
                       by any view
                       Default: false
+                    --correlatedColumns
+                      Dump information about the columns that are used in join equality\s
+                      comparisons\s
+                      Default: false
                     --crates
                       Followed by a program name. Generates code using multiple crates;\s
                       `outputFile` is interpreted as a directory.
