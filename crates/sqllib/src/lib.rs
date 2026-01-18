@@ -787,6 +787,36 @@ pub fn abs_d(left: F64) -> F64 {
     left.abs()
 }
 
+#[doc(hidden)]
+#[inline(always)]
+pub fn abs_u8(left: u8) -> u8 {
+    left
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn abs_u16(left: u16) -> u16 {
+    left
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn abs_u32(left: u32) -> u32 {
+    left
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn abs_u64(left: u64) -> u64 {
+    left
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn abs_u128(left: u128) -> u128 {
+    left
+}
+
 some_polymorphic_function1!(abs, i8, i8, i8);
 some_polymorphic_function1!(abs, i16, i16, i16);
 some_polymorphic_function1!(abs, i32, i32, i32);
@@ -794,6 +824,82 @@ some_polymorphic_function1!(abs, i64, i64, i64);
 some_polymorphic_function1!(abs, i128, i128, i128);
 some_polymorphic_function1!(abs, f, F32, F32);
 some_polymorphic_function1!(abs, d, F64, F64);
+some_polymorphic_function1!(abs, u8, u8, u8);
+some_polymorphic_function1!(abs, u16, u16, u16);
+some_polymorphic_function1!(abs, u32, u32, u32);
+some_polymorphic_function1!(abs, u64, u64, u64);
+some_polymorphic_function1!(abs, u128, u128, u128);
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_i8(x: i8) -> i8 {
+    if x == 0 { x } else { x.signum() }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_i16(x: i16) -> i16 {
+    if x == 0 { x } else { x.signum() }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_i32(x: i32) -> i32 {
+    if x == 0 { x } else { x.signum() }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_i64(x: i64) -> i64 {
+    if x == 0 { x } else { x.signum() }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_i128(x: i128) -> i128 {
+    if x == 0 { x } else { x.signum() }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_u8(x: u8) -> u8 {
+    if x == 0 { x } else { 1 }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_u16(x: u16) -> u16 {
+    if x == 0 { x } else { 1 }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_u32(x: u32) -> u32 {
+    if x == 0 { x } else { 1 }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_u64(x: u64) -> u64 {
+    if x == 0 { x } else { 1 }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_u128(x: u128) -> u128 {
+    if x == 0 { x } else { 1 }
+}
+
+some_polymorphic_function1!(sign, i8, i8, i8);
+some_polymorphic_function1!(sign, i16, i16, i16);
+some_polymorphic_function1!(sign, i32, i32, i32);
+some_polymorphic_function1!(sign, i64, i64, i64);
+some_polymorphic_function1!(sign, i128, i128, i128);
+some_polymorphic_function1!(sign, u8, u8, u8);
+some_polymorphic_function1!(sign, u16, u16, u16);
+some_polymorphic_function1!(sign, u32, u32, u32);
+some_polymorphic_function1!(sign, u64, u64, u64);
+some_polymorphic_function1!(sign, u128, u128, u128);
 
 #[doc(hidden)]
 #[inline(always)]

@@ -1921,4 +1921,20 @@ public class Regression1Tests extends SqlIoTest {
                 CAST(roww_varnt AS ROW(int INT, var VARCHAR)) AS roww
                 FROM cmpx_to_variant;""");
     }
+
+    @Test
+    public void issue5448() {
+        // Also test for issue 5449
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(intt INTEGER UNSIGNED, x INT);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                ABS(intt) AS a, SIGN(x) as s, SIGN(intt) as i FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(0, 0), (1, 1), (2, -1)", """
+                 a | s | i | weight
+                --------------------
+                 0 | 0 | 0 | 1
+                 1 | 1 | 1 | 1
+                 2 | -1 | 1 | 1""");
+    }
 }
