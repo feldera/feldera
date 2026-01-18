@@ -10,7 +10,7 @@
 pub(crate) mod apply;
 pub mod apply2;
 pub mod apply3;
-pub mod apply_n;
+mod apply_n;
 mod async_stream_operators;
 pub mod communication;
 pub(crate) mod inspect;
@@ -54,6 +54,7 @@ mod non_incremental;
 mod recursive;
 pub mod sample;
 mod semijoin;
+pub mod star_join_macros;
 pub mod time_series;
 mod trace;
 
@@ -63,6 +64,7 @@ use crate::storage::backend::StorageError;
 
 pub use self::csv::CsvSource;
 pub use apply::Apply;
+pub use apply_n::apply_n;
 pub use condition::Condition;
 pub use delta0::Delta0;
 pub use dynamic::aggregate::{

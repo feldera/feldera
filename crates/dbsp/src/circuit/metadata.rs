@@ -44,6 +44,15 @@ pub const INPUT_BATCHES_LABEL: &str = "input batches";
 /// A collection of input batch sizes, one for each input
 pub const INPUT_BATCHES_COLLECTION: &str = "collection of input batches";
 
+/// The number of output tuples before consolidation.
+pub const COMPUTED_OUTPUTS_LABEL: &str = "computed outputs";
+
+/// (computed outputs - output batch sizes) / computed outputs
+pub const OUTPUT_REDUNDANCY_LABEL: &str = "output redundancy";
+
+/// Prefix batch sizes.
+pub const PREFIX_BATCHES_LABEL: &str = "prefix batches";
+
 /// Output batch sizes.
 pub const OUTPUT_BATCHES_LABEL: &str = "output batches";
 

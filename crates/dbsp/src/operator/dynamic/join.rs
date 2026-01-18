@@ -86,6 +86,7 @@ impl<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized> TraceJoinFuncs<K
         }
     }
 }
+
 pub trait JoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized>:
     Fn(&K, &V1, &V2, &mut OK, &mut OV)
 {
@@ -1286,6 +1287,7 @@ where
     T: ZBatchReader,
     Z: IndexedZSet,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         right_factories: &T::Factories,
         output_factories: &Z::Factories,

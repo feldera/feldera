@@ -230,6 +230,16 @@ pub trait StreamMetadata: DynClone + 'static {
     /// Invoked by the scheduler exactly once for each consumer operator attached
     /// to the stream.
     fn register_consumer(&self);
+
+    /// Invoked at each step once by each consumer of the stream.
+    /// When the token count drops to 1, the last consumer can retrieve the value using
+    /// `StreamValue::take`.
+    ///
+    /// Panics if called more times than there are tokens.
+    ///
+    /// All tokens must be consumed at each step; otherwise the circuit will panic
+    /// during the next step.
+    fn consume_token(&self);
 }
 
 dyn_clone::clone_trait_object!(StreamMetadata);
@@ -719,6 +729,9 @@ where
     fn register_consumer(&self) {
         self.val.get_mut().consumers += 1;
     }
+    fn consume_token(&self) {
+        StreamValue::consume_token(self.val());
+    }
 }
 
 impl<C, D> Clone for Stream<C, D>
@@ -801,7 +814,7 @@ where
 {
     /// Create a new stream within the given circuit, connected to the specified
     /// node id.
-    fn new(circuit: C, node_id: NodeId) -> Self {
+    pub(crate) fn new(circuit: C, node_id: NodeId) -> Self {
         Self {
             stream_id: circuit.allocate_stream_id(),
             local_node_id: node_id,
@@ -887,10 +900,11 @@ impl<C, D> Stream<C, D> {
     }
 }
 
-impl<C, D> Stream<C, D>
-where
-    D: Clone,
-{
+impl<C, D> Stream<C, D> {
+    pub(crate) fn map_value<T>(&self, f: impl Fn(&D) -> T) -> T {
+        f(StreamValue::peek(&self.get()))
+    }
+
     fn get(&self) -> Ref<'_, StreamValue<D>> {
         self.val.get()
     }
@@ -905,7 +919,7 @@ where
     ///
     /// The caller must have exclusive access to the current stream;
     /// otherwise the method will panic.
-    fn put(&self, d: D) {
+    pub(crate) fn put(&self, d: D) {
         self.val.put(d);
     }
 }
@@ -2240,6 +2254,17 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         O: Data,
         Op: NaryOperator<I, O>,
         Iter: IntoIterator<Item = &'a Stream<Self, I>>;
+
+    /// Use a constructor function to create a node.
+    ///
+    /// Used to add operators that do not implement any of the operator traits.
+    /// The `constructor` closure is responsible for creating the node, its output stream,
+    /// and connecting any input streams to the node.
+    fn add_custom_node<N: Node, R>(
+        &self,
+        name: Cow<'static, str>,
+        constructor: impl FnOnce(NodeId) -> (N, R),
+    ) -> R;
 
     /// Add a feedback loop to the circuit.
     ///
@@ -4159,6 +4184,25 @@ where
                 self.connect_stream(stream, id, input_preference);
             }
             (node, output_stream)
+        })
+    }
+
+    #[track_caller]
+    fn add_custom_node<N: Node, R>(
+        &self,
+        name: Cow<'static, str>,
+        constructor: impl FnOnce(NodeId) -> (N, R),
+    ) -> R {
+        self.add_node(|id| {
+            // This must be called before the node is created, so that the node can connect input streams to
+            // itself without causing a panic.
+            self.log_circuit_event(&CircuitEvent::operator(
+                GlobalNodeId::child_of(self, id),
+                name,
+                Some(Location::caller()),
+            ));
+            let (node, res) = constructor(id);
+            (node, res)
         })
     }
 

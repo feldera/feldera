@@ -186,10 +186,12 @@ struct Inner {
     /// This could be implemented using two separate consensus objects, but we combine them
     /// to reduce the number of communication cycles.
     ///
-    /// The first bool is true if the commit is complete for the current transaction.
+    /// The first bool is true if the commit is complete for the current transaction for
+    /// the local circuit.
     ///
-    /// The second bool is true if the subcircuit has received a flush request from the current
-    /// transaction.
+    /// The second bool is true if the circuit has received a flush request from the current
+    /// _parent_ circuit transaction. Once all workers have completed the local transaction and
+    /// report flush=true, the circuit can report is_flush_complete=true to the parent.
     global_commit_consensus: Broadcast<(bool, bool)>,
 
     /// Broadcast object used to exchange metadata with peers.
