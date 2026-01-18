@@ -704,11 +704,12 @@ where
                 .dyn_accumulate_trace(&factories.right_trace_factories, &factories.right_factories);
 
             let left = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.right_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
                     factories.timed_items_factory,
+                    false,
                     join_funcs.left,
                     Location::caller(),
                     self.circuit().clone(),
@@ -718,11 +719,12 @@ where
             );
 
             let right = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.left_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
                     factories.timed_items_factory,
+                    false,
                     join_funcs.right,
                     Location::caller(),
                     self.circuit().clone(),
@@ -860,11 +862,12 @@ where
             );
 
             let left = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.right_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
                     factories.timed_items_factory,
+                    false,
                     join_funcs.left,
                     Location::caller(),
                     self.circuit().clone(),
@@ -874,11 +877,12 @@ where
             );
 
             let right = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.left_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
                     factories.timed_items_factory,
+                    false,
                     join_funcs.right,
                     Location::caller(),
                     self.circuit().clone(),
@@ -1235,9 +1239,9 @@ impl JoinStats {
     }
 }
 
-/// The `SATURATE` parameter controls whether the right side of the join
+/// The `saturate` property controls whether the right side of the join
 /// (the trace) should be wrapped in a `SaturatingCursor`. See [`Stream::dyn_left_join`].
-pub struct JoinTrace<I, B, T, Z, Clk, const SATURATE: bool = false>
+pub struct JoinTrace<I, B, T, Z, Clk>
 where
     I: WithSnapshot,
     B: ZBatch,
@@ -1251,6 +1255,7 @@ where
     clock: Clk,
     timed_items_factory:
         &'static dyn Factory<DynPairs<DynDataTyped<T::Time>, WeightedItem<Z::Key, Z::Val, Z::R>>>,
+    saturate: bool,
     join_func: RefCell<
         TraceJoinFunc<
             <I::Batch as BatchReader>::Key,
@@ -1274,7 +1279,7 @@ where
     _types: PhantomData<(I, B, T, Z)>,
 }
 
-impl<I, B, T, Z, Clk, const SATURATE: bool> JoinTrace<I, B, T, Z, Clk, SATURATE>
+impl<I, B, T, Z, Clk> JoinTrace<I, B, T, Z, Clk>
 where
     I: WithSnapshot,
     B: ZBatch,
@@ -1290,6 +1295,7 @@ where
         timed_items_factory: &'static dyn Factory<
             DynPairs<DynDataTyped<T::Time>, WeightedItem<Z::Key, Z::Val, Z::R>>,
         >,
+        saturate: bool,
         join_func: TraceJoinFunc<
             <I::Batch as BatchReader>::Key,
             <I::Batch as BatchReader>::Val,
@@ -1305,6 +1311,7 @@ where
             output_factories: output_factories.clone(),
             timed_item_factory,
             timed_items_factory,
+            saturate,
             clock,
             join_func: RefCell::new(join_func),
             location,
@@ -1319,7 +1326,7 @@ where
     }
 }
 
-impl<I, B, T, Z, Clk, const SATURATE: bool> Operator for JoinTrace<I, B, T, Z, Clk, SATURATE>
+impl<I, B, T, Z, Clk> Operator for JoinTrace<I, B, T, Z, Clk>
 where
     I: WithSnapshot + 'static,
     B: ZBatch,
@@ -1436,7 +1443,7 @@ where
 /// - If `swap` is `false`, the `delta_cursor` is the primary cursor.
 ///
 /// This is used to optimize the join operation by iterating over the smaller cursor.
-struct JointKeyCursor<'a, C1, K, V1, V2, T, const SATURATE: bool>
+struct JointKeyCursor<'a, C1, K, V1, V2, T>
 where
     C1: Cursor<K, V1, (), DynZWeight>,
     K: DataTrait + ?Sized,
@@ -1445,12 +1452,12 @@ where
     T: Timestamp,
 {
     delta_cursor: C1,
-    trace_cursor: SaturatingCursor<'a, K, V2, T, SATURATE>,
+    trace_cursor: SaturatingCursor<'a, K, V2, T>,
     swap: bool,
     phantom: PhantomData<fn(&K, &V1, &V2, &T)>,
 }
 
-impl<'a, C1, K, V1, V2, T, const SATURATE: bool> JointKeyCursor<'a, C1, K, V1, V2, T, SATURATE>
+impl<'a, C1, K, V1, V2, T> JointKeyCursor<'a, C1, K, V1, V2, T>
 where
     C1: ZCursor<K, V1, ()>,
     K: DataTrait + ?Sized,
@@ -1458,7 +1465,7 @@ where
     V2: DataTrait + ?Sized,
     T: Timestamp,
 {
-    pub fn new(left: C1, right: SaturatingCursor<'a, K, V2, T, SATURATE>, swap: bool) -> Self {
+    pub fn new(left: C1, right: SaturatingCursor<'a, K, V2, T>, swap: bool) -> Self {
         Self {
             delta_cursor: left,
             trace_cursor: right,
@@ -1509,8 +1516,7 @@ where
     }
 }
 
-impl<I, B, T, Z, Clk, const SATURATE: bool> StreamingBinaryOperator<Option<I>, T, Z>
-    for JoinTrace<I, B, T, Z, Clk, SATURATE>
+impl<I, B, T, Z, Clk> StreamingBinaryOperator<Option<I>, T, Z> for JoinTrace<I, B, T, Z, Clk>
 where
     I: WithSnapshot + 'static,
     I::Batch: ZBatchReader<Time = ()>,
@@ -1552,7 +1558,7 @@ where
             let delta_len = delta.len();
 
             let trace = trace.unwrap();
-            let trace_len = if SATURATE { usize::MAX } else { trace.len() };
+            let trace_len = if self.saturate { usize::MAX } else { trace.len() };
 
             *self.empty_input.borrow_mut() = delta.is_empty();
             *self.empty_output.borrow_mut() = true;
@@ -1573,7 +1579,8 @@ where
                 Box::new(trace.cursor())
             };
 
-            let trace_cursor = SaturatingCursor::<'_, _, _, _, SATURATE>::new(
+            let trace_cursor = SaturatingCursor::new(
+                self.saturate,
                 trace_cursor,
                 self.right_factories.key_factory(),
                 self.right_factories.val_factory()
