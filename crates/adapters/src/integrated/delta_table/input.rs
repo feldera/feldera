@@ -1625,6 +1625,31 @@ impl DeltaTableInputEndpointInner {
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) {
+        if self.config.verbose > 0 {
+            // Don't log actions we ignore to limit spurious logging. E.g., delta lake
+            // optimization passes can generate thousand of noop actions.
+            let data_change_actions = actions
+                .iter()
+                .filter(|action| match action {
+                    Action::Add(add) if add.data_change => true,
+                    Action::Remove(remove) if remove.data_change => true,
+                    _ => false,
+                })
+                .collect::<Vec<_>>();
+            info!(
+                "delta_table {}: log entry for table version {new_version}: {data_change_actions:?}{}",
+                &self.endpoint_name,
+                if actions.len() > data_change_actions.len() {
+                    format!(
+                        " ({} other actions)",
+                        actions.len() - data_change_actions.len()
+                    )
+                } else {
+                    "".to_string()
+                }
+            );
+        }
+
         // Use the time when we _started_ reading transaction data as the ingestion timestamp.
         let timestamp = Utc::now();
 
