@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
@@ -221,6 +222,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
 
     String getColor(DBSPSimpleOperator operator) {
         /*
+        // Uncomment various choices for debugging
         // Show in green projection operators
         if (annotations(operator).contains("IsProjection"))
             return " style=filled fillcolor=green";
@@ -228,6 +230,10 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         if (operator.id > lastCircuit)
             return " style=filled fillcolor=green";
          */
+        if (operator.is(DBSPJoinBaseOperator.class)) {
+            // There are more of these every day
+            return " style=filled fillcolor=orangered";
+        }
         return switch (operator.operation) {
             case "waterline" -> " style=filled fillcolor=lightgreen";
             case "controlled_filter" -> " style=filled fillcolor=cyan";
@@ -243,10 +249,8 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                  // all aggregates require an upsert, which is stateful, even the ones that are linear
                  "aggregate", "partitioned_rolling_aggregate",
                  "stream_aggregate", "chain_aggregate", "linear_aggregate",
-                 // joins require integrators
-                 "join", "join_flatmap", "asof_join", "join_index", "antijoin",
-                 "left_join", "left_join_index", "left_join_flatmap",
-                 "stream_join", "stream_join_index", "stream_antijoin",
+                 // these are not derived from JoinBase
+                 "antijoin", "stream_antijoin",
                  // delays contain state, but not that much
                  "accumulate_delay_trace", // "transaction_delay", "differentiate",
                  // group operators

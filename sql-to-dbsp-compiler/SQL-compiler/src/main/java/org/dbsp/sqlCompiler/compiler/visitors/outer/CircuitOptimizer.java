@@ -73,6 +73,8 @@ public class CircuitOptimizer extends Passes {
         // this.dump(3);
         // First part of optimizations may still synthesize some circuit components
         this.add(new ImplementNow(compiler));
+        if (compiler.options.ioOptions.correlatedColumns)
+            this.add(new Lineage(compiler));
         this.add(new DeterministicFunctions(compiler));
         this.add(new NoConnectorMetadata(compiler).getCircuitVisitor(true));
         this.add(new StopOnError(compiler));
