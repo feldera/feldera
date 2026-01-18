@@ -59,7 +59,12 @@ public class Projection extends InnerVisitor {
 
     /** A pair containing an input (parameter) number (0, 1, 2, etc.)
      * and an index field in the tuple of the corresponding input .*/
-    public record InputAndFieldIndex(int inputIndex, int fieldIndex) {}
+    public record InputAndFieldIndex(int inputIndex, int fieldIndex) {
+        @Override
+        public String toString() {
+            return this.inputIndex + "." + this.fieldIndex;
+        }
+    }
 
     /**
      * A list describing how each output of a projection is computed.
@@ -192,9 +197,7 @@ public class Projection extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
         DBSPType type = expression.getType();
-        if (!expression.source.getType().withMayBeNull(true)
-                .sameType(type.withMayBeNull(true)) ||
-                !this.allowNoopCasts) {
+        if (!expression.source.getType().sameTypeIgnoringNullability(type) || !this.allowNoopCasts) {
             // A cast which only changes nullability is
             // considered an identity function
             return this.notProjection();

@@ -35,16 +35,4 @@ import javax.annotation.Nullable;
  * An IR node that is used to represent DBSP circuits.
  */
 @SuppressWarnings("unused")
-public interface IDBSPNode extends ICastable, IHasId, ToIndentableString, IHasCalciteObject {
-    default <T> T checkNull(@Nullable T value) {
-        if (value == null)
-            this.error("Null pointer");
-        if (value == null)
-            throw new InternalCompilerError("Did not expect a null value", this);
-        return value;
-    }
-
-    default void error(String message) {
-        throw new InternalCompilerError(message, this.getNode());
-    }
-}
+public interface IDBSPNode extends ICastable, IHasId, ToIndentableString, IHasCalciteObject { }

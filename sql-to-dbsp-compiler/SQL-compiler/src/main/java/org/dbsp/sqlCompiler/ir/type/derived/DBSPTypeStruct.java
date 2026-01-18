@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.type.derived;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.backend.MerkleInner;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -156,7 +157,7 @@ public class DBSPTypeStruct extends DBSPType {
         List<DBSPTypeStruct.Field> fieldList = new ArrayList<>();
         for (Field f: args) {
             if (this.hasField(f.getName()))
-                this.error("Field name " + f + " is duplicated");
+                throw new InternalCompilerError("Field name " + f + " is duplicated in struct");
             this.fields.put(f.name, f);
             fieldList.add(f);
         }

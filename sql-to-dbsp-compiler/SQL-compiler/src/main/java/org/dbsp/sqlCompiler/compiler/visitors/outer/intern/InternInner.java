@@ -350,6 +350,7 @@ public class InternInner extends ExpressionTranslator {
             DBSPType originalLeftType, DBSPType originalRightType) {
         DBSPTypeCode lCode = left.getType().code;
         DBSPTypeCode rCode = right.getType().code;
+        boolean mayBeNull = left.getType().mayBeNull;
         if (lCode == DBSPTypeCode.TUPLE || lCode == DBSPTypeCode.RAW_TUPLE) {
             Utilities.enforce(lCode == rCode);
             DBSPTypeTupleBase lTuple = originalLeftType.to(DBSPTypeTupleBase.class);
@@ -359,12 +360,28 @@ public class InternInner extends ExpressionTranslator {
             DBSPExpression[] rExpr = new DBSPExpression[lTuple.size()];
             for (int i = 0; i < lTuple.size(); i++) {
                 var fields = this.uninternBothOrNone(
-                        left.field(i).simplify(), right.field(i).simplify(),
+                        left.unwrapIfNullable("Cannot be NULL").field(i).simplify(),
+                        right.unwrapIfNullable("Cannot be NULL").field(i).simplify(),
                         lTuple.getFieldType(i), rTuple.getFieldType(i));
                 lExpr[i] = fields.left.applyCloneIfNeeded();
                 rExpr[i] = fields.right.applyCloneIfNeeded();
             }
-            return Pair.of(lTuple.makeTuple(lExpr), lTuple.makeTuple(rExpr));
+            DBSPExpression leftResult;
+            DBSPExpression rightResult;
+            if (lCode == DBSPTypeCode.TUPLE) {
+                leftResult = new DBSPTupleExpression(mayBeNull, lExpr);
+                rightResult = new DBSPTupleExpression(mayBeNull, rExpr);
+            } else {
+                leftResult = new DBSPRawTupleExpression(lExpr);
+                rightResult = new DBSPRawTupleExpression(rExpr);
+            }
+            if (mayBeNull) {
+                leftResult = new DBSPIfExpression(left.getNode(), left.is_null(),
+                        leftResult.getType().nullValue(), leftResult).simplify();
+                rightResult = new DBSPIfExpression(right.getNode(), right.is_null(),
+                        rightResult.getType().nullValue(), rightResult).simplify();
+            }
+            return Pair.of(leftResult, rightResult);
         }
         if (lCode == DBSPTypeCode.INTERNED_STRING && rCode != DBSPTypeCode.INTERNED_STRING) {
             left = callUnintern(left, originalLeftType);

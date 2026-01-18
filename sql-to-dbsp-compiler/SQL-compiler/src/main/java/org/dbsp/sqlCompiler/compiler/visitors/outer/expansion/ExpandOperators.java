@@ -410,19 +410,6 @@ public class ExpandOperators extends CircuitCloneVisitor {
         @Nullable DBSPFilterOperator rightFilter = null;
         List<OutputPort> sumInputs = new ArrayList<>();
 
-        if (hasLeftIntegrator) {
-            leftIntegrator = new DBSPDelayedIntegralOperator(operator.getRelNode(), inputs.get(0));
-            this.addOperator(leftIntegrator);
-            leftIntegrator.copyAnnotations(operator.left().node());
-            rightJoin = new DBSPStreamJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
-                    operator.getFunction(), operator.isMultiset, leftIntegrator.outputPort(), inputs.get(1),
-                    operator.balanced);
-            this.addOperator(rightJoin);
-            rightFilter = new DBSPFilterOperator(operator.getRelNode(), operator.getFilter(), rightJoin.outputPort());
-            this.addOperator(rightFilter);
-            sumInputs.add(rightFilter.outputPort());
-        }
-
         if (hasRightIntegrator) {
             rightIntegrator = new DBSPDelayedIntegralOperator(operator.getRelNode(), inputs.get(1));
             this.addOperator(rightIntegrator);
@@ -443,6 +430,19 @@ public class ExpandOperators extends CircuitCloneVisitor {
         DBSPFilterOperator filter = new DBSPFilterOperator(operator.getRelNode(), operator.getFilter(), deltaJoin.outputPort());
         this.addOperator(filter);
         sumInputs.add(filter.outputPort());
+
+        if (hasLeftIntegrator) {
+            leftIntegrator = new DBSPDelayedIntegralOperator(operator.getRelNode(), inputs.get(0));
+            this.addOperator(leftIntegrator);
+            leftIntegrator.copyAnnotations(operator.left().node());
+            rightJoin = new DBSPStreamJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
+                    operator.getFunction(), operator.isMultiset, leftIntegrator.outputPort(), inputs.get(1),
+                    operator.balanced);
+            this.addOperator(rightJoin);
+            rightFilter = new DBSPFilterOperator(operator.getRelNode(), operator.getFilter(), rightJoin.outputPort());
+            this.addOperator(rightFilter);
+            sumInputs.add(rightFilter.outputPort());
+        }
 
         DBSPSumOperator sum = new DBSPSumOperator(operator.getRelNode(), sumInputs);
         this.map(operator, sum);
