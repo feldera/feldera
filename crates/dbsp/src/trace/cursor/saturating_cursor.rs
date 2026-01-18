@@ -14,12 +14,14 @@ use crate::{
 /// Currently implements just enough of the cursor API to be used in
 /// outer join operators; in particular, it only implements searching
 /// for a key with `seek_key_exact`.
-pub struct SaturatingCursor<'a, K, V, T, const SATURATE: bool>
+pub struct SaturatingCursor<'a, K, V, T>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     T: Timestamp,
 {
+    saturate: bool,
+
     /// The underlying cursor.
     cursor: Box<dyn Cursor<K, V, T, DynZWeight> + 'a>,
 
@@ -39,20 +41,22 @@ where
     phantom: PhantomData<fn(&K, &V, &T)>,
 }
 
-impl<'a, K, V, T, const SATURATE: bool> SaturatingCursor<'a, K, V, T, SATURATE>
+impl<'a, K, V, T> SaturatingCursor<'a, K, V, T>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     T: Timestamp,
 {
     pub fn new(
+        saturate: bool,
         cursor: Box<dyn Cursor<K, V, T, DynZWeight> + 'a>,
         key_factory: &'static dyn Factory<K>,
         val_factory: &'static dyn Factory<V>,
     ) -> Self {
-        let on_ghost_key = if SATURATE { !cursor.key_valid() } else { false };
+        let on_ghost_key = if saturate { !cursor.key_valid() } else { false };
 
         Self {
+            saturate,
             cursor,
             on_ghost_key,
             ghost_val_valid: false,
@@ -63,8 +67,7 @@ where
     }
 }
 
-impl<'a, K, V, T, const SATURATE: bool> Cursor<K, V, T, DynZWeight>
-    for SaturatingCursor<'a, K, V, T, SATURATE>
+impl<'a, K, V, T> Cursor<K, V, T, DynZWeight> for SaturatingCursor<'a, K, V, T>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -75,7 +78,7 @@ where
     }
 
     fn key_valid(&self) -> bool {
-        if SATURATE {
+        if self.saturate {
             true
         } else {
             self.cursor.key_valid()
@@ -137,12 +140,12 @@ where
     }
 
     fn step_key(&mut self) {
-        debug_assert!(!SATURATE);
+        debug_assert!(!self.saturate);
         self.cursor.step_key();
     }
 
     fn step_key_reverse(&mut self) {
-        debug_assert!(!SATURATE);
+        debug_assert!(!self.saturate);
         self.cursor.step_key_reverse();
     }
 
@@ -155,7 +158,7 @@ where
         if self.cursor.seek_key_exact(key, hash) {
             self.on_ghost_key = false;
             true
-        } else if SATURATE {
+        } else if self.saturate {
             key.clone_to(self.ghost_key.as_mut());
             self.on_ghost_key = true;
             self.ghost_val_valid = true;
@@ -227,7 +230,7 @@ where
 
     fn rewind_keys(&mut self) {
         self.cursor.rewind_keys();
-        self.on_ghost_key = if SATURATE {
+        self.on_ghost_key = if self.saturate {
             !self.cursor.key_valid()
         } else {
             false
@@ -236,7 +239,7 @@ where
 
     fn fast_forward_keys(&mut self) {
         self.cursor.fast_forward_keys();
-        self.on_ghost_key = if SATURATE {
+        self.on_ghost_key = if self.saturate {
             !self.cursor.key_valid()
         } else {
             false
