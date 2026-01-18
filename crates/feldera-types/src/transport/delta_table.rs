@@ -296,6 +296,17 @@ pub struct DeltaTableReaderConfig {
     /// The default value is 6.
     pub max_concurrent_readers: Option<u32>,
 
+    /// Enable verbose logging.
+    ///
+    /// When enabled, the connector will log detailed information at INFO level.
+    ///
+    /// Supported values:
+    /// * 0 - no verbose logging
+    /// * 1 - log all Delta log entries in follow and cdc modes.
+    /// * >1 - reserved for future use
+    #[serde(default)]
+    pub verbose: u32,
+
     /// Storage options for configuring backend object store.
     ///
     /// For specific options available for different storage backends, see:
@@ -324,7 +335,7 @@ fn test_delta_reader_config_serde() {
     let config = serde_json::from_str::<DeltaTableReaderConfig>(config_str).unwrap();
 
     let serialized_config = serde_json::to_string(&config).unwrap();
-    let expected = r#"{"uri":"protocol:/path/to/somewhere","mode":"follow","transaction_mode":"none","timestamp_column":"ts","filter":null,"skip_unused_columns":false,"snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","end_version":null,"cdc_delete_filter":null,"cdc_order_by":null,"num_parsers":4,"max_concurrent_readers":null,"customoption1":"val1","customoption2":"val2"}"#;
+    let expected = r#"{"uri":"protocol:/path/to/somewhere","mode":"follow","transaction_mode":"none","timestamp_column":"ts","filter":null,"skip_unused_columns":false,"snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","end_version":null,"cdc_delete_filter":null,"cdc_order_by":null,"num_parsers":4,"max_concurrent_readers":null,"customoption1":"val1","customoption2":"val2","verbose":0}"#;
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&serialized_config).unwrap(),
         serde_json::from_str::<serde_json::Value>(expected).unwrap()

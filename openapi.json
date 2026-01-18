@@ -7431,6 +7431,12 @@
             "type": "string",
             "description": "Table URI.\n\nExample: \"s3://feldera-fraud-detection-data/demographics_train\""
           },
+          "verbose": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Enable verbose logging.\n\nWhen enabled, the connector will log detailed information at INFO level.\n\nSupported values:\n* 0 - no verbose logging\n* 1 - log all Delta log entries in follow and cdc modes.\n* >1 - reserved for future use",
+            "minimum": 0
+          },
           "version": {
             "type": "integer",
             "format": "int64",
