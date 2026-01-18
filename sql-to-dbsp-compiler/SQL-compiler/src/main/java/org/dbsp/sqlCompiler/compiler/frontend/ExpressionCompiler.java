@@ -274,7 +274,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     public DBSPExpression visitLiteral(RexLiteral literal) {
         CalciteObject node = CalciteObject.create(this.context, literal);
         try {
-            DBSPType type = this.typeCompiler.convertType(node.getPositionRange(), literal.getType(), true);
+            DBSPType type = this.typeCompiler.convertType(node.getPositionRange(), literal.getType(), false);
             if (literal.isNull())
                 return DBSPLiteral.none(type);
             switch (type.code) {
@@ -528,9 +528,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         DBSPExpression tmp = left;
                         left = right;
                         right = tmp;
-                        type = typeWithNull;
                     }
-                    return new DBSPTimeAddSub(node, type, opcode, left, right);
+                    // There seems to be a bug in Calcite's type inference which returns
+                    // nullable results when subtracting non-nullable values.  Correct for that.
+                    DBSPExpression result = new DBSPTimeAddSub(node, typeWithNull, opcode, left, right);
+                    if (!typeWithNull.sameType(type)) {
+                        result = result.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
+                    }
+                    return result;
                 }
             }
             if (leftType.is(IsTimeRelatedType.class) || rightType.is(IsTimeRelatedType.class))
@@ -848,9 +853,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     }
 
     private boolean validateCast(DBSPType from, DBSPType to, boolean safe) {
-        if (from.is(DBSPTypeBinary.class) && to.is(IsDateType.class)) {
+        if (from.is(DBSPTypeBinary.class) && to.is(IsDateType.class))
             return false;
-        }
+        if (from.is(DBSPTypeNull.class))
+            return true;
         if (from.is(DBSPTypeBaseType.class) && to.is(DBSPTypeBaseType.class))
             return true;
         if (from.is(DBSPTypeVariant.class) || to.is(DBSPTypeVariant.class))

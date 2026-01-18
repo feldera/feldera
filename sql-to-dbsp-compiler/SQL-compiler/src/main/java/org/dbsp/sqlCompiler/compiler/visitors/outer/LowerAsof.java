@@ -78,6 +78,9 @@ public class LowerAsof implements CircuitTransform {
             var newJoin = leftGces.get(originalIntegrate);
             if (newJoin != null)
                 cg.addEdge(newJoin, newIntegrate.asOperator(), 0);
+            newJoin = rightGces.get(originalIntegrate);
+            if (newJoin != null)
+                cg.addEdge(newJoin, newIntegrate.asOperator(), 0);
         }
         circuit.resort(cg);
 
@@ -299,6 +302,7 @@ public class LowerAsof implements CircuitTransform {
                     Utilities.putNew(this.leftGces, op, result);
             }
 
+            // Similar procedure for the right input
             for (Port<DBSPOperator> port : graph.getSuccessors(join.right().operator)) {
                 GCOperator op = port.node().as(DBSPIntegrateTraceRetainValuesLastNOperator.class);
                 if (op != null)

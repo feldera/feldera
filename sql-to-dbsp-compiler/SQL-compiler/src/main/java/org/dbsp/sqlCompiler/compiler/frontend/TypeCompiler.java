@@ -25,6 +25,8 @@ package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
+import org.apache.calcite.rel.type.RelDataTypeFieldImpl;
+import org.apache.calcite.rel.type.RelRecordType;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
@@ -258,6 +260,29 @@ public class TypeCompiler implements ICompilerComponent {
         throw new UnimplementedException("Cast from " + right + " to " + left, left.getNode());
     }
 
+    public static RelDataType removeDuplicateFields(RelDataType rowType) {
+        FreshName names = new FreshName(new HashSet<>());
+        List<RelDataTypeField> fields = new ArrayList<>();
+        boolean duplicates = false;
+        if (rowType.isStruct()) {
+            for (RelDataTypeField field: rowType.getFieldList()) {
+                String name = field.getName();
+                if (names.isUsed(name)) {
+                    duplicates = true;
+                    name = names.freshName(name, true);
+                    fields.add(new RelDataTypeFieldImpl(name, field.getIndex(), field.getType()));
+                } else {
+                    fields.add(field);
+                    names.add(name);
+                }
+            }
+        }
+        if (!duplicates)
+            return rowType;
+        Utilities.enforce(rowType.getFieldCount() == fields.size());
+        return new RelRecordType(rowType.getStructKind(), fields, rowType.isNullable());
+    }
+
     public DBSPType convertType(
             CalciteObject node, ProgramIdentifier name,
             List<RelColumnMetadata> columns, boolean asStruct, boolean mayBeNull) {
@@ -310,7 +335,7 @@ public class TypeCompiler implements ICompilerComponent {
             FreshName fieldNameGen = new FreshName(new HashSet<>());
             int index = 0;
             for (RelDataTypeField field : dt.getFieldList()) {
-                DBSPType type = this.convertType(context, field.getType(), true);
+                DBSPType type = this.convertType(context, field.getType(), asStruct);
                 String fieldName = field.getName();
                 if (this.compiler().options.languageOptions.lenient)
                     // If we are not lenient and names are duplicated

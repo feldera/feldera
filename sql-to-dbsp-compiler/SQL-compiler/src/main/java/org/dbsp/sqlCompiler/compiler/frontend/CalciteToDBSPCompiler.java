@@ -286,6 +286,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     public DBSPType convertType(SourcePositionRange context, RelDataType dt, boolean asStruct) {
+        dt = TypeCompiler.removeDuplicateFields(dt);
         return this.compiler.getTypeCompiler().convertType(context, dt, asStruct);
     }
 

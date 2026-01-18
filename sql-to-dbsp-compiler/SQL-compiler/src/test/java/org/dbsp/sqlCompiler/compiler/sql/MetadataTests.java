@@ -23,7 +23,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
-import org.dbsp.util.NameGen;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Ignore;
@@ -260,7 +259,6 @@ public class MetadataTests extends BaseSQLTests {
 
     @Test
     public void stripProperties1() throws IOException, SQLException {
-        NameGen.reset();
         String sql = """
                 CREATE TABLE CUSTOMER (
                     cc_num BIGINT NOT NULL PRIMARY KEY, -- Credit card number
@@ -1874,7 +1872,7 @@ public class MetadataTests extends BaseSQLTests {
         Assert.assertEquals(0, messages.exitCode);
         String jsonContents1 = Utilities.readFile(json.toPath());
         Assert.assertNotNull(jsonContents1);
-        json.delete();
+        Utilities.deleteFile(json, true);
 
         sql = Arrays.stream(sql.split("\n"))
                 .map(s -> s.contains("skip_unused_columns") ? "" : s)
@@ -1883,17 +1881,8 @@ public class MetadataTests extends BaseSQLTests {
         messages = CompilerMain.execute("--dataflow", json.getPath(), "--noRust", file.getPath());
         Assert.assertEquals(0, messages.exitCode);
         var jsonContents2 = Utilities.readFile(json.toPath());
+        Utilities.deleteFile(json, false);
         Assert.assertNotNull(jsonContents2);
-
-        String[] lines1 = jsonContents1.split("\n");
-        String[] lines2 = jsonContents2.split("\n");
-        for (int i = 0; i < Math.min(lines1.length, lines2.length); i++) {
-            if (!lines1[i].equals(lines2[i])) {
-                System.out.println("c " + i);
-                System.out.println("< " + lines1[i]);
-                System.out.println("> " + lines2[i]);
-            }
-        }
         Assert.assertNotEquals(jsonContents1, jsonContents2);
     }
 }

@@ -21,6 +21,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPInternedStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
@@ -327,6 +328,11 @@ public class ToJsonInnerVisitor extends InnerVisitor {
             this.property("value");
             this.stream.append(node.value.toString());
         }
+        super.postorder(node);
+    }
+
+    @Override
+    public void postorder(DBSPInternedStringLiteral node) {
         super.postorder(node);
     }
 

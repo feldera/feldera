@@ -836,6 +836,28 @@ public class IncrementalRegressionTests extends SqlIoTest {
         }
     }
 
+    @Test @Ignore("Bug still unfixed")
+    public void latenessTypes1() {
+        this.getCCS("""
+                CREATE TABLE T(
+                   id INT,
+                   i INT NOT NULL LATENESS 1,
+                   d DATE NOT NULL LATENESS INTERVAL 1 DAY,
+                   ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 DAY
+                );
+                CREATE TABLE S(
+                   id INT,
+                   ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 DAY,
+                   d DATE NOT NULL LATENESS INTERVAL 1 DAY,
+                   i INT NOT NULL LATENESS 1
+                );
+                CREATE VIEW V AS SELECT
+                   S.*, T.*
+                FROM T JOIN S
+                ON T.id = S.id
+                WHERE T.ts < S.ts AND S.TS - INTERVAL 1 HOUR < T.ts;""");
+    }
+
     @Test
     public void issue5156() {
         var ccs = this.getCCS("""

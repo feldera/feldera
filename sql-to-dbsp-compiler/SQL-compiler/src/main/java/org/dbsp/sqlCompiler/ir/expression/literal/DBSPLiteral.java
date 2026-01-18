@@ -102,6 +102,7 @@ public abstract class DBSPLiteral extends DBSPExpression
             case VARIANT -> new DBSPVariantExpression(null, type);
             case STRUCT -> type.to(DBSPTypeStruct.class).toTuple().none();
             case UUID -> new DBSPUuidLiteral();
+            case INTERNED_STRING -> new DBSPInternedStringLiteral();
             default -> throw new InternalCompilerError("Unexpected type for NULL literal " + type, type);
         };
     }

@@ -56,6 +56,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPInternedStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
@@ -867,6 +868,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPLiteral) node);
     }
 
+    public VisitDecision preorder(DBSPInternedStringLiteral node) {
+        return this.preorder((DBSPLiteral) node);
+    }
+
     public VisitDecision preorder(DBSPGeoPointConstructor node) {
         return this.preorder((DBSPExpression) node);
     }
@@ -1514,6 +1519,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPISizeLiteral node) {
+        this.postorder((DBSPLiteral) node);
+    }
+
+    public void postorder(DBSPInternedStringLiteral node) {
         this.postorder((DBSPLiteral) node);
     }
 

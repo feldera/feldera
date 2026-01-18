@@ -1937,4 +1937,25 @@ public class Regression1Tests extends SqlIoTest {
                  1 | 1 | 1 | 1
                  2 | -1 | 1 | 1""");
     }
+
+    @Test
+    public void castRow() {
+        this.getCCS("""
+                CREATE TABLE T (
+                  str   VARCHAR,
+                  data  INT NOT NULL
+                );
+                
+                CREATE LOCAL VIEW V AS SELECT
+                    T.str AS str,
+                    ARRAY_AGG(ROW(T.data)) AS e
+                  FROM T
+                  GROUP BY T.str;
+                
+                CREATE VIEW W AS SELECT
+                    CASE WHEN V.str IS NOT NULL THEN V.e
+                    ELSE NULL
+                    END
+                FROM V;""");
+    }
 }

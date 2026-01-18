@@ -31,10 +31,12 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import java.util.Objects;
 
 public final class DBSPIfExpression extends DBSPExpression {
     public final DBSPExpression condition;
@@ -86,6 +88,17 @@ public final class DBSPIfExpression extends DBSPExpression {
         return this.condition == o.condition &&
                 this.positive == o.positive &&
                 this.negative == o.negative;
+    }
+
+    public DBSPExpression simplify() {
+        if (this.condition.is(DBSPBoolLiteral.class)) {
+            Boolean cond = this.condition.to(DBSPBoolLiteral.class).value;
+            if (cond == null || !cond) {
+                return Objects.requireNonNull(this.negative);
+            }
+            return this.positive;
+        }
+        return this;
     }
 
     @Override
