@@ -3797,6 +3797,7 @@ dependencies = [
  "reqwest 0.12.24",
  "rkyv",
  "rmp-serde",
+ "seq-macro",
  "serde",
  "serde_json",
  "smallvec",
