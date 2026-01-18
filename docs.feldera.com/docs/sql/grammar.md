@@ -207,6 +207,48 @@ The property `expected_size` can be used to pass information to the
 SQL compiler about the expected size of a table in steady state
 operation.  The value of this property should be an integer value.
 
+#### Ignoring unused columns
+
+The `skip_unused_columns` is an optional Boolean property that can be
+applied to tables.  Pipelines can ingest data from external persistent
+sources, such as databases or data lakes, where the Feldera pipeline
+is not the only consumer of the data.  In some circumstances, the
+views defined may not need all the columns present in the data
+sources.
+
+When set to `true`, this option instructs the connector to avoid
+reading columns from the input that are not used in any view
+definitions. To be skipped, the columns must be either nullable or
+have default values. This can improve ingestion performance,
+especially for wide tables.  Not all connectors support this feature;
+currently only the Delta table connectors can take advantage of this
+feature.
+
+Note: The simplest way to exclude unused columns is to omit them from
+the Feldera SQL table declaration. The connector never reads columns
+that aren't declared in the SQL schema. Additionally, the SQL compiler
+emits warnings for declared but unused columns—use these as a guide to
+optimize your schema.
+
+Why not always skip unused columns?  When a table is materialized, the
+pipeline stores internally the contents of the table ingested so far.
+Pipelines can be stopped, modified, and restarted; future versions of
+a pipeline may actually process columns that are unused in the current
+version.
+
+Note that changing the value of this attribute for a paused pipeline
+is considered a change to the table, and will cause the entire table
+to be re-ingested from scratch:
+https://docs.feldera.com/pipelines/modifying/#limitation-3-table-evolution-is-not-yet-supported
+
+Example:
+
+```sql
+CREATE TABLE T(x INT, unused INT DEFAULT 0)
+WITH ('skip_unused_columns' = 'true');
+```
+
+
 ### LATENESS
 
 ```

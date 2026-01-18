@@ -40,6 +40,13 @@ public class Properties implements IJson {
         }
     }
 
+    public SourcePositionRange getPropertyKeyPosition(String property) {
+        PropertyValue value = this.propertyValue.get(property);
+        if (value != null)
+            return value.keyPosition;
+        return SourcePositionRange.INVALID;
+    }
+
     @Nullable
     public String getPropertyValue(String propertyName) {
         PropertyValue val = this.propertyValue.get(propertyName);

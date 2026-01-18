@@ -1932,14 +1932,15 @@ public class SqlToRelCompiler implements IWritesLogs {
         CalciteObject node = CalciteObject.create(key.getParserPosition());
         String keyString = key.getString();
         switch (key.getString()) {
-            case "materialized":
-            case "append_only":
+            case CreateTableStatement.MATERIALIZED:
+            case CreateTableStatement.APPEND_ONLY:
+            case CreateTableStatement.SKIP_UNUSED_COLUMNS:
                 this.validateBooleanProperty(node, key, value);
                 break;
-            case "connectors":
+            case CreateTableStatement.CONNECTORS:
                 this.validateConnectorsProperty(node, true, table, key, value);
                 break;
-            case "expected_size":
+            case CreateTableStatement.EXPECTED_SIZE:
                 this.validateNumericProperty(node, key, value);
                 break;
             default:
@@ -1973,7 +1974,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         Properties props = null;
         if (viewProperties != null) {
             viewProperties.checkDuplicates(this.errorReporter);
-            SqlFragment materialized = viewProperties.getPropertyValue("materialized");
+            SqlFragment materialized = viewProperties.getPropertyValue(CreateViewStatement.MATERIALIZED);
             if (materialized != null) {
                 this.errorReporter.reportWarning(materialized.getSourcePosition(),
                         "Materialized property not used",

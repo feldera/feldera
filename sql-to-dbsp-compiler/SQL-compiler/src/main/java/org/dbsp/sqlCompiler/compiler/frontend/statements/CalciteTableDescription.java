@@ -39,7 +39,7 @@ public class CalciteTableDescription extends AbstractTable implements ScannableT
                 Properties properties = CalciteTableDescription.this.schema.getProperties();
                 if (properties == null)
                     return null;
-                String expectedSize = properties.getPropertyValue("expected_size");
+                String expectedSize = properties.getPropertyValue(CreateTableStatement.EXPECTED_SIZE);
                 if (expectedSize == null)
                     return null;
                 try {
