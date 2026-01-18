@@ -112,6 +112,7 @@ public class UnusedFields extends Passes {
                                                 src.tableName.singleQuote() + " is unused");
                                 IHasSchema schema = this.compiler.metadata.getTableDescription(src.tableName);
                                 schema.getColumns().get(i).setUnused();
+                                src.getMetadata().getColumnMetadata(i).setUnused();
                             }
                         }
                     }
@@ -165,7 +166,7 @@ public class UnusedFields extends Passes {
             TableMetadata metadata = new TableMetadata(
                     source.metadata.tableName,
                     remainingColumns, source.metadata.getForeignKeys(),
-                    source.metadata.materialized, source.metadata.isStreaming());
+                    source.metadata.materialized, source.metadata.isStreaming(), source.metadata.skipUnusedColumns);
             DBSPSourceMultisetOperator replacement = new DBSPSourceMultisetOperator(
                     source.getRelNode(), source.sourceName, new DBSPTypeZSet(newType.toTuple()), newType,
                     metadata, source.tableName, source.comment);

@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -44,7 +45,9 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /** Tests about table and view metadata */
 public class MetadataTests extends BaseSQLTests {
@@ -341,7 +344,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
-        Assert.assertFalse(rust.contains("connectors"));
+        Assert.assertFalse(rust.contains(CreateTableStatement.CONNECTORS));
     }
 
     @Test
@@ -407,7 +410,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         String rust = Utilities.readFile(BaseSQLTests.TEST_FILE_PATH);
-        Assert.assertFalse(rust.contains("connectors"));
+        Assert.assertFalse(rust.contains(CreateTableStatement.CONNECTORS));
 
         sql = """
                CREATE TABLE T (COL1 INT);
@@ -522,6 +525,54 @@ public class MetadataTests extends BaseSQLTests {
                     "materialized" : false,
                     "foreign_keys" : [ ]
                   } ]"""));
+    }
+
+    @Test
+    public void testValidateSkip() {
+        this.statementsFailingInCompilation("CREATE TABLE T(x INT) with ('skip_unused_columns' = '{}')",
+                "Expected a boolean value for property 'skip_unused_columns'");
+    }
+
+    @Test
+    public void issue5436() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE T(used INTEGER, unused INTEGER) with ('skip_unused_columns' = 'true');
+                CREATE TABLE T1(used INTEGER, unused INTEGER) with (
+                   'connectors' = '[
+                    {
+                      "name": "unnamed",
+                      "transport": {
+                        "name": "delta_table_input",
+                        "config": {
+                          "uri": "s3://feldera-qa-data/deltalake-ingest/partitioned",
+                          "mode": "snapshot",
+                          "aws_access_key_id": "$AWS_ACCESS_KEY_ID",
+                          "aws_secret_access_key": "$AWS_SECRET_ACCESS_KEY",
+                          "aws_region": "us-west-1",
+                          "snapshot_filter": "ts >= timestamp ''2022-01-01T00:00:00''",
+                          "timestamp_column": "ts",
+                          "skip_unused_columns": true
+                        }
+                      }
+                    }]'
+                );
+                CREATE VIEW V AS SELECT used FROM ((SELECT * FROM T) UNION ALL (SELECT * FROM T1));""");
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        Assert.assertNotNull(circuit);
+        IInputOperator t = circuit.getInput(new ProgramIdentifier("t", false));
+        Assert.assertNotNull(t);
+        Boolean skip = t.getMetadata().skipUnusedColumns;
+        Assert.assertNotNull(skip);
+        Assert.assertTrue(skip);
+        IInputOperator t1 = circuit.getInput(new ProgramIdentifier("t1", false));
+        Assert.assertNotNull(t1);
+        skip = t1.getMetadata().skipUnusedColumns;
+        Assert.assertNotNull(skip);
+        Assert.assertTrue(skip);
+        Assert.assertTrue(compiler.messages.toString().contains(
+                "The per-connector property 'skip_unused_columns' is deprecated;"));
     }
 
     @Test
@@ -1781,5 +1832,68 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMain.execute("--plan", json.getPath(), "--noRust", file.getPath());
         String jsonContents = Utilities.readFile(json.toPath());
         Assert.assertNotNull(jsonContents);
+    }
+
+    @Test
+    public void testSkipUnused() throws IOException, SQLException {
+        String sql = """
+                CREATE TABLE transaction(
+                    trans_date_trans_time TIMESTAMP NOT NULL,
+                    cc_num BIGINT,
+                    merchant STRING,
+                    category STRING,
+                    amt DECIMAL(38, 2),
+                    trans_num STRING,
+                    unix_time BIGINT,
+                    merch_lat DOUBLE,
+                    merch_long DOUBLE,
+                    is_fraud BIGINT
+                ) WITH (
+                  'materialized' = 'true',
+                  'connectors' = '[{
+                    "name": "zero",
+                    "transport": {
+                      "name": "delta_table_input",
+                      "config": {
+                        "uri": "s3://feldera-fraud-detection-data/transaction_train",
+                        "mode": "follow",
+                        "aws_skip_signature": "true",
+                        "timestamp_column": "trans_date_trans_time",
+                        "aws_region": "us-east-1",
+                        "skip_unused_columns": true,
+                        "version": 0
+                      }
+                    }
+                  }
+                ]');
+                
+                create view v as select trans_date_trans_time, cc_num, amt, is_fraud from transaction;""";
+        File json = this.createTempJsonFile();
+        File file = createInputScript(sql);
+        var messages = CompilerMain.execute("--dataflow", json.getPath(), "--noRust", file.getPath());
+        Assert.assertEquals(0, messages.exitCode);
+        String jsonContents1 = Utilities.readFile(json.toPath());
+        Assert.assertNotNull(jsonContents1);
+        json.delete();
+
+        sql = Arrays.stream(sql.split("\n"))
+                .map(s -> s.contains("skip_unused_columns") ? "" : s)
+                .collect(Collectors.joining("\n"));
+        file = createInputScript(sql);
+        messages = CompilerMain.execute("--dataflow", json.getPath(), "--noRust", file.getPath());
+        Assert.assertEquals(0, messages.exitCode);
+        var jsonContents2 = Utilities.readFile(json.toPath());
+        Assert.assertNotNull(jsonContents2);
+
+        String[] lines1 = jsonContents1.split("\n");
+        String[] lines2 = jsonContents2.split("\n");
+        for (int i = 0; i < Math.min(lines1.length, lines2.length); i++) {
+            if (!lines1[i].equals(lines2[i])) {
+                System.out.println("c " + i);
+                System.out.println("< " + lines1[i]);
+                System.out.println("> " + lines2[i]);
+            }
+        }
+        Assert.assertNotEquals(jsonContents1, jsonContents2);
     }
 }

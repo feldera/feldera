@@ -39,11 +39,14 @@ import java.util.Objects;
 
 /** The representation of a CREATE VIEW AS ... DDL statement. */
 public class CreateViewStatement extends CreateRelationStatement {
+    // Some predefined properties
+    public static final String EMIT_FINAL = "emit_final";
+    public static final String MATERIALIZED = "materialized";
+
     /** Compiled and optimized query. */
     private final RelRoot compiled;
     public final SqlCreateView createView;
     final int emitFinal;
-    public static final String EMIT_FINAL = "emit_final";
 
     public CreateViewStatement(ParsedStatement node, ProgramIdentifier tableName,
                                List<RelColumnMetadata> columns, SqlCreateView createView,
@@ -70,7 +73,7 @@ public class CreateViewStatement extends CreateRelationStatement {
     public JsonNode asJson(boolean addColumnCaseSensitivity) {
         JsonNode node = super.asJson(addColumnCaseSensitivity);
         ObjectNode object = (ObjectNode) node;
-        object.put("materialized",
+        object.put(MATERIALIZED,
                 this.createView.viewKind == SqlCreateView.ViewKind.MATERIALIZED);
         return object;
     }

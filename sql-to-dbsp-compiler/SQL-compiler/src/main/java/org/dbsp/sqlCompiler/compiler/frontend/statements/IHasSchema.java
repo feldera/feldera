@@ -134,7 +134,6 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
     }
 
     /** The schema as a JSON objects.
-     *
      * @param addColumnCaseSensitivity If true, include case sensitivity information
      *                                 about the fields of nested structures.
      */

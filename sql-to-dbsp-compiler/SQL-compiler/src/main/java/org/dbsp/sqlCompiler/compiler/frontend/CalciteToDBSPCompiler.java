@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.collect.ImmutableList;
 import org.apache.calcite.adapter.jdbc.JdbcTableScan;
 import org.apache.calcite.plan.RelOptTable;
@@ -144,7 +146,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.HasSchema;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
@@ -215,6 +216,7 @@ import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IdShuffle;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Properties;
 import org.dbsp.util.Shuffle;
 import org.dbsp.util.Utilities;
 
@@ -224,6 +226,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -995,7 +998,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 if (!create)
                     throw new InternalCompilerError("Could not find operator for table " + tableName, node);
 
-                // Create external tables table
+                /*
+                // Create external table
                 JdbcTableScan jscan = (JdbcTableScan) scan;
                 RelDataType tableRowType = jscan.jdbcTable.getRowType(this.compiler.sqlToRelCompiler.typeFactory);
                 DBSPTypeStruct originalRowType = this.convertType(node.getPositionRange(), tableRowType, true)
@@ -1006,13 +1010,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.metadata.addTable(withSchema);
                 TableMetadata tableMeta = new TableMetadata(
                         tableName, Linq.map(withSchema.getColumns(), this::convertMetadata), Linq.list(),
-                        false, false);
+                        false, false, false);
                 DBSPSourceMultisetOperator sourceMulti = new DBSPSourceMultisetOperator(
                         node, CalciteObject.EMPTY,
                         TypeCompiler.makeZSet(rowType), originalRowType,
                         tableMeta, tableName, null);
                 this.addOperator(sourceMulti);
                 Utilities.putNew(this.nodeOperator, scan, sourceMulti);
+                 */
             }
         }
     }
@@ -3216,9 +3221,49 @@ public class CalciteToDBSPCompiler extends RelVisitor
         boolean materialized = create.isMaterialized();
         boolean appendOnly = create.isAppendOnly() ||
                 options.languageOptions.streaming;
+        Boolean skipUnusedColumns = create.skipUnusedColumns();
+
+        // Skip unused columns is also set to TRUE if any connector sets it as true
+        Properties properties = create.getProperties();
+        if (properties != null) {
+            String connectors = properties.getPropertyValue(CreateTableStatement.CONNECTORS);
+            if (connectors != null) {
+                try {
+                    JsonNode jsonNode = Utilities.deterministicObjectMapper().readTree(connectors);
+                    if (jsonNode.isArray()) {
+                        for (Iterator<JsonNode> it = jsonNode.elements(); it.hasNext(); ) {
+                            JsonNode connector = it.next();
+                            if (connector.has("transport")) {
+                                JsonNode transport = connector.get("transport");
+                                if (transport.has("config")) {
+                                    JsonNode config = transport.get("config");
+                                    if (config.has(CreateTableStatement.SKIP_UNUSED_COLUMNS)) {
+                                        JsonNode skip = config.get(CreateTableStatement.SKIP_UNUSED_COLUMNS);
+                                        if (skip.isBoolean()) {
+                                            if (skipUnusedColumns == null)
+                                                skipUnusedColumns = skip.asBoolean();
+                                            else
+                                                skipUnusedColumns = skipUnusedColumns || skip.asBoolean();
+                                            this.compiler.reportWarning(
+                                                    properties.getPropertyKeyPosition(CreateTableStatement.CONNECTORS),
+                                                    "Deprecated connector property",
+                                                    "The per-connector property " + Utilities.singleQuote(
+                                                            CreateTableStatement.SKIP_UNUSED_COLUMNS) + " is deprecated;"
+                                                            + " the property can be specified for an entire table");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (JsonProcessingException ex) {
+                    // This should not happen, since connectors were validated by an earlier stage
+                }
+            }
+        }
 
         TableMetadata tableMeta = new TableMetadata(
-                tableName, metadata, create.foreignKeys, materialized, appendOnly);
+                tableName, metadata, create.foreignKeys, materialized, appendOnly, skipUnusedColumns);
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                 new RelAnd(), identifier, TypeCompiler.makeZSet(rowType), originalRowType,
                 tableMeta, tableName, def.getStatement());
@@ -3236,7 +3281,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CalciteObject identifier = CalciteObject.EMPTY;
         List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
         TableMetadata tableMeta = new TableMetadata(
-                tableName, metadata, new ArrayList<>(), false, false);
+                tableName, metadata, new ArrayList<>(), false, false, null);
         DBSPViewDeclarationOperator result = new DBSPViewDeclarationOperator(
                 create.getCalciteObject(), identifier, TypeCompiler.makeZSet(rowType), originalRowType,
                 tableMeta, tableName);
