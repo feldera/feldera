@@ -13,7 +13,6 @@ use crate::{
         dynamic::{
             MonoIndexedZSet, MonoZSet,
             join::{JoinFactories, JoinTrace, TraceJoinFuncs},
-            saturate::SaturateFactories,
         },
     },
 };
@@ -86,17 +85,12 @@ where
         // - we saturate the `other` stream
         // - we set the `SATURATE` parameter to `true` for the first join operator.
 
-        let right_saturated_factories = SaturateFactories {
-            batch_factories: factories.right_factories.clone(),
-            trace_factories: factories.right_trace_factories.clone(),
-        };
-
         self.circuit().region("left_join", || {
             let left = self.dyn_shard(&factories.left_factories);
             let right = other.dyn_shard(&factories.right_factories);
             let right_saturated = right
                 //.inspect(|s| println!("right: {:?}", s))
-                .dyn_saturate(&right_saturated_factories);
+                .dyn_saturate(&factories.right_factories);
             //.inspect(|s| println!("right_saturated: {:?}", s));
 
             let left_trace = left
@@ -105,11 +99,12 @@ where
                 .dyn_accumulate_trace(&factories.right_trace_factories, &factories.right_factories);
 
             let left = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, true>::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.right_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
                     factories.timed_items_factory,
+                    true,
                     join_funcs.left,
                     Location::caller(),
                     self.circuit().clone(),
@@ -119,11 +114,12 @@ where
             );
 
             let right = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.left_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
                     factories.timed_items_factory,
+                    false,
                     join_funcs.right,
                     Location::caller(),
                     self.circuit().clone(),
@@ -162,11 +158,6 @@ where
         // - we saturate the `other` stream
         // - we set the `SATURATE` parameter to `true` for the first join operator.
 
-        let right_saturated_factories = SaturateFactories {
-            batch_factories: factories.right_factories.clone(),
-            trace_factories: factories.right_trace_factories.clone(),
-        };
-
         self.circuit().region("left_join_balanced", || {
             let (left_accumulator, left_trace) = self.dyn_accumulate_trace_balanced(
                 &factories.left_trace_factories,
@@ -180,14 +171,15 @@ where
 
             let right_saturated = other
                 //.inspect(|s| println!("right: {:?}", s))
-                .dyn_saturate_balanced(&right_saturated_factories);
+                .dyn_saturate_balanced(&factories.right_factories);
 
             let left = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, true>::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.right_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
                     factories.timed_items_factory,
+                    true,
                     join_funcs.left,
                     Location::caller(),
                     self.circuit().clone(),
@@ -197,11 +189,12 @@ where
             );
 
             let right = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.left_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
                     factories.timed_items_factory,
+                    false,
                     join_funcs.right,
                     Location::caller(),
                     self.circuit().clone(),
