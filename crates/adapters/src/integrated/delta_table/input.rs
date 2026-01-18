@@ -936,6 +936,17 @@ impl DeltaTableInputEndpointInner {
         if self.config.follow() {
             let mut retry_count = 0;
 
+            // If we haven't previously read a snapshot of the table, report initial frontier.
+            // This makes sure that even if the current version of the table is the final version,
+            // we will report the frontier.
+            if !self.config.snapshot() {
+                self.queue.push_with_aux(
+                    (None, Vec::new()),
+                    Utc::now(),
+                    Some(DeltaResumeInfo::follow_mode(version, false)),
+                );
+            }
+
             loop {
                 wait_running(&mut receiver).await;
                 match table.log_store().peek_next_commit(version).await {
@@ -956,7 +967,9 @@ impl DeltaTableInputEndpointInner {
                         )
                         .await;
 
-                        if self.config.end_version == Some(new_version) {
+                        if self.config.end_version.is_some()
+                            && self.config.end_version <= Some(new_version)
+                        {
                             info!(
                                 "delta_table {}: reached table version {} specified as 'end_version' in connector config: stopping the connector",
                                 &self.endpoint_name,
@@ -1759,7 +1772,7 @@ impl DeltaTableInputEndpointInner {
         let Some(schema) = table.schema() else {
             // At this point the table should have a schema, as it's definitely not empty.
             return Err(anyhow!(
-                "internal error processing {description}; {REPORT_ERROR}: Delta table has not schema"
+                "internal error processing {description}; {REPORT_ERROR}: Delta table has no schema"
             ));
         };
 
