@@ -1195,7 +1195,7 @@ pub fn merge_batches_by_reference<'a, B, T>(
     value_filter: &Option<GroupFilter<B::Val>>,
 ) -> B
 where
-    T: IntoIterator<Item = &'a B> + Clone,
+    T: IntoIterator<Item = &'a B>,
     B: Batch,
 {
     // Collect input batches, discarding empty batches.

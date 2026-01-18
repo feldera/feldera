@@ -1,28 +1,23 @@
 use std::{borrow::Cow, marker::PhantomData};
 
 use crate::{
-    ChildCircuit, Circuit, Stream, Timestamp,
+    Circuit, Stream,
     circuit::operator_traits::{NaryOperator, Operator},
 };
 
-impl<P, TS> ChildCircuit<P, TS>
+#[track_caller]
+pub fn apply_n<'a, C, T, T2, I, F>(circuit: &'a C, streams: I, func: F) -> Stream<C, T2>
 where
-    P: Clone + 'static,
-    TS: Timestamp,
+    C: Circuit,
+    I: Iterator<Item = &'a Stream<C, T>>,
+    T: Clone + 'static,
+    F: Fn(&mut dyn Iterator<Item = Cow<T>>) -> T2 + 'static,
+    T2: Clone + 'static,
 {
-    #[track_caller]
-    pub fn apply_n<'a, T, T2, I, F>(&'a self, streams: I, func: F) -> Stream<Self, T2>
-    where
-        I: Iterator<Item = &'a Stream<Self, T>>,
-        T: Clone + 'static,
-        F: FnMut(&dyn Iterator<Item = Cow<T>>) -> T2 + 'static,
-        T2: Clone + 'static,
-    {
-        self.add_nary_operator(
-            ApplyN::<T, T2, F>::new(func, Cow::Borrowed("ApplyN")),
-            streams,
-        )
-    }
+    circuit.add_nary_operator(
+        ApplyN::<T, T2, F>::new(func, Cow::Borrowed("ApplyN")),
+        streams,
+    )
 }
 
 struct ApplyN<T, T2, F> {
@@ -52,9 +47,7 @@ where
     }
 
     fn fixedpoint(&self, _scope: crate::circuit::Scope) -> bool {
-        // TODO: either change `F` type to `Fn` from `FnMut` or
-        // parameterize the operator with custom fixed point check.
-        unimplemented!();
+        true
     }
 }
 
@@ -62,12 +55,12 @@ impl<T, T2, F> NaryOperator<T, T2> for ApplyN<T, T2, F>
 where
     T: Clone + 'static,
     T2: 'static,
-    F: FnMut(&dyn Iterator<Item = Cow<T>>) -> T2 + 'static,
+    F: Fn(&mut dyn Iterator<Item = Cow<T>>) -> T2 + 'static,
 {
-    async fn eval<'a, Iter>(&'a mut self, inputs: Iter) -> T2
+    async fn eval<'a, Iter>(&'a mut self, mut inputs: Iter) -> T2
     where
         Iter: Iterator<Item = Cow<'a, T>>,
     {
-        (self.func)(&inputs)
+        (self.func)(&mut inputs)
     }
 }
