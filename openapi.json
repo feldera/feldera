@@ -9829,6 +9829,11 @@
           "status"
         ]
       },
+      "PipelineMonitorEventId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Pipeline monitor event identifier."
+      },
       "PipelineMonitorEventSelectedInfo": {
         "type": "object",
         "description": "Pipeline monitor event information which has a selected subset of optional fields.\nIf an optional field is not selected (i.e., is `None`), it will not be serialized.",

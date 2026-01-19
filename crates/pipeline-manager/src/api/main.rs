@@ -285,6 +285,7 @@ It contains the following fields:
         crate::api::endpoints::pipeline_management::PostPutPipeline,
         crate::api::endpoints::pipeline_management::PatchPipeline,
         crate::api::endpoints::pipeline_management::PostStopPipelineParameters,
+        crate::db::types::monitor::PipelineMonitorEventId,
         crate::api::endpoints::pipeline_management::pipeline_events::PipelineMonitorEventSelectedInfo,
         crate::api::endpoints::pipeline_management::pipeline_events::PipelineMonitorEventFieldSelector,
         crate::api::endpoints::pipeline_management::pipeline_events::GetPipelineEventParameters,
