@@ -1,5 +1,3 @@
-Add a brief description of the pull request.
-
 ## Checklist
 
 - [ ] Documentation updated
@@ -20,4 +18,4 @@ Mark if you think the answer is yes for any of these components:
 
 ### Describe Incompatible Changes
 
-Add a few sentences describing the incompatible changes if any.
+<!-- Add a few sentences describing the incompatible changes if any. -->
