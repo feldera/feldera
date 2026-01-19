@@ -2823,6 +2823,8 @@ impl CircuitThread {
                         "Output endpoint '{}' was created during the current transaction (seq. number {}) and will not receive any outputs until the next transaction.",
                         endpoint.endpoint_name, endpoint.created_during_transaction_number
                     );
+                    self.controller.status.enqueue_batch(*endpoint_id, 0);
+
                     // We need to propagate processed_records to the connector for progress tracking.
                     endpoint.queue.push((self.step, None, processed_records));
                     endpoint.unparker.unpark();
