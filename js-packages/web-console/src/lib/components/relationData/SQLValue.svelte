@@ -37,22 +37,13 @@
     class: _class,
     ...rest
   }: { value: SQLValueJS } & {
-    props?: (formatter: (value: SQLValueJS) => string) => HTMLTdAttributes
+    props?: HTMLTdAttributes
   } & HTMLTdAttributes = $props()
   const thumb = $derived(value === null ? 'NULL' : trim(stringifyUntilLength(value, 50)))
-  const displayValue = (value: SQLValueJS) => {
-    return value === null
-      ? 'NULL'
-      : typeof value === 'string'
-        ? value
-        : BigNumber.isBigNumber(value)
-          ? value.toFixed()
-          : JSONbig.stringify(value, undefined, 1)
-  }
 </script>
 
 <td
-  {...props?.(displayValue)}
+  {...props}
   class:italic={value === null}
   class="px-3 {typeof value === 'number' || BigNumber.isBigNumber(value)
     ? 'text-right'

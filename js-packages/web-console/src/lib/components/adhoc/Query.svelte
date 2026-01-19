@@ -45,6 +45,9 @@
   import type { UIEventHandler } from 'svelte/elements'
   import { selectScope } from '$lib/compositions/common/userSelect'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
+  import ClipboardCopyButton from '../other/ClipboardCopyButton.svelte'
+  import SQLValueTooltip from '../other/SQLValueTooltip.svelte'
+  import { tableToCSJV } from '$lib/functions/sql'
 
   let {
     query = $bindable(),
@@ -67,7 +70,7 @@
 
   // Handle hover popup over table cells to display full SQL value
   let popupRef: HTMLElement | undefined = $state()
-  let tooltip = usePopoverTooltip(() => popupRef)
+  let tooltip = usePopoverTooltip<SQLValueJS>(() => popupRef)
   const keepMaxWidth = (element: HTMLElement) => {
     const observer = new ResizeObserver(([entry]) => {
       maxW = Math.max(maxW, entry.borderBoxSize[0].inlineSize)
@@ -88,16 +91,7 @@
   const reverseScroll = useReverseScrollContainer({ observeContentSize: () => rows.length })
 </script>
 
-<div
-  class="bg-white-dark absolute m-0 w-max max-w-lg -translate-x-[4.5px] -translate-y-[2.5px] border border-surface-500 px-2 py-1 break-words whitespace-break-spaces text-surface-950-50"
-  popover="manual"
-  bind:this={popupRef}
-  style={tooltip.data
-    ? `left: ${tooltip.data.x}px; top: ${tooltip.data.y}px; min-width: ${tooltip.data.targetWidth + 8}px`
-    : ''}
->
-  {tooltip.data?.text}
-</div>
+<SQLValueTooltip bind:popupRef tooltipData={tooltip.data}></SQLValueTooltip>
 
 <div
   class="flex flex-nowrap items-start"
@@ -165,7 +159,7 @@
       {@const itemHeight = 'h-7'}
       {#key result.columns}
         <div class="pt-2 pr-4">
-          <div class="relative h-full w-fit max-w-full">
+          <div class="relative flex h-full w-fit max-w-full flex-nowrap items-end">
             {#snippet listContainer(
               items: Snippet,
               {
@@ -216,10 +210,10 @@
                     <SQLValue
                       {value}
                       class="cursor-pointer"
-                      props={(format) => ({
-                        onclick: tooltip.showTooltip(format(value)),
+                      props={{
+                        onclick: tooltip.showTooltip(value),
                         onmouseleave: tooltip.onmouseleave
-                      })}
+                      }}
                     ></SQLValue>
                   {/each}
                 </tr>
@@ -250,7 +244,7 @@
                 {item}
               >
                 {#snippet emptyItem()}
-                  <tr class="h-0"></tr>
+                  <tr class="hidden"></tr>
                 {/snippet}
                 {#snippet footer()}
                   <tr style="height: auto; ">
@@ -259,7 +253,9 @@
                 {/snippet}
               </List>
             {/if}
-            <ScrollDownFab {reverseScroll}></ScrollDownFab>
+            <ScrollDownFab class="mr-7" {reverseScroll}></ScrollDownFab>
+            <ClipboardCopyButton class="-mr-4 mb-4" value={() => tableToCSJV(result)}
+            ></ClipboardCopyButton>
           </div>
         </div>
       {/key}
