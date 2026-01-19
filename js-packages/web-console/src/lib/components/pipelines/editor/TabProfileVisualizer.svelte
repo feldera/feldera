@@ -58,6 +58,11 @@
       loadedPipelineName = sourceName
       getProfileFiles = () => suitableProfiles
       selectedProfile = suitableProfiles.at(-1)![0] // Select most recent
+      if (!selectedProfile || isNaN(selectedProfile.getTime())) { // Hopefully a redundant check for an obscure case where we did not pick a valid bundle
+        errorMessage = `Unexpected error: unable to pick the latest profile in a support bundle. Inspect the bundle archive for integrity.`
+        selectedProfile = null
+        return false
+      }
       return true
     } catch (error) {
       if (error instanceof Error) {

@@ -33,8 +33,9 @@ export function getSuitableProfiles(zipData: Uint8Array): [Date, ZipItem[]][] {
   const profileTimestamps = groupBy(
     profileFiles,
     // group by file timestamp; all files in a bundle are named with names like TIMESTAMP_FILENAME
-    // where TIMESTAMP is a string encoding a timestamp
-    (file) => file.filename.match(/^(.*?)_/)?.[1] ?? ''
+    // where TIMESTAMP is an ISO 8601 timestamp
+    // Examples: "2026-01-19T12:55:54.152834443+00:00_logs.txt", "some/path/2026-01-19T12:55:54.152834443+00:00_logs.txt"
+    (file) => file.filename.match(/(?:^|\/)(\d{4}-\d{2}-\d{2}T[^/_]+)_/)?.[1] ?? ''
   ).filter(
     (group) => group[0] && group[1].some((file) => circuitProfileRegex.test(file.filename))
     // Pipeline config and dataflow graph are not required
