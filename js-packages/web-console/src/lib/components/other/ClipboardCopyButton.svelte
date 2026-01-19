@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { clipboard } from '@svelte-bin/clipboard'
+  import { clipboard, type Parameter } from '@svelte-bin/clipboard'
   import { clickedClass } from '$lib/compositions/actions/clickedClass'
   import type { Snippet } from '$lib/types/svelte'
 
@@ -7,11 +7,11 @@
     value,
     class: _class,
     children
-  }: { value: string; class?: string; children?: Snippet } = $props()
+  }: { value: Parameter; class?: string; children?: Snippet } = $props()
 </script>
 
 <button
-  class="btn flex h-9 flex-none before:w-4 before:transition-transform {_class}"
+  class="btn-icon flex h-9 flex-none before:w-4 before:transition-transform {_class}"
   use:clipboard={value}
   use:clickedClass={{
     base: 'fd fd-copy',

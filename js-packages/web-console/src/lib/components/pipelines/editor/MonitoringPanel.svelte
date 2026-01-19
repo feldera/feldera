@@ -139,7 +139,10 @@
   {#snippet tabBarEnd()}
     {#if currentTab.value !== 'Errors'}
       <div class="ml-auto flex">
-        <ClipboardCopyButton value={pipeline.current.id} class="h-8 w-auto preset-tonal-surface">
+        <ClipboardCopyButton
+          value={pipeline.current.id}
+          class="h-8 w-auto! gap-2 preset-tonal-surface px-4"
+        >
           <span class="text-base font-normal text-surface-950-50"> Pipeline ID </span>
         </ClipboardCopyButton>
         <Tooltip placement="top">

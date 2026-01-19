@@ -2,6 +2,9 @@
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
+# Svelte
+.svelte-kit/
+/build/
 # Other files
 src/assets
 tmp/
