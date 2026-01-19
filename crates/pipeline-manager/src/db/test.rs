@@ -1,6 +1,7 @@
 use crate::api::support_data_collector::SupportBundleData;
 use crate::auth::{generate_api_key, TenantRecord};
 use crate::db::error::DBError;
+use crate::db::operations::pipeline_monitor::MONITOR_PIPELINE_RETENTION_NUM;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::{is_pipeline_assigned_to_worker, StoragePostgres};
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId, ApiPermission};
@@ -3051,6 +3052,14 @@ impl ModelHelpers for Mutex<DbModel> {
                 program_status: pipeline.program_status,
                 storage_status: pipeline.storage_status,
             });
+        let mut state = self.lock().await;
+        let events = state
+            .pipeline_events
+            .get_mut(&(tenant_id, pipeline.id))
+            .unwrap();
+        if events.len() > (MONITOR_PIPELINE_RETENTION_NUM as usize) {
+            events.drain(0..(events.len() - (MONITOR_PIPELINE_RETENTION_NUM as usize)));
+        }
         Ok(())
     }
 
