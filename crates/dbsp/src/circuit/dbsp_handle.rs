@@ -1454,12 +1454,16 @@ impl DBSPHandle {
     }
 
     /// Remove the oldest checkpoint from the list.
+    /// - Prevents removing checkpoints whose UUID is in `except`.
     ///
     /// # Returns
-    /// - Metadata of the removed checkpoint, if one was removed.
-    /// - None otherwise.
-    pub fn gc_checkpoint(&mut self) -> Result<Option<CheckpointMetadata>, DbspError> {
-        self.checkpointer()?.lock().unwrap().gc_checkpoint()
+    /// - Uuid of the removed checkpoints, if any were removed.
+    /// - An empty set if there were no checkpoints to remove.
+    pub fn gc_checkpoint(
+        &mut self,
+        except: HashSet<uuid::Uuid>,
+    ) -> Result<HashSet<uuid::Uuid>, DbspError> {
+        self.checkpointer()?.lock().unwrap().gc_checkpoint(except)
     }
 
     /// Enable CPU profiler.
@@ -2214,14 +2218,16 @@ pub(crate) mod tests {
             let _cpm = dbsp.checkpoint().run().expect("commit failed");
         }
 
-        let mut prev_count = count_directory_entries(temp.path()).unwrap();
+        let prev_count = count_directory_entries(temp.path()).unwrap();
         let num_checkpoints = dbsp.list_checkpoints().unwrap().len();
-        for _i in 0..num_checkpoints - Checkpointer::MIN_CHECKPOINT_THRESHOLD {
-            let _r = dbsp.gc_checkpoint();
-            let count = count_directory_entries(temp.path()).unwrap();
-            assert!(count < prev_count);
-            prev_count = count;
-        }
+
+        assert!(num_checkpoints > Checkpointer::MIN_CHECKPOINT_THRESHOLD);
+
+        // Only MIN_CHECKPONT_THRESHOLD checkpoints will be kept.
+        let _r = dbsp.gc_checkpoint(std::collections::HashSet::new());
+        let count = count_directory_entries(temp.path()).unwrap();
+        assert!(count < prev_count);
+        assert!(dbsp.list_checkpoints().unwrap().len() <= Checkpointer::MIN_CHECKPOINT_THRESHOLD);
     }
 
     /// Make sure that leftover files from uncompleted checkpoints that were

@@ -6553,9 +6553,13 @@ impl RunningCheckpoint {
         checkpoint: Checkpoint,
         circuit: &mut CircuitThread,
     ) -> Result<Checkpoint, ControllerError> {
-        if circuit.sync_checkpoint_requests.is_empty()
-            && let Err(error) = circuit.circuit.gc_checkpoint()
-        {
+        if let Err(error) = circuit.circuit.gc_checkpoint(
+            circuit
+                .sync_checkpoint_requests
+                .iter()
+                .map(|c| c.uuid())
+                .collect::<HashSet<_>>(),
+        ) {
             warn!("error removing old checkpoints: {error}");
         }
 
