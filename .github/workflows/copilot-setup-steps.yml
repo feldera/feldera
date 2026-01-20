@@ -41,6 +41,11 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - name: Build Calcite from source
+        run: |
+          cd sql-to-dbsp-compiler
+          ./build_calcite.sh
+        shell: bash
       - name: Install Node.js 20
         uses: actions/setup-node@v4
         with:
