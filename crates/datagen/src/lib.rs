@@ -1749,7 +1749,11 @@ impl<'a> RecordGenerator<'a> {
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
-        let min = N::min_value().to_i64().unwrap_or(i64::MIN);
+        let min = if field.columntype.scale.is_none() {
+            N::min_value().to_i64().unwrap_or(i64::MIN)
+        } else {
+            u8::MIN as i64
+        };
         let max = if field.columntype.scale.is_none() {
             N::max_value().to_i64().unwrap_or(i64::MAX)
         } else {
