@@ -749,7 +749,7 @@ impl Catalog {
             return None;
         }
 
-        let (stream, workers) = self.gather_output_to_host(&index_name, stream, false);
+        let (stream, workers) = self.gather_output_to_host(index_name, stream, false);
         let view_handles = self.output_handles(view_name)?;
 
         let (stream_handle, enable_count, stream_gid) =

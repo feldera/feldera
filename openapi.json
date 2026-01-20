@@ -9147,7 +9147,7 @@
               },
               "hosts": {
                 "type": "integer",
-                "description": "Number of DBSP hosts.\n\nThe worker threads are evenly divided among the hosts.",
+                "description": "Number of DBSP hosts.\n\nThe worker threads are evenly divided among the hosts.  For single-host\ndeployments, this should be 1 (the default).",
                 "default": 1,
                 "minimum": 0
               },
@@ -10665,7 +10665,7 @@
           },
           "hosts": {
             "type": "integer",
-            "description": "Number of DBSP hosts.\n\nThe worker threads are evenly divided among the hosts.",
+            "description": "Number of DBSP hosts.\n\nThe worker threads are evenly divided among the hosts.  For single-host\ndeployments, this should be 1 (the default).",
             "default": 1,
             "minimum": 0
           },
