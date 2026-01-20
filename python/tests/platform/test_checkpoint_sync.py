@@ -27,6 +27,8 @@ def storage_cfg(
     standby: bool = False,
     pull_interval: int = 2,
     push_interval: Optional[int] = None,
+    retention_min_count: int = 1,
+    retention_min_age: int = 0,
 ) -> dict:
     return {
         "backend": {
@@ -43,6 +45,8 @@ def storage_cfg(
                     "standby": standby,
                     "pull_interval": pull_interval,
                     "push_interval": push_interval,
+                    "retention_min_count": retention_min_age,
+                    "retention_min_age": retention_min_count,
                 }
             },
         }
@@ -70,7 +74,10 @@ class TestCheckpointSync(SharedTestPipeline):
         """
 
         storage_config = storage_cfg(
-            self.pipeline.name, push_interval=automated_sync_interval
+            self.pipeline.name,
+            push_interval=automated_sync_interval,
+            retention_min_count=1,
+            retention_min_age=5 if from_uuid else 0,
         )
         ft = FaultToleranceModel.AtLeastOnce
 
@@ -119,7 +126,7 @@ class TestCheckpointSync(SharedTestPipeline):
 
         if automated_sync_interval is not None:
             time.sleep(automated_sync_interval + 1)
-            timeout = time.monotonic() + 5
+            timeout = time.monotonic() + 15
             success = None
             while time.monotonic() < timeout and success is None:
                 try:

@@ -254,45 +254,90 @@ impl Checkpointer {
 
     /// Removes all meta-data files associated with the checkpoint given by
     /// `cpm` by removing the folder associated with the checkpoint.
-    fn remove_checkpoint_dir(&self, cpm: &CheckpointMetadata) -> Result<(), Error> {
-        assert_ne!(cpm.uuid, Uuid::nil());
-        self.backend
-            .delete_recursive(&cpm.uuid.to_string().into())?;
+    fn remove_checkpoint_dir(&self, cpm: uuid::Uuid) -> Result<(), Error> {
+        assert_ne!(cpm, Uuid::nil());
+        self.backend.delete_recursive(&cpm.to_string().into())?;
         Ok(())
     }
 
-    /// Remove the oldest checkpoint from the list.
+    /// Remove the oldest checkpoints from the list.
+    /// - Preserves at least `MIN_CHECKPOINT_THRESHOLD` checkpoints.
+    /// - Does not remove any checkpoints whose UUID is in the `except` list.
     ///
     /// # Returns
-    /// - Metadata of the removed checkpoint, if there are more than
-    ///   `MIN_CHECKPOINT_THRESHOLD`
-    /// - None otherwise.
-    pub fn gc_checkpoint(&mut self) -> Result<Option<CheckpointMetadata>, Error> {
-        // Ensures that we can unwrap the call to pop_front, and front later:
-        static_assertions::const_assert!(Checkpointer::MIN_CHECKPOINT_THRESHOLD >= 2);
-        if self.checkpoint_list.len() > Self::MIN_CHECKPOINT_THRESHOLD {
-            let cp_to_remove = self.checkpoint_list.pop_front().unwrap();
-            let next_in_line = self.checkpoint_list.front().unwrap();
-
-            // Update the checkpoint list file, we do this first intentionally, in case
-            // later operations fail we don't want the checkpoint list to
-            // contain a checkpoint that only has part of the files.
-            //
-            // If any of the later operations fail, restarting the circuit will try
-            // to remove the checkpoint files again (see also [`Self::gc_startup`]).
-            self.update_checkpoint_file()?;
-
-            let potentially_remove = self.gather_batches_for_checkpoint(&cp_to_remove)?;
-            let need_to_keep = self.gather_batches_for_checkpoint(next_in_line)?;
-            for file in potentially_remove.difference(&need_to_keep) {
-                self.remove_batch_file(file);
-            }
-            self.remove_checkpoint_dir(&cp_to_remove)?;
-
-            Ok(Some(cp_to_remove))
-        } else {
-            Ok(None)
+    /// - Uuid of the removed checkpoints, if there are more than `MIN_CHECKPOINT_THRESHOLD`.
+    /// - Empty set otherwise.
+    pub fn gc_checkpoint(
+        &mut self,
+        except: HashSet<uuid::Uuid>,
+    ) -> Result<HashSet<uuid::Uuid>, Error> {
+        if self.checkpoint_list.len() <= Self::MIN_CHECKPOINT_THRESHOLD {
+            return Ok(HashSet::new());
         }
+
+        let mut batch_files_to_keep: HashSet<_> = except
+            .iter()
+            .filter_map(|uuid| self.backend.gather_batches_for_checkpoint_uuid(*uuid).ok())
+            .flatten()
+            .collect();
+
+        let to_remove: HashSet<_> = self
+            .checkpoint_list
+            .iter()
+            .take(
+                self.checkpoint_list
+                    .len()
+                    .saturating_sub(Self::MIN_CHECKPOINT_THRESHOLD),
+            )
+            .map(|cpm| cpm.uuid)
+            .filter(|cpm| !except.contains(cpm))
+            .collect();
+
+        self.checkpoint_list
+            .retain(|cpm| !to_remove.contains(&cpm.uuid));
+
+        // Update the checkpoint list file, we do this first intentionally, in case
+        // later operations fail we don't want the checkpoint list to
+        // contain a checkpoint that only has part of the files.
+        //
+        // If any of the later operations fail, restarting the circuit will try
+        // to remove the checkpoint files again (see also [`Self::gc_startup`]).
+        self.update_checkpoint_file()?;
+
+        // Find the first checkpoint in checkpoint list that is not in `except`.
+        self.checkpoint_list
+            .iter()
+            .filter(|c| !except.contains(&c.uuid))
+            .take(1)
+            .filter_map(|c| self.backend.gather_batches_for_checkpoint(c).ok())
+            .for_each(|batches| {
+                for batch in batches {
+                    batch_files_to_keep.insert(batch);
+                }
+            });
+
+        for cpm in &to_remove {
+            for batch_file in self
+                .backend
+                .gather_batches_for_checkpoint_uuid(*cpm)?
+                .difference(&batch_files_to_keep)
+            {
+                self.remove_batch_file(batch_file);
+            }
+
+            self.remove_checkpoint_dir(*cpm)?;
+        }
+
+        tracing::info!(
+            "cleaned up {} checkpoints; exception list: {except:?}, retaining checkpoints: {:?}",
+            to_remove.len(),
+            self.checkpoint_list
+                .iter()
+                .map(|cpm| cpm.uuid)
+                .collect::<Vec<_>>()
+        );
+
+        Ok(to_remove)
     }
 }
 
@@ -428,5 +473,207 @@ impl<T: Default> Checkpoint for EmptyCheckpoint<T> {
     fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
         self.val = T::default();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use feldera_storage::StorageBackend;
+    use feldera_types::config::{FileBackendConfig, StorageCacheConfig};
+    use std::collections::HashSet;
+
+    use crate::storage::backend::posixio_impl::PosixBackend;
+
+    use super::Checkpointer;
+
+    struct Empty;
+    struct MinCheckpoints;
+    struct ExtraCheckpoints;
+
+    struct TestState<S> {
+        checkpointer: Checkpointer,
+        tempdir: tempfile::TempDir,
+        _phantom: std::marker::PhantomData<S>,
+    }
+
+    impl<S> TestState<S> {
+        fn extras(&self) -> Vec<uuid::Uuid> {
+            self.checkpointer
+                .checkpoint_list
+                .iter()
+                .map(|cpm| cpm.uuid)
+                .take(
+                    self.checkpointer
+                        .checkpoint_list
+                        .len()
+                        .saturating_sub(Checkpointer::MIN_CHECKPOINT_THRESHOLD),
+                )
+                .collect()
+        }
+
+        fn oldest_extra(&self) -> uuid::Uuid {
+            self.extras().first().cloned().unwrap()
+        }
+
+        fn newest_extra(&self) -> uuid::Uuid {
+            self.extras().last().cloned().unwrap()
+        }
+    }
+
+    impl TestState<Empty> {
+        fn new() -> Self {
+            let tempdir = tempfile::tempdir().unwrap();
+
+            let backend: Arc<dyn StorageBackend> = Arc::new(PosixBackend::new(
+                tempdir.path(),
+                StorageCacheConfig::default(),
+                &FileBackendConfig::default(),
+            ));
+
+            Self {
+                checkpointer: Checkpointer::new(backend).unwrap(),
+                tempdir,
+                _phantom: std::marker::PhantomData,
+            }
+        }
+
+        fn precondition(&self) {
+            assert_eq!(self.checkpointer.checkpoint_list.len(), 0);
+        }
+
+        fn checkpoint(mut self) -> TestState<MinCheckpoints> {
+            self.precondition();
+
+            for i in 0..Checkpointer::MIN_CHECKPOINT_THRESHOLD {
+                self.checkpointer
+                    .commit(uuid::Uuid::now_v7(), 0, None, Some(i as u64), Some(0))
+                    .unwrap();
+            }
+
+            TestState::<MinCheckpoints> {
+                checkpointer: self.checkpointer,
+                tempdir: self.tempdir,
+                _phantom: std::marker::PhantomData,
+            }
+        }
+    }
+
+    impl TestState<MinCheckpoints> {
+        fn precondition(&self) {
+            assert_eq!(
+                self.checkpointer.checkpoint_list.len(),
+                Checkpointer::MIN_CHECKPOINT_THRESHOLD
+            );
+
+            assert!(self.extras().is_empty());
+        }
+
+        fn checkpoint(mut self) -> TestState<ExtraCheckpoints> {
+            self.precondition();
+
+            let uuid = uuid::Uuid::now_v7();
+            self.checkpointer
+                .commit(uuid, 0, None, Some(2), Some(0))
+                .unwrap();
+
+            TestState::<ExtraCheckpoints> {
+                checkpointer: self.checkpointer,
+                tempdir: self.tempdir,
+                _phantom: std::marker::PhantomData,
+            }
+        }
+    }
+
+    impl TestState<ExtraCheckpoints> {
+        fn precondition(&self) {
+            assert!(
+                self.checkpointer.checkpoint_list.len() > Checkpointer::MIN_CHECKPOINT_THRESHOLD
+            );
+
+            assert!(!self.extras().is_empty());
+        }
+
+        fn checkpoint(mut self) -> TestState<ExtraCheckpoints> {
+            self.precondition();
+
+            self.checkpointer
+                .commit(uuid::Uuid::now_v7(), 0, None, Some(3), Some(0))
+                .unwrap();
+
+            TestState::<ExtraCheckpoints> {
+                checkpointer: self.checkpointer,
+                tempdir: self.tempdir,
+                _phantom: std::marker::PhantomData,
+            }
+        }
+
+        fn gc(mut self) -> TestState<MinCheckpoints> {
+            self.precondition();
+
+            let removed = self.checkpointer.gc_checkpoint(HashSet::new()).unwrap();
+            assert!(!removed.is_empty());
+
+            TestState::<MinCheckpoints> {
+                checkpointer: self.checkpointer,
+                tempdir: self.tempdir,
+                _phantom: std::marker::PhantomData,
+            }
+        }
+
+        fn gc_with_except(mut self, except: uuid::Uuid) -> TestState<ExtraCheckpoints> {
+            self.precondition();
+
+            self.checkpointer.gc_checkpoint([except].into()).unwrap();
+
+            assert!(self.extras().contains(&except));
+
+            TestState::<ExtraCheckpoints> {
+                checkpointer: self.checkpointer,
+                tempdir: self.tempdir,
+                _phantom: std::marker::PhantomData,
+            }
+        }
+    }
+
+    #[test]
+    fn test_checkpointer() {
+        // Empty checkpointer.
+        let empty_checkpoints = TestState::<Empty>::new();
+
+        // Add minimum number of checkpoints.
+        let min_checkpoints = empty_checkpoints.checkpoint();
+
+        // Add one extra checkpoint.
+        let extra_checkpoints = min_checkpoints.checkpoint();
+
+        // Veify we can GC back to minimum.
+        let min_checkpoints = extra_checkpoints.gc();
+
+        // Add two extra checkpoints.
+        let one_extra = min_checkpoints.checkpoint();
+        let two_extra = one_extra.checkpoint();
+
+        // There should be more than the minimum number of checkpoints.
+        let keep = two_extra.newest_extra();
+
+        // And GC while keeping the newest extra checkpoint.
+        // This should be the only extra checkpoint remaining.
+        let one_extra = two_extra.gc_with_except(keep);
+        assert!(one_extra.extras().contains(&keep) && one_extra.extras().len() == 1);
+
+        // Add one extra checkpoint.
+        let two_extra = one_extra.checkpoint();
+
+        // Now lets try to GC while keeping the oldest extra checkpoint.
+        let keep = two_extra.oldest_extra();
+        let one_extra = two_extra.gc_with_except(keep);
+        assert!(one_extra.extras().contains(&keep) && one_extra.extras().len() == 1);
+
+        // Finally, GC back to minimum.
+        let min_checkpoints = one_extra.gc();
+        // Verify that this is a valid minimum checkpoint state.
+        min_checkpoints.precondition();
     }
 }
