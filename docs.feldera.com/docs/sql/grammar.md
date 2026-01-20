@@ -321,9 +321,9 @@ query
           select
       |   selectWithoutFrom
       |   query UNION [ ALL | DISTINCT ] query
-      |   query EXCEPT [ ALL | DISTINCT ] query
-      |   query MINUS [ ALL | DISTINCT ] query
-      |   query INTERSECT [ ALL | DISTINCT ] query
+      |   query EXCEPT [ DISTINCT ] query
+      |   query MINUS [ DISTINCT ] query
+      |   query INTERSECT [ DISTINCT ] query
       }
       [ ORDER BY orderItem [, orderItem ]* ]
       [ LIMIT [ start, ] { count | ALL } ]
@@ -336,6 +336,9 @@ withItem
       [ '(' column [, column ]* ')' ]
       AS '(' query ')'
 ```
+
+`MINUS` is equivalent to `EXCEPT`.  Note that `EXCEPT ALL` and
+`INTERSECT ALL` are currently not implemented.
 
 <a id="values"></a>
 ```
@@ -499,8 +502,6 @@ it may refer to tables in the `FROM` clause of an enclosing query.
 `GROUP BY DISTINCT GROUPING SETS ((a), (a, b), (a))` is equivalent to
 `GROUP BY GROUPING SETS ((a), (a, b))`); `GROUP BY ALL` is equivalent
 to `GROUP BY`.
-
-`MINUS` is equivalent to `EXCEPT`.
 
 ### Grouping functions
 

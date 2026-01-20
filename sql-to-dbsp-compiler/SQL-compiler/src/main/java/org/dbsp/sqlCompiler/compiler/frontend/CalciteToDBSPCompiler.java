@@ -1178,8 +1178,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPSimpleOperator opInput = this.getInputAs(input, false);
             if (!first) {
                 DBSPSimpleOperator neg = new DBSPNegateOperator(node, opInput.outputPort());
-                neg = this.castOutput(node, neg, outputType);
                 this.addOperator(neg);
+                neg = this.castOutput(node, neg, outputType);
                 inputs.add(neg.outputPort());
             } else {
                 opInput = this.castOutput(node, opInput, outputType);
@@ -1189,8 +1189,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         if (minus.all) {
-            DBSPSumOperator sum = new DBSPSumOperator(node.getFinal(), inputs);
-            this.assignOperator(minus, sum);
+            throw new UnimplementedException("EXCEPT/MINUS ALL", 5483, node);
         } else {
             DBSPSumOperator sum = new DBSPSumOperator(node, inputs);
             this.addOperator(sum);
@@ -2391,6 +2390,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         if (inputs.isEmpty())
             throw new UnsupportedException(node);
+        if (intersect.all)
+            throw new UnimplementedException("INTERSECT ALL", node);
         if (inputs.size() == 1) {
             Utilities.putNew(this.nodeOperator, intersect, previous);
             return;
