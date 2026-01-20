@@ -474,6 +474,11 @@ pub struct ServerArgs {
     /// whether it is a new start (id changed) or an automatic restart (id remains the same).
     #[arg(long)]
     pub deployment_id: Uuid,
+
+    /// Host identifier for this pipeline instance in multihost deployments.
+    /// Helps distinguish logs originating from different hosts.
+    #[arg(long)]
+    pub host_id: Option<usize>,
 }
 
 pub trait CircuitBuilderFunc:
@@ -575,16 +580,18 @@ pub fn run_server(
     });
 
     // Initialize the logger by setting its filter and template.
-    let pipeline_name = format!(
-        "[{}]",
-        config
-            .given_name
-            .as_ref()
-            .or(config.name.as_ref())
-            .cloned()
-            .unwrap_or_default()
-    )
-    .cyan();
+    let pipeline_label = config
+        .given_name
+        .as_ref()
+        .or(config.name.as_ref())
+        .cloned()
+        .unwrap_or_default();
+    let pipeline_name = if let Some(host_id) = args.host_id.as_ref() {
+        format!("[{} host={}]", pipeline_label, host_id).cyan()
+    } else {
+        format!("[{}]", pipeline_label).cyan()
+    };
+
     let pipeline_id = config
         .name
         .as_ref()
