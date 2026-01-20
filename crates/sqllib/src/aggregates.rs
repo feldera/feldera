@@ -794,12 +794,8 @@ where
 
 /// Collect values for percentile computation (non-nullable values)
 #[doc(hidden)]
-pub fn percentile_collect<T>(
-    accumulator: &mut Vec<T>,
-    value: T,
-    weight: Weight,
-    predicate: bool,
-) where
+pub fn percentile_collect<T>(accumulator: &mut Vec<T>, value: T, weight: Weight, predicate: bool)
+where
     T: Clone,
 {
     if !predicate {
@@ -856,15 +852,11 @@ pub fn percentile_collectN<T>(
 
 /// Compute continuous percentile (with interpolation) for non-nullable result
 #[doc(hidden)]
-pub fn percentile_cont<T>(
-    values: Vec<T>,
-    percentile: f64,
-    ascending: bool,
-) -> Option<T>
+pub fn percentile_cont<T>(values: Vec<T>, percentile: f64, ascending: bool) -> Option<T>
 where
     T: Clone + Debug + Ord,
 {
-    if values.is_empty() || percentile < 0.0 || percentile > 1.0 {
+    if values.is_empty() || !(0.0..=1.0).contains(&percentile) {
         return None;
     }
 
@@ -897,18 +889,14 @@ where
 
 /// Compute continuous percentile (with interpolation) for nullable result
 #[doc(hidden)]
-pub fn percentile_contN<T>(
-    values: Vec<Option<T>>,
-    percentile: f64,
-    ascending: bool,
-) -> Option<T>
+pub fn percentile_contN<T>(values: Vec<Option<T>>, percentile: f64, ascending: bool) -> Option<T>
 where
     T: Clone + Debug + Ord,
 {
     // Filter out None values
-    let non_null_values: Vec<T> = values.into_iter().filter_map(|v| v).collect();
+    let non_null_values: Vec<T> = values.into_iter().flatten().collect();
 
-    if non_null_values.is_empty() || percentile < 0.0 || percentile > 1.0 {
+    if non_null_values.is_empty() || !(0.0..=1.0).contains(&percentile) {
         return None;
     }
 
@@ -940,15 +928,11 @@ where
 
 /// Compute discrete percentile (nearest value) for non-nullable result
 #[doc(hidden)]
-pub fn percentile_disc<T>(
-    values: Vec<T>,
-    percentile: f64,
-    ascending: bool,
-) -> Option<T>
+pub fn percentile_disc<T>(values: Vec<T>, percentile: f64, ascending: bool) -> Option<T>
 where
     T: Clone + Debug + Ord,
 {
-    if values.is_empty() || percentile < 0.0 || percentile > 1.0 {
+    if values.is_empty() || !(0.0..=1.0).contains(&percentile) {
         return None;
     }
 
@@ -969,18 +953,14 @@ where
 
 /// Compute discrete percentile (nearest value) for nullable result
 #[doc(hidden)]
-pub fn percentile_discN<T>(
-    values: Vec<Option<T>>,
-    percentile: f64,
-    ascending: bool,
-) -> Option<T>
+pub fn percentile_discN<T>(values: Vec<Option<T>>, percentile: f64, ascending: bool) -> Option<T>
 where
     T: Clone + Debug + Ord,
 {
     // Filter out None values
-    let non_null_values: Vec<T> = values.into_iter().filter_map(|v| v).collect();
+    let non_null_values: Vec<T> = values.into_iter().flatten().collect();
 
-    if non_null_values.is_empty() || percentile < 0.0 || percentile > 1.0 {
+    if non_null_values.is_empty() || !(0.0..=1.0).contains(&percentile) {
         return None;
     }
 
