@@ -125,13 +125,13 @@ public class IncrementalRegressionTests extends SqlIoTest {
                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS,
                    amount BIGINT
                 );
-                
+
                 CREATE TABLE purchase1 (
                    customer_id INT,
                    ts TIMESTAMP NOT NULL,
                    amount BIGINT
                 );
-                
+
                 CREATE MATERIALIZED VIEW late_records AS (SELECT * FROM purchase1 EXCEPT SELECT * FROM purchase0);""");
     }
 
@@ -195,7 +195,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     account_id INT NOT NULL,
                     amount DECIMAL(10, 2) NOT NULL
                 );
-                
+
                 CREATE VIEW weekly_financial_final
                 WITH ('emit_final' = 'week')
                 AS SELECT
@@ -216,7 +216,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS,
                    amount BIGINT
                 );
-                
+
                 CREATE MATERIALIZED VIEW daily_total
                 WITH ('emit_final' = 'd') AS SELECT
                     TIMESTAMP_TRUNC(ts, DAY) as d,
@@ -230,9 +230,9 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 INSERT INTO purchase VALUES('2020-01-01 01:00:00', 20);""", """
                   d | sum | weight
                  -----------------""");
-        ccs.step("""                                
+        ccs.step("""
                 -- Waterline still at 2020-01-01 due to lateness
-                INSERT INTO purchase VALUES('2020-01-02 00:10:00', 15);""", """ 
+                INSERT INTO purchase VALUES('2020-01-02 00:10:00', 15);""", """
                  d | sum | weight
                 ------------------""");
         ccs.step("""
@@ -250,7 +250,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     x int,
                     ts timestamp
                 );
-                
+
                 create view v as
                 select *
                 from t
@@ -669,22 +669,22 @@ public class IncrementalRegressionTests extends SqlIoTest {
         this.getCCS("""
                 DECLARE RECURSIVE VIEW rv1(x VARCHAR NULL);
                 CREATE MATERIALIZED VIEW rv1 AS SELECT null as x;
-                
+
                 DECLARE RECURSIVE VIEW rv2(x VARCHAR);
                 CREATE MATERIALIZED VIEW rv2 AS SELECT null as x;
-                
+
                 DECLARE RECURSIVE VIEW rv3(x VARCHAR);
                 CREATE MATERIALIZED VIEW rv3 AS SELECT CAST('foo' as varchar) as x;
-                
+
                 DECLARE RECURSIVE VIEW rv4(x VARCHAR NULL);
                 CREATE MATERIALIZED VIEW rv4 AS SELECT CAST('foo' as varchar) as x;
-                
+
                 DECLARE RECURSIVE VIEW rv5(x VARCHAR NOT NULL);
                 CREATE MATERIALIZED VIEW rv5 AS SELECT CAST('foo' as varchar) as x;
-                
+
                 DECLARE RECURSIVE VIEW rv6(x VARCHAR);
                 CREATE MATERIALIZED VIEW rv6 AS SELECT 'foo' as x;
-                
+
                 DECLARE RECURSIVE VIEW rv7(type_path VARCHAR ARRAY NOT NULL);
                 CREATE MATERIALIZED VIEW rv7
                 AS select array[cast('event' as varchar)] as type_path;
@@ -692,7 +692,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 DECLARE RECURSIVE VIEW rv8(type_path VARCHAR ARRAY NOT NULL);
                 CREATE MATERIALIZED VIEW rv8
                 AS select cast(array['event'] as VARCHAR ARRAY) as type_path;
-                
+
                 DECLARE RECURSIVE VIEW rv9(type_path BIGINT);
                 CREATE MATERIALIZED VIEW rv9
                 AS select 1 as type_path;""");
@@ -921,7 +921,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     b BIGINT NOT NULL LATENESS 2,
                     r INTEGER
                 ) WITH ('append_only'='true');
-                
+
                 CREATE VIEW V AS
                 SELECT *
                 FROM (
@@ -1032,7 +1032,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         L_SHIPMODE     CHAR(10) NOT NULL,
                         L_COMMENT      VARCHAR(44) NOT NULL
                 );
-                
+
                 -- Orders
                 CREATE TABLE ORDERS  (
                         O_ORDERKEY       INTEGER NOT NULL,
@@ -1045,7 +1045,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         O_SHIPPRIORITY   INTEGER NOT NULL,
                         O_COMMENT        VARCHAR(79) NOT NULL
                 );
-                
+
                 -- Part
                 CREATE TABLE PART (
                         P_PARTKEY     INTEGER NOT NULL,
@@ -1058,7 +1058,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         P_RETAILPRICE DECIMAL(15,2) NOT NULL,
                         P_COMMENT     VARCHAR(23) NOT NULL
                 );
-                
+
                 -- Customer
                 CREATE TABLE CUSTOMER (
                         C_CUSTKEY     INTEGER NOT NULL,
@@ -1070,7 +1070,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         C_MKTSEGMENT  CHAR(10) NOT NULL,
                         C_COMMENT     VARCHAR(117) NOT NULL
                 );
-                
+
                 -- Supplier
                 CREATE TABLE SUPPLIER (
                         S_SUPPKEY     INTEGER NOT NULL,
@@ -1081,7 +1081,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         S_ACCTBAL     DECIMAL(15,2) NOT NULL,
                         S_COMMENT     VARCHAR(101) NOT NULL
                 );
-                
+
                 -- Part supplies
                 CREATE TABLE PARTSUPP (
                         PS_PARTKEY     INTEGER NOT NULL,
@@ -1090,7 +1090,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         PS_SUPPLYCOST  DECIMAL(15,2)  NOT NULL,
                         PS_COMMENT     VARCHAR(199) NOT NULL
                 );
-                
+
                 -- Nation
                 CREATE TABLE NATION  (
                         N_NATIONKEY  INTEGER NOT NULL,
@@ -1098,14 +1098,14 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         N_REGIONKEY  INTEGER NOT NULL,
                         N_COMMENT    VARCHAR(152)
                 );
-                
+
                 -- Region
                 CREATE TABLE REGION  (
                         R_REGIONKEY  INTEGER NOT NULL,
                         R_NAME       CHAR(25) NOT NULL,
                         R_COMMENT    VARCHAR(152)
                 );
-                
+
                 -- Pricing Summary Report
                 create materialized view q1
                 as select
@@ -1129,7 +1129,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 order by
                         l_returnflag,
                         l_linestatus;
-                
+
                 -- Minimum Cost Supplier
                 create materialized view q2
                 as select
@@ -1176,7 +1176,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         s_name,
                         p_partkey
                 limit 100;
-                
+
                 -- Shipping Priority
                 create materialized view q3
                 as select
@@ -1202,7 +1202,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         revenue desc,
                         o_orderdate
                 limit 10;
-                
+
                 -- Order Priority Checking
                 create materialized view q4
                 as select
@@ -1226,7 +1226,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         o_orderpriority
                 order by
                         o_orderpriority;
-                
+
                 create materialized view q5
                 as select
                         n_name,
@@ -1252,7 +1252,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         n_name
                 order by
                         revenue desc;
-                
+
                 -- Forecasting Revenue Change
                 create materialized view q6
                 as select
@@ -1264,7 +1264,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         and l_shipdate < date '1994-01-01' + interval '1' year
                         and l_discount between .06 - 0.01 and .06 + 0.01
                         and l_quantity < 24;
-                
+
                 -- Volume Shipping
                 create materialized view q7
                 as select
@@ -1306,7 +1306,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         supp_nation,
                         cust_nation,
                         l_year;
-                
+
                 -- Unfortunately this does not work for q8: there is a
                 -- shared join (followed by 2 projections) between q8 and q10 which causes
                 -- the plans for q8 to differ when compiled with and without q10
@@ -1350,7 +1350,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 --        o_year
                 --order by
                 --        o_year;
-                
+
                 -- Product Type Profit Measure
                 create materialized view q9
                 as select
@@ -1491,7 +1491,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
     public void issue4877() {
         this.getCC("""
                 CREATE TABLE tbl(roww ROW(i1 INT, v1 VARCHAR NULL));
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 roww < ROW(3, 'cat') AS roww
                 FROM tbl;""");
@@ -1501,7 +1501,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
     public void issue4880() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(roww ROW(i1 INT, v1 VARCHAR NULL));
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 roww <=> NULL AS roww FROM tbl;""");
         ccs.step("INSERT INTO tbl VALUES(ROW(ROW(4, 'var')));", """
@@ -1518,14 +1518,14 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     join_key_a VARCHAR NOT NULL,
                     event_timestamp TIMESTAMP
                 );
-                
+
                 CREATE TABLE data_entity_2 (
                     key_part_1 VARCHAR NOT NULL,
                     join_key_b VARCHAR NOT NULL,
                     record_timestamp TIMESTAMP,
                     PRIMARY KEY (key_part_1, join_key_b)
                 );
-                
+
                 CREATE VIEW combined_view AS
                 SELECT "t1".*, "t2".* FROM data_entity_1 as t1
                 LEFT ASOF JOIN "data_entity_2" AS "t2"
@@ -1542,13 +1542,13 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     join_key_a1 VARCHAR,
                     event_timestamp TIMESTAMP
                 );
-                
+
                 CREATE TABLE reference_table_b (
                     join_key_b1 VARCHAR NOT NULL PRIMARY KEY,
                     common_join_attribute SMALLINT,
                     event_timestamp TIMESTAMP
                 );
-                
+
                 CREATE TABLE source_stream_c (
                     join_key_b1 VARCHAR NOT NULL,
                     join_key_c2 VARCHAR NOT NULL,
@@ -1558,7 +1558,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     event_timestamp TIMESTAMP,
                     PRIMARY KEY (join_key_b1, join_key_c2)
                 );
-                
+
                 CREATE VIEW combined_view
                 AS
                 SELECT t1.* FROM source_stream_a AS t1
@@ -1579,7 +1579,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     join_key_2 VARCHAR,
                     join_key_3 VARCHAR
                 );
-                
+
                 CREATE TABLE source_table_b (
                     join_key_2 VARCHAR NOT NULL,
                     join_key_3 VARCHAR NOT NULL,
@@ -1587,14 +1587,14 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     timestamp_key_b BIGINT LATENESS 10::BIGINT,
                     PRIMARY KEY (join_key_2, join_key_3)
                 );
-                
+
                 CREATE VIEW combined_view
                 AS SELECT "t1".*
                  FROM "source_table_a" AS "t1"
                  LEFT ASOF JOIN "source_table_b" AS "t2"
                  MATCH_CONDITION ( t1.timestamp_key_a >= t2.timestamp_key_b )
                   ON "t1"."join_key_1" = "t2"."join_key_1" AND "t1"."join_key_3" = "t2"."join_key_3" AND "t1"."join_key_2" = "t2"."join_key_2";
-                
+
                 LATENESS combined_view.timestamp_key_a 10::BIGINT;
                 LATENESS combined_view.timestamp_key_b 10::BIGINT;""");
     }
@@ -1608,12 +1608,12 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     join_key_3 VARCHAR,
                     event_timestamp TIMESTAMP
                 );
-                
+
                 CREATE TABLE reference_table_b (
                     join_key_1 SMALLINT,
                     event_timestamp TIMESTAMP
                 );
-                
+
                 CREATE TABLE source_stream_c (
                     join_key_3 VARCHAR NOT NULL,
                     join_key_2 VARCHAR NOT NULL,
@@ -1621,16 +1621,16 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     event_timestamp TIMESTAMP,
                     PRIMARY KEY (join_key_3, join_key_2)
                 );
-                
+
                 CREATE VIEW intermediate_view_1 AS
                 SELECT * from source_stream_c;
-                
+
                 CREATE VIEW intermediate_view_2
                 AS SELECT "t1".* FROM "source_stream_a" AS "t1"
                 LEFT ASOF JOIN "intermediate_view_1" AS "t2"
                 MATCH_CONDITION ( t1.event_timestamp >= t2.event_timestamp )
                 ON "t1"."join_key_1" = "t2"."join_key_1" AND "t1"."join_key_2" = "t2"."join_key_2" AND "t1"."join_key_3" = "t2"."join_key_3";
-                
+
                 CREATE VIEW final_view
                 AS SELECT * from intermediate_view_2 as v1
                 LEFT ASOF JOIN "reference_table_b" AS "t3"
@@ -1664,18 +1664,18 @@ public class IncrementalRegressionTests extends SqlIoTest {
                    id uuid,
                    ts TIMESTAMP LATENESS INTERVAL 1 MONTH
                 );
-                
+
                 CREATE TABLE C (
                     id uuid,
                     ts timestamp NOT NULL LATENESS INTERVAL 1 HOUR
                 );
-                
+
                 create view V0 AS
                 SELECT c.*
                 FROM C LEFT ASOF JOIN S
                     MATCH_CONDITION ( c.ts >= s.ts )
                     ON c.id = s.id;
-                
+
                 CREATE VIEW V1 AS
                 SELECT ts FROM V0;""");
     }
@@ -1685,10 +1685,10 @@ public class IncrementalRegressionTests extends SqlIoTest {
         this.statementsFailingInCompilation("""
                 CREATE TABLE tbl1(id INT,
                 roww ROW(i1 INT, v1 VARCHAR NULL) NOT NULL);
-                
+
                 CREATE TABLE tbl2(id INT,
                 roww ROW(i1 INT, v1 VARCHAR NULL) NOT NULL);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 t1.id, t1.roww AS t1_roww, t2.roww AS t2_roww
                 FROM tbl1 t1
@@ -1702,10 +1702,10 @@ public class IncrementalRegressionTests extends SqlIoTest {
         this.statementsFailingInCompilation("""
                 CREATE TABLE tbl1(id INT,
                 roww ROW(i1 INT, v1 VARCHAR NULL));
-                
+
                 CREATE TABLE tbl2(id INT,
                 roww ROW(i1 INT, v1 VARCHAR NULL));
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 t1.id, t1.roww AS t1_roww, t2.roww AS t2_roww
                 FROM tbl1 t1
@@ -1783,14 +1783,14 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     p VARCHAR,
                     m DECIMAL(38, 7)
                 );
-                
+
                 CREATE VIEW V0 AS
                 SELECT *
                 FROM T
                 WHERE ts >= NOW() - INTERVAL 1 MINUTE
                 AND p IS NOT NULL
                 AND m > 0;
-                
+
                 CREATE VIEW V1 AS
                 SELECT COUNT(*)
                 FROM V0
@@ -1837,7 +1837,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                   ts TIMESTAMP,
                   sts TIMESTAMP
                 );
-                
+
                 create view seg2c_2
                 as select
                     bsin
@@ -1879,11 +1879,11 @@ public class IncrementalRegressionTests extends SqlIoTest {
                   colF VARCHAR,
                   colG VARCHAR
                 );
-            
+
                 CREATE FUNCTION CONVERT_TS(d VARCHAR)
                 RETURNS TIMESTAMP
                 AS PARSE_TIMESTAMP('%m/%e/%Y %H:%M:%S', d);
-            
+
                 CREATE LOCAL VIEW V AS
                 SELECT
                   key,
@@ -1945,7 +1945,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 -- two more unused fields
                 d INT,
                 e INT);
-                
+
                 create view V
                 as SELECT
                     S.v,
@@ -1986,12 +1986,12 @@ public class IncrementalRegressionTests extends SqlIoTest {
                        ts6 VARCHAR NULL,
                        value INT NULL
                     );
-                
+
                     create type C as (
                        type VARCHAR,
                        value VARCHAR
                     );
-    
+
                     CREATE TABLE input_table (
                       key UUID NOT NULL PRIMARY KEY,
                       colA VARCHAR,
@@ -2002,11 +2002,11 @@ public class IncrementalRegressionTests extends SqlIoTest {
                       colF VARCHAR,
                       colG VARCHAR
                     );
-                
+
                     CREATE FUNCTION CONVERT_TS(d VARCHAR)
                     RETURNS TIMESTAMP
                     AS PARSE_TIMESTAMP('%m/%e/%Y %H:%M:%S', d);
-                
+
                     CREATE LOCAL VIEW V AS
                     SELECT
                       key,
@@ -2033,5 +2033,143 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 FROM V, UNNEST(V.colC) AS t(k, val)
                 WHERE t.val.type not like '%.com%';""");
         this.checkNarrow(cc, 10);
+    }
+
+    @Test
+    public void testPercentileExtremeValues() {
+        // Test extreme percentiles (0.0 and 1.0) with negative numbers and duplicates
+        // Uses incremental compilation because this test has multiple steps that need state across them
+        var ccs = this.getCCS("""
+                CREATE TABLE percentile_edge (
+                    val DOUBLE
+                );
+
+                CREATE VIEW v_extreme AS SELECT
+                    PERCENTILE_CONT(0.0) WITHIN GROUP (ORDER BY val) AS p0,
+                    PERCENTILE_CONT(1.0) WITHIN GROUP (ORDER BY val) AS p100,
+                    PERCENTILE_DISC(0.0) WITHIN GROUP (ORDER BY val) AS d0,
+                    PERCENTILE_DISC(1.0) WITHIN GROUP (ORDER BY val) AS d100
+                FROM percentile_edge;
+                """);
+
+        // Test with multiple values including negative numbers
+        ccs.step("""
+                INSERT INTO percentile_edge VALUES
+                    (-10.0),
+                    (0.0),
+                    (10.0),
+                    (20.0),
+                    (30.0),
+                    (100.0),
+                    (200.0);
+                """, """
+                 p0 | p100 | d0 | d100 | weight
+                ---------------------------------
+                 -10 | 200 | -10 | 200 | 1""");
+
+        // Test with duplicate values - in incremental mode, since min/max don't change,
+        // the output delta should be empty (no change in result)
+        ccs.step("""
+                INSERT INTO percentile_edge VALUES
+                    (10.0),
+                    (10.0);
+                """, """
+                 p0 | p100 | d0 | d100 | weight
+                ---------------------------------""");
+
+        // Insert a new maximum value - this should change the output
+        // In incremental mode: old result (-10, 200) removed, new result (-10, 300) added
+        ccs.step("""
+                INSERT INTO percentile_edge VALUES (300.0);
+                """, """
+                 p0 | p100 | d0 | d100 | weight
+                ---------------------------------
+                 -10 | 200 | -10 | 200 | -1
+                 -10 | 300 | -10 | 300 | 1""");
+    }
+
+    @Test
+    public void testPercentileWithNulls() {
+        // Test that PERCENTILE_CONT and PERCENTILE_DISC correctly ignore NULL values
+        var ccs = this.getCCS("""
+                CREATE TABLE percentile_nulls (
+                    val DOUBLE
+                );
+
+                CREATE VIEW v_nulls AS SELECT
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY val) AS median_cont,
+                    PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY val) AS median_disc
+                FROM percentile_nulls;
+                """);
+
+        // Insert values with NULLs interspersed - NULLs should be ignored
+        // Non-null values: 10, 20, 30, 40 -> median should be between 20 and 30
+        ccs.step("""
+                INSERT INTO percentile_nulls VALUES
+                    (NULL),
+                    (10.0),
+                    (NULL),
+                    (20.0),
+                    (30.0),
+                    (NULL),
+                    (40.0);
+                """, """
+                 median_cont | median_disc | weight
+                ------------------------------------
+                 25          | 20          | 1""");
+
+        // Add more NULLs - shouldn't change the result since NULLs are ignored
+        ccs.step("""
+                INSERT INTO percentile_nulls VALUES
+                    (NULL),
+                    (NULL);
+                """, """
+                 median_cont | median_disc | weight
+                ------------------------------------""");
+
+        // Add a new non-null value that changes the median
+        // Non-null values: 10, 20, 30, 40, 50 -> median should be 30
+        ccs.step("""
+                INSERT INTO percentile_nulls VALUES (50.0);
+                """, """
+                 median_cont | median_disc | weight
+                ------------------------------------
+                 25          | 20          | -1
+                 30          | 30          | 1""");
+    }
+
+    @Test
+    public void testPercentileAllNulls() {
+        // Test that PERCENTILE_CONT and PERCENTILE_DISC return NULL when all values are NULL
+        var ccs = this.getCCS("""
+                CREATE TABLE percentile_all_nulls (
+                    val DOUBLE
+                );
+
+                CREATE VIEW v_all_nulls AS SELECT
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY val) AS median_cont,
+                    PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY val) AS median_disc
+                FROM percentile_all_nulls;
+                """);
+
+        // Insert only NULL values - result should be NULL
+        ccs.step("""
+                INSERT INTO percentile_all_nulls VALUES
+                    (NULL),
+                    (NULL),
+                    (NULL);
+                """, """
+                 median_cont | median_disc | weight
+                ------------------------------------
+                             |             | 1""");
+
+        // Add a non-null value - result should now be that value
+        ccs.step("""
+                INSERT INTO percentile_all_nulls VALUES (100.0);
+                """, """
+                 median_cont | median_disc | weight
+                ------------------------------------
+                             |             | -1
+                 100         | 100         | 1""");
     }
 }

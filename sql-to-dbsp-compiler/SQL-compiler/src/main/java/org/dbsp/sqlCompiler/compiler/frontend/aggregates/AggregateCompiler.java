@@ -55,7 +55,9 @@ import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
@@ -70,6 +72,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
+import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
@@ -85,9 +88,11 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOrderStatisticTree;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
 import org.dbsp.util.ICastable;
@@ -997,7 +1002,210 @@ public class AggregateCompiler implements ICompilerComponent {
         this.setResult(implementation);
     }
 
+    void processPercentile(SqlAggFunction function) {
+        SqlKind kind = function.getKind();
+        if (kind != SqlKind.PERCENTILE_CONT && kind != SqlKind.PERCENTILE_DISC) {
+            throw new UnimplementedException("Percentile function not yet implemented", node);
+        }
+
+        // The first argument is the percentile value (0.0 to 1.0)
+        // The ORDER BY expression is specified via WITHIN GROUP
+        List<RelFieldCollation> collations = this.call.getCollation().getFieldCollations();
+        if (collations.isEmpty()) {
+            throw new CompilationError("PERCENTILE_CONT/PERCENTILE_DISC requires ORDER BY in WITHIN GROUP clause", node);
+        }
+        if (collations.size() > 1) {
+            throw new UnimplementedException("PERCENTILE_CONT/PERCENTILE_DISC with multiple ORDER BY expressions not yet implemented", node);
+        }
+
+        // Get the percentile value from the first argument
+        DBSPExpression percentileArg = this.getAggregatedValue();
+
+        // Get the ORDER BY expression (which is the value to compute percentile over)
+        RelFieldCollation collation = collations.get(0);
+        int orderByFieldIndex = collation.getFieldIndex();
+        DBSPExpression orderByExpr = this.eComp.inputIndex(this.node, orderByFieldIndex).applyCloneIfNeeded();
+        DBSPType orderByType = orderByExpr.getType();
+        boolean ascending = collation.direction == RelFieldCollation.Direction.ASCENDING;
+
+        // The element type stored in the tree is the non-nullable version of orderByType
+        // because NULL values are filtered out in percentile_collectN
+        DBSPType elementType = orderByType.withMayBeNull(false);
+
+        // Create accumulator type: Tuple(Option<percentile_value>, OrderStatisticTree<element_type>)
+        // The percentile is Option because we don't know it on the first row
+        // OrderStatisticTree supports incremental computation with proper insertion/deletion
+        DBSPTypeOrderStatisticTree treeType = new DBSPTypeOrderStatisticTree(elementType, false);
+        DBSPType percentileType = percentileArg.getType().withMayBeNull(true);
+        DBSPTypeTuple accumulatorType = new DBSPTypeTuple(percentileType, treeType);
+        DBSPExpression zero = new DBSPTupleExpression(
+                DBSPLiteral.none(percentileType),
+                treeType.emptyTree());
+        DBSPVariablePath accumulator = accumulatorType.var();
+
+        // Increment function: store percentile value and collect order-by values into the tree
+        // percentile_collect takes a mutable reference to the tree
+        String functionName = "percentile_collect";
+        if (orderByType.mayBeNull) {
+            functionName += "N";
+        }
+        DBSPExpression[] arguments = new DBSPExpression[4];
+        arguments[0] = accumulator.field(1).borrow(true);
+        arguments[1] = ExpressionCompiler.expandTuple(this.node, orderByExpr);
+        arguments[2] = this.compiler.weightVar;
+        arguments[3] = this.filterArgument >= 0 ? this.filterArgument() : new DBSPBoolLiteral(true);
+
+        DBSPExpression collectCall = new DBSPApplyExpression(
+                node, functionName, DBSPTypeVoid.INSTANCE, arguments);
+
+        // Build the increment: update the tuple with percentile (if not set) and collect values
+        // The increment is a block that:
+        // 1. Calls percentile_collect on the tree
+        // 2. Returns the tuple with percentile set to Some(percentileArg) if it was None
+        DBSPExpression percentileValue = percentileArg.applyCloneIfNeeded();
+        if (!percentileValue.getType().mayBeNull) {
+            percentileValue = percentileValue.some();
+        }
+        DBSPExpression newPercentile = new DBSPIfExpression(
+                this.node,
+                accumulator.field(0).is_null(),
+                percentileValue,
+                accumulator.field(0).applyCloneIfNeeded());
+
+        DBSPBlockExpression incrementBlock = new DBSPBlockExpression(
+                Linq.list(new DBSPExpressionStatement(collectCall)),
+                new DBSPTupleExpression(newPercentile, accumulator.field(1).applyCloneIfNeeded()));
+
+        DBSPTypeUser semigroup = new DBSPTypeUser(
+                node, SEMIGROUP, "PercentileSemigroup", false, accumulatorType);
+
+        // Post-processing: extract percentile value and tree, compute percentile
+        DBSPVariablePath p = accumulatorType.var();
+
+        // Determine the post function name and return type based on the aggregate type and element type
+        // For PERCENTILE_CONT on numeric types, we use type-specific interpolated versions
+        // which may return a different type (e.g., integer input -> DOUBLE output)
+        String postFunctionName;
+        DBSPType postReturnType;
+        if (kind == SqlKind.PERCENTILE_CONT) {
+            // Use type-specific interpolated function if available
+            postFunctionName = getPercentileContFunctionName(elementType);
+            // Get the actual return type (integer types return DOUBLE due to interpolation)
+            postReturnType = getPercentileContReturnType(elementType, this.nullableResultType.mayBeNull);
+        } else {
+            postFunctionName = "percentile_disc";
+            // PERCENTILE_DISC always returns the same type as the input
+            postReturnType = this.nullableResultType;
+        }
+        if (this.nullableResultType.mayBeNull) {
+            postFunctionName += "N";
+        }
+
+        // Post-processing: p.0.unwrap() is the percentile, p.1 is the tree
+        // Cast the percentile to F64 (wrapped f64) then unwrap to primitive f64
+        DBSPExpression castedPercentile = p.field(0).applyCloneIfNeeded()
+                .cast(this.node, percentileType.withMayBeNull(false), DBSPCastExpression.CastType.SqlUnsafe)
+                .cast(this.node, DBSPTypeDouble.INSTANCE, DBSPCastExpression.CastType.SqlUnsafe);
+
+        // Call into_inner() to get primitive f64
+        DBSPExpression primitivePercentile = new DBSPApplyMethodExpression(
+                "into_inner", DBSPTypeDouble.INSTANCE,
+                castedPercentile);
+
+        // Call the percentile function with its actual return type
+        DBSPExpression postResult = new DBSPApplyExpression(
+                postFunctionName, postReturnType,
+                p.field(1).borrow(false), primitivePercentile, new DBSPBoolLiteral(ascending));
+
+        // Cast the result to match Calcite's expected type (resultType) if different
+        // (e.g., PERCENTILE_CONT on integers returns DOUBLE but Calcite may expect the input type)
+        if (!postReturnType.sameType(this.resultType)) {
+            postResult = postResult.cast(this.node, this.resultType, DBSPCastExpression.CastType.SqlUnsafe);
+        }
+
+        DBSPClosureExpression post = postResult.closure(p);
+
+        // The empty set result must be NULL, so we use nullableResultType for the literal.
+        // Then cast to Calcite's expected type (resultType) to match the expected output type.
+        DBSPExpression emptySetResult = DBSPLiteral.none(this.nullableResultType);
+        if (!this.nullableResultType.sameType(this.resultType)) {
+            emptySetResult = emptySetResult.cast(this.node, this.resultType, DBSPCastExpression.CastType.SqlUnsafe);
+        }
+
+        NonLinearAggregate aggregate = new NonLinearAggregate(
+                node, zero, this.makeRowClosure(incrementBlock, accumulator), post,
+                emptySetResult, semigroup);
+        this.setResult(aggregate);
+    }
+
+    /** Get the appropriate PERCENTILE_CONT function name based on the element type.
+     *  For numeric types, returns a type-specific interpolated version.
+     *  For other types, returns the generic version (which returns lower bound without interpolation). */
+    private String getPercentileContFunctionName(DBSPType elementType) {
+        if (elementType.is(DBSPTypeDouble.class)) {
+            return "percentile_cont_f64";
+        } else if (elementType.is(DBSPTypeFP.class)) {
+            DBSPTypeFP fp = elementType.to(DBSPTypeFP.class);
+            if (fp.getWidth() == 32) {
+                return "percentile_cont_f32";
+            } else {
+                return "percentile_cont_f64";
+            }
+        } else if (elementType.is(DBSPTypeInteger.class)) {
+            DBSPTypeInteger intType = elementType.to(DBSPTypeInteger.class);
+            switch (intType.getWidth()) {
+                case 8:
+                    return "percentile_cont_i8";
+                case 16:
+                    return "percentile_cont_i16";
+                case 32:
+                    return "percentile_cont_i32";
+                case 64:
+                    return "percentile_cont_i64";
+                default:
+                    return "percentile_cont";
+            }
+        } else if (elementType.is(DBSPTypeDecimal.class)) {
+            // DECIMAL types use the numeric interpolation function
+            return "percentile_cont_numeric";
+        }
+        // For other types, use the generic version (no interpolation)
+        return "percentile_cont";
+    }
+
+    /** Get the return type for PERCENTILE_CONT based on the element type.
+     *  For integer types, returns DOUBLE (F64) since interpolation may produce non-integer values.
+     *  For floating-point types, returns the same type.
+     *  For other types, returns the element type. */
+    private DBSPType getPercentileContReturnType(DBSPType elementType, boolean nullable) {
+        DBSPType returnType;
+        if (elementType.is(DBSPTypeDouble.class)) {
+            // F64 -> F64
+            returnType = DBSPTypeDouble.INSTANCE;
+        } else if (elementType.is(DBSPTypeReal.class)) {
+            // F32 (REAL) -> F32
+            returnType = DBSPTypeReal.INSTANCE;
+        } else if (elementType.is(DBSPTypeFP.class)) {
+            // Other FP widths -> F64
+            returnType = DBSPTypeDouble.INSTANCE;
+        } else if (elementType.is(DBSPTypeInteger.class)) {
+            // All integer types -> F64 (DOUBLE) since interpolation may produce non-integers
+            returnType = DBSPTypeDouble.INSTANCE;
+        } else {
+            // For other types (DECIMAL, etc.), return the same type
+            returnType = elementType;
+        }
+        return returnType.withMayBeNull(nullable);
+    }
+
     public IAggregate compile() {
+        // Check for PERCENTILE_CONT and PERCENTILE_DISC first by SqlKind
+        SqlKind kind = this.aggFunction.getKind();
+        if (kind == SqlKind.PERCENTILE_CONT || kind == SqlKind.PERCENTILE_DISC) {
+            this.processPercentile(this.aggFunction);
+            return Objects.requireNonNull(this.result);
+        }
+
         boolean success =
                 this.process(this.aggFunction, SqlCountAggFunction.class, this::processCount) ||
                 this.process(this.aggFunction, SqlBasicAggFunction.class, this::processBasic) || // arg_max or array_agg

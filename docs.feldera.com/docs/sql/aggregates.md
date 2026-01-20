@@ -122,6 +122,14 @@ should write `SELECT SUM(CAST col AS BIGINT)`.
      <td><a id="stddev_samp"></a><code>STDDEV_SAMP( [ ALL | DISTINCT ] value)</code></td>
      <td>Returns the sample standard deviation of numeric across all input values</td>
   </tr>
+  <tr>
+     <td><a id="percentile_cont"></a><code>PERCENTILE_CONT(fraction) WITHIN GROUP (ORDER BY value)</code></td>
+     <td>Returns the interpolated value at the specified percentile (fraction between 0 and 1) using continuous distribution. Returns DOUBLE. NULL values are ignored. If all values are NULL, returns NULL.</td>
+  </tr>
+  <tr>
+     <td><a id="percentile_disc"></a><code>PERCENTILE_DISC(fraction) WITHIN GROUP (ORDER BY value)</code></td>
+     <td>Returns the first value at or above the specified percentile (fraction between 0 and 1) using discrete distribution. Returns the same type as the input value. NULL values are ignored. If all values are NULL, returns NULL.</td>
+  </tr>
 </table>
 
 Comparisons like `MAX`, `MIN`, `ARG_MIN`, and `ARG_MAX` are defined
