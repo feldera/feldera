@@ -68,7 +68,8 @@ pub use apply_n::apply_n;
 pub use condition::Condition;
 pub use delta0::Delta0;
 pub use dynamic::aggregate::{
-    Aggregator, Avg, Fold, Max, MaxSemigroup, Min, MinSemigroup, Postprocess,
+    Aggregator, Avg, Fold, Max, MaxSemigroup, Min, MinSemigroup, OrderStatisticTree,
+    OrderStatisticTreeSemigroup, PercentileCont, PercentileDisc, Postprocess,
 };
 pub use dynamic::neighborhood::DynNeighborhood;
 pub use generator::{ConstantGenerator, Generator, GeneratorNested, TransactionGenerator};

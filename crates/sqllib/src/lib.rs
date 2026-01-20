@@ -48,6 +48,9 @@ pub use uuid::*;
 pub mod variant;
 pub use variant::*;
 #[doc(hidden)]
+pub mod order_statistic_tree;
+pub use order_statistic_tree::*;
+#[doc(hidden)]
 pub mod rfc3339;
 #[doc(hidden)]
 pub use num_traits::Float;
@@ -1308,6 +1311,40 @@ where
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct ConcatSemigroup<V>(PhantomData<V>);
+
+// Semigroup for PERCENTILE_CONT/PERCENTILE_DISC aggregates
+// Combines (Option<P>, OrderStatisticTree<V>) tuples where P is the percentile and V is the data type
+// The percentile should be the same across all groups, so we just take the first Some value
+// Uses OrderStatisticTree for proper incremental computation with insertion and deletion support
+#[derive(Clone)]
+#[doc(hidden)]
+pub struct PercentileSemigroup<T>(PhantomData<T>);
+
+#[doc(hidden)]
+impl<P, V> Semigroup<Tup2<Option<P>, OrderStatisticTree<V>>>
+    for PercentileSemigroup<Tup2<Option<P>, OrderStatisticTree<V>>>
+where
+    P: Clone,
+    V: Ord + Clone,
+{
+    #[doc(hidden)]
+    fn combine(
+        left: &Tup2<Option<P>, OrderStatisticTree<V>>,
+        right: &Tup2<Option<P>, OrderStatisticTree<V>>,
+    ) -> Tup2<Option<P>, OrderStatisticTree<V>> {
+        // Take the first Some percentile value (they should all be the same within a group)
+        let percentile = match (&left.0, &right.0) {
+            (Some(p), _) => Some(p.clone()),
+            (None, Some(p)) => Some(p.clone()),
+            (None, None) => None,
+        };
+
+        // Merge the trees
+        let tree = OrderStatisticTree::merged(&left.1, &right.1);
+
+        Tup2::new(percentile, tree)
+    }
+}
 
 // Semigroup for the SINGLE_VALUE aggregate
 #[derive(Clone)]
