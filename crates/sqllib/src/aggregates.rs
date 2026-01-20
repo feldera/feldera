@@ -789,3 +789,460 @@ where
         (Some(left), Some(right)) => left >= right,
     }
 }
+
+// ===== PERCENTILE_CONT / PERCENTILE_DISC =====
+//
+// These functions implement SQL PERCENTILE_CONT and PERCENTILE_DISC aggregate functions
+// using an order-statistics multiset (OrderStatisticTree) that supports:
+// - O(log n) insertion with positive/negative weights for incremental computation
+// - O(log n) deletion via negative weights
+// - O(n) k-th element selection
+// - Proper multiset semantics
+
+use crate::order_statistic_tree::OrderStatisticTree;
+
+/// Collect values for percentile computation (non-nullable values)
+///
+/// Inserts the value into the OrderStatisticTree with the given weight.
+/// Positive weights add occurrences, negative weights remove them.
+#[doc(hidden)]
+pub fn percentile_collect<T>(
+    accumulator: &mut OrderStatisticTree<T>,
+    value: T,
+    weight: Weight,
+    predicate: bool,
+) where
+    T: Ord + Clone,
+{
+    if !predicate {
+        return;
+    }
+    accumulator.insert(value, weight);
+}
+
+/// Collect values for percentile computation (nullable values)
+///
+/// Ignores NULL values. Non-NULL values are inserted into the tree.
+#[doc(hidden)]
+pub fn percentile_collectN<T>(
+    accumulator: &mut OrderStatisticTree<T>,
+    value: Option<T>,
+    weight: Weight,
+    predicate: bool,
+) where
+    T: Ord + Clone,
+{
+    if !predicate {
+        return;
+    }
+    // Ignore NULL values in percentile computation
+    if let Some(v) = value {
+        accumulator.insert(v, weight);
+    }
+}
+
+/// Compute continuous percentile (with interpolation) for non-nullable result
+///
+/// Uses the OrderStatisticTree to efficiently compute the percentile.
+/// For PERCENTILE_CONT, we interpolate between adjacent values when the
+/// position falls between two elements.
+#[doc(hidden)]
+pub fn percentile_cont<T>(
+    tree: &OrderStatisticTree<T>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<T>
+where
+    T: Clone + Debug + Ord,
+{
+    // Get the bounds for interpolation
+    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
+
+    if fraction == 0.0 || lower == upper {
+        return Some(lower.clone());
+    }
+
+    // For generic T, we cannot interpolate numerically.
+    // Return the lower value. Type-specific implementations can provide interpolation.
+    // Note: The SQL standard defines PERCENTILE_CONT for numeric types only,
+    // so in practice T would be a numeric type where interpolation is possible.
+    Some(lower.clone())
+}
+
+/// Compute continuous percentile (with interpolation) for nullable result
+#[doc(hidden)]
+pub fn percentile_contN<T>(
+    tree: &OrderStatisticTree<T>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<T>
+where
+    T: Clone + Debug + Ord,
+{
+    // The tree already contains only non-null values (NULL values are filtered in percentile_collectN)
+    percentile_cont(tree, percentile, ascending)
+}
+
+/// Compute discrete percentile (nearest value) for non-nullable result
+///
+/// Returns an actual value from the dataset (no interpolation).
+#[doc(hidden)]
+pub fn percentile_disc<T>(
+    tree: &OrderStatisticTree<T>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<T>
+where
+    T: Clone + Debug + Ord,
+{
+    tree.select_percentile_disc(percentile, ascending).cloned()
+}
+
+/// Compute discrete percentile (nearest value) for nullable result
+#[doc(hidden)]
+pub fn percentile_discN<T>(
+    tree: &OrderStatisticTree<T>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<T>
+where
+    T: Clone + Debug + Ord,
+{
+    // The tree already contains only non-null values
+    percentile_disc(tree, percentile, ascending)
+}
+
+// ===== Type-specific PERCENTILE_CONT implementations with proper interpolation =====
+
+/// Compute continuous percentile with interpolation for f64 (DOUBLE type)
+#[doc(hidden)]
+pub fn percentile_cont_f64(
+    tree: &OrderStatisticTree<crate::F64>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<crate::F64> {
+    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
+
+    if fraction == 0.0 || lower == upper {
+        return Some(*lower);
+    }
+
+    // Linear interpolation: lower + fraction * (upper - lower)
+    let lower_val = lower.into_inner();
+    let upper_val = upper.into_inner();
+    let result = lower_val + fraction * (upper_val - lower_val);
+    Some(crate::F64::new(result))
+}
+
+/// Compute continuous percentile with interpolation for f64 (nullable)
+#[doc(hidden)]
+pub fn percentile_cont_f64N(
+    tree: &OrderStatisticTree<crate::F64>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<crate::F64> {
+    percentile_cont_f64(tree, percentile, ascending)
+}
+
+/// Compute continuous percentile with interpolation for f32 (REAL type)
+#[doc(hidden)]
+pub fn percentile_cont_f32(
+    tree: &OrderStatisticTree<crate::F32>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<crate::F32> {
+    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
+
+    if fraction == 0.0 || lower == upper {
+        return Some(*lower);
+    }
+
+    // Linear interpolation
+    let lower_val = lower.into_inner() as f64;
+    let upper_val = upper.into_inner() as f64;
+    let result = lower_val + fraction * (upper_val - lower_val);
+    Some(crate::F32::new(result as f32))
+}
+
+/// Compute continuous percentile with interpolation for f32 (nullable)
+#[doc(hidden)]
+pub fn percentile_cont_f32N(
+    tree: &OrderStatisticTree<crate::F32>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<crate::F32> {
+    percentile_cont_f32(tree, percentile, ascending)
+}
+
+/// Compute continuous percentile with interpolation for i64 (BIGINT type)
+/// Returns f64 as per SQL standard (interpolated values may not be integers)
+#[doc(hidden)]
+pub fn percentile_cont_i64(
+    tree: &OrderStatisticTree<i64>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<crate::F64> {
+    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
+
+    if fraction == 0.0 || lower == upper {
+        return Some(crate::F64::new(*lower as f64));
+    }
+
+    // Linear interpolation returning double
+    let lower_val = *lower as f64;
+    let upper_val = *upper as f64;
+    let result = lower_val + fraction * (upper_val - lower_val);
+    Some(crate::F64::new(result))
+}
+
+/// Compute continuous percentile with interpolation for i64 (nullable)
+#[doc(hidden)]
+pub fn percentile_cont_i64N(
+    tree: &OrderStatisticTree<i64>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<crate::F64> {
+    percentile_cont_i64(tree, percentile, ascending)
+}
+
+/// Compute continuous percentile with interpolation for i32 (INTEGER type)
+/// Returns f64 as per SQL standard
+#[doc(hidden)]
+pub fn percentile_cont_i32(
+    tree: &OrderStatisticTree<i32>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<crate::F64> {
+    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
+
+    if fraction == 0.0 || lower == upper {
+        return Some(crate::F64::new(*lower as f64));
+    }
+
+    let lower_val = *lower as f64;
+    let upper_val = *upper as f64;
+    let result = lower_val + fraction * (upper_val - lower_val);
+    Some(crate::F64::new(result))
+}
+
+/// Compute continuous percentile with interpolation for i32 (nullable)
+#[doc(hidden)]
+pub fn percentile_cont_i32N(
+    tree: &OrderStatisticTree<i32>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<crate::F64> {
+    percentile_cont_i32(tree, percentile, ascending)
+}
+
+/// Compute continuous percentile with interpolation for i16 (SMALLINT type)
+/// Returns f64 as per SQL standard
+#[doc(hidden)]
+pub fn percentile_cont_i16(
+    tree: &OrderStatisticTree<i16>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<crate::F64> {
+    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
+
+    if fraction == 0.0 || lower == upper {
+        return Some(crate::F64::new(*lower as f64));
+    }
+
+    let lower_val = *lower as f64;
+    let upper_val = *upper as f64;
+    let result = lower_val + fraction * (upper_val - lower_val);
+    Some(crate::F64::new(result))
+}
+
+/// Compute continuous percentile with interpolation for i16 (nullable)
+#[doc(hidden)]
+pub fn percentile_cont_i16N(
+    tree: &OrderStatisticTree<i16>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<crate::F64> {
+    percentile_cont_i16(tree, percentile, ascending)
+}
+
+/// Compute continuous percentile with interpolation for i8 (TINYINT type)
+/// Returns f64 as per SQL standard
+#[doc(hidden)]
+pub fn percentile_cont_i8(
+    tree: &OrderStatisticTree<i8>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<crate::F64> {
+    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
+
+    if fraction == 0.0 || lower == upper {
+        return Some(crate::F64::new(*lower as f64));
+    }
+
+    let lower_val = *lower as f64;
+    let upper_val = *upper as f64;
+    let result = lower_val + fraction * (upper_val - lower_val);
+    Some(crate::F64::new(result))
+}
+
+/// Compute continuous percentile with interpolation for i8 (nullable)
+#[doc(hidden)]
+pub fn percentile_cont_i8N(
+    tree: &OrderStatisticTree<i8>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<crate::F64> {
+    percentile_cont_i8(tree, percentile, ascending)
+}
+
+/// Compute continuous percentile with interpolation for numeric types (DECIMAL, etc.)
+/// Uses f64 conversion for interpolation, returning the original type.
+#[doc(hidden)]
+pub fn percentile_cont_numeric<T>(
+    tree: &OrderStatisticTree<T>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<T>
+where
+    T: Clone + Debug + Ord + Into<f64>,
+    T: TryFrom<f64>,
+{
+    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
+
+    if fraction == 0.0 || lower == upper {
+        return Some(lower.clone());
+    }
+
+    // Linear interpolation using f64
+    let lower_f64: f64 = lower.clone().into();
+    let upper_f64: f64 = upper.clone().into();
+    let result_f64 = lower_f64 + fraction * (upper_f64 - lower_f64);
+
+    // Convert back to the original type
+    T::try_from(result_f64).ok()
+}
+
+/// Compute continuous percentile with interpolation for numeric types (nullable)
+#[doc(hidden)]
+pub fn percentile_cont_numericN<T>(
+    tree: &OrderStatisticTree<T>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<T>
+where
+    T: Clone + Debug + Ord + Into<f64>,
+    T: TryFrom<f64>,
+{
+    percentile_cont_numeric(tree, percentile, ascending)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::F64;
+
+    /// Test that mimics the generated code pattern for PERCENTILE_CONT
+    /// This tests the increment function pattern used in combined aggregates
+    #[test]
+    fn test_increment_function_pattern() {
+        // Mimics the generated code structure:
+        // Accumulator type: Tup2<Option<percentile_value>, OrderStatisticTree<F64>>
+        type Acc = (Option<f64>, OrderStatisticTree<F64>);
+
+        // Zero/initial value
+        let mut acc: Acc = (None, OrderStatisticTree::new());
+
+        // Values to insert (from the failing test)
+        let values: Vec<f64> = vec![-10.0, 0.0, 10.0, 20.0, 30.0, 100.0, 200.0];
+        let percentile_arg = 0.0_f64; // For p0
+
+        // Simulate calling the increment function for each row
+        for val in &values {
+            let value = Some(F64::new(*val));
+            let weight: Weight = 1;
+            let predicate = true;
+
+            // This mimics the generated increment block:
+            // percentile_collectN(&mut acc.1, value, weight, predicate);
+            // acc = (newPercentile, acc.1.clone())
+            percentile_collectN(&mut acc.1, value, weight, predicate);
+            let new_percentile = if acc.0.is_none() {
+                Some(percentile_arg)
+            } else {
+                acc.0
+            };
+            acc = (new_percentile, acc.1.clone());
+        }
+
+        // After processing all 7 values, the tree should have all of them
+        assert_eq!(acc.1.total_count(), 7, "Tree should have 7 elements");
+
+        // Check percentile computations
+        let p0 = percentile_cont_f64(&acc.1, 0.0, true);
+        let p100 = percentile_cont_f64(&acc.1, 1.0, true);
+
+        println!("acc.1 = {:?}", acc.1);
+        println!("p0 = {:?}", p0);
+        println!("p100 = {:?}", p100);
+
+        assert_eq!(p0, Some(F64::new(-10.0)), "p0 should be -10");
+        assert_eq!(p100, Some(F64::new(200.0)), "p100 should be 200");
+    }
+
+    /// Test that mimics the exact generated code with Tup2
+    /// The generated code has: (*p0).0 = { ... Tup2::new(..., (*p0).0.1.clone()) }
+    /// where p0 is &mut Tup4<Tup2<...>, Tup2<...>, ...>
+    #[test]
+    fn test_fold_style_increment() {
+        use crate::Tup2;
+
+        // Exact type from generated code (one element of the Tup4)
+        type Acc = Tup2<Option<f64>, OrderStatisticTree<F64>>;
+
+        // Zero/initial value
+        let mut acc: Acc = Tup2::new(None, OrderStatisticTree::new());
+
+        // Values to insert
+        let values: Vec<f64> = vec![-10.0, 0.0, 10.0, 20.0, 30.0, 100.0, 200.0];
+        let percentile_arg = 0.0_f64;
+
+        // Simulate calling the increment function for each row
+        // This mimics: (*p0).0 = { ... }
+        for val in &values {
+            let p1_1 = Some(F64::new(*val)); // The value being collected
+            let p2: Weight = 1; // Weight
+
+            // This exactly mimics the generated code pattern:
+            // acc = {
+            //     percentile_collectN(&mut acc.1, value, p2, true);
+            //     Tup2::new(
+            //         if acc.0.is_none() { Some(percentile_arg) } else { acc.0.clone() },
+            //         acc.1.clone()
+            //     )
+            // };
+            acc = {
+                percentile_collectN(&mut acc.1, p1_1.as_ref().cloned(), p2, true);
+                Tup2::new(
+                    if acc.0.as_ref().cloned().is_none() {
+                        Some(percentile_arg)
+                    } else {
+                        acc.0.as_ref().cloned()
+                    },
+                    acc.1.clone(),
+                )
+            };
+        }
+
+        // Check results
+        assert_eq!(acc.1.total_count(), 7, "Tree should have 7 elements");
+
+        let p0 = percentile_cont_f64(&acc.1, 0.0, true);
+        let p100 = percentile_cont_f64(&acc.1, 1.0, true);
+
+        println!("Tree contents: {:?}", acc.1);
+        println!("p0 = {:?}, p100 = {:?}", p0, p100);
+
+        assert_eq!(p0, Some(F64::new(-10.0)), "p0 should be -10");
+        assert_eq!(p100, Some(F64::new(200.0)), "p100 should be 200");
+    }
+}
