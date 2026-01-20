@@ -26,14 +26,15 @@ update_pom() {
     sed -i -E "s|<calcite.version>(.*)</calcite.version>|<calcite.version>${VERSION}</calcite.version>|" "${SCRIPT_DIR}/SQL-compiler/pom.xml"
 }
 
-# Parse command line arguments
+# Parse command line arguments (they override environment settings)
+CMD_LINE_BUILD_NEXT=""
 while getopts "nch" opt; do
     case $opt in
         n)
-            CALCITE_BUILD_NEXT="y"
+            CMD_LINE_BUILD_NEXT="y"
             ;;
         c)
-            CALCITE_BUILD_NEXT="n"
+            CMD_LINE_BUILD_NEXT="n"
             ;;
         h)
             usage
@@ -43,6 +44,11 @@ while getopts "nch" opt; do
             ;;
     esac
 done
+
+# Command line arguments take precedence over environment settings
+if [ -n "${CMD_LINE_BUILD_NEXT}" ]; then
+    CALCITE_BUILD_NEXT="${CMD_LINE_BUILD_NEXT}"
+fi
 
 if [ "${CALCITE_BUILD_NEXT}" = "y" ]; then
     update_pom "${CALCITE_NEXT}"
