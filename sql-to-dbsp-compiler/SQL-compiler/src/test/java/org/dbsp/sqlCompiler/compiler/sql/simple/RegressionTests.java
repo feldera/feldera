@@ -2247,17 +2247,17 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void issue3778() {
-        this.statementsFailingInCompilation("""
+        this.compileRustTestCase("""
                 CREATE TABLE foo (
                     bar NUMERIC,
                     baz STRING
                 );
-                
+
                 CREATE VIEW biz AS (
                     SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY bar) AS bar_median
                     FROM foo
                     GROUP BY baz
-                );""", "Aggregate function not yet implemented");
+                );""");
     }
 
     @Test

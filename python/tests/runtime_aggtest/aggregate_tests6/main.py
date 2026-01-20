@@ -41,6 +41,9 @@ from test_interval_mths_min import *  # noqa: F403
 from test_interval_mths_max import *  # noqa: F403
 from test_interval_mths_every import *  # noqa: F403
 from test_interval_mths_some import *  # noqa: F403
+from test_percentile_tbl import *  # noqa: F403
+from test_percentile_cont import *  # noqa: F403
+from test_percentile_disc import *  # noqa: F403
 
 base.APPEND_ONLY = True
 

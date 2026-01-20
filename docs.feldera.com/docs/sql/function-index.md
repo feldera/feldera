@@ -178,6 +178,8 @@
 * `PARSE_JSON`: [json](json.md#parse_json)
 * `PARSE_TIME`: [datetime](datetime.md#date-parsing-and-formatting)
 * `PARSE_TIMESTAMP`: [datetime](datetime.md#date-parsing-and-formatting)
+* `PERCENTILE_CONT` (aggregate): [aggregates](aggregates.md#percentile_cont)
+* `PERCENTILE_DISC` (aggregate): [aggregates](aggregates.md#percentile_disc)
 * `PI`: [float](float.md#pi)
 * `POSITION`: [string](string.md#position)
 * `POWER`: [float](float.md#power)
