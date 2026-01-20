@@ -997,7 +997,83 @@ public class AggregateCompiler implements ICompilerComponent {
         this.setResult(implementation);
     }
 
+    void processPercentile(SqlAggFunction function) {
+        SqlKind kind = function.getKind();
+        if (kind != SqlKind.PERCENTILE_CONT && kind != SqlKind.PERCENTILE_DISC) {
+            throw new UnimplementedException("Percentile function not yet implemented", node);
+        }
+
+        // The first argument is the percentile value (0.0 to 1.0)
+        // The ORDER BY expression is specified via WITHIN GROUP
+        List<RelFieldCollation> collations = this.call.getCollation().getFieldCollations();
+        if (collations.isEmpty()) {
+            throw new CompilationError("PERCENTILE_CONT/PERCENTILE_DISC requires ORDER BY in WITHIN GROUP clause", node);
+        }
+        if (collations.size() > 1) {
+            throw new UnimplementedException("PERCENTILE_CONT/PERCENTILE_DISC with multiple ORDER BY expressions not yet implemented", node);
+        }
+
+        // Get the percentile value from the first argument
+        DBSPExpression percentileArg = this.getAggregatedValue();
+
+        // Get the ORDER BY expression (which is the value to compute percentile over)
+        RelFieldCollation collation = collations.get(0);
+        int orderByFieldIndex = collation.getFieldIndex();
+        DBSPExpression orderByExpr = this.eComp.inputIndex(this.node, orderByFieldIndex).applyCloneIfNeeded();
+        DBSPType orderByType = orderByExpr.getType();
+        boolean ascending = collation.direction == RelFieldCollation.Direction.ASCENDING;
+
+        // Create accumulator type: Vec of the ORDER BY expression type
+        DBSPTypeVec accumulatorType = new DBSPTypeVec(orderByType, false);
+        DBSPExpression zero = accumulatorType.emptyVector();
+        DBSPVariablePath accumulator = accumulatorType.var();
+
+        // Increment function: collect values into a vector
+        String functionName = "percentile_collect";
+        if (orderByType.mayBeNull) {
+            functionName += "N";
+        }
+        DBSPExpression[] arguments = new DBSPExpression[4];
+        arguments[0] = accumulator.borrow(true);
+        arguments[1] = ExpressionCompiler.expandTuple(this.node, orderByExpr);
+        arguments[2] = this.compiler.weightVar;
+        arguments[3] = this.filterArgument >= 0 ? this.filterArgument() : new DBSPBoolLiteral(true);
+
+        DBSPExpression increment = new DBSPApplyExpression(
+                node, functionName, DBSPTypeVoid.INSTANCE, arguments);
+        DBSPTypeUser semigroup = new DBSPTypeUser(
+                node, SEMIGROUP, "ConcatSemigroup", false, accumulatorType);
+
+        // Post-processing: sort the vector and extract the percentile value
+        DBSPVariablePath p = accumulatorType.var();
+        String postFunctionName;
+        if (kind == SqlKind.PERCENTILE_CONT) {
+            postFunctionName = "percentile_cont";
+        } else {
+            postFunctionName = "percentile_disc";
+        }
+        if (this.nullableResultType.mayBeNull) {
+            postFunctionName += "N";
+        }
+
+        DBSPClosureExpression post = new DBSPApplyExpression(
+                postFunctionName, this.nullableResultType,
+                p, percentileArg, new DBSPBoolLiteral(ascending)).closure(p);
+
+        NonLinearAggregate aggregate = new NonLinearAggregate(
+                node, zero, this.makeRowClosure(increment, accumulator), post,
+                DBSPLiteral.none(this.nullableResultType), semigroup);
+        this.setResult(aggregate);
+    }
+
     public IAggregate compile() {
+        // Check for PERCENTILE_CONT and PERCENTILE_DISC first by SqlKind
+        SqlKind kind = this.aggFunction.getKind();
+        if (kind == SqlKind.PERCENTILE_CONT || kind == SqlKind.PERCENTILE_DISC) {
+            this.processPercentile(this.aggFunction);
+            return Objects.requireNonNull(this.result);
+        }
+
         boolean success =
                 this.process(this.aggFunction, SqlCountAggFunction.class, this::processCount) ||
                 this.process(this.aggFunction, SqlBasicAggFunction.class, this::processBasic) || // arg_max or array_agg
