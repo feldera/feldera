@@ -50,6 +50,7 @@ pub fn runtime_status_to_string(runtime_status: RuntimeStatus) -> String {
 pub fn parse_string_as_runtime_status(s: String) -> Result<RuntimeStatus, DBError> {
     match s.as_str() {
         "unavailable" => Ok(RuntimeStatus::Unavailable),
+        "coordination" => Ok(RuntimeStatus::Coordination),
         "standby" => Ok(RuntimeStatus::Standby),
         "awaiting_approval" => Ok(RuntimeStatus::AwaitingApproval),
         "initializing" => Ok(RuntimeStatus::Initializing),
