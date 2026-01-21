@@ -100,6 +100,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=FELDERA_PLATFORM_VERSION_SUFFIX");
     println!("cargo:rustc-env=FELDERA_PLATFORM_VERSION_SUFFIX={platform_version_suffix}");
 
+    // Capture build source (ci vs source)
+    let build_source = env::var("FELDERA_BUILD_ORIGIN").unwrap_or("source".to_string());
+    println!("cargo:rerun-if-env-changed=FELDERA_BUILD_ORIGIN");
+    println!("cargo:rustc-env=FELDERA_BUILD_ORIGIN={build_source}");
+
     let build = BuildBuilder::default().build_timestamp(true).build()?;
     let cargo = CargoBuilder::all_cargo()?;
     let gitcl = GitclBuilder::default().sha(false).dirty(false).build()?;

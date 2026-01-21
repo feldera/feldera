@@ -133,6 +133,9 @@ import type {
   PostPipelinePauseData,
   PostPipelinePauseErrors,
   PostPipelinePauseResponses,
+  PostPipelineRebalanceData,
+  PostPipelineRebalanceErrors,
+  PostPipelineRebalanceResponses,
   PostPipelineResponses,
   PostPipelineResumeData,
   PostPipelineResumeErrors,
@@ -853,6 +856,28 @@ export const pipelineAdhocSql = <ThrowOnError extends boolean = false>(
   (options.client ?? client).get<PipelineAdhocSqlResponses, PipelineAdhocSqlErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/query',
+    ...options
+  })
+
+/**
+ * Initiate rebalancing.
+ *
+ * Initiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically
+ * when the drift in the size of joined relations exceeds a threshold. This endpoint forces the balancer
+ * to reevaluate and apply an optimal partitioning policy regardless of the threshold.
+ *
+ * This operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.
+ */
+export const postPipelineRebalance = <ThrowOnError extends boolean = false>(
+  options: Options<PostPipelineRebalanceData, ThrowOnError>
+) =>
+  (options.client ?? client).post<
+    PostPipelineRebalanceResponses,
+    PostPipelineRebalanceErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/rebalance',
     ...options
   })
 

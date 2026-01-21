@@ -410,6 +410,10 @@ export type Condition = {
 export type Configuration = {
   build_info: BuildInformation
   /**
+   * Build source: "ci" for GitHub Actions builds, "source" for local builds
+   */
+  build_source: string
+  /**
    * URL that navigates to the changelog of the current version
    */
   changelog_url: string
@@ -905,6 +909,17 @@ export type DeltaTableReaderConfig = {
    * Example: "s3://feldera-fraud-detection-data/demographics_train"
    */
   uri: string
+  /**
+   * Enable verbose logging.
+   *
+   * When enabled, the connector will log detailed information at INFO level.
+   *
+   * Supported values:
+   * * 0 - no verbose logging
+   * * 1 - log all Delta log entries in follow and cdc modes.
+   * * >1 - reserved for future use
+   */
+  verbose?: number
   /**
    * Optional table version.
    *
@@ -2500,6 +2515,7 @@ export type PipelineConfig = {
    * different CPUs.
    */
   pin_cpus?: Array<number>
+  pipeline_template_configmap?: PipelineTemplateConfig | null
   /**
    * Timeout in seconds for the `Provisioning` phase of the pipeline.
    * Setting this value will override the default of the runner.
@@ -2601,10 +2617,12 @@ export type PipelineInfo = {
   deployment_resources_desired_status: ResourcesDesiredStatus
   deployment_resources_desired_status_since: string
   deployment_resources_status: ResourcesStatus
+  deployment_resources_status_details?: unknown
   deployment_resources_status_since: string
   deployment_runtime_desired_status?: RuntimeDesiredStatus | null
   deployment_runtime_desired_status_since?: string | null
   deployment_runtime_status?: RuntimeStatus | null
+  deployment_runtime_status_details?: unknown
   deployment_runtime_status_since?: string | null
   deployment_status: CombinedStatus
   deployment_status_since: string
@@ -2643,6 +2661,7 @@ export type PipelineSelectedInfo = {
   deployment_resources_desired_status: ResourcesDesiredStatus
   deployment_resources_desired_status_since: string
   deployment_resources_status: ResourcesStatus
+  deployment_resources_status_details?: unknown
   deployment_resources_status_since: string
   deployment_runtime_desired_status?: RuntimeDesiredStatus | null
   deployment_runtime_desired_status_since?: string | null
@@ -2674,6 +2693,47 @@ export type PipelineSelectedInfo = {
  * Pipeline state.
  */
 export type PipelineState = 'Paused' | 'Running' | 'Terminated'
+
+/**
+ * Configuration for supplying a custom pipeline StatefulSet template via a Kubernetes ConfigMap.
+ *
+ * Operators can provide a custom StatefulSet YAML that the Kubernetes runner will use when
+ * creating pipeline StatefulSets for a pipeline. The custom template must be stored as the
+ * value of a key in a ConfigMap in the same namespace as the pipeline; set `name` to the
+ * ConfigMap name and `key` to the entry that contains the template.
+ *
+ * Recommendations and requirements:
+ * - **Start from the default template and modify it as needed.** The default template is present
+ * in ConfigMap named as `<release-name>-pipeline-template`, with key `pipelineTemplate` in the release
+ * namespace and should be used as a reference.
+ * - The template must contain a valid Kubernetes `StatefulSet` manifest in YAML form. The
+ * runner substitutes variables in the template before parsing; therefore the final YAML
+ * must be syntactically valid.
+ * - The runner performs simple string substitution for the following placeholders. Please ensure these
+ * placeholders are placed at appropriate location for their semantics:
+ * - `{id}`: pipeline Kubernetes name (used for object names and labels)
+ * - `{namespace}`: Kubernetes namespace where the pipeline runs
+ * - `{pipeline_executor_image}`: container image used to run the pipeline executor
+ * - `{binary_ref}`: program binary reference passed as an argument
+ * - `{program_info_ref}`: program info reference passed as an argument
+ * - `{pipeline_storage_path}`: mount path for persistent pipeline storage
+ * - `{storage_class_name}`: storage class name to use for PVCs (if applicable)
+ * - `{deployment_id}`: UUID identifying the deployment instance
+ * - `{deployment_initial}`: initial desired runtime status (e.g., `provisioning`)
+ * - `{bootstrap_policy}`: bootstrap policy value when applicable
+ */
+export type PipelineTemplateConfig = {
+  /**
+   * Key in the ConfigMap containing the pipeline template.
+   *
+   * If not set, defaults to `pipelineTemplate`.
+   */
+  key?: string
+  /**
+   * Name of the ConfigMap containing the pipeline template.
+   */
+  name: string
+}
 
 /**
  * Create a new pipeline (POST), or fully update an existing pipeline (PUT).
@@ -3459,6 +3519,7 @@ export type RuntimeConfig = {
    * different CPUs.
    */
   pin_cpus?: Array<number>
+  pipeline_template_configmap?: PipelineTemplateConfig | null
   /**
    * Timeout in seconds for the `Provisioning` phase of the pipeline.
    * Setting this value will override the default of the runner.
@@ -3946,6 +4007,12 @@ export type SyncConfig = {
    * Default: 10 seconds
    */
   pull_interval?: number
+  /**
+   * The interval (in seconds) between each push of checkpoints to object store.
+   *
+   * Default: disabled (no periodic push).
+   */
+  push_interval?: number | null
   /**
    * The region that this bucket is in.
    *
@@ -5406,6 +5473,36 @@ export type PipelineAdhocSqlResponses = {
 }
 
 export type PipelineAdhocSqlResponse = PipelineAdhocSqlResponses[keyof PipelineAdhocSqlResponses]
+
+export type PostPipelineRebalanceData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/rebalance'
+}
+
+export type PostPipelineRebalanceErrors = {
+  /**
+   * Pipeline with that name does not exist
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+}
+
+export type PostPipelineRebalanceError =
+  PostPipelineRebalanceErrors[keyof PostPipelineRebalanceErrors]
+
+export type PostPipelineRebalanceResponses = {
+  /**
+   * Rebalancing started successfully
+   */
+  200: unknown
+}
 
 export type PostPipelineResumeData = {
   body?: never
