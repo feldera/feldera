@@ -90,3 +90,5 @@ playwright/.cache/
 .pnpm-store
 
 .vite/
+
+/.claude
