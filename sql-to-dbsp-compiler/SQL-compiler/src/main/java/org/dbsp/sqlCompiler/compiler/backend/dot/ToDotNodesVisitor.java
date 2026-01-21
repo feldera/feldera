@@ -234,16 +234,14 @@ public class ToDotNodesVisitor extends CircuitVisitor {
             // There are more of these every day
             return " style=filled fillcolor=orangered";
         }
+        if (operator.operation.contains("retain")) {
+            return " style=filled fillcolor=pink";
+        }
         return switch (operator.operation) {
             case "waterline" -> " style=filled fillcolor=lightgreen";
             case "controlled_filter" -> " style=filled fillcolor=cyan";
             case "apply", "apply2" -> " style=filled fillcolor=yellow";
-            case "accumulate_integrate_trace_retain_keys", "integrate_trace_retain_keys",
-                 "partitioned_rolling_aggregate_with_waterline", "window",
-                 "accumulate_integrate_trace_retain_values", "integrate_trace_retain_values",
-                 "accumulate_integrate_trace_retain_values_last_n",
-                 "integrate_trace_retain_values_last_n" ->
-                    " style=filled fillcolor=pink";
+            case "partitioned_rolling_aggregate_with_waterline", "window" -> " style=filled fillcolor=pink";
             // stateful operators
             case "distinct", "stream_distinct",
                  // all aggregates require an upsert, which is stateful, even the ones that are linear

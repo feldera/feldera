@@ -666,9 +666,11 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 REMOVE FROM T VALUES(3, 'Z');""").simplify(compiler);
         String set = change.getSet(0).toString();
         Assert.assertEquals("""
-                TableData[name=t, data=zset!(Tup2::new(Some(1), Some("x"), ) => 1i64,
-                Tup2::new(Some(2), Some("Y"), ) => -1i64,
-                Tup2::new(Some(3), Some("Z"), ) => -1i64,), primaryKeys=[]]""", set);
+                TableData[name=t, data=zset!(
+                    Tup2::new(Some(1), Some("x"), ) => 1i64,
+                    Tup2::new(Some(2), Some("Y"), ) => -1i64,
+                    Tup2::new(Some(3), Some("Z"), ) => -1i64,
+                ), primaryKeys=[]]""", set);
     }
 
     @Test

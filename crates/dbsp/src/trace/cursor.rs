@@ -1062,7 +1062,7 @@ enum GroupFilterCursor<V: ?Sized> {
         /// The largest of the bottom `n` values below the waterline.
         max_val: Box<V>,
         /// True if there are more than `n` values below the waterline.
-        /// If true, the cursor will include values `<=min_val`. Otherwise,
+        /// If true, the cursor will include values `<=max_val`. Otherwise,
         /// it will include all values under the cursor.
         max_val_valid: bool,
     },

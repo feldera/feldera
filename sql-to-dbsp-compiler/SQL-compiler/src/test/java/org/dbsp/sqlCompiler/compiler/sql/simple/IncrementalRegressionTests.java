@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesLastNOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
@@ -318,7 +318,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
             }
 
             @Override
-            public void postorder(DBSPIntegrateTraceRetainValuesLastNOperator operator) {
+            public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
                 this.integrateTraceValuesLastN++;
             }
 

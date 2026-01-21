@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesLastNOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
@@ -45,12 +45,12 @@ public class CheckRetain extends CircuitWithGraphsVisitor {
     }
 
     @Override
-    public void postorder(DBSPIntegrateTraceRetainValuesLastNOperator retain) {
+    public void postorder(DBSPIntegrateTraceRetainNValuesOperator retain) {
         OutputPort left = retain.left();
         for (Port<DBSPOperator> destination: this.getGraph().getSuccessors(left.node())) {
             if (destination.node() == retain)
                 continue;
-            if (destination.node().is(DBSPIntegrateTraceRetainValuesLastNOperator.class)) {
+            if (destination.node().is(DBSPIntegrateTraceRetainNValuesOperator.class)) {
                 throw new InternalCompilerError("Operator " + left + " has two RetainValues policies"
                         + retain + " and " + destination.node());
             }

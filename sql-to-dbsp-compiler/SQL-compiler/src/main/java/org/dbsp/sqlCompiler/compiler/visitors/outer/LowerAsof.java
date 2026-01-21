@@ -4,7 +4,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesLastNOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -41,7 +41,7 @@ import java.util.Map;
 /** Lower {@link org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator} into
  * {@link org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator}.
  * Also moves their corresponding {@link DBSPIntegrateTraceRetainValuesOperator}
- * and {@link DBSPIntegrateTraceRetainValuesLastNOperator}, if they exist. */
+ * and {@link DBSPIntegrateTraceRetainNValuesOperator}, if they exist. */
 public class LowerAsof implements CircuitTransform {
     final DBSPCompiler compiler;
 
@@ -150,7 +150,7 @@ public class LowerAsof implements CircuitTransform {
         }
 
         @Override
-        public void postorder(DBSPIntegrateTraceRetainValuesLastNOperator operator) {
+        public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
             // Because we only replace such operators in this visitor, and such
             // operators have no successors, we know that the graph will not change
             // anywhere else, including the ConcreteAsofJoinOperator
@@ -304,7 +304,7 @@ public class LowerAsof implements CircuitTransform {
 
             // Similar procedure for the right input
             for (Port<DBSPOperator> port : graph.getSuccessors(join.right().operator)) {
-                GCOperator op = port.node().as(DBSPIntegrateTraceRetainValuesLastNOperator.class);
+                GCOperator op = port.node().as(DBSPIntegrateTraceRetainNValuesOperator.class);
                 if (op != null)
                     Utilities.putNew(this.rightGces, op, result);
             }
@@ -319,10 +319,10 @@ public class LowerAsof implements CircuitTransform {
         }
 
         @Override
-        public void postorder(DBSPIntegrateTraceRetainValuesLastNOperator operator) {
+        public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
             super.postorder(operator);
-            DBSPIntegrateTraceRetainValuesLastNOperator repl = this.mapped(operator.getOutput(0))
-                    .operator.to(DBSPIntegrateTraceRetainValuesLastNOperator.class);
+            DBSPIntegrateTraceRetainNValuesOperator repl = this.mapped(operator.getOutput(0))
+                    .operator.to(DBSPIntegrateTraceRetainNValuesOperator.class);
             Utilities.putNew(this.original, operator, repl);
         }
     }

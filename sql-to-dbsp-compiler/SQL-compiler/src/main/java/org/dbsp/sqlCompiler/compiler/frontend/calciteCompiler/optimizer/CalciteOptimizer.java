@@ -11,6 +11,7 @@ import org.apache.calcite.rel.core.Correlate;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
+import org.apache.calcite.rel.rules.SingleValuesOptimizationRules;
 import org.apache.calcite.sql2rel.RelDecorrelator;
 import org.apache.calcite.tools.RelBuilder;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -193,6 +194,10 @@ public class CalciteOptimizer implements IWritesLogs {
 
         this.addStep(new SimpleOptimizerStep("Constant fold", 2,
                 CoreRules.COERCE_INPUTS,
+                SingleValuesOptimizationRules.JOIN_LEFT_INSTANCE,
+                SingleValuesOptimizationRules.JOIN_RIGHT_INSTANCE,
+                SingleValuesOptimizationRules.JOIN_LEFT_PROJECT_INSTANCE,
+                SingleValuesOptimizationRules.JOIN_RIGHT_PROJECT_INSTANCE,
                 ReduceExpressionsRule.FILTER_REDUCE_EXPRESSIONS,
                 ReduceExpressionsRule.PROJECT_REDUCE_EXPRESSIONS,
                 ReduceExpressionsRule.JOIN_REDUCE_EXPRESSIONS,

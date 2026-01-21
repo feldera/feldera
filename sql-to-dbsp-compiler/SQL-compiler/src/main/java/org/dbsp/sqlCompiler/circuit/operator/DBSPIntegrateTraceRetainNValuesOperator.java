@@ -23,26 +23,43 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/** Used to GC the left input of ASOF JOIN operators, or TopK operators */
-public final class DBSPIntegrateTraceRetainValuesLastNOperator
+/**
+ * Represents multiple DBSP operators, all whose names start with
+ * accumulate_integrate_trace_retain_values.  The name end with
+ * - last_n
+ * - first_n
+ * - bottom_n
+ * Used to GC the right input of ASOF JOIN operators, Min, Max, ArgMin, ArgMax, MinSome, TopK. */
+public final class DBSPIntegrateTraceRetainNValuesOperator
         extends DBSPBinaryOperator implements GCOperator {
+    public enum WhichN {
+        LastN("last_n"),
+        TopN("top_n"),
+        BottomN("bottom_n");
 
-    public final boolean accumulate;
-    public final int n;
+        public final String which;
 
-    public DBSPIntegrateTraceRetainValuesLastNOperator(
-            CalciteRelNode node, DBSPExpression function,
-            OutputPort data, OutputPort control, int n, boolean accumulate) {
-        super(node, accumulate ? "accumulate_integrate_trace_retain_values_last_n" : "integrate_trace_retain_values_last_n",
-                function, data.outputType(), data.isMultiset(), data, control, false);
-        this.accumulate = accumulate;
-        Utilities.enforce(n > 0);
-        this.n = n;
+        WhichN(String which) {
+            this.which = which;
+        }
     }
 
-    static DBSPIntegrateTraceRetainValuesLastNOperator create(
+    public final int n;
+    public final WhichN which;
+
+    public DBSPIntegrateTraceRetainNValuesOperator(
+            CalciteRelNode node, DBSPExpression function,
+            OutputPort data, OutputPort control, int n, WhichN which) {
+        super(node, "accumulate_integrate_trace_retain_values_" + which.which,
+                function, data.outputType(), data.isMultiset(), data, control, false);
+        Utilities.enforce(n > 0);
+        this.n = n;
+        this.which = which;
+    }
+
+    public static DBSPIntegrateTraceRetainNValuesOperator create(
             CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control,
-            int n, boolean accumulate) {
+            int n, WhichN which) {
         DBSPType controlType = control.outputType();
         Utilities.enforce(controlType.is(DBSPTypeTupleBase.class),
                 () -> "Control type is not a tuple: " + controlType);
@@ -65,12 +82,7 @@ public final class DBSPIntegrateTraceRetainValuesLastNOperator
         compare = ExpressionCompiler.makeBinaryExpression(
                 node, compare.getType(), DBSPOpcode.OR, compare0, compare);
         DBSPExpression closure = compare.closure(param, controlArg.asParameter());
-        return new DBSPIntegrateTraceRetainValuesLastNOperator(node, closure, data, control, n, accumulate);
-    }
-
-    public static DBSPIntegrateTraceRetainValuesLastNOperator create(
-            CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control, int n) {
-        return create(node, data, dataProjection, control, n, true);
+        return new DBSPIntegrateTraceRetainNValuesOperator(node, closure, data, control, n, which);
     }
 
     @Override
@@ -79,9 +91,9 @@ public final class DBSPIntegrateTraceRetainValuesLastNOperator
             List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, function, newInputs, outputType)) {
             Utilities.enforce(newInputs.size() == 2, () -> "Expected 2 inputs, got " + newInputs.size());
-            return new DBSPIntegrateTraceRetainValuesLastNOperator(
+            return new DBSPIntegrateTraceRetainNValuesOperator(
                     this.getRelNode(), Objects.requireNonNull(function),
-                    newInputs.get(0), newInputs.get(1), this.n, this.accumulate);
+                    newInputs.get(0), newInputs.get(1), this.n, this.which);
         }
         return this;
     }
@@ -98,14 +110,15 @@ public final class DBSPIntegrateTraceRetainValuesLastNOperator
     // equivalent inherited from parent
 
     @SuppressWarnings("unused")
-    public static DBSPIntegrateTraceRetainValuesLastNOperator fromJson(JsonNode node, JsonDecoder decoder) {
+    public static DBSPIntegrateTraceRetainNValuesOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
         boolean accumulate = Utilities.getBooleanProperty(node, "accumulate");
         int n = Utilities.getIntProperty(node, "n");
+        WhichN which = WhichN.valueOf(Utilities.getStringProperty(node, "which"));
 
-        return new DBSPIntegrateTraceRetainValuesLastNOperator(CalciteEmptyRel.INSTANCE,
-                info.getFunction(), info.getInput(0), info.getInput(1), n, accumulate)
-                .addAnnotations(info.annotations(), DBSPIntegrateTraceRetainValuesLastNOperator.class);
+        return new DBSPIntegrateTraceRetainNValuesOperator(CalciteEmptyRel.INSTANCE,
+                info.getFunction(), info.getInput(0), info.getInput(1), n, which)
+                .addAnnotations(info.annotations(), DBSPIntegrateTraceRetainNValuesOperator.class);
     }
 
     @Override

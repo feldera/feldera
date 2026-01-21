@@ -39,7 +39,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesLastNOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
@@ -643,7 +643,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPIntegrateTraceRetainValuesLastNOperator operator) {
+    public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
         DBSPType outputType = this.transform(operator.outputType);
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
         DBSPExpression function = this.transform(operator.getFunction());
@@ -651,8 +651,8 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         if (!outputType.sameType(operator.outputType)
                 || Linq.different(sources, operator.inputs)
                 || function != operator.getFunction()) {
-            result = new DBSPIntegrateTraceRetainValuesLastNOperator(operator.getRelNode(), function,
-                    sources.get(0), sources.get(1), operator.n, operator.accumulate)
+            result = new DBSPIntegrateTraceRetainNValuesOperator(operator.getRelNode(), function,
+                    sources.get(0), sources.get(1), operator.n, operator.which)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

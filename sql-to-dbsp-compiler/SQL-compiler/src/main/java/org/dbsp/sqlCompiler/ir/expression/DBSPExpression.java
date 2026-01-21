@@ -167,6 +167,7 @@ public abstract class DBSPExpression
     public DBSPExpression question() { return new DBSPQuestionExpression(this); }
 
     /** Addition between two expressions with the same type. */
+    @CheckReturnValue
     public DBSPExpression add(DBSPExpression with) {
         return new DBSPBinaryExpression(this.getNode(), this.getType(), DBSPOpcode.ADD, this, with);
     }
