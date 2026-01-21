@@ -6744,6 +6744,7 @@
           "Stopped",
           "Provisioning",
           "Unavailable",
+          "Coordination",
           "Standby",
           "AwaitingApproval",
           "Initializing",
