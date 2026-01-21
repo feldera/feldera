@@ -72,6 +72,10 @@ public class CompilerCircuitStream extends CompilerCircuit {
         this.stream.addPair(input, output);
     }
 
+    public void step(Change input, Change output) {
+        this.stream.addPair(input, output);
+    }
+
     /** Execute some insert/delete statements using HSQLDB and compare the result
      * with the one produced by the circuit.
      * @param script program that inserts data in tables */

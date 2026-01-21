@@ -23,6 +23,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.ToIndentableString;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.CheckReturnValue;
 import javax.annotation.Nullable;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -201,6 +202,7 @@ public final class DBSPZSetExpression extends DBSPExpression
         this.append(toAdd, weight);
     }
 
+    @CheckReturnValue
     public DBSPZSetExpression negate() {
         DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(this.elementType);
         for (Map.Entry<DBSPExpression, Long> entry : data.entrySet()) {
@@ -213,6 +215,7 @@ public final class DBSPZSetExpression extends DBSPExpression
         return this.data.size();
     }
 
+    @CheckReturnValue
     public DBSPZSetExpression minus(DBSPZSetExpression sub) {
         DBSPZSetExpression result = this.clone();
         result.append(sub.negate());
@@ -292,6 +295,8 @@ public final class DBSPZSetExpression extends DBSPExpression
     @Override
     public IIndentStream toString(IIndentStream builder) {
         builder.append("zset!(");
+        if (this.data.size() > 1)
+            builder.increase();
         boolean first = true;
         // Do this for a deterministic result
         List<Map.Entry<DBSPExpression, Long>> entries = Linq.list(this.data.entrySet());
@@ -305,6 +310,8 @@ public final class DBSPZSetExpression extends DBSPExpression
                     .append(DBSPTypeWeight.makeWeight(e.getValue()))
                     .append(",");
         }
+        if (this.data.size() > 1)
+            builder.decrease().newline();
         return builder.append(")");
     }
 

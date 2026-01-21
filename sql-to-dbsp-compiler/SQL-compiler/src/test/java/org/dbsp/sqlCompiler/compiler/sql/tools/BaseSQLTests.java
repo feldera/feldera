@@ -190,7 +190,7 @@ public class BaseSQLTests {
     @Rule
     public TestName currentTestName = new TestName();
 
-    String currentTestInformation = "";
+    protected String currentTestInformation = "";
 
     @Rule
     public TestWatcher testWatcher = new TestWatcher() {

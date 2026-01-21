@@ -198,7 +198,8 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     }
 
     public DBSPExpression getFunction() {
-        return Objects.requireNonNull(this.function);
+        Utilities.enforce(this.function != null);
+        return this.function;
     }
 
     public DBSPClosureExpression getClosureFunction() {
