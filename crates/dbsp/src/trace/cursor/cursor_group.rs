@@ -73,6 +73,11 @@ where
         self.base.map_times_through(&self.upper, logic);
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&DynUnit, &T, &R)) {
+        self.base
+            .map_times_through(&self.upper, &mut |ts, w| logic(().erase(), ts, w));
+    }
+
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
         self.base.map_times_through(&self.upper.meet(upper), logic)
     }

@@ -413,6 +413,18 @@ where
         }
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&DynUnit, &T, &R)) {
+        self.cursor.child.rewind();
+        while self.cursor.child.valid() {
+            logic(
+                ().erase(),
+                self.cursor.child.current_key(),
+                self.cursor.child.current_diff(),
+            );
+            self.cursor.child.step();
+        }
+    }
+
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
         self.cursor.child.rewind();
         while self.cursor.child.valid() {

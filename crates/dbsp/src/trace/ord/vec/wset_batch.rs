@@ -433,6 +433,12 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<K, DynUnit, (), R>
         }
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&DynUnit, &(), &R)) {
+        if self.cursor.valid() {
+            logic(().erase(), &(), self.cursor.current_diff())
+        }
+    }
+
     fn map_times_through(&mut self, _upper: &(), logic: &mut dyn FnMut(&(), &R)) {
         self.map_times(logic)
     }

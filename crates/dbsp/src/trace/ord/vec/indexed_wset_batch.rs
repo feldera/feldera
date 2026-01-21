@@ -555,6 +555,12 @@ where
         }
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&V, &(), &R)) {
+        if self.cursor.child.valid() {
+            logic(self.val(), &(), self.cursor.child.current_diff())
+        }
+    }
+
     fn map_times_through(&mut self, _upper: &(), logic: &mut dyn FnMut(&(), &R)) {
         self.map_times(logic)
     }

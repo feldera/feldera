@@ -75,6 +75,11 @@ where
             .map_times(&mut |ts, w| logic(ts, (**w * self.polarity).erase()))
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&V, &T, &DynZWeight)) {
+        self.cursor
+            .map_times_with_val(&mut |val, ts, w| logic(val, ts, (**w * self.polarity).erase()))
+    }
+
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &DynZWeight)) {
         self.cursor
             .map_times_through(upper, &mut |ts, w| logic(ts, (**w * self.polarity).erase()))

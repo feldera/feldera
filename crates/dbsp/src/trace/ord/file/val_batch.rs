@@ -500,6 +500,16 @@ where
         })
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&V, &T, &R)) {
+        let val = self.val();
+        self.timediff_factory.with(&mut |timediffs| {
+            for timediff in self.times(timediffs).dyn_iter() {
+                let (time, weight) = timediff.split();
+                logic(val, time, weight);
+            }
+        })
+    }
+
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
         self.timediff_factory.with(&mut |timediffs| {
             for timediff in self.times(timediffs).dyn_iter() {

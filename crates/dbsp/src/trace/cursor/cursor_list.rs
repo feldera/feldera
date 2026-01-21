@@ -331,6 +331,12 @@ where
         }
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&V, &T, &R)) {
+        for &index in self.current_val.iter() {
+            self.cursors[index].map_times_with_val(logic);
+        }
+    }
+
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
         for &index in self.current_val.iter() {
             self.cursors[index].map_times_through(upper, logic);

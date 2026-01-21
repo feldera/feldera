@@ -1048,6 +1048,25 @@ where
         }
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&V, &T, &R)) {
+        let current_key = clone_box(self.data[self.index].0.0.as_ref());
+        let current_val = clone_box(self.data[self.index].0.1.as_ref());
+
+        let mut index = self.index;
+
+        while index < self.data.len()
+            && self.data[index].0.0 == current_key
+            && self.data[index].0.1 == current_val
+        {
+            logic(
+                &current_val,
+                &self.data[index].0.2,
+                self.data[index].1.as_ref(),
+            );
+            index += 1;
+        }
+    }
+
     fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R))
     where
         T: PartialEq<()>,

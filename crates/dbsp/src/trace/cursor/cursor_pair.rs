@@ -311,6 +311,16 @@ where
         }
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&V, &T, &R)) {
+        if self.current_val1() || self.current_val12() {
+            self.cursor1.map_times_with_val(logic);
+        }
+
+        if self.current_val2() || self.current_val12() {
+            self.cursor2.map_times_with_val(logic);
+        }
+    }
+
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
         if self.current_val1() || self.current_val12() {
             self.cursor1.map_times_through(upper, logic);

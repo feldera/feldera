@@ -117,6 +117,14 @@ where
         }
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&V, &T, &DynZWeight)) {
+        if self.on_ghost_key {
+            logic(&self.ghost_val, &T::default(), 1.erase());
+        } else {
+            self.cursor.map_times_with_val(logic);
+        }
+    }
+
     fn map_times_through(&mut self, _upper: &T, _logic: &mut dyn FnMut(&T, &DynZWeight)) {
         unimplemented!()
     }

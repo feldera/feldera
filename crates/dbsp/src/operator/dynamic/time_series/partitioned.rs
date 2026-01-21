@@ -119,6 +119,11 @@ where
         self.cursor.map_times(logic)
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&V, &(), &R)) {
+        self.cursor
+            .map_times_with_val(&mut |val, &(), w| logic(val.snd(), &(), w));
+    }
+
     fn map_times_through(&mut self, upper: &(), logic: &mut dyn FnMut(&(), &R)) {
         self.cursor.map_times_through(upper, logic)
     }

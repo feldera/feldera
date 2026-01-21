@@ -1234,6 +1234,10 @@ impl<B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<B> {
         self.with_cursor_mut(|cursor| cursor.map_times(logic));
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&B::Val, &B::Time, &B::R)) {
+        self.with_cursor_mut(|cursor| cursor.map_times_with_val(logic));
+    }
+
     fn map_times_through(&mut self, upper: &B::Time, logic: &mut dyn FnMut(&B::Time, &B::R)) {
         self.with_cursor_mut(|cursor| cursor.map_times_through(upper, logic));
     }

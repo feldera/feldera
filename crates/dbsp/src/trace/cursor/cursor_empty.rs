@@ -51,6 +51,8 @@ where
 
     fn map_times(&mut self, _logic: &mut dyn FnMut(&T, &R)) {}
 
+    fn map_times_with_val(&mut self, _logic: &mut dyn FnMut(&V, &T, &R)) {}
+
     fn map_times_through(&mut self, _upper: &T, _logic: &mut dyn FnMut(&T, &R)) {}
 
     fn map_values(&mut self, _logic: &mut dyn FnMut(&V, &R))
