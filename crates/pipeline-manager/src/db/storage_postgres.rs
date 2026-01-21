@@ -883,15 +883,17 @@ impl Storage for StoragePostgres {
         let pipeline =
             operations::pipeline::get_pipeline_by_id_for_monitoring(&txn, tenant_id, pipeline_id)
                 .await?;
-        operations::pipeline::set_deployment_resources_desired_status(
-            &txn,
-            tenant_id,
-            &pipeline.name,
-            ResourcesDesiredStatus::Stopped,
-            None,
-            None,
-        )
-        .await?;
+        if pipeline.deployment_resources_desired_status != ResourcesDesiredStatus::Stopped {
+            operations::pipeline::set_deployment_resources_desired_status(
+                &txn,
+                tenant_id,
+                &pipeline.name,
+                ResourcesDesiredStatus::Stopped,
+                None,
+                None,
+            )
+            .await?;
+        }
         operations::pipeline::set_deployment_resources_status_stopping(
             &txn,
             tenant_id,

@@ -4392,16 +4392,18 @@ impl Storage for Mutex<DbModel> {
         )?;
 
         // Apply changes
-        pipeline.deployment_initial = None;
-        pipeline.bootstrap_policy = None;
-        pipeline.deployment_resources_desired_status = ResourcesDesiredStatus::Stopped;
-        pipeline.deployment_resources_desired_status_since = Utc::now();
-        self.lock()
-            .await
-            .pipelines
-            .insert((tenant_id, pipeline.id), pipeline.clone());
-        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
-            .await?;
+        if pipeline.deployment_resources_desired_status != ResourcesDesiredStatus::Stopped {
+            pipeline.deployment_initial = None;
+            pipeline.bootstrap_policy = None;
+            pipeline.deployment_resources_desired_status = ResourcesDesiredStatus::Stopped;
+            pipeline.deployment_resources_desired_status_since = Utc::now();
+            self.lock()
+                .await
+                .pipelines
+                .insert((tenant_id, pipeline.id), pipeline.clone());
+            self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+                .await?;
+        }
         pipeline.deployment_id = None;
         pipeline.deployment_config = None;
         pipeline.deployment_location = None;
