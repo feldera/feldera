@@ -2637,6 +2637,7 @@ outputs:
             initial: RuntimeDesiredStatus::Paused,
             bootstrap_policy: BootstrapPolicy::Allow,
             deployment_id: uuid::Uuid::nil(),
+            host_id: None,
         };
 
         let config = parse_config(&args.config_file).unwrap();
@@ -2929,6 +2930,7 @@ outputs:
             initial: RuntimeDesiredStatus::Paused,
             bootstrap_policy: BootstrapPolicy::Allow,
             deployment_id: Uuid::default(),
+            host_id: None,
         };
 
         let config = parse_config(&args.config_file).unwrap();

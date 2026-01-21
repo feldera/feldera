@@ -50,6 +50,7 @@ feldera-enterprise = []
 iceberg-tests-fs = []
 iceberg-tests-glue = []
 iceberg-tests-rest = []
+fips = ["rustls/fips"]
 
 [dependencies]
 feldera-types = { workspace = true }
@@ -186,6 +187,7 @@ inventory = { workspace = true }
 backtrace = { workspace = true }
 itertools = { workspace = true }
 metrics-process = { version = "2.4.0", default-features = false }
+rustls = { workspace = true }
 serde_json_path_to_error = { workspace = true }
 smallstr = { workspace = true }
 dashmap = { workspace = true }
@@ -201,10 +203,6 @@ ignored = ["num-traits"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemalloc_pprof = { workspace = true, features = ["symbolize"] }
-rustls = { workspace = true, features = ["fips"] }
-
-[target.'cfg(not(target_os = "linux"))'.dependencies]
-rustls = { workspace = true, features = ["aws-lc-rs"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
