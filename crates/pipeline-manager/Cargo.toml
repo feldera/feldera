@@ -92,6 +92,7 @@ awc = { workspace = true, features = ["rustls-0_23", "rustls-0_23-native-roots"]
 reqwest = { workspace = true, features = ["json", "rustls-tls-native-roots"] }
 cached = { workspace = true }
 crossbeam = { workspace = true }
+rustls = { workspace = true }
 
 # System interaction
 dirs = { workspace = true }  # For: discovering home directory
@@ -105,15 +106,6 @@ tempfile = { workspace = true }
 compare = { workspace = true }
 sha2 = { workspace = true }
 
-# Cryptography provider (FIPS enabled by default)
-# Make sure this is the same rustls version used by other crates in the dependency tree.
-# See the `ensure_default_crypto_provider` function at the root of this crate.
-[target.'cfg(target_os = "linux")'.dependencies]
-rustls = { workspace = true, features = ["fips"] }
-
-[target.'cfg(not(target_os = "linux"))'.dependencies]
-rustls = { workspace = true, features = ["aws-lc-rs"] }
-
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 
@@ -121,6 +113,7 @@ tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_mal
 default = ["postgresql_embedded"]
 feldera-enterprise = []
 runtime-version = []
+fips = ["rustls/fips"]
 
 [build-dependencies]
 change-detection = { workspace = true }
