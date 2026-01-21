@@ -6892,11 +6892,16 @@
           "revision",
           "runtime_revision",
           "changelog_url",
-          "build_info"
+          "build_info",
+          "build_source"
         ],
         "properties": {
           "build_info": {
             "$ref": "#/components/schemas/BuildInformation"
+          },
+          "build_source": {
+            "type": "string",
+            "description": "Build source: \"ci\" for GitHub Actions builds, \"source\" for local builds"
           },
           "changelog_url": {
             "type": "string",

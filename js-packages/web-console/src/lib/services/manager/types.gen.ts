@@ -410,6 +410,10 @@ export type Condition = {
 export type Configuration = {
   build_info: BuildInformation
   /**
+   * Build source: "ci" for GitHub Actions builds, "source" for local builds
+   */
+  build_source: string
+  /**
    * URL that navigates to the changelog of the current version
    */
   changelog_url: string
