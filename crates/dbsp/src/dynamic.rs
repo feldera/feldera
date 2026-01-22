@@ -133,6 +133,8 @@ mod vec;
 mod weight;
 mod weighted_pairs;
 
+pub mod order_statistics_multiset;
+
 pub use clonable::{Clonable, ClonableTrait};
 pub use comparable::Comparable;
 pub use data::{Data, DataTrait, DataTraitTyped, DynBool, DynData, DynDataTyped, DynUnit};
