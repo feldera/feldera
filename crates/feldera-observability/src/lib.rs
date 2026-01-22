@@ -67,6 +67,7 @@ pub fn actix_middleware() -> sentry::integrations::actix::Sentry {
         .finish()
 }
 
+pub mod fips;
 pub mod json_logging;
 
 fn trace_header_value() -> Option<String> {

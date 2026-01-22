@@ -29,6 +29,12 @@ fn main() -> anyhow::Result<()> {
         "[manager]".cyan(),
         feldera_observability::json_logging::ServiceName::Manager,
     );
+    if let Some(provider) = rustls::crypto::CryptoProvider::get_default() {
+        observability::fips::log_rustls_provider_fips_status(
+            "startup default provider",
+            provider.fips(),
+        );
+    }
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()

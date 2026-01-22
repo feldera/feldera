@@ -328,6 +328,10 @@ impl CommonConfig {
                 .expect(
                     "server configuration should be built using the certificate and private key",
                 );
+            feldera_observability::fips::log_rustls_fips_status(
+                "HTTPS server config",
+                server_config.fips(),
+            );
 
             Some(server_config)
         } else {
@@ -361,6 +365,10 @@ impl CommonConfig {
             let config = ClientConfig::builder()
                 .with_root_certificates(root_cert_store)
                 .with_no_client_auth();
+            feldera_observability::fips::log_rustls_fips_status(
+                "HTTPS client config",
+                config.fips(),
+            );
             // In the `awc` implementation, the connection is kept open for endpoints that return a
             // streaming response (e.g., `/logs`) when they are half closed. As a workaround,
             // increase the max connections limit to 25'000. This is also the default maximum number

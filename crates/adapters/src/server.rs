@@ -602,6 +602,12 @@ pub fn run_server(
             // This happens in unit tests when another test has initialized logging.
             eprintln!("Failed to initialize logging: {e}.")
         });
+    if let Some(provider) = rustls::crypto::CryptoProvider::get_default() {
+        observability::fips::log_rustls_provider_fips_status(
+            "startup default provider",
+            provider.fips(),
+        );
+    }
     if config.global.tracing {
         warn!(
             "Pipeline tracing was enabled but the 'tracing' option was deprecated, use `FELDERA_SENTRY_ENABLED` for tracing."
@@ -867,6 +873,7 @@ pub fn run_server(
             .with_no_client_auth()
             .with_single_cert(cert_chain, key_der)
             .expect("server configuration should be built");
+        observability::fips::log_rustls_fips_status("HTTPS server config", server_config.fips());
 
         server
             .listen_rustls_0_23(listener, server_config)
