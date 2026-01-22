@@ -4351,6 +4351,7 @@ Core circuit infrastructure providing the runtime execution engine for DBSP comp
 
 #### **`dynamic/`**
 Dynamic typing system that enables runtime flexibility while maintaining performance. Implements trait object architecture to avoid excessive monomorphization during compilation. Contains core dynamic types (`data.rs`, `pair.rs`, `vec.rs`), serialization support (`rkyv.rs`), and factory patterns (`factory.rs`) for creating trait objects. The `erase.rs` module handles type erasure, while `downcast.rs` provides safe downcasting mechanisms. Essential for SQL compiler integration where concrete types are not known at compile time.
+Also contains `OrderStatisticsMultiset` (`order_statistics_multiset.rs`) - an augmented B+ tree for O(log n) rank/select queries used by percentile aggregates (see `order_statistics_multiset.md` for design details).
 
 #### **`monitor/`**
 Circuit monitoring and visualization tools for debugging and performance analysis. Provides circuit graph generation (`circuit_graph.rs`) for visual representation of operator connectivity and data flow. The `visual_graph.rs` module creates GraphViz-compatible output for circuit visualization. Essential for understanding complex circuit behavior, debugging performance bottlenecks, and validating circuit construction correctness during development.
