@@ -1213,10 +1213,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
         if (expansion.rightFilter != null) {
             OutputPort rightLimiter = this.bound.get(expansion.rightFilter.outputPort());
             if (rightLimiter != null) {
-                final MonotoneExpression leftFilterMonotone = this.expansionMonotoneValues.get(expansion.rightFilter);
-                final IMaybeMonotoneType leftFilterProjection = Monotonicity.getBodyType(Objects.requireNonNull(leftFilterMonotone));
-                if (leftFilterProjection.mayBeMonotone()) {
-                    final PartiallyMonotoneTuple filterTuple = leftFilterProjection.to(PartiallyMonotoneTuple.class);
+                final MonotoneExpression rightFilterMonotone = this.expansionMonotoneValues.get(expansion.rightFilter);
+                final IMaybeMonotoneType rightFilterProjection = Monotonicity.getBodyType(Objects.requireNonNull(rightFilterMonotone));
+                if (rightFilterProjection.mayBeMonotone()) {
+                    final PartiallyMonotoneTuple filterTuple = rightFilterProjection.to(PartiallyMonotoneTuple.class);
                     Utilities.enforce(filterTuple.size() == iomap.size());
                     final DBSPVariablePath var = Objects.requireNonNull(filterTuple.getProjectedType()).ref().var();
 

@@ -58,4 +58,14 @@ public class Regression2Tests extends SqlIoTest {
                 INTERSECT
                 SELECT (5, NULL) FROM tbl;""");
     }
+
+    @Test
+    public void issue5493() {
+        this.getCCS("""
+                CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                SAFE_CAST(mapp AS MAP<VARCHAR, VARCHAR>) AS to_map
+                FROM tbl;""");
+    }
 }
