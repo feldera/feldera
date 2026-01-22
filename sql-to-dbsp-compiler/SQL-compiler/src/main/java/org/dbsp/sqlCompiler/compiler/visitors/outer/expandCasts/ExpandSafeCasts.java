@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts;
 
-import org.apache.calcite.sql.util.SqlString;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
@@ -81,15 +80,15 @@ public class ExpandSafeCasts extends ExpressionTranslator {
             Utilities.enforce(outer.getType().sameType(dest.withMayBeNull(true)));
             Utilities.enforce(outer.safe.isUnwrap());
             expanded = outer.source;
-            if (!nullable) {
-                // We have adjusted the result type to be nullable, now we have to strip it out.
-                // This function converts SqlResult<Option<T>> to SqlResult<T>
-                expanded = new DBSPApplyExpression(node, "unwrap_sql_result", functionResultType, expanded);
-            }
         } else {
             // The conversion didn't require applying any casts, but we still need to produce a SqlResult
             // This function converts T to SqlResult<T> using Ok().
             expanded = new DBSPApplyExpression(node, "wrap_sql_result", functionResultType, expanded);
+        }
+        if (!nullable) {
+            // We have adjusted the result type to be nullable, now we have to strip it out.
+            // This function converts SqlResult<Option<T>> to SqlResult<T>
+            expanded = new DBSPApplyExpression(node, "unwrap_sql_result", functionResultType, expanded);
         }
         Utilities.enforce(expanded.getType().sameType(functionResultType));
         return expanded.closure(var);
