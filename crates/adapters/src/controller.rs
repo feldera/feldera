@@ -3536,6 +3536,7 @@ impl StepTrigger {
     /// - The current [CoordinationRequest] and the current step.
     ///
     /// Returns the action for the controller to take.
+    #[allow(clippy::too_many_arguments)]
     fn trigger(
         &mut self,
         last_checkpoint: LastCheckpoint,
