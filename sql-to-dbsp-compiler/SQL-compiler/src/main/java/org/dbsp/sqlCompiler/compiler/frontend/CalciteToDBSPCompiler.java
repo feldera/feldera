@@ -472,9 +472,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // Right projections are applied after uncollect
         List<DBSPClosureExpression> rightProjections = null;
         if (rightProject != null) {
-            DBSPVariablePath eVar = new DBSPVariablePath(uncollectElementType.ref());
-            final ExpressionCompiler eComp0 = new ExpressionCompiler(correlate, eVar, this.compiler);
-            rightProjections = Linq.map(rightProject.getProjects(), e -> eComp0.compile(e).closure(eVar));
+            rightProjections = new ArrayList<>(rightProject.getProjects().size());
+            for (RexNode proj: rightProject.getProjects()) {
+                DBSPVariablePath eVar = new DBSPVariablePath(uncollectElementType.ref());
+                final ExpressionCompiler eComp0 = new ExpressionCompiler(correlate, eVar, this.compiler);
+                DBSPClosureExpression closure = eComp0.compile(proj).closure(eVar);
+                rightProjections.add(closure);
+            }
         }
 
         int shuffleSize = leftElementType.size();
