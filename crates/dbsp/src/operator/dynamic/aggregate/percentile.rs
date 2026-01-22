@@ -15,8 +15,8 @@ use std::marker::PhantomData;
 use crate::{
     DBData, Timestamp,
     algebra::{AddAssignByRef, HasZero, Semigroup, ZWeight},
-    dynamic::{DataTrait, DynUnit, Erase, WeightTrait},
     dynamic::order_statistics_multiset::OrderStatisticsMultiset,
+    dynamic::{DataTrait, DynUnit, Erase, WeightTrait},
     operator::Aggregator,
     trace::Cursor,
 };
