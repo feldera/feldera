@@ -1,4 +1,4 @@
-use tracing::{info, warn};
+use tracing::info;
 
 fn log_rustls_fips_state(context: &str, enabled: bool, scope: &str) {
     if enabled {
