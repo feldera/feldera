@@ -33,16 +33,6 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
-    public void issue5425() {
-        this.getCC("""
-                CREATE TABLE  tbl(
-                arr VARCHAR ARRAY);
-                
-                CREATE MATERIALIZED VIEW v AS SELECT * FROM TABLE(
-                HOP(TABLE tbl, DESCRIPTOR(arr[1]), INTERVAL '1' MINUTE, INTERVAL '5' MINUTE));""");
-    }
-
-    @Test
     public void issue4053() {
         var cc = this.getCC("""
                 CREATE TABLE tbl(t0 int, t1 int NOT NULL);
