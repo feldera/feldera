@@ -2380,6 +2380,24 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
     }
 
+    /** Given an operator with output type ZSet[T], index is using
+     * (ZSet[S], Tup0). */
+    DBSPMapIndexOperator indexEntireTuple(CalciteRelNode node, OutputPort port, DBSPTypeTuple resultType) {
+        DBSPType inputRowType = port.getOutputZSetElementType();
+        DBSPVariablePath t = inputRowType.ref().var();
+        DBSPClosureExpression entireKey =
+                new DBSPRawTupleExpression(
+                        DBSPTupleExpression.flatten(t.deref()).cast(
+                                CalciteObject.EMPTY, resultType, DBSPCastExpression.CastType.SqlUnsafe),
+                        new DBSPTupleExpression()).closure(t);
+        DBSPMapIndexOperator result = new DBSPMapIndexOperator(
+                node, entireKey,
+                makeIndexedZSet(resultType, DBSPTypeTuple.EMPTY),
+                port);
+        this.addOperator(result);
+        return result;
+    }
+
     void visitIntersect(LogicalIntersect intersect) {
         var node = CalciteObject.create(intersect);
         // Intersect is a special case of join.
@@ -2397,35 +2415,22 @@ public class CalciteToDBSPCompiler extends RelVisitor
             return;
         }
 
-        DBSPType inputRowType = this.convertType(node.getPositionRange(), input.getRowType(), false);
-        DBSPTypeTuple resultType = this.convertType(node.getPositionRange(), intersect.getRowType(), false).to(DBSPTypeTuple.class);
-        DBSPVariablePath t = inputRowType.ref().var();
-        DBSPClosureExpression entireKey =
-                new DBSPRawTupleExpression(
-                        DBSPTupleExpression.flatten(t.deref()),
-                        new DBSPTupleExpression()).closure(t);
-        DBSPVariablePath l = DBSPTypeTuple.EMPTY.ref().var();
-        DBSPVariablePath r = DBSPTypeTuple.EMPTY.ref().var();
-        DBSPVariablePath k = inputRowType.ref().var();
+        DBSPTypeTuple resultType = this.convertType(node.getPositionRange(), intersect.getRowType(), false)
+                .to(DBSPTypeTuple.class);
+        DBSPMapIndexOperator previousIndex = this.indexEntireTuple(node, previous.outputPort(), resultType);
 
-        DBSPClosureExpression closure = DBSPTupleExpression.flatten(k.deref()).closure(k, l, r);
         for (int i = 1; i < inputs.size(); i++) {
-            DBSPSimpleOperator previousIndex = new DBSPMapIndexOperator(
-                    node, entireKey,
-                    makeIndexedZSet(inputRowType, DBSPTypeTuple.EMPTY),
-                    previous.outputPort());
-            this.addOperator(previousIndex);
             DBSPSimpleOperator inputI = this.getInputAs(intersect.getInput(i), false);
-            DBSPSimpleOperator index = new DBSPMapIndexOperator(
-                    node, entireKey.to(DBSPClosureExpression.class),
-                    makeIndexedZSet(inputRowType, DBSPTypeTuple.EMPTY),
-                    inputI.outputPort());
-            this.addOperator(index);
+            DBSPMapIndexOperator index = this.indexEntireTuple(node, inputI.outputPort(), resultType);
+            // Join with the current result
+            DBSPVariablePath l = DBSPTypeTuple.EMPTY.ref().var();
+            DBSPVariablePath r = DBSPTypeTuple.EMPTY.ref().var();
+            DBSPVariablePath k = resultType.ref().var();
+            DBSPClosureExpression closure = DBSPTupleExpression.flatten(k.deref()).closure(k, l, r);
             previous = new DBSPStreamJoinOperator(node, TypeCompiler.makeZSet(resultType),
                     closure, false, previousIndex.outputPort(), index.outputPort(), false);
             this.addOperator(previous);
         }
-        Utilities.enforce(resultType.sameType(previous.getOutputZSetElementType()));
         Utilities.putNew(this.nodeOperator, intersect, previous);
     }
 
