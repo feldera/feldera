@@ -1774,7 +1774,16 @@ async fn get_samply_profile(
     state: WebData<ServerState>,
     query_params: web::Query<SamplyProfileGetParams>,
 ) -> Result<HttpResponse, PipelineError> {
-    let samply_state = state.samply_state.lock().unwrap();
+    let mut samply_state = state.samply_state.lock().unwrap();
+
+    // Check if profiling is available (lazy check, cached)
+    if !samply_state.check_is_available() {
+        return Ok(HttpResponse::InternalServerError().json(ErrorResponse {
+            message: "CPU profiling is not enabled. In Kubernetes environments, ensure the Helm flag `pipeline.allowProfiling` is set to true.".to_string(),
+            error_code: "ProfilingNotEnabled".into(),
+            details: serde_json::Value::Null,
+        }));
+    }
 
     // If latest=true, check if profiling is in progress and return 204 No Content
     if query_params.latest {

@@ -4,11 +4,22 @@
   import { Input } from 'flowbite-svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { type ExtendedPipeline, getSamplyProfile } from '$lib/services/pipelineManager'
+
+  // Helper to extract ProfilingNotEnabled error message
+  export const getProfilingNotEnabledMessage = (error: unknown): string | null => {
+    if (Error.isError(error)) {
+      const cause = (error as { cause?: { error_code?: string; message?: string } }).cause
+      if (cause?.error_code === 'ProfilingNotEnabled') {
+        return cause.message ?? 'CPU profiling is not enabled.'
+      }
+    }
+    return null
+  }
 </script>
 
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
-  import { onDestroy, onMount } from 'svelte'
+  import { onDestroy } from 'svelte'
   import { isPipelineInteractive } from '$lib/functions/pipelines/status'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   import { nonNull } from '$lib/functions/common/function'
@@ -36,11 +47,14 @@
   let tick = $state(0) // Force UI updates during countdown
   let isDownloading = $state(false)
   let downloadCancelFn: (() => void) | null = null
+  let profilingNotEnabledMessage = $state<string | null>(null)
+  let hasAvailableProfile = $state(false)
 
   const minDuration = 1
   const maxDuration = 3600
 
-  let disabled = $derived(!isPipelineInteractive(pipeline.current.status))
+  let pipelineNotRunning = $derived(!isPipelineInteractive(pipeline.current.status))
+  let disabled = $derived(pipelineNotRunning || profilingNotEnabledMessage !== null)
 
   // Time formatting: "Xm Ys" ignoring zeros
   const formatTime = (seconds: number) => {
@@ -106,6 +120,7 @@
       isCollecting = false
       startTime = null
       expectedCompletion = null
+      profilingNotEnabledMessage ??= getProfilingNotEnabledMessage(error)
     }
   }
 
@@ -118,6 +133,7 @@
       if (expectedCompletion && Date.now() >= expectedCompletion) {
         isCollecting = false
         profileReady = true
+        hasAvailableProfile = true
         stopCountdown()
       }
     }, 1000)
@@ -171,7 +187,7 @@
       globalDialog.dialog = null
     } catch (error) {
       globalDialog.dialog = null
-      // Silent error as per user request
+      profilingNotEnabledMessage ??= getProfilingNotEnabledMessage(error)
     } finally {
       isDownloading = false
       downloadCancelFn = null
@@ -197,17 +213,41 @@
         startCountdown()
       } else {
         // Profile is ready but we're just checking status - cancel the download
+        hasAvailableProfile = true
         result.cancel()
       }
     } catch (error) {
+      // Check if profiling is not enabled (permission error)
+      profilingNotEnabledMessage ??= getProfilingNotEnabledMessage(error)
       // Silently fail - profile may not exist yet
       console.debug('No profile status available:', error)
     }
   }
 
-  onMount(() => {
-    // Check profile status when tab is first opened
-    checkProfileStatus()
+  const resetState = () => {
+    stopCountdown()
+    duration = 30
+    isCollecting = false
+    startTime = null
+    expectedCompletion = null
+    profileReady = false
+    hasAvailableProfile = false
+    tick = 0
+  }
+
+  // Track previous values for detecting transitions
+  let pipelineName = $derived(pipeline.current.name)
+  let isInteractive = $derived(isPipelineInteractive(pipeline.current.status))
+
+  // Check profile status when pipeline becomes interactive, reset download state when non-interactive
+  // Refresh information when opening another pipeline
+  $effect(() => {
+    pipelineName
+    if (isInteractive) {
+      checkProfileStatus()
+    } else {
+      resetState()
+    }
   })
 
   onDestroy(() => {
@@ -238,7 +278,9 @@
 {/snippet}
 
 <div class="flex h-full flex-col">
-  {#if disabled}
+  {#if profilingNotEnabledMessage}
+    <WarningBanner>{profilingNotEnabledMessage}</WarningBanner>
+  {:else if pipelineNotRunning}
     <WarningBanner>Start the pipeline to collect the profile</WarningBanner>
   {/if}
   <div class="flex flex-nowrap gap-4 p-2">
@@ -276,17 +318,19 @@
       />
     </div>
     <div class="flex flex-col justify-end gap-2">
-      <button
-        class="btn preset-tonal-surface"
-        {disabled}
-        onclick={() => handleDownloadProfile(!isCollecting)}
-      >
-        {#if isCollecting}
-          Download last profile
-        {:else}
-          Download profile
-        {/if}
-      </button>
+      {#if hasAvailableProfile}
+        <button
+          class="btn preset-tonal-surface"
+          {disabled}
+          onclick={() => handleDownloadProfile(!isCollecting)}
+        >
+          {#if isCollecting}
+            Download last profile
+          {:else}
+            Download profile
+          {/if}
+        </button>
+      {/if}
       <button
         class="btn preset-tonal-surface"
         onclick={handleCollectProfile}
