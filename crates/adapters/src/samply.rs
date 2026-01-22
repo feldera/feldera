@@ -63,7 +63,7 @@ use std::{
     cell::RefCell,
     fmt::{Display, Write as _},
     fs::File,
-    io::Write,
+    io::{ErrorKind, Write},
     num::NonZeroUsize,
     path::{Path, PathBuf},
     sync::LazyLock,
@@ -298,6 +298,71 @@ fn write_marker(start: Timestamp, end: Timestamp, name: &str) {
 
 pub(crate) type SamplyProfile = Option<Result<Vec<u8>, String>>;
 
+// Minimal perf_event_attr structure for capability checking
+// We only need the fields that are used in the check
+#[repr(C)]
+struct PerfEventAttr {
+    type_: u32,
+    size: u32,
+    config: u64,
+    // The rest of the struct is zeroed, which is fine for our minimal check
+    _padding: [u8; 112], // perf_event_attr is 136 bytes total, we've used 16
+}
+
+// perf_event_open constants
+const PERF_TYPE_SOFTWARE: u32 = 1;
+const PERF_COUNT_SW_CPU_CLOCK: u64 = 0;
+
+/// Check if profiling is available by attempting a minimal perf_event_open syscall.
+///
+/// Returns `Ok(())` if profiling is available, or `Err(reason)` if not.
+/// This is a low-overhead check that doesn't actually start any profiling.
+pub(crate) fn check_profiling_available() -> Result<(), String> {
+    // Use perf_event_open to check if we have the necessary permissions.
+    // We use a minimal configuration that should succeed if we have PERFMON capability.
+    unsafe {
+        // Initialize perf_event_attr structure with zeros
+        let mut attr: PerfEventAttr = std::mem::zeroed();
+        attr.type_ = PERF_TYPE_SOFTWARE;
+        attr.size = std::mem::size_of::<PerfEventAttr>() as u32;
+        attr.config = PERF_COUNT_SW_CPU_CLOCK;
+
+        // Try to open a perf event for the current process on any CPU
+        // pid=0 means current process, cpu=-1 means any CPU
+        let fd = libc::syscall(
+            libc::SYS_perf_event_open,
+            &attr as *const PerfEventAttr,
+            0i32,  // pid: current process
+            -1i32, // cpu: any CPU
+            -1i32, // group_fd: no group
+            0u64,  // flags: none
+        );
+
+        if fd < 0 {
+            let errno = *libc::__errno_location();
+            let error = std::io::Error::from_raw_os_error(errno);
+
+            // Check for permission-related errors
+            if error.kind() == ErrorKind::PermissionDenied
+                || errno == libc::EACCES
+                || errno == libc::EPERM
+            {
+                return Err(format!(
+                    "CPU profiling is not enabled. In Kubernetes environments, ensure the Helm flag `pipeline.allowProfiling` is set to true. ({})",
+                    error
+                ));
+            }
+            // Other errors might be transient or unrelated to permissions
+            return Err(format!("perf_event_open failed: {}", error));
+        }
+
+        // Successfully opened - close the file descriptor
+        libc::close(fd as i32);
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) enum SamplyStatus {
     #[default]
@@ -311,6 +376,8 @@ pub(crate) enum SamplyStatus {
 pub(crate) struct SamplyState {
     pub(crate) last_profile: SamplyProfile,
     pub(crate) samply_status: SamplyStatus,
+    /// Cached result of profiling availability check (None = not checked yet)
+    profiling_available: Option<bool>,
 }
 
 impl SamplyState {
@@ -330,5 +397,15 @@ impl SamplyState {
             }
         }
         self.samply_status = SamplyStatus::Idle;
+    }
+
+    /// Check if profiling is available, caching the result.
+    ///
+    /// Returns true if profiling is available, false otherwise.
+    /// The check is performed lazily and cached.
+    pub(crate) fn check_is_available(&mut self) -> bool {
+        *self.profiling_available.get_or_insert_with(|| {
+            check_profiling_available().is_ok()
+        })
     }
 }

@@ -112,7 +112,7 @@
 
     downloadProgress.onProgress(0, 1)
 
-    const { downloadPromise } = api.getPipelineSupportBundle(
+    const { dataPromise } = api.getPipelineSupportBundle(
       pipelineName,
       {
         collect: collectNewData,
@@ -122,7 +122,7 @@
       },
       downloadProgress.onProgress
     )
-    const supportBundle = await downloadPromise.catch((error) => {
+    const supportBundle = await dataPromise.catch((error) => {
       errorMessage = error instanceof Error ? error.message : String(error)
       downloadProgress.reset()
       return null
@@ -132,7 +132,7 @@
     }
 
     const success = await processZipBundle(
-      new Uint8Array(await (await supportBundle.dataPromise).arrayBuffer()),
+      new Uint8Array(await supportBundle.data.arrayBuffer()),
       pipelineName,
       'No suitable profiles found. If you are trying to debug a pipeline of an older version try enabling "Collect new data" option.'
     )
