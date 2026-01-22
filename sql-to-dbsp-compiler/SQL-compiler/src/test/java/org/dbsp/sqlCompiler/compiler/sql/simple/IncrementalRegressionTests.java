@@ -836,8 +836,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
         }
     }
 
-    @Test @Ignore("Bug still unfixed")
-    public void latenessTypes1() {
+    @Test
+    public void issue5491() {
         this.getCCS("""
                 CREATE TABLE T(
                    id INT,
