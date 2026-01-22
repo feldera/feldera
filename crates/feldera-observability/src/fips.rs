@@ -4,7 +4,7 @@ fn log_rustls_fips_state(context: &str, enabled: bool, scope: &str) {
     if enabled {
         info!("Rustls {context}: FIPS is enabled for {scope}.");
     } else if cfg!(target_os = "linux") {
-        warn!("Rustls {context}: FIPS is disabled for {scope}.");
+        info!("Rustls {context}: FIPS is disabled for {scope}.");
     } else {
         info!("Rustls {context}: FIPS is disabled for {scope} (non-Linux build).");
     }
