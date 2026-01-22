@@ -36,7 +36,15 @@ class aggtst_percentile_disc_quartiles(TstView):
                       PERCENTILE_DISC(0.75) WITHIN GROUP (ORDER BY value) AS p75,
                       PERCENTILE_DISC(1.0) WITHIN GROUP (ORDER BY value) AS p100
                       FROM percentile_tbl"""
-        self.data = [{"p0": Decimal("1.0"), "p25": Decimal("3.0"), "p50": Decimal("5.0"), "p75": Decimal("30.0"), "p100": Decimal("50.0")}]
+        self.data = [
+            {
+                "p0": Decimal("1.0"),
+                "p25": Decimal("3.0"),
+                "p50": Decimal("5.0"),
+                "p75": Decimal("30.0"),
+                "p100": Decimal("50.0"),
+            }
+        ]
 
 
 class aggtst_percentile_disc_quartiles_gby(TstView):
@@ -52,8 +60,22 @@ class aggtst_percentile_disc_quartiles_gby(TstView):
                       FROM percentile_tbl
                       GROUP BY id"""
         self.data = [
-            {"id": 0, "p0": Decimal("1.0"), "p25": Decimal("2.0"), "p50": Decimal("3.0"), "p75": Decimal("4.0"), "p100": Decimal("5.0")},
-            {"id": 1, "p0": Decimal("10.0"), "p25": Decimal("20.0"), "p50": Decimal("30.0"), "p75": Decimal("40.0"), "p100": Decimal("50.0")},
+            {
+                "id": 0,
+                "p0": Decimal("1.0"),
+                "p25": Decimal("2.0"),
+                "p50": Decimal("3.0"),
+                "p75": Decimal("4.0"),
+                "p100": Decimal("5.0"),
+            },
+            {
+                "id": 1,
+                "p0": Decimal("10.0"),
+                "p25": Decimal("20.0"),
+                "p50": Decimal("30.0"),
+                "p75": Decimal("40.0"),
+                "p100": Decimal("50.0"),
+            },
         ]
 
 
@@ -91,7 +113,9 @@ class aggtst_percentile_disc_single_value(TstView):
                       PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY value) AS p50,
                       PERCENTILE_DISC(1.0) WITHIN GROUP (ORDER BY value) AS p100
                       FROM percentile_single_tbl"""
-        self.data = [{"p0": Decimal("42.0"), "p50": Decimal("42.0"), "p100": Decimal("42.0")}]
+        self.data = [
+            {"p0": Decimal("42.0"), "p50": Decimal("42.0"), "p100": Decimal("42.0")}
+        ]
 
 
 class aggtst_percentile_disc_two_values(TstView):
@@ -108,7 +132,15 @@ class aggtst_percentile_disc_two_values(TstView):
         # For n=2: [0.0, 100.0]
         # p0 returns first value, p100 returns last value
         # Other percentiles return the value at or before the percentile position
-        self.data = [{"p0": Decimal("0.0"), "p25": Decimal("0.0"), "p50": Decimal("0.0"), "p75": Decimal("100.0"), "p100": Decimal("100.0")}]
+        self.data = [
+            {
+                "p0": Decimal("0.0"),
+                "p25": Decimal("0.0"),
+                "p50": Decimal("0.0"),
+                "p75": Decimal("100.0"),
+                "p100": Decimal("100.0"),
+            }
+        ]
 
 
 class aggtst_percentile_disc_duplicates(TstView):
@@ -130,7 +162,9 @@ class aggtst_percentile_disc_negative(TstView):
                       PERCENTILE_DISC(1.0) WITHIN GROUP (ORDER BY value) AS p100
                       FROM percentile_neg_tbl"""
         # Values: [-20, -10, 0, 10, 20]
-        self.data = [{"p0": Decimal("-20.0"), "p50": Decimal("0.0"), "p100": Decimal("20.0")}]
+        self.data = [
+            {"p0": Decimal("-20.0"), "p50": Decimal("0.0"), "p100": Decimal("20.0")}
+        ]
 
 
 class aggtst_percentile_disc_with_nulls(TstView):
@@ -163,7 +197,9 @@ class aggtst_percentile_disc_all_same(TstView):
                       PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY value) AS p50,
                       PERCENTILE_DISC(1.0) WITHIN GROUP (ORDER BY value) AS p100
                       FROM percentile_same_tbl"""
-        self.data = [{"p0": Decimal("7.0"), "p50": Decimal("7.0"), "p100": Decimal("7.0")}]
+        self.data = [
+            {"p0": Decimal("7.0"), "p50": Decimal("7.0"), "p100": Decimal("7.0")}
+        ]
 
 
 class aggtst_percentile_disc_three_values(TstView):
@@ -178,7 +214,15 @@ class aggtst_percentile_disc_three_values(TstView):
                       FROM percentile_three_tbl"""
         # Values: [10, 20, 30]
         # PERCENTILE_DISC returns actual values
-        self.data = [{"p0": Decimal("10.0"), "p25": Decimal("10.0"), "p50": Decimal("20.0"), "p75": Decimal("30.0"), "p100": Decimal("30.0")}]
+        self.data = [
+            {
+                "p0": Decimal("10.0"),
+                "p25": Decimal("10.0"),
+                "p50": Decimal("20.0"),
+                "p75": Decimal("30.0"),
+                "p100": Decimal("30.0"),
+            }
+        ]
 
 
 class aggtst_percentile_disc_four_values(TstView):
@@ -192,7 +236,15 @@ class aggtst_percentile_disc_four_values(TstView):
                       PERCENTILE_DISC(1.0) WITHIN GROUP (ORDER BY value) AS p100
                       FROM percentile_four_tbl"""
         # Values: [0, 10, 20, 30]
-        self.data = [{"p0": Decimal("0.0"), "p25": Decimal("0.0"), "p50": Decimal("10.0"), "p75": Decimal("20.0"), "p100": Decimal("30.0")}]
+        self.data = [
+            {
+                "p0": Decimal("0.0"),
+                "p25": Decimal("0.0"),
+                "p50": Decimal("10.0"),
+                "p75": Decimal("20.0"),
+                "p100": Decimal("30.0"),
+            }
+        ]
 
 
 class aggtst_percentile_disc_mixed_gby(TstView):
