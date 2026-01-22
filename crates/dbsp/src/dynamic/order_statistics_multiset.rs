@@ -353,15 +353,13 @@ impl<T: Ord + Clone> Ord for OrderStatisticsMultiset<T> {
                         (None, None) => return Ordering::Equal,
                         (None, Some(_)) => return Ordering::Less,
                         (Some(_), None) => return Ordering::Greater,
-                        (Some((k1, w1)), Some((k2, w2))) => {
-                            match k1.cmp(k2) {
-                                Ordering::Equal => match w1.cmp(&w2) {
-                                    Ordering::Equal => continue,
-                                    other => return other,
-                                },
+                        (Some((k1, w1)), Some((k2, w2))) => match k1.cmp(k2) {
+                            Ordering::Equal => match w1.cmp(&w2) {
+                                Ordering::Equal => continue,
                                 other => return other,
-                            }
-                        }
+                            },
+                            other => return other,
+                        },
                     }
                 }
             }
@@ -681,7 +679,7 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
         percentile: f64,
         ascending: bool,
     ) -> Option<(&T, &T, f64)> {
-        if self.total_weight <= 0 || percentile < 0.0 || percentile > 1.0 {
+        if self.total_weight <= 0 || !(0.0..=1.0).contains(&percentile) {
             return None;
         }
 
@@ -733,7 +731,7 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
     /// # Complexity
     /// O(log n)
     pub fn select_percentile_disc(&self, percentile: f64, ascending: bool) -> Option<&T> {
-        if self.total_weight <= 0 || percentile < 0.0 || percentile > 1.0 {
+        if self.total_weight <= 0 || !(0.0..=1.0).contains(&percentile) {
             return None;
         }
 
@@ -770,12 +768,10 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
 
     fn get_weight_recursive(&self, node_idx: usize, key: &T) -> ZWeight {
         match &self.nodes[node_idx] {
-            Node::Leaf(leaf) => {
-                match leaf.find_key_pos(key) {
-                    Ok(pos) => leaf.entries[pos].1,
-                    Err(_) => 0,
-                }
-            }
+            Node::Leaf(leaf) => match leaf.find_key_pos(key) {
+                Ok(pos) => leaf.entries[pos].1,
+                Err(_) => 0,
+            },
             Node::Internal(internal) => {
                 let child_pos = internal.find_child(key);
                 self.get_weight_recursive(internal.children[child_pos], key)
@@ -964,7 +960,9 @@ where
     }
 }
 
-impl<T: Ord + Clone + Archive> From<&OrderStatisticsMultiset<T>> for SerializableOrderStatisticsMultiset<T> {
+impl<T: Ord + Clone + Archive> From<&OrderStatisticsMultiset<T>>
+    for SerializableOrderStatisticsMultiset<T>
+{
     fn from(tree: &OrderStatisticsMultiset<T>) -> Self {
         Self {
             entries: tree.iter().map(|(k, w)| (k.clone(), w)).collect(),
@@ -973,7 +971,9 @@ impl<T: Ord + Clone + Archive> From<&OrderStatisticsMultiset<T>> for Serializabl
     }
 }
 
-impl<T: Ord + Clone + Archive> From<SerializableOrderStatisticsMultiset<T>> for OrderStatisticsMultiset<T> {
+impl<T: Ord + Clone + Archive> From<SerializableOrderStatisticsMultiset<T>>
+    for OrderStatisticsMultiset<T>
+{
     fn from(serialized: SerializableOrderStatisticsMultiset<T>) -> Self {
         let mut tree = Self::with_branching_factor(serialized.branching_factor as usize);
         for (key, weight) in serialized.entries {
@@ -1063,7 +1063,7 @@ mod tests {
         }
         assert_eq!(tree.select_kth(5, true), None);
 
-        assert_eq!(tree.rank(&5), 0);  // Nothing less than 5
+        assert_eq!(tree.rank(&5), 0); // Nothing less than 5
         assert_eq!(tree.rank(&10), 0); // Nothing less than 10
         assert_eq!(tree.rank(&15), 5); // 5 elements less than 15
     }
@@ -1331,10 +1331,10 @@ mod tests {
         assert_eq!(tree.num_keys(), 20);
 
         // Delta batch 1: remove some, add to others
-        tree.insert(0, -5);    // Remove key 0 entirely
-        tree.insert(10, -3);   // Reduce key 10 to weight 2
-        tree.insert(50, 10);   // Increase key 50 to weight 15
-        tree.insert(200, 7);   // Add new key
+        tree.insert(0, -5); // Remove key 0 entirely
+        tree.insert(10, -3); // Reduce key 10 to weight 2
+        tree.insert(50, 10); // Increase key 50 to weight 15
+        tree.insert(200, 7); // Add new key
 
         assert_eq!(tree.total_weight(), 100 - 5 - 3 + 10 + 7);
         assert_eq!(tree.get_weight(&0), 0);
@@ -1470,15 +1470,15 @@ mod tests {
 
         // Insert keys in interleaved order with varying weights
         let data = vec![
-            (50, 10),  // middle
-            (25, 5),   // left quarter
-            (75, 15),  // right quarter
-            (10, 3),   // far left
-            (90, 7),   // far right
-            (30, 2),   // between 25 and 50
-            (60, 8),   // between 50 and 75
-            (5, 1),    // leftmost
-            (95, 4),   // rightmost
+            (50, 10), // middle
+            (25, 5),  // left quarter
+            (75, 15), // right quarter
+            (10, 3),  // far left
+            (90, 7),  // far right
+            (30, 2),  // between 25 and 50
+            (60, 8),  // between 50 and 75
+            (5, 1),   // leftmost
+            (95, 4),  // rightmost
         ];
 
         for (key, weight) in &data {
@@ -1521,9 +1521,9 @@ mod tests {
 
         // Verify rank queries
         assert_eq!(tree.rank(&5), 0);
-        assert_eq!(tree.rank(&6), 1);   // after 5's weight
+        assert_eq!(tree.rank(&6), 1); // after 5's weight
         assert_eq!(tree.rank(&10), 1);
-        assert_eq!(tree.rank(&11), 4);  // after 5+10 = 1+3 = 4
+        assert_eq!(tree.rank(&11), 4); // after 5+10 = 1+3 = 4
         assert_eq!(tree.rank(&50), 11); // 1+3+5+2 = 11
         assert_eq!(tree.rank(&100), 55); // all elements
     }
@@ -1760,10 +1760,10 @@ mod tests {
 
         // Insert with various weights including zeros and negatives
         tree.insert(10, 5);
-        tree.insert(20, 0);  // Will have zero (from insert + delta)
+        tree.insert(20, 0); // Will have zero (from insert + delta)
         tree.insert(30, -3); // Negative
         tree.insert(40, 7);
-        tree.insert(50, 0);  // Zero from start (no-op, won't be inserted)
+        tree.insert(50, 0); // Zero from start (no-op, won't be inserted)
 
         // Manually create a zero-weight entry
         tree.insert(60, 5);
@@ -1813,16 +1813,16 @@ mod tests {
         }
 
         // Modify some elements and verify iteration still correct
-        tree.insert(0, 5);   // Increase first
+        tree.insert(0, 5); // Increase first
         tree.insert(50, 10); // Increase middle
         tree.insert(98, -1); // Remove last (set to 0)
 
         let modified: Vec<_> = tree.iter().collect();
         assert_eq!(modified.len(), count); // Still 50 entries (including zero-weight)
 
-        assert_eq!(modified[0], (&0, 6));  // 1 + 5
+        assert_eq!(modified[0], (&0, 6)); // 1 + 5
         assert_eq!(modified[25], (&50, 11)); // 1 + 10
-        assert_eq!(modified[49], (&98, 0));  // 1 - 1
+        assert_eq!(modified[49], (&98, 0)); // 1 - 1
     }
 
     #[test]
@@ -1866,13 +1866,13 @@ mod tests {
         tree.insert(35, -2);
 
         // Rank queries
-        assert_eq!(tree.rank(&5), 0);   // Before all
-        assert_eq!(tree.rank(&10), 0);  // At first key
-        assert_eq!(tree.rank(&15), 5);  // After key 10 (weight 5)
-        assert_eq!(tree.rank(&30), 5);  // At key 30, after 10's weight
-        assert_eq!(tree.rank(&35), 8);  // After 10(5) + 30(3), but 35 has 0 weight
-        assert_eq!(tree.rank(&40), 8);  // Same as 35, since 35 has 0 weight
-        assert_eq!(tree.rank(&50), 8);  // At key 50
+        assert_eq!(tree.rank(&5), 0); // Before all
+        assert_eq!(tree.rank(&10), 0); // At first key
+        assert_eq!(tree.rank(&15), 5); // After key 10 (weight 5)
+        assert_eq!(tree.rank(&30), 5); // At key 30, after 10's weight
+        assert_eq!(tree.rank(&35), 8); // After 10(5) + 30(3), but 35 has 0 weight
+        assert_eq!(tree.rank(&40), 8); // Same as 35, since 35 has 0 weight
+        assert_eq!(tree.rank(&50), 8); // At key 50
         assert_eq!(tree.rank(&100), 15); // After all: 5 + 3 + 7 = 15
     }
 
@@ -1919,15 +1919,16 @@ mod tests {
     #[test]
     fn test_deep_select_consistency_after_many_operations() {
         // Build tree and verify select is consistent with content
-        let mut tree: OrderStatisticsMultiset<i32> = OrderStatisticsMultiset::with_branching_factor(8);
+        let mut tree: OrderStatisticsMultiset<i32> =
+            OrderStatisticsMultiset::with_branching_factor(8);
 
         // Insert with simple weights for easy verification
         let test_data = vec![
-            (10, 5),  // positions 0-4
-            (20, 3),  // positions 5-7
-            (30, 7),  // positions 8-14
-            (40, 2),  // positions 15-16
-            (50, 4),  // positions 17-20
+            (10, 5), // positions 0-4
+            (20, 3), // positions 5-7
+            (30, 7), // positions 8-14
+            (40, 2), // positions 15-16
+            (50, 4), // positions 17-20
         ];
 
         for (key, weight) in &test_data {
@@ -2030,21 +2031,21 @@ mod tests {
     fn test_deep_boundary_select_positions() {
         let mut tree = OrderStatisticsMultiset::new();
 
-        tree.insert(10, 3);  // positions 0, 1, 2
-        tree.insert(20, 1);  // position 3
-        tree.insert(30, 2);  // positions 4, 5
+        tree.insert(10, 3); // positions 0, 1, 2
+        tree.insert(20, 1); // position 3
+        tree.insert(30, 2); // positions 4, 5
 
         // Test exact boundary positions
-        assert_eq!(tree.select_kth(-1, true), None);  // Negative position
-        assert_eq!(tree.select_kth(0, true), Some(&10));   // First position
-        assert_eq!(tree.select_kth(2, true), Some(&10));   // Last position of first key
-        assert_eq!(tree.select_kth(3, true), Some(&20));   // First position of second key
-        assert_eq!(tree.select_kth(4, true), Some(&30));   // First position of third key
-        assert_eq!(tree.select_kth(5, true), Some(&30));   // Last valid position
-        assert_eq!(tree.select_kth(6, true), None);   // One past last
+        assert_eq!(tree.select_kth(-1, true), None); // Negative position
+        assert_eq!(tree.select_kth(0, true), Some(&10)); // First position
+        assert_eq!(tree.select_kth(2, true), Some(&10)); // Last position of first key
+        assert_eq!(tree.select_kth(3, true), Some(&20)); // First position of second key
+        assert_eq!(tree.select_kth(4, true), Some(&30)); // First position of third key
+        assert_eq!(tree.select_kth(5, true), Some(&30)); // Last valid position
+        assert_eq!(tree.select_kth(6, true), None); // One past last
 
         // Test descending at boundaries
-        assert_eq!(tree.select_kth(0, false), Some(&30));  // Last element
+        assert_eq!(tree.select_kth(0, false), Some(&30)); // Last element
         assert_eq!(tree.select_kth(1, false), Some(&30));
         assert_eq!(tree.select_kth(2, false), Some(&20));
         assert_eq!(tree.select_kth(3, false), Some(&10));
@@ -2077,9 +2078,9 @@ mod tests {
         assert_eq!(tree.total_weight(), 66);
 
         // Verify some positions
-        assert_eq!(tree.select_kth(0, true), Some(&1));  // 0 was removed
+        assert_eq!(tree.select_kth(0, true), Some(&1)); // 0 was removed
         assert_eq!(tree.select_kth(1, true), Some(&2));
-        assert_eq!(tree.select_kth(2, true), Some(&4));  // 3 was removed
+        assert_eq!(tree.select_kth(2, true), Some(&4)); // 3 was removed
     }
 
     #[test]
