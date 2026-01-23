@@ -51,5 +51,8 @@ uuid = { workspace = true, features = ["v4", "std"] }
 feldera-macros = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 tempfile = { workspace = true }
+derive_more = { version = "1.0", features = ["not"] }
+proptest = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+size-of = { workspace = true }

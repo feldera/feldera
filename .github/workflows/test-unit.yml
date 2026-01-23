@@ -97,7 +97,7 @@ jobs:
 
       - name: feldera-storage
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: ./build/feldera_storge-*
+        run: ./build/feldera_storage-*
 
       - name: readers
         if: ${{ vars.CI_DRY_RUN != 'true' }}
