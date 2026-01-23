@@ -551,8 +551,11 @@ impl Controller {
                             let _ = init_status_sender.send(Err(error));
                             Ok(())
                         }
-                        Ok(circuit_thread) => {
-                            circuit_thread.run(init_status_sender).inspect_err(|error| {
+                        Ok(mut circuit_thread) => {
+                            if let Err(error) = circuit_thread.run(init_status_sender) {
+                                circuit_thread.controller.error(error, None);
+                            }
+                            circuit_thread.finish().inspect_err(|error| {
                                 // Log the error before returning it from the
                                 // thread: otherwise, only [Controller::stop]
                                 // will join the thread and report the error.
@@ -2276,7 +2279,7 @@ impl CircuitThread {
     /// * `init_status_sender` - A channel sender to report the result of the initialization.
     ///   The circuit is considered fully initialized after executing the first step.
     fn run(
-        mut self,
+        &mut self,
         init_status_sender: SyncSender<Result<Arc<ControllerInner>, ControllerError>>,
     ) -> Result<(), ControllerError> {
         let config = &self.controller.status.pipeline_config;
@@ -2324,7 +2327,7 @@ impl CircuitThread {
             }
 
             if self.controller.state() == PipelineState::Terminated {
-                break;
+                break Ok(());
             }
 
             // Backpressure in the output pipeline: wait for room in output buffers to
@@ -2357,7 +2360,7 @@ impl CircuitThread {
             ) {
                 Action::Step => {
                     if !self.step()? {
-                        break;
+                        break Ok(());
                     }
                 }
                 Action::Checkpoint => self.checkpoint_requests.push(CheckpointRequest::Scheduled),
@@ -2368,6 +2371,9 @@ impl CircuitThread {
                 Action::Park(None) => self.parker.park(),
             }
         }
+    }
+
+    fn finish(mut self) -> Result<(), ControllerError> {
         self.controller.status.set_state(PipelineState::Terminated);
         self.flush_commands_and_requests();
         self.circuit
@@ -5679,8 +5685,8 @@ impl ControllerInner {
         }
     }
 
-    fn error(&self, error: Arc<ControllerError>, tag: Option<String>) {
-        (self.error_cb)(error, tag);
+    fn error(&self, error: impl Into<Arc<ControllerError>>, tag: Option<String>) {
+        (self.error_cb)(error.into(), tag);
     }
 
     /// Process an input transport error.
