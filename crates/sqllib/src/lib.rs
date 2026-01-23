@@ -47,8 +47,8 @@ pub use uuid::*;
 #[doc(hidden)]
 pub mod variant;
 pub use variant::*;
-// Re-export OrderStatisticsMultiset from dbsp for use in compiled SQL
-pub use dbsp::operator::OrderStatisticsMultiset;
+// Re-export OrderStatisticsMultiset and PercentileSemigroup from dbsp for use in compiled SQL
+pub use dbsp::operator::{OrderStatisticsMultiset, PercentileSemigroup};
 #[doc(hidden)]
 pub mod rfc3339;
 #[doc(hidden)]
@@ -1310,40 +1310,6 @@ where
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct ConcatSemigroup<V>(PhantomData<V>);
-
-// Semigroup for PERCENTILE_CONT/PERCENTILE_DISC aggregates
-// Combines (Option<P>, OrderStatisticsMultiset<V>) tuples where P is the percentile and V is the data type
-// The percentile should be the same across all groups, so we just take the first Some value
-// Uses OrderStatisticsMultiset for proper incremental computation with insertion and deletion support
-#[derive(Clone)]
-#[doc(hidden)]
-pub struct PercentileSemigroup<T>(PhantomData<T>);
-
-#[doc(hidden)]
-impl<P, V> Semigroup<Tup2<Option<P>, OrderStatisticsMultiset<V>>>
-    for PercentileSemigroup<Tup2<Option<P>, OrderStatisticsMultiset<V>>>
-where
-    P: Clone,
-    V: Ord + Clone,
-{
-    #[doc(hidden)]
-    fn combine(
-        left: &Tup2<Option<P>, OrderStatisticsMultiset<V>>,
-        right: &Tup2<Option<P>, OrderStatisticsMultiset<V>>,
-    ) -> Tup2<Option<P>, OrderStatisticsMultiset<V>> {
-        // Take the first Some percentile value (they should all be the same within a group)
-        let percentile = match (&left.0, &right.0) {
-            (Some(p), _) => Some(p.clone()),
-            (None, Some(p)) => Some(p.clone()),
-            (None, None) => None,
-        };
-
-        // Merge the trees
-        let tree = OrderStatisticsMultiset::merged(&left.1, &right.1);
-
-        Tup2::new(percentile, tree)
-    }
-}
 
 // Semigroup for the SINGLE_VALUE aggregate
 #[derive(Clone)]

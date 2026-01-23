@@ -92,7 +92,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOrderStatisticTree;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOrderStatisticsMultiset;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
 import org.dbsp.util.ICastable;
@@ -1032,10 +1032,10 @@ public class AggregateCompiler implements ICompilerComponent {
         // because NULL values are filtered out in percentile_collectN
         DBSPType elementType = orderByType.withMayBeNull(false);
 
-        // Create accumulator type: Tuple(Option<percentile_value>, OrderStatisticTree<element_type>)
+        // Create accumulator type: Tuple(Option<percentile_value>, OrderStatisticsMultiset<element_type>)
         // The percentile is Option because we don't know it on the first row
-        // OrderStatisticTree supports incremental computation with proper insertion/deletion
-        DBSPTypeOrderStatisticTree treeType = new DBSPTypeOrderStatisticTree(elementType, false);
+        // OrderStatisticsMultiset supports incremental computation with proper insertion/deletion
+        DBSPTypeOrderStatisticsMultiset treeType = new DBSPTypeOrderStatisticsMultiset(elementType, false);
         DBSPType percentileType = percentileArg.getType().withMayBeNull(true);
         DBSPTypeTuple accumulatorType = new DBSPTypeTuple(percentileType, treeType);
         DBSPExpression zero = new DBSPTupleExpression(
@@ -1083,22 +1083,27 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPVariablePath p = accumulatorType.var();
 
         // Determine the post function name and return type based on the aggregate type and element type
-        // For PERCENTILE_CONT on numeric types, we use type-specific interpolated versions
+        // For PERCENTILE_CONT on numeric types, we use the generic interpolate function
         // which may return a different type (e.g., integer input -> DOUBLE output)
         String postFunctionName;
         DBSPType postReturnType;
         if (kind == SqlKind.PERCENTILE_CONT) {
-            // Use type-specific interpolated function if available
+            // Use generic interpolate function for types that implement Interpolate trait
             postFunctionName = getPercentileContFunctionName(elementType);
             // Get the actual return type (integer types return DOUBLE due to interpolation)
             postReturnType = getPercentileContReturnType(elementType, this.nullableResultType.mayBeNull);
+            // percentile_cont_interpolate always returns Option, no need for "N" suffix
+            // Only append "N" for the fallback percentile_cont function
+            if (this.nullableResultType.mayBeNull && !postFunctionName.equals("percentile_cont_interpolate")) {
+                postFunctionName += "N";
+            }
         } else {
             postFunctionName = "percentile_disc";
             // PERCENTILE_DISC always returns the same type as the input
             postReturnType = this.nullableResultType;
-        }
-        if (this.nullableResultType.mayBeNull) {
-            postFunctionName += "N";
+            if (this.nullableResultType.mayBeNull) {
+                postFunctionName += "N";
+            }
         }
 
         // Post-processing: p.0.unwrap() is the percentile, p.1 is the tree
@@ -1139,35 +1144,15 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     /** Get the appropriate PERCENTILE_CONT function name based on the element type.
-     *  For numeric types, returns a type-specific interpolated version.
-     *  For other types, returns the generic version (which returns lower bound without interpolation). */
+     *  For types that implement the Interpolate trait (numeric types including DECIMAL),
+     *  returns the generic interpolate function. For other types, returns the non-interpolating version. */
     private String getPercentileContFunctionName(DBSPType elementType) {
-        if (elementType.is(DBSPTypeDouble.class)) {
-            return "percentile_cont_f64";
-        } else if (elementType.is(DBSPTypeFP.class)) {
-            DBSPTypeFP fp = elementType.to(DBSPTypeFP.class);
-            if (fp.getWidth() == 32) {
-                return "percentile_cont_f32";
-            } else {
-                return "percentile_cont_f64";
-            }
-        } else if (elementType.is(DBSPTypeInteger.class)) {
-            DBSPTypeInteger intType = elementType.to(DBSPTypeInteger.class);
-            switch (intType.getWidth()) {
-                case 8:
-                    return "percentile_cont_i8";
-                case 16:
-                    return "percentile_cont_i16";
-                case 32:
-                    return "percentile_cont_i32";
-                case 64:
-                    return "percentile_cont_i64";
-                default:
-                    return "percentile_cont";
-            }
-        } else if (elementType.is(DBSPTypeDecimal.class)) {
-            // DECIMAL types use the numeric interpolation function
-            return "percentile_cont_numeric";
+        // All numeric types (F64, F32, integers, DECIMAL) implement the Interpolate trait
+        // and can use the generic percentile_cont_interpolate function
+        if (elementType.is(DBSPTypeFP.class) ||
+            elementType.is(DBSPTypeInteger.class) ||
+            elementType.is(DBSPTypeDecimal.class)) {
+            return "percentile_cont_interpolate";
         }
         // For other types, use the generic version (no interpolation)
         return "percentile_cont";

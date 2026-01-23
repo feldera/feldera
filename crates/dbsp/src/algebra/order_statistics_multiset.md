@@ -418,7 +418,7 @@ The augmented B+ tree has been implemented in `order_statistics_multiset.rs`. Th
 ### Module Location
 
 ```
-crates/dbsp/src/dynamic/order_statistics_multiset.rs
+crates/dbsp/src/algebra/order_statistics_multiset.rs
 ```
 
 ### Public API
@@ -428,7 +428,7 @@ crates/dbsp/src/dynamic/order_statistics_multiset.rs
 The main data structure - an augmented B+ tree for weighted multisets with O(log n) rank/select operations.
 
 ```rust
-use dbsp::dynamic::order_statistics_multiset::OrderStatisticsMultiset;
+use dbsp::algebra::OrderStatisticsMultiset;
 
 // Create with default branching factor (64)
 let mut tree = OrderStatisticsMultiset::new();
@@ -578,7 +578,7 @@ The tree implements `serde::Serialize` and `serde::Deserialize` directly.
 For zero-copy serialization, use `SerializableOrderStatisticsMultiset`:
 
 ```rust
-use dbsp::dynamic::order_statistics_multiset::{
+use dbsp::algebra::{
     OrderStatisticsMultiset,
     SerializableOrderStatisticsMultiset,
 };
