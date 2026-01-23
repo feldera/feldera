@@ -1,20 +1,20 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use dbsp::DBData;
 use dbsp::algebra::{F32, F64};
 use dbsp::dynamic::{DynData, Erase};
 use dbsp::storage::backend::memory_impl::MemoryBackend;
 use dbsp::storage::buffer_cache::BufferCache;
-use dbsp::storage::file::writer::{Parameters, Writer1};
 use dbsp::storage::file::Factories;
-use dbsp::DBData;
+use dbsp::storage::file::writer::{Parameters, Writer1};
 use feldera_sqllib::{
-    to_array, to_map, Array, ByteArray, Date, GeoPoint, LongInterval, Map, ShortInterval,
-    SqlDecimal, SqlString, Time, Timestamp, Uuid, Variant,
+    Array, ByteArray, Date, GeoPoint, LongInterval, Map, ShortInterval, SqlDecimal, SqlString,
+    Time, Timestamp, Uuid, Variant, to_array, to_map,
 };
 use proptest::prelude::*;
 
-use dbsp::utils::{Tup0, Tup1, Tup10, Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9};
+use dbsp::utils::{Tup0, Tup1, Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9, Tup10};
 feldera_macros::declare_tuple! { Tup11<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> }
 feldera_macros::declare_tuple! { Tup12<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> }
 feldera_macros::declare_tuple! { Tup13<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> }
