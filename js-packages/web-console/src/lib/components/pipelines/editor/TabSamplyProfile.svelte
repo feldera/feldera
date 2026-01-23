@@ -19,10 +19,9 @@
 
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
-  import { onDestroy } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { isPipelineInteractive } from '$lib/functions/pipelines/status'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
-  import { nonNull } from '$lib/functions/common/function'
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
@@ -244,7 +243,7 @@
   $effect(() => {
     pipelineName
     if (isInteractive) {
-      checkProfileStatus()
+      untrack(() => checkProfileStatus())
     } else {
       resetState()
     }
