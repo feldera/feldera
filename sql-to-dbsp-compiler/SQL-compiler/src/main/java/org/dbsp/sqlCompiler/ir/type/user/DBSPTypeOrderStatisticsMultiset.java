@@ -37,26 +37,26 @@ import java.util.List;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 /**
- * Represents the OrderStatisticTree type used for PERCENTILE_CONT/PERCENTILE_DISC aggregates.
+ * Represents the OrderStatisticsMultiset type used for PERCENTILE_CONT/PERCENTILE_DISC aggregates.
  *
- * OrderStatisticTree is an order-statistics multiset that supports:
+ * OrderStatisticsMultiset is an order-statistics multiset that supports:
  * - O(log n) insertion with positive/negative weights for incremental computation
  * - O(log n) deletion via negative weights
- * - O(n) k-th element selection
+ * - O(log n) k-th element selection
  * - Proper multiset semantics (duplicate values with counts)
  */
-public class DBSPTypeOrderStatisticTree extends DBSPTypeUser {
-    public DBSPTypeOrderStatisticTree(DBSPType elementType, boolean mayBeNull) {
-        super(elementType.getNode(), USER, "OrderStatisticTree", mayBeNull, elementType);
+public class DBSPTypeOrderStatisticsMultiset extends DBSPTypeUser {
+    public DBSPTypeOrderStatisticsMultiset(DBSPType elementType, boolean mayBeNull) {
+        super(elementType.getNode(), USER, "OrderStatisticsMultiset", mayBeNull, elementType);
     }
 
     public DBSPType getElementType() {
         return this.getTypeArg(0);
     }
 
-    /** OrderStatisticTree::new() or Some(OrderStatisticTree::new()), depending on nullability */
+    /** OrderStatisticsMultiset::new() or Some(OrderStatisticsMultiset::new()), depending on nullability */
     public DBSPExpression emptyTree() {
-        DBSPExpression tree = new DBSPApplyExpression("OrderStatisticTree::new", this.withMayBeNull(false));
+        DBSPExpression tree = new DBSPApplyExpression("OrderStatisticsMultiset::new", this.withMayBeNull(false));
         if (!this.mayBeNull)
             return tree;
         return tree.some();
@@ -83,16 +83,16 @@ public class DBSPTypeOrderStatisticTree extends DBSPTypeUser {
     public DBSPType withMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
-        return new DBSPTypeOrderStatisticTree(this.getElementType(), mayBeNull);
+        return new DBSPTypeOrderStatisticsMultiset(this.getElementType(), mayBeNull);
     }
 
     // sameType and hashCode inherited from TypeUser.
 
     @SuppressWarnings("unused")
-    public static DBSPTypeOrderStatisticTree fromJson(JsonNode node, JsonDecoder decoder) {
+    public static DBSPTypeOrderStatisticsMultiset fromJson(JsonNode node, JsonDecoder decoder) {
         List<DBSPType> typeArgs = fromJsonInnerList(node, "typeArgs", decoder, DBSPType.class);
         Utilities.enforce(typeArgs.size() == 1);
         boolean mayBeNull = fromJsonMayBeNull(node);
-        return new DBSPTypeOrderStatisticTree(typeArgs.get(0), mayBeNull);
+        return new DBSPTypeOrderStatisticsMultiset(typeArgs.get(0), mayBeNull);
     }
 }
