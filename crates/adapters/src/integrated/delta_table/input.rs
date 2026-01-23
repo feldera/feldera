@@ -1671,16 +1671,37 @@ impl DeltaTableInputEndpointInner {
             // TODO: consider processing all Add actions and all Remove actions in one
             // go using `ListingTable`, which understands partitioning and can probably
             // parallelize the load.
+
+            // Process deletes before inserts. Semantically, delete actions in
+            // are applied before insert actions; however the delta standard doesn't
+            // guarantee that actions occur in any particular order in the transaction log
+            // entry.
             for action in actions {
-                self.process_action(
-                    action,
-                    table,
-                    &column_names,
-                    input_stream,
-                    receiver,
-                    start_transaction.clone(),
-                )
-                .await;
+                if matches!(action, Action::Remove(_)) {
+                    self.process_action(
+                        action,
+                        table,
+                        &column_names,
+                        input_stream,
+                        receiver,
+                        start_transaction.clone(),
+                    )
+                    .await;
+                }
+            }
+
+            for action in actions {
+                if matches!(action, Action::Add(_)) {
+                    self.process_action(
+                        action,
+                        table,
+                        &column_names,
+                        input_stream,
+                        receiver,
+                        start_transaction.clone(),
+                    )
+                    .await;
+                }
             }
         }
 
