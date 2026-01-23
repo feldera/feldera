@@ -60,9 +60,11 @@ pub use average::{Avg, AvgFactories, DynAverage};
 pub use fold::Fold;
 pub use max::{Max, MaxSemigroup};
 pub use min::{ArgMinSome, Min, MinSemigroup, MinSome1, MinSome1Semigroup};
-pub use percentile::{OrderStatisticsMultisetSemigroup, PercentileCont, PercentileDisc};
-// Re-export OrderStatisticsMultiset from dynamic module for external use
-pub use crate::dynamic::order_statistics_multiset::OrderStatisticsMultiset;
+pub use percentile::{
+    OrderStatisticsMultisetSemigroup, PercentileCont, PercentileDisc, PercentileSemigroup,
+};
+// Re-export OrderStatisticsMultiset from algebra module for external use
+pub use crate::algebra::OrderStatisticsMultiset;
 
 use super::MonoIndexedZSet;
 

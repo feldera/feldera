@@ -14,11 +14,11 @@ use std::marker::PhantomData;
 
 use crate::{
     DBData, Timestamp,
-    algebra::{AddAssignByRef, HasZero, Semigroup, ZWeight},
-    dynamic::order_statistics_multiset::OrderStatisticsMultiset,
+    algebra::{AddAssignByRef, HasZero, OrderStatisticsMultiset, Semigroup, ZWeight},
     dynamic::{DataTrait, DynUnit, Erase, WeightTrait},
     operator::Aggregator,
     trace::Cursor,
+    utils::Tup2,
 };
 
 /// Semigroup implementation for OrderStatisticsMultiset.
@@ -34,6 +34,40 @@ where
         right: &OrderStatisticsMultiset<T>,
     ) -> OrderStatisticsMultiset<T> {
         OrderStatisticsMultiset::merged(left, right)
+    }
+}
+
+/// Semigroup for SQL PERCENTILE aggregates.
+///
+/// Combines `(Option<P>, OrderStatisticsMultiset<V>)` tuples where:
+/// - P is the percentile value (same across all groups, first Some wins)
+/// - V is the data type being aggregated
+///
+/// This semigroup is used by the SQL compiler for percentile computations.
+#[derive(Clone, Debug, Default)]
+pub struct PercentileSemigroup<T>(PhantomData<T>);
+
+impl<P, V> Semigroup<Tup2<Option<P>, OrderStatisticsMultiset<V>>>
+    for PercentileSemigroup<Tup2<Option<P>, OrderStatisticsMultiset<V>>>
+where
+    P: Clone,
+    V: Ord + Clone,
+{
+    fn combine(
+        left: &Tup2<Option<P>, OrderStatisticsMultiset<V>>,
+        right: &Tup2<Option<P>, OrderStatisticsMultiset<V>>,
+    ) -> Tup2<Option<P>, OrderStatisticsMultiset<V>> {
+        // Take the first Some percentile value (they should all be the same within a group)
+        let percentile = match (&left.0, &right.0) {
+            (Some(p), _) => Some(p.clone()),
+            (None, Some(p)) => Some(p.clone()),
+            (None, None) => None,
+        };
+
+        // Merge the trees
+        let tree = OrderStatisticsMultiset::merged(&left.1, &right.1);
+
+        Tup2::new(percentile, tree)
     }
 }
 

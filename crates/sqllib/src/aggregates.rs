@@ -4,12 +4,126 @@
 #![allow(clippy::unnecessary_cast)]
 
 use crate::{ByteArray, FromInteger, SqlDecimal, ToInteger, Weight};
+use crate::OrderStatisticsMultiset;
 use dbsp::algebra::{F32, F64, FirstLargeValue, HasOne, HasZero, SignedPrimInt, UnsignedPrimInt};
+use feldera_fxp::Fixed;
 use num::PrimInt;
 use num_traits::CheckedAdd;
 use std::cmp::Ord;
 use std::fmt::{Debug, Display};
 use std::marker::Copy;
+
+// ===== Interpolate trait for PERCENTILE_CONT =====
+
+/// Trait for types that can be linearly interpolated for PERCENTILE_CONT.
+///
+/// The interpolation formula is: `lower + fraction * (upper - lower)`
+///
+/// The `Output` associated type allows integer types to return `F64` since
+/// interpolation of integers may produce non-integer results.
+#[doc(hidden)]
+pub trait Interpolate {
+    /// The output type of interpolation (may differ from Self for integers)
+    type Output;
+
+    /// Perform linear interpolation between self and other.
+    ///
+    /// Returns `self + fraction * (other - self)`
+    fn interpolate(&self, other: &Self, fraction: f64) -> Self::Output;
+}
+
+impl Interpolate for F64 {
+    type Output = F64;
+
+    fn interpolate(&self, other: &Self, fraction: f64) -> Self::Output {
+        let lower = self.into_inner();
+        let upper = other.into_inner();
+        F64::new(lower + fraction * (upper - lower))
+    }
+}
+
+impl Interpolate for F32 {
+    type Output = F32;
+
+    fn interpolate(&self, other: &Self, fraction: f64) -> Self::Output {
+        let lower = self.into_inner() as f64;
+        let upper = other.into_inner() as f64;
+        F32::new((lower + fraction * (upper - lower)) as f32)
+    }
+}
+
+// Integer types return F64 per SQL standard (interpolation produces non-integers)
+
+impl Interpolate for i64 {
+    type Output = F64;
+
+    fn interpolate(&self, other: &Self, fraction: f64) -> Self::Output {
+        F64::new(*self as f64 + fraction * (*other as f64 - *self as f64))
+    }
+}
+
+impl Interpolate for i32 {
+    type Output = F64;
+
+    fn interpolate(&self, other: &Self, fraction: f64) -> Self::Output {
+        F64::new(*self as f64 + fraction * (*other as f64 - *self as f64))
+    }
+}
+
+impl Interpolate for i16 {
+    type Output = F64;
+
+    fn interpolate(&self, other: &Self, fraction: f64) -> Self::Output {
+        F64::new(*self as f64 + fraction * (*other as f64 - *self as f64))
+    }
+}
+
+impl Interpolate for i8 {
+    type Output = F64;
+
+    fn interpolate(&self, other: &Self, fraction: f64) -> Self::Output {
+        F64::new(*self as f64 + fraction * (*other as f64 - *self as f64))
+    }
+}
+
+// DECIMAL types (Fixed<P, S>) return the same type after interpolation
+impl<const P: usize, const S: usize> Interpolate for Fixed<P, S> {
+    type Output = Self;
+
+    fn interpolate(&self, other: &Self, fraction: f64) -> Self::Output {
+        // Convert to f64, interpolate, then convert back
+        let lower: f64 = (*self).into();
+        let upper: f64 = (*other).into();
+        let result = lower + fraction * (upper - lower);
+        // TryFrom may fail if result is out of range; in that case, fall back to lower
+        Self::try_from(result).unwrap_or(*self)
+    }
+}
+
+/// Generic PERCENTILE_CONT implementation using the Interpolate trait.
+///
+/// This function handles the common logic for all numeric types that implement
+/// `Interpolate`. The output type is determined by the `Interpolate::Output`
+/// associated type.
+#[doc(hidden)]
+pub fn percentile_cont_interpolate<T>(
+    tree: &OrderStatisticsMultiset<T>,
+    percentile: f64,
+    ascending: bool,
+) -> Option<T::Output>
+where
+    T: Clone + Debug + Ord + Interpolate,
+    T::Output: Clone,
+{
+    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
+
+    if fraction == 0.0 || lower == upper {
+        // No interpolation needed - return lower value interpolated with itself
+        return Some(lower.interpolate(lower, 0.0));
+    }
+
+    Some(lower.interpolate(upper, fraction))
+}
 
 /// Holds some methods for wrapping values into unsigned values
 /// This is used by partitioned_rolling_aggregate
@@ -799,8 +913,6 @@ where
 // - O(n) k-th element selection
 // - Proper multiset semantics
 
-use dbsp::operator::OrderStatisticsMultiset;
-
 /// Collect values for percentile computation (non-nullable values)
 ///
 /// Inserts the value into the OrderStatisticsMultiset with the given weight.
@@ -912,7 +1024,7 @@ where
     percentile_disc(tree, percentile, ascending)
 }
 
-// ===== Type-specific PERCENTILE_CONT implementations with proper interpolation =====
+// ===== Type-specific PERCENTILE_CONT implementations using Interpolate trait =====
 
 /// Compute continuous percentile with interpolation for f64 (DOUBLE type)
 #[doc(hidden)]
@@ -921,17 +1033,7 @@ pub fn percentile_cont_f64(
     percentile: f64,
     ascending: bool,
 ) -> Option<crate::F64> {
-    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
-
-    if fraction == 0.0 || lower == upper {
-        return Some(*lower);
-    }
-
-    // Linear interpolation: lower + fraction * (upper - lower)
-    let lower_val = lower.into_inner();
-    let upper_val = upper.into_inner();
-    let result = lower_val + fraction * (upper_val - lower_val);
-    Some(crate::F64::new(result))
+    percentile_cont_interpolate(tree, percentile, ascending)
 }
 
 /// Compute continuous percentile with interpolation for f64 (nullable)
@@ -941,7 +1043,7 @@ pub fn percentile_cont_f64N(
     percentile: f64,
     ascending: bool,
 ) -> Option<crate::F64> {
-    percentile_cont_f64(tree, percentile, ascending)
+    percentile_cont_interpolate(tree, percentile, ascending)
 }
 
 /// Compute continuous percentile with interpolation for f32 (REAL type)
@@ -951,17 +1053,7 @@ pub fn percentile_cont_f32(
     percentile: f64,
     ascending: bool,
 ) -> Option<crate::F32> {
-    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
-
-    if fraction == 0.0 || lower == upper {
-        return Some(*lower);
-    }
-
-    // Linear interpolation
-    let lower_val = lower.into_inner() as f64;
-    let upper_val = upper.into_inner() as f64;
-    let result = lower_val + fraction * (upper_val - lower_val);
-    Some(crate::F32::new(result as f32))
+    percentile_cont_interpolate(tree, percentile, ascending)
 }
 
 /// Compute continuous percentile with interpolation for f32 (nullable)
@@ -971,7 +1063,7 @@ pub fn percentile_cont_f32N(
     percentile: f64,
     ascending: bool,
 ) -> Option<crate::F32> {
-    percentile_cont_f32(tree, percentile, ascending)
+    percentile_cont_interpolate(tree, percentile, ascending)
 }
 
 /// Compute continuous percentile with interpolation for i64 (BIGINT type)
@@ -982,17 +1074,7 @@ pub fn percentile_cont_i64(
     percentile: f64,
     ascending: bool,
 ) -> Option<crate::F64> {
-    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
-
-    if fraction == 0.0 || lower == upper {
-        return Some(crate::F64::new(*lower as f64));
-    }
-
-    // Linear interpolation returning double
-    let lower_val = *lower as f64;
-    let upper_val = *upper as f64;
-    let result = lower_val + fraction * (upper_val - lower_val);
-    Some(crate::F64::new(result))
+    percentile_cont_interpolate(tree, percentile, ascending)
 }
 
 /// Compute continuous percentile with interpolation for i64 (nullable)
@@ -1002,7 +1084,7 @@ pub fn percentile_cont_i64N(
     percentile: f64,
     ascending: bool,
 ) -> Option<crate::F64> {
-    percentile_cont_i64(tree, percentile, ascending)
+    percentile_cont_interpolate(tree, percentile, ascending)
 }
 
 /// Compute continuous percentile with interpolation for i32 (INTEGER type)
@@ -1013,16 +1095,7 @@ pub fn percentile_cont_i32(
     percentile: f64,
     ascending: bool,
 ) -> Option<crate::F64> {
-    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
-
-    if fraction == 0.0 || lower == upper {
-        return Some(crate::F64::new(*lower as f64));
-    }
-
-    let lower_val = *lower as f64;
-    let upper_val = *upper as f64;
-    let result = lower_val + fraction * (upper_val - lower_val);
-    Some(crate::F64::new(result))
+    percentile_cont_interpolate(tree, percentile, ascending)
 }
 
 /// Compute continuous percentile with interpolation for i32 (nullable)
@@ -1032,7 +1105,7 @@ pub fn percentile_cont_i32N(
     percentile: f64,
     ascending: bool,
 ) -> Option<crate::F64> {
-    percentile_cont_i32(tree, percentile, ascending)
+    percentile_cont_interpolate(tree, percentile, ascending)
 }
 
 /// Compute continuous percentile with interpolation for i16 (SMALLINT type)
@@ -1043,16 +1116,7 @@ pub fn percentile_cont_i16(
     percentile: f64,
     ascending: bool,
 ) -> Option<crate::F64> {
-    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
-
-    if fraction == 0.0 || lower == upper {
-        return Some(crate::F64::new(*lower as f64));
-    }
-
-    let lower_val = *lower as f64;
-    let upper_val = *upper as f64;
-    let result = lower_val + fraction * (upper_val - lower_val);
-    Some(crate::F64::new(result))
+    percentile_cont_interpolate(tree, percentile, ascending)
 }
 
 /// Compute continuous percentile with interpolation for i16 (nullable)
@@ -1062,7 +1126,7 @@ pub fn percentile_cont_i16N(
     percentile: f64,
     ascending: bool,
 ) -> Option<crate::F64> {
-    percentile_cont_i16(tree, percentile, ascending)
+    percentile_cont_interpolate(tree, percentile, ascending)
 }
 
 /// Compute continuous percentile with interpolation for i8 (TINYINT type)
@@ -1073,16 +1137,7 @@ pub fn percentile_cont_i8(
     percentile: f64,
     ascending: bool,
 ) -> Option<crate::F64> {
-    let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
-
-    if fraction == 0.0 || lower == upper {
-        return Some(crate::F64::new(*lower as f64));
-    }
-
-    let lower_val = *lower as f64;
-    let upper_val = *upper as f64;
-    let result = lower_val + fraction * (upper_val - lower_val);
-    Some(crate::F64::new(result))
+    percentile_cont_interpolate(tree, percentile, ascending)
 }
 
 /// Compute continuous percentile with interpolation for i8 (nullable)
@@ -1092,7 +1147,7 @@ pub fn percentile_cont_i8N(
     percentile: f64,
     ascending: bool,
 ) -> Option<crate::F64> {
-    percentile_cont_i8(tree, percentile, ascending)
+    percentile_cont_interpolate(tree, percentile, ascending)
 }
 
 /// Compute continuous percentile with interpolation for numeric types (DECIMAL, etc.)
