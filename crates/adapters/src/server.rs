@@ -1329,26 +1329,35 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
     let runtime_desired_status = state.desired_status();
     match state.controller() {
         Ok(controller) => {
-            let bootstrapping = controller.status().bootstrap_in_progress();
+            fn inner_status(
+                runtime_desired_status: RuntimeDesiredStatus,
+                controller: &Controller,
+                default_status: RuntimeStatus,
+            ) -> ExtendedRuntimeStatus {
+                ExtendedRuntimeStatus {
+                    runtime_status: if controller.status().bootstrap_in_progress() {
+                        RuntimeStatus::Bootstrapping
+                    } else if controller.is_replaying() {
+                        RuntimeStatus::Replaying
+                    } else {
+                        default_status
+                    },
+                    runtime_status_details: json!(""),
+                    runtime_desired_status,
+                }
+            }
+
             return match controller.status().global_metrics.get_state() {
-                PipelineState::Paused => Ok(ExtendedRuntimeStatus {
-                    runtime_status: if bootstrapping {
-                        RuntimeStatus::Bootstrapping
-                    } else {
-                        RuntimeStatus::Paused
-                    },
-                    runtime_status_details: json!(""),
+                PipelineState::Paused => Ok(inner_status(
                     runtime_desired_status,
-                }),
-                PipelineState::Running => Ok(ExtendedRuntimeStatus {
-                    runtime_status: if bootstrapping {
-                        RuntimeStatus::Bootstrapping
-                    } else {
-                        RuntimeStatus::Running
-                    },
-                    runtime_status_details: json!(""),
+                    &controller,
+                    RuntimeStatus::Paused,
+                )),
+                PipelineState::Running => Ok(inner_status(
                     runtime_desired_status,
-                }),
+                    &controller,
+                    RuntimeStatus::Running,
+                )),
                 PipelineState::Terminated => Err(ExtendedRuntimeStatusError {
                     status_code: StatusCode::INTERNAL_SERVER_ERROR,
                     error: feldera_types::error::ErrorResponse {
