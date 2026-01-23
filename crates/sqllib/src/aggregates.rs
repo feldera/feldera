@@ -3,8 +3,8 @@
 #![allow(clippy::let_and_return)]
 #![allow(clippy::unnecessary_cast)]
 
-use crate::{ByteArray, FromInteger, SqlDecimal, ToInteger, Weight};
 use crate::OrderStatisticsMultiset;
+use crate::{ByteArray, FromInteger, SqlDecimal, ToInteger, Weight};
 use dbsp::algebra::{F32, F64, FirstLargeValue, HasOne, HasZero, SignedPrimInt, UnsignedPrimInt};
 use feldera_fxp::Fixed;
 use num::PrimInt;
