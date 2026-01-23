@@ -148,7 +148,7 @@ impl BatchSizeStats {
 /// General metadata about an operator's execution
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
 pub struct OperatorMeta {
-    entries: Vec<(MetaLabel, MetaItem)>,
+    pub entries: Vec<(MetaLabel, MetaItem)>,
 }
 
 impl OperatorMeta {
@@ -173,6 +173,9 @@ impl OperatorMeta {
             .map(|(_label, item)| item.clone())
     }
 
+    /// Merges the mergeable entries in `other` into this operator metadata.
+    ///
+    /// See [MetaItem::merge] to learn about merging metadata.
     pub fn merge(&mut self, other: &Self) {
         for (label, src) in &other.entries {
             if src.is_mergeable() {
@@ -378,6 +381,7 @@ impl MetaItem {
         }
     }
 
+    /// Returns whether this kind of metadata item is mergeable.
     pub fn is_mergeable(&self) -> bool {
         matches!(
             self,
@@ -389,6 +393,12 @@ impl MetaItem {
         )
     }
 
+    /// Attempts to merge `self` and `other` and returns the result if there is
+    /// one.
+    ///
+    /// Counts are merged by adding them, percents are merged by adding the
+    /// numerator and denominator, and so on.  Arbitrary strings and integers
+    /// can't be merged.
     pub fn merge(&self, other: &Self) -> Option<Self> {
         match (self, other) {
             (Self::Count(a), Self::Count(b)) => Some(Self::Count(a + b)),

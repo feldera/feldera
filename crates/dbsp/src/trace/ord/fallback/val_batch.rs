@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
+use crate::circuit::metadata::OperatorMeta;
 use crate::storage::buffer_cache::CacheStats;
 use crate::trace::cursor::{DelegatingCursor, PushCursor};
 use crate::trace::ord::file::val_batch::FileValBuilder;
@@ -311,6 +312,13 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.maybe_contains_key(hash),
             Inner::File(file) => file.maybe_contains_key(hash),
+        }
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        match &self.inner {
+            Inner::Vec(vec) => vec.metadata(meta),
+            Inner::File(file) => file.metadata(meta),
         }
     }
 }

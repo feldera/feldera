@@ -291,9 +291,6 @@ pub trait Trace: BatchReader {
     /// Reads this trace back from storage under `base` with `pid` as the
     /// prefix.
     fn restore(&mut self, base: &StoragePath, pid: &str) -> Result<(), Error>;
-
-    /// Allows the trace to report additional metadata.
-    fn metadata(&self, _meta: &mut OperatorMeta) {}
 }
 
 /// Where a batch is stored.
@@ -559,6 +556,11 @@ where
     fn keys(&self) -> Option<&DynVec<Self::Key>> {
         None
     }
+
+    /// Allows the batch to report additional metadata.
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        let _ = meta;
+    }
 }
 
 impl<B> BatchReader for Arc<B>
@@ -633,6 +635,9 @@ where
     }
     fn keys(&self) -> Option<&DynVec<Self::Key>> {
         (**self).keys()
+    }
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        (**self).metadata(meta);
     }
 }
 

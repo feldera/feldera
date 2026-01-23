@@ -497,6 +497,11 @@ where
         self.add_batches(batches);
     }
 
+    /// Reports metadata for the spine, as well recursively merging the
+    /// individual batches' metadata.  (Only [mergeable] metadata for the
+    /// batches is reported; non-mergable metadata is discarded.)
+    ///
+    /// [mergeable]: MetaItem::merge
     fn metadata(&self, meta: &mut OperatorMeta) {
         let (mut slots, spine_stats) = self.state.lock().unwrap().metadata_snapshot();
 
@@ -563,6 +568,7 @@ where
         let mut merging_size = 0;
         let mut filter_size = 0;
         let mut storage_records = 0;
+        let mut batch_metadata = OperatorMeta::new();
         for (batch, merging) in batches {
             cache_stats += batch.cache_stats();
             filter_size += batch.filter_size();
@@ -577,7 +583,15 @@ where
                     merging_size += size;
                 }
             }
+
+            // Get metadata from all the individual batches and merge them.
+            //
+            // This discards non-mergeable metadata.
+            let mut metadata = OperatorMeta::new();
+            batch.metadata(&mut metadata);
+            batch_metadata.merge(&metadata);
         }
+        meta.extend(batch_metadata.entries);
 
         if storage_records > 0 {
             let bits_per_key = filter_size as f64 * 8.0 / storage_records as f64;
@@ -1142,6 +1156,10 @@ where
             .await,
         ))
     }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        self.merger.metadata(meta);
+    }
 }
 
 impl<B> Spine<B>
@@ -1547,10 +1565,6 @@ where
         }
 
         Ok(())
-    }
-
-    fn metadata(&self, meta: &mut OperatorMeta) {
-        self.merger.metadata(meta);
     }
 }
 
