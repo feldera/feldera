@@ -15,11 +15,11 @@ pub use checked_int::CheckedInt;
 pub use floats::{F32, F64};
 pub use lattice::Lattice;
 pub use order::{PartialOrder, TotalOrder};
-pub use present::Present;
 pub use order_statistics_multiset::{
-    OrderStatisticsMultiset, SerializableOrderStatisticsMultiset, DEFAULT_BRANCHING_FACTOR,
-    MIN_BRANCHING_FACTOR,
+    DEFAULT_BRANCHING_FACTOR, MIN_BRANCHING_FACTOR, OrderStatisticsMultiset,
+    SerializableOrderStatisticsMultiset,
 };
+pub use present::Present;
 pub use zset::{
     DynZWeight, IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet,
     OrdZSetFactories, VecIndexedZSet, VecIndexedZSetFactories, VecZSet, VecZSetFactories, ZBatch,
