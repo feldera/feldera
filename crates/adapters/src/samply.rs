@@ -311,8 +311,6 @@ pub(crate) enum SamplyStatus {
 pub(crate) struct SamplyState {
     pub(crate) last_profile: SamplyProfile,
     pub(crate) samply_status: SamplyStatus,
-    /// Cached result of profiling availability check (None = not checked yet)
-    profiling_available: Option<bool>,
 }
 
 impl SamplyState {

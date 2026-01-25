@@ -1225,12 +1225,13 @@ pub(crate) async fn start_samply_profile(
         SamplyProfileGetParams,
     ),
     responses(
+        // Note: This endpoint may also return 204 No Content with Retry-After header
+        // when latest=true and profiling is in progress, but progenitor can only handle
+        // one success response type, so it's not documented here.
         (status = OK
-            , description = "Samply profile as a gzip containing the profile that can be inspected by the samply tool"
+            , description = "Samply profile as a gzip containing the profile that can be inspected by the samply tool. Note: may return 204 No Content with Retry-After header if latest=true and profiling is in progress."
             , content_type = "application/gzip"
             , body = Vec<u8>),
-        (status = NO_CONTENT
-            , description = "Samply profile collection is in progress. Check the Retry-After header for expected completion time."),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse

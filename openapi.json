@@ -4266,9 +4266,9 @@
           },
           {
             "name": "latest",
-            "in": "path",
-            "description": "If true, returns 307 redirect if profile collection is in progress.\nIf false or not provided, returns the last collected profile.",
-            "required": true,
+            "in": "query",
+            "description": "If true, returns 204 redirect with Retry-After header if profile collection is in progress.\nIf false or not provided, returns the last collected profile.",
+            "required": false,
             "schema": {
               "type": "boolean"
             }
@@ -4276,7 +4276,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Samply profile as a gzip containing the profile that can be inspected by the samply tool",
+            "description": "Samply profile as a gzip containing the profile that can be inspected by the samply tool. Note: may return 204 No Content with Retry-After header if latest=true and profiling is in progress.",
             "content": {
               "application/gzip": {
                 "schema": {
@@ -4285,9 +4285,6 @@
                 }
               }
             }
-          },
-          "204": {
-            "description": "Samply profile collection is in progress. Check the Retry-After header for expected completion time."
           },
           "400": {
             "description": "No samply profile exists for the pipeline, create one by calling `POST /pipelines/{pipeline_name}/samply_profile?duration_secs=30`",
