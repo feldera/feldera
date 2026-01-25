@@ -2637,7 +2637,7 @@ impl CircuitThread {
                     info!(
                         "checkpoint delayed {} seconds because of: {}",
                         elapsed.as_secs(),
-                        reasons.iter().format(", ")
+                        reasons.iter().format(", ").to_string()
                     )
                 });
 
