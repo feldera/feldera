@@ -50,10 +50,6 @@ public final class DBSPFieldExpression extends DBSPExpression {
                 () -> "Non-nullable field from nullable struct");
     }
 
-    DBSPFieldExpression(DBSPExpression expression, int fieldNo, DBSPType type) {
-        this(CalciteObject.EMPTY, expression, fieldNo, type);
-    }
-
     static DBSPType getFieldType(DBSPType type, int fieldNo) {
         if (type.is(DBSPTypeAny.class))
             return type;
@@ -76,6 +72,18 @@ public final class DBSPFieldExpression extends DBSPExpression {
     public DBSPExpression simplify() {
         if (this.expression.is(DBSPBaseTupleExpression.class)) {
             return this.expression.to(DBSPBaseTupleExpression.class).get(this.fieldNo);
+        }
+        if (this.expression.is(DBSPUnwrapExpression.class)) {
+            DBSPUnwrapExpression unwrap = this.expression.to(DBSPUnwrapExpression.class);
+            if (unwrap.neverFails()) {
+                DBSPExpression result = unwrap.expression.field(this.fieldNo);
+                if (!result.getType().sameType(this.type))
+                    // The result of x.unwrap().1 may be
+                    // x.1 or x.1.unwrap(), depending on whether the
+                    // field 1 is nullable or not.
+                    result = result.neverFailsUnwrap();
+                return result;
+            }
         }
         return this;
     }

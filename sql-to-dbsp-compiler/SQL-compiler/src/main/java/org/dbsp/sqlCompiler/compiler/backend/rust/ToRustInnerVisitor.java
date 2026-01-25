@@ -591,7 +591,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.increase();
         for (DBSPExpression exp: expression.data) {
             exp.accept(this);
-            this.builder.append(", ");
+            this.builder.append(",");
+            if (expression.data.size() > 1)
+                this.builder.newline();
         }
         if (expression.data.size() > 1)
             this.builder.decrease();
@@ -1393,26 +1395,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
         if (sourceType.is(DBSPTypeTuple.class)) {
             // should have been eliminated
-            if (!this.compact)
-                this.unimplementedCast(expression);
-            // we are dumping DOT
-            this.builder.append("(");
-            expression.type.accept(this);
-            this.builder.append(")");
-            expression.source.accept(this);
-            this.pop(expression);
+            this.unimplementedCast(expression);
             return VisitDecision.STOP;
         }
         if (code == DBSPTypeCode.TUPLE) {
             // should have been eliminated
-            if (!this.compact)
-                this.unimplementedCast(expression);
-            // we are dumping DOT
-            this.builder.append("(");
-            expression.type.accept(this);
-            this.builder.append(")");
-            expression.source.accept(this);
-            this.pop(expression);
+            this.unimplementedCast(expression);
             return VisitDecision.STOP;
         }
         functionName = "cast_to_" + destType.baseTypeWithSuffix() +
@@ -2143,8 +2131,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPFailExpression expression) {
+        this.push(expression);
+        this.builder.append("panic!(")
+                .append(Utilities.doubleQuote(expression.message, false))
+                .append(")");
+        this.pop(expression);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPUnwrapExpression expression) {
-        if (this.compact) {
+        if (this.compact || expression.neverFails()) {
             expression.expression.accept(this);
             this.builder.append(".unwrap()");
             return VisitDecision.STOP;
@@ -2401,17 +2399,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (expression.getType().mayBeNull)
             this.builder.append("Some");
         this.builder.append("(");
-        boolean newlines = this.compact && expression.fields.length > 2;
-        if (newlines)
-            this.builder.increase();
+        this.builder.increase();
         for (DBSPExpression field : expression.fields) {
             field.accept(this);
             this.builder.append(", ");
-            if (newlines)
-                this.builder.newline();
+            this.builder.newline();
         }
-        if (newlines)
-            this.builder.decrease();
+        this.builder.decrease();
         this.builder.append(")");
         this.pop(expression);
         return VisitDecision.STOP;

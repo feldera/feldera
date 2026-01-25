@@ -97,6 +97,10 @@ public class CreateRuntimeErrorWrappers extends ExpressionTranslator {
             return;
         DBSPExpression source = this.getE(expression.expression);
         DBSPExpression unwrap = new DBSPUnwrapExpression(expression.message, source.applyCloneIfNeeded());
+        if (expression.neverFails()) {
+            this.map(expression, unwrap);
+            return;
+        }
         final DBSPHandleErrorExpression.RuntimeBehavior behavior;
         final boolean hasSourcePosition = this.operatorContext != null;
         if (source.getSourcePosition().isValid() && hasSourcePosition) {

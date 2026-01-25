@@ -62,6 +62,7 @@ public class RustSqlRuntimeLibrary {
         this.universalFunctions.put(DBSPOpcode.MAX, DBSPOpcode.MAX.toString());
         this.universalFunctions.put(DBSPOpcode.MIN_IGNORE_NULLS, DBSPOpcode.MIN_IGNORE_NULLS.toString());
         this.universalFunctions.put(DBSPOpcode.MAX_IGNORE_NULLS, DBSPOpcode.MAX_IGNORE_NULLS.toString());
+        this.universalFunctions.put(DBSPOpcode.MAX_NULL_WINS, DBSPOpcode.MAX_NULL_WINS.toString());
         this.universalFunctions.put(DBSPOpcode.AGG_LTE, DBSPOpcode.AGG_LTE.toString());
         this.universalFunctions.put(DBSPOpcode.AGG_GTE, DBSPOpcode.AGG_GTE.toString());
         this.universalFunctions.put(DBSPOpcode.AGG_MIN, DBSPOpcode.AGG_MIN.toString());
@@ -171,6 +172,7 @@ public class RustSqlRuntimeLibrary {
         if (opcode.isComparison() ||
             opcode == DBSPOpcode.MAX || opcode == DBSPOpcode.MIN ||
             opcode == DBSPOpcode.MAX_IGNORE_NULLS || opcode == DBSPOpcode.MIN_IGNORE_NULLS ||
+            opcode == DBSPOpcode.MAX_NULL_WINS ||
             opcode == DBSPOpcode.AGG_GTE || opcode == DBSPOpcode.AGG_LTE ||
             opcode == DBSPOpcode.AGG_MIN || opcode == DBSPOpcode.AGG_MAX ||
             opcode == DBSPOpcode.AGG_MIN1 || opcode == DBSPOpcode.AGG_MAX1 ||

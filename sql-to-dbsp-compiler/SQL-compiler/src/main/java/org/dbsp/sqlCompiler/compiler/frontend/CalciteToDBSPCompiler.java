@@ -1061,7 +1061,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     // Calcite's optimizations do not preserve types!
                     exp = ExpressionCompiler.expandTupleCast(exp.getNode(), exp, expectedType);
                 } else {
-                    exp = exp.applyCloneIfNeeded();
+                    if (!exp.is(DBSPApplyExpression.class))
+                        exp = exp.applyCloneIfNeeded();
                 }
                 resultColumns[index] = exp;
                 index++;

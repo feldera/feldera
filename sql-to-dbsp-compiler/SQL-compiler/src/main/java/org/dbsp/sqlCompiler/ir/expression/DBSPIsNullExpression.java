@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -63,8 +64,10 @@ public final class DBSPIsNullExpression extends DBSPExpression {
             return new DBSPBoolLiteral(false);
         if (this.expression.is(DBSPCloneExpression.class))
             return this.expression.to(DBSPCloneExpression.class).expression.is_null();
-        if (this.expression.is(DBSPBaseTupleExpression.class) &&
-            this.expression.to(DBSPBaseTupleExpression.class).fields != null)
+        if (this.expression.isNone())
+            return new DBSPBoolLiteral(true);
+        if (this.expression.is(IConstructor.class))
+            // Non-null tuple
             return new DBSPBoolLiteral(false);
         return this;
     }

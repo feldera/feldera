@@ -1088,6 +1088,15 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(DBSPFailExpression expression) {
+        this.push(expression);
+        this.pop(expression);
+        DBSPExpression result = new DBSPFailExpression(expression.getNode(), expression.type, expression.message);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPEnumValue expression) {
         this.map(expression, expression);
         return VisitDecision.STOP;

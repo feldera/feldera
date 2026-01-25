@@ -200,7 +200,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 DBSPExpression safeSource = source.unwrapIfNullable("Cast to non-nullable type applied to NULL value");
                 for (int i = 0; i < tuple.size(); i++) {
                     if (source.is(DBSPBaseTupleExpression.class) &&
-                            source.to(DBSPBaseTupleExpression.class).fields == null) {
+                            source.to(DBSPBaseTupleExpression.class).isNull()) {
                         // NULL tuple literal
                         fields[i] = source.getType().to(DBSPTypeTupleBase.class).getFieldExpressionType(i).none();
                     } else {
@@ -764,7 +764,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     @SuppressWarnings("SameParameterValue")
     void nullLiteralToNullArray(List<DBSPExpression> ops, int arg) {
         if (ops.get(arg).is(DBSPNullLiteral.class)) {
-            ops.set(arg, new DBSPTypeArray(DBSPTypeNull.INSTANCE, true).nullValue());
+            ops.set(arg, new DBSPTypeArray(DBSPTypeNull.INSTANCE, true).none());
         }
     }
 
@@ -984,7 +984,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case SAFE_CAST:
             case REINTERPRET:
                 if (!validateCast(ops.get(0).getType(), type, call.op.kind == SqlKind.SAFE_CAST)) {
-                    throw new CompilationError(call.op.kind.toString() + " cannot be used to convert " +
+                    throw new CompilationError(call.op.kind + " cannot be used to convert " +
                             ops.get(0).getType().asSqlString() +
                             " to " + type.asSqlString(), node);
                 }
@@ -1109,7 +1109,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                 (right.is(DBSPLiteral.class) && right.to(DBSPLiteral.class).isNull())) {
                             this.compiler.reportWarning(node.getPositionRange(),
                                     "evaluates to NULL", node + ": always returns NULL");
-                            return type.nullValue();
+                            return type.none();
                         }
 
                         if (!rightType.is(DBSPTypeInteger.class))
@@ -1444,7 +1444,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         if (ops.get(1).is(DBSPStringLiteral.class)) {
                             DBSPStringLiteral lit = ops.get(1).to(DBSPStringLiteral.class);
                             if (lit.isNull())
-                                return type.nullValue();
+                                return type.none();
                             ops.set(1, this.makeRegex(lit));
                             return compileFunction("regexp_replaceC", node, type, ops, 2, 3);
                         }
@@ -1581,7 +1581,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 if (ops.get(1).is(DBSPStringLiteral.class)) {
                     DBSPStringLiteral lit = ops.get(1).to(DBSPStringLiteral.class);
                     if (lit.isNull())
-                        return type.nullValue();
+                        return type.none();
                     ops.set(1, this.makeRegex(lit));
                     return compileFunction("rlikeC", node, type, ops, 2);
                 } else {
@@ -1956,9 +1956,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 DBSPExpression last = ops.get(ops.size() - 1).cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
                 for (int i = 1; i < ops.size(); i++) {
                     int index = ops.size() - i - 1;
-                    DBSPExpression op = ops.get(index);
-                    last = new DBSPIfExpression(
-                            node, op.is_null(), last, op.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe));
+                    final DBSPExpression op = ops.get(index);
+                    final DBSPExpression castOp;
+                    if (op.getType().sameTypeIgnoringNullability(type) &&
+                            op.getType().mayBeNull && !type.mayBeNull) {
+                        castOp = op.neverFailsUnwrap();
+                    } else {
+                        castOp = op.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
+                    }
+                    last = new DBSPIfExpression(node, op.is_null(), last, castOp);
                 }
                 return last;
             }
@@ -1974,6 +1980,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return new DBSPIfExpression(node, cmp.wrapBoolIfNeeded(), type.none(), ops.get(0)
                         .cast(node, type, DBSPCastExpression.CastType.SqlUnsafe));
             }
+            case GREATEST:
+            case LEAST:
             case GREATEST_PG:
             case LEAST_PG: {
                 if (ops.isEmpty()) {
@@ -1981,9 +1989,32 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             "Function " + Utilities.singleQuote(operationName) +
                                     " with 0 arguments is unknown", node);
                 }
-                ops = Linq.where(ops, op -> !op.is(DBSPNullLiteral.class));
-                DBSPOpcode code = call.getKind() == SqlKind.GREATEST_PG ?
-                        DBSPOpcode.MAX_IGNORE_NULLS : DBSPOpcode.MIN_IGNORE_NULLS;
+                boolean filterNulls = false;
+                DBSPOpcode code = switch (call.getKind()) {
+                    case GREATEST_PG -> {
+                        filterNulls = true;
+                        yield DBSPOpcode.MAX_IGNORE_NULLS;
+                    }
+                    case LEAST_PG -> {
+                        filterNulls = true;
+                        yield DBSPOpcode.MIN_IGNORE_NULLS;
+                    }
+                    case LEAST -> DBSPOpcode.MIN;
+                    case GREATEST -> DBSPOpcode.MAX_NULL_WINS;
+                    default -> throw new InternalCompilerError("Unexpected opcode " + call.getKind());
+                };
+                if (filterNulls) {
+                    // NULLs are ignored for _PG variants, which correspond to _IGNORE_NULLS in SQL
+                    ops = Linq.where(ops, op -> !op.is(DBSPNullLiteral.class));
+                    if (ops.isEmpty()) {
+                        return type.none();
+                    }
+                } else {
+                    // If NULLs are not ignored, they immediately produce a NULL result
+                    boolean anyNull = Linq.any(ops, op -> op.is(DBSPNullLiteral.class));
+                    if (anyNull)
+                        return type.none();
+                }
                 DBSPExpression next = ops.get(0).cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
                 for (int i = 1; i < ops.size(); i++) {
                     DBSPExpression op = ops.get(i);

@@ -52,9 +52,9 @@ public class IncrementalRegressionTests extends SqlIoTest {
         CompilerOptions options = super.testOptions();
         options.languageOptions.incrementalize = true;
         options.languageOptions.optimizationLevel = 2;
-        // This causes the use of SourceSet operators
+        // This will make the generated code use SourceSet operators:
         // options.ioOptions.emitHandles = false;
-        // Without the following ORDER BY causes failures
+        // Without the following flag ORDER BY causes failures
         options.languageOptions.ignoreOrderBy = true;
         return options;
     }
@@ -818,6 +818,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
     // Tests that are not in the repository; run manually
     @Test @Ignore
     public void extraTests() throws IOException {
+        // Logger.INSTANCE.setLoggingLevel(CalciteOptimizer.class, 2);
+        // this.showFinal();
         String dir = "../extra";
         File file = new File(dir);
         if (file.exists()) {

@@ -253,7 +253,9 @@ public class CalciteOptimizer implements IWritesLogs {
                         CoreRules.JOIN_CONDITION_PUSH,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
                         // CoreRules.JOIN_PUSH_TRANSITIVE_PREDICATES,
-                        CoreRules.FILTER_INTO_JOIN
+                        CoreRules.FILTER_INTO_JOIN,
+                        // Sometimes this sequence generates extra filters which can be merged
+                        CoreRules.FILTER_MERGE
                 );
                 OuterJoinFinder finder = new OuterJoinFinder();
                 finder.run(node);

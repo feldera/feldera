@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFailExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -157,12 +158,11 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
         DBSPExpression result = new DBSPTupleExpression(source.getNode(), type, fields);
         if (source.getType().mayBeNull) {
             if (type.mayBeNull) {
-                result = new DBSPIfExpression(node, source.is_null(), type.nullValue(), result);
+                result = new DBSPIfExpression(node, source.is_null(), type.none(), result);
             } else {
                 result = new DBSPIfExpression(node, source.is_null(),
-                        // Causes a runtime panic
-                        type.withMayBeNull(true).nullValue()
-                                .unwrap("Cast to non-nullable value applied to NULL"), result);
+                        new DBSPFailExpression(source.getNode(), type, "Cast to non-nullable value applied to NULL"),
+                        result);
             }
         }
 

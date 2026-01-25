@@ -149,11 +149,6 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         throw new InternalCompilerError("Deref of " + this);
     }
 
-    /** The null value with this type. */
-    public DBSPExpression nullValue() {
-        return DBSPLiteral.none(this);
-    }
-
     /** True if this type has a Rust 'copy' method. */
     public boolean hasCopy() {
         return true;

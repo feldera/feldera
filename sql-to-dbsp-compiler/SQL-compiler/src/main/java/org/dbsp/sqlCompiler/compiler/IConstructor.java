@@ -4,4 +4,6 @@ package org.dbsp.sqlCompiler.compiler;
 public interface IConstructor {
     /** True when the constructed expression has all arguments constant */
     boolean isConstant();
+    /** True when the constructed expression is NULL */
+    boolean isNull();
 }

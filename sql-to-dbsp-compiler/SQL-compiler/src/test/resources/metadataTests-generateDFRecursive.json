@@ -412,7 +412,7 @@
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37}
         ],
-        "persistent_id": "8dab10904e879fd2b4f461f3281c7457c6174c8564b4947de60c8eca065bd95e"
+        "persistent_id": "eea1fb749f276517f2ad1171fc00a889b629d190a675d1cff0ad8f04db1e6a22"
       },
       "s5": {
         "operation": "flat_map_index",
@@ -433,7 +433,7 @@
           {"start_line_number":19,"start_column":17,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":21}
         ],
-        "persistent_id": "958477ed0fb64636fab2e45cd593974f814228cbdae788f5cb8b7fcf118b888d"
+        "persistent_id": "532b61244e3f6ecac6e439489956f24fb4bdfedc3708b4dd7601e06c20c5ffc2"
       },
       "s6": {
         "operation": "delta0",
@@ -473,7 +473,7 @@
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26}
         ],
-        "persistent_id": "e250f5920ce49df2b4ed6413e7735bd57f8790a16923c6ceb7000e8d67d766e8"
+        "persistent_id": "d2d417d4519df7cdda5f1b3418fbfdb6b8fd0a9bd9f9b890d0631e73a66cca5a"
       },
       "s9": {
         "operation": "sum",
@@ -485,7 +485,7 @@
           "final": 10
         },
         "positions": [],
-        "persistent_id": "b07b42fc36f39f5204380b749d85d5b9f8dc1a1e7ee8ae329bdfa2ddccabd0a1"
+        "persistent_id": "1b0a54fcd87bb8e0b251dd69693425ae5b5d3b5753a123d5a0d22fe6f5ea740e"
       }
     }, "s10": {
       "operation": "inspect",
@@ -500,7 +500,7 @@
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1},
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
       ],
-      "persistent_id": "e2d2a4dd0dfb82283495f1e6c8753a2106cc518b3fca2b3ce4c7b0cedcdb95b5"
+      "persistent_id": "3035407bd189e60ab4a95c6e8e3555453d98937a42f859a252171247c5bd3a46"
     }, "s11": {
       "operation": "inspect",
       "inputs": [

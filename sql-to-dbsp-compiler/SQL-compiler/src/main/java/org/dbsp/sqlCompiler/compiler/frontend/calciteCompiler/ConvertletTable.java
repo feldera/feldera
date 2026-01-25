@@ -205,10 +205,11 @@ public class ConvertletTable extends ReflectiveConvertletTable {
         registerOp(SqlLibraryOperators.RTRIM,
                 new ConvertletTable.TrimConvertlet(SqlTrimFunction.Flag.TRAILING));
 
-        registerOp(SqlLibraryOperators.GREATEST, new ConvertletTable.GreatestConvertlet());
-        registerOp(SqlLibraryOperators.GREATEST_PG, new ConvertletTable.GreatestPgConvertlet());
-        registerOp(SqlLibraryOperators.LEAST, new ConvertletTable.GreatestConvertlet());
-        registerOp(SqlLibraryOperators.LEAST_PG, new ConvertletTable.GreatestPgConvertlet());
+        // Removed GREATEST and LEAST - they are inefficient for many arguments
+        // registerOp(SqlLibraryOperators.GREATEST, new ConvertletTable.GreatestConvertlet());
+        // registerOp(SqlLibraryOperators.GREATEST_PG, new ConvertletTable.GreatestPgConvertlet());
+        // registerOp(SqlLibraryOperators.LEAST, new ConvertletTable.GreatestConvertlet());
+        // registerOp(SqlLibraryOperators.LEAST_PG, new ConvertletTable.GreatestPgConvertlet());
         registerOp(SqlLibraryOperators.SUBSTR_BIG_QUERY,
                 new ConvertletTable.SubstrConvertlet(SqlLibrary.BIG_QUERY));
         registerOp(SqlLibraryOperators.SUBSTR_MYSQL,

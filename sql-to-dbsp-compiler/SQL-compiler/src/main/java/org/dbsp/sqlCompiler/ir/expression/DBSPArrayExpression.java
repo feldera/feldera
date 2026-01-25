@@ -204,6 +204,10 @@ public final class DBSPArrayExpression extends DBSPExpression
         return context.equivalent(this.data, otherExpression.data);
     }
 
+    public boolean isNull() {
+        return this.data == null;
+    }
+
     public String toSqlString() {
         if (this.data == null)
             return DBSPNullLiteral.NULL;
