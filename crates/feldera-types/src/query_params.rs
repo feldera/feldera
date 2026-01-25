@@ -55,8 +55,9 @@ fn default_samply_profile_duration() -> u64 {
 
 /// Query parameters to retrieve samply profile.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
 pub struct SamplyProfileGetParams {
-    /// If true, returns 307 redirect if profile collection is in progress.
+    /// If true, returns 204 redirect with Retry-After header if profile collection is in progress.
     /// If false or not provided, returns the last collected profile.
     #[serde(default)]
     pub latest: bool,
