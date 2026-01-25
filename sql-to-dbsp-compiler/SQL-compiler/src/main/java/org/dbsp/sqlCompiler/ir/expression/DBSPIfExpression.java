@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
@@ -94,7 +95,9 @@ public final class DBSPIfExpression extends DBSPExpression {
         if (this.condition.is(DBSPBoolLiteral.class)) {
             Boolean cond = this.condition.to(DBSPBoolLiteral.class).value;
             if (cond == null || !cond) {
-                return Objects.requireNonNull(this.negative);
+                if (this.negative == null)
+                    return DBSPTypeVoid.INSTANCE.defaultValue();
+                return this.negative;
             }
             return this.positive;
         }

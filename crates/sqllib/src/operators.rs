@@ -545,6 +545,46 @@ where
     }
 }
 
+#[inline(always)]
+#[doc(hidden)]
+pub fn max_null_wins__<T>(left: T, right: T) -> T
+where
+    T: Ord,
+{
+    left.max(right)
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn max_null_wins_N_<T>(left: Option<T>, right: T) -> Option<T>
+where
+    T: Ord,
+{
+    left.map(|left| left.max(right))
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn max_null_wins__N<T>(left: T, right: Option<T>) -> Option<T>
+where
+    T: Ord,
+{
+    right.map(|right| left.max(right))
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn max_null_wins_N_N<T>(left: Option<T>, right: Option<T>) -> Option<T>
+where
+    T: Ord,
+{
+    match (&left, &right) {
+        (&None, _) => None,
+        (_, &None) => None,
+        (_, _) => left.max(right),
+    }
+}
+
 #[doc(hidden)]
 pub fn blackbox<T>(value: T) -> T {
     value

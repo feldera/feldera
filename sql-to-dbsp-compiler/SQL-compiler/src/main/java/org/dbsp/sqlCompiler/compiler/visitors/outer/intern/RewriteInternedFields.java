@@ -534,7 +534,7 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
         DBSPExpression right = DBSPTupleExpression.flatten(var.field(1).deref());
         if (sourceType.elementType.mayBeNull) {
             right = new DBSPIfExpression(right.getNode(), var.field(1).is_null(),
-                    sourceType.elementType.nullValue(),
+                    sourceType.elementType.none(),
                     new DBSPTupleExpression(right.allFields(), true));
         }
         DBSPClosureExpression converter = new DBSPRawTupleExpression(

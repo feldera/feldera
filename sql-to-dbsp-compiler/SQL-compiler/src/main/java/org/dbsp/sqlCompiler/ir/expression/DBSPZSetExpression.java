@@ -50,6 +50,11 @@ public final class DBSPZSetExpression extends DBSPExpression
         return Linq.all(this.data.keySet(), DBSPExpression::isCompileTimeConstant);
     }
 
+    @Override
+    public boolean isNull() {
+        return false;
+    }
+
     /**
      * Create a ZSet literal from a set of data values.
      *
@@ -172,7 +177,7 @@ public final class DBSPZSetExpression extends DBSPExpression
             DBSPExpression[] fields = new DBSPExpression[tuple.size()];
             if (expression.is(DBSPBaseTupleExpression.class)) {
                 DBSPBaseTupleExpression te = expression.to(DBSPBaseTupleExpression.class);
-                if (te.fields == null) {
+                if (te.isNull()) {
                     return tuple.none();
                 }
             }

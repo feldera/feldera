@@ -356,17 +356,19 @@ public class Projection extends InnerVisitor {
     @Override
     public void endVisit() {
         if (this.ioMap != null && this.expression != null) {
-            DBSPTypeTupleBase bodyType = this.expression.body.getType().to(DBSPTypeTupleBase.class);
-            int iomapSize = this.ioMap.fields().size();
-            if (bodyType.is(DBSPTypeRawTuple.class)) {
-                Utilities.enforce(bodyType.tupFields.length == 2);
-                int totalSize = bodyType.tupFields[0].to(DBSPTypeTupleBase.class).size() +
-                        bodyType.tupFields[1].to(DBSPTypeTupleBase.class).size();
-                Utilities.enforce(iomapSize == totalSize,
-                        () -> "IOMap has " + iomapSize + " fields, but expected " + totalSize);
-            } else {
-                Utilities.enforce(iomapSize == bodyType.size(),
-                        () -> "IOMap has " + iomapSize + " fields, but expected " + bodyType.size());
+            DBSPTypeTupleBase bodyType = this.expression.body.getType().as(DBSPTypeTupleBase.class);
+            if (bodyType != null) {
+                int iomapSize = this.ioMap.fields().size();
+                if (bodyType.is(DBSPTypeRawTuple.class)) {
+                    Utilities.enforce(bodyType.tupFields.length == 2);
+                    int totalSize = bodyType.tupFields[0].to(DBSPTypeTupleBase.class).size() +
+                            bodyType.tupFields[1].to(DBSPTypeTupleBase.class).size();
+                    Utilities.enforce(iomapSize == totalSize,
+                            () -> "IOMap has " + iomapSize + " fields, but expected " + totalSize);
+                } else {
+                    Utilities.enforce(iomapSize == bodyType.size(),
+                            () -> "IOMap has " + iomapSize + " fields, but expected " + bodyType.size());
+                }
             }
         }
     }

@@ -44,6 +44,7 @@ public enum DBSPOpcode {
     MIN("min", false),
     MAX_IGNORE_NULLS("max_ignore_nulls", false),
     MIN_IGNORE_NULLS("min_ignore_nulls", false),
+    MAX_NULL_WINS("max_null_wins", false),
     CONCAT("||", false),
     IS_DISTINCT("is_distinct", false),
     SQL_INDEX("index", false),

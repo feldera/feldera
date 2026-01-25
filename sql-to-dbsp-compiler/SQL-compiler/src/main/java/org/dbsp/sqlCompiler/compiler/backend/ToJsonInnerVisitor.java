@@ -631,6 +631,13 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public void postorder(DBSPFailExpression node) {
+        this.property("message");
+        this.stream.append(node.message);
+        super.postorder(node);
+    }
+
+    @Override
     public void postorder(DBSPUnwrapExpression node) {
         this.property("message");
         this.stream.append(node.message);

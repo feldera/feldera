@@ -147,9 +147,10 @@ public class CircuitOptimizer extends Passes {
         this.add(new ImplementChains(compiler));
         this.add(new ExpandCasts(compiler));
         this.add(new Simplify(compiler).getCircuitRewriter(true));
-        this.add(new CSE(compiler));
         this.add(new ExpandJoins(compiler));
         this.add(new RemoveViewOperators(compiler, true));
+        this.add(new OptimizeWithGraph(compiler, g -> new PushDifferentialsUp(compiler, g)));
+        this.add(new CSE(compiler));
         this.add(new CircuitRewriter(compiler, new InnerCSE(compiler), true, InnerCSE::process));
         this.add(new CreateRuntimeErrorWrappers(compiler).getCircuitRewriter(true));
         this.add(new OptimizeWithGraph(compiler, g -> new StrayGC(compiler, g)));

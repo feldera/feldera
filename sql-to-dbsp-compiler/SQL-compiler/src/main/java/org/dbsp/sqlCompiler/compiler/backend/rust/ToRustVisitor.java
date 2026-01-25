@@ -651,7 +651,7 @@ public class ToRustVisitor extends CircuitVisitor {
             type.toTupleDeep().accept(this.innerVisitor);
             this.builder.append(", changes: &");
             upsertStruct.toTupleDeep().accept(this.innerVisitor);
-            this.builder.append("| {");
+            this.builder.append("| {").increase();
             int index = 0;
             for (DBSPTypeStruct.Field field: upsertStruct.fields.values()) {
                 String name = field.getSanitizedName();
@@ -670,7 +670,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 }
                 index++;
             }
-            this.builder.append("})");
+            this.builder.decrease().append("})");
         }
         this.builder.decrease().append(");").newline();
         this.tagStream(operator.asOperator());

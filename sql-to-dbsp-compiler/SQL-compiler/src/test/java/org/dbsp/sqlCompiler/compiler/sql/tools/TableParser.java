@@ -265,7 +265,7 @@ public class TableParser {
                         trimmed.equalsIgnoreCase("null"))) {
             if (!fieldType.mayBeNull)
                 throw new RuntimeException("Null value in non-nullable column " + fieldType);
-            result = fieldType.nullValue();
+            result = fieldType.none();
         } else {
             result = switch (fieldType.code) {
                 case DOUBLE -> {

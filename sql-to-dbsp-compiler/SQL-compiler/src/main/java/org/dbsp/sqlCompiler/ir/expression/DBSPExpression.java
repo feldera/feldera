@@ -123,11 +123,12 @@ public abstract class DBSPExpression
 
     /** Unwrap an expression with a nullable type */
     public DBSPExpression unwrap(String message) {
-        if (this.is(DBSPSomeExpression.class)) {
-            return this.to(DBSPSomeExpression.class).expression;
-        }
         Utilities.enforce(this.type.mayBeNull, () -> "Unwrapping non-nullable type");
-        return new DBSPUnwrapExpression(message, this);
+        return new DBSPUnwrapExpression(message, this).simplify();
+    }
+
+    public DBSPExpression neverFailsUnwrap() {
+        return this.unwrap("");
     }
 
     /** Unwrap an expression if the type is nullable
@@ -135,16 +136,6 @@ public abstract class DBSPExpression
     public DBSPExpression unwrapIfNullable(String message) {
         if (!this.type.mayBeNull)
             return this;
-        DBSPBaseTupleExpression tuple = this.as(DBSPBaseTupleExpression.class);
-        if (tuple != null && tuple.fields != null) {
-            // Convert to non-nullable tuple constructor
-            switch (tuple.getType().code) {
-                case RAW_TUPLE: return new DBSPRawTupleExpression(tuple.fields);
-                case TUPLE: return new DBSPTupleExpression(tuple.fields);
-                // Otherwise this compiles into an None.unwrap().
-                default: break;
-            }
-        }
         return this.unwrap(message);
     }
 
@@ -292,7 +283,14 @@ public abstract class DBSPExpression
         BetaReduction beta = new BetaReduction(compiler);
         DBSPExpression reduced = beta.apply(this).to(DBSPExpression.class);
         Simplify simplify = new Simplify(compiler);
-        return simplify.apply(reduced).to(DBSPExpression.class);
+        for (int i = 0; i < 10; i++) {
+            // normally this should be unbounded, but we bound it just to be safe
+            DBSPExpression simplified = simplify.apply(reduced).to(DBSPExpression.class);
+            if (simplified == reduced)
+                break;
+            reduced = simplified;
+        }
+        return reduced;
     }
 
     /** 'this' must be an expression with a tuple type.
@@ -304,6 +302,13 @@ public abstract class DBSPExpression
             result.add(this.deepCopy().field(i).applyCloneIfNeeded());
         }
         return result;
+    }
+
+    /** True if this expression is a constant None for its type. */
+    public boolean isNone() {
+        if (this.is(IConstructor.class))
+            return this.to(IConstructor.class).isNull();
+        return false;
     }
 
     /** Check expressions for equivalence in a specified context.

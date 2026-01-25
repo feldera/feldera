@@ -464,6 +464,11 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> imple
     }
 
     @Override
+    public void postorder(DBSPFailExpression node) {
+        this.map(node, node);
+    }
+
+    @Override
     public void postorder(DBSPVariablePath node) {
         this.map(node, node);
     }
