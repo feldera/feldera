@@ -12,6 +12,7 @@ from test_str_unicode_fn import *  # noqa: F403
 from test_check_negative_tests import *  # noqa: F403
 from test_cmp_operators import *  # noqa: F403
 from test_window_agg import *  # noqa: F403
+from test_cast import *  # noqa: F403
 from test_illegal_tbl import *  # noqa: F403
 
 
