@@ -96,7 +96,13 @@ pub struct GetPipelineEventParameters {
 /// List Pipeline Events
 ///
 /// Retrieve a list of retained pipeline monitor events ordered from most recent to least recent.
-/// cleaned up.
+///
+/// The returned events only have limited details, the full details can be retrieved using
+/// the `GET /v0/pipelines/<pipeline>/events/<event-id>` endpoint.
+///
+/// Pipeline monitor events are collected at a periodic interval (every 10s), however only
+/// every 10 minutes or if the overall health changes, does it get inserted into the database
+/// (and thus, served by this endpoint). The most recent 720 events are retained.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -131,6 +137,10 @@ pub(crate) async fn list_pipeline_events(
 /// Get Pipeline Event
 ///
 /// Get specific pipeline monitor event.
+///
+/// The identifiers of the events can be retrieved via `GET /v0/pipelines/<pipeline>/events`.
+/// The most recent 720 events are retained.
+/// This endpoint can return a 404 for an event that no longer exists due to a cleanup.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
