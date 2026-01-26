@@ -283,7 +283,10 @@ public class DBSPTypeStruct extends DBSPType {
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("struct ")
                 .append(this.mayBeNull ? "?" : "")
-                .append(this.name.name());
+                .append(" ")
+                .append(this.name.name())
+                .append(" ")
+                .append(this.hashName);
     }
 
     /** Generate a tuple type by ignoring the struct and field names. */
