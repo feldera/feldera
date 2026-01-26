@@ -184,6 +184,10 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                 runtime_aggtest/aggregate_tests/test_{stddev_samp,decimal_stddev_samp,empty_set}.py|
                 runtime_aggtest/aggregate_tests3/test_un_int_stddev.py
                 """, true),
+            new Func(SqlStdOperatorTable.PERCENTILE_CONT, "PERCENTILE_CONT", SqlLibrary.STANDARD, "aggregates#percentile_cont",
+                    FunctionDocumentation.NO_FILE, true),
+            new Func(SqlStdOperatorTable.PERCENTILE_DISC, "PERCENTILE_DISC", SqlLibrary.STANDARD, "aggregates#percentile_disc",
+                    FunctionDocumentation.NO_FILE, true),
             // window
             new Func(SqlStdOperatorTable.DENSE_RANK, "DENSE_RANK", SqlLibrary.STANDARD, "aggregates#dense_rank", FunctionDocumentation.NO_FILE, true),
             new Func(SqlStdOperatorTable.LAG, "LAG", SqlLibrary.STANDARD, "aggregates#lag", FunctionDocumentation.NO_FILE, true),

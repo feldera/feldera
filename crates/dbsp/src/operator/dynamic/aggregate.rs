@@ -46,6 +46,7 @@ mod chain_aggregate;
 mod fold;
 mod max;
 mod min;
+mod percentile;
 
 use crate::{
     dynamic::{BSet, ClonableTrait},
@@ -59,6 +60,11 @@ pub use average::{Avg, AvgFactories, DynAverage};
 pub use fold::Fold;
 pub use max::{Max, MaxSemigroup};
 pub use min::{ArgMinSome, Min, MinSemigroup, MinSome1, MinSome1Semigroup};
+pub use percentile::{
+    OrderStatisticsMultisetSemigroup, PercentileCont, PercentileDisc, PercentileSemigroup,
+};
+// Re-export OrderStatisticsMultiset from algebra module for external use
+pub use crate::algebra::OrderStatisticsMultiset;
 
 use super::MonoIndexedZSet;
 

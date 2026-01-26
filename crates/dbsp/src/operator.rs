@@ -51,6 +51,7 @@ pub mod join;
 mod join_range;
 pub mod neighborhood;
 mod non_incremental;
+mod percentile;
 mod recursive;
 pub mod sample;
 mod semijoin;
@@ -66,7 +67,9 @@ pub use apply::Apply;
 pub use condition::Condition;
 pub use delta0::Delta0;
 pub use dynamic::aggregate::{
-    Aggregator, Avg, Fold, Max, MaxSemigroup, Min, MinSemigroup, Postprocess,
+    Aggregator, Avg, Fold, Max, MaxSemigroup, Min, MinSemigroup, OrderStatisticsMultiset,
+    OrderStatisticsMultisetSemigroup, PercentileCont, PercentileDisc, PercentileSemigroup,
+    Postprocess,
 };
 pub use dynamic::neighborhood::DynNeighborhood;
 pub use generator::{ConstantGenerator, Generator, GeneratorNested, TransactionGenerator};

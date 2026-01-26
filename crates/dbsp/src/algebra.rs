@@ -8,12 +8,17 @@ mod lattice;
 mod order;
 mod present;
 
+pub mod order_statistics_multiset;
 pub mod zset;
 
 pub use checked_int::CheckedInt;
 pub use floats::{F32, F64};
 pub use lattice::Lattice;
 pub use order::{PartialOrder, TotalOrder};
+pub use order_statistics_multiset::{
+    DEFAULT_BRANCHING_FACTOR, MIN_BRANCHING_FACTOR, OrderStatisticsMultiset,
+    SerializableOrderStatisticsMultiset,
+};
 pub use present::Present;
 pub use zset::{
     DynZWeight, IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet,
