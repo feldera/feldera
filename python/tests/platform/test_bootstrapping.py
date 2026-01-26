@@ -5,6 +5,7 @@ from tests import TEST_CLIENT, enterprise_only
 from .helper import (
     gen_pipeline_name,
 )
+from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 
 @enterprise_only
@@ -25,6 +26,8 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         pipeline_name,
         sql=sql,
         runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
             fault_tolerance_model=None,  # We will make manual checkpoints in this test.
         ),
     ).create_or_replace()
@@ -277,6 +280,8 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         pipeline_name,
         sql=sql,
         runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
             fault_tolerance_model=None,  # We will make manual checkpoints in this test.
         ),
     ).create_or_replace()
@@ -319,6 +324,8 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         pipeline_name,
         sql=sql,
         runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
             fault_tolerance_model=None,  # We will make manual checkpoints in this test.
         ),
     ).create_or_replace()
@@ -362,6 +369,8 @@ LATENESS v1.c 0;
         pipeline_name,
         sql=sql,
         runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
             fault_tolerance_model=None,  # We will make manual checkpoints in this test.
         ),
     ).create_or_replace()
@@ -411,6 +420,8 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         pipeline_name,
         sql=gen_sql(""),
         runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
             fault_tolerance_model=None,  # We will make manual checkpoints in this test.
         ),
     ).create_or_replace()

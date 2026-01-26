@@ -1,9 +1,14 @@
 import unittest
 
 from feldera.pipeline_builder import PipelineBuilder
-from feldera.testutils import unique_pipeline_name
+from feldera.testutils import (
+    unique_pipeline_name,
+    FELDERA_TEST_NUM_WORKERS,
+    FELDERA_TEST_NUM_HOSTS,
+)
 from tests import TEST_CLIENT
 from feldera.enums import PipelineStatus
+from feldera.runtime_config import RuntimeConfig
 
 
 class TestIssue4895(unittest.TestCase):
@@ -20,7 +25,13 @@ class TestIssue4895(unittest.TestCase):
         """
 
         pipeline = PipelineBuilder(
-            TEST_CLIENT, pipeline_name, sql=sql
+            TEST_CLIENT,
+            pipeline_name,
+            sql=sql,
+            runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+            ),
         ).create_or_replace()
 
         pipeline.start()

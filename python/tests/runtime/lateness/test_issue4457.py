@@ -3,6 +3,8 @@ import unittest
 from pandas import Timestamp
 from feldera import PipelineBuilder
 from tests import TEST_CLIENT, unique_pipeline_name
+from feldera.runtime_config import RuntimeConfig
+from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 
 class TestIssue_4457(unittest.TestCase):
@@ -18,7 +20,13 @@ class TestIssue_4457(unittest.TestCase):
 
         # Make sure the pipelines are unique if we have concurrent runs
         pipeline = PipelineBuilder(
-            TEST_CLIENT, name=unique_pipeline_name("test_issue4457"), sql=sql
+            TEST_CLIENT,
+            name=unique_pipeline_name("test_issue4457"),
+            sql=sql,
+            runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+            ),
         ).create_or_replace()
 
         pipeline.start_paused()

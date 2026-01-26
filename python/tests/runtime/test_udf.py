@@ -4,6 +4,8 @@ import unittest
 from pandas import Timedelta, Timestamp
 from feldera import PipelineBuilder
 from tests import TEST_CLIENT, unique_pipeline_name
+from feldera.runtime_config import RuntimeConfig
+from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 
 class TestUDF(unittest.TestCase):
@@ -232,7 +234,14 @@ pub fn nstruct2nstruct(i: Tup2<Option<i32>, Option<SqlString>>) -> Result<Tup2<O
         """
 
         pipeline = PipelineBuilder(
-            TEST_CLIENT, name=unique_pipeline_name("test_udfs"), sql=sql, udf_rust=udfs
+            TEST_CLIENT,
+            name=unique_pipeline_name("test_udfs"),
+            sql=sql,
+            udf_rust=udfs,
+            runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+            ),
         ).create_or_replace()
 
         # TODO: use .query() instead

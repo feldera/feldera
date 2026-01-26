@@ -40,6 +40,8 @@ def _get_effective_api_key():
 
 BASE_URL = os.environ.get("FELDERA_HOST") or "http://localhost:8080"
 FELDERA_REQUESTS_VERIFY = requests_verify_from_env()
+FELDERA_TEST_NUM_WORKERS = int(os.environ.get("FELDERA_TEST_NUM_WORKERS", "8"))
+FELDERA_TEST_NUM_HOSTS = int(os.environ.get("FELDERA_TEST_NUM_HOSTS", "1"))
 
 
 class _LazyClient:
@@ -249,6 +251,8 @@ def build_pipeline(
         runtime_config=RuntimeConfig(
             provisioning_timeout_secs=60,
             resources=resources,
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
         ),
     ).create_or_replace()
 
