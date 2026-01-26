@@ -890,4 +890,18 @@ public class CatalogTests extends BaseSQLTests {
                     z ROW(x INT, y INT) NOT NULL default ROW(1, 2)
                 );""");
     }
+
+
+    @Test
+    public void issue5390() {
+        this.getCCS("""
+                CREATE TYPE user_def AS(i1 INT);
+                CREATE TYPE user_def_row AS (val ROW(i1 INT));
+                CREATE TYPE user_def_udt AS (val user_def);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                SAFE_CAST(NULL AS user_def_row) AS to_row,
+                SAFE_CAST(NULL AS user_def_udt) AS to_udt
+                ;""");
+    }
 }
