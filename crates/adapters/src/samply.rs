@@ -63,7 +63,7 @@ use std::{
     cell::RefCell,
     fmt::{Display, Write as _},
     fs::File,
-    io::{ErrorKind, Write},
+    io::Write,
     num::NonZeroUsize,
     path::{Path, PathBuf},
     sync::LazyLock,

@@ -1777,15 +1777,15 @@ async fn get_samply_profile(
     let samply_state = state.samply_state.lock().unwrap();
 
     // If latest=true, check if profiling is in progress and return 204 No Content
-    if query_params.latest {
-        if let SamplyStatus::InProgress { expected_after } = samply_state.samply_status {
-            let now = chrono::Utc::now();
-            let retry_after_secs = (expected_after - now).num_seconds().max(0);
+    if query_params.latest
+        && let SamplyStatus::InProgress { expected_after } = samply_state.samply_status
+    {
+        let now = chrono::Utc::now();
+        let retry_after_secs = (expected_after - now).num_seconds().max(0);
 
-            return Ok(HttpResponse::NoContent()
-                .insert_header(("Retry-After", retry_after_secs.to_string()))
-                .finish());
-        }
+        return Ok(HttpResponse::NoContent()
+            .insert_header(("Retry-After", retry_after_secs.to_string()))
+            .finish());
     }
 
     // Return the last profile result
