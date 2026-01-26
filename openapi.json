@@ -3342,7 +3342,7 @@
           "Metrics & Debugging"
         ],
         "summary": "List Pipeline Events",
-        "description": "Retrieve a list of retained pipeline monitor events ordered from most recent to least recent.\ncleaned up.",
+        "description": "Retrieve a list of retained pipeline monitor events ordered from most recent to least recent.\n\nThe returned events only have limited details, the full details can be retrieved using\nthe `GET /v0/pipelines/<pipeline>/events/<event-id>` endpoint.\n\nPipeline monitor events are collected at a periodic interval (every 10s), however only\nevery 10 minutes or if the overall health changes, does it get inserted into the database\n(and thus, served by this endpoint). The most recent 720 events are retained.",
         "operationId": "list_pipeline_events",
         "parameters": [
           {
@@ -3402,7 +3402,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Get Pipeline Event",
-        "description": "Get specific pipeline monitor event.",
+        "description": "Get specific pipeline monitor event.\n\nThe identifiers of the events can be retrieved via `GET /v0/pipelines/<pipeline>/events`.\nThe most recent 720 events are retained.\nThis endpoint can return a 404 for an event that no longer exists due to a cleanup.",
         "operationId": "get_pipeline_event",
         "parameters": [
           {
