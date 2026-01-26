@@ -178,7 +178,13 @@ impl NatsReader {
 
         let client = connect_options
             .connect(&connection_config.server_url)
-            .await?;
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to connect to NATS server at {}",
+                    connection_config.server_url
+                )
+            })?;
 
         Ok(client)
     }
