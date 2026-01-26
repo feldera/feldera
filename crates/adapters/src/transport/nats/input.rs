@@ -150,15 +150,30 @@ impl NatsReader {
     ) -> AnyResult<Self> {
         let span = info_span!("nats_input");
         let (command_sender, command_receiver) = unbounded_channel();
-        let nats_connection = TOKIO
-            .block_on(Self::connect_nats(&config.connection_config).instrument(span.clone()))?;
+
+        // Connect to NATS and verify stream exists (early validation).
+        // This ensures we fail fast with a clear error if the server is
+        // unreachable or the stream doesn't exist.
+        let (nats_connection, jetstream) = TOKIO.block_on(
+            async {
+                let client = Self::connect_nats(&config.connection_config).await?;
+                let js = jetstream::new(client.clone());
+                Self::verify_stream_exists(&js, &config.stream_name).await?;
+                Ok::<_, AnyError>((client, js))
+            }
+            .instrument(span.clone()),
+        )?;
+
+        // The connection is established but we don't need the client reference
+        // in the worker - it stays alive as long as the jetstream context exists.
+        drop(nats_connection);
 
         let consumer_clone = consumer.clone();
         TOKIO.spawn(async move {
             Self::worker_task(
                 config,
                 resume_info,
-                jetstream::new(nats_connection),
+                jetstream,
                 consumer_clone,
                 parser,
                 command_receiver,
@@ -187,6 +202,22 @@ impl NatsReader {
             })?;
 
         Ok(client)
+    }
+
+    /// Verifies that the specified stream exists on the JetStream server.
+    ///
+    /// This provides early validation during initialization.
+    /// If the stream doesn't exist, we fail fast with a clear error
+    /// instead of timing out later during consumer creation.
+    async fn verify_stream_exists(
+        jetstream: &jetstream::Context,
+        stream_name: &str,
+    ) -> Result<(), AnyError> {
+        jetstream
+            .get_stream(stream_name)
+            .await
+            .with_context(|| format!("Failed to get stream '{stream_name}'"))?;
+        Ok(())
     }
 
     async fn worker_task(
