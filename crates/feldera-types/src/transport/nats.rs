@@ -37,11 +37,36 @@ pub struct Auth {
     pub user_and_password: Option<UserAndPassword>,
 }
 
+pub const fn default_connection_timeout_secs() -> u64 {
+    10
+}
+
+pub const fn default_request_timeout_secs() -> u64 {
+    10
+}
+
+/// Options for connecting to a NATS server.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct ConnectOptions {
+    /// NATS server URL (e.g., "nats://localhost:4222").
     pub server_url: String,
+
+    /// Authentication configuration.
     #[serde(default, skip_serializing_if = "is_default")]
     pub auth: Auth,
+
+    /// Connection timeout
+    ///
+    /// How long to wait when establishing the initial connection to the
+    /// NATS server.
+    #[serde(default = "default_connection_timeout_secs")]
+    pub connection_timeout_secs: u64,
+
+    /// Request timeout in seconds.
+    ///
+    /// How long to wait for responses to requests.
+    #[serde(default = "default_request_timeout_secs")]
+    pub request_timeout_secs: u64,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema, Default)]
