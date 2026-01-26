@@ -1960,10 +1960,10 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         "resources_status".to_string(),
                         response.resources_status.to_string(),
                     ]);
-                    if selector == PipelineMonitorEventFieldSelector::All {
-                        if let Some(value) = &response.resources_status_details {
-                            rows.push(["resources_status_details".to_string(), value.to_string()]);
-                        }
+                    if selector == PipelineMonitorEventFieldSelector::All
+                        && let Some(value) = &response.resources_status_details
+                    {
+                        rows.push(["resources_status_details".to_string(), value.to_string()]);
                     }
                     rows.push([
                         "resources_desired_status".to_string(),
