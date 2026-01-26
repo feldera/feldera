@@ -66,7 +66,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, info, info_span};
+use tracing::{Instrument, error, info, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
 
 type NatsConsumerConfig = nats_consumer::pull::OrderedConfig;
@@ -162,7 +162,24 @@ impl NatsReader {
                 Ok::<_, AnyError>((client, js))
             }
             .instrument(span.clone()),
-        )?;
+        )
+        .map_err(|e| {
+            error!(
+                server_url = %config.connection_config.server_url,
+                stream_name = %config.stream_name,
+                connection_timeout_secs = config.connection_config.connection_timeout_secs,
+                request_timeout_secs = config.connection_config.request_timeout_secs,
+                "NATS initialization failed: {e:#}"
+            );
+            e.context(format!(
+                "NATS initialization failed for stream '{}' at server '{}' \
+                (connection_timeout={}s, request_timeout={}s)",
+                config.stream_name,
+                config.connection_config.server_url,
+                config.connection_config.connection_timeout_secs,
+                config.connection_config.request_timeout_secs,
+            ))
+        })?;
 
         // The connection is established but we don't need the client reference
         // in the worker - it stays alive as long as the jetstream context exists.
@@ -373,8 +390,11 @@ async fn create_nats_consumer(
         .await
         .with_context(|| {
             format!(
-                "Failed to create consumer {:?} on stream '{}'",
-                consumer_config.name, stream_name
+                "Failed to create consumer on stream '{}' (start_sequence={}, deliver_policy={:?}, filter_subjects={:?})",
+                stream_name,
+                message_start_sequence,
+                consumer_config.deliver_policy,
+                consumer_config.filter_subjects,
             )
         })
 }
