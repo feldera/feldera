@@ -9,6 +9,7 @@ from feldera import Pipeline, PipelineBuilder
 from feldera.enums import CompilationProfile
 from feldera.rest.errors import FelderaAPIError
 from feldera.runtime_config import RuntimeConfig
+from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 from tests import TEST_CLIENT, unique_pipeline_name
 
 JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None
@@ -236,7 +237,10 @@ class TstAccumulator:
                 sql=sql,
                 compilation_profile=CompilationProfile.UNOPTIMIZED,
                 runtime_config=RuntimeConfig(
-                    provisioning_timeout_secs=180, logging="debug"
+                    workers=FELDERA_TEST_NUM_WORKERS,
+                    hosts=FELDERA_TEST_NUM_HOSTS,
+                    provisioning_timeout_secs=180,
+                    logging="debug",
                 ),
             ).create_or_replace()
 

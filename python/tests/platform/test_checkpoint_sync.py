@@ -9,6 +9,7 @@ from feldera.enums import FaultToleranceModel, PipelineStatus
 from feldera.runtime_config import RuntimeConfig, Storage
 from tests import enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
+from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 DEFAULT_ENDPOINT = os.environ.get(
     "DEFAULT_MINIO_ENDPOINT", "http://minio.extra.svc.cluster.local:9000"
@@ -83,6 +84,8 @@ class TestCheckpointSync(SharedTestPipeline):
 
         self.pipeline.set_runtime_config(
             RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
                 storage=Storage(config=storage_config),
                 checkpoint_interval_secs=ft_interval,
@@ -159,6 +162,8 @@ class TestCheckpointSync(SharedTestPipeline):
         )
         self.pipeline.set_runtime_config(
             RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
                 storage=Storage(config=storage_config),
                 checkpoint_interval_secs=ft_interval,
@@ -261,7 +266,10 @@ class TestCheckpointSync(SharedTestPipeline):
         ft = FaultToleranceModel.AtLeastOnce
         self.pipeline.set_runtime_config(
             RuntimeConfig(
-                fault_tolerance_model=ft, storage=Storage(config=storage_config)
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
             )
         )
         self.pipeline.start()
@@ -285,6 +293,8 @@ class TestCheckpointSync(SharedTestPipeline):
         pull_interval = 1
         standby.set_runtime_config(
             RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
                 storage=Storage(
                     config=storage_cfg(

@@ -15,6 +15,7 @@ from feldera.rest.errors import FelderaAPIError
 from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT, enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
+from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 
 class TestPipeline(SharedTestPipeline):
@@ -637,7 +638,13 @@ class TestPipeline(SharedTestPipeline):
         }
 
         resources = Resources(config)
-        self.pipeline.set_runtime_config(RuntimeConfig(resources=resources))
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                resources=resources,
+            )
+        )
         self.pipeline.start()
         got = TEST_CLIENT.get_pipeline(
             self.pipeline.name, PipelineFieldSelector.ALL

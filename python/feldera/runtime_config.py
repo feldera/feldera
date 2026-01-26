@@ -69,6 +69,7 @@ class RuntimeConfig:
     def __init__(
         self,
         workers: Optional[int] = None,
+        hosts: Optional[int] = None,
         storage: Optional[Storage | bool] = None,
         tracing: Optional[bool] = False,
         tracing_endpoint_jaeger: Optional[str] = "",
@@ -84,6 +85,7 @@ class RuntimeConfig:
         logging: Optional[str] = None,
     ):
         self.workers = workers
+        self.hosts = hosts
         self.tracing = tracing
         self.tracing_endpoint_jaeger = tracing_endpoint_jaeger
         self.cpu_profiler = cpu_profiler

@@ -24,6 +24,7 @@ from urllib.parse import quote, quote_plus
 
 from feldera.testutils_oidc import get_oidc_test_helper
 from tests import FELDERA_REQUESTS_VERIFY, API_KEY, BASE_URL, unique_pipeline_name
+from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 API_PREFIX = "/v0"
 
@@ -136,7 +137,15 @@ def wait_for_deployment_status(name: str, desired: str, timeout_s: float = 60.0)
 def create_pipeline(name: str, sql: str):
     r = post_json(
         api_url("/pipelines"),
-        {"name": name, "program_code": sql, "runtime_config": {"logging": "debug"}},
+        {
+            "name": name,
+            "program_code": sql,
+            "runtime_config": {
+                "workers": FELDERA_TEST_NUM_WORKERS,
+                "hosts": FELDERA_TEST_NUM_HOSTS,
+                "logging": "debug",
+            },
+        },
     )
     assert r.status_code == HTTPStatus.CREATED, r.text
     wait_for_program_success(name, 1)

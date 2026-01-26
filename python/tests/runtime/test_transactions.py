@@ -2,6 +2,8 @@ import unittest
 
 from feldera import PipelineBuilder
 from tests import TEST_CLIENT, unique_pipeline_name
+from feldera.runtime_config import RuntimeConfig
+from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 
 class TestTransactions(unittest.TestCase):
@@ -18,6 +20,10 @@ class TestTransactions(unittest.TestCase):
             TEST_CLIENT,
             name=unique_pipeline_name("test_dynamic_output_connector"),
             sql=sql,
+            runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+            ),
         ).create_or_replace()
 
         pipeline.start()

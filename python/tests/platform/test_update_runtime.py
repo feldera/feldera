@@ -2,7 +2,11 @@ import unittest
 
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
-from feldera.testutils import unique_pipeline_name
+from feldera.testutils import (
+    unique_pipeline_name,
+    FELDERA_TEST_NUM_WORKERS,
+    FELDERA_TEST_NUM_HOSTS,
+)
 from tests import TEST_CLIENT
 from feldera.enums import PipelineStatus
 
@@ -28,6 +32,8 @@ CREATE MATERIALIZED VIEW v0 AS SELECT * FROM tbl;
             pipeline_name,
             sql=sql,
             runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
                 logging="debug",
             ),
         ).create_or_replace()
