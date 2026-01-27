@@ -9258,7 +9258,7 @@
               },
               "hosts": {
                 "type": "integer",
-                "description": "Number of DBSP hosts.\n\nThe worker threads are evenly divided among the hosts.  For single-host\ndeployments, this should be 1 (the default).",
+                "description": "Number of DBSP hosts.\n\nThe worker threads are evenly divided among the hosts.  For single-host\ndeployments, this should be 1 (the default).\n\nMultihost pipelines are an enterprise-only preview feature.",
                 "default": 1,
                 "minimum": 0
               },
@@ -10812,7 +10812,7 @@
           },
           "hosts": {
             "type": "integer",
-            "description": "Number of DBSP hosts.\n\nThe worker threads are evenly divided among the hosts.  For single-host\ndeployments, this should be 1 (the default).",
+            "description": "Number of DBSP hosts.\n\nThe worker threads are evenly divided among the hosts.  For single-host\ndeployments, this should be 1 (the default).\n\nMultihost pipelines are an enterprise-only preview feature.",
             "default": 1,
             "minimum": 0
           },
