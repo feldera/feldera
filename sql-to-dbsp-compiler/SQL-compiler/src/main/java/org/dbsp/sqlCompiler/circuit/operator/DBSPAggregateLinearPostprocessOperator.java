@@ -18,7 +18,9 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOperator {
+public final class DBSPAggregateLinearPostprocessOperator
+        extends DBSPUnaryOperator
+        implements ILinearAggregate {
     public final DBSPClosureExpression postProcess;
 
     // This operator is incremental-only
@@ -27,7 +29,7 @@ public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOpera
             DBSPTypeIndexedZSet outputType,
             DBSPExpression function,
             DBSPClosureExpression postProcess, OutputPort input) {
-        super(node, "aggregate_linear_postprocess", function, outputType, false, input, true);
+        super(node, "aggregate_linear_postprocess", function, outputType, false, input);
         this.postProcess = postProcess;
         Utilities.enforce(outputType.elementType.sameType(postProcess.getResultType()));
     }

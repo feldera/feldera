@@ -31,7 +31,7 @@ import java.util.Objects;
  * - bottom_n
  * Used to GC the right input of ASOF JOIN operators, Min, Max, ArgMin, ArgMax, MinSome, TopK. */
 public final class DBSPIntegrateTraceRetainNValuesOperator
-        extends DBSPBinaryOperator implements GCOperator {
+        extends DBSPBinaryOperator implements IGCOperator {
     public enum WhichN {
         LastN("last_n"),
         TopN("top_n"),
@@ -51,7 +51,7 @@ public final class DBSPIntegrateTraceRetainNValuesOperator
             CalciteRelNode node, DBSPExpression function,
             OutputPort data, OutputPort control, int n, WhichN which) {
         super(node, "accumulate_integrate_trace_retain_values_" + which.which,
-                function, data.outputType(), data.isMultiset(), data, control, false);
+                function, data.outputType(), data.isMultiset(), data, control);
         Utilities.enforce(n > 0);
         this.n = n;
         this.which = which;

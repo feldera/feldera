@@ -26,7 +26,9 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.IInputMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IContainsIntegrator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputMapOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
@@ -506,9 +508,10 @@ public class ToRustVisitor extends CircuitVisitor {
     /** Emit the call to the function associated with the operator, including the open parens */
     void operationCall(DBSPSimpleOperator operator) {
         this.builder.append(operator.operation);
-        if (operator.containsIntegrator &&
+        if (operator.is(IContainsIntegrator.class) &&
                 !operator.is(DBSPJoinBaseOperator.class) &&
-                !operator.is(DBSPAntiJoinOperator.class)) {
+                !operator.is(DBSPAntiJoinOperator.class) &&
+                !operator.is(DBSPIntegrateOperator.class)) {
             this.builder.append("_persistent(hash, ");
         } else {
             this.builder.append("(");

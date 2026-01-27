@@ -27,7 +27,7 @@ import java.util.List;
  * from a {@link DBSPWaterlineOperator}, which replicates its output to all workers.
  * So it's never OK to have an apply operator process inputs from standard operators.
  * In the type system such inputs would show up as ZSets or IndexedZSets. */
-public final class DBSPApplyOperator extends DBSPUnaryOperator {
+public final class DBSPApplyOperator extends DBSPUnaryOperator implements ILinear {
     public static void noZsets(DBSPType type) {
         Utilities.enforce(!type.is(DBSPTypeZSet.class));
         Utilities.enforce(!type.is(DBSPTypeIndexedZSet.class));
@@ -35,7 +35,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
 
     public DBSPApplyOperator(CalciteRelNode node, DBSPClosureExpression function,
                              DBSPType outputType, OutputPort input, @Nullable String comment) {
-        super(node, "apply", function, outputType, false, input, comment, false);
+        super(node, "apply", function, outputType, false, input, comment);
         Utilities.enforce(function.parameters.length == 1,
                 () -> "Expected 1 parameter for function " + function);
         DBSPType paramType = function.parameters[0].getType().deref();

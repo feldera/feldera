@@ -16,7 +16,7 @@ import java.util.List;
 /** An operator whose input contains all interned strings.
  * Behaves like a sink which is always live.
  * Does not correspond to a DBSP operator. */
-public class DBSPInternOperator extends DBSPUnaryOperator {
+public class DBSPInternOperator extends DBSPUnaryOperator implements ILinear {
     public DBSPInternOperator(OutputPort source) {
         super(CalciteEmptyRel.INSTANCE, "interned_strings", null, source.outputType(), false, source);
     }

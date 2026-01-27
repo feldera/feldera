@@ -19,10 +19,10 @@ import java.util.List;
  * which applies an arbitrary function to its 2 inputs.
  * The inputs and outputs cannot be Z-sets or indexed Z-sets.
  * The comments from {@link DBSPApplyOperator} apply to this operator as well. */
-public final class DBSPApply2Operator extends DBSPBinaryOperator {
+public final class DBSPApply2Operator extends DBSPBinaryOperator implements ILinear {
     public DBSPApply2Operator(CalciteRelNode node, DBSPClosureExpression function,
                               OutputPort left, OutputPort right) {
-        super(node, "apply2", function, function.getResultType(), false, left, right, false);
+        super(node, "apply2", function, function.getResultType(), false, left, right);
         Utilities.enforce(function.parameters.length == 2,
                 () -> "Expected 2 parameters for function " + function);
         DBSPType param0Type = function.parameters[0].getType().deref();

@@ -37,7 +37,7 @@ import static org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator.commonInf
  * the input element makes it to the output.  The {@code error} function takes
  * a scalar, and an element and returns an error message with the ERROR_SCHEMA structure.
  * It is invoked only when the function returns 'false'. */
-public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError {
+public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError implements ILinear {
     public DBSPControlledKeyFilterOperator(
             CalciteRelNode node, DBSPClosureExpression function, DBSPClosureExpression error,
             OutputPort data, OutputPort control) {

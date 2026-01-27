@@ -41,7 +41,7 @@ public final class DBSPConstantOperator extends DBSPSimpleOperator {
     public DBSPConstantOperator(CalciteRelNode node, DBSPExpression value, boolean isMultiset) {
         // Notice that we use the 'this.function' field to represent
         // the constant value.  Constants are not ClosureExpressions.
-        super(node, "constant", value, value.getType(), isMultiset, false);
+        super(node, "constant", value, value.getType(), isMultiset);
     }
 
     @Override

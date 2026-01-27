@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IContainsIntegrator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.util.graph.Port;
@@ -31,7 +32,7 @@ public class StrayGC extends CircuitWithGraphsVisitor {
             DBSPOperator so = sibling.node();
             if (so.is(DBSPSimpleOperator.class)) {
                 DBSPSimpleOperator simple = so.to(DBSPSimpleOperator.class);
-                if (simple.containsIntegrator) {
+                if (simple.is(IContainsIntegrator.class)) {
                     return;
                 }
             } else {

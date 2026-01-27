@@ -14,7 +14,8 @@ import javax.annotation.Nullable;
 import java.util.Objects;
 
 /*** Base class for operators that perform some form of aggregation. */
-public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
+public abstract class DBSPAggregateOperatorBase
+        extends DBSPUnaryOperator {
     // Initially 'aggregateList' may be not null, and 'function' may be null.
     // Later always aggregateList is null, and function is not null.
     @Nullable
@@ -25,9 +26,8 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
                                         @Nullable DBSPAggregator function,
                                         @Nullable DBSPAggregateList aggregateList,
                                         boolean multiset,
-                                        OutputPort source,
-                                        boolean containsIntegrate) {
-        super(node, operation, function, outputType, multiset, source, containsIntegrate);
+                                        OutputPort source) {
+        super(node, operation, function, outputType, multiset, source);
         this.aggregateList = aggregateList;
         // There are really two different representations of an aggregate operator,
         // which reuse the same classes: a high-level one, which contains an Aggregate,

@@ -36,7 +36,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public final class DBSPNegateOperator extends DBSPUnaryOperator {
+public final class DBSPNegateOperator extends DBSPUnaryOperator implements ILinear {
     public DBSPNegateOperator(CalciteRelNode node, OutputPort input) {
         super(node, "neg", null, input.outputType(), input.isMultiset(), input);
     }

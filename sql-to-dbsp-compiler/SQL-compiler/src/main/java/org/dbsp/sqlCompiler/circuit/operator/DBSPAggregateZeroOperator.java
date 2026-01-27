@@ -41,7 +41,7 @@ import java.util.Objects;
  *                  |
  */
 @NonCoreIR
-public class DBSPAggregateZeroOperator extends DBSPUnaryOperator {
+public class DBSPAggregateZeroOperator extends DBSPUnaryOperator implements ILinear {
     /** Create an AggregateZero operator.
      *
      * @param node   Calcite node.

@@ -24,7 +24,7 @@ import java.util.List;
  * There is no equivalent DBSP operator, this is only used during compilation to
  * represent an input which is connected to a stream containing clock values.
  * (The compiler option options.ioOptions.nowStream controls how this is implemented). */
-public final class DBSPNowOperator extends DBSPSimpleOperator {
+public final class DBSPNowOperator extends DBSPSimpleOperator implements ILinear {
     static DBSPExpression createFunction(CalciteObject node) {
         return new DBSPZSetExpression(
                 new DBSPTupleExpression(new DBSPApplyExpression(
@@ -33,8 +33,7 @@ public final class DBSPNowOperator extends DBSPSimpleOperator {
 
     public DBSPNowOperator(CalciteRelNode node) {
         super(node, "now", createFunction(node),
-                new DBSPTypeZSet(new DBSPTypeTuple(DBSPTypeTimestamp.create(node, false))),
-                false, false);
+                new DBSPTypeZSet(new DBSPTypeTuple(DBSPTypeTimestamp.create(node, false))), false);
     }
 
     @Override

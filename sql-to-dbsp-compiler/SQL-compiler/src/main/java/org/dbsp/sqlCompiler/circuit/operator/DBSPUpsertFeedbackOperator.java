@@ -19,7 +19,7 @@ import java.util.List;
  * to the indexed collection and produces a corresponding retraction
  * for the pre-existing key. */
 @NonCoreIR
-public final class DBSPUpsertFeedbackOperator extends DBSPUnaryOperator {
+public final class DBSPUpsertFeedbackOperator extends DBSPUnaryOperator implements IContainsIntegrator {
     public DBSPUpsertFeedbackOperator(CalciteRelNode node, OutputPort source) {
         super(node, "upsert_feedback", null, source.outputType(), source.isMultiset(), source);
         source.getOutputIndexedZSetType();  // asserts that the type is right

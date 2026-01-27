@@ -40,14 +40,13 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
+public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase implements INonLinearAggregate {
     public DBSPAggregateOperator(
             CalciteRelNode node,
             DBSPTypeIndexedZSet outputType,
             @Nullable DBSPAggregator function,
             @Nullable DBSPAggregateList aggregate, OutputPort input) {
-        super(node, "aggregate", outputType,
-                function, aggregate, false, input, true);
+        super(node, "aggregate", outputType, function, aggregate, false, input);
         Utilities.enforce(input.getOutputIndexedZSetType().keyType.sameType(outputType.keyType));
     }
 

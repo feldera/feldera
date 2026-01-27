@@ -16,9 +16,9 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 @NonCoreIR
-public final class DBSPDistinctIncrementalOperator extends DBSPBinaryOperator {
+public final class DBSPDistinctIncrementalOperator extends DBSPBinaryOperator implements IContainsIntegrator {
     public DBSPDistinctIncrementalOperator(CalciteRelNode node, OutputPort integral, OutputPort delta) {
-        super(node, "distinct_incremental", null, delta.outputType(), false, integral, delta, false);
+        super(node, "distinct_incremental", null, delta.outputType(), false, integral, delta);
     }
 
     @Override

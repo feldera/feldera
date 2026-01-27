@@ -31,7 +31,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.util.IndentStream;
 
-/** Visitor which emits the circuit nodes in a graphviz file */
+/** Visitor which emits the circuit nodes in a graphviz file.
+ * The compiler options control the detail.  On verbosity=0 table and view names are ommitted. */
 public class ToDotNodesVisitor extends CircuitVisitor {
     protected final IndentStream stream;
     // A higher value -> more details
@@ -67,7 +68,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
-        String name = node.tableName + " " + node.operation;
+        String name = (this.compiler.options.ioOptions.verbosity > 0 ? (node.tableName + " ") : "") + node.operation;
         this.stream.append(node.getNodeName(false))
                 .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
                 .append(node.getIdString())
@@ -104,8 +105,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .append(node.getIdString())
                 .append(isMultiset(node))
                 .append(annotations(node))
-                .append(" ")
-                .append(node.viewName.name())
+                .append(this.compiler.options.ioOptions.verbosity > 0 ? " " + node.viewName.name() : "")
                 .append("\"")
                 .append(" style=filled fillcolor=lightgrey")
                 .append("]")
