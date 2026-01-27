@@ -15,31 +15,31 @@ use crate::{metadata, storage::buffer_cache::CacheCounts};
 /// operator. This includes bytes used to store the actual state, but not the
 /// excess pre-allocated capacity available inside operator's internal data
 /// structures (see [`ALLOCATED_BYTES_LABEL`]).
-pub const USED_BYTES_LABEL: &str = "used bytes";
+pub const USED_BYTES_LABEL: &str = "memory.bytes.used";
 
 /// Attribute that represents the total number of bytes allocated by a stateful
 /// operator. This value can be larger than the number of bytes used by the
 /// operator since it includes excess pre-allocated capacity inside operator's
 /// internal data structures (see [`USED_BYTES_LABEL`]).
-pub const ALLOCATED_BYTES_LABEL: &str = "allocated bytes";
+pub const ALLOCATED_BYTES_LABEL: &str = "memory.bytes.allocated";
 
 /// Attribute that represents the total number of allocations made by a stateful
 /// operator.
-pub const NUM_ALLOCATIONS_LABEL: &str = "allocations";
+pub const NUM_ALLOCATIONS_LABEL: &str = "memory.allocations";
 
 /// Attribute that represents the number of shared bytes used by a stateful
 /// operator, i.e., bytes that are shared behind things like `Arc` or `Rc`.
-pub const SHARED_BYTES_LABEL: &str = "shared bytes";
+pub const SHARED_BYTES_LABEL: &str = "memory.bytes.shared";
 
 /// Attribute that represents the number of entries stored by a stateful
 /// operator, e.g., the number of entries in a trace.
-pub const NUM_ENTRIES_LABEL: &str = "total size";
+pub const NUM_ENTRIES_LABEL: &str = "memory.record_count.stored";
 
 /// The number of input tuples ingested by the operator.
-pub const NUM_INPUTS_LABEL: &str = "inputs";
+pub const NUM_INPUTS_LABEL: &str = "memory.record_count.inputs";
 
 /// Input batch sizes.
-pub const INPUT_BATCHES_LABEL: &str = "input batches";
+pub const INPUT_BATCHES_LABEL: &str = "storage.input_batches";
 
 /// A collection of input batch sizes, one for each input
 pub const INPUT_BATCHES_COLLECTION: &str = "collection of input batches";
@@ -54,34 +54,36 @@ pub const OUTPUT_REDUNDANCY_LABEL: &str = "output redundancy";
 pub const PREFIX_BATCHES_LABEL: &str = "prefix batches";
 
 /// Output batch sizes.
-pub const OUTPUT_BATCHES_LABEL: &str = "output batches";
+pub const OUTPUT_BATCHES_LABEL: &str = "storage.output_batches";
 
 /// The amount of time an async operator spent wait to become ready.
-pub const EXCHANGE_WAIT_TIME: &str = "exchange_wait_time";
+pub const EXCHANGE_WAIT_TIME: &str = "time.exchange_wait";
 
 /// Key distribution of the input stream.
 pub const KEY_DISTRIBUTION_LABEL: &str = "key distribution";
 
 /// Total weight of tuples that map to the local worker based on the hash of the key.
-pub const LOCAL_SHARD_SIZE_LABEL: &str = "local shard size";
+pub const LOCAL_SHARD_SIZE_LABEL: &str = "balancer.local_shard_size";
 
-pub const BALANCER_POLICY_LABEL: &str = "balancer policy";
+pub const BALANCER_POLICY_LABEL: &str = "balancer.policy";
 
 /// The number of times the stream was rebalanced.
-pub const NUM_RABALANCINGS_LABEL: &str = "rebalancings";
+pub const NUM_RABALANCINGS_LABEL: &str = "balancer.rebalancings";
 
-pub const REBALANCING_IN_PROGRESS_LABEL: &str = "rebalancing in progress";
+pub const REBALANCING_IN_PROGRESS_LABEL: &str = "balancer.rebalancing_in_progress";
 
 /// The number of accumulator records that must be repartitioned in the current rebalancing.
-pub const NUM_ACCUMULATOR_RECORDS_TO_REPARTITION_LABEL: &str = "accumulator records to repartition";
+pub const NUM_ACCUMULATOR_RECORDS_TO_REPARTITION_LABEL: &str =
+    "balancer.accumulator_records_to_repartition";
 
 /// The number of integral records that must be repartitioned in the current rebalancing.
-pub const NUM_INTEGRAL_RECORDS_TO_REPARTITION_LABEL: &str = "integral records to repartition";
+pub const NUM_INTEGRAL_RECORDS_TO_REPARTITION_LABEL: &str =
+    "balancer.integral_records_to_repartition";
 
 /// The total time spent rebalancing the stream.
-pub const TOTAL_REBALANCING_TIME_LABEL: &str = "total rebalancing time";
+pub const TOTAL_REBALANCING_TIME_LABEL: &str = "balancer.total_time";
 
-pub const INPROGRESS_REBALANCING_TIME_LABEL: &str = "in-progress rebalancing time";
+pub const INPROGRESS_REBALANCING_TIME_LABEL: &str = "balancer.time_in_progress";
 
 /// An operator's location within the source program
 pub type OperatorLocation = Option<&'static Location<'static>>;
@@ -142,11 +144,11 @@ impl BatchSizeStats {
         } else {
             MetaItem::Map(
                 metadata! {
-                    "batches" => MetaItem::Count(self.cnt),
-                    "min size" => MetaItem::Count(self.min),
-                    "max size" => MetaItem::Count(self.max),
-                    "avg size" => MetaItem::Count(self.total / self.cnt),
-                    "total records" => MetaItem::Count(self.total)
+                    "count" => MetaItem::Count(self.cnt),
+                    "min_size" => MetaItem::Count(self.min),
+                    "max_size" => MetaItem::Count(self.max),
+                    "avg_size" => MetaItem::Count(self.total / self.cnt),
+                    "record_count" => MetaItem::Count(self.total)
                 }
                 .into(),
             )

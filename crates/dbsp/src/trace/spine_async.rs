@@ -581,17 +581,17 @@ where
             let bits_per_key = filter_stats.size_byte as f64 * 8.0 / storage_records as f64;
             let bits_per_key = bits_per_key as usize;
             meta.extend(metadata! {
-                "Bloom filter bits/key" => MetaItem::Int(bits_per_key)
+                "memory.Bloom_filter.bits_per_key" => MetaItem::Int(bits_per_key)
             })
         }
 
         meta.extend(metadata! {
             // Number of batches currently in the spine.
-            "batches" => MetaItem::Count(n_batches),
+            "storage.spine_batches" => MetaItem::Count(n_batches),
 
             // The amount of data in the spine currently stored on disk (not
             // including any in-progress merges).
-            "storage size" => MetaItem::bytes(storage_size),
+            "storage.bytes.spine_size" => MetaItem::bytes(storage_size),
 
             // The amount of memory used for Bloom filters.
             "Bloom filter size" => MetaItem::bytes(filter_stats.size_byte),
@@ -618,18 +618,18 @@ where
             },
 
             // The number of batches currently being merged.
-            "merging batches" => MetaItem::Count(n_merging),
+            "storage.merging_batches" => MetaItem::Count(n_merging),
 
             // The number of bytes of batches being merged.
-            "merging size" => MetaItem::bytes(merging_size),
+            "storage.merging_size" => MetaItem::bytes(merging_size),
 
             // For merges already completed, the percentage of the updates input
             // to merges that merging eliminated, whether by weights adding to
             // zero or through key or value filters.
-            "merge reduction" => spine_stats.merge_reduction(),
+            "storage.merge_reduction" => spine_stats.merge_reduction(),
 
             // The amount of time waiting for backpressure.
-            "merge backpressure wait" => MetaItem::Duration(spine_stats.backpressure_wait),
+            "time.merge_backpressure_wait" => MetaItem::Duration(spine_stats.backpressure_wait),
         });
 
         cache_stats.metadata(meta);
