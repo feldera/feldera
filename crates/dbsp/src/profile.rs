@@ -492,15 +492,15 @@ impl Profiler {
             if let Some(profile) = self.cpu_profiler.operator_profile(node_id) {
                 let default_meta = [
                     (
-                        Cow::Borrowed("invocations"),
+                        Cow::Borrowed("time.invocations"),
                         MetaItem::Int(profile.invocations()),
                     ),
                     (
-                        Cow::Borrowed("time"),
+                        Cow::Borrowed("time.total"),
                         MetaItem::Duration(profile.total_time()),
                     ),
                     (
-                        Cow::Borrowed("time%"),
+                        Cow::Borrowed("time.percent"),
                         MetaItem::Percent {
                             numerator: profile.total_time().as_micros() as u64,
                             denominator: total_time.as_micros() as u64,
@@ -517,23 +517,23 @@ impl Profiler {
             if let Some(profile) = self.cpu_profiler.circuit_profile(node_id) {
                 let default_meta = [
                     (
-                        Cow::Borrowed("wait_time"),
+                        Cow::Borrowed("time.wait"),
                         MetaItem::Duration(profile.wait_profile.total_time()),
                     ),
                     (
-                        Cow::Borrowed("steps"),
+                        Cow::Borrowed("time.steps"),
                         MetaItem::Int(profile.step_profile.invocations()),
                     ),
                     (
-                        Cow::Borrowed("total_runtime"),
+                        Cow::Borrowed("time.total_runtime"),
                         MetaItem::Duration(profile.step_profile.total_time()),
                     ),
                     (
-                        Cow::Borrowed("total_idle_time"),
+                        Cow::Borrowed("time.total_idle"),
                         MetaItem::Duration(profile.idle_profile.total_time()),
                     ),
                     (
-                        Cow::Borrowed("runtime_elapsed"),
+                        Cow::Borrowed("time.runtime_elapsed"),
                         MetaItem::Duration(runtime_elapsed),
                     ),
                 ];
@@ -550,7 +550,7 @@ impl Profiler {
                     meta.insert(
                         0,
                         (
-                            Cow::from(format!("{thread_type} cache occupancy")),
+                            Cow::from(format!("cache.{thread_type}_occupancy")),
                             MetaItem::String(format!(
                                 "{} used (max {})",
                                 HumanBytes::new(cur as u64),
@@ -582,7 +582,7 @@ impl Profiler {
             for (label, item) in meta.iter() {
                 write!(output, "{label}: ").unwrap();
                 item.format(&mut output).unwrap();
-                if label == "time%"
+                if label == "time.percent"
                     && let MetaItem::Percent {
                         numerator,
                         denominator,

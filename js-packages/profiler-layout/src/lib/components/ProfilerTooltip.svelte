@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import type { MeasurementCategory, NodeAttributes, TooltipRow } from 'profiler-lib'
+  import type { NodeAttributes, TooltipRow } from 'profiler-lib'
   import { measurementCategory, shadeOfRed } from 'profiler-lib'
   import { SvelteSet } from 'svelte/reactivity'
   import { groupBy } from '$lib/functions/array'
@@ -18,10 +18,10 @@
       }
 
   // Track which metric categories are collapsed (true = collapsed, false = expanded)
-  let collapsedCategories = $state(new SvelteSet<MeasurementCategory>())
+  let collapsedCategories = $state(new SvelteSet<string>())
 
   // Toggle category collapse state
-  function toggleCategory(category: MeasurementCategory) {
+  function toggleCategory(category: string) {
     if (collapsedCategories.has(category)) {
       collapsedCategories.delete(category)
     } else {

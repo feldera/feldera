@@ -273,8 +273,8 @@ pub enum CacheAccess {
 impl Display for CacheAccess {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Hit => write!(f, "cache hits"),
-            Self::Miss => write!(f, "cache misses"),
+            Self::Hit => write!(f, "hits"),
+            Self::Miss => write!(f, "misses"),
         }
     }
 }
@@ -322,7 +322,7 @@ impl CacheStats {
             if !accesses.values().all(CacheCounts::is_empty) {
                 meta.extend(accesses.iter().map(|(access, counts)| {
                     (
-                        Cow::from(format!("{thread_type} {access}")),
+                        Cow::from(format!("cache.{thread_type}.{access}")),
                         counts.meta_item(),
                     )
                 }));
@@ -330,7 +330,7 @@ impl CacheStats {
                 let hits = accesses[CacheAccess::Hit].count;
                 let misses = accesses[CacheAccess::Miss].count;
                 meta.extend([(
-                    Cow::from(format!("{thread_type} cache hit rate")),
+                    Cow::from(format!("cache.{thread_type}.hit_rate")),
                     MetaItem::Percent {
                         numerator: hits,
                         denominator: hits + misses,
