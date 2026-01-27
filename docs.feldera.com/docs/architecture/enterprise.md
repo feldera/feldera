@@ -18,6 +18,8 @@ Feldera Enterprise brings all the power of our incremental compute platform into
 ### One Pipeline = One Pod
   Each Pipeline runs in its own Kubernetes Pod, resource- and fault-isolated from other pipelines and the control plane. Each Pipeline can use a **Persistent Volume** or **S3 bucket** for its storage.
 
+  Pipelines that run in multiple pods, to scale out resource-hungry computations across multiple machines, are a preview feature.
+
 ### Fine-Grained Resource Management
    The control plane and each Pipeline can be configured with resource reservations and limits for CPU, memory, and storage. When using Persistent Volumes for storage, Pipelines can also specify the specific storage class to use. These controls help enforce SLAs and deal with noisy neighbours in shared clusters.
 
