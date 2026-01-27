@@ -13,6 +13,6 @@ export {
     shadeOfRed
 } from './profiler.js';
 export { HierarchicalTable, HierarchicalTableRow, HierarchicalTableCellValue } from "./hierarchical-table.js";
-export { measurementCategory, CircuitProfile, type JsonProfiles, type MeasurementCategory } from './profile.js';
+export { measurementCategory, CircuitProfile, type JsonProfiles } from './profile.js';
 export { type Dataflow, type SourcePositionRange } from './dataflow.js';
 export { type Option } from './util.js';

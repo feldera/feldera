@@ -1404,15 +1404,15 @@ where
 
         meta.extend(metadata! {
             NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
-            "batch sizes" => batch_sizes,
+            "storage.bytes.total_batch_sizes" => batch_sizes,
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
             NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
-            "left inputs" => stats.lhs_tuples,
-            "right inputs" => stats.rhs_tuples,
-            "computed outputs" => stats.output_tuples,
+            "record_count.left_inputs" => stats.lhs_tuples,
+            "record_count.right_inputs" => stats.rhs_tuples,
+            "record_count.computed_outputs" => stats.output_tuples,
             OUTPUT_BATCHES_LABEL => stats.output_batch_stats.metadata(),
-            "output redundancy" => output_redundancy,
+            "record_count.output_redundancy_percents" => output_redundancy,
         });
     }
 
