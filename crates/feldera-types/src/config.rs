@@ -763,6 +763,8 @@ pub struct RuntimeConfig {
     ///
     /// The worker threads are evenly divided among the hosts.  For single-host
     /// deployments, this should be 1 (the default).
+    ///
+    /// Multihost pipelines are an enterprise-only preview feature.
     pub hosts: usize,
 
     /// Storage configuration.
