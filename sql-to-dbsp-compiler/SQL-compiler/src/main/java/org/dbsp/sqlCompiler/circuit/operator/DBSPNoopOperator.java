@@ -44,7 +44,7 @@ import java.util.List;
 
 /** Same as a map with identity function, but, unlike a {@link DBSPMapOperator},
  * the output can be an IndexedZSet. */
-public final class DBSPNoopOperator extends DBSPUnaryOperator {
+public final class DBSPNoopOperator extends DBSPUnaryOperator implements ILinear {
     static DBSPClosureExpression getClosure(DBSPType sourceType) {
         if (sourceType.is(DBSPTypeZSet.class)) {
             DBSPVariablePath var = sourceType.to(DBSPTypeZSet.class).elementType.ref().var();
@@ -64,7 +64,7 @@ public final class DBSPNoopOperator extends DBSPUnaryOperator {
     public DBSPNoopOperator(CalciteRelNode node, OutputPort source,
                             @Nullable String comment) {
         super(node, "noop", getClosure(source.outputType()),
-                source.outputType(), source.isMultiset(), source, comment, false);
+                source.outputType(), source.isMultiset(), source, comment);
     }
 
     @Override

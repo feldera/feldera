@@ -11,7 +11,7 @@ import org.dbsp.util.Utilities;
 
 /** Base class for the many kinds of joins we have, some incremental,
  * some non-incremental. */
-public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator {
+public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator implements IJoin {
     /** If true the join is dynamically balanced; else it is always a hash-join */
     public final boolean balanced;
 
@@ -19,7 +19,7 @@ public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator {
             CalciteRelNode node, String operation, DBSPExpression function,
             DBSPType outputType, boolean isMultiset,
             OutputPort left, OutputPort right, boolean balanced) {
-        super(node, operation, function, outputType, isMultiset, left, right, true);
+        super(node, operation, function, outputType, isMultiset, left, right);
         this.checkParameterCount(function, 3);
         this.balanced = balanced;
         DBSPClosureExpression closure = this.getClosureFunction();

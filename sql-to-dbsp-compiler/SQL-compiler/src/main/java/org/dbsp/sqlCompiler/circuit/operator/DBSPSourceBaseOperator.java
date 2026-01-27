@@ -52,7 +52,7 @@ public abstract class DBSPSourceBaseOperator
     protected DBSPSourceBaseOperator(
             CalciteRelNode node, String operation, DBSPType outputType, boolean isMultiset,
             ProgramIdentifier tableName, TableMetadata metadata, @Nullable String comment) {
-        super(node, operation, null, outputType, isMultiset, comment, false);
+        super(node, operation, null, outputType, isMultiset, comment);
         this.tableName = tableName;
         this.metadata = metadata;
     }

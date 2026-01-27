@@ -20,12 +20,12 @@ import java.util.List;
 
 /** Corresponds to the DBSP chain_aggregate operator.
  * Used to implement min and max for append-only collections with O(1) space and time. */
-public class DBSPChainAggregateOperator extends DBSPUnaryOperator {
+public class DBSPChainAggregateOperator extends DBSPUnaryOperator implements ILinearAggregate {
     public final DBSPClosureExpression init;
 
     public DBSPChainAggregateOperator(CalciteRelNode node, DBSPClosureExpression init,
                                       DBSPClosureExpression function, DBSPType outputType, OutputPort source) {
-        super(node, "chain_aggregate", function, outputType, false, source, true);
+        super(node, "chain_aggregate", function, outputType, false, source);
         this.init = init;
         Utilities.enforce(init.parameters.length == 2);
         Utilities.enforce(function.parameters.length == 3);

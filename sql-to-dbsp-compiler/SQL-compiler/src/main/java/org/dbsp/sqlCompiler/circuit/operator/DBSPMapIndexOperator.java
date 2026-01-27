@@ -42,7 +42,7 @@ import java.util.Objects;
 
 /** Generate an IndexedZSet by applying a function to every element of an input dataset.
  * Output is always an IndexedZSet.  Input can be a ZSet or an IndexedZSet */
-public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
+public final class DBSPMapIndexOperator extends DBSPUnaryOperator implements ILinear {
     /** Create an MapIndexOperator
      * @param node            Corresponding Calcite node.
      * @param indexFunction   Function that indexes.

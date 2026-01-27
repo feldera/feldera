@@ -49,19 +49,15 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     /** True if the output of the operator is a multiset.  Conservative approximation;
      * if this is 'false', it is surely false.  If it is true, the output may still be a set. */
     public final boolean isMultiset;
-    /** True if the operator contains an integrator */
-    public final boolean containsIntegrator;
 
     protected DBSPSimpleOperator(CalciteRelNode node, String operation,
                                  @Nullable DBSPExpression function, DBSPType outputType,
-                                 boolean isMultiset, @Nullable String comment,
-                                 boolean containsIntegrator) {
+                                 boolean isMultiset, @Nullable String comment) {
         super(node, comment);
         this.operation = operation;
         this.function = function;
         this.outputType = outputType;
         this.isMultiset = isMultiset;
-        this.containsIntegrator = containsIntegrator;
         if (!operation.startsWith("waterline") &&
                 !operation.startsWith("apply") &&
                 !operation.startsWith("transaction_delay") &&
@@ -102,9 +98,8 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
 
     public DBSPSimpleOperator(CalciteRelNode node, String operation,
                               @Nullable DBSPExpression function,
-                              DBSPType outputType, boolean isMultiset,
-                              boolean containsIntegrator) {
-        this(node, operation, function, outputType, isMultiset, null, containsIntegrator);
+                              DBSPType outputType, boolean isMultiset) {
+        this(node, operation, function, outputType, isMultiset, null);
     }
 
     public DBSPSimpleOperator copyAnnotations(DBSPSimpleOperator source) {

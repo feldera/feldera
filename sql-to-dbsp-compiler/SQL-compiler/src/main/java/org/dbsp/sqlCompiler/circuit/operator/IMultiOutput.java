@@ -1,6 +1,6 @@
-package org.dbsp.sqlCompiler.circuit;
+package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 
 /** Interface implemented by operators with multiple outputs */
 public interface IMultiOutput {

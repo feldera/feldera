@@ -36,9 +36,9 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public final class DBSPStreamDistinctOperator extends DBSPUnaryOperator {
+public final class DBSPStreamDistinctOperator extends DBSPUnaryOperator implements INonIncremental {
     public DBSPStreamDistinctOperator(CalciteRelNode node, OutputPort input) {
-        super(node, "stream_distinct", null, input.outputType(), false, input, false);
+        super(node, "stream_distinct", null, input.outputType(), false, input);
     }
 
     @Override

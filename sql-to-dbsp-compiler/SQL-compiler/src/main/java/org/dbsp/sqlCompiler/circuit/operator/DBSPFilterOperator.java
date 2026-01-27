@@ -38,7 +38,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public final class DBSPFilterOperator extends DBSPUnaryOperator {
+public final class DBSPFilterOperator extends DBSPUnaryOperator implements ILinear {
     public DBSPFilterOperator(CalciteRelNode node, DBSPExpression condition, OutputPort input) {
         super(node, "filter", condition, input.outputType(), input.isMultiset(), input);
         this.checkResultType(condition, new DBSPTypeBool(CalciteEmptyRel.INSTANCE, false));

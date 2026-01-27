@@ -164,6 +164,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new CompactNames(compiler));
         this.add(new MerkleOuter(compiler, true));
         this.add(new MerkleOuter(compiler, false));
+        this.add(new CircuitStatistics(compiler));
     }
 
     public DBSPCircuit optimize(DBSPCircuit input) {

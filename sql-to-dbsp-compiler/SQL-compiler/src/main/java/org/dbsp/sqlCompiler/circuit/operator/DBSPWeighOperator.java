@@ -17,7 +17,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 @NonCoreIR
-public final class DBSPWeighOperator extends DBSPUnaryOperator {
+public final class DBSPWeighOperator extends DBSPUnaryOperator implements ILinear {
     static DBSPTypeZSet outputType(DBSPTypeIndexedZSet sourceType) {
         return new DBSPTypeZSet(sourceType.elementType);
     }
