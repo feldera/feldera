@@ -29,6 +29,8 @@ The connector configuration consists of three main sections:
 |------------------------|--------|----------|-------------|
 | `server_url`           | string | Yes      | NATS server URL (e.g., `nats://localhost:4222`) |
 | `auth`                 | object | No       | Authentication configuration (see [Authentication](#authentication)) |
+| `connection_timeout_secs` | integer | No    | Connection timeout in seconds. How long to wait when establishing the initial connection to the NATS server. Default: 10 |
+| `request_timeout_secs` | integer | No       | Request timeout in seconds. How long to wait for responses to requests. Default: 10 |
 
 ### Stream Configuration
 

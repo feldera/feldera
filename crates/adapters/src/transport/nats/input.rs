@@ -66,7 +66,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, info, info_span};
+use tracing::{Instrument, error, info, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
 
 type NatsConsumerConfig = nats_consumer::pull::OrderedConfig;
@@ -150,15 +150,47 @@ impl NatsReader {
     ) -> AnyResult<Self> {
         let span = info_span!("nats_input");
         let (command_sender, command_receiver) = unbounded_channel();
-        let nats_connection = TOKIO
-            .block_on(Self::connect_nats(&config.connection_config).instrument(span.clone()))?;
+
+        // Connect to NATS and verify stream exists (early validation).
+        // This ensures we fail fast with a clear error if the server is
+        // unreachable or the stream doesn't exist.
+        let (nats_connection, jetstream) = TOKIO.block_on(
+            async {
+                let client = Self::connect_nats(&config.connection_config).await?;
+                let js = jetstream::new(client.clone());
+                Self::verify_stream_exists(&js, &config.stream_name).await?;
+                Ok::<_, AnyError>((client, js))
+            }
+            .instrument(span.clone()),
+        )
+        .map_err(|e| {
+            error!(
+                server_url = %config.connection_config.server_url,
+                stream_name = %config.stream_name,
+                connection_timeout_secs = config.connection_config.connection_timeout_secs,
+                request_timeout_secs = config.connection_config.request_timeout_secs,
+                "NATS initialization failed: {e:#}"
+            );
+            e.context(format!(
+                "NATS initialization failed for stream '{}' at server '{}' \
+                (connection_timeout={}s, request_timeout={}s)",
+                config.stream_name,
+                config.connection_config.server_url,
+                config.connection_config.connection_timeout_secs,
+                config.connection_config.request_timeout_secs,
+            ))
+        })?;
+
+        // The connection is established but we don't need the client reference
+        // in the worker - it stays alive as long as the jetstream context exists.
+        drop(nats_connection);
 
         let consumer_clone = consumer.clone();
         TOKIO.spawn(async move {
             Self::worker_task(
                 config,
                 resume_info,
-                jetstream::new(nats_connection),
+                jetstream,
                 consumer_clone,
                 parser,
                 command_receiver,
@@ -178,9 +210,31 @@ impl NatsReader {
 
         let client = connect_options
             .connect(&connection_config.server_url)
-            .await?;
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to connect to NATS server at {}",
+                    connection_config.server_url
+                )
+            })?;
 
         Ok(client)
+    }
+
+    /// Verifies that the specified stream exists on the JetStream server.
+    ///
+    /// This provides early validation during initialization.
+    /// If the stream doesn't exist, we fail fast with a clear error
+    /// instead of timing out later during consumer creation.
+    async fn verify_stream_exists(
+        jetstream: &jetstream::Context,
+        stream_name: &str,
+    ) -> Result<(), AnyError> {
+        jetstream
+            .get_stream(stream_name)
+            .await
+            .with_context(|| format!("Failed to get stream '{stream_name}'"))?;
+        Ok(())
     }
 
     async fn worker_task(
@@ -322,9 +376,18 @@ async fn create_nats_consumer(
         };
     }
 
-    Ok(jetstream
-        .create_consumer_strict_on_stream(consumer_config, stream_name)
-        .await?)
+    jetstream
+        .create_consumer_strict_on_stream(consumer_config.clone(), stream_name)
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to create consumer on stream '{}' (start_sequence={}, deliver_policy={:?}, filter_subjects={:?})",
+                stream_name,
+                message_start_sequence,
+                consumer_config.deliver_policy,
+                consumer_config.filter_subjects,
+            )
+        })
 }
 
 async fn consume_nats_messages_until(
