@@ -1,6 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.util.HashString;
+import org.dbsp.util.Utilities;
 import org.junit.Test;
 
 public class Regression2Tests extends SqlIoTest {
@@ -67,5 +73,37 @@ public class Regression2Tests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW v AS SELECT
                 SAFE_CAST(mapp AS MAP<VARCHAR, VARCHAR>) AS to_map
                 FROM tbl;""");
+    }
+
+    @Test
+    public void checkNowChainAggregateHash() {
+        /* The circuit generated for a NOW operator is always the same:
+           input -> map_index -> chain_aggregate.  This test ensures that the
+           Merkle hash computation does not change for the chain_aggregate.
+           This can happen, for example, when the Rust code generated for any
+           of its sources changes.  This is problematic because this would require
+           boostrapping such circuits from the NOW() source, which is never materialized --
+           this would make the circuits impossible to restart after an upgrade of the compiler.
+         */
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x TIMESTAMP, y INT);
+                CREATE VIEW V AS SELECT y FROM T WHERE x < NOW() - INTERVAL 10 MINUTES;""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            boolean found = false;
+
+            @Override
+            public void postorder(DBSPChainAggregateOperator operator) {
+                this.found = true;
+                HashString hash = OperatorHash.getHash(operator, true);
+                Utilities.enforce(hash != null);
+                Utilities.enforce(hash.toString()
+                        .equals("1f3808fdce7cee3559c13945ba24280abf22b777542af1bac25aa7d57cf29892"));
+            }
+
+            @Override
+            public void endVisit() {
+                Utilities.enforce(this.found);
+            }
+        });
     }
 }

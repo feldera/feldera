@@ -14,7 +14,11 @@ An explicit cast can be specified in two ways:
 
 The rules for implicit casts are complex; we [inherit these
 rules](https://calcite.apache.org/docs/reference.html#conversion-contexts-and-strategies)
-from Calcite.
+from Calcite.  We strongly recommend avoiding casts whhen possible,
+and using explicit conversion functions.  For example, avoid
+converting using casts between integers and `TIME`, `TIMESTAMP`,
+`DATE`, `INTERVAL` values; these casts are not portable between SQL
+dialects, and may have surprising behaviors.
 
 In general SQL casts may discard low order digits.  A cast form a wide
 to a narrow datatype which cannot represent the value in the target
@@ -26,6 +30,10 @@ Conversions from decimal and floating point types to integer types
 always truncate the decimal digits (round towards zero).  For example,
 `CAST(2.9 AS INTEGER)` returns 2, while `CAST(-2.9 AS INTEGER)`
 returns -2.
+
+Casts from a short interval to a numeric type return the length of the
+inteval in milliseconds.  Cast of a long interval to a numeric type
+return the length of the interval in months.
 
 Casts of strings to numeric types produce a runtime error when the
 string cannot be interpreted as a number.  Use `SAFE_CAST` if runtime

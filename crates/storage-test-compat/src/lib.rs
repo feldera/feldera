@@ -198,11 +198,13 @@ pub fn golden_row(row: usize) -> GoldenRow {
     let bytes = [0xBA, 0x5E, (row & 0xFF) as u8, ((row >> 8) & 0xFF) as u8];
     let byte_array_v = ByteArray::new(&bytes);
     let geo_point_v = GeoPoint::new(1000.25 + row as f64, -1000.75 - row as f64);
-    let short_interval_v = ShortInterval::new(0x1111_0000i64.wrapping_add(row as i64));
-    let long_interval_v = LongInterval::new(0x2222i32.wrapping_add(row as i32));
-    let timestamp_v = Timestamp::new(1_600_000_000_000i64.wrapping_add(row as i64));
-    let date_v = Date::new(18_000i32.wrapping_add(row as i32));
-    let time_v = Time::new(43_200_000_000_000u64.wrapping_add((row as u64) % 1_000_000));
+    let short_interval_v =
+        ShortInterval::from_milliseconds(0x1111_0000i64.wrapping_add(row as i64));
+    let long_interval_v = LongInterval::from_months(0x2222i32.wrapping_add(row as i32));
+    let timestamp_v = Timestamp::from_milliseconds(1_600_000_000_000i64.wrapping_add(row as i64));
+    let date_v = Date::from_days(18_000i32.wrapping_add(row as i32));
+    let time_v =
+        Time::from_nanoseconds(43_200_000_000_000u64.wrapping_add((row as u64) % 1_000_000));
     let uuid_v = Uuid::from(RawUuid::from_u128(
         0x1111_2222_3333_4444_5555_6666_0000_0000u128 | row as u128,
     ));
@@ -218,17 +220,20 @@ pub fn golden_row(row: usize) -> GoldenRow {
     );
     let opt_short_interval_v = maybe(
         row,
-        ShortInterval::new(0x2111_0000i64.wrapping_add(row as i64)),
+        ShortInterval::from_milliseconds(0x2111_0000i64.wrapping_add(row as i64)),
     );
-    let opt_long_interval_v = maybe(row, LongInterval::new(0x3222i32.wrapping_add(row as i32)));
+    let opt_long_interval_v = maybe(
+        row,
+        LongInterval::from_months(0x3222i32.wrapping_add(row as i32)),
+    );
     let opt_timestamp_v = maybe(
         row,
-        Timestamp::new(1_700_000_000_000i64.wrapping_add(row as i64)),
+        Timestamp::from_milliseconds(1_700_000_000_000i64.wrapping_add(row as i64)),
     );
-    let opt_date_v = maybe(row, Date::new(19_000i32.wrapping_add(row as i32)));
+    let opt_date_v = maybe(row, Date::from_days(19_000i32.wrapping_add(row as i32)));
     let opt_time_v = maybe(
         row,
-        Time::new(45_000_000_000_000u64.wrapping_add((row as u64) % 1_000_000)),
+        Time::from_nanoseconds(45_000_000_000_000u64.wrapping_add((row as u64) % 1_000_000)),
     );
     let opt_uuid_v = maybe(
         row,

@@ -596,6 +596,11 @@ public class ConvertletTable extends ReflectiveConvertletTable {
         return rexBuilder.makeCall(pos, SqlStdOperatorTable.DIVIDE_INTEGER, a0, a1);
     }
 
+    private static RexNode divide(SqlParserPos pos, RexBuilder rexBuilder, RexNode a0,
+                                  RexNode a1) {
+        return rexBuilder.makeCall(pos, SqlStdOperatorTable.DIVIDE, a0, a1);
+    }
+
     private static RexNode plus(SqlParserPos pos, RexBuilder rexBuilder, RexNode a0, RexNode a1) {
         return rexBuilder.makeCall(pos, SqlStdOperatorTable.PLUS, a0, a1);
     }
@@ -965,7 +970,7 @@ public class ConvertletTable extends ReflectiveConvertletTable {
                 // ignore - reciprocal is not an integer
             }
         }
-        return divideInt(pos, rexBuilder, res, rexBuilder.makeExactLiteral(val));
+        return divide(pos, rexBuilder, res, rexBuilder.makeExactLiteral(val));
     }
 
     public RexNode convertDatetimeMinus(

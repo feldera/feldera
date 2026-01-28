@@ -19,7 +19,6 @@ use feldera_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
     TimestampFormat,
 };
-use num::PrimInt;
 use serde::{Deserialize, Deserializer, Serializer, de::Error as _, ser::Error as _};
 use size_of::SizeOf;
 use std::{
@@ -47,7 +46,6 @@ use crate::{
     SizeOf,
     rkyv::Archive,
     rkyv::Serialize,
-    rkyv::Deserialize,
     serde::Serialize,
     IsNone,
 )]
@@ -56,14 +54,35 @@ use crate::{
 #[serde(transparent)]
 pub struct Timestamp {
     // since unix epoch
-    milliseconds: i64,
+    microseconds: i64,
+}
+
+#[doc(hidden)]
+impl<D> ::rkyv::Deserialize<Timestamp, D> for ArchivedTimestamp
+where
+    D: ::rkyv::Fallible + ::core::any::Any,
+{
+    fn deserialize(&self, deserializer: &mut D) -> Result<Timestamp, D::Error> {
+        // The internal representation of Timestamps changed from version 4 of the storage format
+        const MILLISECOND_VERSION: u32 = 4;
+        let version = (deserializer as &mut dyn ::core::any::Any)
+            .downcast_mut::<::dbsp::storage::file::Deserializer>()
+            .map(|deserializer| deserializer.version())
+            .expect("Deserializer must be of type dbsp::storage::file::Deserializer");
+        let value: i64 = self.microseconds.deserialize(deserializer)?;
+        if version <= MILLISECOND_VERSION {
+            Ok(Timestamp::from_milliseconds(value))
+        } else {
+            Ok(Timestamp::from_microseconds(value))
+        }
+    }
 }
 
 #[doc(hidden)]
 impl ToInteger<i64> for Timestamp {
     #[doc(hidden)]
     fn to_integer(&self) -> i64 {
-        self.milliseconds
+        self.microseconds
     }
 }
 
@@ -72,15 +91,14 @@ impl FromInteger<i64> for Timestamp {
     #[doc(hidden)]
     fn from_integer(value: &i64) -> Self {
         Timestamp {
-            milliseconds: *value,
+            microseconds: *value,
         }
     }
 }
 
 impl Debug for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let datetime = DateTime::from_timestamp_millis(self.milliseconds).ok_or(fmt::Error)?;
-
+        let datetime = DateTime::from_timestamp_micros(self.microseconds).ok_or(fmt::Error)?;
         f.write_str(&datetime.format("%F %T%.f").to_string())
     }
 }
@@ -103,10 +121,10 @@ impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
         match context.timestamp_format {
             TimestampFormat::Default => {
                 let datetime =
-                    DateTime::from_timestamp_millis(self.milliseconds).ok_or_else(|| {
+                    DateTime::from_timestamp_micros(self.microseconds).ok_or_else(|| {
                         S::Error::custom(format!(
                             "timestamp value '{}' out of range",
-                            self.milliseconds
+                            self.microseconds()
                         ))
                     })?;
 
@@ -114,10 +132,10 @@ impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
             }
             TimestampFormat::Rfc3339 => {
                 let datetime =
-                    DateTime::from_timestamp_millis(self.milliseconds).ok_or_else(|| {
+                    DateTime::from_timestamp_micros(self.microseconds).ok_or_else(|| {
                         S::Error::custom(format!(
                             "timestamp value '{}' out of range",
-                            self.milliseconds
+                            self.microseconds()
                         ))
                     })?;
 
@@ -125,17 +143,17 @@ impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
             }
             TimestampFormat::String(format_string) => {
                 let datetime =
-                    DateTime::from_timestamp_millis(self.milliseconds).ok_or_else(|| {
+                    DateTime::from_timestamp_micros(self.microseconds).ok_or_else(|| {
                         S::Error::custom(format!(
                             "timestamp value '{}' out of range",
-                            self.milliseconds
+                            self.microseconds()
                         ))
                     })?;
 
                 serializer.serialize_str(&datetime.format(format_string).to_string())
             }
-            TimestampFormat::MillisSinceEpoch => serializer.serialize_i64(self.milliseconds),
-            TimestampFormat::MicrosSinceEpoch => serializer.serialize_i64(self.milliseconds * 1000),
+            TimestampFormat::MillisSinceEpoch => serializer.serialize_i64(self.milliseconds()),
+            TimestampFormat::MicrosSinceEpoch => serializer.serialize_i64(self.microseconds),
         }
     }
 }
@@ -159,7 +177,7 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Timestamp {
                         ))
                     })?;
 
-                Ok(Self::new(timestamp.timestamp_millis()))
+                Ok(Self::from_microseconds(timestamp.timestamp_micros()))
             }
             TimestampFormat::String(format) => {
                 // `timestamp_str: &'de` doesn't work for JSON, which escapes strings
@@ -171,15 +189,17 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Timestamp {
                         D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e} (expected format: '{format}')"))
                     })?;
 
-                Ok(Self::new(timestamp.and_utc().timestamp_millis()))
+                Ok(Self::from_microseconds(
+                    timestamp.and_utc().timestamp_micros(),
+                ))
             }
             TimestampFormat::MillisSinceEpoch => {
                 let millis: i64 = Deserialize::deserialize(deserializer)?;
-                Ok(Self::new(millis))
+                Ok(Self::from_milliseconds(millis))
             }
             TimestampFormat::MicrosSinceEpoch => {
                 let micros: i64 = Deserialize::deserialize(deserializer)?;
-                Ok(Self::new(micros / 1000))
+                Ok(Self::from_microseconds(micros))
             }
         }
     }
@@ -203,34 +223,50 @@ impl<'de> Deserialize<'de> for Timestamp {
                 ))
             })?;
 
-        Ok(Self::new(timestamp.and_utc().timestamp_millis()))
+        Ok(Self::from_microseconds(
+            timestamp.and_utc().timestamp_micros(),
+        ))
     }
 }
 
 impl Timestamp {
     /// Create a new [Timestamp] from a number of milliseconds since the
     /// Unix epoch (January 1, 1970)
-    pub const fn new(milliseconds: i64) -> Self {
-        Self { milliseconds }
+    pub const fn from_milliseconds(milliseconds: i64) -> Self {
+        Self {
+            microseconds: milliseconds * 1000,
+        }
+    }
+
+    /// Create a new [Timestamp] from a number of microseconds since the
+    /// Unix epoch (January 1, 1970)
+    pub const fn from_microseconds(microseconds: i64) -> Self {
+        Self { microseconds }
     }
 
     /// Return the number of millliseconds elapsed since the Unix
     /// epoch (January 1st, 1970)
     pub fn milliseconds(&self) -> i64 {
-        self.milliseconds
+        self.microseconds / 1000
+    }
+
+    /// Return the number of microseconds elapsed since the Unix
+    /// epoch (January 1st, 1970)
+    pub fn microseconds(&self) -> i64 {
+        self.microseconds
     }
 
     /// Convert a [Timestamp] to a chrono [DateTime] in the [Utc]
     /// timezone.
     pub fn to_dateTime(&self) -> DateTime<Utc> {
-        Utc.timestamp_millis_opt(self.milliseconds)
+        Utc.timestamp_micros(self.microseconds)
             .single()
             .unwrap_or_else(|| panic!("Could not convert timestamp {:?} to DateTime", self))
     }
 
     /// Convert a [Timestamp] to a chrono [NaiveDateTime]
     pub fn to_naiveDateTime(&self) -> NaiveDateTime {
-        Utc.timestamp_millis_opt(self.milliseconds)
+        Utc.timestamp_micros(self.microseconds)
             .single()
             .unwrap_or_else(|| panic!("Could not convert timestamp {:?} to DateTime", self))
             .naive_utc()
@@ -241,14 +277,14 @@ impl Timestamp {
     // Cannot make this into a From trait because Rust reserved it
     pub fn from_dateTime(date: DateTime<Utc>) -> Self {
         Self {
-            milliseconds: date.timestamp_millis(),
+            microseconds: date.timestamp_micros(),
         }
     }
 
     /// Create a [Timestamp] from a chrono [NaiveDateTime].
     pub fn from_naiveDateTime(date: NaiveDateTime) -> Self {
         Self {
-            milliseconds: date.and_utc().timestamp_millis(),
+            microseconds: date.and_utc().timestamp_micros(),
         }
     }
 
@@ -269,7 +305,7 @@ impl Timestamp {
     /// Get the [Date] part of a [Timestamp]
     pub fn get_date(&self) -> Date {
         // Is this right for negative timestamps?
-        Date::new((self.milliseconds / 86_400_000i64) as i32)
+        Date::from_days((self.microseconds / 86_400_000_000i64) as i32)
     }
 
     /// Check if the timestamp is legal; panic if it isn't
@@ -286,37 +322,14 @@ pub fn now() -> Timestamp {
     Timestamp::from_dateTime(Utc::now())
 }
 
-impl<T> From<T> for Timestamp
-where
-    i64: From<T>,
-    T: PrimInt,
-{
-    /// Convert a value expressing a number of milliseconds since the
-    /// Unix epoch (January 1st, 1970) into a [Timestamp].
-    fn from(value: T) -> Self {
-        Self {
-            milliseconds: i64::from(value),
-        }
-    }
-}
-
-impl Add<i64> for Timestamp {
-    type Output = Self;
-
-    /// Add a number of milliseconds to a [Timestamp].
-    fn add(self, value: i64) -> Self {
-        Self {
-            milliseconds: self.milliseconds + value,
-        }
-    }
-}
-
 #[doc(hidden)]
 pub fn plus_Timestamp_Timestamp_ShortInterval__(
     left: Timestamp,
     right: ShortInterval,
 ) -> Timestamp {
-    left.add(right.milliseconds())
+    Timestamp {
+        microseconds: left.microseconds + right.microseconds(),
+    }
 }
 
 some_function2!(
@@ -381,7 +394,7 @@ pub fn minus_ShortInterval_Timestamp_Timestamp__(
     left: Timestamp,
     right: Timestamp,
 ) -> ShortInterval {
-    ShortInterval::from(left.milliseconds() - right.milliseconds())
+    ShortInterval::from_microseconds(left.microseconds - right.microseconds)
 }
 
 some_function2!(
@@ -393,7 +406,9 @@ some_function2!(
 
 #[doc(hidden)]
 pub fn minus_ShortInterval_Time_Time__(left: Time, right: Time) -> ShortInterval {
-    ShortInterval::from((left.nanoseconds() as i64 - right.nanoseconds() as i64) / 1000000)
+    ShortInterval::from_microseconds(
+        (left.nanoseconds() as i64 - right.nanoseconds() as i64) / 1000,
+    )
 }
 
 some_function2!(minus_ShortInterval_Time_Time, Time, Time, ShortInterval);
@@ -403,7 +418,7 @@ pub fn minus_Timestamp_Timestamp_ShortInterval__(
     left: Timestamp,
     right: ShortInterval,
 ) -> Timestamp {
-    Timestamp::new(left.milliseconds() - right.milliseconds())
+    Timestamp::from_microseconds(left.microseconds() - right.microseconds())
 }
 
 some_function2!(
@@ -427,18 +442,18 @@ some_function2!(
 
 #[doc(hidden)]
 pub fn plus_Date_Date_ShortInterval__(left: Date, right: ShortInterval) -> Date {
-    let days = (right.milliseconds() / (86400 * 1000)) as i32;
+    let days = (right.microseconds() / (86400i64 * 1000 * 1000)) as i32;
     let diff = left.days() + days;
-    Date::new(diff)
+    Date::from_days(diff)
 }
 
 some_function2!(plus_Date_Date_ShortInterval, Date, ShortInterval, Date);
 
 #[doc(hidden)]
 pub fn minus_Date_Date_ShortInterval__(left: Date, right: ShortInterval) -> Date {
-    let days = (right.milliseconds() / (86400 * 1000)) as i32;
+    let days = (right.microseconds() / (86400i64 * 1000 * 1000)) as i32;
     let diff = left.days() - days;
-    Date::new(diff)
+    Date::from_days(diff)
 }
 
 some_function2!(minus_Date_Date_ShortInterval, Date, ShortInterval, Date);
@@ -515,7 +530,7 @@ pub fn minus_LongInterval_Timestamp_Timestamp__(left: Timestamp, right: Timestam
         rm += 1;
     }
     let months = (ly - ry) * 12 + lm - rm;
-    LongInterval::from(if swap { -months } else { months })
+    LongInterval::from_months(if swap { -months } else { months })
 }
 
 some_function2!(
@@ -599,7 +614,7 @@ pub fn extract_doy_Timestamp(value: Timestamp) -> i64 {
 
 #[doc(hidden)]
 pub fn extract_epoch_Timestamp(t: Timestamp) -> i64 {
-    t.milliseconds() / 1000
+    t.microseconds() / 1_000_000
 }
 
 #[doc(hidden)]
@@ -776,15 +791,24 @@ some_polymorphic_function1!(floor_second, Timestamp, Timestamp, Timestamp);
 
 #[doc(hidden)]
 pub fn floor_millisecond_Timestamp(value: Timestamp) -> Timestamp {
-    // we currently don't store more than milliseconds, so this is a no-op
-    value
+    let floor = if value.microseconds < 0 {
+        let md = -value.microseconds % 1000;
+        if md == 0 {
+            -((-value.microseconds) / 1000)
+        } else {
+            -((-value.microseconds) / 1000) - 1
+        }
+    } else {
+        value.microseconds / 1000
+    };
+    Timestamp::from_milliseconds(floor)
 }
 
 some_polymorphic_function1!(floor_millisecond, Timestamp, Timestamp, Timestamp);
 
 #[doc(hidden)]
 pub fn floor_microsecond_Timestamp(value: Timestamp) -> Timestamp {
-    // we currently don't store more than milliseconds, so this is a no-op
+    // we currently don't store more than microseconds, so this is a no-op
     value
 }
 
@@ -957,8 +981,7 @@ some_polymorphic_function1!(ceil_second, Timestamp, Timestamp, Timestamp);
 
 #[doc(hidden)]
 pub fn ceil_millisecond_Timestamp(value: Timestamp) -> Timestamp {
-    // We currently do not store more than milliseconds, so this is a no-op
-    value
+    Timestamp::from_milliseconds((value.microseconds + 999) / 1000)
 }
 
 some_polymorphic_function1!(ceil_millisecond, Timestamp, Timestamp, Timestamp);
@@ -981,10 +1004,10 @@ some_polymorphic_function1!(ceil_nanosecond, Timestamp, Timestamp, Timestamp);
 
 #[doc(hidden)]
 pub fn tumble_Timestamp_ShortInterval(ts: Timestamp, i: ShortInterval) -> Timestamp {
-    let ts_ms = ts.milliseconds();
-    let i_ms = i.milliseconds();
-    let round = ts_ms - ts_ms % i_ms;
-    Timestamp::new(round)
+    let ts_us = ts.microseconds();
+    let i_us = i.microseconds();
+    let round = ts_us - ts_us % i_us;
+    Timestamp::from_microseconds(round)
 }
 
 some_polymorphic_function2!(
@@ -998,11 +1021,11 @@ some_polymorphic_function2!(
 
 #[doc(hidden)]
 pub fn tumble_Timestamp_ShortInterval_Time(ts: Timestamp, i: ShortInterval, t: Time) -> Timestamp {
-    let t_ms = (t.nanoseconds() / 1000000) as i64;
-    let ts_ms = ts.milliseconds() - t_ms;
-    let i_ms = i.milliseconds();
-    let round = ts_ms - ts_ms % i_ms;
-    Timestamp::new(round + t_ms)
+    let t_us = (t.nanoseconds() / 1000) as i64;
+    let ts_us = ts.microseconds() - t_us;
+    let i_us = i.microseconds();
+    let round = ts_us - ts_us % i_us;
+    Timestamp::from_microseconds(round + t_us)
 }
 
 some_polymorphic_function3!(
@@ -1022,11 +1045,11 @@ pub fn tumble_Timestamp_ShortInterval_ShortInterval(
     i: ShortInterval,
     t: ShortInterval,
 ) -> Timestamp {
-    let t_ms = t.milliseconds();
-    let ts_ms = ts.milliseconds() - t_ms;
-    let i_ms = i.milliseconds();
-    let round = ts_ms - ts_ms % i_ms;
-    Timestamp::new(round + t_ms)
+    let t_us = t.microseconds();
+    let ts_us = ts.microseconds() - t_us;
+    let i_us = i.microseconds();
+    let round = ts_us - ts_us % i_us;
+    Timestamp::from_microseconds(round + t_us)
 }
 
 some_polymorphic_function3!(
@@ -1040,7 +1063,7 @@ some_polymorphic_function3!(
     Timestamp
 );
 
-// Start of first interval which contains ts
+// Start of first interval which contains ts, in microseconds
 #[doc(hidden)]
 pub fn hop_start(
     ts: Timestamp,
@@ -1048,11 +1071,11 @@ pub fn hop_start(
     size: ShortInterval,
     start: ShortInterval,
 ) -> i64 {
-    let ts_ms = ts.milliseconds();
-    let size_ms = size.milliseconds();
-    let period_ms = period.milliseconds();
-    let start_ms = start.milliseconds();
-    ts_ms - ((ts_ms - start_ms) % period_ms) + period_ms - size_ms
+    let ts_us = ts.microseconds();
+    let size_us = size.microseconds();
+    let period_us = period.microseconds();
+    let start_us = start.microseconds();
+    ts_us - ((ts_us - start_us) % period_us) + period_us - size_us
 }
 
 // Helper function used by the monotonicity analysis for hop table functions
@@ -1063,7 +1086,7 @@ pub fn hop_start_timestamp(
     size: ShortInterval,
     start: ShortInterval,
 ) -> Timestamp {
-    Timestamp::new(hop_start(ts, period, size, start))
+    Timestamp::from_microseconds(hop_start(ts, period, size, start))
 }
 
 #[doc(hidden)]
@@ -1076,9 +1099,9 @@ pub fn hop_Timestamp_ShortInterval_ShortInterval_ShortInterval(
     let mut result = Vec::<Timestamp>::new();
     let round = hop_start(ts, period, size, start);
     let mut add = 0;
-    while add < size.milliseconds() {
-        result.push(Timestamp::new(round + add));
-        add += period.milliseconds();
+    while add < size.microseconds() {
+        result.push(Timestamp::from_microseconds(round + add));
+        add += period.microseconds();
     }
     result.into()
 }
@@ -1163,7 +1186,7 @@ pub struct Date {
 impl Date {
     /// Create a [Date] from a number of days since the Unix epoch
     /// (January 1st, 1970).
-    pub const fn new(days: i32) -> Self {
+    pub const fn from_days(days: i32) -> Self {
         Self { days }
     }
 
@@ -1184,7 +1207,7 @@ impl Date {
     /// Convert a [Date] to a [Timestamp].  The time in the
     /// [Timestamp] is midnight at the start of the date.
     pub fn to_timestamp(&self) -> Timestamp {
-        Timestamp::new((self.days as i64) * 86400 * 1000)
+        Timestamp::from_milliseconds((self.days as i64) * 86400 * 1000)
     }
 
     /// Convert a [Date] to a chrono [DateTime] in the [Utc] timezone,
@@ -1220,20 +1243,6 @@ impl fmt::Debug for Date {
         match ndt {
             Some(ndt) => ndt.date_naive().fmt(f),
             _ => write!(f, "date value '{}' out of range", self.days),
-        }
-    }
-}
-
-impl<T> From<T> for Date
-where
-    i32: From<T>,
-    T: PrimInt,
-{
-    /// Convert an integer representing the number of days since the
-    /// Unix epoch (January 1st, 1970) to a [Date].
-    fn from(value: T) -> Self {
-        Self {
-            days: i32::from(value),
         }
     }
 }
@@ -1294,7 +1303,7 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Date {
                         "invalid date string '{str}': {e} (expected format: '{format}')"
                     ))
                 })?;
-                Ok(Self::new(
+                Ok(Self::from_days(
                     (date.and_time(NaiveTime::default()).and_utc().timestamp() / 86400) as i32,
                 ))
             }
@@ -1317,7 +1326,7 @@ impl<'de> Deserialize<'de> for Date {
                 "invalid date string '{str}': {e} (expected format: '%Y-%m-%d')"
             ))
         })?;
-        Ok(Self::new(
+        Ok(Self::from_days(
             (date.and_time(NaiveTime::default()).and_utc().timestamp() / 86400) as i32,
         ))
     }
@@ -1626,7 +1635,7 @@ pub fn minus_LongInterval_Date_Date__(left: Date, right: Date) -> LongInterval {
         months -= 1;
     }
 
-    LongInterval::from(months * neg)
+    LongInterval::from_months(months * neg)
 }
 
 some_function2!(minus_LongInterval_Date_Date, Date, Date, LongInterval);
@@ -2067,7 +2076,7 @@ const BILLION: u64 = 1_000_000_000;
 
 impl Time {
     /// Create a [Time] from a number of nanoseconds since midnight.
-    pub const fn new(nanoseconds: u64) -> Self {
+    pub const fn from_nanoseconds(nanoseconds: u64) -> Self {
         Self { nanoseconds }
     }
 
@@ -2111,7 +2120,7 @@ impl Add<ShortInterval> for Time {
 
         let rem = (time + int) % nanos_in_day;
 
-        Time::new(rem.unsigned_abs())
+        Time::from_nanoseconds(rem.unsigned_abs())
     }
 }
 
@@ -2120,21 +2129,7 @@ impl Sub<ShortInterval> for Time {
 
     #[doc(hidden)]
     fn sub(self, rhs: ShortInterval) -> Self::Output {
-        self + (ShortInterval::new(-rhs.milliseconds()))
-    }
-}
-
-impl<T> From<T> for Time
-where
-    u64: From<T>,
-    T: PrimInt,
-{
-    /// Create a [Time] from an unsigned number of nanoseconds since
-    /// midnight.
-    fn from(value: T) -> Self {
-        Self {
-            nanoseconds: u64::from(value),
-        }
+        self + (ShortInterval::from_microseconds(-rhs.microseconds()))
     }
 }
 
@@ -2659,9 +2654,9 @@ mod test {
             )
             .unwrap(),
             TestStruct {
-                date: Date::new(16816),
-                time: Time::new(10800000000000),
-                timestamp: Timestamp::new(1529501823000),
+                date: Date::from_days(16816),
+                time: Time::from_nanoseconds(10800000000000),
+                timestamp: Timestamp::from_milliseconds(1529501823000),
             }
         );
     }
@@ -2670,9 +2665,9 @@ mod test {
     fn snowflake_json() {
         assert_eq!(
             serialize_with_snowflake_config(&TestStruct {
-                date: Date::new(19628),
-                time: Time::new(84075123000000),
-                timestamp: Timestamp::new(1529501823000),
+                date: Date::from_days(19628),
+                time: Time::from_nanoseconds(84075123000000),
+                timestamp: Timestamp::from_milliseconds(1529501823000),
             })
             .unwrap(),
             r#"{"date":"2023-09-28","time":"23:21:15.123","timestamp":"2018-06-20T13:37:03+00:00"}"#
@@ -2687,17 +2682,17 @@ mod test {
             )
             .unwrap(),
             TestStruct {
-                date: Date::new(19628),
-                time: Time::new(84075123000000),
-                timestamp: Timestamp::new(1529501823000),
+                date: Date::from_days(19628),
+                time: Time::from_nanoseconds(84075123000000),
+                timestamp: Timestamp::from_milliseconds(1529501823000),
             }
         );
 
         assert_eq!(
             serialize_with_default_config(&TestStruct {
-                date: Date::new(19628),
-                time: Time::new(84075123000000),
-                timestamp: Timestamp::new(1529501823000),
+                date: Date::from_days(19628),
+                time: Time::from_nanoseconds(84075123000000),
+                timestamp: Timestamp::from_milliseconds(1529501823000),
             })
             .unwrap(),
             r#"{"date":"2023-09-28","time":"23:21:15.123","timestamp":"2018-06-20 13:37:03"}"#

@@ -33,7 +33,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -41,24 +41,28 @@ import javax.annotation.Nullable;
 import java.math.BigInteger;
 import java.util.Objects;
 
-public final class DBSPIntervalMonthsLiteral
+public final class DBSPShortIntervalLiteral
         extends DBSPLiteral
         implements IsNumericLiteral, IsIntervalLiteral {
-    /** Expressed in months */
-    @Nullable public final Integer value;
 
-    public DBSPIntervalMonthsLiteral(CalciteObject node, DBSPType type, @Nullable Integer value) {
+    /** Canonical value, represented in microseconds */
+    @Nullable public final Long value;
+
+    public DBSPShortIntervalLiteral(DBSPTypeShortInterval.Units units) {
+        this(CalciteObject.EMPTY, new DBSPTypeShortInterval(CalciteObject.EMPTY, units, true), null);
+    }
+
+    DBSPShortIntervalLiteral(CalciteObject node, DBSPType type, @Nullable Long value) {
         super(node, type, value == null);
-        Utilities.enforce(type.is(DBSPTypeMonthsInterval.class));
         this.value = value;
     }
 
-    public DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units units, int value) {
-        this(CalciteObject.EMPTY, new DBSPTypeMonthsInterval(CalciteObject.EMPTY, units,false), value);
+    public static DBSPShortIntervalLiteral fromMicroseconds(CalciteObject node, DBSPType type, @Nullable Long value) {
+        return new DBSPShortIntervalLiteral(node, type, value);
     }
 
-    public DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units units, int value, boolean mayBeNull) {
-        this(CalciteObject.EMPTY, new DBSPTypeMonthsInterval(CalciteObject.EMPTY, units, mayBeNull), value);
+    public static DBSPShortIntervalLiteral fromMicroseconds(DBSPTypeShortInterval.Units units, long value, boolean mayBeNull) {
+        return new DBSPShortIntervalLiteral(CalciteObject.EMPTY, new DBSPTypeShortInterval(CalciteObject.EMPTY, units, mayBeNull), value);
     }
 
     @Override
@@ -69,7 +73,7 @@ public final class DBSPIntervalMonthsLiteral
 
     @Override
     public int compare(IsNumericLiteral other) {
-        DBSPIntervalMonthsLiteral oi = other.to(DBSPIntervalMonthsLiteral.class);
+        DBSPShortIntervalLiteral oi = other.to(DBSPShortIntervalLiteral.class);
         Utilities.enforce(this.value != null);
         Utilities.enforce(oi.value != null);
         return this.value.compareTo(oi.value);
@@ -79,7 +83,7 @@ public final class DBSPIntervalMonthsLiteral
     public IsNumericLiteral negate() {
         if (this.value == null)
             return this;
-        return new DBSPIntervalMonthsLiteral(this.getNode(), this.type, Math.negateExact(this.value));
+        return new DBSPShortIntervalLiteral(this.getNode(), this.type, Math.negateExact(this.value));
     }
 
     @Override
@@ -95,13 +99,13 @@ public final class DBSPIntervalMonthsLiteral
     public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        DBSPIntervalMonthsLiteral that = (DBSPIntervalMonthsLiteral) o;
+        DBSPShortIntervalLiteral that = (DBSPShortIntervalLiteral) o;
         return Objects.equals(value, that.value);
     }
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPIntervalMonthsLiteral(this.getNode(),
+        return new DBSPShortIntervalLiteral(this.getNode(),
                 this.getType().withMayBeNull(mayBeNull), this.checkIfNull(this.value, mayBeNull));
     }
 
@@ -112,8 +116,30 @@ public final class DBSPIntervalMonthsLiteral
                 .append(")");
         if (this.value == null)
             return builder.append("null");
-        else
+        else {
             return builder.append(this.wrapSome(this.value.toString()));
+        }
+    }
+
+    @Override
+    public IsIntervalLiteral multiply(@Nullable BigInteger value) {
+        if (this.value == null)
+            return this;
+        if (value == null)
+            return new DBSPShortIntervalLiteral(this.getNode(), this.type, null);
+        BigInteger result = value.multiply(BigInteger.valueOf(this.value));
+        return DBSPShortIntervalLiteral.fromMicroseconds(
+                this.type.to(DBSPTypeShortInterval.class).units, result.longValueExact(), this.isNull);
+    }
+
+    @Override
+    public String toSqlString() {
+        if (this.value == null)
+            return DBSPNullLiteral.NULL;
+        long us = this.value % 1000000L;
+        return "INTERVAL " + this.value / 1000000L +
+                ((us > 0) ? "." + String.format("%06d", us) : "") +
+                " SECONDS";
     }
 
     @Override
@@ -123,33 +149,16 @@ public final class DBSPIntervalMonthsLiteral
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPIntervalMonthsLiteral(this.getNode(), this.type, this.value);
-    }
-
-    @Override
-    public IsIntervalLiteral multiply(@Nullable BigInteger value) {
-        if (this.value == null)
-            return this;
-        if (value == null)
-            return new DBSPIntervalMonthsLiteral(this.getNode(), this.type, null);
-        BigInteger result = value.multiply(BigInteger.valueOf(this.value));
-        return new DBSPIntervalMonthsLiteral(this.getNode(), this.type, result.intValueExact());
-    }
-
-    @Override
-    public String toSqlString() {
-        if (this.value == null)
-            return DBSPNullLiteral.NULL;
-        return "INTERVAL " + this.value + " MONTHS";
+        return new DBSPShortIntervalLiteral(this.getNode(), this.type, this.value);
     }
 
     @SuppressWarnings("unused")
-    public static DBSPIntervalMonthsLiteral fromJson(JsonNode node, JsonDecoder decoder) {
-        Integer value = null;
+    public static DBSPShortIntervalLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        Long value = null;
         if (node.has("value")) {
-            value = Utilities.getIntProperty(node, "value");
+            value = Utilities.getLongProperty(node, "value");
         }
         DBSPType type = getJsonType(node, decoder);
-        return new DBSPIntervalMonthsLiteral(CalciteObject.EMPTY, type, value);
+        return new DBSPShortIntervalLiteral(CalciteObject.EMPTY, type, value);
     }
 }

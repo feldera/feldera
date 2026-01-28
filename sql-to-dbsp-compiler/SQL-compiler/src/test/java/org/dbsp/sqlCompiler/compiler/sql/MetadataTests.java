@@ -1362,7 +1362,7 @@ public class MetadataTests extends BaseSQLTests {
                       "case_sensitive" : false,
                       "columntype" : {
                         "nullable" : true,
-                        "precision" : 3,
+                        "precision" : 6,
                         "type" : "TIMESTAMP"
                       },
                       "lateness" : "INTERVAL '5 10:10' DAY TO MINUTE",

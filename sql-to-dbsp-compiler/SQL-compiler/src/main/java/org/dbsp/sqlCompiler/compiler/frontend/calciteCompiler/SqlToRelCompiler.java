@@ -164,6 +164,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.FreshName;
@@ -204,7 +205,7 @@ import java.util.stream.Collectors;
  * The front-end offers several APIs, invoked in this order:
  * - parse SQL (using {@link SqlToRelCompiler#parse})
  * - compile SqlNode to RelNode (using {@link SqlToRelCompiler#compile})
- * - optimize RelNode (using {@link SqlToRelCompiler#optimize(RelNode, boolean)})
+ * - optimize RelNode (using {@link SqlToRelCompiler#optimize(RelNode, boolean, RelBuilder)})
  *   Optimize is called automatically from compile().
  */
 public class SqlToRelCompiler implements IWritesLogs {
@@ -228,6 +229,7 @@ public class SqlToRelCompiler implements IWritesLogs {
     private final HashMap<ProgramIdentifier, DeclareViewStatement> declaredViews;
     /** Recursive views which have been referred */
     private final Set<ProgramIdentifier> usedViewDeclarations;
+    private final RelBuilder relBuilder;
 
     /** Views which have been defined */
     private final Set<ProgramIdentifier> definedViews;
@@ -299,6 +301,9 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.converter = null;
         this.usedViewDeclarations = new HashSet<>();
         this.declaredViews = new HashMap<>();
+        this.relBuilder = this.converterConfig.getRelBuilderFactory()
+                .create(cluster, null)
+                .transform(this.converterConfig.getRelBuilderConfigTransform());
 
         SqlOperatorTable operatorTable = this.createOperatorTable();
         this.addOperatorTable(operatorTable);
@@ -323,6 +328,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.usedViewDeclarations = new HashSet<>(source.usedViewDeclarations);
         this.definedViews = new HashSet<>(source.definedViews);
         this.extraValidator = source.extraValidator;
+        this.relBuilder = source.relBuilder;
         this.addOperatorTable(Objects.requireNonNull(source.validator).getOperatorTable());
     }
 
@@ -763,7 +769,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         return this.parseStatements(statements, true);
     }
 
-    RelNode optimize(RelNode rel, boolean visible) {
+    RelNode optimize(RelNode rel, boolean visible, RelBuilder relBuilder) {
         int level = 2;
         if (rel instanceof LogicalValues)
             // Less verbose for LogicalValues
@@ -778,8 +784,6 @@ public class SqlToRelCompiler implements IWritesLogs {
                 .decrease()
                 .newline();
 
-        RelBuilder relBuilder = this.converterConfig.getRelBuilderFactory().create(
-                cluster, null);
         CalciteOptimizer optimizer = new CalciteOptimizer(
                 this.options.languageOptions.optimizationLevel, relBuilder, this.errorReporter);
         rel = optimizer.apply(rel, this.options);
@@ -789,7 +793,6 @@ public class SqlToRelCompiler implements IWritesLogs {
                 .append("After optimizer ")
                 .increase()
                 .appendSupplier(() -> getPlan(finalRel1))
-                .appendSupplier(() -> CalciteRelNode.toSqlString(finalRel1))
                 .decrease()
                 .newline();
         return rel;
@@ -2024,7 +2027,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         RelNode checked = checkedConverter.visit(relRoot.rel);
         relRoot = relRoot.withRel(checked);
 
-        RelNode optimized = this.optimize(relRoot.rel, node.visible());
+        RelNode optimized = this.optimize(relRoot.rel, node.visible(), this.getRelBuilder());
         relRoot = relRoot.withRel(optimized);
         CreateViewStatement view = new CreateViewStatement(node,
                 viewName, columns, cv, relRoot, emitFinal, props);
@@ -2051,6 +2054,10 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         this.definedViews.add(view.relationName);
         return view;
+    }
+
+    RelBuilder getRelBuilder() {
+        return this.relBuilder;
     }
 
     /** Convert a type to a SQL signature that resembles a TABLE declaration */
@@ -2137,7 +2144,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         TableModifyStatement stat = new TableModifyStatement(
                 node, false, Utilities.toIdentifier(id), remove.getSource());
         RelRoot values = this.sqlToRel(stat.data);
-        values = values.withRel(this.optimize(values.rel, true));
+        values = values.withRel(this.optimize(values.rel, true, this.getRelBuilder()));
         stat.setTranslation(values.rel);
         return stat;
     }
@@ -2149,7 +2156,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             throw new UnimplementedException("INSERT NOT SUPPORTED FOR " + table, CalciteObject.create(table));
         TableModifyStatement stat = new TableModifyStatement(node, true, Utilities.toIdentifier(id), insert.getSource());
         RelRoot values = this.sqlToRel(stat.data);
-        values = values.withRel(this.optimize(values.rel, true));
+        values = values.withRel(this.optimize(values.rel, true, this.getRelBuilder()));
         stat.setTranslation(values.rel);
         return stat;
     }

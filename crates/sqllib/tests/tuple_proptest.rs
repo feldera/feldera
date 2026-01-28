@@ -474,23 +474,23 @@ fn geo_point() -> BoxedStrategy<GeoPoint> {
 }
 
 fn short_interval() -> BoxedStrategy<ShortInterval> {
-    i64_val().prop_map(ShortInterval::new).boxed()
+    i64_val().prop_map(ShortInterval::from_microseconds).boxed()
 }
 
 fn long_interval() -> BoxedStrategy<LongInterval> {
-    i32_val().prop_map(LongInterval::new).boxed()
+    i32_val().prop_map(LongInterval::from_months).boxed()
 }
 
 fn timestamp() -> BoxedStrategy<Timestamp> {
-    i64_val().prop_map(Timestamp::new).boxed()
+    i64_val().prop_map(Timestamp::from_microseconds).boxed()
 }
 
 fn date() -> BoxedStrategy<Date> {
-    i32_val().prop_map(Date::new).boxed()
+    i32_val().prop_map(Date::from_days).boxed()
 }
 
 fn time() -> BoxedStrategy<Time> {
-    u64_val().prop_map(Time::new).boxed()
+    u64_val().prop_map(Time::from_nanoseconds).boxed()
 }
 
 fn uuid() -> BoxedStrategy<Uuid> {
@@ -1038,16 +1038,16 @@ fn edge_values_tup3() -> Vec<Tup3Ty> {
 fn edge_values_tup4() -> Vec<Tup4Ty> {
     vec![
         Tup4::new(
-            ShortInterval::new(i64::MIN),
-            LongInterval::new(i32::MIN),
-            Timestamp::new(i64::MIN),
-            Date::new(i32::MIN),
+            ShortInterval::from_microseconds(i64::MIN),
+            LongInterval::from_months(i32::MIN),
+            Timestamp::from_microseconds(i64::MIN),
+            Date::from_days(i32::MIN),
         ),
         Tup4::new(
-            ShortInterval::new(i64::MAX),
-            LongInterval::new(i32::MAX),
-            Timestamp::new(i64::MAX),
-            Date::new(i32::MAX),
+            ShortInterval::from_microseconds(i64::MAX),
+            LongInterval::from_months(i32::MAX),
+            Timestamp::from_microseconds(i64::MAX),
+            Date::from_days(i32::MAX),
         ),
     ]
 }
@@ -1055,21 +1055,21 @@ fn edge_values_tup4() -> Vec<Tup4Ty> {
 fn edge_values_tup5() -> Vec<Tup5Ty> {
     vec![
         Tup5::new(
-            Time::new(u64::MIN),
+            Time::from_nanoseconds(u64::MIN),
             min_uuid(),
             min_variant(),
             Dec12_2::MIN,
             None,
         ),
         Tup5::new(
-            Time::new(u64::MAX),
+            Time::from_nanoseconds(u64::MAX),
             max_uuid(),
             max_variant(),
             Dec12_2::MAX,
             Some(max_sql_string()),
         ),
         Tup5::new(
-            Time::new(0),
+            Time::from_nanoseconds(0),
             min_uuid(),
             nan_variant(),
             Dec12_2::ZERO,
@@ -1084,10 +1084,10 @@ fn edge_values_tup6() -> Vec<Tup6Ty> {
         Tup6::new(
             Some(max_byte_array()),
             Some(max_geo_point()),
-            Some(ShortInterval::new(i64::MAX)),
-            Some(LongInterval::new(i32::MAX)),
-            Some(Timestamp::new(i64::MAX)),
-            Some(Date::new(i32::MAX)),
+            Some(ShortInterval::from_microseconds(i64::MAX)),
+            Some(LongInterval::from_months(i32::MAX)),
+            Some(Timestamp::from_microseconds(i64::MAX)),
+            Some(Date::from_days(i32::MAX)),
         ),
     ]
 }
@@ -1096,7 +1096,7 @@ fn edge_values_tup7() -> Vec<Tup7Ty> {
     vec![
         Tup7::new(None, None, None, None, Dec10_0::MIN, None, Dec18_4::MIN),
         Tup7::new(
-            Some(Time::new(u64::MAX)),
+            Some(Time::from_nanoseconds(u64::MAX)),
             Some(max_uuid()),
             Some(max_variant()),
             Some(Dec12_2::MAX),
@@ -1242,11 +1242,11 @@ fn edge_values_tup12() -> Vec<Tup12Ty> {
             min_sql_string(),
             min_byte_array(),
             min_geo_point(),
-            ShortInterval::new(i64::MIN),
-            LongInterval::new(i32::MIN),
-            Timestamp::new(i64::MIN),
-            Date::new(i32::MIN),
-            Time::new(u64::MIN),
+            ShortInterval::from_microseconds(i64::MIN),
+            LongInterval::from_months(i32::MIN),
+            Timestamp::from_microseconds(i64::MIN),
+            Date::from_days(i32::MIN),
+            Time::from_nanoseconds(u64::MIN),
             min_uuid(),
             min_variant(),
         ),
@@ -1256,11 +1256,11 @@ fn edge_values_tup12() -> Vec<Tup12Ty> {
             max_sql_string(),
             max_byte_array(),
             max_geo_point(),
-            ShortInterval::new(i64::MAX),
-            LongInterval::new(i32::MAX),
-            Timestamp::new(i64::MAX),
-            Date::new(i32::MAX),
-            Time::new(u64::MAX),
+            ShortInterval::from_microseconds(i64::MAX),
+            LongInterval::from_months(i32::MAX),
+            Timestamp::from_microseconds(i64::MAX),
+            Date::from_days(i32::MAX),
+            Time::from_nanoseconds(u64::MAX),
             max_uuid(),
             max_variant(),
         ),
@@ -1289,11 +1289,11 @@ fn edge_values_tup13() -> Vec<Tup13Ty> {
             Some(max_sql_string()),
             Some(max_byte_array()),
             Some(max_geo_point()),
-            Some(ShortInterval::new(i64::MAX)),
-            Some(LongInterval::new(i32::MAX)),
-            Some(Timestamp::new(i64::MAX)),
-            Some(Date::new(i32::MAX)),
-            Some(Time::new(u64::MAX)),
+            Some(ShortInterval::from_microseconds(i64::MAX)),
+            Some(LongInterval::from_months(i32::MAX)),
+            Some(Timestamp::from_microseconds(i64::MAX)),
+            Some(Date::from_days(i32::MAX)),
+            Some(Time::from_nanoseconds(u64::MAX)),
             Some(max_uuid()),
             Some(max_variant()),
             Some(Dec12_2::MAX),
@@ -1457,11 +1457,11 @@ fn edge_values_tup16() -> Vec<Tup16Ty> {
 fn edge_values_tup17() -> Vec<Tup17Ty> {
     vec![
         Tup17::new(
-            ShortInterval::new(i64::MIN),
-            LongInterval::new(i32::MIN),
-            Timestamp::new(i64::MIN),
-            Date::new(i32::MIN),
-            Time::new(u64::MIN),
+            ShortInterval::from_microseconds(i64::MIN),
+            LongInterval::from_months(i32::MIN),
+            Timestamp::from_microseconds(i64::MIN),
+            Date::from_days(i32::MIN),
+            Time::from_nanoseconds(u64::MIN),
             min_uuid(),
             min_variant(),
             Dec12_2::MIN,
@@ -1476,11 +1476,11 @@ fn edge_values_tup17() -> Vec<Tup17Ty> {
             None,
         ),
         Tup17::new(
-            ShortInterval::new(i64::MAX),
-            LongInterval::new(i32::MAX),
-            Timestamp::new(i64::MAX),
-            Date::new(i32::MAX),
-            Time::new(u64::MAX),
+            ShortInterval::from_microseconds(i64::MAX),
+            LongInterval::from_months(i32::MAX),
+            Timestamp::from_microseconds(i64::MAX),
+            Date::from_days(i32::MAX),
+            Time::from_nanoseconds(u64::MAX),
             max_uuid(),
             max_variant(),
             Dec12_2::MAX,

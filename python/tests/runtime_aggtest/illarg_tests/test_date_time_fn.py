@@ -262,7 +262,7 @@ class illarg_floor_ts_legal(TstView):
                 "min": "2020-06-21T14:23:00",
                 "sec": "2020-06-21T14:23:44",
                 "millsec": "2020-06-21T14:23:44.123",
-                "microsec": "2020-06-21T14:23:44.123",
+                "microsec": "2020-06-21T14:23:44.123654",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW floor_ts_legal AS SELECT
@@ -367,8 +367,8 @@ class illarg_ceil_ts_legal(TstView):
                 "hr": "2020-06-21T15:00:00",
                 "min": "2020-06-21T14:24:00",
                 "sec": "2020-06-21T14:23:45",
-                "millsec": "2020-06-21T14:23:44.123",
-                "microsec": "2020-06-21T14:23:44.123",
+                "millsec": "2020-06-21T14:23:44.124",
+                "microsec": "2020-06-21T14:23:44.123654",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW ceil_ts_legal AS SELECT
@@ -551,14 +551,14 @@ class illarg_tsadd_ts_legal(TstView):
         # checked manually
         self.data = [
             {
-                "yr": "2022-06-21T14:23:44.123",
-                "mth": "2020-08-21T14:23:44.123",
-                "day": "2020-06-23T14:23:44.123",
-                "hr": "2020-06-21T16:23:44.123",
-                "min": "2020-06-21T14:25:44.123",
-                "sec": "2020-06-21T14:23:46.123",
-                "millisec": "2020-06-21T14:23:44.125",
-                "microsec": "2020-06-21T14:23:44.123",
+                "yr": "2022-06-21T14:23:44.123654",
+                "mth": "2020-08-21T14:23:44.123654",
+                "day": "2020-06-23T14:23:44.123654",
+                "hr": "2020-06-21T16:23:44.123654",
+                "min": "2020-06-21T14:25:44.123654",
+                "sec": "2020-06-21T14:23:46.123654",
+                "millisec": "2020-06-21T14:23:44.125654",
+                "microsec": "2020-06-21T14:23:44.123656",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW tsadd_ts_legal AS SELECT
@@ -579,25 +579,25 @@ class illarg_tsadd_ts1_legal(TstView):
         # checked manually
         self.data = [
             {
-                "yr": "2022-06-21T14:23:44.123",
-                "mth": "2020-08-21T14:23:44.123",
-                "day": "2020-06-23T14:23:44.123",
-                "hr": "2020-06-21T16:23:44.123",
-                "min": "2020-06-21T14:25:44.123",
-                "sec": "2020-06-21T14:23:46.123",
-                "millisec": "2020-06-21T14:23:44.125",
-                "microsec": "2020-06-21T14:23:44.123",
+                "yr": "2022-06-21T14:23:44.123654",
+                "mth": "2020-08-21T14:23:44.123654",
+                "day": "2020-06-23T14:23:44.123654",
+                "hr": "2020-06-21T16:23:44.123654",
+                "min": "2020-06-21T14:25:44.123654",
+                "sec": "2020-06-21T14:23:46.123654",
+                "millisec": "2020-06-21T14:23:44.125654",
+                "microsec": "2020-06-21T14:23:44.123656",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW tsadd_ts1_legal AS SELECT
-                      TIMESTAMPADD(YEAR, 2, '2020-06-21 14:23:44.123'::TIMESTAMP) AS yr,
-                      TIMESTAMPADD(MONTH, 2, '2020-06-21 14:23:44.123'::TIMESTAMP) AS mth,
-                      TIMESTAMPADD(DAY, 2, '2020-06-21 14:23:44.123'::TIMESTAMP) AS day,
-                      TIMESTAMPADD(HOUR, 2, '2020-06-21 14:23:44.123'::TIMESTAMP) AS hr,
-                      TIMESTAMPADD(MINUTE, 2, '2020-06-21 14:23:44.123'::TIMESTAMP) AS min,
-                      TIMESTAMPADD(SECOND, 2, '2020-06-21 14:23:44.123'::TIMESTAMP) AS sec,
-                      TIMESTAMPADD(MILLISECOND, 2, '2020-06-21 14:23:44.123'::TIMESTAMP) AS millisec,
-                      TIMESTAMPADD(MICROSECOND, 2, '2020-06-21 14:23:44.123'::TIMESTAMP) AS microsec
+                      TIMESTAMPADD(YEAR, 2, '2020-06-21 14:23:44.123654'::TIMESTAMP) AS yr,
+                      TIMESTAMPADD(MONTH, 2, '2020-06-21 14:23:44.123654'::TIMESTAMP) AS mth,
+                      TIMESTAMPADD(DAY, 2, '2020-06-21 14:23:44.123654'::TIMESTAMP) AS day,
+                      TIMESTAMPADD(HOUR, 2, '2020-06-21 14:23:44.123654'::TIMESTAMP) AS hr,
+                      TIMESTAMPADD(MINUTE, 2, '2020-06-21 14:23:44.123654'::TIMESTAMP) AS min,
+                      TIMESTAMPADD(SECOND, 2, '2020-06-21 14:23:44.123654'::TIMESTAMP) AS sec,
+                      TIMESTAMPADD(MILLISECOND, 2, '2020-06-21 14:23:44.123654'::TIMESTAMP) AS millisec,
+                      TIMESTAMPADD(MICROSECOND, 2, '2020-06-21 14:23:44.123654'::TIMESTAMP) AS microsec
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -623,7 +623,7 @@ class illarg_tsadd_tme_legal(TstView):
                 "min": "14:25:44.456",
                 "sec": "14:23:46.456",
                 "millisec": "14:23:44.458",
-                "microsec": "14:23:44.456",
+                "microsec": "14:23:44.456002",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW tsadd_legal AS SELECT

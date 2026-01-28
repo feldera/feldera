@@ -18,8 +18,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLongIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
@@ -34,8 +34,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
@@ -177,11 +177,11 @@ public class VariantTests extends BaseSQLTests {
                         new DBSPTypeTime(CalciteObject.EMPTY, false),
                         new TimeString("10:01:01"))));
         this.testQuery("SELECT CAST(INTERVAL '4-1' YEARS TO MONTHS AS VARIANT)",
-                new DBSPVariantExpression(new DBSPIntervalMonthsLiteral(
-                        DBSPTypeMonthsInterval.Units.YEARS_TO_MONTHS, 49)));
+                new DBSPVariantExpression(DBSPLongIntervalLiteral.fromMonths(
+                        DBSPTypeLongInterval.Units.YEARS_TO_MONTHS, 49)));
         this.testQuery("SELECT CAST(INTERVAL '4 10:01' DAYS TO MINUTES AS VARIANT)",
-                new DBSPVariantExpression(new DBSPIntervalMillisLiteral(
-                        DBSPTypeMillisInterval.Units.SECONDS, 1000L * (4 * 86400 + 10 * 3600 + 60), false)));
+                new DBSPVariantExpression(DBSPShortIntervalLiteral.fromMicroseconds(
+                        DBSPTypeShortInterval.Units.SECONDS, 1000_000L * (4 * 86400 + 10 * 3600 + 60), false)));
         this.testQuery("SELECT CAST(CAST(1 AS VARIANT) AS VARIANT)",
                 new DBSPVariantExpression(new DBSPI32Literal(1)));
         DBSPTypeBinary binary = new DBSPTypeBinary(CalciteObject.EMPTY, 2, false, false);

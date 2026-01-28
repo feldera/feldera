@@ -61,7 +61,7 @@ class arithtst_timestamp_minus_timestamp_str(TstView):
 
 # Equivalent SQL for MySQL
 # SELECT
-# 	id,
+#       id,
 #     TIMESTAMPDIFF(SECOND, c2, c1) AS seconds,
 #     TIMESTAMPDIFF(MINUTE, c2, c1) AS minutes,
 #     TIMESTAMPDIFF(HOUR, c2, c1) AS hours,
@@ -381,7 +381,7 @@ class arithtst_ats_minus_ts_str(TstView):
         self.data = [
             {
                 "id": 0,
-                "ytm_str": "+5-0",
+                "ytm_str": "+5-00",
                 "dth_str": "+1855 19",
                 "dtm_str": "+1855 19:42",
                 "dts_str": "+1855 19:42:00.000000",
@@ -391,7 +391,7 @@ class arithtst_ats_minus_ts_str(TstView):
             },
             {
                 "id": 1,
-                "ytm_str": "-2-8",
+                "ytm_str": "-2-08",
                 "dth_str": "-980 04",
                 "dtm_str": "-980 04:00",
                 "dts_str": "-980 04:00:00.000000",
@@ -401,7 +401,7 @@ class arithtst_ats_minus_ts_str(TstView):
             },
             {
                 "id": 2,
-                "ytm_str": "+10-6",
+                "ytm_str": "+10-06",
                 "dth_str": "+3853 02",
                 "dtm_str": "+3853 02:17",
                 "dts_str": "+3853 02:17:00.000000",
@@ -695,7 +695,7 @@ class arithtst_bneg_tsinterval(TstView):
         self.data = [
             {
                 "id": 0,
-                "ytm_neg": "-5-0",
+                "ytm_neg": "-5-00",
                 "dth_neg": "-1855 19",
                 "dtm_neg": "-1855 19:42",
                 "dts_neg": "-1855 19:42:00.000000",
@@ -705,7 +705,7 @@ class arithtst_bneg_tsinterval(TstView):
             },
             {
                 "id": 1,
-                "ytm_neg": "+2-8",
+                "ytm_neg": "+2-08",
                 "dth_neg": "+980 04",
                 "dtm_neg": "+980 04:00",
                 "dts_neg": "+980 04:00:00.000000",
@@ -715,7 +715,7 @@ class arithtst_bneg_tsinterval(TstView):
             },
             {
                 "id": 2,
-                "ytm_neg": "-10-6",
+                "ytm_neg": "-10-06",
                 "dth_neg": "-3853 02",
                 "dtm_neg": "-3853 02:17",
                 "dts_neg": "-3853 02:17:00.000000",

@@ -35,7 +35,7 @@ class illarg_tbl(TstTable):
                 "str": "hello ",
                 "bin": [11, 22, 32],
                 "tme": "14:23:44.456",
-                "tmestmp": "2020-06-21 14:23:44.123",
+                "tmestmp": "2020-06-21 14:23:44.123654",
                 "datee": "2020-06-21",
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
                 "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello ", "TRUE"],
