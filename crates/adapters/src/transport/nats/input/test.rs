@@ -137,7 +137,30 @@ impl NatsFtTestRound {
     }
 }
 
+struct NatsFtTestConfig<'a> {
+    rounds: &'a [NatsFtTestRound],
+    consumer_name: Option<&'a str>,
+}
+
+impl<'a> NatsFtTestConfig<'a> {
+    fn new(rounds: &'a [NatsFtTestRound]) -> Self {
+        Self {
+            rounds,
+            consumer_name: None,
+        }
+    }
+
+    fn with_consumer_name(mut self, name: Option<&'a str>) -> Self {
+        self.consumer_name = name;
+        self
+    }
+}
+
 fn test_nats_ft(rounds: &[NatsFtTestRound]) {
+    test_nats_ft_with_config(NatsFtTestConfig::new(rounds));
+}
+
+fn test_nats_ft_with_config(test_config: NatsFtTestConfig<'_>) {
     init_test_logger();
 
     let (_nats_process_guard, nats_url) = util::start_nats_and_get_address().unwrap();
@@ -169,6 +192,11 @@ fn test_nats_ft(rounds: &[NatsFtTestRound]) {
     create_dir(&storage_dir).unwrap();
     let output_path = tempdir_path.join("output.csv");
 
+    let consumer_name_line = test_config
+        .consumer_name
+        .map(|n| format!("name: {n}"))
+        .unwrap_or_default();
+
     let config_str = format!(
         r#"
 name: test
@@ -188,6 +216,7 @@ inputs:
                     server_url: {nats_url}
                 stream_name: {stream_name}
                 consumer_config:
+                    {consumer_name_line}
                     deliver_policy: All
                     subjects: [{subject_name}]
         format:
@@ -217,7 +246,7 @@ outputs:
             n_records,
             do_checkpoint,
         },
-    ) in rounds.iter().cloned().enumerate()
+    ) in test_config.rounds.iter().cloned().enumerate()
     {
         println!(
             "--- round {round}: add {n_records} records, {} ---",
@@ -441,6 +470,23 @@ fn test_nats_ft_empty_step_checkpoint() {
         NatsFtTestRound::with_checkpoint(0),
         NatsFtTestRound::with_checkpoint(10),
     ]);
+}
+
+/// Tests rapid restart+replay with a named consumer.
+///
+/// This reproduces a bug where the previous ordered consumer hadn't expired yet,
+/// causing "consumer already exists" errors. The fix generates unique consumer names
+/// by appending a UUID suffix when a name is explicitly configured.
+#[test]
+fn test_nats_ft_with_named_consumer() {
+    test_nats_ft_with_config(
+        NatsFtTestConfig::new(&[
+            NatsFtTestRound::with_checkpoint(5),
+            NatsFtTestRound::with_checkpoint(5),
+            NatsFtTestRound::with_checkpoint(0),
+        ])
+        .with_consumer_name(Some("my_named_consumer")),
+    );
 }
 
 mod util {
