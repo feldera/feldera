@@ -7856,58 +7856,6 @@ services:
     # Maintains all other production configuration
 ```
 
-### **Extended Services** (`docker-compose-extra.yml`)
-
-**Purpose**: Additional infrastructure services for comprehensive testing and demos.
-
-**Integration Testing Role**:
-- Provides MySQL, PostgreSQL databases for connector testing
-- Kafka Connect service for CDC integration validation
-- Required for database integration demos and tutorials
-- Used in CI integration tests
-
-**Infrastructure Services**:
-```yaml
-services:
-  mysql:
-    # MySQL 8.0 with CDC configuration
-    # Enables Debezium change capture testing
-
-  postgres:
-    # PostgreSQL with replication configuration
-    # Supports CDC and direct connector testing
-
-  kafka-connect:
-    # Debezium + Snowflake connector infrastructure
-    # Enables end-to-end CDC pipeline testing
-```
-
-### **Demo Orchestration** (`docker-compose-demo.yml`)
-
-**Purpose**: Complete demo scenarios showcasing Feldera capabilities.
-
-**Customer Onboarding Role**:
-- Provides working examples of Feldera integration patterns
-- Validates end-to-end functionality in release testing
-- Supports customer proof-of-concept deployments
-- Demonstrates CDC, streaming analytics, and data warehouse integration
-
-**Demo Profiles**:
-```yaml
-profiles:
-  demo-debezium-mysql:
-    # Complete CDC pipeline: MySQL → Kafka → Feldera → Analytics
-    # Showcases real-time change capture and processing
-
-  demo-supply-chain-tutorial:
-    # Business-focused demo with supply chain analytics
-    # Demonstrates SQL streaming analytics capabilities
-
-  demo-snowflake-sink:
-    # Data warehouse integration showcase
-    # End-to-end pipeline to Snowflake data warehouse
-```
-
 ## CI/CD Integration Points
 
 ### **Build Pipeline Integration**
@@ -7998,24 +7946,6 @@ docker compose -f deploy/docker-compose.yml up
 # Builds from source for customization
 docker compose -f deploy/docker-compose.yml \
                -f deploy/docker-compose-dev.yml up --build
-```
-
-### **Enterprise Integration Scenarios**
-
-**Database CDC Integration**:
-```bash
-# Complete CDC pipeline with MySQL
-docker compose -f deploy/docker-compose.yml \
-               -f deploy/docker-compose-extra.yml \
-               --profile mysql --profile kafka-connect up
-```
-
-**Data Warehouse Integration**:
-```bash
-# Snowflake integration demo
-docker compose -f deploy/docker-compose.yml \
-               -f deploy/docker-compose-demo.yml \
-               --profile demo-snowflake-sink up
 ```
 
 ## Best Practices
