@@ -347,6 +347,10 @@ where
 
         Ok(())
     }
+
+    fn flush(&self);
+
+    fn is_flush_complete(&self) -> bool;
 }
 
 /// An executor executes a circuit by evaluating all of its operators using a
@@ -479,12 +483,11 @@ where
     }
 
     fn flush(&self) {
-        // TODO
+        self.scheduler.flush();
     }
 
     fn is_flush_complete(&self) -> bool {
-        // TODO
-        true
+        self.scheduler.is_flush_complete()
     }
 }
 
