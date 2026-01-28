@@ -174,3 +174,14 @@ jobs:
       - name: Inspect image
         run: |
           docker buildx imagetools inspect ${{ vars.FELDERA_IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Wait for image
+        run: |
+          ./.github/scripts/wait_for_images_ghcr.sh \
+            "${{ vars.FELDERA_IMAGE_NAME }}" \
+            "${{ steps.meta.outputs.version }}" \
+            "amd64,arm64"
