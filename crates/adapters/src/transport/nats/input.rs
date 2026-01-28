@@ -322,6 +322,15 @@ async fn create_nats_consumer(
         };
     }
 
+    // Add a unique suffix to named consumers.
+    // If consumer is unamed, NATS automatically generates a random name.
+    //
+    // This fixes "consumer already exists" errors that occurred with rapid
+    // pipeline restarts/replays before the previous consumer expires (inactive_threshold).
+    consumer_config.name = consumer_config
+        .name
+        .map(|n| format!("{n}_{}", uuid::Uuid::now_v7()));
+
     Ok(jetstream
         .create_consumer_strict_on_stream(consumer_config, stream_name)
         .await?)
