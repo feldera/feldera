@@ -189,6 +189,21 @@ def open_csv(path: str, fieldnames: Iterable[str]) -> Tuple[csv.DictWriter, Any]
     return writer, file_obj
 
 
+def resolve_platform_version(pipeline: Any) -> str:
+    descriptor = getattr(pipeline, "_inner", None)
+    if descriptor is not None:
+        version = getattr(descriptor, "platform_version", None)
+        if version:
+            return str(version)
+    try:
+        version = pipeline.platform_version()
+        if version:
+            return str(version)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: failed to read platform version: {exc}", file=sys.stderr)
+    return "unknown"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Benchmark Feldera pipeline performance across workers/payload bytes."
@@ -260,6 +275,7 @@ def main() -> int:
     fieldnames = [
         "timestamp",
         "pipeline_name",
+        "platform_version",
         "program_sql",
         "run_id",
         "pipeline_workers",
@@ -328,6 +344,7 @@ def main() -> int:
                         sql=sql,
                         runtime_config=runtime_config,
                     ).create_or_replace()
+                    platform_version = resolve_platform_version(pipeline)
 
                     pipeline.clear_storage()
 
@@ -353,6 +370,7 @@ def main() -> int:
                     row = {
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "pipeline_name": pipeline_name,
+                        "platform_version": platform_version,
                         "program_sql": program_sql,
                         "run_id": run_id,
                         "pipeline_workers": workers,
