@@ -106,11 +106,27 @@ where
         self.scheduler.prepare(circuit, nodes)
     }
 
+    /// Only called on the executor in the top-level circuit.
     fn start_transaction<'a>(
         &'a self,
-        circuit: &'a C,
+        _circuit: &'a C,
     ) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
-        Box::pin(async { self.scheduler.start_transaction(circuit).await })
+        unimplemented!()
+    }
+
+    /// Only called on the executor in the top-level circuit.
+    fn start_commit_transaction(&self) -> Result<(), SchedulerError> {
+        unimplemented!()
+    }
+
+    /// Only called on the executor in the top-level circuit.
+    fn is_commit_complete(&self) -> bool {
+        unimplemented!()
+    }
+
+    /// Only called on the executor in the top-level circuit.
+    fn commit_progress(&self) -> CommitProgress {
+        unimplemented!()
     }
 
     fn step<'a>(
@@ -135,17 +151,12 @@ where
         })
     }
 
-    fn start_commit_transaction(&self) -> Result<(), SchedulerError> {
+    fn flush(&self) {
         *self.flush.borrow_mut() = true;
-        Ok(())
     }
 
-    fn is_commit_complete(&self) -> bool {
+    fn is_flush_complete(&self) -> bool {
         !*self.flush.borrow()
-    }
-
-    fn commit_progress(&self) -> CommitProgress {
-        CommitProgress::new()
     }
 }
 
