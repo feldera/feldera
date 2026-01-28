@@ -1,3 +1,4 @@
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::{
     DBData, DBWeight, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
@@ -356,8 +357,8 @@ where
         self.file.byte_size().unwrap_storage() as usize
     }
 
-    fn filter_size(&self) -> usize {
-        self.file.filter_size()
+    fn filter_stats(&self) -> BloomFilterStats {
+        self.file.filter_stats()
     }
 
     #[inline]

@@ -1,3 +1,5 @@
+use super::utils::{copy_to_builder, pick_merge_destination};
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::{
     DBWeight, Error, NumEntries,
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
@@ -27,8 +29,6 @@ use std::{
     fmt::{self, Debug},
     sync::Arc,
 };
-
-use super::utils::{copy_to_builder, pick_merge_destination};
 
 pub type FallbackIndexedWSetFactories<K, V, R> = FileIndexedWSetFactories<K, V, R>;
 
@@ -275,10 +275,10 @@ where
     }
 
     #[inline]
-    fn filter_size(&self) -> usize {
+    fn filter_stats(&self) -> BloomFilterStats {
         match &self.inner {
-            Inner::File(file) => file.filter_size(),
-            Inner::Vec(vec) => vec.filter_size(),
+            Inner::File(file) => file.filter_stats(),
+            Inner::Vec(vec) => vec.filter_stats(),
         }
     }
 

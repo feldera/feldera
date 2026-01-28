@@ -7,6 +7,7 @@ use super::{AnyFactories, Deserializer, Factories};
 use crate::dynamic::{DynVec, WeightTrait};
 use crate::storage::buffer_cache::{CacheAccess, CacheEntry};
 use crate::storage::file::format::FilterBlock;
+use crate::storage::tracking_bloom_filter::{BloomFilterStats, TrackingBloomFilter};
 use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
@@ -28,7 +29,6 @@ use binrw::{
 };
 use crc32c::crc32c;
 use dyn_clone::clone_box;
-use fastbloom::BloomFilter;
 use feldera_storage::StoragePath;
 use feldera_storage::file::FileId;
 use size_of::SizeOf;
@@ -59,6 +59,7 @@ pub use fetch_zset::FetchZSet;
 
 mod fetch_indexed_zset;
 pub use fetch_indexed_zset::FetchIndexedZSet;
+
 /// Any kind of error encountered reading a layer file.
 #[derive(ThisError, Debug)]
 pub enum Error {
@@ -1496,7 +1497,7 @@ where
 #[derive(Debug)]
 pub struct Reader<T> {
     file: ImmutableFileRef,
-    bloom_filter: Option<BloomFilter>,
+    bloom_filter: Option<TrackingBloomFilter>,
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -1510,7 +1511,7 @@ where
 {
     fn size_of_children(&self, context: &mut size_of::Context) {
         self.file.size_of_with_context(context);
-        context.add(self.filter_size());
+        context.add(self.filter_stats().size_byte);
         self.columns.size_of_with_context(context);
     }
 }
@@ -1524,7 +1525,7 @@ where
         factories: &[&AnyFactories],
         cache: fn() -> Arc<BufferCache>,
         file: Arc<dyn FileReader>,
-        bloom_filter: Option<BloomFilter>,
+        bloom_filter: Option<TrackingBloomFilter>,
     ) -> Result<Self, Error> {
         let file_size = file.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
@@ -1675,14 +1676,14 @@ where
         Ok(self.file.file_handle.get_size()?)
     }
 
-    /// Returns the size of the Bloom filter, in bytes.
+    /// Returns statistics of the Bloom filter, including its size in bytes.
     ///
-    /// If the file doesn't have a Bloom filter, returns 0.
-    pub fn filter_size(&self) -> usize {
+    /// If the file doesn't have a Bloom filter, returns a default of zeros.
+    pub fn filter_stats(&self) -> BloomFilterStats {
         if let Some(bloom_filter) = &self.bloom_filter {
-            size_of_val(bloom_filter) + bloom_filter.num_bits() / 8
+            bloom_filter.stats()
         } else {
-            0
+            BloomFilterStats::default()
         }
     }
 
