@@ -37,7 +37,7 @@ which can be [configured separately](helm-guide.md).
 Before switching an existing Feldera installation to using HTTPS, it is required to stop
 all existing running pipelines because otherwise the still running pipelines will continue
 to serve their HTTP endpoint -- which the runner will no longer be able to communicate with
-as it expects HTTPS. The pipelines will need to be recompiled.
+as it expects HTTPS. Restart the pipelines after configuring HTTPS.
 
 :::
 
