@@ -1,4 +1,5 @@
 use crate::storage::buffer_cache::CacheStats;
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::trace::BatchLocation;
 use crate::trace::cursor::Position;
 use crate::trace::ord::file::UnwrapStorage;
@@ -294,8 +295,8 @@ where
         self.file.byte_size().unwrap_storage() as usize
     }
 
-    fn filter_size(&self) -> usize {
-        self.file.filter_size()
+    fn filter_stats(&self) -> BloomFilterStats {
+        self.file.filter_stats()
     }
 
     #[inline]

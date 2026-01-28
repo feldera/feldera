@@ -1,3 +1,5 @@
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
     DBData, DBWeight, Error, NumEntries,
     algebra::{NegByRef, ZRingValue},
@@ -23,8 +25,6 @@ use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::fmt::{self, Debug, Display};
-
-use crate::trace::ord::merge_batcher::MergeBatcher;
 
 pub struct VecIndexedWSetFactories<K, V, R>
 where
@@ -448,8 +448,8 @@ where
         self.layer.approximate_byte_size()
     }
 
-    fn filter_size(&self) -> usize {
-        0
+    fn filter_stats(&self) -> BloomFilterStats {
+        BloomFilterStats::default()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)

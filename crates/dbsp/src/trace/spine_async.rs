@@ -28,6 +28,7 @@ use crate::{
 
 use crate::storage::file::{Deserializer, to_bytes};
 use crate::trace::CommittedSpine;
+use dbsp::storage::tracking_bloom_filter::BloomFilterStats;
 use enum_map::EnumMap;
 use feldera_storage::{FileCommitter, StoragePath};
 use feldera_types::checkpoint::PSpineBatches;
@@ -558,11 +559,11 @@ where
         let mut cache_stats = spine_stats.cache_stats;
         let mut storage_size = 0;
         let mut merging_size = 0;
-        let mut filter_size = 0;
+        let mut filter_stats = BloomFilterStats::default();
         let mut storage_records = 0;
         for (batch, merging) in batches {
             cache_stats += batch.cache_stats();
-            filter_size += batch.filter_size();
+            filter_stats += batch.filter_stats();
             let on_storage = batch.location() == BatchLocation::Storage;
             if on_storage || merging {
                 let size = batch.approximate_byte_size();
@@ -577,7 +578,7 @@ where
         }
 
         if storage_records > 0 {
-            let bits_per_key = filter_size as f64 * 8.0 / storage_records as f64;
+            let bits_per_key = filter_stats.size_byte as f64 * 8.0 / storage_records as f64;
             let bits_per_key = bits_per_key as usize;
             meta.extend(metadata! {
                 "Bloom filter bits/key" => MetaItem::Int(bits_per_key)
@@ -593,7 +594,28 @@ where
             "storage size" => MetaItem::bytes(storage_size),
 
             // The amount of memory used for Bloom filters.
-            "Bloom filter size" => MetaItem::bytes(filter_size),
+            "Bloom filter size" => MetaItem::bytes(filter_stats.size_byte),
+
+            // The number of hits across all Bloom filters.
+            // Note that the hits are summed across the Bloom filters for all batches in the
+            // spine. As such, this does not provide information about hits distribution
+            // of the batches in the spine.
+            "Bloom filter hits" => MetaItem::Int(filter_stats.hits),
+
+            // The number of misses across all Bloom filters.
+            // Note that the misses are summed across the Bloom filters for all batches in the
+            // spine. As such, this does not provide information about misses distribution
+            // of the batches in the spine.
+            "Bloom filter misses" => MetaItem::Int(filter_stats.misses),
+
+            // The hit rate across all Bloom filters.
+            // Note that the hits and misses are summed across the Bloom filters for all batches in
+            // the spine is used to calculate this rate. As such, this does not provide
+            // information about hit rate distribution of the batches in the spine.
+            "Bloom filter hit rate" => MetaItem::Percent {
+                numerator: filter_stats.hits as u64,
+                denominator: filter_stats.hits as u64 + filter_stats.misses as u64,
+            },
 
             // The number of batches currently being merged.
             "merging batches" => MetaItem::Count(n_merging),
@@ -1067,11 +1089,11 @@ where
             .sum()
     }
 
-    fn filter_size(&self) -> usize {
+    fn filter_stats(&self) -> BloomFilterStats {
         self.merger
             .get_batches()
             .iter()
-            .map(|batch| batch.filter_size())
+            .map(|batch| batch.filter_stats())
             .sum()
     }
 

@@ -1,7 +1,9 @@
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
+use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::buffer_cache::CacheStats;
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::trace::cursor::{DelegatingCursor, PushCursor};
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
@@ -23,8 +25,6 @@ use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
-
-use super::utils::{copy_to_builder, pick_merge_destination};
 
 pub struct FallbackValBatchFactories<K, V, T, R>
 where
@@ -274,10 +274,10 @@ where
     }
 
     #[inline]
-    fn filter_size(&self) -> usize {
+    fn filter_stats(&self) -> BloomFilterStats {
         match &self.inner {
-            Inner::File(file) => file.filter_size(),
-            Inner::Vec(vec) => vec.filter_size(),
+            Inner::File(file) => file.filter_stats(),
+            Inner::Vec(vec) => vec.filter_stats(),
         }
     }
 
