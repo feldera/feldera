@@ -186,9 +186,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         df = out.to_pandas()
         assert df.shape[0] == 100
+        self.pipeline.stop(force=True)
 
     def test_pipeline_get(self):
         df_students = pd.read_csv("tests/assets/students.csv")
@@ -199,9 +199,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         df = out.to_pandas()
         assert df.shape[0] == 100
+        self.pipeline.stop(force=True)
 
     def test_local_listen_after_start(self):
         df_students = pd.read_csv("tests/assets/students.csv")
@@ -212,8 +212,8 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.input_pandas("grades", df_grades)
         self.pipeline.wait_for_idle()
         df = out.to_pandas()
-        self.pipeline.stop(force=True)
         assert df.shape[0] == 100
+        self.pipeline.stop(force=True)
 
     def test_foreach_chunk(self):
         def callback(df: pd.DataFrame, seq_no: int):
@@ -322,7 +322,6 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data=data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         out_data = out.to_dict()
         expected = []
         for d in data:
@@ -330,6 +329,7 @@ class TestPipeline(SharedTestPipeline):
             row["insert_delete"] = 1
             expected.append(row)
         assert out_data == expected
+        self.pipeline.stop(force=True)
 
     def test_failed_pipeline_stop(self):
         """
@@ -364,10 +364,10 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data, update_format="insert_delete")
         self.pipeline.wait_for_idle(True)
-        self.pipeline.stop(force=True)
         out_data = out.to_dict()
         expected = [dict(data["insert"], insert_delete=1)]
         assert out_data == expected
+        self.pipeline.stop(force=True)
 
     def test_input_json1(self):
         data = [{"id": 1}, {"id": 2}]
@@ -376,10 +376,10 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         out_data = out.to_dict()
         expected = [dict(row, insert_delete=1) for row in data]
         assert out_data == expected
+        self.pipeline.stop(force=True)
 
     @enterprise_only
     def test_suspend(self):
@@ -389,10 +389,10 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data, update_format="insert_delete")
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=False)
         out_data = out.to_dict()
         expected = [dict(data["insert"], insert_delete=1)]
         assert out_data == expected
+        self.pipeline.stop(force=False)
 
     def test_timestamp_pandas(self):
         """
@@ -419,9 +419,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_pandas("tbl_timestamp", df)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         df_out = out.to_pandas()
         assert df_out.shape[0] == 3
+        self.pipeline.stop(force=True)
 
     def test_pandas_binary(self):
         """
@@ -435,9 +435,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_binary", data=data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         assert expected_data == got
+        self.pipeline.stop(force=True)
 
     def test_pandas_decimal(self):
         """
@@ -453,9 +453,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_decimal", data=data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         assert expected == got
+        self.pipeline.stop(force=True)
 
     def test_pandas_array(self):
         """
@@ -468,10 +468,10 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_array", data=data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         expected = [{"c1": [1, 2, 3], "insert_delete": 1}]
         assert got == expected
+        self.pipeline.stop(force=True)
 
     def test_pandas_struct(self):
         """
@@ -488,10 +488,10 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_struct", data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         expected = [{"c1": {"f1": 1, "f2": "a"}, "insert_delete": 1}]
         assert got == expected
+        self.pipeline.stop(force=True)
 
     def test_pandas_date_time_timestamp(self):
         """
@@ -514,9 +514,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_datetime", data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         assert expected == got
+        self.pipeline.stop(force=True)
 
     def test_pandas_simple(self):
         """
@@ -543,7 +543,6 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_simple", data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         expected = []
         for d in data:
@@ -551,6 +550,7 @@ class TestPipeline(SharedTestPipeline):
             row["insert_delete"] = 1
             expected.append(row)
         assert got == expected
+        self.pipeline.stop(force=True)
 
     def test_pandas_map(self):
         """
@@ -564,18 +564,19 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_map", data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         assert expected == got
+        self.pipeline.stop(force=True)
+
         # Second round: single dict
         self.pipeline.start_paused()
         out = self.pipeline.listen("v_map")
         self.pipeline.resume()
         self.pipeline.input_json("tbl_map", {"c1": {"a": 1, "b": 2}})
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         assert expected == got
+        self.pipeline.stop(force=True)
 
     def test_uuid(self):
         """
@@ -590,12 +591,12 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_uuid", data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         # Compare only the UUID values
         got_uuids = sorted([row["c0"] for row in got])
         expected_uuids = sorted([row["c0"] for row in data])
         assert got_uuids == expected_uuids
+        self.pipeline.stop(force=True)
 
     def test_issue3754(self):
         """
