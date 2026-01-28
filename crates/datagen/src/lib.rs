@@ -2200,11 +2200,19 @@ impl<'a> RecordGenerator<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        FELDERA_MAX_DECIMAL_PRECISION, FELDERA_MAX_DECIMAL_SCALE, decimal_max, decimal_min,
+        FELDERA_MAX_DECIMAL_PRECISION, FELDERA_MAX_DECIMAL_SCALE, RecordGenerator, decimal_max,
+        decimal_min,
     };
     use feldera_fxp::{DynamicDecimal, UniformDecimal};
+    use feldera_types::program_schema::{ColumnType, Field, Relation};
+    use feldera_types::transport::datagen::{DatagenStrategy, GenerationPlan, RngFieldSettings};
     use rand::SeedableRng;
     use rand::rngs::SmallRng;
+    use serde_json::json;
+    use std::collections::{BTreeMap, HashMap};
+    use std::sync::{Arc, Barrier};
+    use std::time::Instant;
+    use std::{env, thread};
 
     /// Verify we can generate all feldera min/max decimals without panicking.
     #[test]
@@ -2248,5 +2256,139 @@ mod tests {
             assert!(d >= DynamicDecimal::new(-10, 0) && d <= DynamicDecimal::new(10, 0));
         }
         assert!(small && big);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_tput_binary_payload_datagen_only() {
+        static DEFAULT_SIZE: usize = 2_000_000;
+        let size = env::var("RECORDS")
+            .map(|r| r.parse().unwrap_or(DEFAULT_SIZE))
+            .unwrap_or(DEFAULT_SIZE);
+
+        let worker_counts = parse_csv_env("WORKERS", &[1usize, 2, 4]);
+        let payload_sizes = parse_csv_env("PAYLOAD_BYTES", &[8usize, 128, 512]);
+
+        for &workers in &worker_counts {
+            for &payload_bytes in &payload_sizes {
+                let (plan, schema) = payload_plan(payload_bytes);
+                let mut assignments = Vec::new();
+                let base = size / workers;
+                let remainder = size % workers;
+                let mut start_idx = 0usize;
+                for worker_idx in 0..workers {
+                    let mut count = base;
+                    if worker_idx < remainder {
+                        count += 1;
+                    }
+                    if count == 0 {
+                        continue;
+                    }
+                    assignments.push((start_idx, count));
+                    start_idx += count;
+                }
+                if assignments.is_empty() {
+                    println!(
+                        "DatagenOnly(workers={workers}, payload_bytes={payload_bytes}, records={size}): \
+skipped (no work)"
+                    );
+                    continue;
+                }
+
+                let barrier = Arc::new(Barrier::new(assignments.len() + 1));
+                let mut handles = Vec::with_capacity(assignments.len());
+                for (start, count) in assignments {
+                    let plan = plan.clone();
+                    let schema = schema.clone();
+                    let barrier = barrier.clone();
+                    handles.push(thread::spawn(move || {
+                        let mut generator = RecordGenerator::new(0, &plan, &schema);
+                        let mut buffer = Vec::with_capacity(256);
+                        let mut bytes: u64 = 0;
+                        barrier.wait();
+                        for idx in start..start + count {
+                            let record = generator.make_json_record(idx).unwrap();
+                            buffer.clear();
+                            serde_json::to_writer(&mut buffer, record).unwrap();
+                            bytes += buffer.len() as u64;
+                        }
+                        (count as u64, bytes)
+                    }));
+                }
+
+                barrier.wait();
+                let start_time = Instant::now();
+                let mut total_records = 0u64;
+                let mut total_bytes = 0u64;
+                for handle in handles {
+                    let (records, bytes) = handle.join().expect("worker thread panicked");
+                    total_records += records;
+                    total_bytes += bytes;
+                }
+                let elapsed = start_time.elapsed();
+                assert_eq!(total_records as usize, size);
+
+                let secs = elapsed.as_secs_f64();
+                let recs_per_sec = total_records as f64 / secs;
+                let mbps = total_bytes as f64 / secs / (1024.0 * 1024.0);
+                println!(
+                    "DatagenOnly(workers={workers}, payload_bytes={payload_bytes}, records={size}): \
+{recs_per_sec:.2} records/sec ({mbps:.2} MiB/sec)"
+                );
+            }
+        }
+    }
+
+    fn payload_plan(payload_bytes: usize) -> (GenerationPlan, Relation) {
+        let mut fields = HashMap::new();
+        let value_settings = RngFieldSettings {
+            strategy: DatagenStrategy::Uniform,
+            ..RngFieldSettings::default()
+        };
+        let payload_settings = RngFieldSettings {
+            range: Some((json!(payload_bytes), json!(payload_bytes + 1))),
+            value: Some(Box::new(value_settings)),
+            ..RngFieldSettings::default()
+        };
+        fields.insert("payload".to_string(), Box::new(payload_settings));
+
+        let plan = GenerationPlan {
+            fields,
+            ..GenerationPlan::default()
+        };
+        let schema = Relation::new(
+            "simple".into(),
+            vec![Field::new(
+                "payload".into(),
+                ColumnType::fixed(payload_bytes as i64, false),
+            )],
+            true,
+            BTreeMap::new(),
+        );
+        (plan, schema)
+    }
+
+    fn parse_csv_env(name: &str, defaults: &[usize]) -> Vec<usize> {
+        let Ok(value) = env::var(name) else {
+            return defaults.to_vec();
+        };
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return defaults.to_vec();
+        }
+        trimmed
+            .split(',')
+            .map(|item| item.trim())
+            .filter(|item| !item.is_empty())
+            .map(|item| {
+                let parsed = item
+                    .parse::<usize>()
+                    .unwrap_or_else(|_| panic!("Invalid {name} entry: {item}"));
+                if parsed == 0 {
+                    panic!("{name} entries must be positive: {item}");
+                }
+                parsed
+            })
+            .collect()
     }
 }
