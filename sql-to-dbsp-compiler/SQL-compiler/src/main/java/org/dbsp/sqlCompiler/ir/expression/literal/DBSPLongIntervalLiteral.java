@@ -33,7 +33,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -41,24 +41,32 @@ import javax.annotation.Nullable;
 import java.math.BigInteger;
 import java.util.Objects;
 
-public final class DBSPIntervalMillisLiteral
+public final class DBSPLongIntervalLiteral
         extends DBSPLiteral
         implements IsNumericLiteral, IsIntervalLiteral {
+    /** Expressed in months */
+    @Nullable public final Integer value;
 
-    /** Canonical value, represented in milliseconds */
-    @Nullable public final Long value;
-
-    public DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units units) {
-        this(CalciteObject.EMPTY, new DBSPTypeMillisInterval(CalciteObject.EMPTY, units, true), null);
-    }
-
-    public DBSPIntervalMillisLiteral(CalciteObject node, DBSPType type, @Nullable Long value) {
+    public DBSPLongIntervalLiteral(CalciteObject node, DBSPType type, @Nullable Integer value) {
         super(node, type, value == null);
+        Utilities.enforce(type.is(DBSPTypeLongInterval.class));
         this.value = value;
     }
 
-    public DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units units, long value, boolean mayBeNull) {
-        this(CalciteObject.EMPTY, new DBSPTypeMillisInterval(CalciteObject.EMPTY, units, mayBeNull), value);
+    DBSPLongIntervalLiteral(DBSPTypeLongInterval.Units units, int value) {
+        this(CalciteObject.EMPTY, new DBSPTypeLongInterval(CalciteObject.EMPTY, units,false), value);
+    }
+
+    DBSPLongIntervalLiteral(DBSPTypeLongInterval.Units units, int value, boolean mayBeNull) {
+        this(CalciteObject.EMPTY, new DBSPTypeLongInterval(CalciteObject.EMPTY, units, mayBeNull), value);
+    }
+
+    public static DBSPLongIntervalLiteral fromMonths(DBSPTypeLongInterval.Units units, int value) {
+        return new DBSPLongIntervalLiteral(units, value);
+    }
+
+    public static DBSPLongIntervalLiteral fromMonths(DBSPTypeLongInterval.Units units, int value, boolean mayBeNull) {
+        return new DBSPLongIntervalLiteral(units, value, mayBeNull);
     }
 
     @Override
@@ -69,7 +77,7 @@ public final class DBSPIntervalMillisLiteral
 
     @Override
     public int compare(IsNumericLiteral other) {
-        DBSPIntervalMillisLiteral oi = other.to(DBSPIntervalMillisLiteral.class);
+        DBSPLongIntervalLiteral oi = other.to(DBSPLongIntervalLiteral.class);
         Utilities.enforce(this.value != null);
         Utilities.enforce(oi.value != null);
         return this.value.compareTo(oi.value);
@@ -79,7 +87,7 @@ public final class DBSPIntervalMillisLiteral
     public IsNumericLiteral negate() {
         if (this.value == null)
             return this;
-        return new DBSPIntervalMillisLiteral(this.getNode(), this.type, Math.negateExact(this.value));
+        return new DBSPLongIntervalLiteral(this.getNode(), this.type, Math.negateExact(this.value));
     }
 
     @Override
@@ -95,13 +103,13 @@ public final class DBSPIntervalMillisLiteral
     public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        DBSPIntervalMillisLiteral that = (DBSPIntervalMillisLiteral) o;
+        DBSPLongIntervalLiteral that = (DBSPLongIntervalLiteral) o;
         return Objects.equals(value, that.value);
     }
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPIntervalMillisLiteral(this.getNode(),
+        return new DBSPLongIntervalLiteral(this.getNode(),
                 this.getType().withMayBeNull(mayBeNull), this.checkIfNull(this.value, mayBeNull));
     }
 
@@ -117,43 +125,39 @@ public final class DBSPIntervalMillisLiteral
     }
 
     @Override
-    public IsIntervalLiteral multiply(@Nullable BigInteger value) {
-        if (this.value == null)
-            return this;
-        if (value == null)
-            return new DBSPIntervalMillisLiteral(this.getNode(), this.type, null);
-        BigInteger result = value.multiply(BigInteger.valueOf(this.value));
-        return new DBSPIntervalMillisLiteral(
-                this.type.to(DBSPTypeMillisInterval.class).units, result.longValueExact(), this.isNull);
-    }
-
-    @Override
-    public String toSqlString() {
-        if (this.value == null)
-            return DBSPNullLiteral.NULL;
-        long ms = this.value % 1000L;
-        return "INTERVAL " + this.value / 1000L +
-                ((ms > 0) ? "." + String.format("%03d", this.value % 1000L) : "") +
-                " SECONDS";
-    }
-
-    @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
     }
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPIntervalMillisLiteral(this.getNode(), this.type, this.value);
+        return new DBSPLongIntervalLiteral(this.getNode(), this.type, this.value);
+    }
+
+    @Override
+    public IsIntervalLiteral multiply(@Nullable BigInteger value) {
+        if (this.value == null)
+            return this;
+        if (value == null)
+            return new DBSPLongIntervalLiteral(this.getNode(), this.type, null);
+        BigInteger result = value.multiply(BigInteger.valueOf(this.value));
+        return new DBSPLongIntervalLiteral(this.getNode(), this.type, result.intValueExact());
+    }
+
+    @Override
+    public String toSqlString() {
+        if (this.value == null)
+            return DBSPNullLiteral.NULL;
+        return "INTERVAL " + this.value + " MONTHS";
     }
 
     @SuppressWarnings("unused")
-    public static DBSPIntervalMillisLiteral fromJson(JsonNode node, JsonDecoder decoder) {
-        Long value = null;
+    public static DBSPLongIntervalLiteral fromJson(JsonNode node, JsonDecoder decoder) {
+        Integer value = null;
         if (node.has("value")) {
-            value = Utilities.getLongProperty(node, "value");
+            value = Utilities.getIntProperty(node, "value");
         }
         DBSPType type = getJsonType(node, decoder);
-        return new DBSPIntervalMillisLiteral(CalciteObject.EMPTY, type, value);
+        return new DBSPLongIntervalLiteral(CalciteObject.EMPTY, type, value);
     }
 }

@@ -26,8 +26,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPInternedStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLongIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
@@ -54,8 +54,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeBTreeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
@@ -308,19 +308,19 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPTypeMonthsInterval type) {
+    public VisitDecision preorder(DBSPTypeLongInterval type) {
         this.push(type);
         this.pop(type);
-        DBSPType result = new DBSPTypeMonthsInterval(type.getNode(), type.units, type.mayBeNull);
+        DBSPType result = new DBSPTypeLongInterval(type.getNode(), type.units, type.mayBeNull);
         this.map(type, result);
         return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPTypeMillisInterval type) {
+    public VisitDecision preorder(DBSPTypeShortInterval type) {
         this.push(type);
         this.pop(type);
-        DBSPType result = new DBSPTypeMillisInterval(type.getNode(), type.units, type.mayBeNull);
+        DBSPType result = new DBSPTypeShortInterval(type.getNode(), type.units, type.mayBeNull);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -599,21 +599,21 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPIntervalMillisLiteral expression) {
+    public VisitDecision preorder(DBSPShortIntervalLiteral expression) {
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
-        DBSPExpression result = new DBSPIntervalMillisLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = DBSPShortIntervalLiteral.fromMicroseconds(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPIntervalMonthsLiteral expression) {
+    public VisitDecision preorder(DBSPLongIntervalLiteral expression) {
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
-        DBSPExpression result = new DBSPIntervalMonthsLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPLongIntervalLiteral(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -699,7 +699,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
-        DBSPExpression result = new DBSPTimestampLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = DBSPTimestampLiteral.fromMicroseconds(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

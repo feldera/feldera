@@ -988,7 +988,7 @@ impl PartitionReceiver {
             if let Some(timestamp) = timestamp {
                 metadata.insert(
                     "kafka_timestamp",
-                    Variant::Timestamp(Timestamp::from(timestamp)),
+                    Variant::Timestamp(Timestamp::from_milliseconds(timestamp)),
                 );
             }
         }

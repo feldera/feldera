@@ -251,6 +251,17 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void tsAdd() {
+        // Check that microsecond intervals are correctly added
+        var ccs = this.getCCS("CREATE VIEW V AS SELECT " +
+                "TIMESTAMPADD(MICROSECOND, 2, '2024-01-01 00:00:00.123456'::TIMESTAMP)");
+        ccs.step("", """
+                 ts0 | weight
+                --------------------------------
+                 2024-01-01 00:00:00.123458 | 1""");
+    }
+
+    @Test
     public void issue3164() {
         this.compileRustTestCase("""
                 CREATE TABLE T(x integer LATENESS 1);

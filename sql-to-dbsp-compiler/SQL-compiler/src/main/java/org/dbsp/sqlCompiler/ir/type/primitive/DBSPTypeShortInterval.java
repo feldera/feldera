@@ -29,10 +29,9 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
@@ -41,30 +40,30 @@ import org.dbsp.util.Utilities;
 
 import java.util.Objects;
 
-/** Models the SQL Interval type for months-years.
- * Always stores the interval value in days. */
-public class DBSPTypeMonthsInterval
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INTERVAL_SHORT;
+
+/** Models the SQL Interval type for days-seconds. */
+public class DBSPTypeShortInterval
         extends DBSPTypeBaseType
         implements IsTimeRelatedType, IHasZero, IsIntervalType {
     public enum Units {
-        MONTHS,
-        YEARS,
-        YEARS_TO_MONTHS
+        DAYS,
+        HOURS,
+        DAYS_TO_HOURS,
+        MINUTES,
+        HOURS_TO_MINUTES,
+        DAYS_TO_MINUTES,
+        SECONDS,
+        DAYS_TO_SECONDS,
+        HOURS_TO_SECONDS,
+        MINUTES_TO_SECONDS,
     }
 
     public final Units units;
 
-    public DBSPTypeMonthsInterval(CalciteObject node, Units units, boolean mayBeNull) {
-        super(node, DBSPTypeCode.INTERVAL_LONG, mayBeNull);
+    public DBSPTypeShortInterval(CalciteObject node, Units units, boolean mayBeNull) {
+        super(node, INTERVAL_SHORT, mayBeNull);
         this.units = units;
-    }
-
-    @Override
-    public IIndentStream toString(IIndentStream builder) {
-        return super.toString(builder)
-                .append("(")
-                .append(this.units.toString())
-                .append(")");
     }
 
     @Override
@@ -77,44 +76,57 @@ public class DBSPTypeMonthsInterval
     }
 
     @Override
+    public String toString() {
+        return super.toString() + "(" + this.units + ")";
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return super.toString(builder)
+                .append("(")
+                .append(this.units.toString())
+                .append(")");
+    }
+
+    @Override
     public DBSPExpression getMinValue() {
-        return new DBSPIntervalMonthsLiteral(this.units, Integer.MIN_VALUE, this.mayBeNull);
+        return DBSPShortIntervalLiteral.fromMicroseconds(this.units, Long.MIN_VALUE, this.mayBeNull);
     }
 
     @Override
     public DBSPExpression getMaxValue() {
-        return new DBSPIntervalMonthsLiteral(this.units, Integer.MAX_VALUE, this.mayBeNull);
+        return DBSPShortIntervalLiteral.fromMicroseconds(this.units, Long.MAX_VALUE, this.mayBeNull);
     }
 
     @Override
     public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
-        return new DBSPTypeMonthsInterval(this.getNode(), this.units, mayBeNull);
+        return new DBSPTypeShortInterval(this.getNode(), this.units, mayBeNull);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(this.mayBeNull, this.units, 9);
+        return Objects.hash(this.mayBeNull, this.units, 8);
     }
 
     @Override
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
             return this.none();
-        return new DBSPIntervalMonthsLiteral(this.units, 0, false);
+        return DBSPShortIntervalLiteral.fromMicroseconds(this.units, 0, false);
     }
 
     @Override
     public DBSPLiteral getZero() {
-        return new DBSPIntervalMonthsLiteral(this.units, 0, this.mayBeNull);
+        return DBSPShortIntervalLiteral.fromMicroseconds(this.units, 0, this.mayBeNull);
     }
 
     @Override
     public boolean sameType(DBSPType other) {
         if (!super.sameNullability(other))
             return false;
-        DBSPTypeMonthsInterval otherType = other.as(DBSPTypeMonthsInterval.class);
+        DBSPTypeShortInterval otherType = other.as(DBSPTypeShortInterval.class);
         if (otherType == null)
             return false;
         return this.units == otherType.units;
@@ -125,24 +137,10 @@ public class DBSPTypeMonthsInterval
         return this.shortName() + "_" + this.units.name() + this.nullableSuffix();
     }
 
-    @Override
-    public String toString() {
-        return "LongInterval(" +
-                switch (this.units) {
-                    case YEARS_TO_MONTHS, YEARS -> "Y";
-                    default -> "";
-                } +
-                switch (this.units) {
-                    case YEARS_TO_MONTHS, MONTHS -> "M";
-                    default -> "";
-                } +
-                ")";
-    }
-
     @SuppressWarnings("unused")
-    public static DBSPTypeMonthsInterval fromJson(JsonNode node, JsonDecoder decoder) {
+    public static DBSPTypeShortInterval fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
         Units units = Units.valueOf(Utilities.getStringProperty(node, "units"));
-        return new DBSPTypeMonthsInterval(CalciteObject.EMPTY, units, mayBeNull);
+        return new DBSPTypeShortInterval(CalciteObject.EMPTY, units, mayBeNull);
     }
 }

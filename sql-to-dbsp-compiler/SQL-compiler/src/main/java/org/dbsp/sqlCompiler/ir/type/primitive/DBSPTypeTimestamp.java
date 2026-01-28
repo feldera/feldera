@@ -41,8 +41,8 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TIMESTAMP;
 public class DBSPTypeTimestamp extends DBSPTypeBaseType
         implements IsDateType, IsTimeRelatedType {
 
-    /** Number of digits after decimal point (milliseconds) */
-    public static final int PRECISION = 3;
+    /** Number of digits after decimal point (microseconds) */
+    public static final int PRECISION = 6;
 
     DBSPTypeTimestamp(CalciteObject node, boolean mayBeNull) {
         super(node, TIMESTAMP, mayBeNull);
@@ -65,7 +65,7 @@ public class DBSPTypeTimestamp extends DBSPTypeBaseType
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
             return this.none();
-        return new DBSPTimestampLiteral(this.getNode(), this, 0L);
+        return DBSPTimestampLiteral.fromMicroseconds(this.getNode(), this, 0L);
     }
 
     @Override

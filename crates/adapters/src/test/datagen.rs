@@ -1130,15 +1130,15 @@ fn test_time_types() {
     let mut iter = zst.flushed.iter();
     let first = iter.next().unwrap();
     let record = first.unwrap_insert();
-    assert_eq!(record.field, Timestamp::new(0));
-    assert_eq!(record.field_1, Date::new(0));
-    assert_eq!(record.field_2, Time::new(0));
+    assert_eq!(record.field, Timestamp::from_milliseconds(0));
+    assert_eq!(record.field_1, Date::from_days(0));
+    assert_eq!(record.field_2, Time::from_nanoseconds(0));
 
     let second = iter.next().unwrap();
     let record = second.unwrap_insert();
-    assert_eq!(record.field, Timestamp::new(1));
-    assert_eq!(record.field_1, Date::new(1));
-    assert_eq!(record.field_2, Time::new(1000000));
+    assert_eq!(record.field, Timestamp::from_milliseconds(1));
+    assert_eq!(record.field_1, Date::from_days(1));
+    assert_eq!(record.field_2, Time::from_nanoseconds(1000000));
 }
 
 #[test]
@@ -1186,21 +1186,24 @@ fn test_time_types_with_integer_range() {
     let mut iter = zst.flushed.iter();
     let first = iter.next().unwrap();
     let record = first.unwrap_insert();
-    assert_eq!(record.field, Timestamp::new(1724803200000));
-    assert_eq!(record.field_1, Date::new(19963));
-    assert_eq!(record.field_2, Time::new(5000000));
+    assert_eq!(record.field, Timestamp::from_milliseconds(1724803200000));
+    assert_eq!(record.field_1, Date::from_days(19963));
+    assert_eq!(record.field_2, Time::from_nanoseconds(5000000));
 
     let second = iter.next().unwrap();
     let record = second.unwrap_insert();
-    assert_eq!(record.field, Timestamp::new(1724803200000 + 1));
-    assert_eq!(record.field_1, Date::new(19963 + 1));
-    assert_eq!(record.field_2, Time::new(5000000 + 1000000));
+    assert_eq!(
+        record.field,
+        Timestamp::from_milliseconds(1724803200000 + 1)
+    );
+    assert_eq!(record.field_1, Date::from_days(19963 + 1));
+    assert_eq!(record.field_2, Time::from_nanoseconds(5000000 + 1000000));
 
     let second = iter.next().unwrap();
     let record = second.unwrap_insert();
-    assert_eq!(record.field, Timestamp::new(1724803200000));
-    assert_eq!(record.field_1, Date::new(19963));
-    assert_eq!(record.field_2, Time::new(5000000));
+    assert_eq!(record.field, Timestamp::from_milliseconds(1724803200000));
+    assert_eq!(record.field_1, Date::from_days(19963));
+    assert_eq!(record.field_2, Time::from_nanoseconds(5000000));
 }
 
 #[test]
@@ -1252,10 +1255,10 @@ fn test_uniform_dates_times_timestamps() {
         let record = record.unwrap_insert();
         assert!(record.field >= Timestamp::from_dateTime("2024-10-11T11:04:00Z".parse().unwrap()));
         assert!(record.field < Timestamp::from_dateTime("2024-10-11T11:05:02Z".parse().unwrap()));
-        assert!(record.field_1 >= Date::new(19963));
-        assert!(record.field_1 < Date::new(19965));
-        assert!(record.field_2 >= Time::new(5000000));
-        assert!(record.field_2 < Time::new(7000000));
+        assert!(record.field_1 >= Date::from_days(19963));
+        assert!(record.field_1 < Date::from_days(19965));
+        assert!(record.field_2 >= Time::from_nanoseconds(5000000));
+        assert!(record.field_2 < Time::from_nanoseconds(7000000));
     }
 }
 
@@ -1402,21 +1405,24 @@ fn test_time_types_with_string_range() {
     let mut iter = zst.flushed.iter();
     let first = iter.next().unwrap();
     let record = first.unwrap_insert();
-    assert_eq!(record.field, Timestamp::new(1724803200000));
-    assert_eq!(record.field_1, Date::new(19963));
-    assert_eq!(record.field_2, Time::new(5000000000));
+    assert_eq!(record.field, Timestamp::from_milliseconds(1724803200000));
+    assert_eq!(record.field_1, Date::from_days(19963));
+    assert_eq!(record.field_2, Time::from_nanoseconds(5000000000));
 
     let second = iter.next().unwrap();
     let record = second.unwrap_insert();
-    assert_eq!(record.field, Timestamp::new(1724803200000 + 1000));
-    assert_eq!(record.field_1, Date::new(19963 + 1));
-    assert_eq!(record.field_2, Time::new(6000000000));
+    assert_eq!(
+        record.field,
+        Timestamp::from_milliseconds(1724803200000 + 1000)
+    );
+    assert_eq!(record.field_1, Date::from_days(19963 + 1));
+    assert_eq!(record.field_2, Time::from_nanoseconds(6000000000));
 
     let second = iter.next().unwrap();
     let record = second.unwrap_insert();
-    assert_eq!(record.field, Timestamp::new(1724803200000));
-    assert_eq!(record.field_1, Date::new(19963));
-    assert_eq!(record.field_2, Time::new(5000000000));
+    assert_eq!(record.field, Timestamp::from_milliseconds(1724803200000));
+    assert_eq!(record.field_1, Date::from_days(19963));
+    assert_eq!(record.field_2, Time::from_nanoseconds(5000000000));
 }
 
 /// Field T not found, "t" is case sensitive.
@@ -1486,9 +1492,9 @@ fn test_case_insensitivity() {
     let mut iter = zst.flushed.iter();
     let first = iter.next().unwrap();
     let record = first.unwrap_insert();
-    assert_eq!(record.field, Timestamp::new(0));
-    assert_eq!(record.field_1, Date::new(1));
-    assert_eq!(record.field_2, Time::new(1_000_000_000));
+    assert_eq!(record.field, Timestamp::from_milliseconds(0));
+    assert_eq!(record.field_1, Date::from_days(1));
+    assert_eq!(record.field_2, Time::from_nanoseconds(1_000_000_000));
 }
 
 #[test]

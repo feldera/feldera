@@ -16,8 +16,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLongIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
@@ -67,7 +67,7 @@ public class TableParser {
         return new DateTimeFormatterBuilder()
                 .appendPattern(pattern)
                 .appendLiteral('.')
-                .appendFraction(ChronoField.MILLI_OF_SECOND, 1, 3, false);
+                .appendFraction(ChronoField.MICRO_OF_SECOND, 1, 6, false);
     }
 
     // The first few of these are postgres specific
@@ -186,7 +186,7 @@ public class TableParser {
         return result;
     }
 
-    public static long shortIntervalToMilliseconds(String interval) {
+    public static long shortIntervalToMicroseconds(String interval) {
         String orig = interval;
         boolean negate = false;
 
@@ -203,7 +203,7 @@ public class TableParser {
             m = DAYS.matcher(interval);
             if (m.matches()) {
                 int d = Integer.parseInt(m.group(1));
-                result += (long) d * 86_400_000;
+                result += (long) d * 86_400_000_000L;
                 interval = m.group(2);
             }
 
@@ -213,30 +213,30 @@ public class TableParser {
                 if (m.group(2) != null)
                     timeString += m.group(2);
                 TimeString time = new TimeString(timeString);
-                result += time.getMillisOfDay();
+                result += time.getMillisOfDay() * 1000L;
                 interval = m.group(3);
             } else {
                 m = HOURS.matcher(interval);
                 if (m.matches()) {
                     long h = Long.parseLong(m.group(1));
-                    result += h * 3600_000;
+                    result += h * 3_600_000_000L;
                     interval = m.group(2);
                 }
 
                 m = MINUTES.matcher(interval);
                 if (m.matches()) {
                     long mm = Long.parseLong(m.group(1));
-                    result += mm * 60_000;
+                    result += mm * 60_000_000;
                     interval = m.group(2);
                 }
 
                 m = SECONDS.matcher(interval);
                 if (m.matches()) {
                     long s = Long.parseLong(m.group(1));
-                    result += s * 1000;
+                    result += s * 1_000_000;
                     if (m.group(3) != null) {
-                        String msec = m.group(3) + "000";
-                        result += Long.parseLong(msec.substring(0, 3));
+                        String usec = m.group(3) + "000000";
+                        result += Long.parseLong(usec.substring(0, 6));
                     }
                     interval = m.group(4);
                 }
@@ -292,12 +292,12 @@ public class TableParser {
                 case UINT32 -> new DBSPU32Literal(CalciteObject.EMPTY, fieldType, Long.parseLong(trimmed));
                 case UINT64 -> new DBSPU64Literal(CalciteObject.EMPTY, fieldType, new BigInteger(trimmed));
                 case INTERVAL_SHORT -> {
-                    long value = shortIntervalToMilliseconds(trimmed);
-                    yield new DBSPIntervalMillisLiteral(CalciteObject.EMPTY, fieldType, value);
+                    long value = shortIntervalToMicroseconds(trimmed);
+                    yield DBSPShortIntervalLiteral.fromMicroseconds(CalciteObject.EMPTY, fieldType, value);
                 }
                 case INTERVAL_LONG -> {
                     int months = longIntervalToMonths(trimmed);
-                    yield new DBSPIntervalMonthsLiteral(CalciteObject.EMPTY, fieldType, months);
+                    yield new DBSPLongIntervalLiteral(CalciteObject.EMPTY, fieldType, months);
                 }
                 case STRING -> {
                     // If there is no space in front of the string, we expect a NULL.

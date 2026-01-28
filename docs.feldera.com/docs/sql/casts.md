@@ -27,6 +27,10 @@ always truncate the decimal digits (round towards zero).  For example,
 `CAST(2.9 AS INTEGER)` returns 2, while `CAST(-2.9 AS INTEGER)`
 returns -2.
 
+Casts from a short interval to a numeric type return the length of the
+inteval in milliseconds.  Cast of a long interval to a numeric type
+return the length of the interval in months.
+
 Casts of strings to numeric types produce a runtime error when the
 string cannot be interpreted as a number.  Use `SAFE_CAST` if runtime
 errors are undesired.

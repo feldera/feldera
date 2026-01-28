@@ -8,8 +8,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -32,9 +32,9 @@ public class DBSPTimeAddSub extends DBSPExpression {
     // The result type for all other operations is a deterministic function of the input types and the operation fields.
     // By using these fields, we ensure that this operation follows the same pattern.
     @Nullable
-    public final DBSPTypeMillisInterval.Units shortUnits;
+    public final DBSPTypeShortInterval.Units shortUnits;
     @Nullable
-    public final DBSPTypeMonthsInterval.Units longUnits;
+    public final DBSPTypeLongInterval.Units longUnits;
 
     public DBSPTimeAddSub(CalciteObject node, DBSPType type, DBSPOpcode opcode, DBSPExpression left, DBSPExpression right) {
         super(node, type);
@@ -42,11 +42,11 @@ public class DBSPTimeAddSub extends DBSPExpression {
         Utilities.enforce(opcode == DBSPOpcode.ADD || opcode == DBSPOpcode.SUB);
         this.left = left;
         this.right = right;
-        if (this.type.is(DBSPTypeMillisInterval.class)) {
-            this.shortUnits = this.type.to(DBSPTypeMillisInterval.class).units;
+        if (this.type.is(DBSPTypeShortInterval.class)) {
+            this.shortUnits = this.type.to(DBSPTypeShortInterval.class).units;
             this.longUnits = null;
-        } else if (this.type.is(DBSPTypeMonthsInterval.class)) {
-            this.longUnits = this.type.to(DBSPTypeMonthsInterval.class).units;
+        } else if (this.type.is(DBSPTypeLongInterval.class)) {
+            this.longUnits = this.type.to(DBSPTypeLongInterval.class).units;
             this.shortUnits = null;
         } else {
             this.shortUnits = null;

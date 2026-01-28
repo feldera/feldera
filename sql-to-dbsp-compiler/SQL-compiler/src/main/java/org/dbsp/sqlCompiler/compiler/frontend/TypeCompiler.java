@@ -61,8 +61,8 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeKeyword;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
@@ -460,31 +460,31 @@ public class TypeCompiler implements ICompilerComponent {
                     throw new UnimplementedException("Support for SQL type " + Utilities.singleQuote(tn.getName())
                             + " not yet implemented", node);
                 case INTERVAL_YEAR:
-                    return new DBSPTypeMonthsInterval(node, DBSPTypeMonthsInterval.Units.YEARS, nullable);
+                    return new DBSPTypeLongInterval(node, DBSPTypeLongInterval.Units.YEARS, nullable);
                 case INTERVAL_YEAR_MONTH:
-                    return new DBSPTypeMonthsInterval(node, DBSPTypeMonthsInterval.Units.YEARS_TO_MONTHS, nullable);
+                    return new DBSPTypeLongInterval(node, DBSPTypeLongInterval.Units.YEARS_TO_MONTHS, nullable);
                 case INTERVAL_MONTH:
-                    return new DBSPTypeMonthsInterval(node, DBSPTypeMonthsInterval.Units.MONTHS, nullable);
+                    return new DBSPTypeLongInterval(node, DBSPTypeLongInterval.Units.MONTHS, nullable);
                 case INTERVAL_DAY:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.DAYS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.DAYS, nullable);
                 case INTERVAL_DAY_HOUR:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.DAYS_TO_HOURS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.DAYS_TO_HOURS, nullable);
                 case INTERVAL_DAY_MINUTE:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.DAYS_TO_MINUTES, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.DAYS_TO_MINUTES, nullable);
                 case INTERVAL_DAY_SECOND:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.DAYS_TO_SECONDS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.DAYS_TO_SECONDS, nullable);
                 case INTERVAL_HOUR:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.HOURS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.HOURS, nullable);
                 case INTERVAL_HOUR_MINUTE:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.HOURS_TO_MINUTES, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.HOURS_TO_MINUTES, nullable);
                 case INTERVAL_HOUR_SECOND:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.HOURS_TO_SECONDS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.HOURS_TO_SECONDS, nullable);
                 case INTERVAL_MINUTE:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.MINUTES, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.MINUTES, nullable);
                 case INTERVAL_MINUTE_SECOND:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.MINUTES_TO_SECONDS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.MINUTES_TO_SECONDS, nullable);
                 case INTERVAL_SECOND:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.SECONDS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.SECONDS, nullable);
                 case GEOMETRY:
                     return DBSPTypeGeoPoint.create(node, nullable);
                 case TIMESTAMP:
