@@ -24,6 +24,7 @@ import plotly.graph_objects as go
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
 
 DEFAULT_DATA_PATH = str(Path(__file__).resolve().parents[0] / "bench_results.csv")
+VERSION_COLUMN = "platform_version"
 METRICS: List[Tuple[str, str]] = [
     ("throughput_value", "Throughput [records/s]"),
     ("storage_value", "Storage [bytes]"),
@@ -56,6 +57,7 @@ def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     if "pipeline_name" not in df.columns:
         df["pipeline_name"] = "u64"
+    df[VERSION_COLUMN] = df[VERSION_COLUMN].astype(str)
 
     numeric_columns = [
         "pipeline_workers",
@@ -525,6 +527,21 @@ app.layout = html.Div(
                                 ),
                             ],
                         ),
+                        html.Div(
+                            className="control-group",
+                            children=[
+                                html.Label("Version", className="control-label"),
+                                dcc.Dropdown(
+                                    id="version-dropdown",
+                                    className="control-dropdown",
+                                    clearable=False,
+                                ),
+                                html.Div(
+                                    "Filter results by platform version.",
+                                    className="control-help",
+                                ),
+                            ],
+                        ),
                     ],
                 ),
                 html.Div(
@@ -637,14 +654,33 @@ def handle_load(_n_clicks, upload_contents, upload_filename):
 
 
 @app.callback(
-    Output("program-tabs", "children"),
-    Output("program-tabs", "value"),
+    Output("version-dropdown", "options"),
+    Output("version-dropdown", "value"),
     Input("data-store", "data"),
 )
-def update_program_tabs(data):
+def update_version_dropdown(data):
     if not data:
         return [], None
     df = pd.read_json(StringIO(data), orient="split")
+    versions = sorted(df[VERSION_COLUMN].dropna().unique().tolist())
+    if not versions:
+        return [], None
+    options = [{"label": version, "value": version} for version in versions]
+    return options, options[0]["value"]
+
+
+@app.callback(
+    Output("program-tabs", "children"),
+    Output("program-tabs", "value"),
+    Input("data-store", "data"),
+    Input("version-dropdown", "value"),
+)
+def update_program_tabs(data, version):
+    if not data:
+        return [], None
+    df = pd.read_json(StringIO(data), orient="split")
+    if version:
+        df = df[df[VERSION_COLUMN] == version]
     programs = sorted(df["pipeline_name"].dropna().unique().tolist())
     tabs = [dcc.Tab(label=program, value=program) for program in programs]
     selected = programs[0] if programs else None
@@ -660,13 +696,16 @@ def update_program_tabs(data):
     Output("payload-slider", "disabled"),
     Output("payload-slider-wrapper", "style"),
     Input("program-tabs", "value"),
+    Input("version-dropdown", "value"),
     Input("data-store", "data"),
 )
-def update_payload_slider(program, data):
+def update_payload_slider(program, version, data):
     if not data or not program:
         return 0, 0, {0: "0"}, 0, None, True, {"display": "none"}
 
     df = pd.read_json(StringIO(data), orient="split")
+    if version:
+        df = df[df[VERSION_COLUMN] == version]
     program_df = df[df["pipeline_name"] == program].copy()
     values, labels = payload_values_for_program(program_df)
     if not values:
@@ -685,9 +724,10 @@ def update_payload_slider(program, data):
     Input("program-tabs", "value"),
     Input("payload-slider", "value"),
     Input("gauge-worker-slider", "value"),
+    Input("version-dropdown", "value"),
     Input("data-store", "data"),
 )
-def update_graphs(program, payload_idx, gauge_worker_idx, data):
+def update_graphs(program, payload_idx, gauge_worker_idx, version, data):
     if not data:
         empty_gauge = build_gauge_card(
             fig=None,
@@ -707,6 +747,8 @@ def update_graphs(program, payload_idx, gauge_worker_idx, data):
             ),
         )
     df = pd.read_json(StringIO(data), orient="split")
+    if version:
+        df = df[df[VERSION_COLUMN] == version]
     if not program:
         return (
             "Select a program tab.",
