@@ -331,9 +331,15 @@ async fn create_nats_consumer(
         .name
         .map(|n| format!("{n}_{}", uuid::Uuid::now_v7()));
 
-    Ok(jetstream
-        .create_consumer_strict_on_stream(consumer_config, stream_name)
-        .await?)
+    jetstream
+        .create_consumer_strict_on_stream(consumer_config.clone(), stream_name)
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to create consumer {:?} on stream '{}'",
+                consumer_config.name, stream_name
+            )
+        })
 }
 
 async fn consume_nats_messages_until(
