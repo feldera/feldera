@@ -32,8 +32,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.IIndentStream;
@@ -52,8 +52,8 @@ public final class DBSPBinaryExpression extends DBSPExpression {
         this.right = right;
         if (opcode == DBSPOpcode.ADD || opcode == DBSPOpcode.SUB) {
             // These should use DBSPTimeAddSub
-            Utilities.enforce(!type.is(DBSPTypeMillisInterval.class));
-            Utilities.enforce(!type.is(DBSPTypeMonthsInterval.class));
+            Utilities.enforce(!type.is(DBSPTypeShortInterval.class));
+            Utilities.enforce(!type.is(DBSPTypeLongInterval.class));
             Utilities.enforce(!type.is(DBSPTypeTime.class));
             Utilities.enforce(!type.is(DBSPTypeDate.class));
             Utilities.enforce(!type.is(DBSPTypeTimestamp.class));

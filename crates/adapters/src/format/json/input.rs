@@ -1197,7 +1197,7 @@ mod test {
         metadata.insert("kafka_topic", Variant::String(SqlString::from("my_topic")));
         metadata.insert(
             "kafka_timestamp",
-            Variant::Timestamp(Timestamp::new(1763626606441)),
+            Variant::Timestamp(Timestamp::from_milliseconds(1763626606441)),
         );
         metadata.insert("kafka_partition", Variant::Int(10));
         metadata.insert("kafka_offset", Variant::Int(1_000_000));
@@ -1216,7 +1216,7 @@ mod test {
                         0,
                         Variant::Map(Arc::new(BTreeMap::new())),
                         SqlString::from("my_topic"),
-                        Timestamp::new(1763626606441),
+                        Timestamp::from_milliseconds(1763626606441),
                         10,
                         1_000_000,
                     ),

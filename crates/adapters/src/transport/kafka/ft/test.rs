@@ -2427,7 +2427,7 @@ fn test_kafka_metadata_json() {
                 ),
             ]))),
             SqlString::from(topic),
-            feldera_sqllib::Timestamp::new(0),
+            feldera_sqllib::Timestamp::from_microseconds(0),
             0,
             0,
         ),
@@ -2435,15 +2435,15 @@ fn test_kafka_metadata_json() {
             1,
             Variant::Map(Arc::new(BTreeMap::new())),
             SqlString::from(topic),
-            feldera_sqllib::Timestamp::new(0),
+            feldera_sqllib::Timestamp::from_microseconds(0),
             0,
             1,
         ),
     ];
 
     let mut received = wait_for_output_count(&zset, 2, flush);
-    received[0].kafka_timestamp = feldera_sqllib::Timestamp::new(0);
-    received[1].kafka_timestamp = feldera_sqllib::Timestamp::new(0);
+    received[0].kafka_timestamp = feldera_sqllib::Timestamp::from_microseconds(0);
+    received[1].kafka_timestamp = feldera_sqllib::Timestamp::from_microseconds(0);
     assert_eq!(received, expected);
 }
 
@@ -2607,7 +2607,7 @@ fn test_kafka_metadata_raw() {
                 ),
             ]))),
             SqlString::from(topic),
-            feldera_sqllib::Timestamp::new(0),
+            feldera_sqllib::Timestamp::from_microseconds(0),
             0,
             0,
         ),
@@ -2615,14 +2615,14 @@ fn test_kafka_metadata_raw() {
             SqlString::from("bar"),
             Variant::Map(Arc::new(BTreeMap::new())),
             SqlString::from(topic),
-            feldera_sqllib::Timestamp::new(0),
+            feldera_sqllib::Timestamp::from_microseconds(0),
             0,
             1,
         ),
     ];
 
     let mut received = wait_for_output_count(&zset, 2, flush);
-    received[0].kafka_timestamp = feldera_sqllib::Timestamp::new(0);
-    received[1].kafka_timestamp = feldera_sqllib::Timestamp::new(0);
+    received[0].kafka_timestamp = feldera_sqllib::Timestamp::from_microseconds(0);
+    received[1].kafka_timestamp = feldera_sqllib::Timestamp::from_microseconds(0);
     assert_eq!(received, expected);
 }

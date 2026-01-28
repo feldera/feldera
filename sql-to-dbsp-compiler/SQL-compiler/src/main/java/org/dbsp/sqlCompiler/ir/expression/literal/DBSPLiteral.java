@@ -88,8 +88,8 @@ public abstract class DBSPLiteral extends DBSPExpression
             case DOUBLE -> new DBSPDoubleLiteral();
             case REAL -> new DBSPRealLiteral();
             case GEOPOINT -> new DBSPGeoPointConstructor();
-            case INTERVAL_SHORT -> new DBSPIntervalMillisLiteral(type.getNode(), type, null);
-            case INTERVAL_LONG -> new DBSPIntervalMonthsLiteral(type.getNode(), type, null);
+            case INTERVAL_SHORT -> new DBSPShortIntervalLiteral(type.getNode(), type, null);
+            case INTERVAL_LONG -> new DBSPLongIntervalLiteral(type.getNode(), type, null);
             case STRING -> new DBSPStringLiteral(CalciteObject.EMPTY, type, null, StandardCharsets.UTF_8);
             case TIME -> new DBSPTimeLiteral();
             case ARRAY -> new DBSPArrayExpression(type.to(DBSPTypeArray.class), true);

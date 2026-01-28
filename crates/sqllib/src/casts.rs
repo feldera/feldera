@@ -23,7 +23,7 @@ use num::{One, Zero};
 use num_traits::cast::NumCast;
 use regex::{Captures, Regex};
 use smallstr::SmallString;
-use std::{error::Error, fmt::Display, iter::once};
+use std::{error::Error, fmt::Display, iter::once, ops::Div};
 use std::{fmt::Write, str::FromStr};
 use std::{marker::PhantomData, sync::LazyLock};
 
@@ -351,7 +351,7 @@ pub fn cast_to_bN_bN(value: Option<bool>) -> SqlResult<Option<bool>> {
 #[doc(hidden)]
 pub fn cast_to_Date_s(value: SqlString) -> SqlResult<Date> {
     match NaiveDate::parse_from_str(value.str(), "%Y-%m-%d") {
-        Ok(value) => Ok(Date::new(
+        Ok(value) => Ok(Date::from_days(
             (value.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() / 86400) as i32,
         )),
         Err(e) => Err(SqlRuntimeError::from_string(format!(
@@ -1353,14 +1353,14 @@ pub fn cast_to_s_LongInterval_YEARS_TO_MONTHS(
     let sign = sign(months < 0);
     let years = months.unsigned_abs() / 12;
     let months = months.unsigned_abs() % 12;
-    let result = format_args!("{sign}{years}-{months}").to_small_string::<32>();
+    let result = format_args!("{sign}{years}-{months:02}").to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
 impl ShortInterval {
     fn into_sign_and_magnitude(self) -> (&'static str, Self) {
-        if self.milliseconds() < 0 {
-            ("-", Self::new(-self.milliseconds()))
+        if self.microseconds() < 0 {
+            ("-", Self::from_microseconds(-self.microseconds()))
         } else {
             ("+", self)
         }
@@ -1411,7 +1411,7 @@ pub fn cast_to_s_ShortInterval_MINUTES(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let minutes = interval.milliseconds() / 60_000;
+    let minutes = interval.microseconds() / 60_000_000;
     let result = format_args!("{minutes:+}").to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
@@ -1450,7 +1450,7 @@ pub fn cast_to_s_ShortInterval_SECONDS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let seconds = interval.milliseconds() / 1000;
+    let seconds = interval.microseconds() / 1_000_000;
     let result = format_args!("{seconds:+}.{:06}", 0).to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
@@ -1969,7 +1969,7 @@ pub fn cast_to_ShortInterval_DAYS_i64(value: i64) -> SqlResult<ShortInterval> {
         None => Err(SqlRuntimeError::from_string(format!(
             "Overflow during conversion of {value} to INTERVAL DAYS"
         ))),
-        Some(value) => Ok(ShortInterval::new(value)),
+        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
     }
 }
 
@@ -1998,7 +1998,7 @@ pub fn cast_to_ShortInterval_HOURS_i64(value: i64) -> SqlResult<ShortInterval> {
         None => Err(SqlRuntimeError::from_string(format!(
             "Overflow during conversion of {value} to INTERVAL HOURS"
         ))),
-        Some(value) => Ok(ShortInterval::new(value)),
+        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
     }
 }
 
@@ -2027,7 +2027,7 @@ pub fn cast_to_ShortInterval_MINUTES_i64(value: i64) -> SqlResult<ShortInterval>
         None => Err(SqlRuntimeError::from_string(format!(
             "Overflow during conversion of {value} to INTERVAL MINUTES"
         ))),
-        Some(value) => Ok(ShortInterval::new(value)),
+        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
     }
 }
 
@@ -2056,7 +2056,7 @@ pub fn cast_to_ShortInterval_SECONDS_i64(value: i64) -> SqlResult<ShortInterval>
         None => Err(SqlRuntimeError::from_string(format!(
             "Overflow during conversion of {value} to INTERVAL SECONDS"
         ))),
-        Some(value) => Ok(ShortInterval::new(value)),
+        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
     }
 }
 
@@ -2093,7 +2093,7 @@ pub fn cast_to_ShortInterval_DAYS_u64(value: u64) -> SqlResult<ShortInterval> {
         None => Err(SqlRuntimeError::from_string(format!(
             "Overflow during conversion of {value} to INTERVAL DAYS"
         ))),
-        Some(value) => Ok(ShortInterval::new(value)),
+        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
     }
 }
 
@@ -2130,7 +2130,7 @@ pub fn cast_to_ShortInterval_HOURS_u64(value: u64) -> SqlResult<ShortInterval> {
         None => Err(SqlRuntimeError::from_string(format!(
             "Overflow during conversion of {value} to INTERVAL HOURS"
         ))),
-        Some(value) => Ok(ShortInterval::new(value)),
+        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
     }
 }
 
@@ -2164,7 +2164,7 @@ pub fn cast_to_ShortInterval_MINUTES_u64(value: u64) -> SqlResult<ShortInterval>
     };
     let val = value.checked_mul(60 * 1000);
     match val {
-        Some(value) => Ok(ShortInterval::new(value)),
+        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
         None => Err(SqlRuntimeError::from_string(format!(
             "Overflow during conversion of {value} to INTERVAL MINUTES"
         ))),
@@ -2201,7 +2201,7 @@ pub fn cast_to_ShortInterval_SECONDS_u64(value: u64) -> SqlResult<ShortInterval>
     };
     let val = value.checked_mul(1000);
     match val {
-        Some(value) => Ok(ShortInterval::new(value)),
+        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
         None => Err(SqlRuntimeError::from_string(format!(
             "Overflow during conversion of {value} to INTERVAL SECONDS"
         ))),
@@ -2268,7 +2268,7 @@ pub fn cast_to_LongInterval_YEARS_i16(value: i16) -> SqlResult<LongInterval> {
 pub fn cast_to_LongInterval_YEARS_i32(value: i32) -> SqlResult<LongInterval> {
     let val = value.checked_mul(12);
     match val {
-        Some(value) => Ok(LongInterval::from(value)),
+        Some(value) => Ok(LongInterval::from_months(value)),
         None => Err(SqlRuntimeError::from_string(format!(
             "Overflow during conversion of {value} to INTERVAL YEARS"
         ))),
@@ -2303,7 +2303,7 @@ pub fn cast_to_LongInterval_MONTHS_i16(value: i16) -> SqlResult<LongInterval> {
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_LongInterval_MONTHS_i32(value: i32) -> SqlResult<LongInterval> {
-    Ok(LongInterval::from(value))
+    Ok(LongInterval::from_months(value))
 }
 
 #[doc(hidden)]
@@ -2379,7 +2379,7 @@ pub fn cast_to_LongInterval_MONTHS_u32(value: u32) -> SqlResult<LongInterval> {
             )));
         }
     };
-    Ok(LongInterval::from(value))
+    Ok(LongInterval::from_months(value))
 }
 
 #[doc(hidden)]
@@ -2464,7 +2464,7 @@ pub fn cast_to_LongInterval_YEARS_TO_MONTHS_s(value: SqlString) -> SqlResult<Lon
         } else {
             12 * years + months
         };
-        Ok(LongInterval::new(months))
+        Ok(LongInterval::from_months(months))
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'years-months'",
@@ -2593,7 +2593,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_HOURS_s(value: SqlString) -> SqlResult<Shor
         } else {
             days * 24 + hours
         };
-        Ok(ShortInterval::new(hours * 3600 * 1000))
+        Ok(ShortInterval::from_milliseconds(hours * 3600 * 1000))
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'days hours'",
@@ -2648,7 +2648,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(value: SqlString) -> SqlResult<Sh
         } else {
             (days * 24 + hours) * 60 + minutes
         };
-        Ok(ShortInterval::new(minutes * 60 * 1000))
+        Ok(ShortInterval::from_milliseconds(minutes * 60 * 1000))
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'days hours:minutes'",
@@ -2686,7 +2686,7 @@ pub fn cast_to_ShortInterval_HOURS_TO_MINUTES_s(value: SqlString) -> SqlResult<S
         } else {
             hours * 60 + minutes
         };
-        Ok(ShortInterval::new(minutes * 60 * 1000))
+        Ok(ShortInterval::from_milliseconds(minutes * 60 * 1000))
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'hours:minutes'",
@@ -2730,7 +2730,7 @@ pub fn cast_to_ShortInterval_SECONDS_s(value: SqlString) -> SqlResult<ShortInter
         } else {
             seconds * 1000 + ms
         };
-        Ok(ShortInterval::new(ms))
+        Ok(ShortInterval::from_milliseconds(ms))
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'seconds.fractions'",
@@ -2807,7 +2807,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(value: SqlString) -> SqlResult<Sh
         } else {
             ((days * 24 + hours) * 60 + minutes) * 60000 + seconds * 1000 + ms
         };
-        Ok(ShortInterval::new(ms))
+        Ok(ShortInterval::from_milliseconds(ms))
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'days hours:minutes:seconds'"
@@ -2873,7 +2873,7 @@ pub fn cast_to_ShortInterval_HOURS_TO_SECONDS_s(value: SqlString) -> SqlResult<S
         } else {
             (hours * 60 + minutes) * 60000 + seconds * 1000 + ms
         };
-        Ok(ShortInterval::new(ms))
+        Ok(ShortInterval::from_milliseconds(ms))
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'hours:minutes:seconds.fractions'"
@@ -2928,7 +2928,7 @@ pub fn cast_to_ShortInterval_MINUTES_TO_SECONDS_s(value: SqlString) -> SqlResult
         } else {
             minutes * 60000 + seconds * 1000 + ms
         };
-        Ok(ShortInterval::new(ms))
+        Ok(ShortInterval::from_milliseconds(ms))
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'minutes:seconds.fractions'"
@@ -2959,10 +2959,11 @@ pub fn cast_to_Timestamp_s(value: SqlString) -> SqlResult<Timestamp> {
     if let Ok(v) = NaiveDateTime::parse_from_str(value.str(), "%Y-%m-%d %H:%M:%S%.f") {
         // round the number of microseconds
         let nanos = v.and_utc().timestamp_subsec_nanos();
-        let nanos = (nanos + 500000) / 1000000;
-        let result = Timestamp::new(v.and_utc().timestamp() * 1000 + (nanos as i64));
+        let nanos = (nanos + 500) / 1000;
+        let result =
+            Timestamp::from_microseconds(v.and_utc().timestamp() * 1_000_000 + (nanos as i64));
         //println!("Parsed successfully {} using {} into {:?} ({})",
-        //         value, "%Y-%m-%d %H:%M:%S%.f", result, result.milliseconds());
+        //         value, "%Y-%m-%d %H:%M:%S%.f", result, result.microseconds());
         return Ok(result);
     }
 
@@ -2970,9 +2971,9 @@ pub fn cast_to_Timestamp_s(value: SqlString) -> SqlResult<Timestamp> {
     // parse_from_str fails to parse a datetime if there is no time in the format!
     if let Ok(v) = NaiveDate::parse_from_str(value.str(), "%Y-%m-%d") {
         let dt = v.and_hms_opt(0, 0, 0).unwrap();
-        let result = Timestamp::new(dt.and_utc().timestamp_millis());
+        let result = Timestamp::from_microseconds(dt.and_utc().timestamp_micros());
         //println!("Parsed successfully {} using {} into {:?} ({})",
-        //         value, "%Y-%m-%d", result, result.milliseconds());
+        //         value, "%Y-%m-%d", result, result.microseconds());
         return Ok(result);
     }
 
@@ -3018,7 +3019,7 @@ cast_function!(Timestamp, Timestamp, Timestamp, Timestamp);
 #[doc(hidden)]
 pub fn cast_to_Timestamp_i64(value: i64) -> SqlResult<Timestamp> {
     // Calcite ignores sub-second units
-    Ok(Timestamp::new((value / 1000) * 1000))
+    Ok(Timestamp::from_milliseconds((value / 1000) * 1000))
 }
 
 cast_function!(Timestamp, Timestamp, i64, i64);
@@ -3029,7 +3030,7 @@ pub fn cast_to_Timestamp_SqlDecimal<const P: usize, const S: usize>(
 ) -> SqlResult<Timestamp> {
     match TryInto::<i64>::try_into(value) {
         // Calcite ignores sub-second units
-        Ok(value) => Ok(Timestamp::new((value / 1000) * 1000)),
+        Ok(value) => Ok(Timestamp::from_milliseconds((value / 1000) * 1000)),
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "Error converting {value} to TIMESTAMP: {}",
             e
@@ -3047,7 +3048,7 @@ pub fn cast_to_Timestamp_u64(value: u64) -> SqlResult<Timestamp> {
             "Error converting {value} to TIMESTAMP: {}",
             e
         ))),
-        Ok(result) => Ok(Timestamp::new(result)),
+        Ok(result) => Ok(Timestamp::from_milliseconds(result)),
     }
 }
 
@@ -3080,7 +3081,8 @@ cast_function!(u64, u64, Timestamp, Timestamp);
 pub fn cast_to_SqlDecimal_Timestamp<const P: usize, const S: usize>(
     value: Timestamp,
 ) -> SqlResult<SqlDecimal<P, S>> {
-    cast_to_SqlDecimal_i64::<P, S>(value.milliseconds())
+    cast_to_SqlDecimal_i64::<P, S>(value.microseconds())
+        .map(|x| x.div(SqlDecimal::<P, S>::for_i32(1000)))
 }
 
 #[doc(hidden)]
@@ -3888,123 +3890,189 @@ mod tests {
     #[test]
     fn long_interval_to_string() {
         assert_eq!(
-            cast_to_s_LongInterval_YEARS(LongInterval::new(123), -1, false).unwrap(),
+            cast_to_s_LongInterval_YEARS(LongInterval::from_months(123), -1, false).unwrap(),
             SqlString::from_ref("+10")
         );
         assert_eq!(
-            cast_to_s_LongInterval_YEARS(LongInterval::new(-123), -1, false).unwrap(),
+            cast_to_s_LongInterval_YEARS(LongInterval::from_months(-123), -1, false).unwrap(),
             SqlString::from_ref("-10")
         );
         assert_eq!(
-            cast_to_s_LongInterval_MONTHS(LongInterval::new(123), -1, false).unwrap(),
+            cast_to_s_LongInterval_MONTHS(LongInterval::from_months(123), -1, false).unwrap(),
             SqlString::from_ref("+123")
         );
         assert_eq!(
-            cast_to_s_LongInterval_MONTHS(LongInterval::new(-123), -1, false).unwrap(),
+            cast_to_s_LongInterval_MONTHS(LongInterval::from_months(-123), -1, false).unwrap(),
             SqlString::from_ref("-123")
         );
         assert_eq!(
-            cast_to_s_LongInterval_YEARS_TO_MONTHS(LongInterval::new(123), -1, false).unwrap(),
-            SqlString::from_ref("+10-3")
+            cast_to_s_LongInterval_YEARS_TO_MONTHS(LongInterval::from_months(123), -1, false)
+                .unwrap(),
+            SqlString::from_ref("+10-03")
         );
         assert_eq!(
-            cast_to_s_LongInterval_YEARS_TO_MONTHS(LongInterval::new(-123), -1, false).unwrap(),
-            SqlString::from_ref("-10-3")
+            cast_to_s_LongInterval_YEARS_TO_MONTHS(LongInterval::from_months(-123), -1, false)
+                .unwrap(),
+            SqlString::from_ref("-10-03")
         );
     }
 
     #[test]
     fn short_interval_to_string() {
         assert_eq!(
-            cast_to_s_ShortInterval_DAYS(ShortInterval::new(123456789), -1, false).unwrap(),
+            cast_to_s_ShortInterval_DAYS(ShortInterval::from_milliseconds(123456789), -1, false)
+                .unwrap(),
             SqlString::from_ref("+1")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_DAYS(ShortInterval::new(-123456789), -1, false).unwrap(),
+            cast_to_s_ShortInterval_DAYS(ShortInterval::from_milliseconds(-123456789), -1, false)
+                .unwrap(),
             SqlString::from_ref("-1")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_HOURS(ShortInterval::new(123456789), -1, false).unwrap(),
+            cast_to_s_ShortInterval_HOURS(ShortInterval::from_milliseconds(123456789), -1, false)
+                .unwrap(),
             SqlString::from_ref("+34")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_HOURS(ShortInterval::new(-123456789), -1, false).unwrap(),
+            cast_to_s_ShortInterval_HOURS(ShortInterval::from_milliseconds(-123456789), -1, false)
+                .unwrap(),
             SqlString::from_ref("-34")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_DAYS_TO_HOURS(ShortInterval::new(123456789), -1, false)
-                .unwrap(),
+            cast_to_s_ShortInterval_DAYS_TO_HOURS(
+                ShortInterval::from_milliseconds(123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("+1 10")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_DAYS_TO_HOURS(ShortInterval::new(-123456789), -1, false)
-                .unwrap(),
+            cast_to_s_ShortInterval_DAYS_TO_HOURS(
+                ShortInterval::from_milliseconds(-123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("-1 10")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_MINUTES(ShortInterval::new(123456789), -1, false).unwrap(),
+            cast_to_s_ShortInterval_MINUTES(ShortInterval::from_milliseconds(123456789), -1, false)
+                .unwrap(),
             SqlString::from_ref("+2057")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_MINUTES(ShortInterval::new(-123456789), -1, false).unwrap(),
+            cast_to_s_ShortInterval_MINUTES(
+                ShortInterval::from_milliseconds(-123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("-2057")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_DAYS_TO_MINUTES(ShortInterval::new(123456789), -1, false)
-                .unwrap(),
+            cast_to_s_ShortInterval_DAYS_TO_MINUTES(
+                ShortInterval::from_milliseconds(123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("+1 10:17")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_DAYS_TO_MINUTES(ShortInterval::new(-123456789), -1, false)
-                .unwrap(),
+            cast_to_s_ShortInterval_DAYS_TO_MINUTES(
+                ShortInterval::from_milliseconds(-123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("-1 10:17")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_HOURS_TO_MINUTES(ShortInterval::new(123456789), -1, false)
-                .unwrap(),
+            cast_to_s_ShortInterval_HOURS_TO_MINUTES(
+                ShortInterval::from_milliseconds(123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("+34:17")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_HOURS_TO_MINUTES(ShortInterval::new(-123456789), -1, false)
-                .unwrap(),
+            cast_to_s_ShortInterval_HOURS_TO_MINUTES(
+                ShortInterval::from_milliseconds(-123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("-34:17")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_SECONDS(ShortInterval::new(123456789), -1, false).unwrap(),
+            cast_to_s_ShortInterval_SECONDS(ShortInterval::from_milliseconds(123456789), -1, false)
+                .unwrap(),
             SqlString::from_ref("+123456.000000")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_SECONDS(ShortInterval::new(-123456789), -1, false).unwrap(),
+            cast_to_s_ShortInterval_SECONDS(
+                ShortInterval::from_milliseconds(-123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("-123456.000000")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_DAYS_TO_SECONDS(ShortInterval::new(123456789), -1, false)
-                .unwrap(),
+            cast_to_s_ShortInterval_DAYS_TO_SECONDS(
+                ShortInterval::from_milliseconds(123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("+1 10:17:36.000000")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_DAYS_TO_SECONDS(ShortInterval::new(-123456789), -1, false)
-                .unwrap(),
+            cast_to_s_ShortInterval_DAYS_TO_SECONDS(
+                ShortInterval::from_milliseconds(-123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("-1 10:17:36.000000")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_HOURS_TO_SECONDS(ShortInterval::new(123456789), -1, false)
-                .unwrap(),
+            cast_to_s_ShortInterval_HOURS_TO_SECONDS(
+                ShortInterval::from_milliseconds(123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("+34:17:36.000000")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_HOURS_TO_SECONDS(ShortInterval::new(-123456789), -1, false)
-                .unwrap(),
+            cast_to_s_ShortInterval_HOURS_TO_SECONDS(
+                ShortInterval::from_milliseconds(-123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("-34:17:36.000000")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_MINUTES_TO_SECONDS(ShortInterval::new(123456789), -1, false)
-                .unwrap(),
+            cast_to_s_ShortInterval_MINUTES_TO_SECONDS(
+                ShortInterval::from_milliseconds(123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("+2057:36.000000")
         );
         assert_eq!(
-            cast_to_s_ShortInterval_MINUTES_TO_SECONDS(ShortInterval::new(-123456789), -1, false)
-                .unwrap(),
+            cast_to_s_ShortInterval_MINUTES_TO_SECONDS(
+                ShortInterval::from_milliseconds(-123456789),
+                -1,
+                false
+            )
+            .unwrap(),
             SqlString::from_ref("-2057:36.000000")
         );
     }

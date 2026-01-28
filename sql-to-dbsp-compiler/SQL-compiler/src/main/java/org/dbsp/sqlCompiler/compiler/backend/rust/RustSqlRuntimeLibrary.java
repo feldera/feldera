@@ -133,7 +133,7 @@ public class RustSqlRuntimeLibrary {
     public static FunctionDescription getWindowBound(CalciteObject node,
             DBSPType unsignedType, DBSPType sortType, DBSPType boundType) {
         // we ignore nullability because window bounds are constants and cannot be null
-        if (boundType.is(DBSPTypeMonthsInterval.class)) {
+        if (boundType.is(DBSPTypeLongInterval.class)) {
             throw new UnsupportedException("""
                     Currently the compiler only supports constant OVER window bounds.
                     Intervals such as 'INTERVAL 1 MONTH' or 'INTERVAL 1 YEAR' are not constant.

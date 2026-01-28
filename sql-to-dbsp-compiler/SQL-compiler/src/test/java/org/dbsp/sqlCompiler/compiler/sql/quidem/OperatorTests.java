@@ -42,6 +42,34 @@ public class OperatorTests extends SqlIoTest {
     }
 
     @Test
+    public void testFloor() {
+        this.qs("""
+             select floor(timestamp '2025-01-01 10:00:00.123456' to millisecond),
+                    floor(timestamp '1950-01-01 10:00:00.123456' to millisecond);
+              t1 | t2
+             -----------------
+              2025-01-01 10:00:00.123 | 1950-01-01 10:00:00.123
+             (1 row)""");
+    }
+
+    @Test
+    public void testIntervalToString() {
+        // Test that months are formatted with two digits
+        this.qs("""
+                SELECT CAST((INTERVAL '-2-8' YEAR TO MONTH / 2.583) AS VARCHAR);
+                 r
+                ---
+                 -1-00
+                (1 row)
+                
+                SELECT CAST((INTERVAL '+5-0' YEAR TO MONTH - INTERVAL '10' YEAR) AS VARCHAR);
+                 r
+                ---
+                 -5-00
+                (1 row)""");
+    }
+
+    @Test
     public void testCeilFloor() {
         // From Calcite operator.iq
         this.qs("""

@@ -82,8 +82,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLongIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
@@ -120,8 +120,8 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
@@ -305,12 +305,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 case KEYWORD:
                     return new DBSPKeywordLiteral(node, Objects.requireNonNull(literal.getValue()).toString());
                 case INTERVAL_SHORT: {
-                    long value = Objects.requireNonNull(literal.getValueAs(BigDecimal.class)).longValue();
-                    return new DBSPIntervalMillisLiteral(node, type, value);
+                    BigDecimal milliseconds = literal.getValueAs(BigDecimal.class);
+                    // Multiply by 1000 to get microseconds
+                    long value = Objects.requireNonNull(milliseconds).movePointRight(3).longValue();
+                    return DBSPShortIntervalLiteral.fromMicroseconds(node, type, value);
                 }
                 case INTERVAL_LONG: {
                     int value = Objects.requireNonNull(literal.getValueAs(Integer.class));
-                    return new DBSPIntervalMonthsLiteral(node, type, value);
+                    return new DBSPLongIntervalLiteral(node, type, value);
                 }
                 case TIMESTAMP:
                     return new DBSPTimestampLiteral(node, type,
@@ -503,7 +505,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     Utilities.enforce(rightType.is(IsNumericType.class));
                     // Canonicalize the type on the right without information loss
                     if (rightType.is(DBSPTypeInteger.class)) {
-                        if (leftType.is(DBSPTypeMillisInterval.class)) {
+                        if (leftType.is(DBSPTypeShortInterval.class)) {
                             right = right.cast(node, DBSPTypeInteger.getType(rightType.getNode(), INT64, rightType.mayBeNull),
                                     DBSPCastExpression.CastType.SqlUnsafe);
                         } else {
@@ -1729,7 +1731,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case TUMBLE: {
                 validateArgCount(node, operationName, ops.size(), 2, 3);
                 DBSPExpression op = ops.get(1);
-                if (op.getType().is(DBSPTypeMonthsInterval.class)) {
+                if (op.getType().is(DBSPTypeLongInterval.class)) {
                     throw new UnsupportedException(
                             "Tumbling window intervals must be 'short' SQL intervals (days and lower)",
                             op.getNode());

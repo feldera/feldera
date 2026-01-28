@@ -179,7 +179,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
@@ -199,8 +199,8 @@ import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
@@ -566,17 +566,17 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression interval = expressionCompiler.compile(operands.get(1));
         Simplify simplify = new Simplify(this.compiler.compiler());
         interval = simplify.apply(interval).to(DBSPExpression.class);
-        if (interval.getType().is(DBSPTypeMonthsInterval.class)) {
+        if (interval.getType().is(DBSPTypeLongInterval.class)) {
             throw new UnsupportedException(
                     "Tumbling window intervals must be 'short' SQL intervals (days and lower)",
                     interval.getNode());
         }
-        if (!interval.is(DBSPIntervalMillisLiteral.class)) {
+        if (!interval.is(DBSPShortIntervalLiteral.class)) {
             throw new UnsupportedException(
                     "Tumbling window interval must be a constant",
                     interval.getNode());
         }
-        DBSPIntervalMillisLiteral intValue = interval.to(DBSPIntervalMillisLiteral.class);
+        DBSPShortIntervalLiteral intValue = interval.to(DBSPShortIntervalLiteral.class);
         if (!intValue.gt0()) {
             throw new UnsupportedException(
                     "Tumbling window interval must be positive",
@@ -633,20 +633,20 @@ public class CalciteToDBSPCompiler extends RelVisitor
         int timestampIndex = this.getDescriptor(operands.get(0));
         // Need to do a few more checks, Calcite should be doing these really.
         DBSPExpression interval = expressionCompiler.compile(operands.get(1));
-        if (!interval.getType().is(DBSPTypeMillisInterval.class)) {
+        if (!interval.getType().is(DBSPTypeShortInterval.class)) {
             throw new UnsupportedException("Hopping window intervals must be 'short' SQL intervals (days and lower)",
                     interval.getNode());
         }
         DBSPExpression start;
         DBSPExpression size = expressionCompiler.compile(operands.get(2));
-        if (!size.getType().is(DBSPTypeMillisInterval.class)) {
+        if (!size.getType().is(DBSPTypeShortInterval.class)) {
             throw new UnsupportedException("Hopping window intervals must be 'short' SQL intervals (days and lower)",
                     size.getNode());
         }
         if (call.operandCount() == 4)
             start = expressionCompiler.compile(operands.get(3));
         else
-            start = new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.SECONDS, 0, false);
+            start = DBSPShortIntervalLiteral.fromMicroseconds(DBSPTypeShortInterval.Units.SECONDS, 0, false);
 
         DBSPHopOperator hop = new DBSPHopOperator(
                 node.getFinal(), timestampIndex, interval, start, size, TypeCompiler.makeZSet(type), opInput.outputPort());

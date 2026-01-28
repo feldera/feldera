@@ -942,8 +942,8 @@ mod test {
             field: 1,
             field_0: Some("foo".to_string()),
             field_1: false,
-            field_2: Timestamp::new(1713597703),
-            field_3: Date::new(19833),
+            field_2: Timestamp::from_milliseconds(1713597703),
+            field_3: Date::from_days(19833),
             field_5: Some(EmbeddedStruct { field: true }),
             field_6: Some(BTreeMap::from([
                 ("foo".to_string(), 1),

@@ -162,14 +162,14 @@ public class MiscTests extends ScottBaseTests {
                  CAST(deptno AS DECIMAL(6, 2)) / 10 * interval 1 minutes as m,
                  CAST(deptno AS REAL) / 15 * interval 1 day as d
                 from dept;
-                +---------+------------+-----------+------------+--------------------+--------+-----------------+
-                | D2      | H3         | H4        | H4_5       | Y1_25              | M      | D               |
-                +---------+------------+-----------+------------+--------------------+--------+-----------------+
-                | 20 days |  -30 hours |  40 hours |  -45 hours | 12 years 06 months | 1 mins |  57600.001 secs |
-                | 40 days |  -60 hours |  80 hours |  -90 hours | 25 years 00 months | 2 mins | 115200.003 secs |
-                | 60 days |  -90 hours | 120 hours | -135 hours | 37 years 06 months | 3 mins | 172800 secs     |
-                | 80 days | -120 hours | 160 hours | -180 hours | 50 years 00 months | 4 mins | 230400.006 secs |
-                +---------+------------+-----------+------------+--------------------+--------+-----------------+
+                +---------+------------+-----------+------------+--------------------+--------+--------------------+
+                | D2      | H3         | H4        | H4_5       | Y1_25              | M      | D                  |
+                +---------+------------+-----------+------------+--------------------+--------+--------------------+
+                | 20 days |  -30 hours |  40 hours |  -45 hours | 12 years 06 months | 1 mins |  57600.001716 secs |
+                | 40 days |  -60 hours |  80 hours |  -90 hours | 25 years 00 months | 2 mins | 115200.003433 secs |
+                | 60 days |  -90 hours | 120 hours | -135 hours | 37 years 06 months | 3 mins | 172800 secs        |
+                | 80 days | -120 hours | 160 hours | -180 hours | 50 years 00 months | 4 mins | 230400.006866 secs |
+                +---------+------------+-----------+------------+--------------------+--------+--------------------+
                 (4 rows)
                 
                 -- [CALCITE-4091] Interval expressions

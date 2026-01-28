@@ -134,7 +134,7 @@ class illarg_tumble_legal(TstView):
     def __init__(self):
         self.data = [
             {"tmestmp": "2020-06-21T14:23:44"},
-            {"tmestmp": "2020-06-21T14:23:44.123"},
+            {"tmestmp": "2020-06-21T14:23:44.123654"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW tumble_legal AS SELECT tmestmp FROM TABLE(
                       TUMBLE(TABLE illegal_tbl, DESCRIPTOR(tmestmp), INTERVAL '1' MINUTE))"""
@@ -154,8 +154,8 @@ class illarg_hop_legal(TstView):
         self.data = [
             {"tmestmp": "2020-06-21T14:23:44"},
             {"tmestmp": "2020-06-21T14:23:44"},
-            {"tmestmp": "2020-06-21T14:23:44.123"},
-            {"tmestmp": "2020-06-21T14:23:44.123"},
+            {"tmestmp": "2020-06-21T14:23:44.123654"},
+            {"tmestmp": "2020-06-21T14:23:44.123654"},
         ]
         self.sql = """CREATE MATERIALIZED VIEW hop_legal AS SELECT tmestmp FROM TABLE(
                       HOP(TABLE illegal_tbl, DESCRIPTOR(tmestmp), INTERVAL '1' MINUTE, INTERVAL '2' MINUTE))"""

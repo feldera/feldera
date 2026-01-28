@@ -33,13 +33,13 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLongIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.junit.Test;
 
@@ -65,7 +65,7 @@ public class TimeTests extends BaseSQLTests {
     }
 
     public Change createInput(String name) {
-        return new Change(name, new DBSPZSetExpression(new DBSPTupleExpression(new DBSPTimestampLiteral(100))));
+        return new Change(name, new DBSPZSetExpression(new DBSPTupleExpression(DBSPTimestampLiteral.fromMilliseconds(100))));
     }
 
     @Test
@@ -93,61 +93,64 @@ public class TimeTests extends BaseSQLTests {
 
     @Test
     public void testInterval() {
+        // microseconds per second
+        final long UPS = 1_000_000;
         this.testQuery("SELECT INTERVAL '20' YEAR",
-                new DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units.YEARS, 240));
+                DBSPLongIntervalLiteral.fromMonths(DBSPTypeLongInterval.Units.YEARS, 240));
         this.testQuery("SELECT INTERVAL '20-7' YEAR TO MONTH",
-                new DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units.YEARS_TO_MONTHS, 247));
+                DBSPLongIntervalLiteral.fromMonths(DBSPTypeLongInterval.Units.YEARS_TO_MONTHS, 247));
         this.testQuery("SELECT INTERVAL '10' MONTH",
-                new DBSPIntervalMonthsLiteral(DBSPTypeMonthsInterval.Units.MONTHS, 10));
+                DBSPLongIntervalLiteral.fromMonths(DBSPTypeLongInterval.Units.MONTHS, 10));
         this.testQuery("SELECT INTERVAL '10' DAY",
-                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.DAYS, 10L * 86400 * 1000, false));
+                DBSPShortIntervalLiteral.fromMicroseconds(DBSPTypeShortInterval.Units.DAYS,
+                        10L * 86400 * UPS, false));
         this.testQuery("SELECT INTERVAL '10 10' DAY TO HOUR",
-                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.DAYS_TO_HOURS, 10L * 86400 * 1000 + 10 * 3600 * 1000, false));
+                DBSPShortIntervalLiteral.fromMicroseconds(DBSPTypeShortInterval.Units.DAYS_TO_HOURS,
+                        10L * 86400 * UPS + 10L * 3600 * UPS, false));
         this.testQuery("SELECT INTERVAL '10 10:30' DAY TO MINUTE",
-                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.DAYS_TO_MINUTES, 10L * 86400 * 1000 + 10 * 3600 * 1000 + 30 * 60 * 1000, false));
+                DBSPShortIntervalLiteral.fromMicroseconds(DBSPTypeShortInterval.Units.DAYS_TO_MINUTES,
+                        10L * 86400 * UPS + 10 * 3600 * UPS + 30 * 60 * UPS, false));
         this.testQuery("SELECT INTERVAL '10 10:30:40.999' DAY TO SECOND",
-                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.DAYS_TO_SECONDS,
-                        10L * 86400 * 1000 + 10 * 3600 * 1000 + 30 * 60 * 1000 + 40999, false));
+                DBSPShortIntervalLiteral.fromMicroseconds(DBSPTypeShortInterval.Units.DAYS_TO_SECONDS,
+                        10L * 86400 * UPS + 10 * 3600 * UPS + 30 * 60 * UPS + 40999 * 1000, false));
         this.testQuery("SELECT INTERVAL '12' HOUR",
-                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.HOURS,
-                        12L * 3600 * 1000, false));
+                DBSPShortIntervalLiteral.fromMicroseconds(DBSPTypeShortInterval.Units.HOURS,
+                        12L * 3600 * UPS, false));
         this.testQuery("SELECT INTERVAL '12:10' HOUR TO MINUTE",
-                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.HOURS_TO_MINUTES,
-                        12L * 3600 * 1000 + 10 * 60 * 1000, false));
+                DBSPShortIntervalLiteral.fromMicroseconds(DBSPTypeShortInterval.Units.HOURS_TO_MINUTES,
+                        12L * 3600 * UPS + 10 * 60 * UPS, false));
         this.testQuery("SELECT INTERVAL '12:10:59' HOUR TO SECOND",
-                new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.HOURS_TO_SECONDS,
-                        12L * 3600 * 1000 + 10 * 60 * 1000 + 59000, false));
+                DBSPShortIntervalLiteral.fromMicroseconds(DBSPTypeShortInterval.Units.HOURS_TO_SECONDS,
+                        12L * 3600 * UPS + 10 * 60 * UPS + 59 * UPS, false));
         this.testQuery("SELECT INTERVAL '10' MINUTE",
-                new DBSPIntervalMillisLiteral(
-                        DBSPTypeMillisInterval.Units.MINUTES, 10L * 60 * 1000, false));
+                DBSPShortIntervalLiteral.fromMicroseconds(
+                        DBSPTypeShortInterval.Units.MINUTES, 10L * 60 * UPS, false));
         this.testQuery("SELECT INTERVAL '80:01.001' MINUTE TO SECOND",
-                new DBSPIntervalMillisLiteral(
-                        DBSPTypeMillisInterval.Units.MINUTES_TO_SECONDS, 80L * 60 * 1000 + 1001, false));
+                DBSPShortIntervalLiteral.fromMicroseconds(
+                        DBSPTypeShortInterval.Units.MINUTES_TO_SECONDS, 80L * 60 * UPS + 1_001_000, false));
         this.testQuery("SELECT INTERVAL '80.001' SECOND",
-                new DBSPIntervalMillisLiteral(
-                        DBSPTypeMillisInterval.Units.SECONDS, 80001, false));
+                DBSPShortIntervalLiteral.fromMicroseconds(
+                        DBSPTypeShortInterval.Units.SECONDS, 80_001_000, false));
         this.testQuery("SELECT INTERVAL '100' HOUR(3)",
-                new DBSPIntervalMillisLiteral(
-                        DBSPTypeMillisInterval.Units.HOURS, 100L * 3600 * 1000, false));
+                DBSPShortIntervalLiteral.fromMicroseconds(
+                        DBSPTypeShortInterval.Units.HOURS, 100L * 3600 * UPS, false));
         this.testQuery("SELECT INTERVAL '-1 2:03:04' DAYS TO SECONDS",
-                new DBSPIntervalMillisLiteral(
-                        DBSPTypeMillisInterval.Units.DAYS_TO_SECONDS, -(86400L * 1000 + 2 * 3600 * 1000 + 3 * 60 * 1000 + 4000), false));
+                DBSPShortIntervalLiteral.fromMicroseconds(
+                        DBSPTypeShortInterval.Units.DAYS_TO_SECONDS,
+                        -(86400L * UPS + 2 * 3600 * UPS + 3 * 60 * UPS + 4000_000), false));
     }
 
     @Test
     public void maxTest() {
-        String query = """
-                    SELECT MAX(COL1)
-                    FROM T
-                """;
-        this.testQuery(query, new DBSPTimestampLiteral(
-                CalciteObject.EMPTY, DBSPTypeTimestamp.NULLABLE_INSTANCE, 100L));
+        String query = "SELECT MAX(COL1) FROM T";
+        this.testQuery(query, DBSPTimestampLiteral.fromMicroseconds(
+                CalciteObject.EMPTY, DBSPTypeTimestamp.NULLABLE_INSTANCE, 100_000L));
     }
 
     @Test
     public void timestampTableTest() {
         String query = "SELECT COL1 FROM T";
-        this.testQuery(query, new DBSPTimestampLiteral(100));
+        this.testQuery(query, DBSPTimestampLiteral.fromMilliseconds(100));
     }
 
     @Test
@@ -159,7 +162,7 @@ public class TimeTests extends BaseSQLTests {
     @Test
     public void castTimestampToStringToTimestamp() {
         String query = "SELECT CAST(CAST(T.COL1 AS STRING) AS Timestamp) FROM T";
-        this.testQuery(query, new DBSPTimestampLiteral(0));
+        this.testQuery(query, DBSPTimestampLiteral.fromMilliseconds(0));
     }
 
     @Test
@@ -220,16 +223,15 @@ public class TimeTests extends BaseSQLTests {
                 " TIMESTAMPADD(HOUR, 1, COL1), " +
                 " TIMESTAMPADD(MINUTE, 10, COL1) FROM T";
         this.testQuery(query,
-                        new DBSPTimestampLiteral(10100),
-                        new DBSPTimestampLiteral(3600100),
-                        new DBSPTimestampLiteral(600100)
-                        );
+                        DBSPTimestampLiteral.fromMicroseconds(10100000L),
+                        DBSPTimestampLiteral.fromMicroseconds(3600100000L),
+                        DBSPTimestampLiteral.fromMicroseconds(600100000L));
     }
 
     @Test
     public void timestampParse() {
         String query = "SELECT TIMESTAMP '2020-04-30 12:25:13.45'";
-        this.testQuery(query, new DBSPTimestampLiteral(1588249513450L));
+        this.testQuery(query, DBSPTimestampLiteral.fromMicroseconds(1588249513450000L));
     }
 
     @Test
