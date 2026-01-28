@@ -1864,6 +1864,161 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             println!("Initiated rebalancing for pipeline {name}.");
         }
         PipelineAction::Bench { args } => bench::bench(client, format, args).await,
+        PipelineAction::Events { name } => {
+            let response = client
+                .list_pipeline_events()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Unable to retrieve pipeline events",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    let mut rows = vec![];
+                    rows.push([
+                        "id".to_string(),
+                        "recorded_at".to_string(),
+                        "resources_status".to_string(),
+                        "resources_desired_status".to_string(),
+                        "runtime_status".to_string(),
+                        "runtime_desired_status".to_string(),
+                        "program_status".to_string(),
+                        "storage_status".to_string(),
+                    ]);
+                    for event in response.iter() {
+                        rows.push([
+                            event.id.to_string(),
+                            format!(
+                                "{} ({:.0}s ago)",
+                                event.recorded_at,
+                                (Utc::now() - event.recorded_at).as_seconds_f64()
+                            ),
+                            event.resources_status.to_string(),
+                            event.resources_desired_status.to_string(),
+                            event
+                                .runtime_status
+                                .map(|v| v.to_string())
+                                .unwrap_or("(none)".to_string()),
+                            event
+                                .runtime_desired_status
+                                .map(|v| v.to_string())
+                                .unwrap_or("(none)".to_string()),
+                            event.program_status.to_string(),
+                            event.storage_status.to_string(),
+                        ]);
+                    }
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize pipeline events")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        PipelineAction::Event { name, id, selector } => {
+            let response = client
+                .get_pipeline_event()
+                .pipeline_name(name.clone())
+                .event_id(id)
+                .selector(selector)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Unable to retrieve pipeline event",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    let mut rows = vec![];
+                    rows.push(["Field".to_string(), "Value".to_string()]);
+                    rows.push(["id".to_string(), response.id.to_string()]);
+                    rows.push([
+                        "recorded_at".to_string(),
+                        format!(
+                            "{} ({:.0}s ago)",
+                            response.recorded_at,
+                            (Utc::now() - response.recorded_at).as_seconds_f64()
+                        ),
+                    ]);
+                    rows.push([
+                        "resources_status".to_string(),
+                        response.resources_status.to_string(),
+                    ]);
+                    if selector == PipelineMonitorEventFieldSelector::All
+                        && let Some(value) = &response.resources_status_details
+                    {
+                        rows.push(["resources_status_details".to_string(), value.to_string()]);
+                    }
+                    rows.push([
+                        "resources_desired_status".to_string(),
+                        response.resources_desired_status.to_string(),
+                    ]);
+                    rows.push([
+                        "runtime_status".to_string(),
+                        response
+                            .runtime_status
+                            .map(|v| v.to_string())
+                            .unwrap_or("(none)".to_string()),
+                    ]);
+                    if selector == PipelineMonitorEventFieldSelector::All {
+                        rows.push([
+                            "runtime_status_details".to_string(),
+                            response
+                                .runtime_status_details
+                                .as_ref()
+                                .map(|v| v.to_string())
+                                .unwrap_or("(none)".to_string()),
+                        ]);
+                    }
+                    rows.push([
+                        "runtime_desired_status".to_string(),
+                        response
+                            .runtime_desired_status
+                            .map(|v| v.to_string())
+                            .unwrap_or("(none)".to_string()),
+                    ]);
+                    rows.push([
+                        "program_status".to_string(),
+                        response.program_status.to_string(),
+                    ]);
+                    rows.push([
+                        "storage_status".to_string(),
+                        response.storage_status.to_string(),
+                    ]);
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize pipeline events")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 }
 

@@ -15,5 +15,6 @@ pub mod api_key;
 pub mod cluster_monitor;
 pub mod connectivity;
 pub mod pipeline;
+pub mod pipeline_monitor;
 pub mod tenant;
 pub(crate) mod utils;

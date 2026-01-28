@@ -15,6 +15,12 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        Pipeline monitoring: Feldera now monitors each pipeline health and stores these as events
+        in the database. They are exposed via `/v0/pipelines/[pipeline]/events` and further details
+        of a specific event can be retrieved via `/v0/pipelines/[pipeline]/events/[<id>|latest]`.
+        All API clients support these endpoints. The Web Console will soon expose these
+        events via a tab too.
+
         The Delta Lake connector's `skip_unused_columns` property has been deprecated. Use
         table-level [`skip_unused_colums`](https://docs.feldera.com/sql/grammar#skip-unused-columns)
         instead.

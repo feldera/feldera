@@ -96,6 +96,14 @@ def get_pipeline(name: str, selector: str) -> requests.Response:
     return get(f"{API_PREFIX}/pipelines/{name}?selector={selector}")
 
 
+def get_pipeline_events(name: str) -> requests.Response:
+    return get(f"{API_PREFIX}/pipelines/{name}/events")
+
+
+def get_pipeline_event(name: str, event_id: str, selector: str) -> requests.Response:
+    return get(f"{API_PREFIX}/pipelines/{name}/events/{event_id}?selector={selector}")
+
+
 def post_no_body(path: str, **kw):
     return http_request("POST", path, **kw)
 
