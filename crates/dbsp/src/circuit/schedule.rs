@@ -355,16 +355,28 @@ where
 pub trait Executor<C>: 'static {
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error>;
 
-    fn start_commit_transaction(&self) -> Result<(), Error>;
-
-    fn is_commit_complete(&self) -> bool;
-
-    fn commit_progress(&self) -> CommitProgress;
-
+    /// Start a transaction.
+    ///
+    /// Only called on the executor in the top-level circuit.
     fn start_transaction<'a>(
         &'a self,
         circuit: &'a C,
     ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+
+    /// Start committing the current transaction.
+    ///
+    /// Only called on the executor in the top-level circuit.
+    fn start_commit_transaction(&self) -> Result<(), Error>;
+
+    /// Check if the current transaction is complete.
+    ///
+    /// Only called on the executor in the top-level circuit.
+    fn is_commit_complete(&self) -> bool;
+
+    /// Get the commit progress.
+    ///
+    /// Only called on the executor in the top-level circuit.
+    fn commit_progress(&self) -> CommitProgress;
 
     fn step<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 
@@ -372,6 +384,16 @@ pub trait Executor<C>: 'static {
         &'a self,
         circuit: &'a C,
     ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+
+    /// The ChildNode operator that wraps this circuit is being flushed.
+    ///
+    /// Only called on nested circuits.
+    fn flush(&self);
+
+    /// Check if the current flush operation is complete.
+    ///
+    /// Only called on nested circuits.
+    fn is_flush_complete(&self) -> bool;
 }
 
 /// An iterative executor evaluates the circuit until the `termination_check`
@@ -402,10 +424,26 @@ where
     C: Circuit,
     S: Scheduler + 'static,
 {
+    /// Only called on the executor in the top-level circuit.
     fn start_transaction<'a>(
         &'a self,
         _circuit: &C,
     ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        unimplemented!()
+    }
+
+    /// Only called on the executor in the top-level circuit.
+    fn start_commit_transaction(&self) -> Result<(), Error> {
+        unimplemented!()
+    }
+
+    /// Only called on the executor in the top-level circuit.
+    fn commit_progress(&self) -> CommitProgress {
+        unimplemented!()
+    }
+
+    /// Only called on the executor in the top-level circuit.
+    fn is_commit_complete(&self) -> bool {
         unimplemented!()
     }
 
@@ -440,15 +478,12 @@ where
         self.scheduler.prepare(circuit, nodes)
     }
 
-    fn start_commit_transaction(&self) -> Result<(), Error> {
-        Ok(())
+    fn flush(&self) {
+        // TODO
     }
 
-    fn commit_progress(&self) -> CommitProgress {
-        CommitProgress::new()
-    }
-
-    fn is_commit_complete(&self) -> bool {
+    fn is_flush_complete(&self) -> bool {
+        // TODO
         true
     }
 }
@@ -508,6 +543,16 @@ where
 
     fn commit_progress(&self) -> CommitProgress {
         self.scheduler.commit_progress()
+    }
+
+    /// Only called on nested circuits.
+    fn flush(&self) {
+        unimplemented!()
+    }
+
+    /// Only called on nested circuits.
+    fn is_flush_complete(&self) -> bool {
+        unimplemented!()
     }
 }
 

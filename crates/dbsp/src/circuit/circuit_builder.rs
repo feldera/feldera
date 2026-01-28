@@ -6728,11 +6728,11 @@ where
     }
 
     fn flush(&mut self) {
-        self.executor.start_commit_transaction().unwrap();
+        self.executor.flush();
     }
 
     fn is_flush_complete(&self) -> bool {
-        self.executor.is_commit_complete()
+        self.executor.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
