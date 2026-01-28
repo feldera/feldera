@@ -1762,10 +1762,9 @@ where
 #[cfg(test)]
 pub(crate) mod test {
     use crate::{
-        Circuit, DBData, RootCircuit, Runtime, Stream, ZWeight,
+        DBData, Runtime, Stream, ZWeight,
         circuit::CircuitConfig,
         indexed_zset,
-        operator::Generator,
         typed_batch::{OrdZSet, TypedBatch},
         utils::Tup2,
         zset,
@@ -2034,22 +2033,69 @@ pub(crate) mod test {
     // transitive closure of the edge relation.
     #[test]
     fn join_trace_test() {
-        let circuit = RootCircuit::build(move |circuit| {
-            // Changes to the edges relation.
-            let mut edges: vec::IntoIter<OrdZSet<Tup2<u64, u64>>> = vec![
-                zset! { Tup2(1, 2) => 1 },
-                zset! { Tup2(2, 3) => 1},
-                zset! { Tup2(1, 3) => 1},
-                zset! { Tup2(3, 1) => 1},
-                zset! { Tup2(3, 1) => -1},
-                zset! { Tup2(1, 2) => -1},
-                zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
-                zset! {Tup2 (2, 3) => -1, Tup2(3, 2) => 1 },
-            ]
-            .into_iter();
+        let (mut circuit, (edges_handle, paths_handle)) = Runtime::init_circuit(
+            CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+            move |circuit| {
+                let (edges, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
 
-            // Expected content of the reachability relation.
-            let mut outputs: vec::IntoIter<OrdZSet<Tup2<u64, u64>>> = vec![
+                let paths = circuit
+                    .recursive(|child, paths_delayed: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
+                        // ```text
+                        //                             distinct
+                        //               ┌───┐          ┌───┐
+                        // edges         │   │          │   │  paths
+                        // ────┬────────►│ + ├──────────┤   ├────────┬───►
+                        //     │         │   │          │   │        │
+                        //     │         └───┘          └───┘        │
+                        //     │           ▲                         │
+                        //     │           │                         │
+                        //     │         ┌─┴─┐                       │
+                        //     │         │   │                       │
+                        //     └────────►│ X │ ◄─────────────────────┘
+                        //               │   │
+                        //               └───┘
+                        //               join
+                        // ```
+                        let edges = edges.delta0(child);
+
+                        let paths_inverted: Stream<_, OrdZSet<Tup2<u64, u64>>> =
+                            paths_delayed.map(|&Tup2(x, y)| Tup2(y, x));
+
+                        let paths_inverted_indexed =
+                            paths_inverted.map_index(|Tup2(k, v)| (*k, *v));
+                        let edges_indexed = edges.map_index(|Tup2(k, v)| (*k, *v));
+
+                        Ok(edges.plus(
+                            &paths_inverted_indexed
+                                .join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
+                        ))
+                    })
+                    .unwrap();
+
+                let paths_handle = paths
+                    .accumulate_integrate()
+                    .stream_distinct()
+                    .accumulate_output();
+
+                Ok((edges_handle, paths_handle))
+            },
+        )
+        .unwrap();
+
+        // Changes to the edges relation.
+        let edges = vec![
+            vec![Tup2(Tup2(1u64, 2u64), 1i64)],
+            vec![Tup2(Tup2(2, 3), 1)],
+            vec![Tup2(Tup2(1, 3), 1)],
+            vec![Tup2(Tup2(3, 1), 1)],
+            vec![Tup2(Tup2(3, 1), -1)],
+            vec![Tup2(Tup2(1, 2), -1)],
+            vec![Tup2(Tup2(2, 4), 1), Tup2(Tup2(4, 1), 1)],
+            vec![Tup2(Tup2(2, 3), -1), Tup2(Tup2(3, 2), 1)],
+        ];
+
+        // Expected content of the reachability relation.
+        let mut expected_outputs: vec::IntoIter<OrdZSet<Tup2<u64, u64>>> = vec![
                 zset! { Tup2(1, 2) => 1 },
                 zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
                 zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
@@ -2065,49 +2111,15 @@ pub(crate) mod test {
             ]
             .into_iter();
 
-            let edges: Stream<_, OrdZSet<Tup2<u64, u64>>> =
-                circuit
-                    .add_source(Generator::new(move || edges.next().unwrap()));
-
-            let paths = circuit.recursive(|child, paths_delayed: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
-                // ```text
-                //                             distinct
-                //               ┌───┐          ┌───┐
-                // edges         │   │          │   │  paths
-                // ────┬────────►│ + ├──────────┤   ├────────┬───►
-                //     │         │   │          │   │        │
-                //     │         └───┘          └───┘        │
-                //     │           ▲                         │
-                //     │           │                         │
-                //     │         ┌─┴─┐                       │
-                //     │         │   │                       │
-                //     └────────►│ X │ ◄─────────────────────┘
-                //               │   │
-                //               └───┘
-                //               join
-                // ```
-                let edges = edges.delta0(child);
-
-                let paths_inverted: Stream<_, OrdZSet<Tup2<u64, u64>>> = paths_delayed
-                    .map(|&Tup2(x, y)| Tup2(y, x));
-
-                let paths_inverted_indexed = paths_inverted.map_index(|Tup2(k,v)| (*k, *v));
-                let edges_indexed = edges.map_index(|Tup2(k, v)| (*k, *v));
-
-                Ok(edges.plus(&paths_inverted_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
-            })
-            .unwrap();
-
-            paths.integrate().stream_distinct().inspect(move |ps| {
-                assert_eq!(*ps, outputs.next().unwrap());
-            });
-            Ok(())
-        })
-        .unwrap().0;
-
-        for _ in 0..8 {
+        for mut edges in edges.into_iter() {
+            edges_handle.append(&mut edges);
             //eprintln!("{}", i);
             circuit.transaction().unwrap();
+
+            assert_eq!(
+                paths_handle.concat().consolidate(),
+                expected_outputs.next().unwrap()
+            );
         }
     }
 
