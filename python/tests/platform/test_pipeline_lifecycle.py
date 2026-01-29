@@ -224,8 +224,7 @@ def test_pipeline_stop_with_force(pipeline_name):
     #   pipeline while it is stopping. Wait until it is stopped before
     #   starting the pipeline again."
     start_pipeline(pipeline_name, wait=False)
-    wait_for_deployment_status(pipeline_name,
-                               lambda status: status != "Stopped")
+    wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
     stop_pipeline(pipeline_name, force=True)
 
     # Start paused then stop (simulate by pausing immediately)
@@ -254,8 +253,7 @@ def test_pipeline_stop_without_force(pipeline_name):
     #
     # See test_pipeline_stop_with_force() for notes.
     start_pipeline(pipeline_name, wait=False)
-    wait_for_deployment_status(pipeline_name,
-                               lambda status: status != "Stopped")
+    wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
     stop_pipeline(pipeline_name, force=False)
 
     # Start, wait for running, stop
