@@ -72,6 +72,7 @@ pub use ord::{
 
 use rkyv::{Deserialize, archived_root};
 
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::{
     Error, NumEntries, Timestamp,
     algebra::MonoidValue,
@@ -466,10 +467,14 @@ where
     /// the implementation need not attempt to cache the return value.
     fn approximate_byte_size(&self) -> usize;
 
-    /// Number of bytes used as a Bloom filter for [Cursor::seek_key_exact].
-    ///
-    /// Only some kinds of batches use a filter; others should return 0.
-    fn filter_size(&self) -> usize;
+    /// Statistics of the Bloom filter used by [Cursor::seek_key_exact].
+    /// The Bloom filter (kept in memory) is used there to quickly check
+    /// whether a key might be present in the batch, before doing a
+    /// binary tree lookup within the batch to be exactly sure.
+    /// The statistics include for example the size in bytes and the hit rate.
+    /// Only some kinds of batches use a filter; others should return
+    /// `BloomFilterStats::default()`.
+    fn filter_stats(&self) -> BloomFilterStats;
 
     /// Where the batch's data is stored.
     fn location(&self) -> BatchLocation {
@@ -604,8 +609,8 @@ where
     fn approximate_byte_size(&self) -> usize {
         (**self).approximate_byte_size()
     }
-    fn filter_size(&self) -> usize {
-        (**self).filter_size()
+    fn filter_stats(&self) -> BloomFilterStats {
+        (**self).filter_stats()
     }
     fn location(&self) -> BatchLocation {
         (**self).location()

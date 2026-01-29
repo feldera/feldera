@@ -374,7 +374,10 @@ export function measurementCategory(prop: string): MeasurementCategory {
         "batch sizes",
         "bounds",
         "Bloom filter size",
-        "Bloom filter bits/key"]);
+        "Bloom filter bits/key",
+        "Bloom filter hits",
+        "Bloom filter misses",
+        "Bloom filter hit rate"]);
     map.set("cache", [
         "background cache hit",
         "foreground cache hit",
@@ -474,6 +477,7 @@ export class Measurement {
             case "output redundancy":
             case "background cache hit rate":
             case "foreground cache hit rate":
+            case "Bloom filter hit rate":
                 if (Measurement.RANDOM_DATA) {
                     let v = Math.random() * 100;
                     return Option.some(new PercentValue(v, 1));
@@ -481,6 +485,8 @@ export class Measurement {
                 return Option.some(new PercentValue(value[0][0], value[0][1]));
             case "Bloom filter size":
             case "Bloom filter bits/key":
+            case "Bloom filter hits":
+            case "Bloom filter misses":
             case "total size":
             case "invocations":
             case "allocated bytes":

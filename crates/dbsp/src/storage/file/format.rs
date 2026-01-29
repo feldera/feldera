@@ -76,8 +76,8 @@
 //!
 //! Decompressing a compressed block yields the regular index or data block
 //! format starting with a [`BlockHeader`].
+use crate::storage::tracking_bloom_filter::TrackingBloomFilter;
 use crate::storage::{buffer_cache::FBuf, file::BLOOM_FILTER_SEED};
-
 use binrw::{BinRead, BinResult, BinWrite, Error as BinError, binrw, binwrite};
 #[cfg(doc)]
 use crc32c;
@@ -508,11 +508,13 @@ pub struct FilterBlock {
     pub data: Vec<u64>,
 }
 
-impl From<FilterBlock> for BloomFilter {
+impl From<FilterBlock> for TrackingBloomFilter {
     fn from(block: FilterBlock) -> Self {
-        BloomFilter::from_vec(block.data)
-            .seed(&BLOOM_FILTER_SEED)
-            .hashes(block.num_hashes)
+        TrackingBloomFilter::new(
+            BloomFilter::from_vec(block.data)
+                .seed(&BLOOM_FILTER_SEED)
+                .hashes(block.num_hashes),
+        )
     }
 }
 
@@ -534,8 +536,8 @@ pub struct FilterBlockRef<'a> {
     pub data: &'a [u64],
 }
 
-impl<'a> From<&'a BloomFilter> for FilterBlockRef<'a> {
-    fn from(value: &'a BloomFilter) -> Self {
+impl<'a> From<&'a TrackingBloomFilter> for FilterBlockRef<'a> {
+    fn from(value: &'a TrackingBloomFilter) -> Self {
         FilterBlockRef {
             header: BlockHeader::new(&FILTER_BLOCK_MAGIC),
             num_hashes: value.num_hashes(),

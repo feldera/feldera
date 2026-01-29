@@ -39,14 +39,14 @@ use std::{
 };
 use tracing::info;
 
+use super::format::Compression;
+use super::{AnyFactories, Factories, reader::Reader};
+use crate::storage::tracking_bloom_filter::TrackingBloomFilter;
 use crate::{
     Runtime,
     dynamic::{DataTrait, DeserializeDyn, SerializeDyn},
     storage::file::ItemFactory,
 };
-
-use super::format::Compression;
-use super::{AnyFactories, Factories, reader::Reader};
 
 struct VarintWriter {
     varint: Varint,
@@ -1089,7 +1089,7 @@ impl BlockWriter {
 struct Writer {
     cache: fn() -> Arc<BufferCache>,
     writer: BlockWriter,
-    bloom_filter: Option<BloomFilter>,
+    bloom_filter: Option<TrackingBloomFilter>,
     cws: Vec<ColumnWriter>,
     finished_columns: Vec<FileTrailerColumn>,
 }
@@ -1121,14 +1121,16 @@ impl Writer {
         assert_eq!(factories.len(), n_columns);
 
         let bloom_filter = Self::bloom_false_positive_rate().map(|bloom_false_positive_rate| {
-            BloomFilter::with_false_pos(bloom_false_positive_rate)
-                .seed(&BLOOM_FILTER_SEED)
-                .expected_items({
-                    // `.max(64)` works around a fastbloom bug that hangs when the
-                    // expected number of items is zero (see
-                    // https://github.com/tomtomwombat/fastbloom/issues/17).
-                    estimated_keys.max(64)
-                })
+            TrackingBloomFilter::new(
+                BloomFilter::with_false_pos(bloom_false_positive_rate)
+                    .seed(&BLOOM_FILTER_SEED)
+                    .expected_items({
+                        // `.max(64)` works around a fastbloom bug that hangs when the
+                        // expected number of items is zero (see
+                        // https://github.com/tomtomwombat/fastbloom/issues/17).
+                        estimated_keys.max(64)
+                    }),
+            )
         });
         let parameters = Arc::new(parameters);
         let cws = factories
@@ -1187,7 +1189,9 @@ impl Writer {
         Ok(())
     }
 
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
+    pub fn close(
+        mut self,
+    ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
         // Write the Bloom filter.
@@ -1335,7 +1339,9 @@ where
 
     /// Finishes writing the layer file and returns the writer passed to
     /// [`new`](Self::new).
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
+    pub fn close(
+        mut self,
+    ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.close()
     }
@@ -1510,7 +1516,9 @@ where
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
+    pub fn close(
+        mut self,
+    ) -> Result<(Arc<dyn FileReader>, Option<TrackingBloomFilter>), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.finish_column::<K1, A1>(1)?;
         self.inner.close()
