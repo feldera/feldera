@@ -307,7 +307,7 @@ was changed out-of-band, thereby undoing the storage expansion.
    kubectl patch pvc -n $NAMESPACE $PIPELINE_PVC \
        -p '{"spec":{"resources":{"requests":{"storage":"50G"}}}}'
    ```
-   
+
    Note: it is not possible to patch `spec.resources.limits.storage`,
    as such it will be lower than `spec.resources.requests.storage` afterward.
    Irrespectively, on AWS it does expand the storage.
