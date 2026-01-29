@@ -483,9 +483,8 @@ impl InputGenerator {
                 .plan
                 .iter()
                 .map(|p| {
-                    RateLimiter::direct(Quota::per_second(
-                        p.rate.and_then(NonZeroU32::new).unwrap_or(NonZeroU32::MAX),
-                    ))
+                    let rate_nonzero = p.rate.and_then(NonZeroU32::new);
+                    rate_nonzero.map(|p| RateLimiter::direct(Quota::per_second(p)))
                 })
                 .collect::<Vec<_>>(),
         );
@@ -713,7 +712,9 @@ impl InputGenerator {
         schema: Relation,
         consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
-        rate_limiters: Arc<Vec<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>>,
+        rate_limiters: Arc<
+            Vec<Option<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>>,
+        >,
         datagen_unparker: Unparker,
     ) {
         let mut buffer = Vec::new();
@@ -785,8 +786,9 @@ impl InputGenerator {
                     }
                 }
 
-                if rate_limit {
-                    rate_limiters[plan_idx]
+                if rate_limit && let Some(rate_limiter) = &rate_limiters[plan_idx] {
+                    eprintln!("no longer here");
+                    rate_limiter
                         .until_ready_with_jitter(Jitter::up_to(StdDuration::from_millis(20)))
                         .await;
                 }
