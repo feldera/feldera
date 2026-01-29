@@ -127,7 +127,8 @@ def wait_for_deployment_status(
     - If 'desired' is a function, until it returns true when passed
       the deployment status.
     """
-    deadline = time.time() + timeout_s
+    start = time.time()
+    deadline = start + timeout_s
     last = None
     while time.time() < deadline:
         r = get_pipeline(name, "status")
@@ -135,7 +136,10 @@ def wait_for_deployment_status(
             time.sleep(0.25)
             continue
         obj = r.json()
-        last = obj.get("deployment_status")
+        status = obj.get("deployment_status")
+        if status != last:
+            print(f"After {time.time() - start:.1f} seconds: status is {status}")
+        last = status
         if last == desired if isinstance(desired, str) else desired(last):
             return obj
         time.sleep(0.25)
