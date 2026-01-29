@@ -122,7 +122,7 @@ impl TransportInputEndpoint for NatsInputEndpoint {
         &self,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
-        _schema: Relation,
+        schema: Relation,
         resume_info: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>> {
         let resume_info = Metadata::from_resume_info(resume_info)?;
@@ -133,6 +133,7 @@ impl TransportInputEndpoint for NatsInputEndpoint {
             resume_info,
             consumer,
             parser,
+            &schema.name.name(),
         )?))
     }
 }
@@ -147,8 +148,18 @@ impl NatsReader {
         resume_info: Metadata,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
+        table_name: &str,
     ) -> AnyResult<Self> {
-        let span = info_span!("nats_input");
+        let span = info_span!(
+            "nats_input",
+            table = %table_name,
+            server_url = %config.connection_config.server_url,
+            stream_name = %config.stream_name,
+            // Note: this is consumer_name from config, not the created name with unique suffix.
+            consumer_name = config.consumer_config.name.as_deref().unwrap_or(""),
+            consumer_description = config.consumer_config.description.as_deref().unwrap_or(""),
+            filter_subjects = ?config.consumer_config.filter_subjects,
+        );
         let (command_sender, command_receiver) = unbounded_channel();
 
         // Connect to NATS and verify stream exists (early validation).
