@@ -34,6 +34,7 @@ from feldera.rest.sql_table import SQLTable
 from feldera.rest.sql_view import SQLView
 from feldera.runtime_config import RuntimeConfig
 from feldera.stats import PipelineStatistics
+from feldera.types import CheckpointMetadata
 
 
 class Pipeline:
@@ -1493,3 +1494,13 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         """
 
         self.client.wait_for_token(self.name, token)
+
+    def checkpoints(self) -> List[CheckpointMetadata]:
+        """
+        Returns the list of checkpoints for this pipeline.
+        """
+
+        return [
+            CheckpointMetadata.from_dict(chk)
+            for chk in self.client.get_checkpoints(self.name)
+        ]

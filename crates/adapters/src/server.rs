@@ -86,8 +86,8 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
 use std::ffi::OsStr;
 use std::hash::{BuildHasherDefault, DefaultHasher};
@@ -1195,7 +1195,7 @@ where
         .service(lir)
         .service(checkpoint)
         .service(checkpoint_status)
-        .service(checkpoint_list)
+        .service(checkpoints)
         .service(checkpoint_sync)
         .service(sync_checkpoint_status)
         .service(suspend)
@@ -1828,11 +1828,20 @@ fn samply_profile_response(last_profile: &SamplyProfile) -> HttpResponse {
     }
 }
 
+fn get_checkpoints(state: &ServerState) -> Result<VecDeque<CheckpointMetadata>, PipelineError> {
+    Ok(match &state.storage {
+        Some(backend) => {
+            Checkpointer::read_checkpoints(&**backend).map_err(ControllerError::dbsp_error)?
+        }
+        None => Default::default(),
+    })
+}
+
 #[post("/checkpoint/sync")]
 async fn checkpoint_sync(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     let controller = state.controller()?;
 
-    let Some(last_checkpoint) = controller.last_checkpoint().id else {
+    let Some(last_checkpoint) = get_checkpoints(&state)?.back().map(|c| c.uuid) else {
         return Ok(HttpResponse::BadRequest().json(ErrorResponse {
                     message: "no checkpoints found; make a POST request to `/checkpoint` to make a new checkpoint".to_string(),
                     error_code: "400".into(),
@@ -1874,15 +1883,9 @@ async fn checkpoint_status(state: WebData<ServerState>) -> impl Responder {
     HttpResponse::Ok().json(state.checkpoint_state.lock().unwrap().status.clone())
 }
 
-#[get("/checkpoint_list")]
-async fn checkpoint_list(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let checkpoints = match &state.storage {
-        Some(backend) => {
-            Checkpointer::read_checkpoints(&**backend).map_err(ControllerError::dbsp_error)?
-        }
-        None => Default::default(),
-    };
-    Ok(HttpResponse::Ok().json(checkpoints))
+#[get("/checkpoints")]
+async fn checkpoints(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponse::Ok().json(get_checkpoints(&state)?))
 }
 
 #[get("/checkpoint/sync_status")]
