@@ -22,8 +22,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPInternedStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLongIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
@@ -48,8 +48,8 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.JsonStream;
@@ -314,7 +314,7 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public void postorder(DBSPIntervalMillisLiteral node) {
+    public void postorder(DBSPShortIntervalLiteral node) {
         if (node.value != null) {
             this.property("value");
             this.stream.append(node.value.toString());
@@ -472,14 +472,14 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public void postorder(DBSPTypeMillisInterval node) {
+    public void postorder(DBSPTypeShortInterval node) {
         this.property("units");
         this.stream.append(node.units.toString());
         super.postorder(node);
     }
 
     @Override
-    public void postorder(DBSPTypeMonthsInterval node) {
+    public void postorder(DBSPTypeLongInterval node) {
         this.property("units");
         this.stream.append(node.units.toString());
         super.postorder(node);
@@ -520,7 +520,7 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public void postorder(DBSPIntervalMonthsLiteral node) {
+    public void postorder(DBSPLongIntervalLiteral node) {
         if (node.value != null) {
             this.property("value");
             this.stream.append(node.value.toString());

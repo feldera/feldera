@@ -268,7 +268,6 @@ public class Simplify extends ExpressionTranslator {
                 } else if (type.is(DBSPTypeTimestamp.class)) {
                     try {
                         TimestampString ts = new TimestampString(str.value);
-                        ts = Utilities.roundMillis(ts);
                         result = new DBSPTimestampLiteral(lit.getNode(), type, ts);
                     } catch (DateTimeParseException | IllegalArgumentException ex) {
                         this.compiler.reportWarning(expression.getSourcePosition(), "Not a TIMESTAMP",

@@ -60,8 +60,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPInternedStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLongIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
@@ -101,8 +101,8 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
@@ -437,7 +437,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("Timestamp::new(")
+        this.builder.append("Timestamp::from_microseconds(")
                 .append(Long.toString(Objects.requireNonNull(literal.value)))
                 .append("/*")
                 .append(Objects.requireNonNull(literal.getTimestampString()).toString())
@@ -484,7 +484,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("Date::new(")
+        this.builder.append("Date::from_days(")
                 .append(Integer.toString(Objects.requireNonNull(literal.value)))
                 .append("/*")
                 .append(Objects.requireNonNull(literal.getDateString()).toString())
@@ -504,7 +504,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (literal.mayBeNull())
             this.builder.append("Some(");
         TimeString ts = Objects.requireNonNull(literal.value);
-        this.builder.append("Time::new(")
+        this.builder.append("Time::from_nanoseconds(")
                 .append(Utilities.timeStringToNanoseconds(ts))
                 .append("/*")
                 .append(ts.toString())
@@ -517,13 +517,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPIntervalMonthsLiteral literal) {
+    public VisitDecision preorder(DBSPLongIntervalLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
         this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("LongInterval::new(")
+        this.builder.append("LongInterval::from_months(")
                 .append(Integer.toString(Objects.requireNonNull(literal.value)))
                 .append(")");
         if (literal.mayBeNull())
@@ -533,13 +533,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPIntervalMillisLiteral literal) {
+    public VisitDecision preorder(DBSPShortIntervalLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
         this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("ShortInterval::new(")
+        this.builder.append("ShortInterval::from_microseconds(")
                 .append(Long.toString(Objects.requireNonNull(literal.value)))
                 .append(")");
         if (literal.mayBeNull())
@@ -1406,8 +1406,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
         functionName = "cast_to_" + destType.baseTypeWithSuffix() +
                 "_" + sourceType.baseTypeWithSuffix();
 
-        if ((sourceType.is(DBSPTypeMonthsInterval.class) && code == DBSPTypeCode.INTERVAL_LONG) ||
-            (sourceType.is(DBSPTypeMillisInterval.class) && code == DBSPTypeCode.INTERVAL_SHORT)) {
+        if ((sourceType.is(DBSPTypeLongInterval.class) && code == DBSPTypeCode.INTERVAL_LONG) ||
+            (sourceType.is(DBSPTypeShortInterval.class) && code == DBSPTypeCode.INTERVAL_SHORT)) {
             DBSPTypeBaseType t = destType.to(DBSPTypeBaseType.class);
             functionName = "cast_to_" + t.shortName() + destType.nullableSuffix() +
                     "_" + t.shortName() + sourceType.nullableSuffix();
@@ -1517,9 +1517,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return "Time";
         else if (type.is(DBSPTypeDate.class))
             return "Date";
-        else if (type.is(DBSPTypeMonthsInterval.class))
+        else if (type.is(DBSPTypeLongInterval.class))
             return "LongInterval";
-        else if (type.is(DBSPTypeMillisInterval.class))
+        else if (type.is(DBSPTypeShortInterval.class))
             return "ShortInterval";
         throw new InternalCompilerError("Unexpected fragment: " + type);
     }

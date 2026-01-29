@@ -176,7 +176,7 @@ class illarg_cast_timestamp_legal(TstView):
                 "to_double": Decimal("1592749424123"),
                 "to_varchar": "2020-06-21 14:23:44",
                 "to_date": "2020-06-21",
-                "to_time": "14:23:44.123",
+                "to_time": "14:23:44.123654",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_timestamp_legal AS SELECT

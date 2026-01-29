@@ -167,12 +167,12 @@ time unit between `HOUR` and `MICROSECOND`.
 
 The `TIMESTAMP` data type represents values composed of a `DATE` (as
 described above) and a `TIME`.  `TIMESTAMP`s are represented with a
-precision of milliseconds (3 digits for fractions of second).
+precision of microseconds (6 digits for fractions of second).
 
 ### Timestamp literals
 
 `TIMESTAMP` literals have the form `TIMESTAMP 'YYYY-MM-DD
-HH:MM:SS.FFF'`, where the fractional part is optional.  Trailing
+HH:MM:SS.FFFFFF'`, where the fractional part is optional.  Trailing
 spaces are not allowed.
 
 Timestamp literals can only represent 4-digit year positive values.
@@ -278,9 +278,9 @@ verbose syntax:
 INTERVAL 'string' timeUnit [ TO timeUnit]
 ```
 
-`tiemUnit` is one of `millisecond`, `second`, `minute`, `hour`, `day`,
-`week`, `month`, `quarter`, `year`, or plurals of these units.  Only
-the following combinations are supported:
+`tiemUnit` is one of `second`, `minute`, `hour`, `day`, `month`,
+`year`, or plurals of these units.  Only the following combinations
+are supported:
 
 | Type                        | Example literal                            |
 |-----------------------------|--------------------------------------------|
