@@ -464,6 +464,21 @@ where
         }
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&DynUnit, &T, &R)) {
+        let mut val_cursor = unsafe {
+            self.cursor
+                .next_column()
+                .unwrap_storage()
+                .first()
+                .unwrap_storage()
+        };
+
+        while unsafe { val_cursor.item((self.time.as_mut(), &mut self.diff)) }.is_some() {
+            logic(().erase(), self.time.as_ref(), self.diff.as_ref());
+            unsafe { val_cursor.move_next() }.unwrap_storage();
+        }
+    }
+
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
         let mut val_cursor = unsafe {
             self.cursor

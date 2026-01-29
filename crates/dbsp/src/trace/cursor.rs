@@ -161,6 +161,8 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
     /// mutation of the closure's scope.
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R));
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&V, &T, &R));
+
     /// Applies `logic` to each pair of time and difference, restricted
     /// to times `t <= upper`.
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R));
@@ -420,6 +422,10 @@ where
         (**self).map_times(logic)
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&V, &T, &R)) {
+        (**self).map_times_with_val(logic)
+    }
+
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
         (**self).map_times_through(upper, logic)
     }
@@ -590,6 +596,10 @@ where
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
         self.0.map_times(logic)
+    }
+
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&V, &T, &R)) {
+        self.0.map_times_with_val(logic)
     }
 
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {

@@ -230,6 +230,8 @@ pub trait StreamMetadata: DynClone + 'static {
     /// Invoked by the scheduler exactly once for each consumer operator attached
     /// to the stream.
     fn register_consumer(&self);
+
+    fn consume_token(&self);
 }
 
 dyn_clone::clone_trait_object!(StreamMetadata);
@@ -719,6 +721,9 @@ where
     fn register_consumer(&self) {
         self.val.get_mut().consumers += 1;
     }
+    fn consume_token(&self) {
+        StreamValue::consume_token(self.val());
+    }
 }
 
 impl<C, D> Clone for Stream<C, D>
@@ -801,7 +806,7 @@ where
 {
     /// Create a new stream within the given circuit, connected to the specified
     /// node id.
-    fn new(circuit: C, node_id: NodeId) -> Self {
+    pub(crate) fn new(circuit: C, node_id: NodeId) -> Self {
         Self {
             stream_id: circuit.allocate_stream_id(),
             local_node_id: node_id,
@@ -888,9 +893,13 @@ impl<C, D> Stream<C, D> {
 }
 
 impl<C, D> Stream<C, D>
-where
-    D: Clone,
+// where
+//     D: Clone,
 {
+    pub(crate) fn map_value<T>(&self, f: impl Fn(&D) -> T) -> T {
+        f(StreamValue::peek(&self.get()))
+    }
+
     fn get(&self) -> Ref<'_, StreamValue<D>> {
         self.val.get()
     }
@@ -905,7 +914,7 @@ where
     ///
     /// The caller must have exclusive access to the current stream;
     /// otherwise the method will panic.
-    fn put(&self, d: D) {
+    pub(crate) fn put(&self, d: D) {
         self.val.put(d);
     }
 }
@@ -2240,6 +2249,8 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         O: Data,
         Op: NaryOperator<I, O>,
         Iter: IntoIterator<Item = &'a Stream<Self, I>>;
+
+    fn add_custom_node<N: Node, R>(&self, constructor: impl FnOnce(NodeId) -> (N, R)) -> R;
 
     /// Add a feedback loop to the circuit.
     ///
@@ -4159,6 +4170,18 @@ where
                 self.connect_stream(stream, id, input_preference);
             }
             (node, output_stream)
+        })
+    }
+
+    fn add_custom_node<N: Node, R>(&self, constructor: impl FnOnce(NodeId) -> (N, R)) -> R {
+        self.add_node(|id| {
+            self.log_circuit_event(&CircuitEvent::operator(
+                GlobalNodeId::child_of(self, id),
+                Cow::Borrowed("Custom Node"),
+                None,
+            ));
+            let (node, res) = constructor(id);
+            (node, res)
         })
     }
 
@@ -6728,11 +6751,11 @@ where
     }
 
     fn flush(&mut self) {
-        self.executor.start_commit_transaction().unwrap();
+        self.executor.flush();
     }
 
     fn is_flush_complete(&self) -> bool {
-        self.executor.is_commit_complete()
+        self.executor.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {

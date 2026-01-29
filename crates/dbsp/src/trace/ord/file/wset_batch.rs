@@ -632,6 +632,13 @@ where
         }
     }
 
+    fn map_times_with_val(&mut self, logic: &mut dyn FnMut(&DynUnit, &(), &R)) {
+        if self.val_valid {
+            unsafe { self.cursor.aux(&mut self.diff) };
+            logic(().erase(), &(), self.diff.as_ref());
+        }
+    }
+
     fn map_times_through(&mut self, _upper: &(), logic: &mut dyn FnMut(&(), &R)) {
         self.map_times(logic)
     }
