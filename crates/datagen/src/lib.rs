@@ -28,7 +28,9 @@ use rand::{Rng, SeedableRng, thread_rng};
 use rand_distr::{Distribution, Zipf};
 use range_set::RangeSet;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, to_writer};
+use serde_json::Value as JsonValue;
+use simd_json::{OwnedValue as Value, StaticNode, to_writer};
+use simd_json::value::owned::Object;
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 use tokio::{sync::mpsc::UnboundedSender, time::Instant as TokioInstant};
 
@@ -46,11 +48,11 @@ use xxhash_rust::xxh3::Xxh3Default;
 
 fn range_as_i64(
     field: &SqlIdentifier,
-    range: &Option<(Value, Value)>,
+    range: &Option<(JsonValue, JsonValue)>,
 ) -> AnyResult<Option<(i64, i64)>> {
     match range {
         None => Ok(None),
-        Some((Value::Number(a), Value::Number(b))) => {
+        Some((JsonValue::Number(a), JsonValue::Number(b))) => {
             let a = a
                 .as_i64()
                 .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field.sql_name()))?;
@@ -68,11 +70,11 @@ fn range_as_i64(
 
 fn range_as_f64(
     field: &SqlIdentifier,
-    range: &Option<(Value, Value)>,
+    range: &Option<(JsonValue, JsonValue)>,
 ) -> AnyResult<Option<(f64, f64)>> {
     match range {
         None => Ok(None),
-        Some((Value::Number(a), Value::Number(b))) => {
+        Some((JsonValue::Number(a), JsonValue::Number(b))) => {
             let a = a
                 .as_f64()
                 .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field.sql_name()))?;
@@ -121,7 +123,7 @@ fn decimal_max_range(field: &Field) -> AnyResult<(DynamicDecimal, DynamicDecimal
 
 fn range_as_decimal(
     name: &SqlIdentifier,
-    range: &Option<(Value, Value)>,
+    range: &Option<(JsonValue, JsonValue)>,
 ) -> AnyResult<Option<(DynamicDecimal, DynamicDecimal)>> {
     match range {
         None => Ok(None),
@@ -143,8 +145,8 @@ fn range_as_decimal(
     }
 }
 
-fn field_is_json_array(field: &Field, value: &Value) -> AnyResult<()> {
-    if !matches!(value, Value::Array(_)) {
+fn field_is_json_array(field: &Field, value: &JsonValue) -> AnyResult<()> {
+    if !matches!(value, JsonValue::Array(_)) {
         return Err(anyhow!(
             "Invalid type found in `values` for field {:?} with type {:?}",
             field.name,
@@ -154,8 +156,8 @@ fn field_is_json_array(field: &Field, value: &Value) -> AnyResult<()> {
     Ok(())
 }
 
-fn field_is_string(field: &Field, value: &Value) -> AnyResult<()> {
-    if !matches!(value, Value::String(_)) {
+fn field_is_string(field: &Field, value: &JsonValue) -> AnyResult<()> {
+    if !matches!(value, JsonValue::String(_)) {
         return Err(anyhow!(
             "Invalid type found in `values` for field {:?} with type {:?}",
             field.name,
@@ -165,8 +167,8 @@ fn field_is_string(field: &Field, value: &Value) -> AnyResult<()> {
     Ok(())
 }
 
-fn field_is_number(field: &Field, value: &Value) -> AnyResult<()> {
-    if !matches!(value, Value::Number(_)) {
+fn field_is_number(field: &Field, value: &JsonValue) -> AnyResult<()> {
+    if !matches!(value, JsonValue::Number(_)) {
         return Err(anyhow!(
             "Invalid type found in `values` for field {:?} with type {:?}",
             field.name,
@@ -176,9 +178,9 @@ fn field_is_number(field: &Field, value: &Value) -> AnyResult<()> {
     Ok(())
 }
 
-fn field_is_uuid(field: &Field, value: &Value) -> AnyResult<()> {
+fn field_is_uuid(field: &Field, value: &JsonValue) -> AnyResult<()> {
     match value {
-        Value::String(s) => {
+        JsonValue::String(s) => {
             uuid::Uuid::parse_str(s).map_err(|e| {
                 anyhow!(
                     "Invalid UUID string `{s}` found in `values` for field {:?}: {e}",
@@ -196,10 +198,47 @@ fn field_is_uuid(field: &Field, value: &Value) -> AnyResult<()> {
     Ok(())
 }
 
+fn f64_to_value(value: f64) -> Value {
+    if value.is_finite() {
+        Value::from(value)
+    } else {
+        Value::from(0i64)
+    }
+}
+
+fn json_value_to_simd(value: &JsonValue) -> Value {
+    match value {
+        JsonValue::Null => Value::Static(StaticNode::Null),
+        JsonValue::Bool(b) => Value::from(*b),
+        JsonValue::Number(n) => {
+            if n.is_i64() {
+                Value::from(n.as_i64().unwrap())
+            } else if n.is_u64() {
+                Value::from(n.as_u64().unwrap())
+            } else if let Some(f) = n.as_f64() {
+                f64_to_value(f)
+            } else {
+                Value::from(0i64)
+            }
+        }
+        JsonValue::String(s) => Value::String(s.clone()),
+        JsonValue::Array(arr) => {
+            Value::Array(Box::new(arr.iter().map(json_value_to_simd).collect()))
+        }
+        JsonValue::Object(map) => {
+            let mut obj = Object::with_capacity(map.len());
+            for (k, v) in map {
+                obj.insert(k.clone(), json_value_to_simd(v));
+            }
+            Value::Object(Box::new(obj))
+        }
+    }
+}
+
 /// Tries to parse a range as a UUID range.
 fn parse_range_for_uuid(
     field: &SqlIdentifier,
-    range: &Option<(Value, Value)>,
+    range: &Option<(JsonValue, JsonValue)>,
 ) -> AnyResult<Option<(u128, u128)>> {
     match range {
         Some((min, max)) => {
@@ -225,11 +264,11 @@ fn parse_range_for_uuid(
 /// but we can specify either as a number or a string.
 fn parse_range_for_date(
     field: &SqlIdentifier,
-    range: &Option<(Value, Value)>,
+    range: &Option<(JsonValue, JsonValue)>,
 ) -> AnyResult<Option<(i64, i64)>> {
     match range {
         None => Ok(None),
-        Some((Value::Number(a), Value::Number(b))) => {
+        Some((JsonValue::Number(a), JsonValue::Number(b))) => {
             let a = a
                 .as_i64()
                 .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field.sql_name()))?;
@@ -238,7 +277,7 @@ fn parse_range_for_date(
                 .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field.sql_name()))?;
             Ok(Some((a, b)))
         }
-        Some((Value::String(a), Value::String(b))) => {
+        Some((JsonValue::String(a), JsonValue::String(b))) => {
             let unix_date: NaiveDate = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
             let since = NaiveDate::signed_duration_since;
             let a = NaiveDate::parse_from_str(a, "%Y-%m-%d").map_err(|e| {
@@ -269,11 +308,11 @@ fn parse_range_for_date(
 
 fn parse_range_for_time(
     field: &SqlIdentifier,
-    range: &Option<(Value, Value)>,
+    range: &Option<(JsonValue, JsonValue)>,
 ) -> AnyResult<Option<(i64, i64)>> {
     match range {
         None => Ok(None),
-        Some((Value::Number(a), Value::Number(b))) => {
+        Some((JsonValue::Number(a), JsonValue::Number(b))) => {
             let a = a
                 .as_i64()
                 .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field.sql_name()))?;
@@ -282,7 +321,7 @@ fn parse_range_for_time(
                 .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field.sql_name()))?;
             Ok(Some((a, b)))
         }
-        Some((Value::String(a), Value::String(b))) => {
+        Some((JsonValue::String(a), JsonValue::String(b))) => {
             let a = NaiveTime::parse_from_str(a, "%H:%M:%S").map_err(|e| {
                 anyhow!(
                     "Invalid min time range for field {:?}: {}",
@@ -311,11 +350,11 @@ fn parse_range_for_time(
 
 fn parse_range_for_datetime(
     field: &SqlIdentifier,
-    range: &Option<(Value, Value)>,
+    range: &Option<(JsonValue, JsonValue)>,
 ) -> AnyResult<Option<(i64, i64)>> {
     match range {
         None => Ok(None),
-        Some((Value::Number(a), Value::Number(b))) => {
+        Some((JsonValue::Number(a), JsonValue::Number(b))) => {
             let a = a
                 .as_i64()
                 .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field.sql_name()))?;
@@ -324,7 +363,7 @@ fn parse_range_for_datetime(
                 .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field.sql_name()))?;
             Ok(Some((a, b)))
         }
-        Some((Value::String(a), Value::String(b))) => {
+        Some((JsonValue::String(a), JsonValue::String(b))) => {
             let a = DateTime::parse_from_rfc3339(a).map_err(|e| {
                 anyhow!(
                     "Invalid min datetime range for field {:?}: {}",
@@ -396,7 +435,7 @@ impl TransportInputEndpoint for GeneratorEndpoint {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         schema: Relation,
-        seek: Option<Value>,
+        seek: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(InputGenerator::new(
             consumer,
@@ -419,7 +458,7 @@ impl InputGenerator {
         parser: Box<dyn Parser>,
         mut config: DatagenInputConfig,
         schema: Relation,
-        seek: Option<Value>,
+        seek: Option<JsonValue>,
     ) -> AnyResult<Self> {
         let (command_sender, command_receiver) = unbounded_channel();
 
@@ -475,7 +514,7 @@ impl InputGenerator {
         parser: Box<dyn Parser>,
         config: DatagenInputConfig,
         schema: Relation,
-        seek: Option<Value>,
+        seek: Option<JsonValue>,
         parker: Parker,
     ) -> AnyResult<()> {
         let rate_limiters = Arc::new(
@@ -951,13 +990,13 @@ impl<'a> RecordGenerator<'a> {
             schema,
             current: 0,
             seed,
-            json_obj: Some(Value::Object(Map::with_capacity(8))),
+            json_obj: Some(Value::Object(Box::new(Object::with_capacity(8)))),
         }
     }
 
     fn typ_to_default(typ: SqlType) -> Value {
         match typ {
-            SqlType::Boolean => Value::Bool(false),
+            SqlType::Boolean => Value::from(false),
             SqlType::Uuid => Value::String("00000000-0000-0000-0000-000000000000".to_string()),
             SqlType::TinyInt
             | SqlType::SmallInt
@@ -968,19 +1007,19 @@ impl<'a> RecordGenerator<'a> {
             | SqlType::UInt
             | SqlType::UBigInt
             | SqlType::Real
-            | SqlType::Double => Value::Number(serde_json::Number::from(0)),
+            | SqlType::Double => Value::from(0i64),
             SqlType::Decimal => Value::String("0".to_string()),
-            SqlType::Binary | SqlType::Varbinary => Value::Array(Vec::new()),
+            SqlType::Binary | SqlType::Varbinary => Value::Array(Box::new(Vec::new())),
             SqlType::Char
             | SqlType::Varchar
             | SqlType::Timestamp
             | SqlType::Date
             | SqlType::Variant
             | SqlType::Time => Value::String(String::new()),
-            SqlType::Interval(_unit) => Value::Null,
-            SqlType::Array => Value::Array(Vec::new()),
-            SqlType::Map | SqlType::Struct => Value::Object(Map::new()),
-            SqlType::Null => Value::Null,
+            SqlType::Interval(_unit) => Value::Static(StaticNode::Null),
+            SqlType::Array => Value::Array(Box::new(Vec::new())),
+            SqlType::Map | SqlType::Struct => Value::Object(Box::new(Object::new())),
+            SqlType::Null => Value::Static(StaticNode::Null),
         }
     }
 
@@ -992,7 +1031,10 @@ impl<'a> RecordGenerator<'a> {
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
-        let map = obj.as_object_mut().unwrap();
+        let map = match obj {
+            Value::Object(map) => map.as_mut(),
+            _ => unreachable!("Value is not an object"),
+        };
 
         let default_settings = Box::<RngFieldSettings>::default();
         for field in fields {
@@ -1006,7 +1048,7 @@ impl<'a> RecordGenerator<'a> {
                     // map got set to NULL previously, however our generator methods
                     // depend on the field being set to the correct type, so we
                     // need reallocate a new default value again.
-                    if v.is_null() {
+                    if matches!(v, Value::Static(StaticNode::Null)) {
                         *v = Self::typ_to_default(field.columntype.typ)
                     }
                 })
@@ -1056,12 +1098,12 @@ impl<'a> RecordGenerator<'a> {
             SqlType::Time => self.generate_time(field, settings, incr, rng, obj),
             SqlType::Interval(_unit) => {
                 // I don't think this can show up in a table schema
-                *obj = Value::Null;
+                *obj = Value::Static(StaticNode::Null);
                 Ok(())
             }
             SqlType::Variant => {
                 // I don't think this can show up in a table schema
-                *obj = Value::Null;
+                *obj = Value::Static(StaticNode::Null);
                 Ok(())
             }
             SqlType::Array => self.generate_array(field, settings, incr, rng, obj),
@@ -1081,7 +1123,7 @@ impl<'a> RecordGenerator<'a> {
                 )
             }
             SqlType::Null => {
-                *obj = Value::Null;
+                *obj = Value::Static(StaticNode::Null);
                 Ok(())
             }
         }
@@ -1096,7 +1138,7 @@ impl<'a> RecordGenerator<'a> {
         settings.null_percentage.and_then(|null_percentage| {
             let between = Uniform::from(1..=100);
             if between.sample(rng) <= null_percentage {
-                Some(Value::Null)
+                Some(Value::Static(StaticNode::Null))
             } else {
                 None
             }
@@ -1111,7 +1153,7 @@ impl<'a> RecordGenerator<'a> {
         _rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
-        *obj = Value::Object(Map::new());
+        *obj = Value::Object(Box::new(Object::new()));
         Ok(())
     }
 
@@ -1169,9 +1211,9 @@ impl<'a> RecordGenerator<'a> {
                     }
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    let new_value = values[self.current % values.len()].clone();
-                    field_is_json_array(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[self.current % values.len()];
+                    field_is_json_array(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let len = rng.sample(Uniform::from(min..max)) * scale;
@@ -1181,9 +1223,9 @@ impl<'a> RecordGenerator<'a> {
                     }
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
-                    let new_value = values[rng.sample(Uniform::from(0..values.len()))].clone();
-                    field_is_json_array(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[rng.sample(Uniform::from(0..values.len()))];
+                    field_is_json_array(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (DatagenStrategy::Zipf, None) => {
                     let range = max - min;
@@ -1197,9 +1239,9 @@ impl<'a> RecordGenerator<'a> {
                 (DatagenStrategy::Zipf, Some(values)) => {
                     let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                     let idx = rng.sample(zipf) as usize - 1;
-                    let new_value = values[idx].clone();
-                    field_is_json_array(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[idx];
+                    field_is_json_array(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (m, _) => {
                     return Err(anyhow!(
@@ -1263,9 +1305,9 @@ impl<'a> RecordGenerator<'a> {
                     write!(str, "{}", t)?;
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    let new_value = values[incr % values.len()].clone();
-                    field_is_string(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[incr % values.len()];
+                    field_is_string(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let dist = Uniform::from(min..max);
@@ -1274,9 +1316,9 @@ impl<'a> RecordGenerator<'a> {
                     write!(str, "{}", t)?;
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
-                    let new_value = values[rng.sample(Uniform::from(0..values.len()))].clone();
-                    field_is_string(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[rng.sample(Uniform::from(0..values.len()))];
+                    field_is_string(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (DatagenStrategy::Zipf, None) => {
                     let range = max - min;
@@ -1288,9 +1330,9 @@ impl<'a> RecordGenerator<'a> {
                 (DatagenStrategy::Zipf, Some(values)) => {
                     let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                     let idx = rng.sample(zipf) as usize - 1;
-                    let new_value = values[idx].clone();
-                    field_is_string(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[idx];
+                    field_is_string(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (m, _) => {
                     return Err(anyhow!(
@@ -1353,9 +1395,9 @@ impl<'a> RecordGenerator<'a> {
                     write!(str, "{}", d.format_with_items(YMD_FORMAT.as_slice().iter()))?;
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    let new_value = values[incr % values.len()].clone();
-                    field_is_string(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[incr % values.len()];
+                    field_is_string(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let dist = Uniform::from(min..max);
@@ -1372,9 +1414,9 @@ impl<'a> RecordGenerator<'a> {
                     write!(str, "{}", d.format_with_items(YMD_FORMAT.as_slice().iter()))?;
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
-                    let new_value = values[rng.sample(Uniform::from(0..values.len()))].clone();
-                    field_is_string(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[rng.sample(Uniform::from(0..values.len()))];
+                    field_is_string(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (DatagenStrategy::Zipf, None) => {
                     let range = max - min;
@@ -1395,9 +1437,9 @@ impl<'a> RecordGenerator<'a> {
                 (DatagenStrategy::Zipf, Some(values)) => {
                     let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                     let idx = rng.sample(zipf) as usize - 1;
-                    let new_value = values[idx].clone();
-                    field_is_string(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[idx];
+                    field_is_string(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (m, _) => {
                     return Err(anyhow!(
@@ -1461,9 +1503,9 @@ impl<'a> RecordGenerator<'a> {
                     *obj = Value::String(dt.to_rfc3339());
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    let new_value = values[incr % values.len()].clone();
-                    field_is_string(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[incr % values.len()];
+                    field_is_string(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let dist = Uniform::from(min..max);
@@ -1472,9 +1514,9 @@ impl<'a> RecordGenerator<'a> {
                     *obj = Value::String(dt.to_rfc3339());
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
-                    let new_value = values[rng.sample(Uniform::from(0..values.len()))].clone();
-                    field_is_string(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[rng.sample(Uniform::from(0..values.len()))];
+                    field_is_string(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (DatagenStrategy::Zipf, None) => {
                     let range = max - min;
@@ -1487,9 +1529,9 @@ impl<'a> RecordGenerator<'a> {
                 (DatagenStrategy::Zipf, Some(values)) => {
                     let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                     let idx = rng.sample(zipf) as usize - 1;
-                    let new_value = values[idx].clone();
-                    field_is_string(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[idx];
+                    field_is_string(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (m, _) => {
                     return Err(anyhow!(
@@ -1553,18 +1595,18 @@ impl<'a> RecordGenerator<'a> {
                     write!(str, "{}", incr as i64 * settings.scale)?;
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    let new_value = values[incr % values.len()].clone();
-                    field_is_string(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[incr % values.len()];
+                    field_is_string(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let len = rng.sample(Uniform::from(min..max));
                     str.extend(rng.sample_iter(&Alphanumeric).map(char::from).take(len));
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
-                    let new_value = values[rng.sample(Uniform::from(0..values.len()))].clone();
-                    field_is_string(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[rng.sample(Uniform::from(0..values.len()))];
+                    field_is_string(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (DatagenStrategy::Zipf, None) => {
                     let zipf = Zipf::new(max as u64, settings.e as f64).unwrap();
@@ -1574,9 +1616,9 @@ impl<'a> RecordGenerator<'a> {
                 (DatagenStrategy::Zipf, Some(values)) => {
                     let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                     let idx = rng.sample(zipf) as usize - 1;
-                    let new_value = values[idx].clone();
-                    field_is_string(field, &new_value)?;
-                    *obj = new_value;
+                    let new_value = &values[idx];
+                    field_is_string(field, new_value)?;
+                    *obj = json_value_to_simd(new_value);
                 }
                 (DatagenStrategy::Word, _) => *str = Dummy::dummy_with_rng(&Word(EN), rng),
                 (DatagenStrategy::Words, _) => {
@@ -1783,51 +1825,51 @@ impl<'a> RecordGenerator<'a> {
         match (&settings.strategy, &settings.values, &range) {
             (DatagenStrategy::Increment, None, None) => {
                 let val = (incr as i64 * scale) % max;
-                *obj = Value::Number(serde_json::Number::from(val));
+                *obj = Value::from(val);
             }
             (DatagenStrategy::Increment, None, Some((a, b))) => {
                 let range = b - a;
                 let val_in_range = (incr as i64 * scale) % range;
                 let val = a + val_in_range;
                 debug_assert!(val >= *a && val < *b);
-                *obj = Value::Number(serde_json::Number::from(val));
+                *obj = Value::from(val);
             }
             (DatagenStrategy::Increment, Some(values), _) => {
-                let new_value = values[incr % values.len()].clone();
-                field_is_number(field, &new_value)?;
-                *obj = new_value;
+                let new_value = &values[incr % values.len()];
+                field_is_number(field, new_value)?;
+                *obj = json_value_to_simd(new_value);
             }
             (DatagenStrategy::Uniform, None, None) => {
                 let dist = Uniform::from(min..max);
-                *obj = Value::Number(serde_json::Number::from(rng.sample(dist) * scale));
+                *obj = Value::from(rng.sample(dist) * scale);
             }
             (DatagenStrategy::Uniform, None, Some((a, b))) => {
                 let dist = Uniform::from(*a..*b);
-                *obj = Value::Number(serde_json::Number::from(rng.sample(dist) * scale));
+                *obj = Value::from(rng.sample(dist) * scale);
             }
             (DatagenStrategy::Uniform, Some(values), _) => {
                 let dist = Uniform::from(0..values.len());
-                let new_value = values[rng.sample(dist)].clone();
-                field_is_number(field, &new_value)?;
-                *obj = new_value;
+                let new_value = &values[rng.sample(dist)];
+                field_is_number(field, new_value)?;
+                *obj = json_value_to_simd(new_value);
             }
             (DatagenStrategy::Zipf, None, None) => {
                 let zipf = Zipf::new(max as u64, settings.e as f64).unwrap();
                 let val_in_range = rng.sample(zipf) as i64 - 1;
-                *obj = Value::Number(serde_json::Number::from(val_in_range));
+                *obj = Value::from(val_in_range);
             }
             (DatagenStrategy::Zipf, None, Some((a, b))) => {
                 let range = b - a;
                 let zipf = Zipf::new(range as u64, settings.e as f64).unwrap();
                 let val_in_range = rng.sample(zipf) as i64 - 1;
-                *obj = Value::Number(serde_json::Number::from(val_in_range + a));
+                *obj = Value::from(val_in_range + a);
             }
             (DatagenStrategy::Zipf, Some(values), _) => {
                 let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                 let idx = rng.sample(zipf) as usize - 1;
-                let new_value = values[idx].clone();
-                field_is_number(field, &new_value)?;
-                *obj = new_value;
+                let new_value = &values[idx];
+                field_is_number(field, new_value)?;
+                *obj = json_value_to_simd(new_value);
             }
             (m, _, _) => {
                 return Err(anyhow!(
@@ -1870,58 +1912,48 @@ impl<'a> RecordGenerator<'a> {
         match (&settings.strategy, &settings.values, &range) {
             (DatagenStrategy::Increment, None, None) => {
                 let val = (incr as f64 * scale) % max;
-                *obj = Value::Number(
-                    serde_json::Number::from_f64(val).unwrap_or(serde_json::Number::from(0)),
-                );
+                *obj = f64_to_value(val);
             }
             (DatagenStrategy::Increment, None, Some((a, b))) => {
                 let range = b - a;
                 let val_in_range = (incr as f64 * scale) % range;
                 let val = a + val_in_range;
                 debug_assert!(val >= *a && val < *b);
-                *obj = Value::Number(
-                    serde_json::Number::from_f64(val).unwrap_or(serde_json::Number::from(0)),
-                );
+                *obj = f64_to_value(val);
             }
             (DatagenStrategy::Increment, Some(values), _) => {
-                *obj = values[incr % values.len()].clone();
+                let new_value = &values[incr % values.len()];
+                *obj = json_value_to_simd(new_value);
             }
             (DatagenStrategy::Uniform, None, None) => {
                 let dist = Uniform::from(min..max);
-                *obj = Value::Number(
-                    serde_json::Number::from_f64(rng.sample(dist) * scale)
-                        .unwrap_or(serde_json::Number::from(0)),
-                );
+                *obj = f64_to_value(rng.sample(dist) * scale);
             }
             (DatagenStrategy::Uniform, None, Some((a, b))) => {
                 let dist = Uniform::from(*a..*b);
-                *obj = Value::Number(
-                    serde_json::Number::from_f64(rng.sample(dist) * scale)
-                        .unwrap_or(serde_json::Number::from(0)),
-                );
+                *obj = f64_to_value(rng.sample(dist) * scale);
             }
             (DatagenStrategy::Uniform, Some(values), _) => {
                 let dist = Uniform::from(0..values.len());
-                *obj = values[rng.sample(dist)].clone();
+                let new_value = &values[rng.sample(dist)];
+                *obj = json_value_to_simd(new_value);
             }
             (DatagenStrategy::Zipf, None, None) => {
                 let zipf = Zipf::new(max as u64, settings.e as f64).unwrap();
                 let val_in_range = rng.sample(zipf) as i64 - 1;
-                *obj = Value::Number(serde_json::Number::from(val_in_range));
+                *obj = Value::from(val_in_range);
             }
             (DatagenStrategy::Zipf, None, Some((a, b))) => {
                 let range = b - a;
                 let zipf = Zipf::new(range as u64, settings.e as f64).unwrap();
                 let val_in_range = rng.sample(zipf) - 1.0;
-                *obj = Value::Number(
-                    serde_json::Number::from_f64(*a + val_in_range)
-                        .unwrap_or(serde_json::Number::from(0)),
-                );
+                *obj = f64_to_value(*a + val_in_range);
             }
             (DatagenStrategy::Zipf, Some(values), _) => {
                 let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                 let idx = rng.sample(zipf) as usize - 1;
-                *obj = values[idx].clone();
+                let new_value = &values[idx];
+                *obj = json_value_to_simd(new_value);
             }
             (m, _, _) => {
                 return Err(anyhow!(
@@ -1973,7 +2005,8 @@ impl<'a> RecordGenerator<'a> {
                 *obj = Value::String(val.to_string());
             }
             (DatagenStrategy::Increment, Some(values), _) => {
-                *obj = values[incr % values.len()].clone();
+                let new_value = &values[incr % values.len()];
+                *obj = json_value_to_simd(new_value);
             }
             (DatagenStrategy::Uniform, None, None) => {
                 let dist =
@@ -1989,7 +2022,8 @@ impl<'a> RecordGenerator<'a> {
             }
             (DatagenStrategy::Uniform, Some(values), _) => {
                 let dist = Uniform::from(0..values.len());
-                *obj = values[rng.sample(dist)].clone();
+                let new_value = &values[rng.sample(dist)];
+                *obj = json_value_to_simd(new_value);
             }
             (DatagenStrategy::Zipf, None, None) => {
                 let max_int = u64::try_from(max).map_err(|_| {
@@ -2042,7 +2076,8 @@ impl<'a> RecordGenerator<'a> {
                     )
                 })?;
                 let idx = rng.sample(zipf) as usize - 1;
-                *obj = values[idx].clone();
+                let new_value = &values[idx];
+                *obj = json_value_to_simd(new_value);
             }
             (m, _, _) => {
                 return Err(anyhow!(
@@ -2070,21 +2105,26 @@ impl<'a> RecordGenerator<'a> {
         }
 
         *obj = match (&settings.strategy, &settings.values) {
-            (DatagenStrategy::Increment, None) => Value::Bool(incr % 2 == 1),
-            (DatagenStrategy::Increment, Some(values)) => values[incr % values.len()].clone(),
-            (DatagenStrategy::Uniform, None) => Value::Bool(rand::random::<bool>()),
+            (DatagenStrategy::Increment, None) => Value::from(incr % 2 == 1),
+            (DatagenStrategy::Increment, Some(values)) => {
+                let new_value = &values[incr % values.len()];
+                json_value_to_simd(new_value)
+            }
+            (DatagenStrategy::Uniform, None) => Value::from(rand::random::<bool>()),
             (DatagenStrategy::Uniform, Some(values)) => {
-                values[rand::random::<usize>() % values.len()].clone()
+                let new_value = &values[rand::random::<usize>() % values.len()];
+                json_value_to_simd(new_value)
             }
             (DatagenStrategy::Zipf, None) => {
                 let zipf = Zipf::new(2, settings.e as f64)?;
                 let x = rng.sample(zipf) as usize;
-                Value::Bool(x == 1)
+                Value::from(x == 1)
             }
             (DatagenStrategy::Zipf, Some(values)) => {
                 let zipf = Zipf::new(values.len() as u64, settings.e as f64)?;
                 let idx = rng.sample(zipf) as usize - 1;
-                values[idx].clone()
+                let new_value = &values[idx];
+                json_value_to_simd(new_value)
             }
             (m, _) => {
                 return Err(anyhow!(
@@ -2135,9 +2175,9 @@ impl<'a> RecordGenerator<'a> {
                 *obj = Value::String(uuid::Uuid::from_u128(val).to_string());
             }
             (DatagenStrategy::Increment, Some(values), _) => {
-                let new_value = values[incr % values.len()].clone();
-                field_is_uuid(field, &new_value)?;
-                *obj = new_value;
+                let new_value = &values[incr % values.len()];
+                field_is_uuid(field, new_value)?;
+                *obj = json_value_to_simd(new_value);
             }
             (DatagenStrategy::Uniform, None, None) => {
                 let dist = Uniform::from(0..u128::MAX);
@@ -2153,16 +2193,16 @@ impl<'a> RecordGenerator<'a> {
             }
             (DatagenStrategy::Uniform, Some(values), _) => {
                 let dist = Uniform::from(0..values.len());
-                let new_value = values[rng.sample(dist)].clone();
-                field_is_uuid(field, &new_value)?;
-                *obj = new_value;
+                let new_value = &values[rng.sample(dist)];
+                field_is_uuid(field, new_value)?;
+                *obj = json_value_to_simd(new_value);
             }
             (DatagenStrategy::Zipf, Some(values), _) => {
                 let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                 let idx = rng.sample(zipf) as usize - 1;
-                let new_value = values[idx].clone();
-                field_is_uuid(field, &new_value)?;
-                *obj = new_value;
+                let new_value = &values[idx];
+                field_is_uuid(field, new_value)?;
+                *obj = json_value_to_simd(new_value);
             }
             (m, _, _) => {
                 return Err(anyhow!(
@@ -2210,6 +2250,7 @@ mod tests {
     use feldera_types::transport::datagen::{DatagenStrategy, GenerationPlan, RngFieldSettings};
     use rand::SeedableRng;
     use rand::rngs::SmallRng;
+    use simd_json::to_writer;
     use serde_json::json;
     use std::collections::{BTreeMap, HashMap};
     use std::sync::{Arc, Barrier};
@@ -2311,7 +2352,7 @@ skipped (no work)"
                         for idx in start..start + count {
                             let record = generator.make_json_record(idx).unwrap();
                             buffer.clear();
-                            serde_json::to_writer(&mut buffer, record).unwrap();
+                            to_writer(&mut buffer, record).unwrap();
                             bytes += buffer.len() as u64;
                         }
                         (count as u64, bytes)

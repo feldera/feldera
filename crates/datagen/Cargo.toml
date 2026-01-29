@@ -21,6 +21,7 @@ num-traits = { workspace = true }
 rand = { workspace = true, features = ["small_rng"] }
 rand_distr = { workspace = true }
 serde_json = { workspace = true }
+simd-json = { workspace = true }
 tokio = { workspace = true }
 governor = { workspace = true }
 fake = { workspace = true, features = ["http"] }
