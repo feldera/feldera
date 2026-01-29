@@ -580,10 +580,6 @@ impl Controller {
         })
     }
 
-    pub(crate) fn last_checkpoint(&self) -> LastCheckpoint {
-        self.inner.last_checkpoint()
-    }
-
     pub(crate) fn last_checkpoint_sync(&self) -> LastCheckpoint {
         self.inner.last_checkpoint_sync()
     }

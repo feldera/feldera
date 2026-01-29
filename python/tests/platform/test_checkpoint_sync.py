@@ -7,9 +7,9 @@ from uuid import uuid4
 
 from feldera.enums import FaultToleranceModel, PipelineStatus
 from feldera.runtime_config import RuntimeConfig, Storage
+from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 from tests import enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
-from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 DEFAULT_ENDPOINT = os.environ.get(
     "DEFAULT_MINIO_ENDPOINT", "http://minio.extra.svc.cluster.local:9000"
@@ -122,14 +122,31 @@ class TestCheckpointSync(SharedTestPipeline):
                 f"adhoc query returned {len(got_before)} but {processed} records were processed: {got_before}"
             )
 
+        chk_timeout = time.monotonic() + 30
+        chk_uuid = None
+
         if not automated_checkpoint:
             self.pipeline.checkpoint(wait=True)
         else:
-            time.sleep(ft_interval)
+            # wait for at least one automated checkpoint to be created with current data
+            while True:
+                chks = self.pipeline.checkpoints()
+                chk = next((x for x in chks if x.processed_records == processed), None)
+
+                if chk is not None:
+                    chk_uuid = chk.uuid
+                    break
+
+                if time.monotonic() > chk_timeout:
+                    raise TimeoutError(
+                        "timed out waiting for automated checkpoint to be created"
+                    )
+                time.sleep(0.5)
+
+        print("Checkpoint UUID:", chk_uuid, file=sys.stderr)
 
         if automated_sync_interval is not None:
-            time.sleep(automated_sync_interval + 1)
-            timeout = time.monotonic() + 15
+            timeout = time.monotonic() + 30
             success = None
             while time.monotonic() < timeout and success is None:
                 try:

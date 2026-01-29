@@ -215,6 +215,7 @@ It contains the following fields:
         endpoints::pipeline_interaction::get_checkpoint_status,
         endpoints::pipeline_interaction::sync_checkpoint,
         endpoints::pipeline_interaction::get_checkpoint_sync_status,
+        endpoints::pipeline_interaction::get_checkpoints,
         endpoints::pipeline_interaction::post_pipeline_pause,
         endpoints::pipeline_interaction::post_pipeline_resume,
         endpoints::pipeline_interaction::post_pipeline_activate,
@@ -423,6 +424,7 @@ It contains the following fields:
         feldera_types::checkpoint::CheckpointStatus,
         feldera_types::checkpoint::CheckpointResponse,
         feldera_types::checkpoint::CheckpointFailure,
+        feldera_types::checkpoint::CheckpointMetadata,
         feldera_types::transaction::StartTransactionResponse,
         feldera_types::time_series::TimeSeries,
         feldera_types::time_series::SampleStatistics,
@@ -546,6 +548,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::sync_checkpoint)
         .service(endpoints::pipeline_interaction::get_checkpoint_status)
         .service(endpoints::pipeline_interaction::get_checkpoint_sync_status)
+        .service(endpoints::pipeline_interaction::get_checkpoints)
         .service(endpoints::pipeline_interaction::post_pipeline_pause)
         .service(endpoints::pipeline_interaction::post_pipeline_resume)
         .service(endpoints::pipeline_interaction::post_pipeline_activate)
