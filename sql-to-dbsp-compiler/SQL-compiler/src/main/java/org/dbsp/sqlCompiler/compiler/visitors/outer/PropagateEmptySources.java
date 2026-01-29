@@ -16,9 +16,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
@@ -228,7 +231,55 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPStreamJoinIndexOperator operator) {
+        for (OutputPort prev: operator.inputs) {
+            OutputPort source = this.mapped(prev);
+            if (this.emptySources.contains(source.node())) {
+                DBSPExpression value = emptySet(operator.getType());
+                DBSPConstantOperator result = new DBSPConstantOperator(
+                        operator.getRelNode(), value, operator.isMultiset);
+                this.emptySources.add(result);
+                this.map(operator, result);
+                return;
+            }
+        }
+        super.postorder(operator);
+    }
+
+    @Override
     public void postorder(DBSPJoinOperator operator) {
+        for (OutputPort prev: operator.inputs) {
+            OutputPort source = this.mapped(prev);
+            if (this.emptySources.contains(source.node())) {
+                DBSPExpression value = emptySet(operator.getType());
+                DBSPConstantOperator result = new DBSPConstantOperator(
+                        operator.getRelNode(), value, operator.isMultiset);
+                this.emptySources.add(result);
+                this.map(operator, result);
+                return;
+            }
+        }
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinOperator operator) {
+        for (OutputPort prev: operator.inputs) {
+            OutputPort source = this.mapped(prev);
+            if (this.emptySources.contains(source.node())) {
+                DBSPExpression value = emptySet(operator.getType());
+                DBSPConstantOperator result = new DBSPConstantOperator(
+                        operator.getRelNode(), value, operator.isMultiset);
+                this.emptySources.add(result);
+                this.map(operator, result);
+                return;
+            }
+        }
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinIndexOperator operator) {
         for (OutputPort prev: operator.inputs) {
             OutputPort source = this.mapped(prev);
             if (this.emptySources.contains(source.node())) {

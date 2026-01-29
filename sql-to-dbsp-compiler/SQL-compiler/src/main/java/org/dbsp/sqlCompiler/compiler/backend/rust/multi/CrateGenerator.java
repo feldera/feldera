@@ -114,6 +114,7 @@ public final class CrateGenerator {
                 compare = { workspace = true }
                 size-of = { workspace = true }
                 serde_json = { workspace = true }
+                seq-macro = { workspace = true }
                 rkyv = { workspace = true }""");
         if (this.enterprise) {
             stream.println("dbsp-enterprise = { workspace = true }");

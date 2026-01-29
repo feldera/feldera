@@ -15,10 +15,12 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.List;
 
+/** This operator does not exist in DBSP, it is purely used while computing monotonicity */
 @NonCoreIR
-public final class DBSPDistinctIncrementalOperator extends DBSPBinaryOperator implements IContainsIntegrator {
-    public DBSPDistinctIncrementalOperator(CalciteRelNode node, OutputPort integral, OutputPort delta) {
-        super(node, "distinct_incremental", null, delta.outputType(), false, integral, delta);
+public final class DBSPBinaryDistinctOperator extends DBSPBinaryOperator
+        implements IContainsIntegrator, IIncremental {
+    public DBSPBinaryDistinctOperator(CalciteRelNode node, OutputPort integral, OutputPort delta) {
+        super(node, "distinct_component", null, delta.outputType(), false, integral, delta);
     }
 
     @Override
@@ -37,16 +39,16 @@ public final class DBSPDistinctIncrementalOperator extends DBSPBinaryOperator im
         if (this.mustReplace(force, function, newInputs, outputType)) {
             Utilities.enforce(newInputs.size() == 2);
             if (force || this.inputsDiffer(newInputs))
-                return new DBSPDistinctIncrementalOperator(
+                return new DBSPBinaryDistinctOperator(
                         this.getRelNode(), newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         }
         return this;
     }
 
     @SuppressWarnings("unused")
-    public static DBSPDistinctIncrementalOperator fromJson(JsonNode node, JsonDecoder decoder) {
+    public static DBSPBinaryDistinctOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        return new DBSPDistinctIncrementalOperator(CalciteEmptyRel.INSTANCE, info.getInput(0), info.getInput(1))
-                .addAnnotations(info.annotations(), DBSPDistinctIncrementalOperator.class);
+        return new DBSPBinaryDistinctOperator(CalciteEmptyRel.INSTANCE, info.getInput(0), info.getInput(1))
+                .addAnnotations(info.annotations(), DBSPBinaryDistinctOperator.class);
     }
 }

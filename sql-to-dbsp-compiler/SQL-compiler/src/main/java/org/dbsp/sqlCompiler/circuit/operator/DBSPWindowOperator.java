@@ -24,7 +24,7 @@ import java.util.List;
  * elements in the left input are compared with the two scalars
  * in the pair; when they fall between the two limits,
  * they are emitted to the output ZSet. */
-public final class DBSPWindowOperator extends DBSPBinaryOperator implements IContainsIntegrator {
+public final class DBSPWindowOperator extends DBSPBinaryOperator implements IContainsIntegrator, IIncremental {
     public final boolean lowerInclusive;
     public final boolean upperInclusive;
 

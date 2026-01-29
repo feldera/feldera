@@ -27,6 +27,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IContainsIntegrator;
 import org.dbsp.sqlCompiler.circuit.operator.IInputMapOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
@@ -1624,6 +1626,46 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPJoinOperator operator) {
         return this.processJoinBase(operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPStarJoinBaseOperator operator) {
+        this.computeHash(operator);
+        this.innerVisitor.setOperatorContext(null);
+        DBSPType streamType = this.streamType(operator);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getNodeName(this.preferHash))
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ");
+        this.builder.append(operator.operation);
+        // A different function has to be called in nested circuits
+        // DBSP operator name contains input count
+        this.builder.append(operator.inputs.size());
+        if (this.getParent().is(DBSPNestedOperator.class))
+            this.builder.append("_nested");
+        this.builder.append("(").increase();
+        for (int index = 0; index < operator.inputs.size(); index++) {
+            this.builder.append("&")
+                    .append(this.getInputName(operator, index))
+                    .append(",")
+                    .newline();
+        }
+        DBSPClosureExpression closure = operator.getClosureFunction();
+        if (operator.is(DBSPStarJoinIndexOperator.class))
+            // The function signature does not correspond to
+            // the DBSP star_join_index operator; it must produce an iterator.
+            closure = closure.body.some().closure(closure.parameters);
+        closure.accept(this.innerVisitor);
+        this.builder.newline()
+                .decrease()
+                .append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
+        this.tagStream(operator);
+        this.innerVisitor.setOperatorContext(null);
+        return VisitDecision.STOP;
     }
 
     @Override

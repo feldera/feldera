@@ -4,7 +4,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctIncrementalOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
@@ -19,6 +19,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
@@ -100,6 +103,21 @@ public class AppendOnly extends CircuitVisitor {
     }
 
     @Override
+    public void postorder(DBSPStarJoinOperator node) {
+        this.copy(node);
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinIndexOperator node) {
+        this.copy(node);
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinFilterMapOperator node) {
+        this.copy(node);
+    }
+
+    @Override
     public void postorder(DBSPStreamJoinOperator node) {
         this.copy(node);
     }
@@ -155,7 +173,7 @@ public class AppendOnly extends CircuitVisitor {
     }
 
     @Override
-    public void postorder(DBSPDistinctIncrementalOperator node) {
+    public void postorder(DBSPBinaryDistinctOperator node) {
         this.copy(node);
     }
 

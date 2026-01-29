@@ -204,7 +204,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         // NULL tuple literal
                         fields[i] = source.getType().to(DBSPTypeTupleBase.class).getFieldExpressionType(i).none();
                     } else {
-                        fields[i] = expandTupleCast(node, safeSource.field(i).simplify(), tuple.getFieldType(i));
+                        fields[i] = expandTupleCast(node, safeSource.field(i), tuple.getFieldType(i));
                     }
                 }
                 DBSPExpression convertedTuple;

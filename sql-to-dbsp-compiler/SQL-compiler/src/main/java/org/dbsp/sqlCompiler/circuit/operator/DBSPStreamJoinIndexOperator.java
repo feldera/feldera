@@ -18,7 +18,7 @@ import java.util.Objects;
 
 /** Currently there is no corespondent operator in DBSP.
  * See {@link DBSPJoinIndexOperator} for the function signature. */
-public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
+public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator implements INonIncremental {
     public DBSPStreamJoinIndexOperator(
             CalciteRelNode node, DBSPTypeIndexedZSet outputType,
             DBSPExpression function, boolean isMultiset,

@@ -20,7 +20,7 @@ import java.util.Objects;
  * Notice that, unlike the corresponding DBSP operator join_index,
  * this operator has a function that produces a single value, and not an Iterator.
  * The code generator has to wrap this value in a Some to be able to use the DBSP operator. */
-public final class DBSPJoinIndexOperator extends DBSPJoinBaseOperator {
+public final class DBSPJoinIndexOperator extends DBSPJoinBaseOperator implements IIncremental {
     public DBSPJoinIndexOperator(
             CalciteRelNode node, DBSPTypeIndexedZSet outputType,
             DBSPExpression function, boolean isMultiset,
