@@ -232,3 +232,106 @@ kubectl delete configmap -n $NAMESPACE $NAME
 kubectl delete pod -n $NAMESPACE $POD
 kubectl delete pvc -n $NAMESPACE $PVC
 ```
+
+## Expand existing pipeline storage
+
+:::note Advanced Enterprise-only feature
+This guide is only applicable to the Feldera Enterprise Edition and is
+for advanced users as it details out-of-band steps that make certain
+assumptions on implementation details of Feldera. As a consequence,
+these steps might be subject to change in the future. They are
+written with only single-host pipelines in mind.
+:::
+
+Choosing a larger storage without preserving existing state can be done
+by clearing the storage, followed by increasing the runtime configuration's
+`resources.storage_mb_max`. However, this field cannot be edited with uncleared
+storage (i.e., while preserving existing state). Currently, Feldera does not
+have the feature to expand existing storage. It is however possible to do it
+out-of-band by directly interacting with the underlying Kubernetes PVC.
+This is only possible if its storage class allows volume expansion.
+
+This out-of-band action will result in a discrepancy between what the runtime
+configuration `resources.storage_mb_max` states and the actual size of the
+storage. Be aware that clearing storage afterward will delete the PVC that
+was changed out-of-band, thereby undoing the storage expansion.
+
+### Steps
+
+1. Note down the `<pipeline-id>` of the pipeline
+   (from the Web Console: Open pipeline -> Tab: Performance -> Pipeline ID button).
+
+   These environment variables will be used in the following steps:
+   ```
+   # TODO: change to your own situation
+   NAMESPACE=feldera
+   PIPELINE_PVC=pipeline-<pipeline-id>-storage-pipeline-<pipeline-id>-0
+   ```
+
+2. Check the PVC of the pipeline:
+   ```
+   kubectl get pvc -n $NAMESPACE $PIPELINE_PVC
+   ```
+
+   ... which for example outputs (`resources.storage_mb_max` is set to 25000 in this example):
+   ```
+   NAME            STATUS   VOLUME    CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+   pipeline-....   Bound    pvc-...   24Gi       RWO            gp3            <unset>                 21s
+   ```
+   The storage class is `gp3` in this example.
+
+3. Check the storage class:
+   ```
+   kubectl get sc gp3
+   ```
+
+   ... which for example outputs:
+   ```
+   NAME   PROVISIONER       RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
+   gp3    ebs.csi.aws.com   Delete          WaitForFirstConsumer   true                   10d
+   ```
+
+   The storage class must support volume expansion (above: `ALLOWVOLUMEEXPANSION`)
+   in order to continue with the next step. If it does not, you can potentially enable
+   it for the storage class via:
+   ```
+   kubectl patch sc gp3 -p '{"allowVolumeExpansion": true}'
+   ```
+
+   ... followed by checking this is the case by doing again `kubectl get sc gp3`
+   and looking under `ALLOWVOLUMEEXPANSION`.
+
+4. Patch the PVC of the pipeline with a higher storage request
+   (in this example, increasing `25G` to `50G`):
+   ```
+   kubectl patch pvc -n $NAMESPACE $PIPELINE_PVC \
+       -p '{"spec":{"resources":{"requests":{"storage":"50G"}}}}'
+   ```
+   
+   Note: it is not possible to patch `spec.resources.limits.storage`,
+   as such it will be lower than `spec.resources.requests.storage` afterward.
+   Irrespectively, on AWS it does expand the storage.
+
+5. Wait for the PVC resizing to take effect:
+   ```
+   kubectl get pvc -n $NAMESPACE $PIPELINE_PVC
+   ```
+
+   ... which for example eventually outputs (it can take seconds or minutes):
+   ```
+   NAME            STATUS   VOLUME    CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+   pipeline-....   Bound    pvc-...   47Gi       RWO            gp3            <unset>                 5m44s
+   ```
+
+   If it takes longer than expected, you can also debug
+   using `kubectl describe pvc -n $NAMESPACE $PIPELINE_PVC`
+   to find out what is going on with the PVC.
+
+   :::note
+   It depends on the storage provisioner backing the storage class whether it accepts the
+   PVC modification, and how long it takes for it to be applied. Additionally, storage
+   provisioners can limit how often you can modify a PVC in a certain time window.
+   Doing multiple expansions of the same PVC in quick succession might stop working at
+   some point, as is the case for AWS. Consult your cloud provider documentation to learn more
+   (e.g., [AWS](https://docs.aws.amazon.com/ebs/latest/userguide/ebs-modify-volume.html#elastic-volumes-considerations)).
+   :::
