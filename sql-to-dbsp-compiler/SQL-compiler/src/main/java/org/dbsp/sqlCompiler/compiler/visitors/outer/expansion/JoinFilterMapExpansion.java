@@ -8,8 +8,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import javax.annotation.Nullable;
 
 public final class JoinFilterMapExpansion
-        extends OperatorExpansion
-        implements CommonJoinExpansion {
+        extends OperatorDeltaExpansion
+        implements CommonJoinDeltaExpansion {
     @Nullable public final DBSPDelayedIntegralOperator leftIntegrator;
     @Nullable public final DBSPDelayedIntegralOperator rightIntegrator;
     @Nullable public final DBSPStreamJoinOperator leftDelta;

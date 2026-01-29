@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -21,6 +23,8 @@ import java.util.stream.IntStream;
 public abstract class RustWriter extends BaseRustCodeGenerator {
     protected RustWriter() {}
 
+    public record StarJoin(String kind, int inputs) {}
+
     /** Various visitors gather here information about the program prior to generating code. */
     public static class StructuresUsed {
         /** Tuples up to this size are predefined */
@@ -30,6 +34,10 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
         public final Set<Integer> tupleSizesUsed = new HashSet<>();
         /** The set of all semigroup sizes used. */
         public final Set<Integer> semigroupSizesUsed = new HashSet<>();
+        /** The set of all kinds of star joins used */
+        public final Set<StarJoin> starJoinsUsed = new HashSet<>();
+        /** Count of backEdges in each recursive component */
+        public final Set<Integer> recursiveComponentBackEdges = new HashSet<>();
 
         public boolean isPredefined(int tupleSize) {
             return tupleSize <= PREDEFINED;
@@ -46,10 +54,10 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
 
     /** Visitor which discovers some data structures used.
      * Stores the result in the "used" structure. */
-    public static class FindResources extends InnerVisitor {
+    public static class FindInnerResources extends InnerVisitor {
         final StructuresUsed used;
 
-        public FindResources(DBSPCompiler compiler, StructuresUsed used) {
+        public FindInnerResources(DBSPCompiler compiler, StructuresUsed used) {
             super(compiler);
             this.used = used;
         }
@@ -67,6 +75,25 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
         @Override
         public void postorder(DBSPTypeSemigroup type) {
             this.used.semigroupSizesUsed.add(type.semigroupSize());
+        }
+    }
+
+    public static class FindOuterResources extends CircuitVisitor {
+        final StructuresUsed used;
+
+        public FindOuterResources(DBSPCompiler compiler, StructuresUsed used) {
+            super(compiler);
+            this.used = used;
+        }
+
+        @Override
+        public void postorder(DBSPNestedOperator operator) {
+            this.used.recursiveComponentBackEdges.add(operator.declarationByName.size());
+        }
+
+        @Override
+        public void postorder(DBSPStarJoinBaseOperator operator) {
+            this.used.starJoinsUsed.add(new StarJoin(operator.operation, operator.inputs.size()));
         }
     }
 
@@ -204,6 +231,15 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
             }
         }
         this.builder().newline();
+
+        for (StarJoin sj: used.starJoinsUsed) {
+            this.builder().append("define_")
+                    .append(sj.kind)
+                    .append("!(")
+                    .append(sj.inputs)
+                    .append(");")
+                    .newline();
+        }
     }
 
     void generateUdfInclude() {
@@ -232,7 +268,8 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
     /** Analyze the nodes to generate code for and find structures used */
     public StructuresUsed analyze(DBSPCompiler compiler) {
         StructuresUsed used = new StructuresUsed();
-        FindResources findResources = new FindResources(compiler, used);
+        FindInnerResources findResources = new FindInnerResources(compiler, used);
+        FindOuterResources findOuterResources = new FindOuterResources(compiler, used);
         CircuitVisitor findCircuitResources = findResources.getCircuitVisitor(true);
 
         for (IDBSPNode node : this.toWrite) {
@@ -241,7 +278,7 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
                 inner.accept(findResources);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
-                // Find the resources used to generate the correct Rust preamble
+                findOuterResources.apply(outer);
                 findCircuitResources.apply(outer);
             }
         }
