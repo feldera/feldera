@@ -18,7 +18,7 @@ import logging
 import pytest
 import requests
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional, Callable
 from http import HTTPStatus
 from urllib.parse import quote, quote_plus
 
@@ -116,7 +116,19 @@ def delete(path: str, **kw) -> requests.Response:
     return http_request("DELETE", path, **kw)
 
 
-def wait_for_deployment_status(name: str, desired: str, timeout_s: float = 60.0):
+def wait_for_deployment_status(
+    name: str,
+    desired: str | Callable[[str], bool],
+    timeout_s: float = 60.0
+):
+    """
+    Wait until pipeline 'name' has 'desired' deployment status:
+
+    - If 'desired' is a string, until that is the status.
+
+    - If 'desired' is a function, until it returns true when passed
+      the deployment status.
+    """
     deadline = time.time() + timeout_s
     last = None
     while time.time() < deadline:
@@ -126,7 +138,7 @@ def wait_for_deployment_status(name: str, desired: str, timeout_s: float = 60.0)
             continue
         obj = r.json()
         last = obj.get("deployment_status")
-        if last == desired:
+        if last == desired if isinstance(desired, str) else desired(last):
             return obj
         time.sleep(0.25)
     raise TimeoutError(
