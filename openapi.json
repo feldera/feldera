@@ -6952,6 +6952,7 @@
       },
       "ConnectOptions": {
         "type": "object",
+        "description": "Options for connecting to a NATS server.",
         "required": [
           "server_url"
         ],
@@ -6959,8 +6960,21 @@
           "auth": {
             "$ref": "#/components/schemas/Auth"
           },
+          "connection_timeout_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Connection timeout\n\nHow long to wait when establishing the initial connection to the\nNATS server.",
+            "minimum": 0
+          },
+          "request_timeout_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Request timeout in seconds.\n\nHow long to wait for responses to requests.",
+            "minimum": 0
+          },
           "server_url": {
-            "type": "string"
+            "type": "string",
+            "description": "NATS server URL (e.g., \"nats://localhost:4222\")."
           }
         }
       },

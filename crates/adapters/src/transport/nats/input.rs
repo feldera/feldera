@@ -165,32 +165,33 @@ impl NatsReader {
         // Connect to NATS and verify stream exists (early validation).
         // This ensures we fail fast with a clear error if the server is
         // unreachable or the stream doesn't exist.
-        let (nats_connection, jetstream) = TOKIO.block_on(
-            async {
-                let client = Self::connect_nats(&config.connection_config).await?;
-                let js = jetstream::new(client.clone());
-                Self::verify_stream_exists(&js, &config.stream_name).await?;
-                Ok::<_, AnyError>((client, js))
-            }
-            .instrument(span.clone()),
-        )
-        .map_err(|e| {
-            error!(
-                server_url = %config.connection_config.server_url,
-                stream_name = %config.stream_name,
-                connection_timeout_secs = config.connection_config.connection_timeout_secs,
-                request_timeout_secs = config.connection_config.request_timeout_secs,
-                "NATS initialization failed: {e:#}"
-            );
-            e.context(format!(
-                "NATS initialization failed for stream '{}' at server '{}' \
+        let (nats_connection, jetstream) = TOKIO
+            .block_on(
+                async {
+                    let client = Self::connect_nats(&config.connection_config).await?;
+                    let js = jetstream::new(client.clone());
+                    Self::verify_stream_exists(&js, &config.stream_name).await?;
+                    Ok::<_, AnyError>((client, js))
+                }
+                .instrument(span.clone()),
+            )
+            .map_err(|e| {
+                error!(
+                    server_url = %config.connection_config.server_url,
+                    stream_name = %config.stream_name,
+                    connection_timeout_secs = config.connection_config.connection_timeout_secs,
+                    request_timeout_secs = config.connection_config.request_timeout_secs,
+                    "NATS initialization failed: {e:#}"
+                );
+                e.context(format!(
+                    "NATS initialization failed for stream '{}' at server '{}' \
                 (connection_timeout={}s, request_timeout={}s)",
-                config.stream_name,
-                config.connection_config.server_url,
-                config.connection_config.connection_timeout_secs,
-                config.connection_config.request_timeout_secs,
-            ))
-        })?;
+                    config.stream_name,
+                    config.connection_config.server_url,
+                    config.connection_config.connection_timeout_secs,
+                    config.connection_config.request_timeout_secs,
+                ))
+            })?;
 
         // The connection is established but we don't need the client reference
         // in the worker - it stays alive as long as the jetstream context exists.
