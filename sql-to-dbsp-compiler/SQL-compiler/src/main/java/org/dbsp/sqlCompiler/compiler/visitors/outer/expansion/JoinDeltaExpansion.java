@@ -6,9 +6,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 
 import javax.annotation.Nullable;
 
-public final class JoinExpansion
-        extends OperatorExpansion
-        implements CommonJoinExpansion {
+public final class JoinDeltaExpansion
+        extends OperatorDeltaExpansion
+        implements CommonJoinDeltaExpansion {
     @Nullable
     public final DBSPDelayedIntegralOperator leftIntegrator;
     @Nullable
@@ -20,12 +20,12 @@ public final class JoinExpansion
     public final DBSPStreamJoinOperator both;
     public final DBSPSumOperator sum;
 
-    public JoinExpansion(@Nullable DBSPDelayedIntegralOperator leftIntegrator,
-                         @Nullable DBSPDelayedIntegralOperator rightIntegrator,
-                         @Nullable DBSPStreamJoinOperator leftDelta,
-                         @Nullable DBSPStreamJoinOperator rightDelta,
-                         DBSPStreamJoinOperator both,
-                         DBSPSumOperator sum) {
+    public JoinDeltaExpansion(@Nullable DBSPDelayedIntegralOperator leftIntegrator,
+                              @Nullable DBSPDelayedIntegralOperator rightIntegrator,
+                              @Nullable DBSPStreamJoinOperator leftDelta,
+                              @Nullable DBSPStreamJoinOperator rightDelta,
+                              DBSPStreamJoinOperator both,
+                              DBSPSumOperator sum) {
         this.leftIntegrator = leftIntegrator;
         this.rightIntegrator = rightIntegrator;
         this.leftDelta = leftDelta;

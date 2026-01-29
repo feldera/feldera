@@ -16,7 +16,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ExpandOperators;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DeltaExpandOperators;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.IWritesLogs;
@@ -140,7 +140,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         if (debug)
             ToDot.dump(this.compiler, "original.png", details, "png", circuit);
 
-        ExpandOperators expander = new ExpandOperators(
+        DeltaExpandOperators expander = new DeltaExpandOperators(
                 this.compiler,
                 appendOnly.appendOnly::contains,
                 keyPropagation.joins::get);

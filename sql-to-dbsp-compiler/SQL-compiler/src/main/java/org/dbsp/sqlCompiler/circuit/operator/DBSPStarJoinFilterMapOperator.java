@@ -17,14 +17,11 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
-import java.util.Objects;
 
-/** This class represents a left join followed by a filter followed by a map.
- * The operator is eventually lowered to a left_join_flatmap,
- * where the synthesized function
- * returns None when filter(function) is false, and Some(map(function))
- * otherwise. */
-public final class DBSPLeftJoinFilterMapOperator extends DBSPJoinBaseOperator implements IIncremental {
+/** A Join operator that has N inputs, combined with a filter and a map;
+ * each input is indexed and all keys must be of the same type;
+ * this operator is incremental-only. */
+public class DBSPStarJoinFilterMapOperator extends DBSPStarJoinBaseOperator implements IIncremental {
     // If the following is null, the function represents the combined function/filter
     // and the function returns Option.
     @Nullable
@@ -32,31 +29,21 @@ public final class DBSPLeftJoinFilterMapOperator extends DBSPJoinBaseOperator im
     @Nullable
     public final DBSPClosureExpression map;
 
-    public DBSPLeftJoinFilterMapOperator(
-            CalciteRelNode node, DBSPTypeZSet outputType,
-            DBSPExpression function, @Nullable DBSPClosureExpression filter, @Nullable DBSPClosureExpression map,
-            boolean isMultiset,
-            OutputPort left, OutputPort right, boolean balanced) {
-        super(node, joinOperationName("left_join_flatmap", balanced), function, outputType, isMultiset, left, right, balanced);
+    public DBSPStarJoinFilterMapOperator(CalciteRelNode node, DBSPType outputType, DBSPClosureExpression function,
+                                         @Nullable DBSPClosureExpression filter, @Nullable DBSPClosureExpression map,
+                                         boolean isMultiset, List<OutputPort> inputs) {
+        super(node, "inner_star_join_flatmap", outputType, function, isMultiset, inputs);
         this.filter = filter;
         this.map = map;
-        Utilities.enforce(left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType));
-        Utilities.enforce(right.getOutputIndexedZSetType().elementType.mayBeNull);
-    }
-
-    public DBSPExpression getFilter() {
-        return Objects.requireNonNull(this.filter);
+        Utilities.enforce(function.getResultType().sameType(outputType.to(DBSPTypeZSet.class).elementType));
     }
 
     @Override
-    public DBSPSimpleOperator with(
-            @Nullable DBSPExpression function, DBSPType outputType,
-            List<OutputPort> newInputs, boolean force) {
-        if (this.mustReplace(force, function, newInputs, outputType)) {
-            return new DBSPLeftJoinFilterMapOperator(
-                    this.getRelNode(), outputType.to(DBSPTypeZSet.class),
-                    Objects.requireNonNull(function), this.filter, this.map,
-                    this.isMultiset, newInputs.get(0), newInputs.get(1), this.balanced).copyAnnotations(this);
+    public DBSPOperator with(@Nullable DBSPExpression function, DBSPType outputType, List<OutputPort> inputs, boolean force) {
+        Utilities.enforce(function != null);
+        if (this.mustReplace(force, function, inputs, outputType)) {
+            return new DBSPStarJoinFilterMapOperator(this.getRelNode(), outputType, function.to(DBSPClosureExpression.class),
+                    this.filter, this.map, this.isMultiset, inputs).copyAnnotations(this);
         }
         return this;
     }
@@ -65,7 +52,7 @@ public final class DBSPLeftJoinFilterMapOperator extends DBSPJoinBaseOperator im
     public boolean equivalent(DBSPOperator other) {
         if (!super.equivalent(other))
             return false;
-        DBSPLeftJoinFilterMapOperator jfm = other.as(DBSPLeftJoinFilterMapOperator.class);
+        DBSPStarJoinFilterMapOperator jfm = other.as(DBSPStarJoinFilterMapOperator.class);
         if (jfm == null)
             return false;
         return EquivalenceContext.equiv(this.filter, jfm.filter) &&
@@ -95,7 +82,7 @@ public final class DBSPLeftJoinFilterMapOperator extends DBSPJoinBaseOperator im
     }
 
     @SuppressWarnings("unused")
-    public static DBSPLeftJoinFilterMapOperator fromJson(JsonNode node, JsonDecoder decoder) {
+    public static DBSPStarJoinFilterMapOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         DBSPClosureExpression filter = null;
         if (node.has("filter"))
@@ -103,11 +90,9 @@ public final class DBSPLeftJoinFilterMapOperator extends DBSPJoinBaseOperator im
         DBSPClosureExpression map = null;
         if (node.has("map"))
             map = fromJsonInner(node, "map", decoder, DBSPClosureExpression.class);
-        boolean balanced = Utilities.getBooleanProperty(node, "balanced");
-        return new DBSPLeftJoinFilterMapOperator(
-                CalciteEmptyRel.INSTANCE, info.getZsetType(), info.getFunction(),
-                filter, map,
-                info.isMultiset(), info.getInput(0), info.getInput(1), balanced)
-                .addAnnotations(info.annotations(), DBSPLeftJoinFilterMapOperator.class);
+        return new DBSPStarJoinFilterMapOperator(
+                CalciteEmptyRel.INSTANCE, info.getZsetType(), info.getClosureFunction(),
+                filter, map, info.isMultiset(), info.inputs())
+                .addAnnotations(info.annotations(), DBSPStarJoinFilterMapOperator.class);
     }
 }

@@ -88,7 +88,7 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
                 ProgramIdentifier fieldName = names.get(i);
                 keys.add(new DBSPStringLiteral(fieldName.toString()));
 
-                DBSPExpression field = source.field(i).simplify();
+                DBSPExpression field = source.field(i);
                 if (!field.getType().hasCopy())
                     field = field.applyCloneIfNeeded();
                 DBSPExpression rec = field.cast(node, DBSPTypeVariant.create(false), UNSAFE);
@@ -130,7 +130,7 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
             DBSPType fieldType = type.getFieldType(i);
             DBSPExpression field;
             if (sourceType.is(DBSPTypeTupleBase.class)) {
-                field = source.field(i).simplify();
+                field = source.field(i);
             } else if (sourceType.is(DBSPTypeVariant.class)) {
                 if (struct == null) {
                     field = new DBSPBinaryExpression(
@@ -179,7 +179,7 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
             throw new InternalCompilerError("Cast to RAW tuple from " + sourceType);
         for (int i = 0; i < type.size(); i++) {
             DBSPType fieldType = type.getFieldType(i);
-            DBSPExpression field = source.field(i).simplify();
+            DBSPExpression field = source.field(i);
             DBSPExpression expression;
             expression = field.cast(node, fieldType, UNSAFE);
             // Convert recursively

@@ -19,11 +19,10 @@ import java.util.Objects;
 
 public final class DBSPAggregateLinearPostprocessRetainKeysOperator
         extends DBSPBinaryOperator
-        implements ILinearAggregate {
+        implements ILinearAggregate, IIncremental {
     public final DBSPClosureExpression postProcess;
     public final DBSPClosureExpression retainKeysFunction;
 
-    // This operator is incremental-only
     public DBSPAggregateLinearPostprocessRetainKeysOperator(
             CalciteRelNode node,
             DBSPTypeIndexedZSet outputType,

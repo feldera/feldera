@@ -21,7 +21,7 @@ import java.util.Objects;
  * this operator has a function that produces a single value, and not an Iterator.
  * The code generator has to wrap this value in a Some to be able to use the DBSP operator.
  * This is similar to the {@link DBSPJoinIndexOperator}. */
-public final class DBSPLeftJoinIndexOperator extends DBSPJoinBaseOperator {
+public final class DBSPLeftJoinIndexOperator extends DBSPJoinBaseOperator implements IIncremental {
     public DBSPLeftJoinIndexOperator(
             CalciteRelNode node, DBSPTypeIndexedZSet outputType,
             DBSPExpression function, boolean isMultiset,

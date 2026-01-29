@@ -7,7 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctIncrementalOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
@@ -560,7 +560,7 @@ public class Monotonicity extends CircuitVisitor {
     }
 
     @Override
-    public void postorder(DBSPDistinctIncrementalOperator node) {
+    public void postorder(DBSPBinaryDistinctOperator node) {
         // The right input is the delta.
         MonotoneExpression input = this.getMonotoneExpression(node.right());
         if (input == null)

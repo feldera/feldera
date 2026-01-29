@@ -7,7 +7,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
@@ -18,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IJoin;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -69,8 +69,9 @@ public class ToDotNodesVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
         String name = (this.compiler.options.ioOptions.verbosity > 0 ? (node.tableName + " ") : "") + node.operation;
+        String color = " style=filled fillcolor=lightgrey";       
         this.stream.append(node.getNodeName(false))
-                .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
+                .append(" [ shape=box " + color + " label=\"")
                 .append(node.getIdString())
                 .append(isMultiset(node))
                 .append(annotations(node))
@@ -230,7 +231,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         if (operator.id > lastCircuit)
             return " style=filled fillcolor=green";
          */
-        if (operator.is(DBSPJoinBaseOperator.class)) {
+        if (operator.is(IJoin.class)) {
             // There are more of these every day
             return " style=filled fillcolor=orangered";
         }

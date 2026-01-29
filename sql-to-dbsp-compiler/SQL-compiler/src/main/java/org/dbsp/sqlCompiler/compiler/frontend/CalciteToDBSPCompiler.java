@@ -95,12 +95,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
@@ -171,7 +171,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
@@ -759,32 +758,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return new DBSPTupleExpression(keys);
     }
 
-    /** Given two results of aggregation functions, join them on the common keys and concatenate the fields */
-    public static DBSPStreamJoinIndexOperator combineTwoAggregates(
-            CalciteRelNode node, DBSPType groupKeyType,
-            DBSPSimpleOperator left, DBSPSimpleOperator right,
-            Consumer<DBSPOperator> addOperator) {
-        DBSPTypeTupleBase leftType = left.getOutputIndexedZSetType().getElementTypeTuple();
-        DBSPTypeTupleBase rightType = right.getOutputIndexedZSetType().getElementTypeTuple();
-
-        DBSPVariablePath leftVar = leftType.ref().var();
-        DBSPVariablePath rightVar = rightType.ref().var();
-
-        leftType = leftType.concat(rightType);
-        DBSPTypeIndexedZSet joinOutputType = makeIndexedZSet(groupKeyType, leftType);
-
-        DBSPVariablePath key = groupKeyType.ref().var();
-        DBSPExpression body = new DBSPRawTupleExpression(
-                DBSPTupleExpression.flatten(key.deref()),
-                DBSPTupleExpression.flatten(leftVar.deref(), rightVar.deref()));
-        DBSPClosureExpression appendFields = body.closure(key, leftVar, rightVar);
-
-        DBSPStreamJoinIndexOperator result = new DBSPStreamJoinIndexOperator(
-                node, joinOutputType, appendFields, false, left.outputPort(), right.outputPort(), false);
-        addOperator.accept(result);
-        return result;
-    }
-
     /** Implement an AggregateList using a {@link DBSPStreamAggregateOperator} operator */
     public DBSPSimpleOperator implementAggregateList(
             CalciteRelNode node, DBSPType groupKeyType, OutputPort indexedInput, DBSPAggregateList agg) {
@@ -805,17 +778,41 @@ public class CalciteToDBSPCompiler extends RelVisitor
             return aggregates.get(0);
         }
 
-        List<DBSPSimpleOperator> pairs = new ArrayList<>();
-        for (int i = 0; i < aggregates.size(); i += 2) {
-            if (i == aggregates.size() - 1) {
-                pairs.add(aggregates.get(i));
-            } else {
-                DBSPSimpleOperator join = combineTwoAggregates(
-                        node, groupKeyType, aggregates.get(i), aggregates.get(i + 1), addOperator);
-                pairs.add(join);
-            }
+        DBSPTypeTupleBase resultValueType = new DBSPTypeTuple();
+        for (var agg: aggregates)
+            resultValueType = resultValueType.concat(agg.getOutputIndexedZSetType()
+                    .elementType.to(DBSPTypeTupleBase.class));
+
+        DBSPParameter[] parameters = new DBSPParameter[aggregates.size() + 1];
+        DBSPVariablePath var = groupKeyType.ref().var();
+        parameters[0] = var.asParameter();
+        List<DBSPExpression> fields = new ArrayList<>();
+        for (int i = 0; i < aggregates.size(); i++) {
+            DBSPType aggregateDataType = aggregates.get(i).getOutputIndexedZSetType().elementType;
+            DBSPVariablePath varI = aggregateDataType.ref().var();
+            DBSPTypeTuple tuple = aggregateDataType.to(DBSPTypeTuple.class);
+            for (int j = 0; j < tuple.size(); j++)
+                fields.add(varI.deref().field(j).applyCloneIfNeeded());
+            parameters[i + 1] = varI.asParameter();
         }
-        return combineAggregateList(node, groupKeyType, pairs, addOperator);
+        DBSPClosureExpression function = new DBSPRawTupleExpression(
+                DBSPTupleExpression.flatten(var.deref()),
+                new DBSPTupleExpression(fields, false)).closure(parameters);
+        // Incremental operator; must sandwich with D-I
+        List<OutputPort> differentiators = new ArrayList<>();
+        for (DBSPSimpleOperator agg: aggregates) {
+            var diff = new DBSPDifferentiateOperator(node, agg.outputPort());
+            addOperator.accept(diff);
+            differentiators.add(diff.outputPort());
+        }
+
+        DBSPSimpleOperator result = new DBSPStarJoinIndexOperator(
+                node, new DBSPTypeIndexedZSet(node, groupKeyType, resultValueType), function,
+                false, differentiators);
+        addOperator.accept(result);
+        result = new DBSPIntegrateOperator(node, result.outputPort());
+        addOperator.accept(result);
+        return result;
     }
 
     /** Implement one list of aggregates (possibly from a rollup) described by a LogicalAggregate. */
@@ -1260,7 +1257,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression condition = null;
         for (int i = 0; i < rowType.size(); i++) {
             if (fields.contains(i)) {
-                DBSPFieldExpression field = var.deref().field(i);
+                DBSPExpression field = var.deref().field(i);
                 DBSPExpression expr = field.is_null();
                 if (condition == null)
                     condition = expr;

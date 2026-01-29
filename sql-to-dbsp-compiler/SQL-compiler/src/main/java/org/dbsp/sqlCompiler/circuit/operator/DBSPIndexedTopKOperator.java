@@ -27,7 +27,7 @@ import java.util.Objects;
 /** Apply a topK operation to each of the groups in an indexed collection.
  * This always sorts the elements of each group.
  * To sort the entire collection just group by (). */
-public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator implements IContainsIntegrator {
+public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator implements IContainsIntegrator, IIncremental {
     /** These values correspond to the SQL keywords
      * ROW, RANK, and DENSE RANK.  See e.g.:
      * https://learn.microsoft.com/en-us/sql/t-sql/functions/ranking-functions-transact-sql

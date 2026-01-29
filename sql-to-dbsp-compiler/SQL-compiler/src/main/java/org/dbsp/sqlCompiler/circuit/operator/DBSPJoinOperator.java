@@ -39,9 +39,9 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/** Corresponds to a DBSP join operator, which may include multiple integrators.
+/** Corresponds to a DBSP incremental join operator.
  * Output is always a ZSet.  There's an DBSPJoinIndexOperator which can produce IndexedZSets. */
-public final class DBSPJoinOperator extends DBSPJoinBaseOperator {
+public final class DBSPJoinOperator extends DBSPJoinBaseOperator implements IIncremental {
     public DBSPJoinOperator(
             CalciteRelNode node, DBSPTypeZSet outputType,
             DBSPExpression function, boolean isMultiset,

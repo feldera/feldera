@@ -36,7 +36,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public final class DBSPIntegrateOperator extends DBSPUnaryOperator implements IContainsIntegrator {
+public final class DBSPIntegrateOperator extends DBSPUnaryOperator implements IContainsIntegrator, ILinear {
     public DBSPIntegrateOperator(CalciteRelNode node, OutputPort source) {
         super(node, "integrate", null, source.outputType(), source.isMultiset(), source);
     }

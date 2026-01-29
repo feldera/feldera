@@ -21,7 +21,7 @@ import java.util.List;
 /** Implements the LAG/LEAD operators for an SQL OVER Window.  The LEAD/LAG operator
  * is an interesting WINDOW operator, since it computes the entire content of the window.
  * The output of other window aggregates need to be joined with the data, but this one doesn't. */
-public final class DBSPLagOperator extends DBSPUnaryOperator implements IContainsIntegrator {
+public final class DBSPLagOperator extends DBSPUnaryOperator implements IContainsIntegrator, IIncremental {
     // Usually a DBSPComparatorExpression, replaced with a PathExpression later.
     public final DBSPExpression comparator;
     public final DBSPExpression projection;

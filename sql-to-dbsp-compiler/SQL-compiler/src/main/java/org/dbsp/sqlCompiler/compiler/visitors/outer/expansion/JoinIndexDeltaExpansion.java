@@ -4,9 +4,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 
-public final class JoinIndexExpansion
-        extends OperatorExpansion
-        implements CommonJoinExpansion {
+public final class JoinIndexDeltaExpansion
+        extends OperatorDeltaExpansion
+        implements CommonJoinDeltaExpansion {
     public final DBSPDelayedIntegralOperator leftIntegrator;
     public final DBSPDelayedIntegralOperator rightIntegrator;
     public final DBSPStreamJoinIndexOperator leftDelta;
@@ -14,12 +14,12 @@ public final class JoinIndexExpansion
     public final DBSPStreamJoinIndexOperator both;
     public final DBSPSumOperator sum;
 
-    public JoinIndexExpansion(DBSPDelayedIntegralOperator leftIntegrator,
-                              DBSPDelayedIntegralOperator rightIntegrator,
-                              DBSPStreamJoinIndexOperator leftDelta,
-                              DBSPStreamJoinIndexOperator rightDelta,
-                              DBSPStreamJoinIndexOperator both,
-                              DBSPSumOperator sum) {
+    public JoinIndexDeltaExpansion(DBSPDelayedIntegralOperator leftIntegrator,
+                                   DBSPDelayedIntegralOperator rightIntegrator,
+                                   DBSPStreamJoinIndexOperator leftDelta,
+                                   DBSPStreamJoinIndexOperator rightDelta,
+                                   DBSPStreamJoinIndexOperator both,
+                                   DBSPSumOperator sum) {
         this.leftIntegrator = leftIntegrator;
         this.rightIntegrator = rightIntegrator;
         this.leftDelta = leftDelta;

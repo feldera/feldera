@@ -39,7 +39,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
+public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator implements INonIncremental {
     public DBSPStreamJoinOperator(CalciteRelNode node, DBSPTypeZSet outputType,
                                   // Closure from key, valueLeft, valueRight to result type
                                   DBSPExpression function, boolean isMultiset,
