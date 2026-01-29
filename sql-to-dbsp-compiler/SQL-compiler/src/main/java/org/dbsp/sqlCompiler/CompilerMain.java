@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.StubsWriter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCrates;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCratesWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
@@ -269,14 +270,16 @@ public class CompilerMain {
         String outputFile = this.options.ioOptions.outputFile;
         if (!outputFile.isEmpty() && !this.options.ioOptions.noRust) {
             Path stubs;
-            Path outputPath = Paths.get(new File(outputFile).getAbsolutePath());
+            Path outputPath;
             if (options.ioOptions.multiCrates()) {
                 // Generate globals/src/stubs.rs
                 Utilities.enforce(multiWriter != null);
                 String globals = multiWriter.getGlobalsName();
+                outputPath = Paths.get(outputFile, MultiCrates.CRATES_DIRECTORY);
                 stubs = outputPath.resolve(globals).resolve("src").resolve(DBSPCompiler.STUBS_FILE_NAME);
             } else {
                 // Generate stubs.rs in the same directory
+                outputPath = Paths.get(new File(outputFile).getAbsolutePath());
                 stubs = outputPath.getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
             }
             StubsWriter writer = new StubsWriter(stubs);
