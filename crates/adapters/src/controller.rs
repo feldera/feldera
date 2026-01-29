@@ -4503,8 +4503,14 @@ impl TransactionInitiators {
         self.initiated_by_connectors.clear();
     }
 
-    /// At least one participant has not committed the transaction and
-    /// can push more data as part of the transaction.
+    /// Returns true if at least one participant has started a transaction and
+    /// can push more data as part of it.
+    ///
+    /// `is_multihost` indicates whether the pipeline is multihost.  In
+    /// multihost pipelines, we track which connectors have requested a
+    /// transaction but only the coordinator actually initiates and commits
+    /// them, so we ignore connector-initiated transactions for the purpose of
+    /// whether a transaction is ongoing.
     fn is_ongoing(&self, is_multihost: bool) -> bool {
         self.initiated_by_api == Some(TransactionPhase::Started)
             || (!is_multihost
@@ -4513,11 +4519,29 @@ impl TransactionInitiators {
                 ))
     }
 
-    /// Transaction has been initiated and is ready to commit.
+    /// Returns true if there is an active transaction, which means that there
+    /// is at least one participant that has started a transaction, regardless
+    /// of whether that participant has requested that the transaction commit.
+    ///
+    /// `is_multihost` indicates whether the pipeline is multihost.  In
+    /// multihost pipelines, we track which connectors have requested a
+    /// transaction but only the coordinator actually initiates and commits
+    /// them, so we ignore connector-initiated transactions for the purpose of
+    /// whether a transaction is active.
+    fn is_active(&self, is_multihost: bool) -> bool {
+        self.initiated_by_api.is_some()
+            || (!is_multihost && !self.initiated_by_connectors.is_empty())
+    }
+
+    /// Return true if a transaction has been initiated and is ready to commit.
+    ///
+    /// `is_multihost` indicates whether the pipeline is multihost.  In
+    /// multihost pipelines, we track which connectors have requested a
+    /// transaction but only the coordinator actually initiates and commits
+    /// them, so we ignore connector-initiated transactions for the purpose of
+    /// whether a transaction is ready to commit.
     fn is_ready_to_commit(&self, is_multihost: bool) -> bool {
-        let active = self.initiated_by_api.is_some()
-            || (!is_multihost && !self.initiated_by_connectors.is_empty());
-        active && !self.is_ongoing(is_multihost)
+        self.is_active(is_multihost) && !self.is_ongoing(is_multihost)
     }
 
     /// Number of active participants in the transaction.
@@ -6084,31 +6108,67 @@ impl ControllerInner {
     pub fn advance_transaction_state(&self) -> Option<TransactionState> {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
-        let result = match (
-            transaction_info
-                .initiators
-                .is_ongoing(transaction_info.is_multihost),
-            transaction_info.transaction_state,
-        ) {
-            (true, TransactionState::None) => {
-                let tid = transaction_info.initiators.transaction_id.unwrap();
-
-                transaction_info.transaction_state = TransactionState::Started(tid);
-                Some(transaction_info.transaction_state)
+        let is_multihost = transaction_info.is_multihost;
+        let result = if transaction_info.initiators.is_ongoing(is_multihost) {
+            // The API and connectors want us to be in a transaction, so start a
+            // new one if there's not one already.
+            match transaction_info.transaction_state {
+                TransactionState::None => {
+                    // Start a new transaction.
+                    transaction_info.transaction_state = TransactionState::Started(
+                        transaction_info.initiators.transaction_id.unwrap(),
+                    );
+                    Some(transaction_info.transaction_state)
+                }
+                TransactionState::Started(_) => {
+                    // We are already in a transaction, so there is nothing to do.
+                    None
+                }
+                TransactionState::Committing(_) => unreachable!(
+                    "Requests to initiate a transaction are rejected while a transaction is committing but somehow one slipped through anyhow"
+                ),
             }
-            (false, TransactionState::Started(transaction_id)) => {
-                transaction_info.transaction_state = TransactionState::Committing(transaction_id);
-                transaction_info.initiators.clear();
-                Some(transaction_info.transaction_state)
+        } else {
+            // The API and connectors want us to not be in a transaction, so
+            // start committing one if we are.
+            match transaction_info.transaction_state {
+                TransactionState::Started(transaction_id) => {
+                    // Commit the running transaction.
+                    transaction_info.transaction_state =
+                        TransactionState::Committing(transaction_id);
+                    transaction_info.initiators.clear();
+                    Some(transaction_info.transaction_state)
+                }
+                TransactionState::Committing(_) => {
+                    // Nothing to do.
+                    //
+                    // We know that there must not be any active initiators
+                    // because we cleared them when we started the transaction
+                    // (the previous case) and we reject requests to initiate a
+                    // transaction while a transaction is committing.
+                    assert!(!transaction_info.initiators.is_active(is_multihost));
+                    None
+                }
+                TransactionState::None => {
+                    // Nothing to do.
+                    //
+                    // We know that there must not be any active initiators
+                    // because:
+                    //
+                    // - If any of them are ongoing, then we wouldn't arrive
+                    //   here; instead, we'd be ensuring that a transaction is
+                    //   running.
+                    //
+                    // - They cannot all be committed, because
+                    //   [ControllerInner::start_commit_transaction_from_api] and
+                    //   [ControllerInner::commit_transaction_from_connector],
+                    //   which are the only paths that commit transactions, both
+                    //   clear all the initiators if they commit the last
+                    //   initiator and no transaction has started.
+                    assert!(!transaction_info.initiators.is_active(is_multihost));
+                    None
+                }
             }
-            (false, _) => {
-                // This is possible if a connector starts and commits a transaction within the same step.
-                // We need to clear `transaction_requested` so that the connectors are reenabled in
-                // `input_step`.
-                transaction_info.initiators.clear();
-                None
-            }
-            _ => None,
         };
 
         self.update_transaction_status(transaction_info);
