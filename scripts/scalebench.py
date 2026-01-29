@@ -13,8 +13,12 @@ import argparse
 import csv
 import json
 import os
+import shutil
+import signal
+import statistics
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Tuple
 
@@ -26,6 +30,8 @@ WORKER_COUNTS = [1, 2, 4, 8, 12, 16, 20]
 DEFAULT_PAYLOAD_BYTES = [8, 128, 512, 4096, 32768]
 BENCH_DURATION_S = 120
 CSV_PATH = "bench_results.csv"
+MEM_BW_TOOL = "AMDuProfPcm"
+MEM_BW_COOLDOWN_S = 5
 
 
 def default_payload_bytes(program: str) -> list[int]:
@@ -124,6 +130,206 @@ def parse_bench_output(output: str) -> Dict[str, Any]:
             obj, _ = decoder.raw_decode(json_text)
             return obj
     raise ValueError("No JSON payload found in fda bench output")
+
+
+def check_mem_bw_requirements() -> None:
+    if not is_amd_cpu():
+        raise SystemExit(
+            "Memory bandwidth collection requires an AMD CPU. "
+            "Detected a non-AMD processor."
+        )
+    if shutil.which(MEM_BW_TOOL) is None:
+        raise SystemExit(
+            f"{MEM_BW_TOOL} not found in PATH. Install AMDuProfPcm and add it to PATH."
+        )
+    if not is_module_loaded("amd_uncore"):
+        raise SystemExit(
+            "Kernel module amd_uncore is not loaded. Run: sudo modprobe amd_uncore"
+        )
+    perf_val = read_sysctl_value("/proc/sys/kernel/perf_event_paranoid")
+    if perf_val != "0":
+        raise SystemExit(
+            "kernel.perf_event_paranoid must be 0 for AMDuProfPcm. "
+            "Run: sudo sysctl -w kernel.perf_event_paranoid=0"
+        )
+    nmi_watchdog = read_sysctl_value("/proc/sys/kernel/nmi_watchdog")
+    if nmi_watchdog != "0":
+        raise SystemExit(
+            "kernel.nmi_watchdog must be 0 for AMDuProfPcm. "
+            "Run: sudo sysctl -w kernel.nmi_watchdog=0"
+        )
+
+
+def is_amd_cpu() -> bool:
+    try:
+        with open("/proc/cpuinfo", encoding="utf-8") as file_obj:
+            for line in file_obj:
+                if line.startswith("vendor_id"):
+                    _, value = line.split(":", 1)
+                    return value.strip() == "AuthenticAMD"
+    except OSError:
+        return False
+    return False
+
+
+def is_module_loaded(name: str) -> bool:
+    try:
+        with open("/proc/modules", encoding="utf-8") as file_obj:
+            for line in file_obj:
+                if line.split(" ", 1)[0] == name:
+                    return True
+    except OSError:
+        return False
+    return False
+
+
+def read_sysctl_value(path: str) -> str:
+    try:
+        with open(path, encoding="utf-8") as file_obj:
+            return file_obj.read().strip()
+    except OSError:
+        return ""
+
+
+def start_mem_bw_monitor(output_path: str) -> subprocess.Popen[str]:
+    cmd = [MEM_BW_TOOL, "-m", "memory", "-a", "-o", output_path]
+    return subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def stop_mem_bw_monitor(proc: subprocess.Popen[str]) -> tuple[str, int | None]:
+    if proc.poll() is None:
+        proc.send_signal(signal.SIGINT)
+    try:
+        _stdout, stderr = proc.communicate(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.terminate()
+        _stdout, stderr = proc.communicate(timeout=5)
+    return stderr.strip(), proc.returncode
+
+
+def parse_mem_bw_csv(path: str) -> tuple[Dict[str, Any], str]:
+    try:
+        raw_text = open(path, encoding="utf-8", errors="replace").read()
+    except OSError as exc:
+        raise RuntimeError(f"Failed to read memory bandwidth CSV: {exc}") from exc
+
+    lines = raw_text.splitlines()
+    header_idx = None
+    for idx, line in enumerate(lines):
+        if (
+            "Total Mem Bw" in line
+            and "Total Mem RdBw" in line
+            and "Total Mem WrBw" in line
+        ):
+            header_idx = idx
+            break
+    if header_idx is None:
+        raise RuntimeError("Memory bandwidth CSV missing headers.")
+
+    header_row = next(csv.reader([lines[header_idx]]))
+    total_idx = None
+    read_idx = None
+    write_idx = None
+    for i, header in enumerate(header_row):
+        lower = header.lower()
+        if "total mem bw" in lower:
+            total_idx = i
+        elif "mem rdbw" in lower or ("read" in lower and "bw" in lower):
+            read_idx = i
+        elif "mem wrbw" in lower or ("write" in lower and "bw" in lower):
+            write_idx = i
+
+    if total_idx is None or read_idx is None or write_idx is None:
+        raise RuntimeError(
+            "Failed to locate read/write/total bandwidth columns in "
+            f"{path}. Columns: {header_row}"
+        )
+
+    read_vals: list[float] = []
+    write_vals: list[float] = []
+    total_vals: list[float] = []
+    for line in lines[header_idx + 1 :]:
+        if not line.strip():
+            if read_vals:
+                break
+            continue
+        row = next(csv.reader([line]))
+        total_val = parse_float(row[total_idx]) if total_idx < len(row) else None
+        read_val = parse_float(row[read_idx]) if read_idx < len(row) else None
+        write_val = parse_float(row[write_idx]) if write_idx < len(row) else None
+        if total_val is None or read_val is None or write_val is None:
+            if read_vals:
+                break
+            continue
+        total_vals.append(total_val)
+        read_vals.append(read_val)
+        write_vals.append(write_val)
+
+    if not read_vals:
+        raise RuntimeError("No memory bandwidth samples parsed from CSV.")
+
+    read_stats = compute_stats(read_vals)
+    write_stats = compute_stats(write_vals)
+    total_stats = compute_stats(total_vals)
+
+    raw_clean = raw_text.replace("\r\n", "\n").replace("\n", "\\n")
+
+    metrics = {
+        "mem_bw_read_min": read_stats["min"],
+        "mem_bw_read_max": read_stats["max"],
+        "mem_bw_read_mean": read_stats["mean"],
+        "mem_bw_read_stdev": read_stats["stdev"],
+        "mem_bw_write_min": write_stats["min"],
+        "mem_bw_write_max": write_stats["max"],
+        "mem_bw_write_mean": write_stats["mean"],
+        "mem_bw_write_stdev": write_stats["stdev"],
+        "mem_bw_total_min": total_stats["min"],
+        "mem_bw_total_max": total_stats["max"],
+        "mem_bw_total_mean": total_stats["mean"],
+        "mem_bw_total_stdev": total_stats["stdev"],
+        "mem_bw_samples": len(read_vals),
+        "mem_bw_csv": raw_clean,
+    }
+    return metrics, raw_text
+
+
+def parse_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace(",", "")
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def compute_stats(values: list[float]) -> Dict[str, float]:
+    if not values:
+        return {"min": 0.0, "max": 0.0, "mean": 0.0, "stdev": 0.0}
+    mean_val = statistics.mean(values)
+    stdev_val = statistics.stdev(values) if len(values) > 1 else 0.0
+    return {
+        "min": min(values),
+        "max": max(values),
+        "mean": mean_val,
+        "stdev": stdev_val,
+    }
+
+
+def read_text_file(path: str) -> str:
+    try:
+        return open(path, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return ""
 
 
 def run_fda_bench(pipeline_name: str, duration_s: int) -> Dict[str, Any]:
@@ -242,6 +448,11 @@ def main() -> int:
         default=BENCH_DURATION_S,
         help="Benchmark duration in seconds.",
     )
+    parser.add_argument(
+        "--mem-bw",
+        action="store_true",
+        help="Collect memory bandwidth metrics using AMDuProfPcm.",
+    )
     args = parser.parse_args()
     dry_run = args.dry_run
     program = args.program
@@ -252,6 +463,8 @@ def main() -> int:
         raise SystemExit("--repetition must be a positive integer")
     if duration_s <= 0:
         raise SystemExit("--duration must be a positive integer")
+    if args.mem_bw and not dry_run:
+        check_mem_bw_requirements()
 
     client = None if dry_run else FelderaClient()
     worker_counts = (
@@ -271,6 +484,8 @@ def main() -> int:
 
     if dry_run:
         print(f"dry-run: program={program}")
+        if args.mem_bw:
+            print("dry-run: memory bandwidth collection enabled")
 
     fieldnames = [
         "timestamp",
@@ -292,6 +507,20 @@ def main() -> int:
         "buffered_input_records_upper_value",
         "uptime_value",
         "state_amplification_value",
+        "mem_bw_read_min",
+        "mem_bw_read_max",
+        "mem_bw_read_mean",
+        "mem_bw_read_stdev",
+        "mem_bw_write_min",
+        "mem_bw_write_max",
+        "mem_bw_write_mean",
+        "mem_bw_write_stdev",
+        "mem_bw_total_min",
+        "mem_bw_total_max",
+        "mem_bw_total_mean",
+        "mem_bw_total_stdev",
+        "mem_bw_samples",
+        "mem_bw_csv",
     ]
     writer = None
     file_obj = None
@@ -335,7 +564,11 @@ def main() -> int:
                         )
                         print("dry-run: stop pipeline (force)")
                         print("dry-run: clear storage")
+                        if args.mem_bw:
+                            print("dry-run: run AMDuProfPcm during benchmark")
                         print(f"dry-run: append results to {CSV_PATH}")
+                        if args.mem_bw and run_idx < total_runs:
+                            print(f"dry-run: cooldown {MEM_BW_COOLDOWN_S}s")
                         continue
 
                     pipeline = PipelineBuilder(
@@ -348,9 +581,55 @@ def main() -> int:
 
                     pipeline.clear_storage()
 
+                    mem_bw_metrics: Dict[str, Any] = {}
+                    mem_bw_proc = None
+                    mem_bw_path = None
+
+                    if args.mem_bw:
+                        results_dir = os.path.dirname(CSV_PATH) or "."
+                        mem_bw_path = os.path.join(
+                            results_dir,
+                            f"mem_bw_{pipeline_name}_{workers}_{payload_bytes}_{run_id}.csv",
+                        )
+                        mem_bw_proc = start_mem_bw_monitor(mem_bw_path)
+
+                    bench_payload = None
                     try:
                         bench_payload = run_fda_bench(pipeline_name, duration_s)
                     finally:
+                        if (
+                            args.mem_bw
+                            and mem_bw_proc is not None
+                            and mem_bw_path is not None
+                        ):
+                            stderr, returncode = stop_mem_bw_monitor(mem_bw_proc)
+                            if stderr:
+                                print(
+                                    f"AMDuProfPcm stderr: {stderr}",
+                                    file=sys.stderr,
+                                )
+                            if returncode not in (None, 0):
+                                print(
+                                    f"Warning: AMDuProfPcm exited with code {returncode}.",
+                                    file=sys.stderr,
+                                )
+                            try:
+                                mem_bw_metrics, _raw = parse_mem_bw_csv(mem_bw_path)
+                            except Exception as exc:  # noqa: BLE001
+                                print(
+                                    f"Warning: failed to parse memory bandwidth CSV: {exc}",
+                                    file=sys.stderr,
+                                )
+                                raw_text = read_text_file(mem_bw_path)
+                                if raw_text:
+                                    mem_bw_metrics["mem_bw_csv"] = raw_text.replace(
+                                        "\r\n", "\n"
+                                    ).replace("\n", "\\n")
+                            finally:
+                                try:
+                                    os.remove(mem_bw_path)
+                                except OSError:
+                                    pass
                         try:
                             pipeline.stop(force=True)
                         except Exception as exc:  # noqa: BLE001
@@ -378,6 +657,30 @@ def main() -> int:
                         "payload_bytes": payload_bytes,
                         "duration_s": duration_s,
                         **metrics,
+                        "mem_bw_read_min": mem_bw_metrics.get("mem_bw_read_min", ""),
+                        "mem_bw_read_max": mem_bw_metrics.get("mem_bw_read_max", ""),
+                        "mem_bw_read_mean": mem_bw_metrics.get("mem_bw_read_mean", ""),
+                        "mem_bw_read_stdev": mem_bw_metrics.get(
+                            "mem_bw_read_stdev", ""
+                        ),
+                        "mem_bw_write_min": mem_bw_metrics.get("mem_bw_write_min", ""),
+                        "mem_bw_write_max": mem_bw_metrics.get("mem_bw_write_max", ""),
+                        "mem_bw_write_mean": mem_bw_metrics.get(
+                            "mem_bw_write_mean", ""
+                        ),
+                        "mem_bw_write_stdev": mem_bw_metrics.get(
+                            "mem_bw_write_stdev", ""
+                        ),
+                        "mem_bw_total_min": mem_bw_metrics.get("mem_bw_total_min", ""),
+                        "mem_bw_total_max": mem_bw_metrics.get("mem_bw_total_max", ""),
+                        "mem_bw_total_mean": mem_bw_metrics.get(
+                            "mem_bw_total_mean", ""
+                        ),
+                        "mem_bw_total_stdev": mem_bw_metrics.get(
+                            "mem_bw_total_stdev", ""
+                        ),
+                        "mem_bw_samples": mem_bw_metrics.get("mem_bw_samples", ""),
+                        "mem_bw_csv": mem_bw_metrics.get("mem_bw_csv", ""),
                     }
                     writer.writerow(row)
                     file_obj.flush()
@@ -392,6 +695,8 @@ def main() -> int:
                         f"uptime_ms={metrics['uptime_value']} "
                         f"state_amp={metrics['state_amplification_value']}"
                     )
+                    if args.mem_bw and run_idx < total_runs:
+                        time.sleep(MEM_BW_COOLDOWN_S)
     finally:
         if file_obj is not None:
             file_obj.close()

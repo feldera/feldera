@@ -120,6 +120,10 @@ body {
   margin-top: 0.3rem;
 }
 
+.control-subgroup + .control-subgroup {
+  margin-top: 0.6rem;
+}
+
 .gauge-worker-select {
   margin: 0.6rem 0.6rem 0.3rem;
 }
@@ -272,6 +276,13 @@ body {
 .graph {
   height: 320px;
   width: 100%;
+}
+
+.gauge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.6rem;
+  padding: 0.2rem 0.4rem 0.4rem;
 }
 
 .sql-card {
