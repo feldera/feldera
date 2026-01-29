@@ -42,6 +42,17 @@ public class OperatorTests extends SqlIoTest {
     }
 
     @Test
+    public void testFloor() {
+        this.qs("""
+             select floor(timestamp '2025-01-01 10:00:00.123456' to millisecond),
+                    floor(timestamp '1950-01-01 10:00:00.123456' to millisecond);
+              t1 | t2
+             -----------------
+              2025-01-01 10:00:00.123 | 1950-01-01 10:00:00.123
+             (1 row)""");
+    }
+
+    @Test
     public void testCeilFloor() {
         // From Calcite operator.iq
         this.qs("""

@@ -46,7 +46,6 @@ use crate::{
     SizeOf,
     rkyv::Archive,
     rkyv::Serialize,
-    rkyv::Deserialize,
     serde::Serialize,
     IsNone,
 )]
@@ -56,6 +55,27 @@ use crate::{
 pub struct Timestamp {
     // since unix epoch
     microseconds: i64,
+}
+
+#[doc(hidden)]
+impl<D> ::rkyv::Deserialize<Timestamp, D> for ArchivedTimestamp
+where
+    D: ::rkyv::Fallible + ::core::any::Any,
+{
+    fn deserialize(&self, deserializer: &mut D) -> Result<Timestamp, D::Error> {
+        // The internal representation of Timestamps changed from version 4 of the storage format
+        const MILLISECOND_VERSION: u32 = 4;
+        let version = (deserializer as &mut dyn ::core::any::Any)
+            .downcast_mut::<::dbsp::storage::file::Deserializer>()
+            .map(|deserializer| deserializer.version())
+            .expect("Deserializer must be of type dbsp::storage::file::Deserializer");
+        let value: i64 = self.microseconds.deserialize(deserializer)?;
+        if version <= MILLISECOND_VERSION {
+            Ok(Timestamp::from_milliseconds(value))
+        } else {
+            Ok(Timestamp::from_microseconds(value))
+        }
+    }
 }
 
 #[doc(hidden)]
@@ -386,8 +406,8 @@ some_function2!(
 
 #[doc(hidden)]
 pub fn minus_ShortInterval_Time_Time__(left: Time, right: Time) -> ShortInterval {
-    ShortInterval::from_milliseconds(
-        (left.nanoseconds() as i64 - right.nanoseconds() as i64) / 1000000,
+    ShortInterval::from_microseconds(
+        (left.nanoseconds() as i64 - right.nanoseconds() as i64) / 1000,
     )
 }
 
@@ -771,7 +791,17 @@ some_polymorphic_function1!(floor_second, Timestamp, Timestamp, Timestamp);
 
 #[doc(hidden)]
 pub fn floor_millisecond_Timestamp(value: Timestamp) -> Timestamp {
-    Timestamp::from_milliseconds(value.microseconds / 1000)
+    let floor = if value.microseconds < 0 {
+        let md = (-value.microseconds % 1000);
+        if md == 0 {
+            -((-value.microseconds) / 1000)
+        } else {
+            -((-value.microseconds) / 1000) - 1
+        }
+    } else {
+        value.microseconds / 1000
+    };
+    Timestamp::from_milliseconds(floor)
 }
 
 some_polymorphic_function1!(floor_millisecond, Timestamp, Timestamp, Timestamp);

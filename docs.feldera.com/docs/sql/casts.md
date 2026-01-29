@@ -14,7 +14,11 @@ An explicit cast can be specified in two ways:
 
 The rules for implicit casts are complex; we [inherit these
 rules](https://calcite.apache.org/docs/reference.html#conversion-contexts-and-strategies)
-from Calcite.
+from Calcite.  We strongly recommend avoiding casts whhen possible,
+and using explicit conversion functions.  For example, avoid
+converting using casts between integers and `TIME`, `TIMESTAMP`,
+`DATE`, `INTERVAL` values; these casts are not portable between SQL
+dialects, and may have surprising behaviors.
 
 In general SQL casts may discard low order digits.  A cast form a wide
 to a narrow datatype which cannot represent the value in the target

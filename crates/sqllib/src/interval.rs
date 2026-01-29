@@ -42,7 +42,6 @@ use crate::{Time, Timestamp};
     SizeOf,
     rkyv::Archive,
     rkyv::Serialize,
-    rkyv::Deserialize,
     Serialize,
     Deserialize,
     IsNone,
@@ -52,6 +51,27 @@ use crate::{Time, Timestamp};
 #[serde(transparent)]
 pub struct ShortInterval {
     microseconds: i64,
+}
+
+#[doc(hidden)]
+impl<D> ::rkyv::Deserialize<ShortInterval, D> for ArchivedShortInterval
+where
+    D: ::rkyv::Fallible + ::core::any::Any,
+{
+    fn deserialize(&self, deserializer: &mut D) -> Result<ShortInterval, D::Error> {
+        // The internal representation of ShortInterval changed from version 4 of the storage format
+        const MILLISECOND_VERSION: u32 = 4;
+        let version = (deserializer as &mut dyn ::core::any::Any)
+            .downcast_mut::<::dbsp::storage::file::Deserializer>()
+            .map(|deserializer| deserializer.version())
+            .expect("Deserializer must be of type dbsp::storage::file::Deserializer");
+        let value: i64 = self.microseconds.deserialize(deserializer)?;
+        if version <= MILLISECOND_VERSION {
+            Ok(ShortInterval::from_milliseconds(value))
+        } else {
+            Ok(ShortInterval::from_microseconds(value))
+        }
+    }
 }
 
 impl ShortInterval {
@@ -176,15 +196,16 @@ impl<const P: usize, const S: usize> Mul<SqlDecimal<P, S>> for ShortInterval {
     type Output = Self;
 
     fn mul(self, rhs: SqlDecimal<P, S>) -> Self {
-        let us = SqlDecimal::<38, 0>::try_from(self.microseconds)
-            .expect("overflow in short interval multiplication");
+        let us = SqlDecimal::<38, 0>::try_from(self.microseconds).expect(
+            "overflow in short interval multiplication while converting microseconds to DECIMAL",
+        );
         let mul = us
             .checked_mul_generic::<P, S, 38, 0>(rhs)
             .expect("overflow in short interval multiplication");
         Self {
             microseconds: mul
                 .try_into()
-                .expect("overflow in short interval multiplication"),
+                .expect("overflow in short interval multiplication: result too large"),
         }
     }
 }
@@ -216,12 +237,14 @@ impl<const P: usize, const S: usize> Div<SqlDecimal<P, S>> for ShortInterval {
 
     fn div(self, rhs: SqlDecimal<P, S>) -> Self {
         let us = SqlDecimal::<38, 0>::try_from(self.microseconds)
-            .expect("overflow in short interval division");
+            .expect("overflow in short interval division while converting microseconds to DECIMAL");
         let div = us
             .checked_div_generic::<P, S, 38, 0>(rhs)
             .expect("overflow in short interval division");
         Self {
-            microseconds: div.try_into().expect("overflow in short interval division"),
+            microseconds: div
+                .try_into()
+                .expect("overflow in short interval division: result too large"),
         }
     }
 }
@@ -490,14 +513,14 @@ impl<const P: usize, const S: usize> Mul<SqlDecimal<P, S>> for LongInterval {
 
     fn mul(self, rhs: SqlDecimal<P, S>) -> Self {
         let months = SqlDecimal::<10, 0>::try_from(self.months)
-            .expect("overflow in long interval multiplication");
+            .expect("overflow in long interval multiplication while converting months to DECIMAL");
         let mul = months
             .checked_mul_generic::<P, S, 10, 0>(rhs)
             .expect("overflow in long interval multiplication");
         Self {
             months: mul
                 .try_into()
-                .expect("overflow in long interval multiplication"),
+                .expect("overflow in long interval multiplication: result too large"),
         }
     }
 }
@@ -529,13 +552,15 @@ impl<const P: usize, const S: usize> Div<SqlDecimal<P, S>> for LongInterval {
     type Output = Self;
 
     fn div(self, rhs: SqlDecimal<P, S>) -> Self {
-        let months =
-            SqlDecimal::<10, 0>::try_from(self.months).expect("overflow in long interval division");
+        let months = SqlDecimal::<10, 0>::try_from(self.months)
+            .expect("overflow in long interval division while converting months to DECIMAL");
         let div = months
             .checked_div_generic::<P, S, 10, 0>(rhs)
             .expect("overflow in long interval division");
         Self {
-            months: div.try_into().expect("overflow in long interval division"),
+            months: div
+                .try_into()
+                .expect("overflow in long interval division: result too large"),
         }
     }
 }

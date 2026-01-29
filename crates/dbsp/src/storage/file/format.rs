@@ -92,11 +92,12 @@ use size_of::SizeOf;
 /// - v2: TODO.
 /// - v3: Bloom filter format change.
 /// - v4: Tup None optimizations.
+/// - v5: Change in representation for Timestamp, ShortInterval
 ///
 /// When a new version is created, make sure to generate new golden
 /// files for it in crate `storage-test-compat` to check for
 /// backwards compatibility.
-pub const VERSION_NUMBER: u32 = 4;
+pub const VERSION_NUMBER: u32 = 5;
 
 /// Magic number for data blocks.
 pub const DATA_BLOCK_MAGIC: [u8; 4] = *b"LFDB";
