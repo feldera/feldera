@@ -792,7 +792,7 @@ some_polymorphic_function1!(floor_second, Timestamp, Timestamp, Timestamp);
 #[doc(hidden)]
 pub fn floor_millisecond_Timestamp(value: Timestamp) -> Timestamp {
     let floor = if value.microseconds < 0 {
-        let md = (-value.microseconds % 1000);
+        let md = -value.microseconds % 1000;
         if md == 0 {
             -((-value.microseconds) / 1000)
         } else {
