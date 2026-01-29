@@ -117,9 +117,7 @@ def delete(path: str, **kw) -> requests.Response:
 
 
 def wait_for_deployment_status(
-    name: str,
-    desired: str | Callable[[str], bool],
-    timeout_s: float = 60.0
+    name: str, desired: str | Callable[[str], bool], timeout_s: float = 60.0
 ):
     """
     Wait until pipeline 'name' has 'desired' deployment status:
