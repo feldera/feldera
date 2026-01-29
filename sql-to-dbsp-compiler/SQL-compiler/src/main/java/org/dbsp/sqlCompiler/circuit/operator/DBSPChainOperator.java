@@ -130,8 +130,8 @@ public class DBSPChainOperator extends DBSPUnaryOperator implements ILinear {
         DBSPExpression call(DBSPCompiler compiler, DBSPClosureExpression closure, DBSPExpression arg) {
             if (arg.getType().is(DBSPTypeRawTuple.class)) {
                 return closure.call(new DBSPRawTupleExpression(
-                        arg.field(0).simplify().borrow(),
-                        arg.field(1).simplify().borrow()))
+                        arg.field(0).borrow(),
+                        arg.field(1).borrow()))
                         .reduce(compiler);
             } else {
                 return closure.call(arg.borrow()).reduce(compiler);

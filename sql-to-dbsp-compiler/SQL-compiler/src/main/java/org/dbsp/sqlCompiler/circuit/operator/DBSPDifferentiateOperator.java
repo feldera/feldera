@@ -36,7 +36,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public final class DBSPDifferentiateOperator extends DBSPUnaryOperator implements IStateful {
+public final class DBSPDifferentiateOperator extends DBSPUnaryOperator implements IStateful, ILinear {
     public DBSPDifferentiateOperator(CalciteRelNode node, OutputPort source) {
         super(node, "differentiate", null, source.outputType(), source.isMultiset(), source);
     }

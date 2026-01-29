@@ -330,7 +330,7 @@ public abstract class CircuitVisitor
         return this.preorder((DBSPUnaryOperator) node);
     }
 
-    public VisitDecision preorder(DBSPDistinctIncrementalOperator node) {
+    public VisitDecision preorder(DBSPBinaryDistinctOperator node) {
         return this.preorder((DBSPBinaryOperator) node);
     }
 
@@ -368,6 +368,22 @@ public abstract class CircuitVisitor
 
     public VisitDecision preorder(DBSPJoinOperator node) {
         return this.preorder((DBSPJoinBaseOperator) node);
+    }
+
+    public VisitDecision preorder(DBSPStarJoinBaseOperator node) {
+        return this.preorder((DBSPSimpleOperator) node);
+    }
+
+    public VisitDecision preorder(DBSPStarJoinOperator node) {
+        return this.preorder((DBSPStarJoinBaseOperator) node);
+    }
+
+    public VisitDecision preorder(DBSPStarJoinFilterMapOperator node) {
+        return this.preorder((DBSPStarJoinBaseOperator) node);
+    }
+
+    public VisitDecision preorder(DBSPStarJoinIndexOperator node) {
+        return this.preorder((DBSPStarJoinBaseOperator) node);
     }
 
     public VisitDecision preorder(DBSPLeftJoinOperator node) {
@@ -412,6 +428,10 @@ public abstract class CircuitVisitor
 
     public VisitDecision preorder(DBSPApply2Operator node) {
         return this.preorder((DBSPBinaryOperator) node);
+    }
+
+    public VisitDecision preorder(DBSPApplyNOperator node) {
+        return this.preorder((DBSPSimpleOperator) node);
     }
 
     public VisitDecision preorder(DBSPWindowOperator node) {
@@ -499,6 +519,22 @@ public abstract class CircuitVisitor
 
     public void postorder(DBSPJoinOperator node) {
         this.postorder((DBSPJoinBaseOperator) node);
+    }
+
+    public void postorder(DBSPStarJoinBaseOperator node) {
+        this.postorder((DBSPSimpleOperator) node);
+    }
+
+    public void postorder(DBSPStarJoinOperator node) {
+        this.postorder((DBSPStarJoinBaseOperator) node);
+    }
+
+    public void postorder(DBSPStarJoinIndexOperator node) {
+        this.postorder((DBSPStarJoinBaseOperator) node);
+    }
+
+    public void postorder(DBSPStarJoinFilterMapOperator node) {
+        this.postorder((DBSPStarJoinBaseOperator) node);
     }
 
     public void postorder(DBSPLeftJoinOperator node) {
@@ -657,7 +693,7 @@ public abstract class CircuitVisitor
         this.postorder((DBSPUnaryOperator) node);
     }
 
-    public void postorder(DBSPDistinctIncrementalOperator node) {
+    public void postorder(DBSPBinaryDistinctOperator node) {
         this.postorder((DBSPBinaryOperator) node);
     }
 
@@ -703,6 +739,10 @@ public abstract class CircuitVisitor
 
     public void postorder(DBSPApply2Operator node) {
         this.postorder((DBSPBinaryOperator) node);
+    }
+
+    public void postorder(DBSPApplyNOperator node) {
+        this.postorder((DBSPSimpleOperator) node);
     }
 
     public void postorder(DBSPWindowOperator node) {

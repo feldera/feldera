@@ -555,12 +555,12 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
             this.map(operator, operator);
             return;
         }
-        DBSPTypeIndexedZSet leftType = left.getOutputIndexedZSetType();
-        DBSPTypeIndexedZSet rightType = right.getOutputIndexedZSetType();
+        final DBSPTypeIndexedZSet leftType = left.getOutputIndexedZSetType();
+        final DBSPTypeIndexedZSet rightType = right.getOutputIndexedZSetType();
 
-        DBSPTypeTuple leftKey = leftType.keyType.to(DBSPTypeTuple.class);
-        DBSPTypeTuple rightKey = rightType.keyType.to(DBSPTypeTuple.class);
-        DBSPTypeTuple commonKeyType = lessInternedType(leftKey, rightKey).to(DBSPTypeTuple.class);
+        final DBSPTypeTuple leftKey = leftType.keyType.to(DBSPTypeTuple.class);
+        final DBSPTypeTuple rightKey = rightType.keyType.to(DBSPTypeTuple.class);
+        final DBSPTypeTuple commonKeyType = lessInternedType(leftKey, rightKey).to(DBSPTypeTuple.class);
         left = this.uninternKey(left, leftType, commonKeyType);
         right = this.uninternKey(right, rightType, commonKeyType);
 
@@ -609,6 +609,41 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPJoinOperator operator) {
         this.processJoin(operator);
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinBaseOperator operator) {
+        // If key types to not match, they have to be reconciled.
+        // Currently, use unintern; the opposite is possible too, but requires more work.
+        List<OutputPort> inputs = Linq.map(operator.inputs, this::mapped);
+        if (!operator.inputsDiffer(inputs)) {
+            this.map(operator, operator);
+            return;
+        }
+        List<DBSPTypeIndexedZSet> types = Linq.map(operator.inputs, OutputPort::getOutputIndexedZSetType);
+        List<DBSPTypeTuple> keys = Linq.map(types, t -> t.keyType.to(DBSPTypeTuple.class));
+
+        DBSPTypeTuple commonKeyType = keys.get(0);
+        for (int i = 1; i < keys.size(); i++) {
+            commonKeyType = lessInternedType(commonKeyType, keys.get(i)).to(DBSPTypeTuple.class);
+        }
+
+        final DBSPTypeTuple common = commonKeyType;
+        List<OutputPort> uninterned = Linq.map(inputs,
+                i -> this.uninternKey(i, i.getOutputIndexedZSetType(), common));
+
+        DBSPType[] parameterTypes = new DBSPType[inputs.size() + 1];
+        parameterTypes[0] = commonKeyType.ref();
+        for (int i = 0; i < inputs.size(); i++)
+            parameterTypes[i + 1] = types.get(i).elementType.ref();
+
+        InternInner interner = new InternInner(this.compiler, false, false, parameterTypes);
+        DBSPClosureExpression function = interner.apply(operator.getFunction()).to(DBSPClosureExpression.class);
+        DBSPSimpleOperator replacement = operator.with(function,
+                        function.getResultType().to(DBSPTypeTupleBase.class).intoCollectionType(),
+                        uninterned, false)
+                .to(DBSPSimpleOperator.class);
+        this.map(operator, replacement);
     }
 
     @Override

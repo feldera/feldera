@@ -186,7 +186,7 @@ public class MultiCrates {
         if (this.usesGlobals(operator))
             op.addDependency(this.globals);
         RustWriter.StructuresUsed locallyUsed = new RustWriter.StructuresUsed();
-        RustWriter.FindResources finder = new RustWriter.FindResources(compiler, locallyUsed);
+        RustWriter.FindInnerResources finder = new RustWriter.FindInnerResources(compiler, locallyUsed);
         CircuitVisitor circuitFinder = finder.getCircuitVisitor(false);
         if (!operator.is(DBSPNestedOperator.class)) {
             finder.setOperatorContext(operator);
@@ -214,7 +214,7 @@ public class MultiCrates {
 
     void addNodes(List<IDBSPNode> nodes) {
         RustWriter.StructuresUsed locallyUsed = new RustWriter.StructuresUsed();
-        RustWriter.FindResources finder = new RustWriter.FindResources(compiler, locallyUsed);
+        RustWriter.FindInnerResources finder = new RustWriter.FindInnerResources(compiler, locallyUsed);
 
         for (IDBSPNode node: nodes) {
             if (node.is(IDBSPInnerNode.class))
