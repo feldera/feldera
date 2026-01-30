@@ -95,7 +95,7 @@ public final class MultiCratesWriter extends RustWriter {
                 serde = { version = "1.0", features = ["derive"] }
                 compare = { version = "0.1.0" }
                 size-of = { version = "0.1.5", package = "feldera-size-of" }
-                serde_json = { version = "1.0.127", features = ["arbitrary_precision"] }
+                serde_json = { version = "1.0.127" }
                 rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
                 tikv-jemallocator = { version = "0.6.0", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }""";
 
