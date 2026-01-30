@@ -4,7 +4,7 @@ use crate::{
     circuit::{
         OwnershipPreference, Scope, WithClock,
         circuit_builder::register_replay_stream,
-        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
+        metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::{BinaryOperator, Operator},
     },
     dynamic::{ClonableTrait, DataTrait, DynOpt, DynPairs, DynUnit, Erase},
@@ -350,8 +350,8 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            INPUT_BATCHES_LABEL => self.input_batch_stats.metadata(),
-            OUTPUT_BATCHES_LABEL => self.output_batch_stats.metadata(),
+            INPUT_BATCHES_STATS => self.input_batch_stats.metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.metadata(),
         });
     }
 

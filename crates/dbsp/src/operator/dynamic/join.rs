@@ -1,6 +1,9 @@
 use crate::algebra::{ZBatch, ZBatchReader, ZCursor};
 use crate::circuit::circuit_builder::{CircuitBase, StreamId};
-use crate::circuit::metadata::{BatchSizeStats, NUM_ALLOCATIONS_LABEL, OUTPUT_BATCHES_LABEL};
+use crate::circuit::metadata::{
+    BatchSizeStats, COMPUTED_OUTPUT_RECORDS_COUNT, LEFT_INPUT_RECORDS_COUNT, OUTPUT_BATCHES_STATS,
+    OUTPUT_REDUNDANCY_PERCENT, RIGHT_INPUT_INTEGRAL_RECORDS_COUNT,
+};
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::DynData;
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
@@ -16,10 +19,7 @@ use crate::{
     },
     circuit::{
         Circuit, RootCircuit, Scope, Stream, WithClock,
-        metadata::{
-            MetaItem, NUM_ENTRIES_LABEL, OperatorLocation, OperatorMeta, SHARED_BYTES_LABEL,
-            USED_BYTES_LABEL,
-        },
+        metadata::{MetaItem, OperatorLocation, OperatorMeta},
         operator_traits::{BinaryOperator, Operator},
     },
     circuit_cache_key,
@@ -36,7 +36,6 @@ use crate::{
 };
 use crate::{DynZWeight, NestedCircuit, Position, Runtime};
 use async_stream::stream;
-use size_of::{Context, SizeOf};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::{
@@ -1362,39 +1361,42 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         let stats = self.stats.borrow();
-        let total_size: usize = self
-            .future_outputs
-            .borrow()
-            .values()
-            .map(|spine| spine.len())
-            .sum();
 
-        let batch_sizes = MetaItem::Array(
-            self.future_outputs
-                .borrow()
-                .values()
-                .map(|batcher| {
-                    let size = batcher.size_of();
+        // Since profiles are currently only collected between steps, these metrics are all zero.
 
-                    MetaItem::Map(
-                        metadata! {
-                            "allocated" => MetaItem::bytes(size.total_bytes()),
-                            "used" => MetaItem::bytes(size.used_bytes()),
-                        }
-                        .into(),
-                    )
-                })
-                .collect(),
-        );
+        // let total_size: usize = self
+        //     .future_outputs
+        //     .borrow()
+        //     .values()
+        //     .map(|spine| spine.len())
+        //     .sum();
 
-        let bytes = {
-            let mut context = Context::new();
-            for batcher in self.future_outputs.borrow().values() {
-                batcher.size_of_with_context(&mut context);
-            }
+        // let batch_sizes = MetaItem::Array(
+        //     self.future_outputs
+        //         .borrow()
+        //         .values()
+        //         .map(|batcher| {
+        //             let size = batcher.size_of();
 
-            context.size_of()
-        };
+        //             MetaItem::Map(BTreeMap::from([
+        //                 (
+        //                     Cow::Borrowed("allocated"),
+        //                     MetaItem::bytes(size.total_bytes()),
+        //                 ),
+        //                 (Cow::Borrowed("used"), MetaItem::bytes(size.used_bytes())),
+        //             ]))
+        //         })
+        //         .collect(),
+        // );
+
+        // let bytes = {
+        //     let mut context = Context::new();
+        //     for batcher in self.future_outputs.borrow().values() {
+        //         batcher.size_of_with_context(&mut context);
+        //     }
+
+        //     context.size_of()
+        // };
 
         // Find the percentage of consolidated outputs
         let output_redundancy = MetaItem::Percent {
@@ -1403,16 +1405,16 @@ where
         };
 
         meta.extend(metadata! {
-            NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
-            "storage.bytes.total_batch_sizes" => batch_sizes,
-            USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
-            SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
-            "record_count.left_inputs" => stats.lhs_tuples,
-            "record_count.right_inputs" => stats.rhs_tuples,
-            "record_count.computed_outputs" => stats.output_tuples,
-            OUTPUT_BATCHES_LABEL => stats.output_batch_stats.metadata(),
-            "record_count.output_redundancy_percents" => output_redundancy,
+            //STATE_RECORDS_COUNT => MetaItem::Count(total_size),
+            //FUTURE_OUTPUT_RECORDS_COUNT => batch_sizes,
+            //USED_MEMORY_BYTES => MetaItem::bytes(bytes.used_bytes()),
+            //MEMORY_ALLOCATIONS_COUNT => MetaItem::Count(bytes.distinct_allocations()),
+            //SHARED_MEMORY_BYTES => MetaItem::bytes(bytes.shared_bytes()),
+            LEFT_INPUT_RECORDS_COUNT => stats.lhs_tuples,
+            RIGHT_INPUT_INTEGRAL_RECORDS_COUNT => stats.rhs_tuples,
+            COMPUTED_OUTPUT_RECORDS_COUNT => stats.output_tuples,
+            OUTPUT_BATCHES_STATS => stats.output_batch_stats.metadata(),
+            OUTPUT_REDUNDANCY_PERCENT => output_redundancy,
         });
     }
 

@@ -3,7 +3,7 @@
 use crate::algebra::ZBatchReader;
 use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metadata::{
-    BatchSizeStats, INPUT_BATCHES_LABEL, NUM_ALLOCATIONS_LABEL, OUTPUT_BATCHES_LABEL,
+    BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT, OUTPUT_BATCHES_STATS,
 };
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::{ClonableTrait, Data, DynData};
@@ -19,8 +19,8 @@ use crate::{
     circuit::{
         Circuit, Scope, Stream, WithClock,
         metadata::{
-            MetaItem, NUM_ENTRIES_LABEL, OperatorLocation, OperatorMeta, SHARED_BYTES_LABEL,
-            USED_BYTES_LABEL,
+            MetaItem, OperatorLocation, OperatorMeta, SHARED_MEMORY_BYTES, STATE_RECORDS_COUNT,
+            USED_MEMORY_BYTES,
         },
         operator_traits::{Operator, UnaryOperator},
     },
@@ -476,8 +476,8 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
-            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+            INPUT_BATCHES_STATS => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.borrow().metadata(),
         });
     }
 
@@ -917,12 +917,12 @@ where
         let bytes = self.size_of();
 
         meta.extend(metadata! {
-            NUM_ENTRIES_LABEL => MetaItem::Count(size),
-            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
-            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
-            USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
-            SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
+            STATE_RECORDS_COUNT => MetaItem::Count(size),
+            INPUT_BATCHES_STATS => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.borrow().metadata(),
+            USED_MEMORY_BYTES => MetaItem::bytes(bytes.used_bytes()),
+            MEMORY_ALLOCATIONS_COUNT => MetaItem::Count(bytes.distinct_allocations()),
+            SHARED_MEMORY_BYTES => MetaItem::bytes(bytes.shared_bytes()),
         });
     }
 
