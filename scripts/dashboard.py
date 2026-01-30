@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import base64
+import argparse
 import os
 import re
 from difflib import SequenceMatcher
@@ -39,6 +40,8 @@ GRID_COLOR = "#D9D9D9"
 TEXT_COLOR = "#1E1E1E"
 IO_WRITE_WARN_MIB = 1600
 IO_WRITE_MAX_MIB = 3000
+MEM_BW_WARN_GBS = 160
+MEM_BW_MAX_GBS = 200
 
 
 def load_csv(path: str) -> pd.DataFrame:
@@ -698,7 +701,8 @@ def build_mem_bw_figure(
         rangemode="tozero",
     )
     if max_val is not None:
-        fig.update_yaxes(range=[0, max_val * 1.2])
+        range_max = max(max_val * 1.2, MEM_BW_MAX_GBS * 1.05)
+        fig.update_yaxes(range=[0, range_max])
 
     fig.update_xaxes(
         showgrid=False,
@@ -708,6 +712,42 @@ def build_mem_bw_figure(
         tickvals=worker_labels,
         ticktext=worker_labels,
         type="category",
+    )
+    fig.add_shape(
+        type="line",
+        xref="paper",
+        x0=0,
+        x1=1,
+        y0=MEM_BW_WARN_GBS,
+        y1=MEM_BW_WARN_GBS,
+        line=dict(color="#F4E19E", width=2, dash="dash"),
+    )
+    fig.add_shape(
+        type="line",
+        xref="paper",
+        x0=0,
+        x1=1,
+        y0=MEM_BW_MAX_GBS,
+        y1=MEM_BW_MAX_GBS,
+        line=dict(color="#F7A1A1", width=2, dash="dash"),
+    )
+    fig.add_annotation(
+        x=1.02,
+        y=MEM_BW_WARN_GBS,
+        xref="paper",
+        yref="y",
+        text=f"{MEM_BW_WARN_GBS} GB/s",
+        showarrow=False,
+        font=dict(size=10, color="#8A7A2E"),
+    )
+    fig.add_annotation(
+        x=1.02,
+        y=MEM_BW_MAX_GBS,
+        xref="paper",
+        yref="y",
+        text=f"{MEM_BW_MAX_GBS} GB/s",
+        showarrow=False,
+        font=dict(size=10, color="#9A2C2C"),
     )
     return fig
 
@@ -1199,7 +1239,7 @@ def update_graphs(
                 className="card",
                 style={"animationDelay": f"{len(graphs) * 60}ms"},
                 children=[
-                    html.Div("Memory Bandwidth (GB/s)", className="card-title"),
+                    html.Div("Memory Bandwidth [GB/s]", className="card-title"),
                     dcc.Graph(
                         figure=mem_bw_fig,
                         config={"displayModeBar": False, "responsive": True},
@@ -1214,4 +1254,12 @@ def update_graphs(
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run Feldera benchmark dashboard.")
+    parser.add_argument(
+        "--data",
+        default=DEFAULT_DATA_PATH,
+        help="Path to the benchmark CSV to load by default.",
+    )
+    args = parser.parse_args()
+    DEFAULT_DATA_PATH = str(Path(args.data).expanduser())
     app.run(debug=True)
