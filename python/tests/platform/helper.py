@@ -127,6 +127,7 @@ def wait_for_deployment_status(
     - If 'desired' is a function, until it returns true when passed
       the deployment status.
     """
+    print(f"Waiting up to {timeout_s} seconds for {name} to transition to {desired}")
     start = time.time()
     deadline = start + timeout_s
     last = None
