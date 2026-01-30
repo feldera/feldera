@@ -3,7 +3,7 @@ import random
 import sys
 import time
 from typing import Optional
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 from feldera.enums import FaultToleranceModel, PipelineStatus
 from feldera.runtime_config import RuntimeConfig, Storage
@@ -144,13 +144,22 @@ class TestCheckpointSync(SharedTestPipeline):
                 time.sleep(0.5)
 
         print("Checkpoint UUID:", chk_uuid, file=sys.stderr)
+        time.sleep(1)
 
         if automated_sync_interval is not None:
             timeout = time.monotonic() + 30
             success = None
             while time.monotonic() < timeout and success is None:
                 try:
-                    success = self.pipeline.last_successful_checkpoint_sync()
+                    synced = self.pipeline.last_successful_checkpoint_sync()
+                    print(
+                        "Automatically synced checkpoint UUID:", synced, file=sys.stderr
+                    )
+                    if synced is not None and chk_uuid is not None:
+                        if synced >= UUID(chk_uuid):
+                            success = synced
+                    else:
+                        success = synced
                 except RuntimeError:
                     time.sleep(0.5)
                     continue
@@ -160,6 +169,9 @@ class TestCheckpointSync(SharedTestPipeline):
                 )
         else:
             uuid = self.pipeline.sync_checkpoint(wait=True)
+            print("Synced Checkpoint UUID:", uuid, file=sys.stderr)
+            if chk_uuid is not None:
+                assert UUID(uuid) >= UUID(chk_uuid)
 
         self.pipeline.stop(force=True)
 
