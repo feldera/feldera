@@ -1615,6 +1615,24 @@ impl Controller {
             metrics,
             labels,
             status,
+            "output_connector_queued_records",
+            "Number of records currently queued by the output connector.",
+            ValueType::Gauge,
+            |m| &m.queued_records,
+        );
+        write_output_metric(
+            metrics,
+            labels,
+            status,
+            "output_connector_queued_batches",
+            "Number of batches of records currently queued by the output connector.",
+            ValueType::Gauge,
+            |m| &m.queued_batches,
+        );
+        write_output_metric(
+            metrics,
+            labels,
+            status,
             "output_connector_errors_transport_total",
             "Total number of errors encountered at the transport layer sending records.",
             ValueType::Counter,
