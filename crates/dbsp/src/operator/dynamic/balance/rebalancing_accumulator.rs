@@ -8,9 +8,9 @@ use crate::{
         checkpointer::EmptyCheckpoint,
         circuit_builder::RefStreamValue,
         metadata::{
-            ALLOCATED_BYTES_LABEL, BatchSizeStats, INPUT_BATCHES_LABEL, MetaItem,
-            NUM_ALLOCATIONS_LABEL, NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, OperatorLocation,
-            OperatorMeta, SHARED_BYTES_LABEL, USED_BYTES_LABEL,
+            ALLOCATED_MEMORY_BYTES, BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT,
+            MetaItem, OUTPUT_BATCHES_STATS, OperatorLocation, OperatorMeta, SHARED_MEMORY_BYTES,
+            STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
         },
         operator_traits::{Operator, UnaryOperator},
     },
@@ -124,13 +124,13 @@ where
         let bytes = self.0.borrow().state.size_of();
 
         meta.extend(metadata! {
-            NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
-            ALLOCATED_BYTES_LABEL => MetaItem::bytes(bytes.total_bytes()),
-            USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
-            SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
-            INPUT_BATCHES_LABEL => self.0.borrow().input_batch_stats.metadata(),
-            OUTPUT_BATCHES_LABEL => self.0.borrow().output_batch_stats.metadata(),
+            STATE_RECORDS_COUNT => MetaItem::Count(total_size),
+            ALLOCATED_MEMORY_BYTES => MetaItem::bytes(bytes.total_bytes()),
+            USED_MEMORY_BYTES => MetaItem::bytes(bytes.used_bytes()),
+            MEMORY_ALLOCATIONS_COUNT => MetaItem::Count(bytes.distinct_allocations()),
+            SHARED_MEMORY_BYTES => MetaItem::bytes(bytes.shared_bytes()),
+            INPUT_BATCHES_STATS => self.0.borrow().input_batch_stats.metadata(),
+            OUTPUT_BATCHES_STATS => self.0.borrow().output_batch_stats.metadata(),
 
         });
 

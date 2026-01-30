@@ -5,9 +5,10 @@ use crate::{
         GlobalNodeId, NodeId, OwnershipPreference, WithClock,
         circuit_builder::{Node, StreamMetadata},
         metadata::{
-            BatchSizeStats, COMPUTED_OUTPUTS_LABEL, MetaItem, NUM_ALLOCATIONS_LABEL,
-            NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, OUTPUT_REDUNDANCY_LABEL, OperatorMeta,
-            PREFIX_BATCHES_LABEL, SHARED_BYTES_LABEL, USED_BYTES_LABEL,
+            BatchSizeStats, COMPUTED_OUTPUT_RECORDS_COUNT, INPUT_INTEGRAL_RECORDS_COUNT,
+            MEMORY_ALLOCATIONS_COUNT, MetaItem, MetricReading, OUTPUT_BATCHES_STATS,
+            OUTPUT_REDUNDANCY_PERCENT, OperatorMeta, PREFIX_BATCHES_STATS, SHARED_MEMORY_BYTES,
+            STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
         },
         splitter_output_chunk_size,
     },
@@ -744,24 +745,24 @@ where
             .map(|spine| spine.len())
             .sum();
 
-        let batch_sizes = MetaItem::Array(
-            self.inner
-                .future_outputs
-                .borrow()
-                .values()
-                .map(|batcher| {
-                    let size = batcher.size_of();
+        // let batch_sizes = MetaItem::Array(
+        //     self.inner
+        //         .future_outputs
+        //         .borrow()
+        //         .values()
+        //         .map(|batcher| {
+        //             let size = batcher.size_of();
 
-                    MetaItem::Map(
-                        metadata! {
-                            "allocated" => MetaItem::bytes(size.total_bytes()),
-                            "used" => MetaItem::bytes(size.used_bytes()),
-                        }
-                        .into(),
-                    )
-                })
-                .collect(),
-        );
+        //             MetaItem::Map(
+        //                 metadata! {
+        //                     "allocated" => MetaItem::bytes(size.total_bytes()),
+        //                     "used" => MetaItem::bytes(size.used_bytes()),
+        //                 }
+        //                 .into(),
+        //             )
+        //         })
+        //         .collect(),
+        // );
 
         let bytes = {
             let mut context = Context::new();
@@ -779,21 +780,23 @@ where
         };
 
         meta.extend(metadata! {
-            NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
-            "batch sizes" => batch_sizes,
-            USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
-            SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
-            PREFIX_BATCHES_LABEL => stats.prefix_batch_stats.metadata(),
-            COMPUTED_OUTPUTS_LABEL => stats.output_tuples,
-            OUTPUT_BATCHES_LABEL => stats.output_batch_stats.metadata(),
-            OUTPUT_REDUNDANCY_LABEL => output_redundancy,
+            STATE_RECORDS_COUNT => MetaItem::Count(total_size),
+            //"batch sizes" => batch_sizes,
+            USED_MEMORY_BYTES => MetaItem::bytes(bytes.used_bytes()),
+            MEMORY_ALLOCATIONS_COUNT => MetaItem::Count(bytes.distinct_allocations()),
+            SHARED_MEMORY_BYTES => MetaItem::bytes(bytes.shared_bytes()),
+            PREFIX_BATCHES_STATS => stats.prefix_batch_stats.metadata(),
+            COMPUTED_OUTPUT_RECORDS_COUNT => stats.output_tuples,
+            OUTPUT_BATCHES_STATS => stats.output_batch_stats.metadata(),
+            OUTPUT_REDUNDANCY_PERCENT => output_redundancy,
         });
 
         for (i, size) in stats.trace_sizes.iter().enumerate() {
-            meta.extend(metadata! {
-                format!("integral {i} size") => MetaItem::Count(*size),
-            });
+            meta.extend([MetricReading::new(
+                INPUT_INTEGRAL_RECORDS_COUNT,
+                vec![("integral".into(), i.to_string().into())],
+                MetaItem::Count(*size),
+            )])
         }
     }
 

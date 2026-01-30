@@ -3,7 +3,6 @@
 //! This is a layer over a storage backend that adds a cache of a
 //! client-provided function of the blocks.
 use std::any::Any;
-use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 use std::ops::{Add, AddAssign};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -15,7 +14,11 @@ use enum_map::{Enum, EnumMap};
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 
-use crate::circuit::metadata::{MetaItem, OperatorMeta};
+use crate::circuit::metadata::{
+    CACHE_BACKGROUND_HIT_RATE_PERCENT, CACHE_BACKGROUND_HITS_STATS, CACHE_BACKGROUND_MISSES_STATS,
+    CACHE_FOREGROUND_HIT_RATE_PERCENT, CACHE_FOREGROUND_HITS_COUNT, CACHE_FOREGROUND_MISSES_COUNT,
+    MetaItem, MetricId, MetricReading, OperatorMeta,
+};
 use crate::circuit::runtime::ThreadType;
 use crate::storage::backend::{BlockLocation, FileId, FileReader};
 
@@ -270,6 +273,22 @@ pub enum CacheAccess {
     Miss,
 }
 
+fn cache_metric(thread_type: ThreadType, access: CacheAccess) -> MetricId {
+    match (thread_type, access) {
+        (ThreadType::Foreground, CacheAccess::Hit) => CACHE_FOREGROUND_HITS_COUNT,
+        (ThreadType::Foreground, CacheAccess::Miss) => CACHE_FOREGROUND_MISSES_COUNT,
+        (ThreadType::Background, CacheAccess::Hit) => CACHE_BACKGROUND_HITS_STATS,
+        (ThreadType::Background, CacheAccess::Miss) => CACHE_BACKGROUND_MISSES_STATS,
+    }
+}
+
+fn cache_hit_rate_metric(thread_type: ThreadType) -> MetricId {
+    match thread_type {
+        ThreadType::Foreground => CACHE_FOREGROUND_HIT_RATE_PERCENT,
+        ThreadType::Background => CACHE_BACKGROUND_HIT_RATE_PERCENT,
+    }
+}
+
 impl Display for CacheAccess {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -321,16 +340,18 @@ impl CacheStats {
         for (thread_type, accesses) in &self.0 {
             if !accesses.values().all(CacheCounts::is_empty) {
                 meta.extend(accesses.iter().map(|(access, counts)| {
-                    (
-                        Cow::from(format!("cache.{thread_type}.{access}")),
+                    MetricReading::new(
+                        cache_metric(thread_type, access),
+                        Vec::new(),
                         counts.meta_item(),
                     )
                 }));
 
                 let hits = accesses[CacheAccess::Hit].count;
                 let misses = accesses[CacheAccess::Miss].count;
-                meta.extend([(
-                    Cow::from(format!("cache.{thread_type}.hit_rate")),
+                meta.extend([MetricReading::new(
+                    cache_hit_rate_metric(thread_type),
+                    Vec::new(),
                     MetaItem::Percent {
                         numerator: hits,
                         denominator: hits + misses,

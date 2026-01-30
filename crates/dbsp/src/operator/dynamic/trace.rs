@@ -1,6 +1,6 @@
 use crate::Runtime;
 use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
-use crate::circuit::metadata::{NUM_ALLOCATIONS_LABEL, NUM_INPUTS_LABEL};
+use crate::circuit::metadata::{INPUT_RECORDS_COUNT, MEMORY_ALLOCATIONS_COUNT, RETAINMENT_BOUNDS};
 use crate::dynamic::{Factory, Weight, WeightTrait};
 use crate::operator::require_persistent_id;
 use crate::trace::spine_async::WithSnapshot;
@@ -11,8 +11,8 @@ use crate::{
         Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
         Scope, Stream, WithClock,
         metadata::{
-            ALLOCATED_BYTES_LABEL, MetaItem, NUM_ENTRIES_LABEL, OperatorMeta, SHARED_BYTES_LABEL,
-            USED_BYTES_LABEL,
+            ALLOCATED_MEMORY_BYTES, MetaItem, OperatorMeta, SHARED_MEMORY_BYTES,
+            STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
         },
         operator_traits::{BinaryOperator, Operator, StrictOperator, StrictUnaryOperator},
     },
@@ -25,6 +25,7 @@ use feldera_storage::{FileCommitter, StoragePath};
 use ouroboros::self_referencing;
 use size_of::SizeOf;
 use std::any::TypeId;
+use std::collections::BTreeMap;
 use std::mem::transmute;
 use std::{
     borrow::Cow,
@@ -292,13 +293,10 @@ struct TraceBoundsInner<K: ?Sized + 'static, V: DataTrait + ?Sized> {
 
 impl<K: Debug + ?Sized + 'static, V: DataTrait + ?Sized> TraceBoundsInner<K, V> {
     pub fn metadata(&self) -> MetaItem {
-        MetaItem::Map(
-            metadata! {
-                "key" => self.key_predicate.metadata(),
-                "value" => self.val_predicate.metadata()
-            }
-            .into(),
-        )
+        MetaItem::Map(BTreeMap::from([
+            (Cow::Borrowed("key"), self.key_predicate.metadata()),
+            (Cow::Borrowed("value"), self.val_predicate.metadata()),
+        ]))
     }
 }
 
@@ -781,7 +779,7 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_INPUTS_LABEL => MetaItem::Count(self.num_inputs),
+            INPUT_RECORDS_COUNT => MetaItem::Count(self.num_inputs),
         });
     }
 
@@ -863,7 +861,7 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_INPUTS_LABEL => MetaItem::Count(self.num_inputs),
+            INPUT_RECORDS_COUNT => MetaItem::Count(self.num_inputs),
         });
     }
 }
@@ -1076,12 +1074,12 @@ where
             .unwrap_or_default();
 
         meta.extend(metadata! {
-            NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
-            ALLOCATED_BYTES_LABEL => MetaItem::bytes(bytes.total_bytes()),
-            USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
-            SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
-            "bounds" => self.bounds.metadata()
+            STATE_RECORDS_COUNT => MetaItem::Count(total_size),
+            ALLOCATED_MEMORY_BYTES => MetaItem::bytes(bytes.total_bytes()),
+            USED_MEMORY_BYTES => MetaItem::bytes(bytes.used_bytes()),
+            MEMORY_ALLOCATIONS_COUNT => MetaItem::Count(bytes.distinct_allocations()),
+            SHARED_MEMORY_BYTES => MetaItem::bytes(bytes.shared_bytes()),
+            RETAINMENT_BOUNDS => self.bounds.metadata()
         });
 
         if let Some(trace) = self.trace.as_ref() {

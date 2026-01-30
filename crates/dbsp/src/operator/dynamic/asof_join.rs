@@ -8,7 +8,10 @@ use crate::{
     Circuit, DBData, DynZWeight, Position, RootCircuit, Scope, Stream, ZWeight,
     algebra::{IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdZSet, ZBatchReader, ZCursor},
     circuit::{
-        metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL, OperatorLocation, OperatorMeta},
+        metadata::{
+            BatchSizeStats, LEFT_INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorLocation,
+            OperatorMeta, RIGHT_INPUT_BATCHES_STATS,
+        },
         operator_traits::Operator,
         splitter_output_chunk_size,
     },
@@ -568,9 +571,9 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            "left input batches" => self.delta1_batch_stats.borrow().metadata(),
-            "right input batches" => self.delta2_batch_stats.borrow().metadata(),
-            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+            LEFT_INPUT_BATCHES_STATS => self.delta1_batch_stats.borrow().metadata(),
+            RIGHT_INPUT_BATCHES_STATS => self.delta2_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.borrow().metadata(),
         });
     }
 
