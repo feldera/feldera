@@ -40,7 +40,7 @@ rkyv = { workspace = true, features = ["std", "size_64", "validation", "smallvec
 ryu = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 # `serde-with-arbitrary-precision` is needed because we enable `arbitrary_precision` in `serde_json`.
-serde_json = { workspace = true, features = ["arbitrary_precision"] }
+serde_json = { workspace = true }
 size-of = { workspace = true }
 smallstr = { workspace = true }
 smallvec = { workspace = true }
