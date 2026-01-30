@@ -3,7 +3,7 @@ use crate::{
     algebra::{HasZero, IndexedZSet, UnsignedPrimInt, ZRingValue},
     circuit::{
         Scope,
-        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
+        metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::Operator,
         splitter_output_chunk_size,
     },
@@ -815,8 +815,8 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
-            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+            INPUT_BATCHES_STATS => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.borrow().metadata(),
         });
     }
 

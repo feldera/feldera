@@ -9,7 +9,15 @@
 use crate::{
     Error, NumEntries, Runtime,
     circuit::{
-        metadata::{MetaItem, OperatorMeta},
+        metadata::{
+            BLOOM_FILTER_BITS_PER_KEY, BLOOM_FILTER_HIT_RATE_PERCENT, BLOOM_FILTER_HITS_COUNT,
+            BLOOM_FILTER_MISSES_COUNT, BLOOM_FILTER_SIZE_BYTES, COMPLETED_MERGES_COUNT,
+            LOOSE_BATCHES_COUNT, LOOSE_MEMORY_RECORDS_COUNT, LOOSE_STORAGE_RECORDS_COUNT,
+            MERGE_BACKPRESSURE_WAIT_TIME_SECONDS, MERGE_REDUCTION_PERCENT, MERGING_BATCHES_COUNT,
+            MERGING_MEMORY_RECORDS_COUNT, MERGING_SIZE_BYTES, MERGING_STORAGE_RECORDS_COUNT,
+            MetaItem, MetricId, MetricReading, OperatorMeta, SPINE_BATCHES_COUNT,
+            SPINE_STORAGE_SIZE_BYTES,
+        },
         metrics::COMPACTION_STALL_TIME_NANOSECONDS,
     },
     dynamic::{DynVec, Factory, Weight},
@@ -36,8 +44,14 @@ use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::{Context, SizeOf};
-use std::sync::{Arc, MutexGuard};
-use std::time::{Duration, Instant};
+use std::{
+    borrow::Cow,
+    sync::{Arc, MutexGuard},
+};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 use std::{collections::VecDeque, sync::atomic::Ordering};
 use std::{
     fmt::{self, Debug, Display, Formatter},
@@ -496,6 +510,24 @@ where
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
+        fn class_batch_count_label(class: &str) -> MetricId {
+            match class {
+                "loose" => LOOSE_BATCHES_COUNT,
+                "merging" => MERGING_BATCHES_COUNT,
+                _ => panic!("invalid class: {class}"),
+            }
+        }
+
+        fn class_tuple_count_label(class: &str, location: BatchLocation) -> MetricId {
+            match (class, location) {
+                ("loose", BatchLocation::Memory) => LOOSE_MEMORY_RECORDS_COUNT,
+                ("loose", BatchLocation::Storage) => LOOSE_STORAGE_RECORDS_COUNT,
+                ("merging", BatchLocation::Memory) => MERGING_MEMORY_RECORDS_COUNT,
+                ("merging", BatchLocation::Storage) => MERGING_STORAGE_RECORDS_COUNT,
+                _ => panic!("invalid class: {class} and location: {location:?}"),
+            }
+        }
+
         let (mut slots, spine_stats) = self.state.lock().unwrap().metadata_snapshot();
 
         // Construct per-slot occupancy description.
@@ -517,28 +549,39 @@ where
                     }
 
                     let mut facts = Vec::with_capacity(3);
-                    facts.push(format!("{} batches", batches.len()));
+                    facts.push(MetricReading::new(
+                        class_batch_count_label(class),
+                        vec![(Cow::Borrowed("slot"), index.to_string().into())],
+                        MetaItem::Count(batches.len()),
+                    ));
                     for (location, count) in tuple_counts {
                         if count > 0 {
-                            facts.push(format!("{count} {} tuples", location.as_str()));
+                            facts.push(MetricReading::new(
+                                class_tuple_count_label(class, location),
+                                vec![(Cow::Borrowed("slot"), index.to_string().into())],
+                                MetaItem::Count(count),
+                            ));
                         }
                     }
-                    meta.extend([(
-                        format!("slot {index} {class}").into(),
-                        MetaItem::String(facts.join(", ")),
-                    )]);
+                    meta.extend(facts);
                 }
             }
             if slot.n_merged > 0 {
-                meta.extend([(
-                    format!("slot {index} completed").into(),
-                    MetaItem::String(format!(
-                        "{} merges of {} batches over {} steps (avg {:.1} ms/step)",
-                        slot.n_merged,
-                        slot.n_merged_batches,
-                        slot.n_steps,
-                        (slot.elapsed / slot.n_steps as u32).as_secs_f64() * 1000.0
-                    )),
+                meta.extend([MetricReading::new(
+                    COMPLETED_MERGES_COUNT,
+                    vec![(Cow::Borrowed("slot"), index.to_string().into())],
+                    MetaItem::Map(BTreeMap::from([
+                        (Cow::Borrowed("merges"), MetaItem::Count(slot.n_merged)),
+                        (
+                            Cow::Borrowed("batches"),
+                            MetaItem::Count(slot.n_merged_batches),
+                        ),
+                        (Cow::Borrowed("steps"), MetaItem::Count(slot.n_steps)),
+                        (
+                            Cow::Borrowed("avg_step_time"),
+                            MetaItem::Duration(slot.elapsed / slot.n_steps as u32),
+                        ),
+                    ])),
                 )]);
             }
         }
@@ -581,56 +624,61 @@ where
             let bits_per_key = filter_stats.size_byte as f64 * 8.0 / storage_records as f64;
             let bits_per_key = bits_per_key as usize;
             meta.extend(metadata! {
-                "memory.Bloom_filter.bits_per_key" => MetaItem::Int(bits_per_key)
+                BLOOM_FILTER_BITS_PER_KEY => MetaItem::Int(bits_per_key)
             })
         }
 
-        meta.extend(metadata! {
-            // Number of batches currently in the spine.
-            "storage.spine_batches" => MetaItem::Count(n_batches),
-
-            // The amount of data in the spine currently stored on disk (not
-            // including any in-progress merges).
-            "storage.bytes.spine_size" => MetaItem::bytes(storage_size),
-
-            // The amount of memory used for Bloom filters.
-            "Bloom filter size" => MetaItem::bytes(filter_stats.size_byte),
-
-            // The number of hits across all Bloom filters.
-            // Note that the hits are summed across the Bloom filters for all batches in the
-            // spine. As such, this does not provide information about hits distribution
-            // of the batches in the spine.
-            "Bloom filter hits" => MetaItem::Int(filter_stats.hits),
-
-            // The number of misses across all Bloom filters.
-            // Note that the misses are summed across the Bloom filters for all batches in the
-            // spine. As such, this does not provide information about misses distribution
-            // of the batches in the spine.
-            "Bloom filter misses" => MetaItem::Int(filter_stats.misses),
-
-            // The hit rate across all Bloom filters.
-            // Note that the hits and misses are summed across the Bloom filters for all batches in
-            // the spine is used to calculate this rate. As such, this does not provide
-            // information about hit rate distribution of the batches in the spine.
-            "Bloom filter hit rate" => MetaItem::Percent {
-                numerator: filter_stats.hits as u64,
-                denominator: filter_stats.hits as u64 + filter_stats.misses as u64,
-            },
-
-            // The number of batches currently being merged.
-            "storage.merging_batches" => MetaItem::Count(n_merging),
-
-            // The number of bytes of batches being merged.
-            "storage.merging_size" => MetaItem::bytes(merging_size),
-
-            // For merges already completed, the percentage of the updates input
-            // to merges that merging eliminated, whether by weights adding to
-            // zero or through key or value filters.
-            "storage.merge_reduction" => spine_stats.merge_reduction(),
-
-            // The amount of time waiting for backpressure.
-            "time.merge_backpressure_wait" => MetaItem::Duration(spine_stats.backpressure_wait),
-        });
+        meta.extend([
+            MetricReading::new(SPINE_BATCHES_COUNT, Vec::new(), MetaItem::Count(n_batches)),
+            MetricReading::new(
+                SPINE_STORAGE_SIZE_BYTES,
+                Vec::new(),
+                MetaItem::bytes(storage_size),
+            ),
+            MetricReading::new(
+                MERGING_BATCHES_COUNT,
+                Vec::new(),
+                MetaItem::Count(n_merging),
+            ),
+            MetricReading::new(
+                MERGING_SIZE_BYTES,
+                Vec::new(),
+                MetaItem::bytes(merging_size),
+            ),
+            MetricReading::new(
+                MERGE_REDUCTION_PERCENT,
+                Vec::new(),
+                spine_stats.merge_reduction(),
+            ),
+            MetricReading::new(
+                MERGE_BACKPRESSURE_WAIT_TIME_SECONDS,
+                Vec::new(),
+                MetaItem::Duration(spine_stats.backpressure_wait),
+            ),
+            MetricReading::new(
+                BLOOM_FILTER_SIZE_BYTES,
+                Vec::new(),
+                MetaItem::bytes(filter_stats.size_byte),
+            ),
+            MetricReading::new(
+                BLOOM_FILTER_HITS_COUNT,
+                Vec::new(),
+                MetaItem::Count(filter_stats.hits),
+            ),
+            MetricReading::new(
+                BLOOM_FILTER_MISSES_COUNT,
+                Vec::new(),
+                MetaItem::Count(filter_stats.misses),
+            ),
+            MetricReading::new(
+                BLOOM_FILTER_HIT_RATE_PERCENT,
+                Vec::new(),
+                MetaItem::Percent {
+                    numerator: filter_stats.hits as u64,
+                    denominator: filter_stats.hits as u64 + filter_stats.misses as u64,
+                },
+            ),
+        ]);
 
         cache_stats.metadata(meta);
     }

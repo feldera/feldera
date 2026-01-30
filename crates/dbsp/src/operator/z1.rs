@@ -2,7 +2,7 @@
 
 use crate::Runtime;
 use crate::circuit::circuit_builder::StreamId;
-use crate::circuit::metadata::NUM_ALLOCATIONS_LABEL;
+use crate::circuit::metadata::{MEMORY_ALLOCATIONS_COUNT, STATE_RECORDS_COUNT};
 use crate::{
     Error, NumEntries,
     algebra::HasZero,
@@ -11,8 +11,7 @@ use crate::{
         Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
         Scope, Stream,
         metadata::{
-            ALLOCATED_BYTES_LABEL, MetaItem, NUM_ENTRIES_LABEL, OperatorMeta, SHARED_BYTES_LABEL,
-            USED_BYTES_LABEL,
+            ALLOCATED_MEMORY_BYTES, MetaItem, OperatorMeta, SHARED_MEMORY_BYTES, USED_MEMORY_BYTES,
         },
         operator_traits::{Operator, StrictOperator, StrictUnaryOperator, UnaryOperator},
     },
@@ -289,11 +288,11 @@ where
     fn metadata(&self, meta: &mut OperatorMeta) {
         let bytes = self.values.size_of();
         meta.extend(metadata! {
-            NUM_ENTRIES_LABEL => MetaItem::Count(self.values.num_entries_deep()),
-            ALLOCATED_BYTES_LABEL => MetaItem::bytes(bytes.total_bytes()),
-            USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
-            SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
+            STATE_RECORDS_COUNT => MetaItem::Count(self.values.num_entries_deep()),
+            ALLOCATED_MEMORY_BYTES => MetaItem::bytes(bytes.total_bytes()),
+            USED_MEMORY_BYTES => MetaItem::bytes(bytes.used_bytes()),
+            MEMORY_ALLOCATIONS_COUNT => MetaItem::Count(bytes.distinct_allocations()),
+            SHARED_MEMORY_BYTES => MetaItem::bytes(bytes.shared_bytes()),
         });
     }
 
@@ -491,12 +490,12 @@ where
         };
 
         meta.extend(metadata! {
-            NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
-            "batch sizes" => MetaItem::Array(batch_sizes),
-            ALLOCATED_BYTES_LABEL => MetaItem::bytes(total_bytes.total_bytes()),
-            USED_BYTES_LABEL => MetaItem::bytes(total_bytes.used_bytes()),
-            NUM_ALLOCATIONS_LABEL => MetaItem::Count(total_bytes.distinct_allocations()),
-            SHARED_BYTES_LABEL => MetaItem::bytes(total_bytes.shared_bytes()),
+            STATE_RECORDS_COUNT => MetaItem::Count(total_size),
+            STATE_RECORDS_COUNT => MetaItem::Array(batch_sizes),
+            ALLOCATED_MEMORY_BYTES => MetaItem::bytes(total_bytes.total_bytes()),
+            USED_MEMORY_BYTES => MetaItem::bytes(total_bytes.used_bytes()),
+            MEMORY_ALLOCATIONS_COUNT => MetaItem::Count(total_bytes.distinct_allocations()),
+            SHARED_MEMORY_BYTES => MetaItem::bytes(total_bytes.shared_bytes()),
         });
     }
 

@@ -318,14 +318,14 @@ pub enum BatchLocation {
     Storage,
 }
 
-impl BatchLocation {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::Memory => "memory",
-            Self::Storage => "storage",
-        }
-    }
-}
+// impl BatchLocation {
+//     fn as_str(&self) -> &'static str {
+//         match self {
+//             Self::Memory => "memory",
+//             Self::Storage => "storage",
+//         }
+//     }
+// }
 
 /// A set of `(key, value, time, diff)` tuples whose contents may be read in
 /// order by key and value.

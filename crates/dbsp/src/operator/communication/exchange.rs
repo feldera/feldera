@@ -10,8 +10,8 @@ use crate::{
     circuit::{
         Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
         metadata::{
-            BatchSizeStats, EXCHANGE_WAIT_TIME, INPUT_BATCHES_LABEL, MetaItem,
-            OUTPUT_BATCHES_LABEL, OperatorLocation, OperatorMeta,
+            BatchSizeStats, EXCHANGE_WAIT_TIME_SECONDS, INPUT_BATCHES_STATS, MetaItem,
+            OUTPUT_BATCHES_STATS, OperatorLocation, OperatorMeta,
         },
         operator_traits::{Operator, SinkOperator, SourceOperator},
         tokio::TOKIO,
@@ -906,7 +906,7 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            INPUT_BATCHES_LABEL => self.input_batch_stats.metadata(),
+            INPUT_BATCHES_STATS => self.input_batch_stats.metadata(),
         });
     }
 
@@ -1052,8 +1052,8 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            OUTPUT_BATCHES_LABEL => self.output_batch_stats.metadata(),
-            EXCHANGE_WAIT_TIME => MetaItem::Duration(Duration::from_micros(self.total_wait_time.load(Ordering::Acquire)))
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.metadata(),
+            EXCHANGE_WAIT_TIME_SECONDS => MetaItem::Duration(Duration::from_micros(self.total_wait_time.load(Ordering::Acquire)))
         });
     }
 

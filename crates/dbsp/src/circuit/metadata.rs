@@ -1,89 +1,521 @@
 use num_format::{Locale, ToFormattedString};
-use serde::{Serialize, Serializer, ser::SerializeSeq};
+use serde::{
+    Serialize, Serializer,
+    ser::{SerializeSeq, SerializeStruct},
+};
 use size_of::{HumanBytes, TotalSize};
 use std::{
     borrow::Cow,
-    fmt::{self, Write},
+    collections::BTreeMap,
+    fmt::{self, Display, Write},
     ops::{Deref, DerefMut},
     panic::Location,
     time::Duration,
 };
 
-use crate::{metadata, storage::buffer_cache::CacheCounts};
+use crate::storage::buffer_cache::CacheCounts;
 
-/// Attribute that represents the total number of bytes used by a stateful
-/// operator. This includes bytes used to store the actual state, but not the
-/// excess pre-allocated capacity available inside operator's internal data
-/// structures (see [`ALLOCATED_BYTES_LABEL`]).
-pub const USED_BYTES_LABEL: &str = "memory.bytes.used";
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, PartialOrd, Ord)]
+#[repr(transparent)]
+pub struct MetricId(pub Cow<'static, str>);
 
-/// Attribute that represents the total number of bytes allocated by a stateful
-/// operator. This value can be larger than the number of bytes used by the
-/// operator since it includes excess pre-allocated capacity inside operator's
-/// internal data structures (see [`USED_BYTES_LABEL`]).
-pub const ALLOCATED_BYTES_LABEL: &str = "memory.bytes.allocated";
+impl Display for MetricId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
-/// Attribute that represents the total number of allocations made by a stateful
-/// operator.
-pub const NUM_ALLOCATIONS_LABEL: &str = "memory.allocations";
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum CircuitMetricCategory {
+    State,
+    Inputs,
+    Outputs,
+    Cache,
+    Time,
+    Balancer,
+}
 
-/// Attribute that represents the number of shared bytes used by a stateful
-/// operator, i.e., bytes that are shared behind things like `Arc` or `Rc`.
-pub const SHARED_BYTES_LABEL: &str = "memory.bytes.shared";
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CircuitMetric {
+    pub name: MetricId,
+    pub category: CircuitMetricCategory,
+    pub advanced: bool,
+    pub description: &'static str,
+}
 
-/// Attribute that represents the number of entries stored by a stateful
-/// operator, e.g., the number of entries in a trace.
-pub const NUM_ENTRIES_LABEL: &str = "memory.record_count.stored";
+pub type MetricLabels = Vec<(Cow<'static, str>, Cow<'static, str>)>;
 
-/// The number of input tuples ingested by the operator.
-pub const NUM_INPUTS_LABEL: &str = "memory.record_count.inputs";
+#[derive(Debug, Clone)]
+pub struct MetricReading {
+    metric_id: MetricId,
+    labels: MetricLabels,
+    value: MetaItem,
+}
 
-/// Input batch sizes.
-pub const INPUT_BATCHES_LABEL: &str = "storage.input_batches";
+impl MetricReading {
+    pub fn new(metric_id: MetricId, labels: MetricLabels, value: MetaItem) -> Self {
+        Self {
+            metric_id,
+            labels,
+            value,
+        }
+    }
+}
 
-/// A collection of input batch sizes, one for each input
-pub const INPUT_BATCHES_COLLECTION: &str = "collection of input batches";
+pub const USED_MEMORY_BYTES: MetricId = MetricId(Cow::Borrowed("used_memory_bytes"));
+pub const ALLOCATED_MEMORY_BYTES: MetricId = MetricId(Cow::Borrowed("allocated_memory_bytes"));
+pub const MEMORY_ALLOCATIONS_COUNT: MetricId = MetricId(Cow::Borrowed("memory_allocations_count"));
+pub const SHARED_MEMORY_BYTES: MetricId = MetricId(Cow::Borrowed("shared_memory_bytes"));
+pub const STATE_RECORDS_COUNT: MetricId = MetricId(Cow::Borrowed("state_records_count"));
+pub const INPUT_RECORDS_COUNT: MetricId = MetricId(Cow::Borrowed("input_records_count"));
+pub const INPUT_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("input_batches_stats"));
+pub const OUTPUT_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("output_batches_stats"));
+pub const EXCHANGE_WAIT_TIME_SECONDS: MetricId =
+    MetricId(Cow::Borrowed("exchange_wait_time_seconds"));
+pub const KEY_DISTRIBUTION: MetricId = MetricId(Cow::Borrowed("key_distribution"));
+pub const LOCAL_SHARD_RECORDS_COUNT: MetricId =
+    MetricId(Cow::Borrowed("local_shard_records_count"));
+pub const BALANCER_POLICY: MetricId = MetricId(Cow::Borrowed("balancer_policy"));
+pub const RABALANCINGS_COUNT: MetricId = MetricId(Cow::Borrowed("rebalancings_count"));
+pub const REBALANCING_IN_PROGRESS: MetricId =
+    MetricId(Cow::Borrowed("rebalancing_in_progress_bool"));
+pub const ACCUMULATOR_RECORDS_TO_REPARTITION_COUNT: MetricId =
+    MetricId(Cow::Borrowed("accumulator_records_to_repartition_count"));
+pub const INTEGRAL_RECORDS_TO_REPARTITION_COUNT: MetricId =
+    MetricId(Cow::Borrowed("integral_records_to_repartition_count"));
+pub const TOTAL_REBALANCING_TIME_SECONDS: MetricId =
+    MetricId(Cow::Borrowed("total_rebalancing_time_seconds"));
+pub const INPROGRESS_REBALANCING_TIME_SECONDS: MetricId =
+    MetricId(Cow::Borrowed("inprogress_rebalancing_time_seconds"));
+pub const LEFT_INPUT_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("left_input_batches_stats"));
+pub const RIGHT_INPUT_BATCHES_STATS: MetricId =
+    MetricId(Cow::Borrowed("right_input_batches_stats"));
+pub const RETAINMENT_BOUNDS: MetricId = MetricId(Cow::Borrowed("retainment_bounds"));
+pub const LEFT_INPUT_RECORDS_COUNT: MetricId = MetricId(Cow::Borrowed("left_input_records_count"));
+pub const RIGHT_INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
+    MetricId(Cow::Borrowed("right_input_integral_records_count"));
+pub const COMPUTED_OUTPUT_RECORDS_COUNT: MetricId =
+    MetricId(Cow::Borrowed("computed_output_records_count"));
+pub const OUTPUT_REDUNDANCY_PERCENT: MetricId =
+    MetricId(Cow::Borrowed("output_redundancy_percent"));
+pub const CACHE_FOREGROUND_HITS_COUNT: MetricId =
+    MetricId(Cow::Borrowed("foreground_cache_hits_count"));
+pub const CACHE_FOREGROUND_MISSES_COUNT: MetricId =
+    MetricId(Cow::Borrowed("foreground_cache_misses_count"));
+pub const CACHE_BACKGROUND_HITS_STATS: MetricId =
+    MetricId(Cow::Borrowed("background_cache_hits_stats"));
+pub const CACHE_BACKGROUND_MISSES_STATS: MetricId =
+    MetricId(Cow::Borrowed("background_cache_misses_stats"));
+pub const CACHE_FOREGROUND_HIT_RATE_PERCENT: MetricId =
+    MetricId(Cow::Borrowed("foreground_cache_hit_rate_percent"));
+pub const CACHE_BACKGROUND_HIT_RATE_PERCENT: MetricId =
+    MetricId(Cow::Borrowed("background_cache_hit_rate_percent"));
+pub const LOOSE_BATCHES_COUNT: MetricId = MetricId(Cow::Borrowed("loose_batches_count"));
+pub const MERGING_BATCHES_COUNT: MetricId = MetricId(Cow::Borrowed("merging_batches_count"));
+pub const LOOSE_MEMORY_RECORDS_COUNT: MetricId =
+    MetricId(Cow::Borrowed("loose_memory_records_count"));
+pub const LOOSE_STORAGE_RECORDS_COUNT: MetricId =
+    MetricId(Cow::Borrowed("loose_storage_records_count"));
+pub const MERGING_MEMORY_RECORDS_COUNT: MetricId =
+    MetricId(Cow::Borrowed("merging_memory_records_count"));
+pub const MERGING_STORAGE_RECORDS_COUNT: MetricId =
+    MetricId(Cow::Borrowed("merging_storage_records_count"));
+pub const COMPLETED_MERGES_COUNT: MetricId = MetricId(Cow::Borrowed("completed_merges_count"));
+pub const BLOOM_FILTER_BITS_PER_KEY: MetricId =
+    MetricId(Cow::Borrowed("bloom_filter_bits_per_key"));
+pub const BLOOM_FILTER_HITS_COUNT: MetricId = MetricId(Cow::Borrowed("bloom_filter_hits_count"));
+pub const BLOOM_FILTER_MISSES_COUNT: MetricId =
+    MetricId(Cow::Borrowed("bloom_filter_misses_count"));
+pub const BLOOM_FILTER_HIT_RATE_PERCENT: MetricId =
+    MetricId(Cow::Borrowed("bloom_filter_hit_rate_percent"));
+pub const BLOOM_FILTER_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("bloom_filter_size_bytes"));
+pub const SPINE_BATCHES_COUNT: MetricId = MetricId(Cow::Borrowed("spine_batches_count"));
+pub const SPINE_STORAGE_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("spine_storage_size_bytes"));
+pub const MERGING_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("merging_size_bytes"));
+pub const MERGE_REDUCTION_PERCENT: MetricId = MetricId(Cow::Borrowed("merge_reduction_percent"));
+pub const MERGE_BACKPRESSURE_WAIT_TIME_SECONDS: MetricId =
+    MetricId(Cow::Borrowed("merge_backpressure_wait_time_seconds"));
+pub const INVOCATIONS_COUNT: MetricId = MetricId(Cow::Borrowed("invocations_count"));
+pub const RUNTIME_SECONDS: MetricId = MetricId(Cow::Borrowed("runtime_seconds"));
+pub const RUNTIME_PERCENT: MetricId = MetricId(Cow::Borrowed("runtime_percent"));
+pub const CIRCUIT_WAIT_TIME_SECONDS: MetricId =
+    MetricId(Cow::Borrowed("circuit_wait_time_seconds"));
+pub const STEPS_COUNT: MetricId = MetricId(Cow::Borrowed("steps_count"));
+pub const CIRCUIT_RUNTIME_SECONDS: MetricId = MetricId(Cow::Borrowed("circuit_runtime_seconds"));
+pub const CIRCUIT_IDLE_TIME_SECONDS: MetricId =
+    MetricId(Cow::Borrowed("circuit_idle_time_seconds"));
+pub const CIRCUIT_RUNTIME_ELAPSED_SECONDS: MetricId =
+    MetricId(Cow::Borrowed("circuit_runtime_elapsed_seconds"));
+pub const FOREGROUND_CACHE_OCCUPANCY_BYTES: MetricId =
+    MetricId(Cow::Borrowed("foreground_cache_occupancy_bytes"));
+pub const BACKGROUND_CACHE_OCCUPANCY_BYTES: MetricId =
+    MetricId(Cow::Borrowed("background_cache_occupancy_bytes"));
+pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batches_stats"));
+pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
+    MetricId(Cow::Borrowed("input_integral_records_count"));
 
-/// The number of output tuples before consolidation.
-pub const COMPUTED_OUTPUTS_LABEL: &str = "computed outputs";
-
-/// (computed outputs - output batch sizes) / computed outputs
-pub const OUTPUT_REDUNDANCY_LABEL: &str = "output redundancy";
-
-/// Prefix batch sizes.
-pub const PREFIX_BATCHES_LABEL: &str = "prefix batches";
-
-/// Output batch sizes.
-pub const OUTPUT_BATCHES_LABEL: &str = "storage.output_batches";
-
-/// The amount of time an async operator spent wait to become ready.
-pub const EXCHANGE_WAIT_TIME: &str = "time.exchange_wait";
-
-/// Key distribution of the input stream.
-pub const KEY_DISTRIBUTION_LABEL: &str = "key distribution";
-
-/// Total weight of tuples that map to the local worker based on the hash of the key.
-pub const LOCAL_SHARD_SIZE_LABEL: &str = "balancer.local_shard_size";
-
-pub const BALANCER_POLICY_LABEL: &str = "balancer.policy";
-
-/// The number of times the stream was rebalanced.
-pub const NUM_RABALANCINGS_LABEL: &str = "balancer.rebalancings";
-
-pub const REBALANCING_IN_PROGRESS_LABEL: &str = "balancer.rebalancing_in_progress";
-
-/// The number of accumulator records that must be repartitioned in the current rebalancing.
-pub const NUM_ACCUMULATOR_RECORDS_TO_REPARTITION_LABEL: &str =
-    "balancer.accumulator_records_to_repartition";
-
-/// The number of integral records that must be repartitioned in the current rebalancing.
-pub const NUM_INTEGRAL_RECORDS_TO_REPARTITION_LABEL: &str =
-    "balancer.integral_records_to_repartition";
-
-/// The total time spent rebalancing the stream.
-pub const TOTAL_REBALANCING_TIME_LABEL: &str = "balancer.total_time";
-
-pub const INPROGRESS_REBALANCING_TIME_LABEL: &str = "balancer.time_in_progress";
+pub const CIRCUIT_METRICS: [CircuitMetric; 59] = [
+    // State
+    CircuitMetric {
+        name: USED_MEMORY_BYTES,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Bytes used by the in-memory state of the operator. See also 'allocated_memory_bytes'.",
+    },
+    CircuitMetric {
+        name: ALLOCATED_MEMORY_BYTES,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Total bytes reserved by the operator's in-memory state, including unused capacity; can exceed 'used_memory_bytes'.",
+    },
+    CircuitMetric {
+        name: MEMORY_ALLOCATIONS_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: true,
+        description: "Number of contiguous memory regions allocated for the operator's in-memory state.",
+    },
+    CircuitMetric {
+        name: SHARED_MEMORY_BYTES,
+        category: CircuitMetricCategory::State,
+        advanced: true,
+        description: "Bytes of in-memory state possibly shared with other operators.",
+    },
+    CircuitMetric {
+        name: STATE_RECORDS_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Number of records stored in operator state (both in-memory and on-disk).",
+    },
+    CircuitMetric {
+        name: SPINE_BATCHES_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Number of batches in the spine.",
+    },
+    CircuitMetric {
+        name: SPINE_STORAGE_SIZE_BYTES,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Size of the spine.",
+    },
+    CircuitMetric {
+        name: MERGING_BATCHES_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Total number of currently merging batches in the operator's state.",
+    },
+    CircuitMetric {
+        name: MERGING_MEMORY_RECORDS_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "The number of in-memory records in merging batches.",
+    },
+    CircuitMetric {
+        name: MERGING_STORAGE_RECORDS_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "The number of on-disk records in merging batches.",
+    },
+    CircuitMetric {
+        name: MERGING_SIZE_BYTES,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Approximate combined in-memory and on-disk size of currently merging batches.",
+    },
+    CircuitMetric {
+        name: MERGE_REDUCTION_PERCENT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Merge reduction. across all merges performed by the operator.",
+    },
+    CircuitMetric {
+        name: LOOSE_BATCHES_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "The number of loose batches, i.e., batches that are not being merged, in the operator's state.",
+    },
+    CircuitMetric {
+        name: LOOSE_MEMORY_RECORDS_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "The number of in-memory records in loose batches.",
+    },
+    CircuitMetric {
+        name: LOOSE_STORAGE_RECORDS_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "The number of on-disk records in loose batches.",
+    },
+    CircuitMetric {
+        name: BLOOM_FILTER_BITS_PER_KEY,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Average number of bits per key in the Bloom filter.",
+    },
+    CircuitMetric {
+        name: BLOOM_FILTER_SIZE_BYTES,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Size of the Bloom filter in bytes.",
+    },
+    CircuitMetric {
+        name: BLOOM_FILTER_HITS_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "The number of hits across all Bloom filters. The hits are summed across the Bloom filters for all batches in the spine.",
+    },
+    CircuitMetric {
+        name: BLOOM_FILTER_MISSES_COUNT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "The number of misses across all Bloom filters. The misses are summed across the Bloom filters for all batches in the spine.",
+    },
+    CircuitMetric {
+        name: BLOOM_FILTER_HIT_RATE_PERCENT,
+        category: CircuitMetricCategory::State,
+        advanced: false,
+        description: "Hit rate of the Bloom filter.",
+    },
+    CircuitMetric {
+        name: RETAINMENT_BOUNDS,
+        category: CircuitMetricCategory::State,
+        advanced: true,
+        description: "Bounds used by the garbage collector to discard unused state.",
+    },
+    // Inputs
+    CircuitMetric {
+        name: INPUT_RECORDS_COUNT,
+        category: CircuitMetricCategory::Inputs,
+        advanced: false,
+        description: "Total input records ingested by the operator.",
+    },
+    CircuitMetric {
+        name: INPUT_BATCHES_STATS,
+        category: CircuitMetricCategory::Inputs,
+        advanced: false,
+        description: "Distribution of input batch sizes processed by the operator.",
+    },
+    CircuitMetric {
+        name: LEFT_INPUT_BATCHES_STATS,
+        category: CircuitMetricCategory::Inputs,
+        advanced: false,
+        description: "Distribution of input batch sizes in the left input stream of an asof-join operator.",
+    },
+    CircuitMetric {
+        name: RIGHT_INPUT_BATCHES_STATS,
+        category: CircuitMetricCategory::Inputs,
+        advanced: false,
+        description: "Distribution of input batch sizes in the right input stream of an asof-join operator.",
+    },
+    CircuitMetric {
+        name: LEFT_INPUT_RECORDS_COUNT,
+        category: CircuitMetricCategory::Inputs,
+        advanced: false,
+        description: "Total number of input records received in the left input stream of a join operator.",
+    },
+    CircuitMetric {
+        name: RIGHT_INPUT_INTEGRAL_RECORDS_COUNT,
+        category: CircuitMetricCategory::Inputs,
+        advanced: false,
+        description: "The size of the integral of the right input stream of a join operator.",
+    },
+    CircuitMetric {
+        name: PREFIX_BATCHES_STATS,
+        category: CircuitMetricCategory::Outputs,
+        advanced: false,
+        description: "Distribution of prefix batch sizes ingested by a match operator.",
+    },
+    CircuitMetric {
+        name: INPUT_INTEGRAL_RECORDS_COUNT,
+        category: CircuitMetricCategory::Inputs,
+        advanced: false,
+        description: "The size of the integral input to a match operator.",
+    },
+    // Outputs
+    CircuitMetric {
+        name: OUTPUT_BATCHES_STATS,
+        category: CircuitMetricCategory::Outputs,
+        advanced: false,
+        description: "Distribution of output batch sizes produced by the operator.",
+    },
+    CircuitMetric {
+        name: COMPUTED_OUTPUT_RECORDS_COUNT,
+        category: CircuitMetricCategory::Outputs,
+        advanced: false,
+        description: "Total number of output records computed by the operator. This number can include duplicate records and be greater than the number of output records produced by the operator.",
+    },
+    CircuitMetric {
+        name: OUTPUT_REDUNDANCY_PERCENT,
+        category: CircuitMetricCategory::Outputs,
+        advanced: false,
+        description: "Percentage of redundant output records eliminated during compaction.",
+    },
+    // Time
+    CircuitMetric {
+        name: INVOCATIONS_COUNT,
+        category: CircuitMetricCategory::Time,
+        advanced: false,
+        description: "Number of times the operator has been invoked.",
+    },
+    CircuitMetric {
+        name: RUNTIME_SECONDS,
+        category: CircuitMetricCategory::Time,
+        advanced: false,
+        description: "Total time spent evaluating the operator.",
+    },
+    CircuitMetric {
+        name: RUNTIME_PERCENT,
+        category: CircuitMetricCategory::Time,
+        advanced: false,
+        description: "Percentage of time spent evaluating the operator as a fraction of the total runtime of all operators in the circuit.",
+    },
+    CircuitMetric {
+        name: CIRCUIT_WAIT_TIME_SECONDS,
+        category: CircuitMetricCategory::Time,
+        advanced: false,
+        description: "Time the circuit scheduler spent waiting for an operator to become ready.",
+    },
+    CircuitMetric {
+        name: STEPS_COUNT,
+        category: CircuitMetricCategory::Time,
+        advanced: false,
+        description: "Number of steps performed by the circuit.",
+    },
+    CircuitMetric {
+        name: CIRCUIT_RUNTIME_SECONDS,
+        category: CircuitMetricCategory::Time,
+        advanced: false,
+        description: "Total time spent evaluating the circuit, including operators runtime and circuit wait time ('circuit_wait_time_seconds').",
+    },
+    CircuitMetric {
+        name: CIRCUIT_IDLE_TIME_SECONDS,
+        category: CircuitMetricCategory::Time,
+        advanced: false,
+        description: "Total time spent between circuit invocations, waiting for new data from input connectors or for output connector queues to clear out.",
+    },
+    CircuitMetric {
+        name: CIRCUIT_RUNTIME_ELAPSED_SECONDS,
+        category: CircuitMetricCategory::Time,
+        advanced: false,
+        description: "Time elapsed while the circuit is executing a step, multiplied by the number of foreground and background threads.",
+    },
+    CircuitMetric {
+        name: EXCHANGE_WAIT_TIME_SECONDS,
+        category: CircuitMetricCategory::Time,
+        advanced: true,
+        description: "Total time the exchange operator spent waiting for data from other workers. This includes the time between the operator sent local data to its peers and the time it received data from all peers. Other operators in the circuit may be running during this time.",
+    },
+    CircuitMetric {
+        name: MERGE_BACKPRESSURE_WAIT_TIME_SECONDS,
+        category: CircuitMetricCategory::Time,
+        advanced: false,
+        description: "Time spent waiting for backpressure.",
+    },
+    // Balancer
+    CircuitMetric {
+        name: KEY_DISTRIBUTION,
+        category: CircuitMetricCategory::Balancer,
+        advanced: true,
+        description: "Distribution of input keys received by the local worker. The metric value is an array of counts, where each index corresponds to a worker and the value at that index is the number of input records mapped to that worker based on the hash of the key.",
+    },
+    CircuitMetric {
+        name: LOCAL_SHARD_RECORDS_COUNT,
+        category: CircuitMetricCategory::Balancer,
+        advanced: false,
+        description: "Total number of input records mapped to the local worker based on the hash of the key. This metric is used to measure the skew of the input stream. The stream is skewed if the number of records mapped to some of the workers is significantly higher from the average number of records per worker.",
+    },
+    CircuitMetric {
+        name: BALANCER_POLICY,
+        category: CircuitMetricCategory::Balancer,
+        advanced: false,
+        description: "Current balancing policy.",
+    },
+    CircuitMetric {
+        name: RABALANCINGS_COUNT,
+        category: CircuitMetricCategory::Balancer,
+        advanced: false,
+        description: "Number of stream rebalancing events. A rebalancing event occurs when the balancing policy is changed and requires repartitioning of the input stream across workers.",
+    },
+    CircuitMetric {
+        name: REBALANCING_IN_PROGRESS,
+        category: CircuitMetricCategory::Balancer,
+        advanced: false,
+        description: "Indicates if rebalancing is currently in progress.",
+    },
+    CircuitMetric {
+        name: ACCUMULATOR_RECORDS_TO_REPARTITION_COUNT,
+        category: CircuitMetricCategory::Balancer,
+        advanced: true,
+        description: "The number of records in the local accumulator that need to be repartitioned in the current rebalance.",
+    },
+    CircuitMetric {
+        name: INTEGRAL_RECORDS_TO_REPARTITION_COUNT,
+        category: CircuitMetricCategory::Balancer,
+        advanced: true,
+        description: "The number of records in the local integral operator that need to be repartitioned in the current rebalance.",
+    },
+    CircuitMetric {
+        name: TOTAL_REBALANCING_TIME_SECONDS,
+        category: CircuitMetricCategory::Balancer,
+        advanced: false,
+        description: "Total time spent rebalancing the stream.",
+    },
+    CircuitMetric {
+        name: INPROGRESS_REBALANCING_TIME_SECONDS,
+        category: CircuitMetricCategory::Balancer,
+        advanced: false,
+        description: "Elapsed time for the current rebalance.",
+    },
+    // Cache
+    CircuitMetric {
+        name: CACHE_FOREGROUND_HITS_COUNT,
+        category: CircuitMetricCategory::Cache,
+        advanced: false,
+        description: "Number of cache hits in the foreground thread.",
+    },
+    CircuitMetric {
+        name: CACHE_FOREGROUND_MISSES_COUNT,
+        category: CircuitMetricCategory::Cache,
+        advanced: false,
+        description: "Number of cache misses in the foreground thread.",
+    },
+    CircuitMetric {
+        name: CACHE_BACKGROUND_HITS_STATS,
+        category: CircuitMetricCategory::Cache,
+        advanced: false,
+        description: "Number of cache hits in the background thread.",
+    },
+    CircuitMetric {
+        name: CACHE_BACKGROUND_MISSES_STATS,
+        category: CircuitMetricCategory::Cache,
+        advanced: false,
+        description: "Number of cache misses in the background thread.",
+    },
+    CircuitMetric {
+        name: CACHE_FOREGROUND_HIT_RATE_PERCENT,
+        category: CircuitMetricCategory::Cache,
+        advanced: false,
+        description: "Cache hit rate for the foreground thread.",
+    },
+    CircuitMetric {
+        name: CACHE_BACKGROUND_HIT_RATE_PERCENT,
+        category: CircuitMetricCategory::Cache,
+        advanced: false,
+        description: "Cache hit rate for the background thread.",
+    },
+    CircuitMetric {
+        name: FOREGROUND_CACHE_OCCUPANCY_BYTES,
+        category: CircuitMetricCategory::Cache,
+        advanced: false,
+        description: "Occupancy of the foreground cache.",
+    },
+    CircuitMetric {
+        name: BACKGROUND_CACHE_OCCUPANCY_BYTES,
+        category: CircuitMetricCategory::Cache,
+        advanced: false,
+        description: "Occupancy of the background cache.",
+    },
+];
 
 /// An operator's location within the source program
 pub type OperatorLocation = Option<&'static Location<'static>>;
@@ -135,79 +567,94 @@ impl BatchSizeStats {
 
     pub fn metadata(&self) -> MetaItem {
         if self.cnt == 0 {
-            MetaItem::Map(
-                metadata! {
-                    "batches" => MetaItem::Count(0),
-                }
-                .into(),
-            )
+            MetaItem::Map(BTreeMap::from([(
+                Cow::Borrowed("batches"),
+                MetaItem::Count(0),
+            )]))
         } else {
-            MetaItem::Map(
-                metadata! {
-                    "count" => MetaItem::Count(self.cnt),
-                    "min_size" => MetaItem::Count(self.min),
-                    "max_size" => MetaItem::Count(self.max),
-                    "avg_size" => MetaItem::Count(self.total / self.cnt),
-                    "record_count" => MetaItem::Count(self.total)
-                }
-                .into(),
-            )
+            MetaItem::Map(BTreeMap::from([
+                (Cow::Borrowed("count"), MetaItem::Count(self.cnt)),
+                (Cow::Borrowed("min_size"), MetaItem::Count(self.min)),
+                (Cow::Borrowed("max_size"), MetaItem::Count(self.max)),
+                (
+                    Cow::Borrowed("avg_size"),
+                    MetaItem::Count(self.total / self.cnt),
+                ),
+                (Cow::Borrowed("record_count"), MetaItem::Count(self.total)),
+            ]))
         }
     }
 }
 
 /// General metadata about an operator's execution
-#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct OperatorMeta {
-    entries: Vec<(MetaLabel, MetaItem)>,
+    entries: BTreeMap<(MetricId, MetricLabels), MetaItem>,
+}
+
+#[derive(Serialize)]
+struct MetricReadingRef<'a> {
+    metric_id: &'a MetricId,
+    labels: &'a MetricLabels,
+    value: &'a MetaItem,
+}
+
+impl Serialize for OperatorMeta {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(self.entries.len()))?;
+        for ((metric_id, labels), value) in &self.entries {
+            let reading = MetricReadingRef {
+                metric_id,
+                labels,
+                value,
+            };
+            seq.serialize_element(&reading)?;
+        }
+        seq.end()
+    }
 }
 
 impl OperatorMeta {
     /// Create a new `OperatorMeta`
     pub const fn new() -> Self {
         Self {
-            entries: Vec::new(),
+            entries: BTreeMap::new(),
         }
     }
 
-    /// Create a new `OperatorMeta` with space for `capacity` entries
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            entries: Vec::with_capacity(capacity),
-        }
-    }
-
-    pub fn get(&self, attribute: &str) -> Option<MetaItem> {
-        self.entries
-            .iter()
-            .find(|(label, _item)| label == attribute)
-            .map(|(_label, item)| item.clone())
-    }
+    // pub fn get(&self, attribute: &str) -> Option<MetaItem> {
+    //     self.entries
+    //         .iter()
+    //         .find(|(label, _item)| label == attribute)
+    //         .map(|(_label, item)| item.clone())
+    // }
 
     pub fn merge(&mut self, other: &Self) {
         for (label, src) in &other.entries {
             if src.is_mergeable() {
-                if let Some(dst_index) = self
-                    .entries
-                    .iter_mut()
-                    .position(|(label2, _item)| label == label2)
-                {
-                    let (_label, dst) = &mut self.entries[dst_index];
+                if let Some(dst) = self.entries.get_mut(label) {
                     if let Some(merged) = src.merge(dst) {
                         *dst = merged;
                     } else {
-                        self.entries.remove(dst_index);
+                        self.entries.remove(label);
                     }
                 } else {
-                    self.entries.push((label.clone(), src.clone()));
+                    self.entries.insert(label.clone(), src.clone());
                 }
             }
         }
     }
+
+    pub fn insert(&mut self, metric_id: MetricId, labels: MetricLabels, value: MetaItem) {
+        self.entries.insert((metric_id, labels), value);
+    }
 }
 
 impl Deref for OperatorMeta {
-    type Target = Vec<(MetaLabel, MetaItem)>;
+    type Target = BTreeMap<(MetricId, MetricLabels), MetaItem>;
 
     fn deref(&self) -> &Self::Target {
         &self.entries
@@ -220,37 +667,33 @@ impl DerefMut for OperatorMeta {
     }
 }
 
-impl Extend<(MetaLabel, MetaItem)> for OperatorMeta {
+impl Extend<MetricReading> for OperatorMeta {
     fn extend<T>(&mut self, iter: T)
     where
-        T: IntoIterator<Item = (MetaLabel, MetaItem)>,
+        T: IntoIterator<Item = MetricReading>,
     {
-        self.entries.extend(iter);
+        for reading in iter {
+            self.entries
+                .insert((reading.metric_id, reading.labels), reading.value);
+        }
     }
 }
 
-impl<const N: usize> From<[(MetaLabel, MetaItem); N]> for OperatorMeta {
-    fn from(array: [(MetaLabel, MetaItem); N]) -> Self {
-        let mut this = Self::with_capacity(N);
+impl<const N: usize> From<[MetricReading; N]> for OperatorMeta {
+    fn from(array: [MetricReading; N]) -> Self {
+        let mut this = Self::new();
         this.extend(array);
         this
     }
 }
 
-impl<'a> From<&'a [(MetaLabel, MetaItem)]> for OperatorMeta {
-    fn from(slice: &'a [(MetaLabel, MetaItem)]) -> Self {
-        let mut this = Self::with_capacity(slice.len());
-        this.entries.clone_from_slice(slice);
+impl<'a> From<&'a [MetricReading]> for OperatorMeta {
+    fn from(slice: &'a [MetricReading]) -> Self {
+        let mut this = Self::new();
+        this.extend(slice.iter().cloned());
         this
     }
 }
-
-impl From<Vec<(MetaLabel, MetaItem)>> for OperatorMeta {
-    fn from(entries: Vec<(MetaLabel, MetaItem)>) -> Self {
-        Self { entries }
-    }
-}
-
 /// An operator metadata entry
 #[derive(Debug, Clone, PartialEq)]
 pub enum MetaItem {
@@ -274,10 +717,16 @@ pub enum MetaItem {
 
     String(String),
     Array(Vec<Self>),
-    Map(OperatorMeta),
+    Map(BTreeMap<Cow<'static, str>, MetaItem>),
     Bytes(HumanBytes),
     Duration(Duration),
     Bool(bool),
+}
+
+#[derive(Serialize)]
+struct PercentValue {
+    numerator: u64,
+    denominator: u64,
 }
 
 impl MetaItem {
@@ -294,27 +743,52 @@ impl Serialize for MetaItem {
     where
         S: Serializer,
     {
+        fn serialize_typed<S, T>(
+            serializer: S,
+            type_name: &'static str,
+            value: &T,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+            T: ?Sized + Serialize,
+        {
+            let mut state = serializer.serialize_struct("MetaItem", 2)?;
+            state.serialize_field("type", type_name)?;
+            state.serialize_field("value", value)?;
+            state.end()
+        }
+
         match self {
-            MetaItem::Int(x) => serializer.serialize_u64(*x as u64),
-            MetaItem::Count(x) => serializer.serialize_u64(*x as u64),
+            MetaItem::Int(x) => {
+                let value = *x as u64;
+                serialize_typed(serializer, "int", &value)
+            }
+            MetaItem::Count(x) => {
+                let value = *x as u64;
+                serialize_typed(serializer, "count", &value)
+            }
             MetaItem::Percent {
                 numerator,
                 denominator,
             } => {
-                let mut seq = serializer.serialize_seq(Some(2))?;
-                seq.serialize_element(numerator)?;
-                seq.serialize_element(denominator)?;
-                seq.end()
+                let value = PercentValue {
+                    numerator: *numerator,
+                    denominator: *denominator,
+                };
+                serialize_typed(serializer, "percent", &value)
             }
-            MetaItem::CacheCounts(cache_counts) => cache_counts.serialize(serializer),
-            MetaItem::String(x) => serializer.serialize_str(x),
+            MetaItem::CacheCounts(cache_counts) => {
+                serialize_typed(serializer, "cachecounts", cache_counts)
+            }
+            MetaItem::String(x) => serialize_typed(serializer, "string", x),
             MetaItem::Array(meta_items) => meta_items.serialize(serializer),
             MetaItem::Map(operator_meta) => operator_meta.serialize(serializer),
             MetaItem::Bytes(human_bytes) => {
-                serializer.serialize_i128(human_bytes.into_inner() as i128)
+                let value = human_bytes.into_inner() as i128;
+                serialize_typed(serializer, "bytes", &value)
             }
-            MetaItem::Duration(duration) => duration.serialize(serializer),
-            MetaItem::Bool(bool) => serializer.serialize_bool(*bool),
+            MetaItem::Duration(duration) => serialize_typed(serializer, "duration", duration),
+            MetaItem::Bool(bool) => serialize_typed(serializer, "bool", bool),
         }
     }
 }
@@ -465,20 +939,26 @@ impl From<bool> for MetaItem {
 #[macro_export]
 macro_rules! metadata {
     ($($name:expr_2021 => $value:expr_2021),* $(,)?) => {
-        [$((::std::borrow::Cow::from($name), $crate::circuit::metadata::MetaItem::from($value)),)*]
+        [$(($crate::circuit::metadata::MetricReading::new($name, Vec::new(), $crate::circuit::metadata::MetaItem::from($value))),)*]
     };
 }
 
 impl From<TotalSize> for MetaItem {
     fn from(size: TotalSize) -> Self {
-        Self::Map(
-            metadata! {
-                "allocated bytes" => Self::bytes(size.total_bytes()),
-                "used bytes" => Self::bytes(size.used_bytes()),
-                "allocations" => Self::Count(size.distinct_allocations()),
-                "shared bytes" => Self::bytes(size.shared_bytes()),
-            }
-            .into(),
-        )
+        Self::Map(BTreeMap::from([
+            (
+                Cow::Borrowed("allocated bytes"),
+                Self::bytes(size.total_bytes()),
+            ),
+            (Cow::Borrowed("used bytes"), Self::bytes(size.used_bytes())),
+            (
+                Cow::Borrowed("allocations"),
+                Self::Count(size.distinct_allocations()),
+            ),
+            (
+                Cow::Borrowed("shared bytes"),
+                Self::bytes(size.shared_bytes()),
+            ),
+        ]))
     }
 }

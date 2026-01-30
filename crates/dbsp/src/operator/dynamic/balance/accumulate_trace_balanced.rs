@@ -6,11 +6,11 @@ use crate::{
         checkpointer::EmptyCheckpoint,
         circuit_builder::{MetadataExchange, StreamId, register_replay_stream},
         metadata::{
-            BALANCER_POLICY_LABEL, BatchSizeStats, INPROGRESS_REBALANCING_TIME_LABEL,
-            INPUT_BATCHES_LABEL, KEY_DISTRIBUTION_LABEL, LOCAL_SHARD_SIZE_LABEL, MetaItem,
-            NUM_ACCUMULATOR_RECORDS_TO_REPARTITION_LABEL,
-            NUM_INTEGRAL_RECORDS_TO_REPARTITION_LABEL, NUM_RABALANCINGS_LABEL, OperatorLocation,
-            OperatorMeta, REBALANCING_IN_PROGRESS_LABEL, TOTAL_REBALANCING_TIME_LABEL,
+            ACCUMULATOR_RECORDS_TO_REPARTITION_COUNT, BALANCER_POLICY, BatchSizeStats,
+            INPROGRESS_REBALANCING_TIME_SECONDS, INPUT_BATCHES_STATS,
+            INTEGRAL_RECORDS_TO_REPARTITION_COUNT, KEY_DISTRIBUTION, LOCAL_SHARD_RECORDS_COUNT,
+            MetaItem, OperatorLocation, OperatorMeta, RABALANCINGS_COUNT, REBALANCING_IN_PROGRESS,
+            TOTAL_REBALANCING_TIME_SECONDS,
         },
         operator_traits::Operator,
         splitter_output_chunk_size,
@@ -1047,19 +1047,19 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            INPUT_BATCHES_LABEL => self.input_batch_stats.metadata(),
-            KEY_DISTRIBUTION_LABEL => self.key_distribution.borrow().meta_item(),
-            BALANCER_POLICY_LABEL => MetaItem::String(self.current_policy.borrow().to_string()),
-            NUM_RABALANCINGS_LABEL => MetaItem::Count(*self.num_rebalancings.borrow()),
-            REBALANCING_IN_PROGRESS_LABEL => MetaItem::Bool(self.rebalancing_in_progress()),
-            NUM_ACCUMULATOR_RECORDS_TO_REPARTITION_LABEL => MetaItem::Count(*self.rebalance_accumulator_size.borrow()),
-            NUM_INTEGRAL_RECORDS_TO_REPARTITION_LABEL => MetaItem::Count(*self.rebalance_integral_size.borrow()),
-            TOTAL_REBALANCING_TIME_LABEL => MetaItem::Duration(*self.total_rebalancing_time.borrow()),
+            INPUT_BATCHES_STATS => self.input_batch_stats.metadata(),
+            KEY_DISTRIBUTION => self.key_distribution.borrow().meta_item(),
+            BALANCER_POLICY => MetaItem::String(self.current_policy.borrow().to_string()),
+            RABALANCINGS_COUNT => MetaItem::Count(*self.num_rebalancings.borrow()),
+            REBALANCING_IN_PROGRESS => MetaItem::Bool(self.rebalancing_in_progress()),
+            ACCUMULATOR_RECORDS_TO_REPARTITION_COUNT => MetaItem::Count(*self.rebalance_accumulator_size.borrow()),
+            INTEGRAL_RECORDS_TO_REPARTITION_COUNT => MetaItem::Count(*self.rebalance_integral_size.borrow()),
+            TOTAL_REBALANCING_TIME_SECONDS => MetaItem::Duration(*self.total_rebalancing_time.borrow()),
         });
 
         if let Some(rebalancing_start_time) = self.rebalance_start_time.borrow().as_ref() {
             meta.extend(metadata! {
-                INPROGRESS_REBALANCING_TIME_LABEL => MetaItem::Duration(rebalancing_start_time.elapsed()),
+                INPROGRESS_REBALANCING_TIME_SECONDS => MetaItem::Duration(rebalancing_start_time.elapsed()),
             });
         }
         if let Some(local_shard_size) = self
@@ -1067,7 +1067,7 @@ where
             .key_distribtion_for_stream_local_worker(self.input_node_id)
         {
             meta.extend(metadata! {
-                LOCAL_SHARD_SIZE_LABEL => MetaItem::Count(local_shard_size.unsigned_abs() as usize),
+                LOCAL_SHARD_RECORDS_COUNT => MetaItem::Count(local_shard_size.unsigned_abs() as usize),
             });
         }
     }
