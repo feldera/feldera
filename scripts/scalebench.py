@@ -25,7 +25,7 @@ from typing import Any, Dict, Iterable, Tuple
 from feldera import FelderaClient, PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 
-PROGRAMS = ["u64", "u64_binary", "u64_binary_primary_key"]
+PROGRAMS = ["u64", "u64_binary", "u64_string", "u64_binary_primary_key"]
 WORKER_COUNTS = [1, 2, 4, 8, 12, 16, 20]
 DEFAULT_PAYLOAD_BYTES = [8, 128, 512, 4096, 32768]
 BENCH_DURATION_S = 120
@@ -80,6 +80,14 @@ def make_sql(program: str, datagen_workers: int, payload_bytes: int) -> str:
             "payload": {
                 "range": [payload_bytes, payload_bytes + 1],
                 "value": {"strategy": "uniform"},
+            }
+        }
+    elif program == "u64_string":
+        table_fields = "    payload string NOT NULL\n"
+        fields = {
+            "payload": {
+                "range": [payload_bytes, payload_bytes + 1],
+                "strategy": "words",
             }
         }
     elif program == "u64_binary_primary_key":
