@@ -187,7 +187,13 @@ def test_pipeline_stop_force_after_start(pipeline_name):
     create_pipeline(pipeline_name, "CREATE TABLE t1(c1 INTEGER);")
 
     for delay_sec in [0, 0.1, 0.5, 1, 3, 10]:
+        print(f"Testing with {delay_sec} second delay")
         start_pipeline(pipeline_name)
+        # Wait for the pipeline to transition away from "Stopped"
+        #
+        # See big comment in test_pipeline_stop_with_force for
+        # reasoning.
+        wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
         # Shortly wait for the pipeline to transition to next state(s)
         time.sleep(delay_sec)
         # Stop force and clear the pipeline
