@@ -29,6 +29,7 @@ use deadpool_postgres::Transaction;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
 use rmp_serde::{from_slice, to_vec};
+use serde_json::json;
 use tokio_postgres::Row;
 use tracing::{error, warn};
 use uuid::Uuid;
@@ -697,7 +698,10 @@ pub(crate) async fn update_pipeline(
             if runtime_config.get("workers") != current.runtime_config.get("workers") {
                 not_allowed.push("`runtime_config.workers`");
             }
-            if runtime_config.get("hosts") != current.runtime_config.get("hosts") {
+            let one = json!(1);
+            if runtime_config.get("hosts").unwrap_or(&one)
+                != current.runtime_config.get("hosts").unwrap_or(&one)
+            {
                 not_allowed.push("`runtime_config.hosts`");
             }
             if runtime_config.get("fault_tolerance")
