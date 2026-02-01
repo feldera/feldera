@@ -8,7 +8,9 @@ mod lattice;
 mod order;
 mod present;
 
+pub mod order_statistics_file_format;
 pub mod order_statistics_multiset;
+pub mod order_statistics_storage;
 pub mod zset;
 
 pub use checked_int::CheckedInt;

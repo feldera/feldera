@@ -6,7 +6,7 @@
 use crate::{
     Circuit, DBData, DynZWeight, Stream, ZWeight,
     circuit::WithClock,
-    dynamic::{DynData, Erase},
+    dynamic::DynData,
     operator::dynamic::aggregate::{
         DynAggregatorImpl, IncAggregateFactories, PercentileCont, PercentileDisc,
     },
