@@ -1,8 +1,12 @@
-# OrderStatisticsMultiset Storage Implementation
+# Generic Node Storage for B+ Tree Structures
 
 ## Overview
 
-This document describes the disk-backed storage implementation for `OrderStatisticsMultiset`, an augmented B+ tree used for O(log n) rank/select queries in percentile aggregation. The implementation supports level-based disk spilling with configurable policies, integrating with DBSP's storage infrastructure.
+This document describes the generic disk-backed storage implementation for **B+ tree-like data structures**. The `NodeStorage<I, L>` abstraction separates internal nodes from leaf nodes and supports level-based disk spilling with configurable policies, integrating with DBSP's storage infrastructure.
+
+The storage is designed for trees where **data is stored exclusively in leaves**, while internal nodes serve only as navigation/index structures. This is the classic B+ tree property, distinct from B-trees where internal nodes also contain data.
+
+The primary use case is `OrderStatisticsMultiset`, an augmented B+ tree used for O(log n) rank/select queries in percentile aggregation. The generic design enables reuse for other B+ tree variants like interval trees or segment trees.
 
 ## Architecture
 
@@ -34,15 +38,17 @@ Higher values allow more aggressive memory reclamation but may cause cascading d
 ┌─────────────────────────────────────────────────────────┐
 │              OrderStatisticsMultiset<T>                 │
 │  ┌─────────────────────────────────────────────────┐   │
-│  │              NodeStorage<T>                      │   │
+│  │        OsmNodeStorage<T> (type alias)           │   │
+│  │    = NodeStorage<InternalNodeTyped<T>,          │   │
+│  │                   LeafNode<T>>                  │   │
 │  │  ┌─────────────────┐  ┌─────────────────────┐   │   │
 │  │  │ InternalNodes   │  │    Leaves           │   │   │
-│  │  │ (always pinned) │  │  Vec<Option<Leaf>>  │   │   │
-│  │  │ Vec<Internal>   │  │  (evictable)        │   │   │
+│  │  │ (always pinned) │  │  Vec<Option<L>>     │   │   │
+│  │  │ Vec<I>          │  │  (evictable)        │   │   │
 │  │  └─────────────────┘  └────────┬────────────┘   │   │
 │  │                                │                 │   │
 │  │                       ┌────────▼────────────┐   │   │
-│  │                       │     LeafFile        │   │   │
+│  │                       │     LeafFile<L>     │   │   │
 │  │                       │  (block-based I/O)  │   │   │
 │  │                       └─────────────────────┘   │   │
 │  └─────────────────────────────────────────────────┘   │
@@ -56,23 +62,22 @@ Higher values allow more aggressive memory reclamation but may cause cascading d
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Core Types
+## Core Traits
 
 ### StorableNode Trait
 
-Unified trait for all tree nodes that can be stored in NodeStorage:
+Base trait for all tree nodes that can be stored in NodeStorage:
 
 ```rust
-/// Unified trait for tree nodes that can be stored in NodeStorage.
-/// All nodes must be serializable to support:
-/// - Checkpointing (save/restore of tree state)
-/// - Level-based disk spilling (configurable via `max_spillable_level`)
+/// Base trait for tree nodes that can be stored in NodeStorage.
+///
+/// This trait defines the minimal interface for tree nodes. Serialization
+/// bounds are added separately where needed (e.g., for disk spilling) to
+/// keep the base trait simple.
 pub trait StorableNode:
     Clone + Debug + SizeOf + Send + Sync + 'static
-    + Archive + for<'a> RkyvSerialize<AllocSerializer<4096>>
-where
-    Self::Archived: RkyvDeserialize<Self, rkyv::Infallible>,
 {
+    /// Estimate the memory size of this node.
     fn estimate_size(&self) -> usize;
 }
 ```
@@ -81,11 +86,31 @@ Default implementations:
 - `InternalNodeTyped<T>` implements `StorableNode`
 - `LeafNode<T>` implements `StorableNode`
 
-This unified trait enables:
-- Consistent size estimation for memory accounting
-- Full serialization support for both checkpointing and disk spilling
-- Level-based spilling where any level of nodes can be spilled (configured via `max_spillable_level`)
-- Future extensibility for custom node types
+### LeafNodeOps Trait
+
+Trait for leaf-specific operations required by the storage layer:
+
+```rust
+/// Operations specific to leaf nodes.
+///
+/// This trait defines leaf-specific behavior that the generic storage
+/// layer needs to interact with leaves.
+pub trait LeafNodeOps {
+    /// Key type stored in the leaf
+    type Key;
+
+    /// Compute total weight of all entries in this leaf
+    fn total_weight(&self) -> ZWeight;
+
+    /// Number of entries in this leaf
+    fn entry_count(&self) -> usize;
+
+    /// Iterate over entries as (key, weight) pairs
+    fn entries(&self) -> impl Iterator<Item = (&Self::Key, ZWeight)>;
+}
+```
+
+## Core Types
 
 ### NodeLocation
 
@@ -155,20 +180,28 @@ impl NodeStorageConfig {
 }
 ```
 
-### NodeStorage<T>
+### NodeStorage<I, L>
 
-Main storage abstraction separating internal nodes from leaves:
+Generic storage abstraction separating internal nodes from leaves:
 
 ```rust
-pub struct NodeStorage<T> {
+/// Generic node-level storage for tree data structures.
+///
+/// `NodeStorage<I, L>` is generic over:
+/// - `I: StorableNode` - internal node type
+/// - `L: StorableNode + LeafNodeOps` - leaf node type
+///
+/// This follows the Spine-Trace pattern from DBSP where storage is
+/// decoupled from the specific data structure using it.
+pub struct NodeStorage<I, L> {
     // Configuration
     config: NodeStorageConfig,
 
     // Internal nodes (always in memory)
-    internal_nodes: Vec<InternalNodeWithMeta<T>>,
+    internal_nodes: Vec<InternalNodeWithMeta<I>>,
 
     // Leaf nodes (Some = in memory, None = evicted)
-    leaves: Vec<Option<LeafNode<T>>>,
+    leaves: Vec<Option<L>>,
 
     // Dirty tracking
     dirty_leaves: HashSet<usize>,
@@ -186,6 +219,9 @@ pub struct NodeStorage<T> {
     // Statistics
     stats: StorageStats,
 }
+
+/// Convenience type alias for OrderStatisticsMultiset storage.
+pub type OsmNodeStorage<T> = NodeStorage<InternalNodeTyped<T>, LeafNode<T>>;
 ```
 
 ## Node Access API
@@ -193,45 +229,84 @@ pub struct NodeStorage<T> {
 ### Allocation
 
 ```rust
-impl<T> NodeStorage<T> {
+impl<I, L> NodeStorage<I, L>
+where
+    I: StorableNode,
+    L: StorableNode + LeafNodeOps,
+{
     /// Allocate new leaf (marked dirty)
-    pub fn alloc_leaf(&mut self, leaf: LeafNode<T>) -> NodeLocation;
+    pub fn alloc_leaf(&mut self, leaf: L) -> NodeLocation;
 
-    /// Allocate new internal node (marked dirty)
-    pub fn alloc_internal(&mut self, node: InternalNodeTyped<T>) -> NodeLocation;
+    /// Allocate new internal node at given level (marked dirty)
+    pub fn alloc_internal(&mut self, node: I, level: u8) -> NodeLocation;
 }
 ```
 
 ### Read Access
 
 ```rust
-impl<T> NodeStorage<T> {
+impl<I, L> NodeStorage<I, L>
+where
+    I: StorableNode,
+    L: StorableNode + LeafNodeOps,
+{
     /// Get node reference (immutable)
-    pub fn get(&self, loc: NodeLocation) -> NodeRef<'_, T>;
+    pub fn get(&self, loc: NodeLocation) -> NodeRef<'_, I, L>;
 
     /// Get leaf directly
-    pub fn get_leaf(&self, loc: LeafLocation) -> &LeafNode<T>;
+    pub fn get_leaf(&self, loc: LeafLocation) -> &L;
 
     /// Get leaf, reloading from disk if evicted
-    pub fn get_leaf_reloading(&mut self, loc: LeafLocation) -> &LeafNode<T>;
+    pub fn get_leaf_reloading(&mut self, loc: LeafLocation) -> &L;
 
     /// Get internal node directly
-    pub fn get_internal(&self, idx: usize) -> &InternalNodeTyped<T>;
+    pub fn get_internal(&self, idx: usize) -> &I;
 }
 ```
 
 ### Write Access
 
 ```rust
-impl<T> NodeStorage<T> {
+impl<I, L> NodeStorage<I, L>
+where
+    I: StorableNode,
+    L: StorableNode + LeafNodeOps,
+{
     /// Get mutable node reference (marks dirty)
-    pub fn get_mut(&mut self, loc: NodeLocation) -> NodeRefMut<'_, T>;
+    pub fn get_mut(&mut self, loc: NodeLocation) -> NodeRefMut<'_, I, L>;
 
     /// Get mutable leaf (marks dirty)
-    pub fn get_leaf_mut(&mut self, loc: LeafLocation) -> &mut LeafNode<T>;
+    pub fn get_leaf_mut(&mut self, loc: LeafLocation) -> &mut L;
 
     /// Get mutable internal node (marks dirty)
-    pub fn get_internal_mut(&mut self, idx: usize) -> &mut InternalNodeTyped<T>;
+    pub fn get_internal_mut(&mut self, idx: usize) -> &mut I;
+}
+```
+
+### Node References
+
+Generic reference types for accessing nodes:
+
+```rust
+/// Immutable reference to a node.
+pub enum NodeRef<'a, I, L> {
+    Internal(&'a I),
+    Leaf(&'a L),
+}
+
+impl<'a, I, L> NodeRef<'a, I, L> {
+    pub fn is_leaf(&self) -> bool;
+}
+
+impl<'a, I, L: LeafNodeOps> NodeRef<'a, I, L> {
+    /// Get total weight (only for leaf nodes)
+    pub fn leaf_total_weight(&self) -> Option<ZWeight>;
+}
+
+/// Mutable reference to a node.
+pub enum NodeRefMut<'a, I, L> {
+    Internal(&'a mut I),
+    Leaf(&'a mut L),
 }
 ```
 
@@ -240,7 +315,7 @@ impl<T> NodeStorage<T> {
 Copy-on-write semantics for incremental persistence:
 
 ```rust
-impl<T> NodeStorage<T> {
+impl<I, L> NodeStorage<I, L> {
     /// Check if any nodes are dirty
     pub fn has_dirty_nodes(&self) -> bool;
 
@@ -263,7 +338,12 @@ impl<T> NodeStorage<T> {
 ### Flushing to Disk
 
 ```rust
-impl<T> NodeStorage<T> {
+impl<I, L> NodeStorage<I, L>
+where
+    I: StorableNode,
+    L: StorableNode + LeafNodeOps + Archive + RkyvSerialize<Serializer>,
+    Archived<L>: RkyvDeserialize<L, Deserializer>,
+{
     /// Flush dirty leaves to disk file
     /// Returns number of leaves written
     pub fn flush_dirty_to_disk(
@@ -285,12 +365,17 @@ impl<T> NodeStorage<T> {
 ### Loading from Disk
 
 ```rust
-impl<T> NodeStorage<T> {
+impl<I, L> NodeStorage<I, L>
+where
+    I: StorableNode,
+    L: StorableNode + LeafNodeOps + Archive + RkyvSerialize<Serializer>,
+    Archived<L>: RkyvDeserialize<L, Deserializer>,
+{
     /// Load leaf from disk (checks BufferCache first)
     pub fn load_leaf_from_disk(
         &mut self,
         loc: LeafLocation,
-    ) -> Result<&LeafNode<T>, FileFormatError>;
+    ) -> Result<&L, FileFormatError>;
 
     /// Reload all spilled leaves into memory
     pub fn reload_spilled_leaves(&mut self) -> Result<usize, FileFormatError>;
@@ -302,7 +387,7 @@ impl<T> NodeStorage<T> {
 Leaves can be evicted from memory after flushing to disk:
 
 ```rust
-impl<T> NodeStorage<T> {
+impl<I, L> NodeStorage<I, L> {
     /// Evict clean, spilled leaves from memory
     /// Returns (count evicted, bytes freed)
     pub fn evict_clean_leaves(&mut self) -> (usize, usize);
@@ -335,12 +420,12 @@ Evicted leaves are cached in DBSP's global BufferCache for faster reload:
 
 ```rust
 /// Wrapper for caching leaves in BufferCache
-pub struct CachedLeafNode<T> {
-    pub leaf: LeafNode<T>,
+pub struct CachedLeafNode<L> {
+    pub leaf: L,
     pub size_bytes: usize,
 }
 
-impl<T> CacheEntry for CachedLeafNode<T> {
+impl<L> CacheEntry for CachedLeafNode<L> {
     fn cost(&self) -> usize {
         self.size_bytes
     }
@@ -358,7 +443,7 @@ impl<T> CacheEntry for CachedLeafNode<T> {
 Prevents unbounded memory growth during heavy writes:
 
 ```rust
-impl<T> NodeStorage<T> {
+impl<I, L> NodeStorage<I, L> {
     /// Returns true when dirty_bytes >= 2x threshold
     pub fn should_apply_backpressure(&self) -> bool;
 
@@ -373,7 +458,7 @@ impl<T> NodeStorage<T> {
 ## Cleanup
 
 ```rust
-impl<T> NodeStorage<T> {
+impl<I, L> NodeStorage<I, L> {
     /// Delete spill file and clear tracking state
     /// Warning: evicted leaves will be lost!
     pub fn cleanup_spill_file(&mut self) -> Result<(), std::io::Error>;
@@ -401,7 +486,7 @@ Block-based format with 512-byte alignment and CRC32C checksums:
 ├─────────────────────────────────────────────────────┤
 │ Data Blocks (512-byte aligned)                      │
 │   [checksum:4][magic:4][leaf_id:8][data_len:8]     │
-│   [rkyv serialized LeafNode<T>]                    │
+│   [rkyv serialized leaf node]                      │
 │   [padding to 512-byte boundary]                   │
 ├─────────────────────────────────────────────────────┤
 │ Index Block (at index_offset)                       │
@@ -413,7 +498,7 @@ Block-based format with 512-byte alignment and CRC32C checksums:
 ## LeafFile API
 
 ```rust
-pub struct LeafFile<T> {
+pub struct LeafFile<L> {
     path: PathBuf,
     file: Option<File>,
     index: HashMap<u64, FileBlockLocation>,
@@ -421,7 +506,11 @@ pub struct LeafFile<T> {
     // ...
 }
 
-impl<T> LeafFile<T> {
+impl<L> LeafFile<L>
+where
+    L: StorableNode + Archive + RkyvSerialize<Serializer>,
+    Archived<L>: RkyvDeserialize<L, Deserializer>,
+{
     /// Create new file for writing
     pub fn create<P: AsRef<Path>>(path: P) -> Result<Self, FileFormatError>;
 
@@ -432,11 +521,11 @@ impl<T> LeafFile<T> {
     pub fn write_leaf(
         &mut self,
         leaf_id: u64,
-        leaf: &LeafNode<T>,
+        leaf: &L,
     ) -> Result<FileBlockLocation, FileFormatError>;
 
     /// Load leaf by ID
-    pub fn load_leaf(&mut self, leaf_id: u64) -> Result<LeafNode<T>, FileFormatError>;
+    pub fn load_leaf(&mut self, leaf_id: u64) -> Result<L, FileFormatError>;
 
     /// Write index and finalize file
     pub fn finalize(&mut self) -> Result<(), FileFormatError>;
@@ -471,11 +560,11 @@ pub struct StorageStats {
 
 ## OrderStatisticsMultiset Integration
 
-The tree uses NodeStorage internally:
+The tree uses `OsmNodeStorage<T>` internally:
 
 ```rust
 pub struct OrderStatisticsMultiset<T> {
-    storage: NodeStorage<T>,
+    storage: OsmNodeStorage<T>,  // = NodeStorage<InternalNodeTyped<T>, LeafNode<T>>
     root: Option<NodeLocation>,
     first_leaf: Option<LeafLocation>,
     total_weight: ZWeight,
@@ -491,7 +580,13 @@ Key type changes from arena-based storage:
 ### Checkpoint/Restore
 
 ```rust
-impl<T> OrderStatisticsMultiset<T> {
+impl<T> OrderStatisticsMultiset<T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static
+       + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
+    <T as Archive>::Archived: Ord,
+{
     /// Save tree state to checkpoint
     pub fn save(
         &self,
@@ -539,6 +634,28 @@ let median = tree.select_kth(500_000, true);
 let rank = tree.rank(&500_000);
 ```
 
+## Extensibility
+
+The generic design enables using `NodeStorage<I, L>` for other **B+ tree variants** where data resides in leaves:
+
+```rust
+// Example: Interval tree storage (B+ tree variant)
+type IntervalInternalNode = ...;
+type IntervalLeafNode = ...;  // Must implement LeafNodeOps
+type IntervalNodeStorage = NodeStorage<IntervalInternalNode, IntervalLeafNode>;
+
+// Example: Segment tree storage (B+ tree variant)
+type SegmentInternalNode = ...;
+type SegmentLeafNode = ...;  // Must implement LeafNodeOps
+type SegmentNodeStorage = NodeStorage<SegmentInternalNode, SegmentLeafNode>;
+```
+
+Requirements:
+- Internal node type must implement `StorableNode`
+- Leaf node type must implement `StorableNode + LeafNodeOps`
+- For disk spilling, leaf type must also implement rkyv `Archive`, `Serialize`, and `Deserialize`
+- **The tree must follow B+ tree semantics**: data entries stored only in leaves, internal nodes for navigation only
+
 ## Test Coverage
 
 79 tests covering:
@@ -555,6 +672,43 @@ let rank = tree.rank(&500_000);
 
 | File | Contents |
 |------|----------|
-| `order_statistics_storage.rs` | `NodeStorage`, `LeafFile`, `CachedLeafNode` |
+| `order_statistics_storage.rs` | `NodeStorage<I,L>`, `LeafFile<L>`, `CachedLeafNode<L>`, `OsmNodeStorage<T>` |
 | `order_statistics_file_format.rs` | Block format constants, `FileHeader`, `IndexEntry` |
-| `order_statistics_multiset.rs` | `OrderStatisticsMultiset`, `LeafNode`, `InternalNodeTyped` |
+| `order_statistics_multiset.rs` | `OrderStatisticsMultiset<T>`, `LeafNode<T>`, `InternalNodeTyped<T>` |
+
+## Design Notes: B+ Tree Assumption and LeafNodeOps
+
+### Why LeafNodeOps?
+
+The `LeafNodeOps` trait exists because `NodeStorage` assumes **B+ tree semantics** where:
+
+1. **Leaves contain data**: All actual key-value entries (with weights) are stored in leaf nodes
+2. **Internal nodes are indexes**: Internal nodes contain only routing keys, child pointers, and aggregate metadata (like subtree sums)
+
+This is distinct from classic B-trees where internal nodes also store data entries.
+
+### What LeafNodeOps Provides
+
+The `LeafNodeOps` trait enables:
+- **Statistics collection**: `entry_count()` and `total_weight()` for dirty bytes tracking and memory accounting
+- **Weight queries**: The `NodeRef::leaf_total_weight()` accessor for querying leaf statistics
+
+### Level-Based Spilling vs Node Semantics
+
+The `max_spillable_level` configuration unifies **which levels can be evicted to disk**, but does not change the fundamental data model:
+- Level 0 (leaves) contains the actual data entries
+- Level 1+ (internal nodes) contains navigation/index information
+
+Even when internal nodes can be spilled (`max_spillable_level > 0`), they remain structurally different from leaves - they don't have "entries" or "weights" in the same sense.
+
+### Limitations
+
+This design does **not** support:
+- **B-trees** where internal nodes store data entries
+- **Trees with queryable internal node data** beyond navigation metadata
+
+For such structures, you would need either:
+1. An `InternalNodeOps` trait mirroring `LeafNodeOps`
+2. A unified `NodeOps` trait that both node types implement
+
+The current design prioritizes simplicity for the common B+ tree case (order-statistics trees, interval trees, segment trees) over full generality.

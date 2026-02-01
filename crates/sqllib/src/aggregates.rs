@@ -6,9 +6,12 @@
 use crate::OrderStatisticsMultiset;
 use crate::{ByteArray, FromInteger, SqlDecimal, ToInteger, Weight};
 use dbsp::algebra::{F32, F64, FirstLargeValue, HasOne, HasZero, SignedPrimInt, UnsignedPrimInt};
+use dbsp::storage::file::{Deserializer, Serializer};
 use feldera_fxp::Fixed;
 use num::PrimInt;
 use num_traits::CheckedAdd;
+use rkyv::{Archive, Archived, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+use size_of::SizeOf;
 use std::cmp::Ord;
 use std::fmt::{Debug, Display};
 use std::marker::Copy;
@@ -112,8 +115,9 @@ pub fn percentile_cont_interpolate<T>(
     ascending: bool,
 ) -> Option<T::Output>
 where
-    T: Clone + Debug + Ord + Interpolate,
+    T: Clone + Debug + Ord + Interpolate + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
     T::Output: Clone,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
 
@@ -917,7 +921,8 @@ pub fn percentile_collect<T>(
     weight: Weight,
     predicate: bool,
 ) where
-    T: Ord + Clone,
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     if !predicate {
         return;
@@ -935,7 +940,8 @@ pub fn percentile_collectN<T>(
     weight: Weight,
     predicate: bool,
 ) where
-    T: Ord + Clone,
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     if !predicate {
         return;
@@ -958,7 +964,8 @@ pub fn percentile_cont<T>(
     ascending: bool,
 ) -> Option<T>
 where
-    T: Clone + Debug + Ord,
+    T: Clone + Debug + Ord + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     // Get the bounds for interpolation
     let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
@@ -982,7 +989,8 @@ pub fn percentile_contN<T>(
     ascending: bool,
 ) -> Option<T>
 where
-    T: Clone + Debug + Ord,
+    T: Clone + Debug + Ord + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     // The tree already contains only non-null values (NULL values are filtered in percentile_collectN)
     percentile_cont(tree, percentile, ascending)
@@ -998,7 +1006,8 @@ pub fn percentile_disc<T>(
     ascending: bool,
 ) -> Option<T>
 where
-    T: Clone + Debug + Ord,
+    T: Clone + Debug + Ord + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     tree.select_percentile_disc(percentile, ascending).cloned()
 }
@@ -1011,7 +1020,8 @@ pub fn percentile_discN<T>(
     ascending: bool,
 ) -> Option<T>
 where
-    T: Clone + Debug + Ord,
+    T: Clone + Debug + Ord + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     // The tree already contains only non-null values
     percentile_disc(tree, percentile, ascending)
@@ -1152,8 +1162,9 @@ pub fn percentile_cont_numeric<T>(
     ascending: bool,
 ) -> Option<T>
 where
-    T: Clone + Debug + Ord + Into<f64>,
+    T: Clone + Debug + Ord + Into<f64> + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
     T: TryFrom<f64>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     let (lower, upper, fraction) = tree.select_percentile_bounds(percentile, ascending)?;
 
@@ -1178,8 +1189,9 @@ pub fn percentile_cont_numericN<T>(
     ascending: bool,
 ) -> Option<T>
 where
-    T: Clone + Debug + Ord + Into<f64>,
+    T: Clone + Debug + Ord + Into<f64> + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
     T: TryFrom<f64>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     percentile_cont_numeric(tree, percentile, ascending)
 }
