@@ -59,6 +59,68 @@ pub struct Checkpoint {
     pub output_statistics: HashMap<String, CheckpointOutputEndpointMetrics>,
 }
 
+impl Checkpoint {
+    pub fn display_summary(&self) -> String {
+        let input_metadata = self
+            .input_metadata
+            .0
+            .iter()
+            .map(|(name, value)| format!("    {name}: {}", serde_json::to_string(value).unwrap()))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let input_statistics = self
+            .input_statistics
+            .iter()
+            .map(|(name, value)| format!("    {name}: {}", serde_json::to_string(value).unwrap()))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let output_statistics = self
+            .output_statistics
+            .iter()
+            .map(|(name, value)| format!("    {name}: {}", serde_json::to_string(value).unwrap()))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let checkpoint_timestamp = self
+            .circuit
+            .as_ref()
+            .and_then(|circuit| circuit.uuid.get_timestamp())
+            .and_then(|timestamp| {
+                DateTime::<Utc>::from_timestamp(timestamp.to_unix().0 as i64, timestamp.to_unix().1)
+            })
+            .map(|timestamp| timestamp.to_rfc3339())
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        format!(
+            r#"Checkpoint made at step {}:
+  Initial pipeline start time: {}
+  Checkpoint timestamp: {}
+  Records processed before the checkpoint: {}
+  Checkpoint metadata: {}
+  Checkpointed input connector state:
+{}
+  Checkpointed input connector metrics:
+{}
+  Checkpointed output connector metrics:
+{}"#,
+            self.step,
+            self.initial_start_time,
+            checkpoint_timestamp,
+            self.processed_records,
+            if let Some(circuit) = &self.circuit {
+                serde_json::to_string(circuit).unwrap()
+            } else {
+                "None".to_string()
+            },
+            input_metadata,
+            input_statistics,
+            output_statistics
+        )
+    }
+}
+
 /// Checkpoint for the statistics for an input endpoint.
 ///
 /// This is the checkpointed form of [InputEndpointMetrics].
