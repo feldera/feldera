@@ -51,7 +51,7 @@ impl<P, V> Semigroup<Tup2<Option<P>, OrderStatisticsMultiset<V>>>
     for PercentileSemigroup<Tup2<Option<P>, OrderStatisticsMultiset<V>>>
 where
     P: Clone,
-    V: Ord + Clone,
+    V: DBData,
 {
     fn combine(
         left: &Tup2<Option<P>, OrderStatisticsMultiset<V>>,

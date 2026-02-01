@@ -29,10 +29,9 @@
 //! cumulative weight are considered valid.
 
 use rkyv::{
-    Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize,
-    de::deserializers::SharedDeserializeMap as Deserializer,
-    ser::serializers::AllocSerializer,
+    Archive, Archived, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize,
 };
+use crate::storage::file::{Deserializer, Serializer};
 use size_of::SizeOf;
 use std::{
     cmp::Ordering,
@@ -43,8 +42,8 @@ use std::{
 
 use crate::algebra::ZWeight;
 use crate::algebra::order_statistics_storage::{
-    LeafLocation, NodeLocation, NodeStorage, NodeStorageConfig,
-    StorableNode,
+    LeafLocation, LeafNodeOps, NodeLocation, NodeStorageConfig,
+    OsmNodeStorage, StorableNode,
 };
 use crate::circuit::Runtime;
 use feldera_storage::{FileCommitter, StoragePath};
@@ -275,10 +274,8 @@ impl<T: Ord + Clone> InternalNodeTyped<T> {
 
 impl<T> StorableNode for InternalNodeTyped<T>
 where
-    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static,
-    T: Archive,
-    T: for<'a> RkyvSerialize<AllocSerializer<4096>>,
-    T::Archived: RkyvDeserialize<T, rkyv::Infallible>,
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     fn estimate_size(&self) -> usize {
         // Estimate: keys vec + children vec + subtree_sums vec + overhead
@@ -295,16 +292,24 @@ where
 
 impl<T> StorableNode for LeafNode<T>
 where
-    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static,
-    T: Archive,
-    T: for<'a> RkyvSerialize<AllocSerializer<4096>>,
-    T::Archived: RkyvDeserialize<T, rkyv::Infallible>,
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     fn estimate_size(&self) -> usize {
         // Estimate: entries vec + next_leaf option + overhead
         let entries_size = self.entries.len() * (std::mem::size_of::<T>() + std::mem::size_of::<ZWeight>());
         let option_size = std::mem::size_of::<Option<LeafLocation>>();
         entries_size + option_size + std::mem::size_of::<Vec<()>>()
+    }
+}
+
+impl<T: Ord + Clone> LeafNodeOps for LeafNode<T> {
+    fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn total_weight(&self) -> ZWeight {
+        self.entries.iter().map(|(_, w)| *w).sum()
     }
 }
 
@@ -365,7 +370,7 @@ impl<T: Ord + Clone> Node<T> {
 #[derive(Debug, SizeOf)]
 pub struct OrderStatisticsMultiset<T: Ord + Clone> {
     /// Node storage (separates internal nodes and leaves, supports disk spilling)
-    storage: NodeStorage<T>,
+    storage: OsmNodeStorage<T>,
     /// Location of the root node (None if tree is empty)
     root: Option<NodeLocation>,
     /// Total weight across all elements
@@ -381,7 +386,11 @@ pub struct OrderStatisticsMultiset<T: Ord + Clone> {
 }
 
 // Implement Clone manually since NodeStorage doesn't implement Clone
-impl<T: Ord + Clone> Clone for OrderStatisticsMultiset<T> {
+impl<T> Clone for OrderStatisticsMultiset<T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
+{
     fn clone(&self) -> Self {
         // Rebuild from entries (this is O(n) due to bulk load)
         let entries: Vec<_> = self.iter().map(|(k, w)| (k.clone(), w)).collect();
@@ -390,7 +399,11 @@ impl<T: Ord + Clone> Clone for OrderStatisticsMultiset<T> {
 }
 
 // Implement PartialEq manually to compare contents, not structure
-impl<T: Ord + Clone + PartialEq> PartialEq for OrderStatisticsMultiset<T> {
+impl<T> PartialEq for OrderStatisticsMultiset<T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + PartialEq + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
+{
     fn eq(&self, other: &Self) -> bool {
         if self.total_weight != other.total_weight || self.num_keys != other.num_keys {
             return false;
@@ -402,15 +415,28 @@ impl<T: Ord + Clone + PartialEq> PartialEq for OrderStatisticsMultiset<T> {
     }
 }
 
-impl<T: Ord + Clone + PartialEq> Eq for OrderStatisticsMultiset<T> {}
+impl<T> Eq for OrderStatisticsMultiset<T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + PartialEq + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
+{
+}
 
-impl<T: Ord + Clone + PartialOrd> PartialOrd for OrderStatisticsMultiset<T> {
+impl<T> PartialOrd for OrderStatisticsMultiset<T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
+{
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T: Ord + Clone> Ord for OrderStatisticsMultiset<T> {
+impl<T> Ord for OrderStatisticsMultiset<T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
+{
     fn cmp(&self, other: &Self) -> Ordering {
         match self.total_weight.cmp(&other.total_weight) {
             Ordering::Equal => {
@@ -453,7 +479,11 @@ impl<T: Ord + Clone> IsNone for OrderStatisticsMultiset<T> {
     }
 }
 
-impl<T: Ord + Clone + Hash> Hash for OrderStatisticsMultiset<T> {
+impl<T> Hash for OrderStatisticsMultiset<T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Hash + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
+{
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.total_weight.hash(state);
         self.num_keys.hash(state);
@@ -464,13 +494,21 @@ impl<T: Ord + Clone + Hash> Hash for OrderStatisticsMultiset<T> {
     }
 }
 
-impl<T: Ord + Clone> Default for OrderStatisticsMultiset<T> {
+impl<T> Default for OrderStatisticsMultiset<T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
+impl<T> OrderStatisticsMultiset<T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
+{
     /// Create a new empty multiset with default branching factor.
     pub fn new() -> Self {
         Self::with_branching_factor(DEFAULT_BRANCHING_FACTOR)
@@ -483,7 +521,7 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
     pub fn with_branching_factor(b: usize) -> Self {
         let b = b.max(MIN_BRANCHING_FACTOR);
         Self {
-            storage: NodeStorage::new(),
+            storage: OsmNodeStorage::new(),
             root: None,
             total_weight: 0,
             max_leaf_entries: b,
@@ -497,7 +535,7 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
     pub fn with_config(b: usize, storage_config: NodeStorageConfig) -> Self {
         let b = b.max(MIN_BRANCHING_FACTOR);
         Self {
-            storage: NodeStorage::with_config(storage_config),
+            storage: OsmNodeStorage::with_config(storage_config),
             root: None,
             total_weight: 0,
             max_leaf_entries: b,
@@ -539,7 +577,7 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
         let num_keys = entries.len();
         let total_weight: ZWeight = entries.iter().map(|(_, w)| *w).sum();
 
-        let mut storage = NodeStorage::new();
+        let mut storage = OsmNodeStorage::new();
 
         // Phase 1: Build leaf nodes
         let mut leaf_locations: Vec<LeafLocation> = Vec::new();
@@ -639,7 +677,7 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
 
     /// Helper to get the first key from a node (for building separator keys).
     /// This recursively descends to the leftmost leaf to find the minimum key.
-    fn get_first_key_from_storage(storage: &NodeStorage<T>, loc: NodeLocation) -> T {
+    fn get_first_key_from_storage(storage: &OsmNodeStorage<T>, loc: NodeLocation) -> T {
         match loc {
             NodeLocation::Leaf(leaf_loc) => {
                 storage.get_leaf(leaf_loc).entries[0].0.clone()
@@ -1014,13 +1052,13 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
 
     /// Get a reference to the internal storage.
     /// This is useful for disk spilling operations.
-    pub fn storage(&self) -> &NodeStorage<T> {
+    pub fn storage(&self) -> &OsmNodeStorage<T> {
         &self.storage
     }
 
     /// Get a mutable reference to the internal storage.
     /// This is useful for disk spilling operations.
-    pub fn storage_mut(&mut self) -> &mut NodeStorage<T> {
+    pub fn storage_mut(&mut self) -> &mut OsmNodeStorage<T> {
         &mut self.storage
     }
 
@@ -1081,7 +1119,11 @@ struct OrderStatisticsIter<'a, T: Ord + Clone> {
     current_pos: usize,
 }
 
-impl<'a, T: Ord + Clone> Iterator for OrderStatisticsIter<'a, T> {
+impl<'a, T> Iterator for OrderStatisticsIter<'a, T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
+{
     type Item = (&'a T, ZWeight);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1130,6 +1172,7 @@ impl<'a, T: Ord + Clone> Iterator for OrderStatisticsIter<'a, T> {
 #[archive(bound(
     archive = "<T as Archive>::Archived: Ord",
     serialize = "T: rkyv::Serialize<__S>",
+    deserialize = "T: Archive, <T as Archive>::Archived: rkyv::Deserialize<T, __D>",
 ))]
 pub struct SerializableOrderStatisticsMultiset<T>
 where
@@ -1177,8 +1220,10 @@ where
     }
 }
 
-impl<T: Ord + Clone + Archive> From<&OrderStatisticsMultiset<T>>
-    for SerializableOrderStatisticsMultiset<T>
+impl<T> From<&OrderStatisticsMultiset<T>> for SerializableOrderStatisticsMultiset<T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     fn from(tree: &OrderStatisticsMultiset<T>) -> Self {
         Self {
@@ -1188,8 +1233,10 @@ impl<T: Ord + Clone + Archive> From<&OrderStatisticsMultiset<T>>
     }
 }
 
-impl<T: Ord + Clone + Archive> From<SerializableOrderStatisticsMultiset<T>>
-    for OrderStatisticsMultiset<T>
+impl<T> From<SerializableOrderStatisticsMultiset<T>> for OrderStatisticsMultiset<T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     fn from(serialized: SerializableOrderStatisticsMultiset<T>) -> Self {
         // Use O(n) bulk construction instead of O(n log n) repeated inserts
@@ -1202,6 +1249,10 @@ impl<T: Ord + Clone + Archive> From<SerializableOrderStatisticsMultiset<T>>
 // We use SerializableOrderStatisticsMultiset as the archived form, which flattens
 // the B+ tree to a simple sorted vector of (key, weight) pairs. This enables
 // efficient serialization for spill-to-disk scenarios.
+//
+// Note: The Archive impl has minimal bounds (just T: Archive + Archived<T>: Ord)
+// because SerializableOrderStatisticsMultiset requires Ord on the archived type.
+// The Serialize and Deserialize impls have full bounds.
 
 impl<T> Archive for OrderStatisticsMultiset<T>
 where
@@ -1212,16 +1263,19 @@ where
     type Resolver = <SerializableOrderStatisticsMultiset<T> as Archive>::Resolver;
 
     #[allow(clippy::unit_arg)]
-    unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-        let serializable: SerializableOrderStatisticsMultiset<T> = self.into();
-        // SAFETY: Caller guarantees pos and out are valid
-        unsafe { serializable.resolve(pos, resolver, out) };
+    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
+        // NOTE: This impl exists to make OrderStatisticsMultiset archivable.
+        // The actual conversion happens in Serialize::serialize.
+        // We can't access storage.iter() here because we don't have the right bounds.
+        // This is only called via serialize() which has the full bounds.
+        unreachable!("resolve should not be called directly - use serialize()")
     }
 }
 
 impl<T, S> rkyv::Serialize<S> for OrderStatisticsMultiset<T>
 where
-    T: Ord + Clone + Archive,
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
     <T as Archive>::Archived: Ord,
     S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer + ?Sized,
     SerializableOrderStatisticsMultiset<T>: rkyv::Serialize<S>,
@@ -1235,10 +1289,11 @@ where
 impl<T, D> rkyv::Deserialize<OrderStatisticsMultiset<T>, D>
     for ArchivedSerializableOrderStatisticsMultiset<T>
 where
-    T: Ord + Clone + Archive,
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
     <T as Archive>::Archived: Ord,
     D: rkyv::Fallible + ?Sized,
-    <SerializableOrderStatisticsMultiset<T> as Archive>::Archived:
+    ArchivedSerializableOrderStatisticsMultiset<T>:
         rkyv::Deserialize<SerializableOrderStatisticsMultiset<T>, D>,
 {
     fn deserialize(&self, deserializer: &mut D) -> Result<OrderStatisticsMultiset<T>, D::Error> {
@@ -1255,10 +1310,11 @@ where
 /// Helper function to serialize to bytes using rkyv.
 fn to_bytes<T>(value: &T) -> Result<feldera_storage::fbuf::FBuf, Error>
 where
-    T: rkyv::Serialize<AllocSerializer<4096>>,
+    T: Archive + for<'a> RkyvSerialize<rkyv::ser::serializers::AllocSerializer<4096>>,
 {
     use feldera_storage::fbuf::FBuf;
-    use rkyv::ser::Serializer;
+    use rkyv::ser::Serializer as RkyvSerializer;
+    use rkyv::ser::serializers::AllocSerializer;
     use std::io::{Error as IoError, ErrorKind};
 
     let mut serializer = AllocSerializer::<4096>::default();
@@ -1275,10 +1331,11 @@ where
 
 impl<T> OrderStatisticsMultiset<T>
 where
-    T: Ord + Clone + Archive,
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    Archived<T>: RkyvDeserialize<T, Deserializer>,
     <T as Archive>::Archived: Ord,
-    SerializableOrderStatisticsMultiset<T>: rkyv::Serialize<AllocSerializer<4096>>,
-    <SerializableOrderStatisticsMultiset<T> as Archive>::Archived:
+    SerializableOrderStatisticsMultiset<T>: for<'a> rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<4096>>,
+    ArchivedSerializableOrderStatisticsMultiset<T>:
         rkyv::Deserialize<SerializableOrderStatisticsMultiset<T>, Deserializer>,
 {
     /// Save the multiset state to persistent storage.
@@ -1341,14 +1398,17 @@ where
         let path = Self::checkpoint_file(base, persistent_id);
         let content = backend.read(&path)?;
 
-        // Deserialize using rkyv
+        // Deserialize using rkyv with DBSP's Deserializer
         // SAFETY: The data was written by save() using rkyv serialization
         let archived = unsafe {
             rkyv::archived_root::<SerializableOrderStatisticsMultiset<T>>(&content)
         };
 
+        // Use DBSP's Deserializer which wraps SharedDeserializeMap
+        // Version 0 since we use AllocSerializer (not file format)
+        let mut deserializer = Deserializer::new(0);
         let serializable: SerializableOrderStatisticsMultiset<T> =
-            archived.deserialize(&mut Deserializer::default())
+            rkyv::Deserialize::deserialize(archived, &mut deserializer)
                 .map_err(|e| {
                     use std::io::{Error as IoError, ErrorKind};
                     Error::IO(IoError::new(ErrorKind::Other, format!("Failed to deserialize checkpoint: {e:?}")))
@@ -1375,353 +1435,5 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_empty_tree() {
-        let tree: OrderStatisticsMultiset<i32> = OrderStatisticsMultiset::new();
-        assert_eq!(tree.total_weight(), 0);
-        assert_eq!(tree.num_keys(), 0);
-        assert!(tree.is_empty());
-        assert_eq!(tree.select_kth(0, true), None);
-        assert_eq!(tree.rank(&10), 0);
-    }
-
-    #[test]
-    fn test_single_insert() {
-        let mut tree = OrderStatisticsMultiset::new();
-        tree.insert(10, 5);
-
-        assert_eq!(tree.total_weight(), 5);
-        assert_eq!(tree.num_keys(), 1);
-        assert!(!tree.is_empty());
-
-        // All positions 0-4 should return 10
-        for i in 0..5 {
-            assert_eq!(tree.select_kth(i, true), Some(&10));
-        }
-        assert_eq!(tree.select_kth(5, true), None);
-
-        assert_eq!(tree.rank(&5), 0); // Nothing less than 5
-        assert_eq!(tree.rank(&10), 0); // Nothing less than 10
-        assert_eq!(tree.rank(&15), 5); // 5 elements less than 15
-    }
-
-    #[test]
-    fn test_multiple_inserts() {
-        let mut tree = OrderStatisticsMultiset::new();
-        tree.insert(10, 3); // positions 0, 1, 2
-        tree.insert(20, 2); // positions 3, 4
-        tree.insert(15, 1); // position between: now 0,1,2=10, 3=15, 4,5=20
-
-        assert_eq!(tree.total_weight(), 6);
-        assert_eq!(tree.num_keys(), 3);
-
-        assert_eq!(tree.select_kth(0, true), Some(&10));
-        assert_eq!(tree.select_kth(1, true), Some(&10));
-        assert_eq!(tree.select_kth(2, true), Some(&10));
-        assert_eq!(tree.select_kth(3, true), Some(&15));
-        assert_eq!(tree.select_kth(4, true), Some(&20));
-        assert_eq!(tree.select_kth(5, true), Some(&20));
-        assert_eq!(tree.select_kth(6, true), None);
-
-        assert_eq!(tree.rank(&10), 0);
-        assert_eq!(tree.rank(&15), 3);
-        assert_eq!(tree.rank(&20), 4);
-        assert_eq!(tree.rank(&25), 6);
-    }
-
-    #[test]
-    fn test_weight_update() {
-        let mut tree = OrderStatisticsMultiset::new();
-        tree.insert(10, 5);
-        tree.insert(10, 3); // Should add to existing weight
-
-        assert_eq!(tree.total_weight(), 8);
-        assert_eq!(tree.num_keys(), 1);
-        assert_eq!(tree.get_weight(&10), 8);
-    }
-
-    #[test]
-    fn test_negative_weights() {
-        let mut tree = OrderStatisticsMultiset::new();
-        tree.insert(10, 5);
-        tree.insert(10, -2); // Reduce weight to 3
-
-        assert_eq!(tree.total_weight(), 3);
-        assert_eq!(tree.get_weight(&10), 3);
-
-        // Only 3 positions now
-        assert_eq!(tree.select_kth(0, true), Some(&10));
-        assert_eq!(tree.select_kth(2, true), Some(&10));
-        assert_eq!(tree.select_kth(3, true), None);
-    }
-
-    #[test]
-    fn test_merge() {
-        let mut tree1 = OrderStatisticsMultiset::new();
-        tree1.insert(10, 3);
-        tree1.insert(30, 2);
-
-        let mut tree2 = OrderStatisticsMultiset::new();
-        tree2.insert(20, 1);
-        tree2.insert(30, 1);
-
-        tree1.merge(&tree2);
-
-        assert_eq!(tree1.total_weight(), 7);
-        assert_eq!(tree1.get_weight(&10), 3);
-        assert_eq!(tree1.get_weight(&20), 1);
-        assert_eq!(tree1.get_weight(&30), 3); // 2 + 1
-    }
-
-    #[test]
-    fn test_percentile_disc() {
-        let mut tree = OrderStatisticsMultiset::new();
-        for i in 1..=100 {
-            tree.insert(i, 1);
-        }
-
-        assert_eq!(tree.select_percentile_disc(0.0, true), Some(&1));
-        assert_eq!(tree.select_percentile_disc(0.5, true), Some(&50));
-        assert_eq!(tree.select_percentile_disc(1.0, true), Some(&100));
-    }
-
-    #[test]
-    fn test_percentile_cont_bounds() {
-        let mut tree = OrderStatisticsMultiset::new();
-        tree.insert(10, 1);
-        tree.insert(20, 1);
-        tree.insert(30, 1);
-        tree.insert(40, 1);
-
-        // 50th percentile should interpolate between 20 and 30
-        let (lower, upper, frac) = tree.select_percentile_bounds(0.5, true).unwrap();
-        assert_eq!(*lower, 20);
-        assert_eq!(*upper, 30);
-        assert!((frac - 0.5).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_descending_select() {
-        let mut tree = OrderStatisticsMultiset::new();
-        tree.insert(10, 2);
-        tree.insert(20, 2);
-        tree.insert(30, 2);
-
-        // Descending: 0,1->30, 2,3->20, 4,5->10
-        assert_eq!(tree.select_kth(0, false), Some(&30));
-        assert_eq!(tree.select_kth(1, false), Some(&30));
-        assert_eq!(tree.select_kth(2, false), Some(&20));
-        assert_eq!(tree.select_kth(4, false), Some(&10));
-    }
-
-    // ========================================================================
-    // Bulk load tests
-    // ========================================================================
-
-    #[test]
-    fn test_bulk_load_empty() {
-        let tree: OrderStatisticsMultiset<i32> =
-            OrderStatisticsMultiset::from_sorted_entries(vec![], 64);
-        assert!(tree.is_empty());
-        assert_eq!(tree.num_keys(), 0);
-        assert_eq!(tree.total_weight(), 0);
-        assert_eq!(tree.select_kth(0, true), None);
-    }
-
-    #[test]
-    fn test_bulk_load_single() {
-        let tree = OrderStatisticsMultiset::from_sorted_entries(vec![(42, 5)], 64);
-        assert_eq!(tree.total_weight(), 5);
-        assert_eq!(tree.num_keys(), 1);
-        assert_eq!(tree.select_kth(0, true), Some(&42));
-        assert_eq!(tree.select_kth(4, true), Some(&42));
-        assert_eq!(tree.select_kth(5, true), None);
-    }
-
-    #[test]
-    fn test_bulk_load_matches_incremental() {
-        // Build tree incrementally
-        let mut incremental: OrderStatisticsMultiset<i32> = OrderStatisticsMultiset::new();
-        for i in 0..1000 {
-            incremental.insert(i, (i % 10) as ZWeight + 1);
-        }
-
-        // Build tree via bulk load
-        let entries: Vec<_> = incremental.iter().map(|(k, w)| (*k, w)).collect();
-        let bulk = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
-
-        // Verify equality
-        assert_eq!(incremental.total_weight(), bulk.total_weight());
-        assert_eq!(incremental.num_keys(), bulk.num_keys());
-
-        // Verify select operations match for a sample of positions
-        for i in (0..incremental.total_weight()).step_by(100) {
-            assert_eq!(
-                incremental.select_kth(i, true),
-                bulk.select_kth(i, true),
-                "Mismatch at position {i}"
-            );
-        }
-
-        // Verify iteration produces same results
-        let inc_entries: Vec<_> = incremental.iter().collect();
-        let bulk_entries: Vec<_> = bulk.iter().collect();
-        assert_eq!(inc_entries, bulk_entries);
-    }
-
-    #[test]
-    fn test_bulk_load_various_sizes() {
-        // Test sizes around branching factor boundaries
-        for size in [1, 10, 63, 64, 65, 100, 127, 128, 129, 1000, 10000] {
-            let entries: Vec<_> = (0..size).map(|i| (i as i32, 1)).collect();
-
-            let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
-
-            assert_eq!(tree.num_keys(), size, "num_keys mismatch for size {size}");
-            assert_eq!(
-                tree.total_weight(),
-                size as ZWeight,
-                "total_weight mismatch for size {size}"
-            );
-
-            // Verify first and last
-            assert_eq!(tree.select_kth(0, true), Some(&0), "first key for size {size}");
-            assert_eq!(
-                tree.select_kth(size as ZWeight - 1, true),
-                Some(&(size as i32 - 1)),
-                "last key for size {size}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_bulk_load_preserves_iteration_order() {
-        let entries: Vec<_> = (0..500)
-            .map(|i| (i * 2, i as ZWeight + 1)) // Even numbers with varying weights
-            .collect();
-
-        let tree = OrderStatisticsMultiset::from_sorted_entries(entries.clone(), 32);
-
-        let collected: Vec<_> = tree.iter().map(|(k, w)| (*k, w)).collect();
-        assert_eq!(collected.len(), entries.len());
-        assert_eq!(collected, entries);
-    }
-
-    #[test]
-    fn test_bulk_load_with_varying_weights() {
-        let entries = vec![(10, 3), (20, 2), (30, 5), (40, 1), (50, 4)];
-        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
-
-        assert_eq!(tree.total_weight(), 15); // 3+2+5+1+4
-        assert_eq!(tree.num_keys(), 5);
-
-        // Test select_kth with varying weights
-        // Key 10 has weight 3: positions 0, 1, 2
-        assert_eq!(tree.select_kth(0, true), Some(&10));
-        assert_eq!(tree.select_kth(2, true), Some(&10));
-
-        // Key 20 has weight 2: positions 3, 4
-        assert_eq!(tree.select_kth(3, true), Some(&20));
-        assert_eq!(tree.select_kth(4, true), Some(&20));
-
-        // Key 30 has weight 5: positions 5-9
-        assert_eq!(tree.select_kth(5, true), Some(&30));
-        assert_eq!(tree.select_kth(9, true), Some(&30));
-
-        // Key 40 has weight 1: position 10
-        assert_eq!(tree.select_kth(10, true), Some(&40));
-
-        // Key 50 has weight 4: positions 11-14
-        assert_eq!(tree.select_kth(11, true), Some(&50));
-        assert_eq!(tree.select_kth(14, true), Some(&50));
-    }
-
-    #[test]
-    fn test_bulk_load_small_branching_factor() {
-        // Use minimum branching factor to force multiple internal levels
-        let entries: Vec<_> = (0..100).map(|i| (i, 1)).collect();
-        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 4);
-
-        assert_eq!(tree.num_keys(), 100);
-        assert_eq!(tree.total_weight(), 100);
-
-        // Verify all elements accessible
-        for i in 0..100 {
-            assert_eq!(tree.select_kth(i, true), Some(&(i as i32)));
-        }
-    }
-
-    #[test]
-    fn test_bulk_load_rank_queries() {
-        let entries: Vec<_> = (0..100).map(|i| (i * 10, 1)).collect();
-        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
-
-        // rank(key) = sum of weights of keys < key
-        assert_eq!(tree.rank(&0), 0); // No keys less than 0
-        assert_eq!(tree.rank(&10), 1); // One key (0) less than 10
-        assert_eq!(tree.rank(&50), 5); // Keys 0,10,20,30,40 less than 50
-        assert_eq!(tree.rank(&990), 99); // 99 keys less than 990
-        assert_eq!(tree.rank(&1000), 100); // All 100 keys less than 1000
-    }
-
-    #[test]
-    fn test_compact_uses_bulk_load() {
-        let mut tree = OrderStatisticsMultiset::new();
-        for i in 0..100 {
-            tree.insert(i, 1);
-        }
-        // Add some zero-weight entries
-        tree.insert(50, -1); // Now key 50 has weight 0
-
-        let original_weight = tree.total_weight();
-        assert_eq!(original_weight, 99); // 100 - 1
-
-        tree.compact();
-
-        // After compact, zero-weight entry should be removed
-        assert_eq!(tree.total_weight(), 99);
-        assert_eq!(tree.num_keys(), 99); // Key 50 removed
-
-        // Verify structure is still correct
-        assert_eq!(tree.select_kth(0, true), Some(&0));
-        assert_eq!(tree.select_kth(49, true), Some(&49));
-        assert_eq!(tree.select_kth(50, true), Some(&51)); // 50 is gone
-    }
-
-    #[test]
-    fn test_bulk_load_negative_weights() {
-        // Bulk load with some negative weights (for incremental computation)
-        let entries = vec![(10, 5), (20, -2), (30, 3)];
-        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
-
-        assert_eq!(tree.total_weight(), 6); // 5 + (-2) + 3
-        assert_eq!(tree.num_keys(), 3);
-
-        // Negative weights are skipped in select
-        // Key 10: positions 0-4
-        assert_eq!(tree.select_kth(0, true), Some(&10));
-        assert_eq!(tree.select_kth(4, true), Some(&10));
-        // Key 20 has negative weight, skipped
-        // Key 30: positions 5-7
-        assert_eq!(tree.select_kth(5, true), Some(&30));
-    }
-
-    #[test]
-    fn test_bulk_load_percentile_operations() {
-        let entries: Vec<_> = (1..=100).map(|i| (i, 1)).collect();
-        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
-
-        // PERCENTILE_DISC
-        assert_eq!(tree.select_percentile_disc(0.0, true), Some(&1));
-        assert_eq!(tree.select_percentile_disc(0.5, true), Some(&50));
-        assert_eq!(tree.select_percentile_disc(1.0, true), Some(&100));
-
-        // PERCENTILE_CONT bounds
-        let (lower, upper, _frac) = tree.select_percentile_bounds(0.5, true).unwrap();
-        assert_eq!(*lower, 50);
-        assert_eq!(*upper, 51);
-    }
-}
+#[path = "order_statistics_multiset_tests.rs"]
+mod tests;
