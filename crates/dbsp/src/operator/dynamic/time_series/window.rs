@@ -20,8 +20,8 @@ use crate::{
     },
     storage::file::{to_bytes, with_serializer},
     trace::{
-        BatchFactories, BatchReader, BatchReaderFactories, Cursor, Spine, SpineSnapshot,
-        spine_async::WithSnapshot,
+        BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Cursor, Spine,
+        SpineSnapshot, spine_async::WithSnapshot,
     },
 };
 use async_stream::stream;
@@ -356,128 +356,140 @@ where
             let mut tuple = self.factories.weighted_item_factory().default_box();
             let mut key = self.factories.key_factory().default_box();
 
-            let mut trace_cursor = trace.unwrap().cursor();
-            let mut batch_cursor = delta.cursor();
-
-            if let Some((start0, end0)) = bounds0 {
-                // Retract tuples in `trace` that slid out of the window (region 1).
-                seek_start(&mut trace_cursor, &start0, self.left_inclusive);
-                while trace_cursor.key_valid()
-                    && before_start(&trace_cursor, &start1, self.left_inclusive)
-                    && before_end(&trace_cursor, &end0, self.right_inclusive)
-                {
-                    trace_cursor.key().clone_to(&mut *key);
-                    while trace_cursor.val_valid(){
-                        let (kv, w) = tuple.split_mut();
-                        let (k, v) = kv.split_mut();
-                        key.clone_to(k);
-                        trace_cursor.val().clone_to(v);
-                        **w = trace_cursor.weight().neg_by_ref();
-                        tuples.push_val(&mut *tuple);
-
-                        if tuples.len() >= chunk_size {
-                            let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-                            self.output_batch_stats.borrow_mut().add_batch(result.len());
-                            yield (result, false, None);
-                            tuples = self.factories.weighted_items_factory().default_box();
-                            tuples.reserve(chunk_size);
-                        }
-
-                        trace_cursor.step_val();
-                    };
-                    trace_cursor.step_key();
-                }
-
-                // If the window shrunk, retract values that dropped off the right end of the
-                // window.
-                if end1 < end0 {
-                    seek_after_end(&mut trace_cursor, &end1, self.right_inclusive);
-
-                    while trace_cursor.key_valid()
-                        && before_end(&trace_cursor, &end0, self.right_inclusive)
-                    {
-                        trace_cursor.key().clone_to(&mut key);
-                        while trace_cursor.val_valid()  {
-                            let (kv, w) = tuple.split_mut();
-                            let (k, v) = kv.split_mut();
-                            key.clone_to(k);
-                            trace_cursor.val().clone_to(v);
-                            **w = trace_cursor.weight().neg_by_ref();
-
-                            tuples.push_val(&mut *tuple);
-
-                            if tuples.len() >= chunk_size {
-                                let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-                                self.output_batch_stats.borrow_mut().add_batch(result.len());
-                                yield (result, false, None);
-                                tuples = self.factories.weighted_items_factory().default_box();
-                                tuples.reserve(chunk_size);
-                            }
-
-                            trace_cursor.step_val();
-                        };
-                        trace_cursor.step_key();
-                    }
-                }
-
-                // Add tuples in `trace` that slid into the window (region 3).
-                seek_after_end(&mut trace_cursor, &end0, self.right_inclusive);
-
-                // In case start1 > end0
-                seek_start(&mut trace_cursor, &start1, self.left_inclusive);
-                // trace_cursor.seek_key(max(end0, &start1));
-                while trace_cursor.key_valid() && before_end(&trace_cursor, &end1, self.right_inclusive)
-                {
-                    trace_cursor.key().clone_to(&mut key);
-                    while trace_cursor.val_valid() {
-                        let (kv, w) = tuple.split_mut();
-                        let (k, v) = kv.split_mut();
-                        key.clone_to(k);
-                        trace_cursor.val().clone_to(v);
-                        trace_cursor.weight().clone_to(w);
-
-                        tuples.push_val(&mut *tuple);
-
-                        if tuples.len() >= chunk_size {
-                            let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-                            self.output_batch_stats.borrow_mut().add_batch(result.len());
-                            yield (result, false, None);
-                            tuples = self.factories.weighted_items_factory().default_box();
-                            tuples.reserve(chunk_size);
-                        }
-
-                        trace_cursor.step_val();
-                    };
-                    trace_cursor.step_key();
-                }
-            };
-
-            // Insert tuples in `batch` that fall within the new window.
-            seek_start(&mut batch_cursor, &start1, self.left_inclusive);
-            // batch_cursor.seek_key(&start1);
-            while batch_cursor.key_valid() && before_end(&batch_cursor, &end1, self.right_inclusive) {
-                batch_cursor.key().clone_to(&mut key);
-                while batch_cursor.val_valid() {
-                    let (kv, w) = tuple.split_mut();
-                    let (k, v) = kv.split_mut();
-                    key.clone_to(k);
-                    batch_cursor.val().clone_to(v);
-                    batch_cursor.weight().clone_to(w);
-
-                    tuples.push_val(&mut *tuple);
-
-                    if tuples.len() >= chunk_size {
-                        let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-                        self.output_batch_stats.borrow_mut().add_batch(result.len());
-                        yield (result, false, None);
-                        tuples = self.factories.weighted_items_factory().default_box();
-                        tuples.reserve(chunk_size);
-                    }
-
-                    batch_cursor.step_val();
-                };
-                batch_cursor.step_key();
+            if Runtime::worker_index() == 0 {
+                println!("batches: {:?}", trace.unwrap().batches().iter().filter(|b| b.location() == BatchLocation::Storage).count());
             }
+            let mut trace_cursor = trace.unwrap().cursor();
+            //let mut batch_cursor = delta.cursor();
+
+            // if let Some((start0, end0)) = bounds0 {
+            //     // Retract tuples in `trace` that slid out of the window (region 1).
+            //     if end0 < end1 {
+            //         println!("window moved forward");
+            //         seek_start(&mut trace_cursor, &start0, self.left_inclusive);
+            //         while trace_cursor.key_valid()
+            //             && before_start(&trace_cursor, &start1, self.left_inclusive)
+            //             && before_end(&trace_cursor, &end0, self.right_inclusive)
+            //         {
+            //             println!("region 1: trace_cursor.key(): {:?}", trace_cursor.key());
+            //             trace_cursor.key().clone_to(&mut *key);
+            //             while trace_cursor.val_valid(){
+            //                 let (kv, w) = tuple.split_mut();
+            //                 let (k, v) = kv.split_mut();
+            //                 key.clone_to(k);
+            //                 trace_cursor.val().clone_to(v);
+            //                 **w = trace_cursor.weight().neg_by_ref();
+            //                 tuples.push_val(&mut *tuple);
+
+            //                 if tuples.len() >= chunk_size {
+            //                     let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
+            //                     self.output_batch_stats.borrow_mut().add_batch(result.len());
+            //                     yield (result, false, None);
+            //                     tuples = self.factories.weighted_items_factory().default_box();
+            //                     tuples.reserve(chunk_size);
+            //                 }
+
+            //                 trace_cursor.step_val();
+            //             };
+            //             trace_cursor.step_key();
+            //         }
+            //     }
+
+            //     // If the window shrunk, retract values that dropped off the right end of the
+            //     // window.
+            //     if end1 < end0 {
+            //         println!("window shrunk, seeking after end1: {:?}", end1);
+            //         seek_after_end(&mut trace_cursor, &end1, self.right_inclusive);
+
+            //         while trace_cursor.key_valid()
+            //             && before_end(&trace_cursor, &end0, self.right_inclusive)
+            //         {
+            //             trace_cursor.key().clone_to(&mut key);
+            //             while trace_cursor.val_valid()  {
+            //                 let (kv, w) = tuple.split_mut();
+            //                 let (k, v) = kv.split_mut();
+            //                 key.clone_to(k);
+            //                 trace_cursor.val().clone_to(v);
+            //                 **w = trace_cursor.weight().neg_by_ref();
+
+            //                 tuples.push_val(&mut *tuple);
+
+            //                 if tuples.len() >= chunk_size {
+            //                     let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
+            //                     self.output_batch_stats.borrow_mut().add_batch(result.len());
+            //                     yield (result, false, None);
+            //                     tuples = self.factories.weighted_items_factory().default_box();
+            //                     tuples.reserve(chunk_size);
+            //                 }
+
+            //                 trace_cursor.step_val();
+            //             };
+            //             trace_cursor.step_key();
+            //         }
+            //     }
+
+            //     if end0 < end1 {
+            //         println!("window end moved forward");
+            //         // Add tuples in `trace` that slid into the window (region 3).
+            //         seek_after_end(&mut trace_cursor, &end0, self.right_inclusive);
+
+            //         // In case start1 > end0
+            //         seek_start(&mut trace_cursor, &start1, self.left_inclusive);
+            //         // trace_cursor.seek_key(max(end0, &start1));
+            //         while trace_cursor.key_valid() && before_end(&trace_cursor, &end1, self.right_inclusive)
+            //         {
+            //             println!("region 3: trace_cursor.key(): {:?}", trace_cursor.key());
+            //             trace_cursor.key().clone_to(&mut key);
+            //             while trace_cursor.val_valid() {
+            //                 let (kv, w) = tuple.split_mut();
+            //                 let (k, v) = kv.split_mut();
+            //                 key.clone_to(k);
+            //                 trace_cursor.val().clone_to(v);
+            //                 trace_cursor.weight().clone_to(w);
+
+            //                 tuples.push_val(&mut *tuple);
+
+            //                 if tuples.len() >= chunk_size {
+            //                     let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
+            //                     self.output_batch_stats.borrow_mut().add_batch(result.len());
+            //                     yield (result, false, None);
+            //                     tuples = self.factories.weighted_items_factory().default_box();
+            //                     tuples.reserve(chunk_size);
+            //                 }
+
+            //                 trace_cursor.step_val();
+            //             };
+            //             trace_cursor.step_key();
+            //         }
+            //     }
+            // };
+
+            // // Insert tuples in `batch` that fall within the new window.
+            // seek_start(&mut batch_cursor, &start1, self.left_inclusive);
+            // // batch_cursor.seek_key(&start1);
+            // while batch_cursor.key_valid() && before_end(&batch_cursor, &end1, self.right_inclusive) {
+            //     batch_cursor.key().clone_to(&mut key);
+            //     while batch_cursor.val_valid() {
+            //         let (kv, w) = tuple.split_mut();
+            //         let (k, v) = kv.split_mut();
+            //         key.clone_to(k);
+            //         batch_cursor.val().clone_to(v);
+            //         batch_cursor.weight().clone_to(w);
+
+            //         tuples.push_val(&mut *tuple);
+
+            //         if tuples.len() >= chunk_size {
+            //             let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
+            //             self.output_batch_stats.borrow_mut().add_batch(result.len());
+            //             yield (result, false, None);
+            //             tuples = self.factories.weighted_items_factory().default_box();
+            //             tuples.reserve(chunk_size);
+            //         }
+
+            //         batch_cursor.step_val();
+            //     };
+            //     batch_cursor.step_key();
+            // }
 
             *self.window.borrow_mut() = Some((start1, end1));
 

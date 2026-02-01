@@ -134,6 +134,10 @@ harness = false
 name = "column_layer"
 harness = false
 
+[[bench]]
+name = "window"
+harness = false
+
 [[example]]
 name = "orgchart"
 
