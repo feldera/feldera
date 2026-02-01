@@ -70,8 +70,19 @@ pub const MAGIC_INDEX_BLOCK: [u8; 4] = *b"OSMI";
 // =============================================================================
 
 /// Location of a block within the leaf file.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, SizeOf)]
-#[derive(Archive, RkyvSerialize, RkyvDeserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    SizeOf,
+    Archive,
+    RkyvSerialize,
+    RkyvDeserialize,
+)]
 #[archive(check_bytes)]
 pub struct BlockLocation {
     /// Byte offset from start of file
@@ -205,8 +216,7 @@ impl FileHeader {
 // =============================================================================
 
 /// Entry in the leaf index.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[derive(Archive, RkyvSerialize, RkyvDeserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Archive, RkyvSerialize, RkyvDeserialize)]
 #[archive(check_bytes)]
 pub struct IndexEntry {
     /// Unique leaf ID
@@ -325,9 +335,7 @@ pub fn create_data_block_header(leaf_id: u64, data_len: u64) -> [u8; DATA_BLOCK_
 ///
 /// Returns `(leaf_id, data_len)` where `data_len` is the actual serialized data length
 /// (before 512-byte alignment padding).
-pub fn verify_data_block_header(
-    block: &[u8],
-) -> Result<(u64, u64), FileFormatError> {
+pub fn verify_data_block_header(block: &[u8]) -> Result<(u64, u64), FileFormatError> {
     if block.len() < DATA_BLOCK_HEADER_SIZE {
         return Err(FileFormatError::Io("block too small".to_string()));
     }
@@ -425,10 +433,7 @@ mod tests {
         set_block_checksum(&mut bytes);
 
         let result = FileHeader::from_bytes(&bytes);
-        assert!(matches!(
-            result,
-            Err(FileFormatError::InvalidMagic { .. })
-        ));
+        assert!(matches!(result, Err(FileFormatError::InvalidMagic { .. })));
     }
 
     #[test]

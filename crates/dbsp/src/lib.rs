@@ -79,6 +79,7 @@ pub mod algebra;
 pub mod ir;
 pub mod mimalloc;
 pub mod monitor;
+pub mod node_storage;
 pub mod operator;
 pub mod profile;
 pub mod storage;

@@ -198,7 +198,7 @@ pub struct NodeStorage<I, L> {
     config: NodeStorageConfig,
 
     // Internal nodes (always in memory)
-    internal_nodes: Vec<InternalNodeWithMeta<I>>,
+    internal_nodes: Vec<NodeWithMeta<InternalNodeTyped<T>>>,
 
     // Leaf nodes (Some = in memory, None = evicted)
     leaves: Vec<Option<L>>,
@@ -672,7 +672,7 @@ Requirements:
 
 | File | Contents |
 |------|----------|
-| `order_statistics_storage.rs` | `NodeStorage<I,L>`, `LeafFile<L>`, `CachedLeafNode<L>`, `OsmNodeStorage<T>` |
+| `node_storage.rs` | `NodeStorage<I,L>`, `LeafFile<L>`, `CachedLeafNode<L>`, `OsmNodeStorage<T>` |
 | `order_statistics_file_format.rs` | Block format constants, `FileHeader`, `IndexEntry` |
 | `order_statistics_multiset.rs` | `OrderStatisticsMultiset<T>`, `LeafNode<T>`, `InternalNodeTyped<T>` |
 

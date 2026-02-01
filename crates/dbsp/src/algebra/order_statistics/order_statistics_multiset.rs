@@ -28,10 +28,11 @@
 //! computation. When querying (select_kth, rank), only positions with positive
 //! cumulative weight are considered valid.
 
-use rkyv::{
-    Archive, Archived, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize,
+use crate::{
+    node_storage::NodeStorage,
+    storage::file::{Deserializer, Serializer},
 };
-use crate::storage::file::{Deserializer, Serializer};
+use rkyv::{Archive, Archived, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use size_of::SizeOf;
 use std::{
     cmp::Ordering,
@@ -40,15 +41,14 @@ use std::{
     sync::Arc,
 };
 
-use crate::algebra::ZWeight;
-use crate::algebra::order_statistics_storage::{
-    LeafLocation, LeafNodeOps, NodeLocation, NodeStorageConfig,
-    OsmNodeStorage, StorableNode,
-};
-use crate::circuit::Runtime;
-use feldera_storage::{FileCommitter, StoragePath};
-use crate::utils::IsNone;
 use crate::Error;
+use crate::algebra::ZWeight;
+use crate::circuit::Runtime;
+use crate::node_storage::{
+    LeafLocation, LeafNodeOps, NodeLocation, NodeStorageConfig, StorableNode,
+};
+use crate::utils::IsNone;
+use feldera_storage::{FileCommitter, StoragePath};
 
 /// Default branching factor for the B+ tree.
 /// Larger values are more cache/disk friendly but may have higher constant factors.
@@ -57,6 +57,12 @@ pub const DEFAULT_BRANCHING_FACTOR: usize = 64;
 
 /// Minimum branching factor to ensure tree properties.
 pub const MIN_BRANCHING_FACTOR: usize = 4;
+
+/// Type alias for OrderStatisticsMultiset storage.
+///
+/// This provides backward compatibility and convenience for the common case
+/// of using NodeStorage with OrderStatisticsMultiset node types.
+pub type OsmNodeStorage<T> = NodeStorage<InternalNodeTyped<T>, LeafNode<T>>;
 
 /// A leaf node in the B+ tree, storing sorted (key, weight) pairs.
 #[derive(
@@ -173,9 +179,18 @@ impl<T: Ord + Clone> LeafNode<T> {
 }
 
 /// An internal node with actual key storage
-#[derive(Debug, Clone, PartialEq, Eq, SizeOf)]
-#[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Archive, RkyvSerialize, RkyvDeserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    SizeOf,
+    serde::Serialize,
+    serde::Deserialize,
+    Archive,
+    RkyvSerialize,
+    RkyvDeserialize,
+)]
 #[archive(bound(serialize = "__S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer"))]
 pub struct InternalNodeTyped<T> {
     /// Separator keys: keys[i] is the minimum key in children[i+1]
@@ -297,7 +312,8 @@ where
 {
     fn estimate_size(&self) -> usize {
         // Estimate: entries vec + next_leaf option + overhead
-        let entries_size = self.entries.len() * (std::mem::size_of::<T>() + std::mem::size_of::<ZWeight>());
+        let entries_size =
+            self.entries.len() * (std::mem::size_of::<T>() + std::mem::size_of::<ZWeight>());
         let option_size = std::mem::size_of::<Option<LeafLocation>>();
         entries_size + option_size + std::mem::size_of::<Vec<()>>()
     }
@@ -401,7 +417,16 @@ where
 // Implement PartialEq manually to compare contents, not structure
 impl<T> PartialEq for OrderStatisticsMultiset<T>
 where
-    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + PartialEq + Archive + RkyvSerialize<Serializer>,
+    T: Ord
+        + Clone
+        + Debug
+        + SizeOf
+        + Send
+        + Sync
+        + 'static
+        + PartialEq
+        + Archive
+        + RkyvSerialize<Serializer>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     fn eq(&self, other: &Self) -> bool {
@@ -417,7 +442,16 @@ where
 
 impl<T> Eq for OrderStatisticsMultiset<T>
 where
-    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + PartialEq + Archive + RkyvSerialize<Serializer>,
+    T: Ord
+        + Clone
+        + Debug
+        + SizeOf
+        + Send
+        + Sync
+        + 'static
+        + PartialEq
+        + Archive
+        + RkyvSerialize<Serializer>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
 }
@@ -481,7 +515,16 @@ impl<T: Ord + Clone> IsNone for OrderStatisticsMultiset<T> {
 
 impl<T> Hash for OrderStatisticsMultiset<T>
 where
-    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Hash + Archive + RkyvSerialize<Serializer>,
+    T: Ord
+        + Clone
+        + Debug
+        + SizeOf
+        + Send
+        + Sync
+        + 'static
+        + Hash
+        + Archive
+        + RkyvSerialize<Serializer>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -618,10 +661,8 @@ where
 
         // Phase 2: Build internal layers bottom-up
         // Level 0 = leaves, Level 1 = first internal nodes, etc.
-        let mut current_level_locs: Vec<NodeLocation> = leaf_locations
-            .into_iter()
-            .map(NodeLocation::Leaf)
-            .collect();
+        let mut current_level_locs: Vec<NodeLocation> =
+            leaf_locations.into_iter().map(NodeLocation::Leaf).collect();
         let mut current_level_weights = leaf_weights;
         let mut current_level: u8 = 1; // First internal nodes are at level 1
 
@@ -679,9 +720,7 @@ where
     /// This recursively descends to the leftmost leaf to find the minimum key.
     fn get_first_key_from_storage(storage: &OsmNodeStorage<T>, loc: NodeLocation) -> T {
         match loc {
-            NodeLocation::Leaf(leaf_loc) => {
-                storage.get_leaf(leaf_loc).entries[0].0.clone()
-            }
+            NodeLocation::Leaf(leaf_loc) => storage.get_leaf(leaf_loc).entries[0].0.clone(),
             NodeLocation::Internal { id, .. } => {
                 let internal = storage.get_internal(id);
                 Self::get_first_key_from_storage(storage, internal.children[0])
@@ -793,7 +832,9 @@ where
 
                     // Allocate the right leaf
                     let right_loc = self.storage.alloc_leaf(right_leaf);
-                    let right_leaf_loc = right_loc.as_leaf().expect("alloc_leaf returns Leaf location");
+                    let right_leaf_loc = right_loc
+                        .as_leaf()
+                        .expect("alloc_leaf returns Leaf location");
 
                     // Update the left leaf's next pointer to the new right leaf
                     self.storage.get_leaf_mut(leaf_loc).next_leaf = Some(right_leaf_loc);
@@ -803,7 +844,10 @@ where
                     (new_key, None)
                 }
             }
-            NodeLocation::Internal { id: internal_idx, level } => {
+            NodeLocation::Internal {
+                id: internal_idx,
+                level,
+            } => {
                 // Internal node - find child and recurse
                 let (child_loc, child_pos) = {
                     let internal = self.storage.get_internal(internal_idx);
@@ -880,9 +924,7 @@ where
 
     fn select_kth_recursive(&self, loc: NodeLocation, k: ZWeight) -> Option<&T> {
         match loc {
-            NodeLocation::Leaf(leaf_loc) => {
-                self.storage.get_leaf(leaf_loc).select_kth(k)
-            }
+            NodeLocation::Leaf(leaf_loc) => self.storage.get_leaf(leaf_loc).select_kth(k),
             NodeLocation::Internal { id, .. } => {
                 let internal = self.storage.get_internal(id);
                 let (child_loc, remaining_k) = internal.find_child_for_select(k)?;
@@ -907,9 +949,7 @@ where
 
     fn rank_recursive(&self, loc: NodeLocation, key: &T) -> ZWeight {
         match loc {
-            NodeLocation::Leaf(leaf_loc) => {
-                self.storage.get_leaf(leaf_loc).prefix_weight(key)
-            }
+            NodeLocation::Leaf(leaf_loc) => self.storage.get_leaf(leaf_loc).prefix_weight(key),
             NodeLocation::Internal { id, .. } => {
                 let internal = self.storage.get_internal(id);
                 let child_pos = internal.find_child(key);
@@ -1318,9 +1358,12 @@ where
     use std::io::{Error as IoError, ErrorKind};
 
     let mut serializer = AllocSerializer::<4096>::default();
-    serializer
-        .serialize_value(value)
-        .map_err(|e| Error::IO(IoError::new(ErrorKind::Other, format!("Failed to serialize: {e}"))))?;
+    serializer.serialize_value(value).map_err(|e| {
+        Error::IO(IoError::new(
+            ErrorKind::Other,
+            format!("Failed to serialize: {e}"),
+        ))
+    })?;
     let bytes = serializer.into_serializer().into_inner();
 
     // Copy to FBuf which has the required 512-byte alignment
@@ -1334,7 +1377,8 @@ where
     T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
     <T as Archive>::Archived: Ord,
-    SerializableOrderStatisticsMultiset<T>: for<'a> rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<4096>>,
+    SerializableOrderStatisticsMultiset<T>:
+        for<'a> rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<4096>>,
     ArchivedSerializableOrderStatisticsMultiset<T>:
         rkyv::Deserialize<SerializableOrderStatisticsMultiset<T>, Deserializer>,
 {
@@ -1400,19 +1444,20 @@ where
 
         // Deserialize using rkyv with DBSP's Deserializer
         // SAFETY: The data was written by save() using rkyv serialization
-        let archived = unsafe {
-            rkyv::archived_root::<SerializableOrderStatisticsMultiset<T>>(&content)
-        };
+        let archived =
+            unsafe { rkyv::archived_root::<SerializableOrderStatisticsMultiset<T>>(&content) };
 
         // Use DBSP's Deserializer which wraps SharedDeserializeMap
         // Version 0 since we use AllocSerializer (not file format)
         let mut deserializer = Deserializer::new(0);
         let serializable: SerializableOrderStatisticsMultiset<T> =
-            rkyv::Deserialize::deserialize(archived, &mut deserializer)
-                .map_err(|e| {
-                    use std::io::{Error as IoError, ErrorKind};
-                    Error::IO(IoError::new(ErrorKind::Other, format!("Failed to deserialize checkpoint: {e:?}")))
-                })?;
+            rkyv::Deserialize::deserialize(archived, &mut deserializer).map_err(|e| {
+                use std::io::{Error as IoError, ErrorKind};
+                Error::IO(IoError::new(
+                    ErrorKind::Other,
+                    format!("Failed to deserialize checkpoint: {e:?}"),
+                ))
+            })?;
 
         // Reconstruct the tree using bulk load for O(n) instead of O(n log n)
         *self = serializable.into();

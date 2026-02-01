@@ -45,20 +45,19 @@
 //!
 //! See `order_statistics_node_storage_plan.md` for the full design.
 
+use crate::storage::buffer_cache::{BufferCache, CacheEntry, FBuf, FBufSerializer};
+use crate::storage::file::{Deserializer, Serializer};
 use rkyv::{
     Archive, Archived, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize,
     ser::serializers::{
         AllocScratch, CompositeSerializer, FallbackScratch, HeapScratch, SharedSerializeMap,
     },
 };
-use crate::storage::file::{Deserializer, Serializer};
-use crate::storage::buffer_cache::{FBufSerializer, FBuf, BufferCache, CacheEntry};
 use size_of::SizeOf;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use super::order_statistics_multiset::{InternalNodeTyped, LeafNode};
 use crate::algebra::ZWeight;
 use crate::circuit::Runtime;
 use crate::storage::backend::{BlockLocation, FileId, StorageBackend, StorageError};
@@ -76,7 +75,11 @@ where
 
     // Create DBSP's serializer with FBuf backing
     let fbuf = FBuf::with_capacity(4096);
-    let mut serializer = CompositeSerializer::<_, FallbackScratch<HeapScratch<65536>, AllocScratch>, SharedSerializeMap>::new(
+    let mut serializer = CompositeSerializer::<
+        _,
+        FallbackScratch<HeapScratch<65536>, AllocScratch>,
+        SharedSerializeMap,
+    >::new(
         FBufSerializer::new(fbuf, usize::MAX),
         FallbackScratch::default(),
         SharedSerializeMap::default(),
@@ -127,14 +130,7 @@ where
 ///     }
 /// }
 /// ```
-pub trait StorableNode:
-    Clone
-    + Debug
-    + SizeOf
-    + Send
-    + Sync
-    + 'static
-{
+pub trait StorableNode: Clone + Debug + SizeOf + Send + Sync + 'static {
     /// Estimate the memory size of this node in bytes.
     ///
     /// Should include struct size plus heap allocations (Vec capacity, etc.).
@@ -215,8 +211,14 @@ impl Debug for NodeStorageConfig {
             .field("max_spillable_level", &self.max_spillable_level)
             .field("spill_threshold_bytes", &self.spill_threshold_bytes)
             .field("spill_directory", &self.spill_directory)
-            .field("storage_backend", &self.storage_backend.as_ref().map(|_| "<StorageBackend>"))
-            .field("buffer_cache", &self.buffer_cache.as_ref().map(|_| "<BufferCache>"))
+            .field(
+                "storage_backend",
+                &self.storage_backend.as_ref().map(|_| "<StorageBackend>"),
+            )
+            .field(
+                "buffer_cache",
+                &self.buffer_cache.as_ref().map(|_| "<BufferCache>"),
+            )
             .finish()
     }
 }
@@ -225,7 +227,7 @@ impl Default for NodeStorageConfig {
     fn default() -> Self {
         Self {
             enable_spill: false,
-            max_spillable_level: 0, // Only leaves by default
+            max_spillable_level: 0,                  // Only leaves by default
             spill_threshold_bytes: 64 * 1024 * 1024, // 64MB
             spill_directory: None,
             storage_backend: None,
@@ -300,8 +302,7 @@ impl NodeStorageConfig {
 
         // Get the spill threshold from Runtime settings
         // min_index_storage_bytes is for persistent data (like percentile state)
-        let spill_threshold_bytes = Runtime::min_index_storage_bytes()
-            .unwrap_or(64 * 1024 * 1024); // Default 64MB if not set
+        let spill_threshold_bytes = Runtime::min_index_storage_bytes().unwrap_or(64 * 1024 * 1024); // Default 64MB if not set
 
         // Get the buffer cache for caching deserialized leaves
         let buffer_cache = Some(Runtime::buffer_cache());
@@ -394,10 +395,7 @@ impl feldera_storage::FileReader for CacheFileHandle {
         // Not used for cache lookups
     }
 
-    fn read_block(
-        &self,
-        _location: BlockLocation,
-    ) -> Result<Arc<FBuf>, StorageError> {
+    fn read_block(&self, _location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
         // Not used for cache lookups - we use the cache, not direct reads
         Err(StorageError::StdIo {
             kind: std::io::ErrorKind::Unsupported,
@@ -424,16 +422,24 @@ impl feldera_storage::FileReader for CacheFileHandle {
 /// - Level 2+: Higher internal nodes
 ///
 /// The level determines spill eligibility based on `max_spillable_level` config.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, SizeOf)]
-#[derive(Archive, RkyvSerialize, RkyvDeserialize)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    SizeOf,
+    Archive,
+    RkyvSerialize,
+    RkyvDeserialize,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 #[archive(check_bytes)]
 pub enum NodeLocation {
     /// Internal node at given index with its level (level >= 1)
-    Internal {
-        id: usize,
-        level: u8,
-    },
+    Internal { id: usize, level: u8 },
     /// Leaf node (always level 0)
     Leaf(LeafLocation),
 }
@@ -477,9 +483,21 @@ impl NodeLocation {
 ///
 /// For Phase 3, this wraps an index into the leaf vector with dirty tracking.
 /// In Phase 4+, this will include disk block location for spilled leaves.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, SizeOf)]
-#[derive(Archive, RkyvSerialize, RkyvDeserialize)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    SizeOf,
+    Archive,
+    RkyvSerialize,
+    RkyvDeserialize,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 #[archive(check_bytes)]
 pub struct LeafLocation {
     /// Unique ID for this leaf (index in Phases 2-3, monotonic ID in Phase 4+)
@@ -576,9 +594,6 @@ impl<N> NodeWithMeta<N> {
     }
 }
 
-/// Type alias for backward compatibility
-pub type InternalNodeWithMeta<T> = NodeWithMeta<InternalNodeTyped<T>>;
-
 // =============================================================================
 // Node Storage
 // =============================================================================
@@ -657,12 +672,6 @@ pub struct NodeStorage<I, L> {
     #[size_of(skip)]
     leaf_block_locations: std::collections::HashMap<usize, (u64, u32)>,
 }
-
-/// Type alias for OrderStatisticsMultiset storage.
-///
-/// This provides backward compatibility and convenience for the common case
-/// of using NodeStorage with OrderStatisticsMultiset node types.
-pub type OsmNodeStorage<T> = NodeStorage<InternalNodeTyped<T>, LeafNode<T>>;
 
 // =============================================================================
 // Basic NodeStorage methods (minimal bounds)
@@ -749,8 +758,7 @@ where
     /// Check if any nodes are dirty.
     #[inline]
     pub fn has_dirty_nodes(&self) -> bool {
-        !self.dirty_leaves.is_empty()
-            || self.internal_nodes.iter().any(|n| n.is_dirty())
+        !self.dirty_leaves.is_empty() || self.internal_nodes.iter().any(|n| n.is_dirty())
     }
 
     /// Get the number of dirty leaves.
@@ -853,11 +861,8 @@ where
 
     /// Update dirty-related and eviction statistics.
     fn update_dirty_stats(&mut self) {
-        self.stats.dirty_internal_count = self
-            .internal_nodes
-            .iter()
-            .filter(|n| n.is_dirty())
-            .count();
+        self.stats.dirty_internal_count =
+            self.internal_nodes.iter().filter(|n| n.is_dirty()).count();
         self.stats.dirty_leaf_count = self.dirty_leaves.len();
         self.stats.dirty_bytes = self.dirty_bytes;
         self.stats.evicted_leaf_count = self.evicted_leaves.len();
@@ -1282,10 +1287,7 @@ where
     /// # Returns
     /// * Reference to the leaf
     /// * Error if the leaf cannot be loaded
-    pub fn load_leaf_from_disk(
-        &mut self,
-        loc: LeafLocation,
-    ) -> Result<&L, FileFormatError> {
+    pub fn load_leaf_from_disk(&mut self, loc: LeafLocation) -> Result<&L, FileFormatError> {
         let id = loc.id;
 
         // Check if we have the leaf in memory
@@ -1338,9 +1340,10 @@ where
         }
 
         // Need to load from disk
-        let path = self.spill_file_path.as_ref().ok_or_else(|| {
-            FileFormatError::Io(format!("No spill file for leaf {}", id))
-        })?;
+        let path = self
+            .spill_file_path
+            .as_ref()
+            .ok_or_else(|| FileFormatError::Io(format!("No spill file for leaf {}", id)))?;
 
         let mut leaf_file: LeafFile<L> = LeafFile::open(path)?;
         let leaf = leaf_file.load_leaf(id as u64)?;
@@ -1401,8 +1404,7 @@ where
     /// Call `reload_evicted_leaves()` first if you need to preserve them.
     pub fn cleanup_spill_file(&mut self) -> Result<(), std::io::Error> {
         // Evict entries from BufferCache if present (Phase 7)
-        if let (Some(buffer_cache), Some(file_id)) =
-            (&self.config.buffer_cache, self.spill_file_id)
+        if let (Some(buffer_cache), Some(file_id)) = (&self.config.buffer_cache, self.spill_file_id)
         {
             let cache_handle = CacheFileHandle {
                 file_id,
@@ -1621,10 +1623,10 @@ impl<'a, I, L> NodeRefMut<'a, I, L> {
 // Leaf File - Block-Based Disk Storage (Phase 4)
 // =============================================================================
 
-use super::order_statistics_file_format::{
-    align_to_block, create_data_block_header, set_block_checksum, verify_data_block_header,
-    BlockLocation as FileBlockLocation, FileFormatError, FileHeader, IndexEntry, DATA_BLOCK_HEADER_SIZE,
-    FILE_HEADER_SIZE, INDEX_ENTRY_SIZE, MAGIC_INDEX_BLOCK,
+use super::algebra::order_statistics::order_statistics_file_format::{
+    BlockLocation as FileBlockLocation, DATA_BLOCK_HEADER_SIZE, FILE_HEADER_SIZE, FileFormatError,
+    FileHeader, INDEX_ENTRY_SIZE, IndexEntry, MAGIC_INDEX_BLOCK, align_to_block,
+    create_data_block_header, set_block_checksum, verify_data_block_header,
 };
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
@@ -1800,7 +1802,9 @@ where
         L: LeafNodeOps,
     {
         if self.finalized {
-            return Err(FileFormatError::Io("file is finalized (read-only)".to_string()));
+            return Err(FileFormatError::Io(
+                "file is finalized (read-only)".to_string(),
+            ));
         }
 
         let file = self
@@ -1996,5 +2000,5 @@ impl<L> Drop for LeafFile<L> {
 }
 
 #[cfg(test)]
-#[path = "order_statistics_storage_tests.rs"]
+#[path = "node_storage_tests.rs"]
 mod tests;
