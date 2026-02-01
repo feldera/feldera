@@ -6,7 +6,7 @@ This plan implements O(n) bulk construction of `OrderStatisticsMultiset` from so
 replacing the current O(n log n) approach that uses repeated insertions. This optimization:
 
 1. Improves checkpoint/restore performance from O(n log n) to O(n)
-2. Establishes the foundation for node-level file storage (Option 1)
+2. Establishes the foundation for node-level file storage (order_statistics_node_storage_plan.md)
 3. Enables efficient tree reconstruction from disk-backed node storage
 
 ## Current State
@@ -525,7 +525,7 @@ Expected results:
 
 ## Future: How This Helps Node-Level Storage
 
-When we implement Option 1 (node-level file backing), bulk load will be used:
+When we implement node-level file backing, bulk load will be used:
 
 1. **Loading cold subtrees**: When a subtree is evicted and later needed,
    its entries can be loaded from disk and reconstructed via bulk load in O(n)

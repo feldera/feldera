@@ -28,16 +28,28 @@
 //! computation. When querying (select_kth, rank), only positions with positive
 //! cumulative weight are considered valid.
 
-use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+use rkyv::{
+    Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize,
+    de::deserializers::SharedDeserializeMap as Deserializer,
+    ser::serializers::AllocSerializer,
+};
 use size_of::SizeOf;
 use std::{
     cmp::Ordering,
     fmt::Debug,
     hash::{Hash, Hasher},
+    sync::Arc,
 };
 
 use crate::algebra::ZWeight;
+use crate::algebra::order_statistics_storage::{
+    LeafLocation, NodeLocation, NodeStorage, NodeStorageConfig,
+    StorableNode,
+};
+use crate::circuit::Runtime;
+use feldera_storage::{FileCommitter, StoragePath};
 use crate::utils::IsNone;
+use crate::Error;
 
 /// Default branching factor for the B+ tree.
 /// Larger values are more cache/disk friendly but may have higher constant factors.
@@ -48,31 +60,44 @@ pub const DEFAULT_BRANCHING_FACTOR: usize = 64;
 pub const MIN_BRANCHING_FACTOR: usize = 4;
 
 /// A leaf node in the B+ tree, storing sorted (key, weight) pairs.
-#[derive(Debug, Clone, PartialEq, Eq, SizeOf, serde::Serialize, serde::Deserialize)]
-struct LeafNode<T> {
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    SizeOf,
+    serde::Serialize,
+    serde::Deserialize,
+    Archive,
+    RkyvSerialize,
+    RkyvDeserialize,
+)]
+#[archive(bound(serialize = "__S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer"))]
+pub struct LeafNode<T> {
     /// Sorted keys with their weights
-    entries: Vec<(T, ZWeight)>,
-    /// Link to next leaf for efficient iteration (index in arena, or usize::MAX if none)
-    next_leaf: usize,
+    pub entries: Vec<(T, ZWeight)>,
+    /// Link to next leaf for efficient iteration (None if this is the last leaf)
+    pub next_leaf: Option<LeafLocation>,
 }
 
 impl<T: Ord + Clone> LeafNode<T> {
+    #[allow(dead_code)]
     fn new() -> Self {
         Self {
             entries: Vec::new(),
-            next_leaf: usize::MAX,
+            next_leaf: None,
         }
     }
 
     fn with_capacity(capacity: usize) -> Self {
         Self {
             entries: Vec::with_capacity(capacity),
-            next_leaf: usize::MAX,
+            next_leaf: None,
         }
     }
 
     /// Total weight in this leaf
-    fn total_weight(&self) -> ZWeight {
+    pub fn total_weight(&self) -> ZWeight {
         self.entries.iter().map(|(_, w)| *w).sum()
     }
 
@@ -102,7 +127,8 @@ impl<T: Ord + Clone> LeafNode<T> {
         self.entries.len() > max_entries
     }
 
-    /// Split this leaf, returning the new right leaf and the split key
+    /// Split this leaf, returning the new right leaf and the split key.
+    /// The caller must set self.next_leaf to point to the right leaf after allocating it.
     fn split(&mut self) -> (T, LeafNode<T>) {
         let mid = self.entries.len() / 2;
         let right_entries = self.entries.split_off(mid);
@@ -110,10 +136,10 @@ impl<T: Ord + Clone> LeafNode<T> {
 
         let right = LeafNode {
             entries: right_entries,
-            next_leaf: self.next_leaf,
+            next_leaf: self.next_leaf.take(), // Right leaf inherits our next pointer
         };
 
-        // We'll set self.next_leaf after we know the right node's index
+        // self.next_leaf is now None; caller will set it to point to right leaf
         (split_key, right)
     }
 
@@ -147,32 +173,22 @@ impl<T: Ord + Clone> LeafNode<T> {
     }
 }
 
-/// An internal node in the B+ tree, storing keys, child indices, and subtree sums.
-#[derive(Debug, Clone, PartialEq, Eq, SizeOf, serde::Serialize, serde::Deserialize)]
-struct InternalNode {
-    /// Separator keys: keys[i] is the minimum key in children[i+1]
-    keys: Vec<ZWeight>, // Using ZWeight as placeholder, will be index
-    /// Actually stores keys as indices into a separate key storage
-    /// For simplicity, we'll store keys directly but typed
-    key_indices: Vec<usize>,
-    /// Child node indices (into the arena)
-    children: Vec<usize>,
-    /// Sum of weights in each child's subtree
-    subtree_sums: Vec<ZWeight>,
-}
-
 /// An internal node with actual key storage
-#[derive(Debug, Clone, PartialEq, Eq, SizeOf, serde::Serialize, serde::Deserialize)]
-struct InternalNodeTyped<T> {
+#[derive(Debug, Clone, PartialEq, Eq, SizeOf)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Archive, RkyvSerialize, RkyvDeserialize)]
+#[archive(bound(serialize = "__S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer"))]
+pub struct InternalNodeTyped<T> {
     /// Separator keys: keys[i] is the minimum key in children[i+1]
-    keys: Vec<T>,
-    /// Child node indices (into the arena)
-    children: Vec<usize>,
+    pub keys: Vec<T>,
+    /// Child node locations (can be internal or leaf nodes)
+    pub children: Vec<NodeLocation>,
     /// Sum of weights in each child's subtree
-    subtree_sums: Vec<ZWeight>,
+    pub subtree_sums: Vec<ZWeight>,
 }
 
 impl<T: Ord + Clone> InternalNodeTyped<T> {
+    #[allow(dead_code)]
     fn new() -> Self {
         Self {
             keys: Vec::new(),
@@ -190,7 +206,7 @@ impl<T: Ord + Clone> InternalNodeTyped<T> {
     }
 
     /// Total weight across all children
-    fn total_weight(&self) -> ZWeight {
+    pub fn total_weight(&self) -> ZWeight {
         self.subtree_sums.iter().sum()
     }
 
@@ -231,7 +247,7 @@ impl<T: Ord + Clone> InternalNodeTyped<T> {
     }
 
     /// Select k-th element by navigating subtree sums
-    fn find_child_for_select(&self, k: ZWeight) -> Option<(usize, ZWeight)> {
+    fn find_child_for_select(&self, k: ZWeight) -> Option<(NodeLocation, ZWeight)> {
         let mut remaining = k;
         for (i, &sum) in self.subtree_sums.iter().enumerate() {
             // Only count positive sums for selection
@@ -253,13 +269,53 @@ impl<T: Ord + Clone> InternalNodeTyped<T> {
     }
 }
 
+// =============================================================================
+// StorableNode implementation for InternalNodeTyped<T>
+// =============================================================================
+
+impl<T> StorableNode for InternalNodeTyped<T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static,
+    T: Archive,
+    T: for<'a> RkyvSerialize<AllocSerializer<4096>>,
+    T::Archived: RkyvDeserialize<T, rkyv::Infallible>,
+{
+    fn estimate_size(&self) -> usize {
+        // Estimate: keys vec + children vec + subtree_sums vec + overhead
+        let keys_size = self.keys.len() * std::mem::size_of::<T>();
+        let children_size = self.children.len() * std::mem::size_of::<NodeLocation>();
+        let sums_size = self.subtree_sums.len() * std::mem::size_of::<ZWeight>();
+        keys_size + children_size + sums_size + 3 * std::mem::size_of::<Vec<()>>()
+    }
+}
+
+// =============================================================================
+// StorableNode implementation for LeafNode<T>
+// =============================================================================
+
+impl<T> StorableNode for LeafNode<T>
+where
+    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static,
+    T: Archive,
+    T: for<'a> RkyvSerialize<AllocSerializer<4096>>,
+    T::Archived: RkyvDeserialize<T, rkyv::Infallible>,
+{
+    fn estimate_size(&self) -> usize {
+        // Estimate: entries vec + next_leaf option + overhead
+        let entries_size = self.entries.len() * (std::mem::size_of::<T>() + std::mem::size_of::<ZWeight>());
+        let option_size = std::mem::size_of::<Option<LeafLocation>>();
+        entries_size + option_size + std::mem::size_of::<Vec<()>>()
+    }
+}
+
 /// A node in the B+ tree (either leaf or internal)
 #[derive(Debug, Clone, PartialEq, Eq, SizeOf, serde::Serialize, serde::Deserialize)]
-enum Node<T> {
+pub enum Node<T> {
     Leaf(LeafNode<T>),
     Internal(InternalNodeTyped<T>),
 }
 
+#[allow(dead_code)]
 impl<T: Ord + Clone> Node<T> {
     fn total_weight(&self) -> ZWeight {
         match self {
@@ -288,6 +344,10 @@ impl<T: Ord + Clone> Node<T> {
 /// - Rank query: O(log n)
 /// - Merge: O(m log(n+m)) where m is the size of the smaller tree
 ///
+/// # Storage
+/// Uses `NodeStorage` internally which separates internal nodes (always in memory)
+/// from leaf nodes (can be spilled to disk when memory pressure is high).
+///
 /// # Example
 /// ```ignore
 /// use dbsp::algebra::OrderStatisticsMultiset;
@@ -302,22 +362,31 @@ impl<T: Ord + Clone> Node<T> {
 /// assert_eq!(tree.select_kth(2, true), Some(&20)); // Positions 2,3 -> 20
 /// assert_eq!(tree.rank(&20), 2); // Two elements before 20
 /// ```
-#[derive(Debug, Clone, SizeOf, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, SizeOf)]
 pub struct OrderStatisticsMultiset<T: Ord + Clone> {
-    /// Arena storage for all nodes
-    nodes: Vec<Node<T>>,
-    /// Index of the root node (usize::MAX if tree is empty)
-    root: usize,
+    /// Node storage (separates internal nodes and leaves, supports disk spilling)
+    storage: NodeStorage<T>,
+    /// Location of the root node (None if tree is empty)
+    root: Option<NodeLocation>,
     /// Total weight across all elements
     total_weight: ZWeight,
     /// Maximum entries per leaf node
     max_leaf_entries: usize,
     /// Maximum children per internal node
     max_internal_children: usize,
-    /// Index of the first leaf (for iteration)
-    first_leaf: usize,
+    /// Location of the first leaf (for iteration)
+    first_leaf: Option<LeafLocation>,
     /// Number of distinct keys
     num_keys: usize,
+}
+
+// Implement Clone manually since NodeStorage doesn't implement Clone
+impl<T: Ord + Clone> Clone for OrderStatisticsMultiset<T> {
+    fn clone(&self) -> Self {
+        // Rebuild from entries (this is O(n) due to bulk load)
+        let entries: Vec<_> = self.iter().map(|(k, w)| (k.clone(), w)).collect();
+        Self::from_sorted_entries(entries, self.max_leaf_entries)
+    }
 }
 
 // Implement PartialEq manually to compare contents, not structure
@@ -369,8 +438,18 @@ impl<T: Ord + Clone> Ord for OrderStatisticsMultiset<T> {
 }
 
 impl<T: Ord + Clone> IsNone for OrderStatisticsMultiset<T> {
+    type Inner = OrderStatisticsMultiset<T>;
+
     fn is_none(&self) -> bool {
         false // OrderStatisticsMultiset is never "none"
+    }
+
+    fn unwrap_or_self(&self) -> &Self::Inner {
+        self
+    }
+
+    fn from_inner(inner: Self::Inner) -> Self {
+        inner
     }
 }
 
@@ -404,13 +483,171 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
     pub fn with_branching_factor(b: usize) -> Self {
         let b = b.max(MIN_BRANCHING_FACTOR);
         Self {
-            nodes: Vec::new(),
-            root: usize::MAX,
+            storage: NodeStorage::new(),
+            root: None,
             total_weight: 0,
             max_leaf_entries: b,
             max_internal_children: b,
-            first_leaf: usize::MAX,
+            first_leaf: None,
             num_keys: 0,
+        }
+    }
+
+    /// Create a new empty multiset with specified branching factor and storage config.
+    pub fn with_config(b: usize, storage_config: NodeStorageConfig) -> Self {
+        let b = b.max(MIN_BRANCHING_FACTOR);
+        Self {
+            storage: NodeStorage::with_config(storage_config),
+            root: None,
+            total_weight: 0,
+            max_leaf_entries: b,
+            max_internal_children: b,
+            first_leaf: None,
+            num_keys: 0,
+        }
+    }
+
+    /// Construct a multiset from pre-sorted entries in O(n) time.
+    ///
+    /// This method builds the B+ tree bottom-up, which is significantly faster
+    /// than repeated insertions for bulk loading scenarios like deserialization
+    /// or checkpoint restore.
+    ///
+    /// # Preconditions
+    /// - `entries` MUST be sorted by key in ascending order
+    /// - Duplicate keys should have their weights combined before calling
+    ///
+    /// # Complexity
+    /// O(n) where n = entries.len()
+    ///
+    /// # Panics
+    /// Debug builds panic if entries are not sorted.
+    pub fn from_sorted_entries(entries: Vec<(T, ZWeight)>, branching_factor: usize) -> Self {
+        let b = branching_factor.max(MIN_BRANCHING_FACTOR);
+
+        // Handle empty case
+        if entries.is_empty() {
+            return Self::with_branching_factor(b);
+        }
+
+        // Debug assertion for sorted input
+        debug_assert!(
+            entries.windows(2).all(|w| w[0].0 <= w[1].0),
+            "entries must be sorted by key"
+        );
+
+        let num_keys = entries.len();
+        let total_weight: ZWeight = entries.iter().map(|(_, w)| *w).sum();
+
+        let mut storage = NodeStorage::new();
+
+        // Phase 1: Build leaf nodes
+        let mut leaf_locations: Vec<LeafLocation> = Vec::new();
+        let mut leaf_weights: Vec<ZWeight> = Vec::new();
+
+        for chunk in entries.chunks(b) {
+            let leaf = LeafNode {
+                entries: chunk.to_vec(),
+                next_leaf: None, // Will be set below
+            };
+            leaf_weights.push(leaf.total_weight());
+            let loc = storage.alloc_leaf(leaf);
+            let leaf_loc = loc.as_leaf().expect("alloc_leaf returns Leaf location");
+            leaf_locations.push(leaf_loc);
+        }
+
+        // Link leaves together
+        for i in 0..leaf_locations.len().saturating_sub(1) {
+            let current_loc = leaf_locations[i];
+            let next_loc = leaf_locations[i + 1];
+            storage.get_leaf_mut(current_loc).next_leaf = Some(next_loc);
+        }
+
+        let first_leaf = Some(leaf_locations[0]);
+
+        // If there's only one leaf, it becomes the root
+        if leaf_locations.len() == 1 {
+            return Self {
+                storage,
+                root: Some(NodeLocation::Leaf(leaf_locations[0])),
+                total_weight,
+                max_leaf_entries: b,
+                max_internal_children: b,
+                first_leaf,
+                num_keys,
+            };
+        }
+
+        // Phase 2: Build internal layers bottom-up
+        // Level 0 = leaves, Level 1 = first internal nodes, etc.
+        let mut current_level_locs: Vec<NodeLocation> = leaf_locations
+            .into_iter()
+            .map(NodeLocation::Leaf)
+            .collect();
+        let mut current_level_weights = leaf_weights;
+        let mut current_level: u8 = 1; // First internal nodes are at level 1
+
+        while current_level_locs.len() > 1 {
+            let mut next_level_locs = Vec::new();
+            let mut next_level_weights = Vec::new();
+
+            // Process children in groups of B
+            let mut i = 0;
+            while i < current_level_locs.len() {
+                let chunk_end = (i + b).min(current_level_locs.len());
+                let chunk_locs = &current_level_locs[i..chunk_end];
+                let chunk_weights = &current_level_weights[i..chunk_end];
+
+                // Build keys: first key of each child except the first
+                let mut keys = Vec::with_capacity(chunk_locs.len().saturating_sub(1));
+                for &child_loc in &chunk_locs[1..] {
+                    let first_key = Self::get_first_key_from_storage(&storage, child_loc);
+                    keys.push(first_key);
+                }
+
+                let internal = InternalNodeTyped {
+                    keys,
+                    children: chunk_locs.to_vec(),
+                    subtree_sums: chunk_weights.to_vec(),
+                };
+
+                let internal_weight = internal.total_weight();
+                next_level_weights.push(internal_weight);
+                let internal_loc = storage.alloc_internal(internal, current_level);
+                next_level_locs.push(internal_loc);
+
+                i = chunk_end;
+            }
+
+            current_level_locs = next_level_locs;
+            current_level_weights = next_level_weights;
+            current_level = current_level.saturating_add(1);
+        }
+
+        let root = Some(current_level_locs[0]);
+
+        Self {
+            storage,
+            root,
+            total_weight,
+            max_leaf_entries: b,
+            max_internal_children: b,
+            first_leaf,
+            num_keys,
+        }
+    }
+
+    /// Helper to get the first key from a node (for building separator keys).
+    /// This recursively descends to the leftmost leaf to find the minimum key.
+    fn get_first_key_from_storage(storage: &NodeStorage<T>, loc: NodeLocation) -> T {
+        match loc {
+            NodeLocation::Leaf(leaf_loc) => {
+                storage.get_leaf(leaf_loc).entries[0].0.clone()
+            }
+            NodeLocation::Internal { id, .. } => {
+                let internal = storage.get_internal(id);
+                Self::get_first_key_from_storage(storage, internal.children[0])
+            }
         }
     }
 
@@ -445,20 +682,22 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
             return;
         }
 
-        if self.root == usize::MAX {
+        if self.root.is_none() {
             // Tree is empty, create first leaf
             let mut leaf = LeafNode::with_capacity(self.max_leaf_entries);
             leaf.entries.push((key, weight));
-            self.nodes.push(Node::Leaf(leaf));
-            self.root = 0;
-            self.first_leaf = 0;
+            let loc = self.storage.alloc_leaf(leaf);
+            let leaf_loc = loc.as_leaf().expect("alloc_leaf returns Leaf location");
+            self.root = Some(loc);
+            self.first_leaf = Some(leaf_loc);
             self.total_weight = weight;
             self.num_keys = 1;
             return;
         }
 
         // Insert into tree and handle splits
-        let (new_key_created, split_result) = self.insert_recursive(self.root, key, weight);
+        let root_loc = self.root.unwrap();
+        let (new_key_created, split_result) = self.insert_recursive(root_loc, key, weight);
 
         if new_key_created {
             self.num_keys += 1;
@@ -466,136 +705,111 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
         self.total_weight += weight;
 
         // Handle root split
-        if let Some((promoted_key, new_child_idx)) = split_result {
+        if let Some((promoted_key, new_child_loc)) = split_result {
             let mut new_root = InternalNodeTyped::with_capacity(self.max_internal_children);
-            new_root.children.push(self.root);
-            new_root.children.push(new_child_idx);
+            new_root.children.push(root_loc);
+            new_root.children.push(new_child_loc);
             new_root.keys.push(promoted_key);
 
             // Calculate subtree sums
-            let left_sum = self.nodes[self.root].total_weight();
-            let right_sum = self.nodes[new_child_idx].total_weight();
+            let left_sum = self.node_total_weight(root_loc);
+            let right_sum = self.node_total_weight(new_child_loc);
             new_root.subtree_sums.push(left_sum);
             new_root.subtree_sums.push(right_sum);
 
-            let new_root_idx = self.nodes.len();
-            self.nodes.push(Node::Internal(new_root));
-            self.root = new_root_idx;
+            // New root is one level above the old root
+            let new_root_level = root_loc.level().saturating_add(1);
+            let new_root_loc = self.storage.alloc_internal(new_root, new_root_level);
+            self.root = Some(new_root_loc);
+        }
+    }
+
+    /// Get the total weight of a node at the given location.
+    fn node_total_weight(&self, loc: NodeLocation) -> ZWeight {
+        match loc {
+            NodeLocation::Leaf(leaf_loc) => self.storage.get_leaf(leaf_loc).total_weight(),
+            NodeLocation::Internal { id, .. } => self.storage.get_internal(id).total_weight(),
         }
     }
 
     /// Recursive insert helper. Returns (new_key_created, optional split result).
     fn insert_recursive(
         &mut self,
-        node_idx: usize,
+        loc: NodeLocation,
         key: T,
         weight: ZWeight,
-    ) -> (bool, Option<(T, usize)>) {
-        // First, determine if this is a leaf or internal node
-        let is_leaf = self.nodes[node_idx].is_leaf();
-
-        if is_leaf {
-            // Insert into leaf - get info we need first
-            let (new_key, needs_split) = {
-                let leaf = match &mut self.nodes[node_idx] {
-                    Node::Leaf(l) => l,
-                    _ => unreachable!(),
-                };
+    ) -> (bool, Option<(T, NodeLocation)>) {
+        match loc {
+            NodeLocation::Leaf(leaf_loc) => {
+                // Insert into leaf
+                let leaf = self.storage.get_leaf_mut(leaf_loc);
                 let new_key = leaf.find_key_pos(&key).is_err();
                 leaf.insert(key, weight);
-                (new_key, leaf.needs_split(self.max_leaf_entries))
-            };
+                let needs_split = leaf.needs_split(self.max_leaf_entries);
 
-            // Handle split if needed
-            if needs_split {
-                let (split_key, right_leaf, old_next) = {
-                    let leaf = match &mut self.nodes[node_idx] {
-                        Node::Leaf(l) => l,
-                        _ => unreachable!(),
-                    };
+                // Handle split if needed
+                if needs_split {
+                    let leaf = self.storage.get_leaf_mut(leaf_loc);
                     let (split_key, right_leaf) = leaf.split();
-                    let old_next = leaf.next_leaf;
-                    (split_key, right_leaf, old_next)
+                    // right_leaf already has the correct next_leaf (inherited from left)
+
+                    // Allocate the right leaf
+                    let right_loc = self.storage.alloc_leaf(right_leaf);
+                    let right_leaf_loc = right_loc.as_leaf().expect("alloc_leaf returns Leaf location");
+
+                    // Update the left leaf's next pointer to the new right leaf
+                    self.storage.get_leaf_mut(leaf_loc).next_leaf = Some(right_leaf_loc);
+
+                    (new_key, Some((split_key, right_loc)))
+                } else {
+                    (new_key, None)
+                }
+            }
+            NodeLocation::Internal { id: internal_idx, level } => {
+                // Internal node - find child and recurse
+                let (child_loc, child_pos) = {
+                    let internal = self.storage.get_internal(internal_idx);
+                    let child_pos = internal.find_child(&key);
+                    (internal.children[child_pos], child_pos)
                 };
 
-                let right_idx = self.nodes.len();
+                let (new_key, split_result) = self.insert_recursive(child_loc, key, weight);
 
-                // Update the left leaf's next pointer
+                // Update subtree sum for the child we descended into
                 {
-                    let leaf = match &mut self.nodes[node_idx] {
-                        Node::Leaf(l) => l,
-                        _ => unreachable!(),
-                    };
-                    leaf.next_leaf = right_idx;
+                    let internal = self.storage.get_internal_mut(internal_idx);
+                    internal.subtree_sums[child_pos] += weight;
                 }
 
-                // Create right leaf with correct next pointer
-                let mut right_leaf = right_leaf;
-                right_leaf.next_leaf = old_next;
-                self.nodes.push(Node::Leaf(right_leaf));
+                // Handle child split
+                if let Some((promoted_key, new_child_loc)) = split_result {
+                    // Calculate sums
+                    let left_sum = self.node_total_weight(child_loc);
+                    let right_sum = self.node_total_weight(new_child_loc);
 
-                (new_key, Some((split_key, right_idx)))
-            } else {
+                    let needs_internal_split = {
+                        let internal = self.storage.get_internal_mut(internal_idx);
+
+                        internal.subtree_sums[child_pos] = left_sum;
+                        internal.keys.insert(child_pos, promoted_key);
+                        internal.children.insert(child_pos + 1, new_child_loc);
+                        internal.subtree_sums.insert(child_pos + 1, right_sum);
+
+                        internal.needs_split(self.max_internal_children)
+                    };
+
+                    // Handle internal node split if needed
+                    if needs_internal_split {
+                        let internal = self.storage.get_internal_mut(internal_idx);
+                        let (promoted, right_internal) = internal.split();
+                        // Right sibling has the same level as the original node
+                        let right_loc = self.storage.alloc_internal(right_internal, level);
+                        return (new_key, Some((promoted, right_loc)));
+                    }
+                }
+
                 (new_key, None)
             }
-        } else {
-            // Internal node - find child and recurse
-            let (child_idx, child_pos) = {
-                let internal = match &self.nodes[node_idx] {
-                    Node::Internal(i) => i,
-                    _ => unreachable!(),
-                };
-                let child_pos = internal.find_child(&key);
-                (internal.children[child_pos], child_pos)
-            };
-
-            let (new_key, split_result) = self.insert_recursive(child_idx, key, weight);
-
-            // Update subtree sum for the child we descended into
-            {
-                let internal = match &mut self.nodes[node_idx] {
-                    Node::Internal(i) => i,
-                    _ => unreachable!(),
-                };
-                internal.subtree_sums[child_pos] += weight;
-            }
-
-            // Handle child split
-            if let Some((promoted_key, new_child_idx)) = split_result {
-                // Calculate sums before taking mutable borrow
-                let left_sum = self.nodes[child_idx].total_weight();
-                let right_sum = self.nodes[new_child_idx].total_weight();
-
-                let needs_internal_split = {
-                    let internal = match &mut self.nodes[node_idx] {
-                        Node::Internal(i) => i,
-                        _ => unreachable!(),
-                    };
-
-                    internal.subtree_sums[child_pos] = left_sum;
-                    internal.keys.insert(child_pos, promoted_key);
-                    internal.children.insert(child_pos + 1, new_child_idx);
-                    internal.subtree_sums.insert(child_pos + 1, right_sum);
-
-                    internal.needs_split(self.max_internal_children)
-                };
-
-                // Handle internal node split if needed
-                if needs_internal_split {
-                    let (promoted, right_internal) = {
-                        let internal = match &mut self.nodes[node_idx] {
-                            Node::Internal(i) => i,
-                            _ => unreachable!(),
-                        };
-                        internal.split()
-                    };
-                    let right_idx = self.nodes.len();
-                    self.nodes.push(Node::Internal(right_internal));
-                    return (new_key, Some((promoted, right_idx)));
-                }
-            }
-
-            (new_key, None)
         }
     }
 
@@ -620,18 +834,21 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
             self.total_weight - 1 - k
         };
 
-        if effective_k < 0 || effective_k >= self.total_weight || self.root == usize::MAX {
+        if effective_k < 0 || effective_k >= self.total_weight || self.root.is_none() {
             return None;
         }
-        self.select_kth_recursive(self.root, effective_k)
+        self.select_kth_recursive(self.root.unwrap(), effective_k)
     }
 
-    fn select_kth_recursive(&self, node_idx: usize, k: ZWeight) -> Option<&T> {
-        match &self.nodes[node_idx] {
-            Node::Leaf(leaf) => leaf.select_kth(k),
-            Node::Internal(internal) => {
-                let (child_idx, remaining_k) = internal.find_child_for_select(k)?;
-                self.select_kth_recursive(child_idx, remaining_k)
+    fn select_kth_recursive(&self, loc: NodeLocation, k: ZWeight) -> Option<&T> {
+        match loc {
+            NodeLocation::Leaf(leaf_loc) => {
+                self.storage.get_leaf(leaf_loc).select_kth(k)
+            }
+            NodeLocation::Internal { id, .. } => {
+                let internal = self.storage.get_internal(id);
+                let (child_loc, remaining_k) = internal.find_child_for_select(k)?;
+                self.select_kth_recursive(child_loc, remaining_k)
             }
         }
     }
@@ -644,20 +861,23 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
     /// # Complexity
     /// O(log n)
     pub fn rank(&self, key: &T) -> ZWeight {
-        if self.root == usize::MAX {
-            return 0;
+        match self.root {
+            None => 0,
+            Some(loc) => self.rank_recursive(loc, key),
         }
-        self.rank_recursive(self.root, key)
     }
 
-    fn rank_recursive(&self, node_idx: usize, key: &T) -> ZWeight {
-        match &self.nodes[node_idx] {
-            Node::Leaf(leaf) => leaf.prefix_weight(key),
-            Node::Internal(internal) => {
+    fn rank_recursive(&self, loc: NodeLocation, key: &T) -> ZWeight {
+        match loc {
+            NodeLocation::Leaf(leaf_loc) => {
+                self.storage.get_leaf(leaf_loc).prefix_weight(key)
+            }
+            NodeLocation::Internal { id, .. } => {
+                let internal = self.storage.get_internal(id);
                 let child_pos = internal.find_child(key);
                 let prefix = internal.prefix_weight_before_child(child_pos);
-                let child_idx = internal.children[child_pos];
-                prefix + self.rank_recursive(child_idx, key)
+                let child_loc = internal.children[child_pos];
+                prefix + self.rank_recursive(child_loc, key)
             }
         }
     }
@@ -760,19 +980,23 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
     /// # Complexity
     /// O(log n)
     pub fn get_weight(&self, key: &T) -> ZWeight {
-        if self.root == usize::MAX {
-            return 0;
+        match self.root {
+            None => 0,
+            Some(loc) => self.get_weight_recursive(loc, key),
         }
-        self.get_weight_recursive(self.root, key)
     }
 
-    fn get_weight_recursive(&self, node_idx: usize, key: &T) -> ZWeight {
-        match &self.nodes[node_idx] {
-            Node::Leaf(leaf) => match leaf.find_key_pos(key) {
-                Ok(pos) => leaf.entries[pos].1,
-                Err(_) => 0,
-            },
-            Node::Internal(internal) => {
+    fn get_weight_recursive(&self, loc: NodeLocation, key: &T) -> ZWeight {
+        match loc {
+            NodeLocation::Leaf(leaf_loc) => {
+                let leaf = self.storage.get_leaf(leaf_loc);
+                match leaf.find_key_pos(key) {
+                    Ok(pos) => leaf.entries[pos].1,
+                    Err(_) => 0,
+                }
+            }
+            NodeLocation::Internal { id, .. } => {
+                let internal = self.storage.get_internal(id);
                 let child_pos = internal.find_child(key);
                 self.get_weight_recursive(internal.children[child_pos], key)
             }
@@ -786,6 +1010,18 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
             current_leaf: self.first_leaf,
             current_pos: 0,
         }
+    }
+
+    /// Get a reference to the internal storage.
+    /// This is useful for disk spilling operations.
+    pub fn storage(&self) -> &NodeStorage<T> {
+        &self.storage
+    }
+
+    /// Get a mutable reference to the internal storage.
+    /// This is useful for disk spilling operations.
+    pub fn storage_mut(&mut self) -> &mut NodeStorage<T> {
+        &mut self.storage
     }
 
     /// Merge another multiset into this one.
@@ -818,18 +1054,16 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
             .collect();
 
         let b = self.max_leaf_entries;
-        *self = Self::with_branching_factor(b);
-        for (key, weight) in entries {
-            self.insert(key, weight);
-        }
+        // Use O(n) bulk construction instead of O(n log n) repeated inserts
+        *self = Self::from_sorted_entries(entries, b);
     }
 
     /// Clear all entries from the multiset.
     pub fn clear(&mut self) {
-        self.nodes.clear();
-        self.root = usize::MAX;
+        self.storage.clear();
+        self.root = None;
         self.total_weight = 0;
-        self.first_leaf = usize::MAX;
+        self.first_leaf = None;
         self.num_keys = 0;
     }
 
@@ -843,7 +1077,7 @@ impl<T: Ord + Clone> OrderStatisticsMultiset<T> {
 /// Iterator over (key, weight) pairs in sorted order.
 struct OrderStatisticsIter<'a, T: Ord + Clone> {
     tree: &'a OrderStatisticsMultiset<T>,
-    current_leaf: usize,
+    current_leaf: Option<LeafLocation>,
     current_pos: usize,
 }
 
@@ -852,14 +1086,8 @@ impl<'a, T: Ord + Clone> Iterator for OrderStatisticsIter<'a, T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if self.current_leaf == usize::MAX {
-                return None;
-            }
-
-            let leaf = match &self.tree.nodes.get(self.current_leaf)? {
-                Node::Leaf(l) => l,
-                _ => return None, // Shouldn't happen
-            };
+            let leaf_loc = self.current_leaf?;
+            let leaf = self.tree.storage.get_leaf(leaf_loc);
 
             if self.current_pos < leaf.entries.len() {
                 let (key, weight) = &leaf.entries[self.current_pos];
@@ -878,20 +1106,9 @@ impl<'a, T: Ord + Clone> Iterator for OrderStatisticsIter<'a, T> {
 // rkyv serialization support
 // ============================================================================
 
-#[derive(Archive, RkyvSerialize, RkyvDeserialize)]
-#[archive(check_bytes)]
-struct ArchivedLeafNode<T: Archive> {
-    entries: Vec<(T, ZWeight)>,
-    next_leaf: usize,
-}
-
-#[derive(Archive, RkyvSerialize, RkyvDeserialize)]
-#[archive(check_bytes)]
-struct ArchivedInternalNode<T: Archive> {
-    keys: Vec<T>,
-    children: Vec<usize>,
-    subtree_sums: Vec<ZWeight>,
-}
+// Note: LeafNode and InternalNodeTyped have rkyv derives directly on their struct
+// definitions, so we don't need separate ArchivedLeafNode/ArchivedInternalNode types.
+// The rkyv derive macro auto-generates ArchivedLeafNode and ArchivedInternalNodeTyped.
 
 /// Serializable representation of the multiset for rkyv.
 /// Converts to/from a flat representation for efficient serialization.
@@ -975,11 +1192,8 @@ impl<T: Ord + Clone + Archive> From<SerializableOrderStatisticsMultiset<T>>
     for OrderStatisticsMultiset<T>
 {
     fn from(serialized: SerializableOrderStatisticsMultiset<T>) -> Self {
-        let mut tree = Self::with_branching_factor(serialized.branching_factor as usize);
-        for (key, weight) in serialized.entries {
-            tree.insert(key, weight);
-        }
-        tree
+        // Use O(n) bulk construction instead of O(n log n) repeated inserts
+        Self::from_sorted_entries(serialized.entries, serialized.branching_factor as usize)
     }
 }
 
@@ -1031,6 +1245,132 @@ where
         let serializable: SerializableOrderStatisticsMultiset<T> =
             rkyv::Deserialize::deserialize(self, deserializer)?;
         Ok(serializable.into())
+    }
+}
+
+// ============================================================================
+// Checkpoint save/restore support
+// ============================================================================
+
+/// Helper function to serialize to bytes using rkyv.
+fn to_bytes<T>(value: &T) -> Result<feldera_storage::fbuf::FBuf, Error>
+where
+    T: rkyv::Serialize<AllocSerializer<4096>>,
+{
+    use feldera_storage::fbuf::FBuf;
+    use rkyv::ser::Serializer;
+    use std::io::{Error as IoError, ErrorKind};
+
+    let mut serializer = AllocSerializer::<4096>::default();
+    serializer
+        .serialize_value(value)
+        .map_err(|e| Error::IO(IoError::new(ErrorKind::Other, format!("Failed to serialize: {e}"))))?;
+    let bytes = serializer.into_serializer().into_inner();
+
+    // Copy to FBuf which has the required 512-byte alignment
+    let mut fbuf = FBuf::with_capacity(bytes.len());
+    fbuf.extend_from_slice(&bytes);
+    Ok(fbuf)
+}
+
+impl<T> OrderStatisticsMultiset<T>
+where
+    T: Ord + Clone + Archive,
+    <T as Archive>::Archived: Ord,
+    SerializableOrderStatisticsMultiset<T>: rkyv::Serialize<AllocSerializer<4096>>,
+    <SerializableOrderStatisticsMultiset<T> as Archive>::Archived:
+        rkyv::Deserialize<SerializableOrderStatisticsMultiset<T>, Deserializer>,
+{
+    /// Save the multiset state to persistent storage.
+    ///
+    /// Creates a checkpoint file at `{base}/{persistent_id}_osm.dat` containing
+    /// a serialized representation of the multiset.
+    ///
+    /// # Arguments
+    /// * `base` - Base directory for checkpoint files
+    /// * `persistent_id` - Unique identifier for this multiset's state
+    /// * `files` - Vector to append FileCommitter for atomic checkpoint commit
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mut files = Vec::new();
+    /// tree.save(&"checkpoint/uuid".into(), "percentile_0", &mut files)?;
+    /// // Later, commit all files atomically
+    /// for file in files {
+    ///     file.commit()?;
+    /// }
+    /// ```
+    pub fn save(
+        &self,
+        base: &StoragePath,
+        persistent_id: &str,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error> {
+        let backend = Runtime::storage_backend()?;
+
+        // Convert to serializable form and serialize
+        let serializable: SerializableOrderStatisticsMultiset<T> = self.into();
+        let bytes = to_bytes(&serializable)?;
+
+        // Write to checkpoint file
+        let path = Self::checkpoint_file(base, persistent_id);
+        let committer = backend.write(&path, bytes)?;
+        files.push(committer);
+
+        Ok(())
+    }
+
+    /// Restore the multiset state from persistent storage.
+    ///
+    /// Reads the checkpoint file at `{base}/{persistent_id}_osm.dat` and
+    /// reconstructs the multiset from the serialized data.
+    ///
+    /// # Arguments
+    /// * `base` - Base directory for checkpoint files
+    /// * `persistent_id` - Unique identifier for this multiset's state
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mut tree = OrderStatisticsMultiset::new();
+    /// tree.restore(&"checkpoint/uuid".into(), "percentile_0")?;
+    /// ```
+    pub fn restore(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
+        let backend = Runtime::storage_backend()?;
+
+        // Read checkpoint file
+        let path = Self::checkpoint_file(base, persistent_id);
+        let content = backend.read(&path)?;
+
+        // Deserialize using rkyv
+        // SAFETY: The data was written by save() using rkyv serialization
+        let archived = unsafe {
+            rkyv::archived_root::<SerializableOrderStatisticsMultiset<T>>(&content)
+        };
+
+        let serializable: SerializableOrderStatisticsMultiset<T> =
+            archived.deserialize(&mut Deserializer::default())
+                .map_err(|e| {
+                    use std::io::{Error as IoError, ErrorKind};
+                    Error::IO(IoError::new(ErrorKind::Other, format!("Failed to deserialize checkpoint: {e:?}")))
+                })?;
+
+        // Reconstruct the tree using bulk load for O(n) instead of O(n log n)
+        *self = serializable.into();
+
+        Ok(())
+    }
+
+    /// Generate the checkpoint file path for this multiset.
+    fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
+        StoragePath::from(format!("{base}/{persistent_id}_osm.dat"))
+    }
+
+    /// Clear the multiset state and reset to empty.
+    ///
+    /// This is called during state management operations like clearing
+    /// before a restore or resetting operator state.
+    pub fn clear_state(&mut self) {
+        self.clear();
     }
 }
 
@@ -1175,5 +1515,213 @@ mod tests {
         assert_eq!(tree.select_kth(1, false), Some(&30));
         assert_eq!(tree.select_kth(2, false), Some(&20));
         assert_eq!(tree.select_kth(4, false), Some(&10));
+    }
+
+    // ========================================================================
+    // Bulk load tests
+    // ========================================================================
+
+    #[test]
+    fn test_bulk_load_empty() {
+        let tree: OrderStatisticsMultiset<i32> =
+            OrderStatisticsMultiset::from_sorted_entries(vec![], 64);
+        assert!(tree.is_empty());
+        assert_eq!(tree.num_keys(), 0);
+        assert_eq!(tree.total_weight(), 0);
+        assert_eq!(tree.select_kth(0, true), None);
+    }
+
+    #[test]
+    fn test_bulk_load_single() {
+        let tree = OrderStatisticsMultiset::from_sorted_entries(vec![(42, 5)], 64);
+        assert_eq!(tree.total_weight(), 5);
+        assert_eq!(tree.num_keys(), 1);
+        assert_eq!(tree.select_kth(0, true), Some(&42));
+        assert_eq!(tree.select_kth(4, true), Some(&42));
+        assert_eq!(tree.select_kth(5, true), None);
+    }
+
+    #[test]
+    fn test_bulk_load_matches_incremental() {
+        // Build tree incrementally
+        let mut incremental: OrderStatisticsMultiset<i32> = OrderStatisticsMultiset::new();
+        for i in 0..1000 {
+            incremental.insert(i, (i % 10) as ZWeight + 1);
+        }
+
+        // Build tree via bulk load
+        let entries: Vec<_> = incremental.iter().map(|(k, w)| (*k, w)).collect();
+        let bulk = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+
+        // Verify equality
+        assert_eq!(incremental.total_weight(), bulk.total_weight());
+        assert_eq!(incremental.num_keys(), bulk.num_keys());
+
+        // Verify select operations match for a sample of positions
+        for i in (0..incremental.total_weight()).step_by(100) {
+            assert_eq!(
+                incremental.select_kth(i, true),
+                bulk.select_kth(i, true),
+                "Mismatch at position {i}"
+            );
+        }
+
+        // Verify iteration produces same results
+        let inc_entries: Vec<_> = incremental.iter().collect();
+        let bulk_entries: Vec<_> = bulk.iter().collect();
+        assert_eq!(inc_entries, bulk_entries);
+    }
+
+    #[test]
+    fn test_bulk_load_various_sizes() {
+        // Test sizes around branching factor boundaries
+        for size in [1, 10, 63, 64, 65, 100, 127, 128, 129, 1000, 10000] {
+            let entries: Vec<_> = (0..size).map(|i| (i as i32, 1)).collect();
+
+            let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+
+            assert_eq!(tree.num_keys(), size, "num_keys mismatch for size {size}");
+            assert_eq!(
+                tree.total_weight(),
+                size as ZWeight,
+                "total_weight mismatch for size {size}"
+            );
+
+            // Verify first and last
+            assert_eq!(tree.select_kth(0, true), Some(&0), "first key for size {size}");
+            assert_eq!(
+                tree.select_kth(size as ZWeight - 1, true),
+                Some(&(size as i32 - 1)),
+                "last key for size {size}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_bulk_load_preserves_iteration_order() {
+        let entries: Vec<_> = (0..500)
+            .map(|i| (i * 2, i as ZWeight + 1)) // Even numbers with varying weights
+            .collect();
+
+        let tree = OrderStatisticsMultiset::from_sorted_entries(entries.clone(), 32);
+
+        let collected: Vec<_> = tree.iter().map(|(k, w)| (*k, w)).collect();
+        assert_eq!(collected.len(), entries.len());
+        assert_eq!(collected, entries);
+    }
+
+    #[test]
+    fn test_bulk_load_with_varying_weights() {
+        let entries = vec![(10, 3), (20, 2), (30, 5), (40, 1), (50, 4)];
+        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+
+        assert_eq!(tree.total_weight(), 15); // 3+2+5+1+4
+        assert_eq!(tree.num_keys(), 5);
+
+        // Test select_kth with varying weights
+        // Key 10 has weight 3: positions 0, 1, 2
+        assert_eq!(tree.select_kth(0, true), Some(&10));
+        assert_eq!(tree.select_kth(2, true), Some(&10));
+
+        // Key 20 has weight 2: positions 3, 4
+        assert_eq!(tree.select_kth(3, true), Some(&20));
+        assert_eq!(tree.select_kth(4, true), Some(&20));
+
+        // Key 30 has weight 5: positions 5-9
+        assert_eq!(tree.select_kth(5, true), Some(&30));
+        assert_eq!(tree.select_kth(9, true), Some(&30));
+
+        // Key 40 has weight 1: position 10
+        assert_eq!(tree.select_kth(10, true), Some(&40));
+
+        // Key 50 has weight 4: positions 11-14
+        assert_eq!(tree.select_kth(11, true), Some(&50));
+        assert_eq!(tree.select_kth(14, true), Some(&50));
+    }
+
+    #[test]
+    fn test_bulk_load_small_branching_factor() {
+        // Use minimum branching factor to force multiple internal levels
+        let entries: Vec<_> = (0..100).map(|i| (i, 1)).collect();
+        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 4);
+
+        assert_eq!(tree.num_keys(), 100);
+        assert_eq!(tree.total_weight(), 100);
+
+        // Verify all elements accessible
+        for i in 0..100 {
+            assert_eq!(tree.select_kth(i, true), Some(&(i as i32)));
+        }
+    }
+
+    #[test]
+    fn test_bulk_load_rank_queries() {
+        let entries: Vec<_> = (0..100).map(|i| (i * 10, 1)).collect();
+        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+
+        // rank(key) = sum of weights of keys < key
+        assert_eq!(tree.rank(&0), 0); // No keys less than 0
+        assert_eq!(tree.rank(&10), 1); // One key (0) less than 10
+        assert_eq!(tree.rank(&50), 5); // Keys 0,10,20,30,40 less than 50
+        assert_eq!(tree.rank(&990), 99); // 99 keys less than 990
+        assert_eq!(tree.rank(&1000), 100); // All 100 keys less than 1000
+    }
+
+    #[test]
+    fn test_compact_uses_bulk_load() {
+        let mut tree = OrderStatisticsMultiset::new();
+        for i in 0..100 {
+            tree.insert(i, 1);
+        }
+        // Add some zero-weight entries
+        tree.insert(50, -1); // Now key 50 has weight 0
+
+        let original_weight = tree.total_weight();
+        assert_eq!(original_weight, 99); // 100 - 1
+
+        tree.compact();
+
+        // After compact, zero-weight entry should be removed
+        assert_eq!(tree.total_weight(), 99);
+        assert_eq!(tree.num_keys(), 99); // Key 50 removed
+
+        // Verify structure is still correct
+        assert_eq!(tree.select_kth(0, true), Some(&0));
+        assert_eq!(tree.select_kth(49, true), Some(&49));
+        assert_eq!(tree.select_kth(50, true), Some(&51)); // 50 is gone
+    }
+
+    #[test]
+    fn test_bulk_load_negative_weights() {
+        // Bulk load with some negative weights (for incremental computation)
+        let entries = vec![(10, 5), (20, -2), (30, 3)];
+        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+
+        assert_eq!(tree.total_weight(), 6); // 5 + (-2) + 3
+        assert_eq!(tree.num_keys(), 3);
+
+        // Negative weights are skipped in select
+        // Key 10: positions 0-4
+        assert_eq!(tree.select_kth(0, true), Some(&10));
+        assert_eq!(tree.select_kth(4, true), Some(&10));
+        // Key 20 has negative weight, skipped
+        // Key 30: positions 5-7
+        assert_eq!(tree.select_kth(5, true), Some(&30));
+    }
+
+    #[test]
+    fn test_bulk_load_percentile_operations() {
+        let entries: Vec<_> = (1..=100).map(|i| (i, 1)).collect();
+        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+
+        // PERCENTILE_DISC
+        assert_eq!(tree.select_percentile_disc(0.0, true), Some(&1));
+        assert_eq!(tree.select_percentile_disc(0.5, true), Some(&50));
+        assert_eq!(tree.select_percentile_disc(1.0, true), Some(&100));
+
+        // PERCENTILE_CONT bounds
+        let (lower, upper, _frac) = tree.select_percentile_bounds(0.5, true).unwrap();
+        assert_eq!(*lower, 50);
+        assert_eq!(*upper, 51);
     }
 }
