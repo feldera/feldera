@@ -373,7 +373,7 @@ pub struct NodeStorage<T: Ord + Clone + Archive> {
     config: NodeStorageConfig,
 
     /// Internal nodes - always in memory, with dirty tracking
-    internal_nodes: Vec<InternalNodeWithMeta<T>>,
+    internal_nodes: Vec<NodeWithMeta<InternalNodeTyped<T>>>,
 
     /// Leaf file for disk-backed leaves (uses block-based format)
     leaf_file: Option<LeafFile<T>>,
@@ -396,13 +396,7 @@ pub struct NodeStorage<T: Ord + Clone + Archive> {
 }
 
 /// Internal node with metadata for dirty tracking
-struct InternalNodeWithMeta<T> {
-    node: InternalNodeTyped<T>,
-    /// True if modified since last checkpoint
-    dirty: bool,
-    /// Disk offset if persisted (None if never written)
-    disk_offset: Option<u64>,
-}
+NodeWithMeta<InternalNodeTyped<T>>
 
 /// Wrapper to make LeafNode work with global BufferCache
 /// Implements CacheEntry trait for integration with DBSP's cache
@@ -1363,7 +1357,7 @@ With 64MB leaf cache and 156MB total leaves:
 ### Phase 2: Storage Abstraction ✅ COMPLETE
 - [x] Define `NodeLocation` enum with `Internal(usize)` and `Leaf(LeafLocation)`
 - [x] Define `NodeStorageConfig` struct (Runtime integration pending Phase 5)
-- [x] Define `InternalNodeWithMeta<T>` with dirty tracking
+- [x] Define `InternalNodeWithMeta<T>` with dirty tracking (later substituted with `NodeWithMeta<InternalNodeTyped<T>>`)
 - [x] Define `NodeStorage<T>` struct
 - [ ] Implement `CacheEntry` trait for `CachedLeafNode<T>` (deferred to Phase 5)
 - [x] Implement wrapper that maintains current behavior (no disk spilling yet)
@@ -1396,7 +1390,7 @@ With 64MB leaf cache and 156MB total leaves:
 - [x] Implement `restore()` following `Trace::restore` pattern
 - [x] Add `FileCommitter` tracking for checkpoint files
 - [x] Implement `StorageStats` (CacheStats compatibility)
-- [x] Documentation (`order_statistics_storage_overview.md` updated)
+- [x] Documentation (`node_storage_overview.md` updated)
 - [x] Backpressure mechanism for heavy writes (`should_apply_backpressure()`, `should_relieve_backpressure()`)
 - [ ] Integration tests with `Checkpointer` (deferred - requires end-to-end pipeline)
 - [ ] Benchmarks comparing memory-only vs spilling (deferred)
@@ -1547,12 +1541,12 @@ where
 
 **Remaining:** Phase 8 (marked NOT APPLICABLE - see analysis below).
 
-**See:** `order_statistics_storage_overview.md` for detailed implementation notes.
+**See:** `node_storage_overview.md` for detailed implementation notes.
 
 ## Files to Create/Modify
 
 ### New Files
-- `crates/dbsp/src/algebra/order_statistics_storage.rs` - NodeStorage, LeafFile implementation
+- `crates/dbsp/src/algebra/node_storage.rs` - NodeStorage, LeafFile implementation
 - `crates/dbsp/src/algebra/order_statistics_file_format.rs` - Block format constants, header structs
 
 ### Modified Files

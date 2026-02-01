@@ -115,7 +115,16 @@ pub fn percentile_cont_interpolate<T>(
     ascending: bool,
 ) -> Option<T::Output>
 where
-    T: Clone + Debug + Ord + Interpolate + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    T: Clone
+        + Debug
+        + Ord
+        + Interpolate
+        + SizeOf
+        + Send
+        + Sync
+        + 'static
+        + Archive
+        + RkyvSerialize<Serializer>,
     T::Output: Clone,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
@@ -1169,7 +1178,16 @@ pub fn percentile_cont_numeric<T>(
     ascending: bool,
 ) -> Option<T>
 where
-    T: Clone + Debug + Ord + Into<f64> + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    T: Clone
+        + Debug
+        + Ord
+        + Into<f64>
+        + SizeOf
+        + Send
+        + Sync
+        + 'static
+        + Archive
+        + RkyvSerialize<Serializer>,
     T: TryFrom<f64>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
@@ -1196,7 +1214,16 @@ pub fn percentile_cont_numericN<T>(
     ascending: bool,
 ) -> Option<T>
 where
-    T: Clone + Debug + Ord + Into<f64> + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
+    T: Clone
+        + Debug
+        + Ord
+        + Into<f64>
+        + SizeOf
+        + Send
+        + Sync
+        + 'static
+        + Archive
+        + RkyvSerialize<Serializer>,
     T: TryFrom<f64>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
 {

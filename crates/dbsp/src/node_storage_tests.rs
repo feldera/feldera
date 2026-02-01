@@ -1,5 +1,3 @@
-
-
 // =============================================================================
 // Tests
 // =============================================================================
@@ -10,15 +8,20 @@ mod tests {
 
     use rkyv::Deserialize;
 
-    use crate::{algebra::order_statistics_storage::CachedLeafNode, storage::buffer_cache::{BufferCache, CacheEntry}};
-
-    use crate::algebra::order_statistics_storage::{
-        InternalNodeTyped, LeafLocation, LeafNode, NodeLocation, NodeRef, NodeStorage,
-        NodeStorageConfig, OsmNodeStorage, ZWeight,
+    use crate::{
+        node_storage::CachedLeafNode,
+        storage::buffer_cache::{BufferCache, CacheEntry},
     };
-    use crate::algebra::order_statistics_storage::{
-        DATA_BLOCK_HEADER_SIZE, FILE_HEADER_SIZE, FileHeader, LeafFile, FileFormatError,
+
+    use crate::algebra::order_statistics::order_statistics_multiset::{
+        InternalNodeTyped, LeafNode, OsmNodeStorage,
+    };
+    use crate::node_storage::{
+        DATA_BLOCK_HEADER_SIZE, FILE_HEADER_SIZE, FileFormatError, FileHeader, LeafFile,
         verify_data_block_header,
+    };
+    use crate::node_storage::{
+        LeafLocation, NodeLocation, NodeRef, NodeStorage, NodeStorageConfig, ZWeight,
     };
 
     #[test]
@@ -53,9 +56,18 @@ mod tests {
         let mut storage: OsmNodeStorage<i32> = OsmNodeStorage::new();
 
         // First allocate some leaves to reference
-        let leaf1 = LeafNode { entries: vec![(10, 5)], next_leaf: None };
-        let leaf2 = LeafNode { entries: vec![(20, 10)], next_leaf: None };
-        let leaf3 = LeafNode { entries: vec![(30, 15)], next_leaf: None };
+        let leaf1 = LeafNode {
+            entries: vec![(10, 5)],
+            next_leaf: None,
+        };
+        let leaf2 = LeafNode {
+            entries: vec![(20, 10)],
+            next_leaf: None,
+        };
+        let leaf3 = LeafNode {
+            entries: vec![(30, 15)],
+            next_leaf: None,
+        };
         let loc1 = storage.alloc_leaf(leaf1);
         let loc2 = storage.alloc_leaf(leaf2);
         let loc3 = storage.alloc_leaf(leaf3);
@@ -111,11 +123,14 @@ mod tests {
             entries: vec![(10, 1)],
             next_leaf: None,
         });
-        storage.alloc_internal(InternalNodeTyped {
-            keys: vec![],
-            children: vec![leaf_loc],
-            subtree_sums: vec![1],
-        }, 1);
+        storage.alloc_internal(
+            InternalNodeTyped {
+                keys: vec![],
+                children: vec![leaf_loc],
+                subtree_sums: vec![1],
+            },
+            1,
+        );
 
         assert!(!storage.is_empty());
 
@@ -138,11 +153,14 @@ mod tests {
             entries: vec![(30, 3)],
             next_leaf: None,
         });
-        storage.alloc_internal(InternalNodeTyped {
-            keys: vec![30],
-            children: vec![loc1, loc2],
-            subtree_sums: vec![3, 3],
-        }, 1);
+        storage.alloc_internal(
+            InternalNodeTyped {
+                keys: vec![30],
+                children: vec![loc1, loc2],
+                subtree_sums: vec![3, 3],
+            },
+            1,
+        );
 
         let stats = storage.stats();
         assert_eq!(stats.internal_node_count, 1);
@@ -175,8 +193,14 @@ mod tests {
         let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
 
         // First allocate leaves to reference
-        let loc1 = storage.alloc_leaf(LeafNode { entries: vec![(10, 5)], next_leaf: None });
-        let loc2 = storage.alloc_leaf(LeafNode { entries: vec![(20, 10)], next_leaf: None });
+        let loc1 = storage.alloc_leaf(LeafNode {
+            entries: vec![(10, 5)],
+            next_leaf: None,
+        });
+        let loc2 = storage.alloc_leaf(LeafNode {
+            entries: vec![(20, 10)],
+            next_leaf: None,
+        });
 
         let internal = InternalNodeTyped {
             keys: vec![20],
@@ -222,11 +246,14 @@ mod tests {
             entries: vec![(10, 1)],
             next_leaf: None,
         });
-        storage.alloc_internal(InternalNodeTyped {
-            keys: vec![],
-            children: vec![leaf_loc],
-            subtree_sums: vec![1],
-        }, 1);
+        storage.alloc_internal(
+            InternalNodeTyped {
+                keys: vec![],
+                children: vec![leaf_loc],
+                subtree_sums: vec![1],
+            },
+            1,
+        );
 
         assert!(storage.has_dirty_nodes());
 
@@ -335,11 +362,14 @@ mod tests {
         });
 
         // Allocate internal (dirty)
-        storage.alloc_internal(InternalNodeTyped {
-            keys: vec![20],
-            children: vec![loc1, loc2],
-            subtree_sums: vec![1, 2],
-        }, 1);
+        storage.alloc_internal(
+            InternalNodeTyped {
+                keys: vec![20],
+                children: vec![loc1, loc2],
+                subtree_sums: vec![1, 2],
+            },
+            1,
+        );
 
         // Check dirty leaf iterator
         let dirty_leaves: Vec<_> = storage.dirty_leaf_ids().collect();
@@ -508,7 +538,8 @@ mod tests {
             let mut file = std::fs::File::open(&path).unwrap();
 
             // Seek to the data block
-            file.seek(std::io::SeekFrom::Start(location.offset)).unwrap();
+            file.seek(std::io::SeekFrom::Start(location.offset))
+                .unwrap();
 
             // Read the block
             let mut block = vec![0u8; location.size as usize];
@@ -542,7 +573,11 @@ mod tests {
             let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::open(&path).unwrap();
             let loaded = leaf_file.load_leaf(0).unwrap();
             eprintln!("Loaded via LeafFile entries: {:?}", loaded.entries);
-            assert_eq!(loaded.entries.len(), 2, "LeafFile read: entries len mismatch");
+            assert_eq!(
+                loaded.entries.len(),
+                2,
+                "LeafFile read: entries len mismatch"
+            );
         }
     }
 
@@ -823,9 +858,8 @@ mod tests {
 
         // Create and flush storage
         {
-            let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(
-                NodeStorageConfig::with_spill_directory(1024, dir.path()),
-            );
+            let mut storage: OsmNodeStorage<i32> =
+                NodeStorage::with_config(NodeStorageConfig::with_spill_directory(1024, dir.path()));
 
             let leaf1 = LeafNode {
                 entries: original_entries1.clone(),
@@ -866,7 +900,16 @@ mod tests {
 
         // Add a leaf that exceeds threshold
         let leaf = LeafNode {
-            entries: vec![(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6), (7, 7), (8, 8)],
+            entries: vec![
+                (1, 1),
+                (2, 2),
+                (3, 3),
+                (4, 4),
+                (5, 5),
+                (6, 6),
+                (7, 7),
+                (8, 8),
+            ],
             next_leaf: None,
         };
         storage.alloc_leaf(leaf);
@@ -885,9 +928,8 @@ mod tests {
     #[test]
     fn test_backpressure() {
         // Very low threshold to trigger easily (50 bytes)
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(
-            NodeStorageConfig::with_threshold(50),
-        );
+        let mut storage: OsmNodeStorage<i32> =
+            NodeStorage::with_config(NodeStorageConfig::with_threshold(50));
 
         // Initially no backpressure
         assert!(!storage.should_apply_backpressure());
@@ -932,9 +974,8 @@ mod tests {
     #[test]
     fn test_backpressure_disabled_without_spill() {
         // Memory-only config should never trigger backpressure
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(
-            NodeStorageConfig::memory_only(),
-        );
+        let mut storage: OsmNodeStorage<i32> =
+            NodeStorage::with_config(NodeStorageConfig::memory_only());
 
         // Add lots of data
         for i in 0..100 {
@@ -1127,7 +1168,7 @@ mod tests {
         assert_eq!(storage.in_memory_leaf_count(), 1);
         assert_eq!(storage.evicted_leaf_count(), 1);
         assert!(!storage.is_leaf_evicted(LeafLocation::new(0))); // Still in memory (dirty)
-        assert!(storage.is_leaf_evicted(LeafLocation::new(1)));  // Evicted
+        assert!(storage.is_leaf_evicted(LeafLocation::new(1))); // Evicted
     }
 
     #[test]
@@ -1308,9 +1349,8 @@ mod tests {
 
     #[test]
     fn test_no_eviction_without_spill() {
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(
-            NodeStorageConfig::memory_only(),
-        );
+        let mut storage: OsmNodeStorage<i32> =
+            NodeStorage::with_config(NodeStorageConfig::memory_only());
 
         // Add leaves
         for i in 0..10 {
@@ -1356,7 +1396,7 @@ mod tests {
         // Create config with BufferCache
         let config = NodeStorageConfig {
             enable_spill: true,
-            max_spillable_level: 0, // Default: only leaves
+            max_spillable_level: 0,           // Default: only leaves
             spill_threshold_bytes: 64 * 1024, // 64KB
             spill_directory: None,
             storage_backend: None,
@@ -1410,7 +1450,7 @@ mod tests {
             assert!(storage.leaf_block_locations.contains_key(&i));
             let &(offset, size) = storage.leaf_block_locations.get(&i).unwrap();
             assert!(offset > 0); // After file header
-            assert!(size > 0);   // Non-empty
+            assert!(size > 0); // Non-empty
         }
 
         // FileId should be assigned

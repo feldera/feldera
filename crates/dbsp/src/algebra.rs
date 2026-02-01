@@ -8,16 +8,14 @@ mod lattice;
 mod order;
 mod present;
 
-pub mod order_statistics_file_format;
-pub mod order_statistics_multiset;
-pub mod order_statistics_storage;
+pub mod order_statistics;
 pub mod zset;
 
 pub use checked_int::CheckedInt;
 pub use floats::{F32, F64};
 pub use lattice::Lattice;
 pub use order::{PartialOrder, TotalOrder};
-pub use order_statistics_multiset::{
+pub use order_statistics::order_statistics_multiset::{
     DEFAULT_BRANCHING_FACTOR, MIN_BRANCHING_FACTOR, OrderStatisticsMultiset,
     SerializableOrderStatisticsMultiset,
 };
