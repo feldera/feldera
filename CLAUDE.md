@@ -4538,6 +4538,10 @@ circuit.recursive(|child| {
 - **Gather**: Collecting distributed results
 - **Shard**: Partitioning data for parallel processing
 
+**Order Statistics** (`algebra/order_statistics/`):
+- **OrderStatisticsMultiset**: Augmented B+ tree for O(log n) update/rank/select queries used by percentile aggregates
+- See design docs: `order_statistics_multiset.md`, `order_statistics_sql_functions.md`, `order_statistics_bulk_load_plan.md`, `order_statistics_node_storage_plan.md`, `order_statistics_storage_vs_spine.md`
+
 ### **Dynamic vs Static APIs**
 
 #### **Static API** (Top-level `operator/` modules)
@@ -4596,6 +4600,9 @@ FileBatch {
     cache_stats: CacheStats,
 }
 ```
+
+#### **NodeStorage** (`node_storage.rs`)
+Generic spillable storage abstraction for tree-based data structures (e.g., `OrderStatisticsMultiset`). Enables nodes to spill to disk when memory is constrained. See `node_storage.md` for design details.
 
 ## Performance Architecture
 

@@ -1,4 +1,3 @@
-
 #[cfg(test)]
 mod tests {
     use crate::algebra::{OrderStatisticsMultiset, ZWeight};
@@ -213,7 +212,11 @@ mod tests {
             );
 
             // Verify first and last
-            assert_eq!(tree.select_kth(0, true), Some(&0), "first key for size {size}");
+            assert_eq!(
+                tree.select_kth(0, true),
+                Some(&0),
+                "first key for size {size}"
+            );
             assert_eq!(
                 tree.select_kth(size as ZWeight - 1, true),
                 Some(&(size as i32 - 1)),
