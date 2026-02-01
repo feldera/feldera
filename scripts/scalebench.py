@@ -537,9 +537,9 @@ def main() -> int:
 
     run_idx = 0
     try:
-        for workers in worker_counts:
-            for payload_bytes in payload_bytes_list:
-                for run_id in range(1, repetitions + 1):
+        for payload_bytes in payload_bytes_list:
+            for run_id in range(1, repetitions + 1):
+                for workers in worker_counts:
                     run_idx += 1
                     payload_kib = payload_bytes / 1024.0
                     print(
