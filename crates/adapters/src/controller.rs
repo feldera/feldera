@@ -3801,6 +3801,8 @@ impl ControllerInit {
         storage: CircuitStorageConfig,
         checkpoint: Checkpoint,
     ) -> Result<Self, ControllerError> {
+        let checkpoint_summary = checkpoint.display_summary();
+
         let Checkpoint {
             circuit,
             step,
@@ -3811,7 +3813,7 @@ impl ControllerInit {
             input_statistics,
             output_statistics,
         } = checkpoint;
-        info!("resuming from checkpoint made at step {step}");
+        info!("Resuming from checkpoint:\n{checkpoint_summary}");
 
         let storage = storage.with_init_checkpoint(circuit.map(|circuit| circuit.uuid));
 
