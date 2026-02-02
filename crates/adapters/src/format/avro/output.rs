@@ -5,11 +5,13 @@ use crate::format::avro::schema_registry_settings;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 use crate::{ControllerError, Encoder, OutputConsumer, OutputFormat, RecordFormat, SerCursor};
 use actix_web::HttpRequest;
-use anyhow::{Result as AnyResult, anyhow, bail};
+use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use apache_avro::Schema;
 use apache_avro::schema::RecordField;
 use apache_avro::{Schema as AvroSchema, to_avro_datum, types::Value as AvroValue};
+use crossbeam::channel::Sender;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_adapterlib::catalog::SplitCursorBuilder;
 use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::format::avro::{
     AvroEncoderConfig, AvroEncoderKeyMode, AvroUpdateFormat, SubjectNameStrategy,
@@ -23,6 +25,7 @@ use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
+use threadpool::ThreadPool;
 use tracing::debug;
 
 // TODOs:
@@ -32,6 +35,16 @@ use tracing::debug;
 // - Support complex schemas with cross-references.
 // - The serializer doesn't currently support the Avro `fixed` type.
 // - Add a Kafka end-to-end test to `kafka/test.rs`.  This requires implementing an Avro parser.
+
+enum ConsumerMessage {
+    PushKey {
+        key: Option<Vec<u8>>,
+        val: Option<Vec<u8>>,
+        headers: Vec<(String, Option<Vec<u8>>)>,
+        num_records: usize,
+    },
+    Error(AnyError),
+}
 
 /// Avro format encoder.
 pub struct AvroOutputFormat;
@@ -93,6 +106,13 @@ impl OutputFormat for AvroOutputFormat {
             _ => None,
         };
 
+        if avro_config.workers == 0 {
+            return Err(ControllerError::invalid_encoder_configuration(
+                endpoint_name,
+                "the 'workers' configuration must be greater than zero",
+            ));
+        }
+
         Ok(Box::new(AvroEncoder::create(
             endpoint_name,
             key_schema,
@@ -104,9 +124,8 @@ impl OutputFormat for AvroOutputFormat {
     }
 }
 
-pub(crate) struct AvroEncoder {
-    /// Consumer to push serialized data to.
-    output_consumer: Box<dyn OutputConsumer>,
+struct AvroParallelEncoder {
+    consumer: Sender<ConsumerMessage>,
 
     value_sql_schema: Relation,
 
@@ -132,6 +151,251 @@ pub(crate) struct AvroEncoder {
 
     /// Avro Schema when the CDC field is Some.
     value_avro_schema_with_cdc: Option<AvroSchema>,
+}
+
+impl AvroParallelEncoder {
+    fn view_name(&self) -> &SqlIdentifier {
+        &self.value_sql_schema.name
+    }
+
+    fn index_name(&self) -> Option<&SqlIdentifier> {
+        self.key_sql_schema.as_ref().map(|schema| &schema.name)
+    }
+
+    fn serialize_avro_value(
+        skip_schema_id: bool,
+        value: AvroValue,
+        schema: &AvroSchema,
+        buffer: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        let mut avro_buffer = to_avro_datum(schema, value)
+            .map_err(|e| anyhow!("error serializing Avro value: {e}"))?;
+
+        if !skip_schema_id {
+            // 5 is the length of the Avro message header (magic byte + 4-byte schema id).
+            buffer.truncate(5);
+        } else {
+            buffer.clear();
+        }
+
+        buffer.append(&mut avro_buffer);
+
+        Ok(())
+    }
+    /// Serialize key and/or value needed for this operation by the given output format.
+    fn serialize(&mut self, cursor: &mut dyn SerCursor) -> AnyResult<Option<IndexedOperationType>> {
+        let Some(operation_type) =
+            indexed_operation_type(self.view_name(), self.index_name().unwrap(), cursor)?
+        else {
+            return Ok(None);
+        };
+
+        let cdc_field = match operation_type {
+            IndexedOperationType::Insert => "I",
+            IndexedOperationType::Delete => "D",
+            IndexedOperationType::Upsert => "U",
+        };
+
+        // Second pass: serialize the key and value for the operation.
+        cursor.rewind_vals();
+
+        if let Some(key_schema) = self.key_avro_schema.as_ref() {
+            let avro_key = cursor
+                .key_to_avro(key_schema, &HashMap::new())
+                .map_err(|e| anyhow!("error converting record key to Avro format: {e}"))?;
+
+            Self::serialize_avro_value(
+                self.skip_schema_id,
+                avro_key,
+                key_schema,
+                &mut self.key_buffer,
+            )?;
+        }
+
+        while cursor.val_valid() {
+            let w = cursor.weight();
+
+            if w == 1 {
+                match operation_type {
+                    IndexedOperationType::Insert | IndexedOperationType::Upsert => {
+                        // println!("schema: {:#?}", self.value_avro_schema);
+                        let mut avro_value = cursor
+                            .val_to_avro(&self.value_avro_schema, &HashMap::new())
+                            .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
+
+                        let AvroValue::Record(items) = &mut avro_value else {
+                            bail!("expected avro value of type record, found: {avro_value:?}")
+                        };
+
+                        if let Some(field_name) = &self.cdc_field {
+                            items.push((
+                                field_name.to_owned(),
+                                AvroValue::String(cdc_field.to_owned()),
+                            ));
+                        }
+
+                        Self::serialize_avro_value(
+                            self.skip_schema_id,
+                            avro_value,
+                            self.value_avro_schema_with_cdc
+                                .as_ref()
+                                .unwrap_or(&self.value_avro_schema),
+                            &mut self.value_buffer,
+                        )?;
+                    }
+                    _ => (),
+                }
+            }
+
+            if w == -1 {
+                match operation_type {
+                    IndexedOperationType::Delete if self.update_format == AvroUpdateFormat::Raw => {
+                        let mut avro_value = cursor
+                            .val_to_avro(&self.value_avro_schema, &HashMap::new())
+                            .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
+
+                        let AvroValue::Record(items) = &mut avro_value else {
+                            bail!("expected avro value of type record, found: {avro_value:?}")
+                        };
+
+                        if let Some(field_name) = &self.cdc_field {
+                            items.push((
+                                field_name.to_owned(),
+                                AvroValue::String(cdc_field.to_owned()),
+                            ));
+                        }
+
+                        Self::serialize_avro_value(
+                            self.skip_schema_id,
+                            avro_value,
+                            self.value_avro_schema_with_cdc
+                                .as_ref()
+                                .unwrap_or(&self.value_avro_schema),
+                            &mut self.value_buffer,
+                        )?;
+                    }
+                    _ => (),
+                }
+            }
+
+            cursor.step_val();
+        }
+
+        Ok(Some(operation_type))
+    }
+
+    fn encode_indexed(&mut self, cursor: &mut dyn SerCursor) -> AnyResult<()> {
+        while cursor.key_valid() {
+            let operation_type = self.serialize(cursor)?;
+
+            let key_buffer = if self.key_avro_schema.is_some() {
+                Some(self.key_buffer.as_slice())
+            } else {
+                None
+            };
+
+            match (operation_type, self.update_format.clone()) {
+                (None, _) => (),
+                (Some(IndexedOperationType::Delete), AvroUpdateFormat::ConfluentJdbc) => {
+                    self.consumer
+                        .send(ConsumerMessage::PushKey {
+                            key: key_buffer.map(|b| b.to_owned()),
+                            val: None,
+                            headers: Vec::new(),
+                            num_records: 1,
+                        })
+                        .unwrap();
+                }
+                (Some(IndexedOperationType::Delete), AvroUpdateFormat::Raw) => {
+                    self.consumer
+                        .send(ConsumerMessage::PushKey {
+                            key: key_buffer.map(|b| b.to_owned()),
+                            val: Some(self.value_buffer.to_vec()),
+                            headers: vec![("op".to_owned(), Some(b"delete".to_vec()))],
+                            num_records: 1,
+                        })
+                        .unwrap();
+                }
+                (
+                    Some(IndexedOperationType::Insert) | Some(IndexedOperationType::Upsert),
+                    AvroUpdateFormat::ConfluentJdbc,
+                ) => {
+                    self.consumer
+                        .send(ConsumerMessage::PushKey {
+                            key: key_buffer.map(|b| b.to_owned()),
+                            val: Some(self.value_buffer.to_vec()),
+                            headers: Vec::new(),
+                            num_records: 1,
+                        })
+                        .unwrap();
+                }
+                (Some(IndexedOperationType::Insert), AvroUpdateFormat::Raw) => {
+                    self.consumer
+                        .send(ConsumerMessage::PushKey {
+                            key: key_buffer.map(|b| b.to_owned()),
+                            val: Some(self.value_buffer.to_vec()),
+                            headers: vec![("op".to_owned(), Some(b"insert".to_vec()))],
+                            num_records: 1,
+                        })
+                        .unwrap();
+                }
+                (Some(IndexedOperationType::Upsert), AvroUpdateFormat::Raw) => {
+                    self.consumer
+                        .send(ConsumerMessage::PushKey {
+                            key: key_buffer.map(|b| b.to_owned()),
+                            val: Some(self.value_buffer.to_vec()),
+                            headers: vec![("op".to_owned(), Some(b"update".to_vec()))],
+                            num_records: 1,
+                        })
+                        .unwrap();
+                }
+                (Some(operation_type), _) => bail!(
+                    "internal error: unexpected operation type {:?} for update format {:?}",
+                    operation_type,
+                    self.update_format
+                ),
+            }
+
+            cursor.step_key()
+        }
+
+        Ok(())
+    }
+}
+
+pub(crate) struct AvroEncoder {
+    /// Consumer to push serialized data to.
+    output_consumer: Box<dyn OutputConsumer>,
+
+    value_sql_schema: Relation,
+
+    pub(crate) value_avro_schema: AvroSchema,
+
+    /// Only set when connected to an indexed stream.
+    key_sql_schema: Option<Relation>,
+
+    /// Only set when using a separate schema for the key.
+    pub(crate) key_avro_schema: Option<AvroSchema>,
+
+    /// Buffer to store serialized avro records, reused across `encode` invocations.
+    value_buffer: Vec<u8>,
+
+    /// `True` if the serialized result should not include the schema ID.
+    skip_schema_id: bool,
+
+    update_format: AvroUpdateFormat,
+
+    /// CDC Field.
+    cdc_field: Option<String>,
+
+    /// Avro Schema when the CDC field is Some.
+    value_avro_schema_with_cdc: Option<AvroSchema>,
+
+    /// The thread pool for parallel encoding.
+    pool: Option<ThreadPool>,
+
+    /// The number of workers to run in parallel.
+    workers: usize,
 }
 
 /// `true` - this config will create messages with key and value components.
@@ -432,7 +696,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
         };
 
         let mut value_buffer = vec![0u8; 5];
-        let mut key_buffer = vec![0u8; 5];
+        let mut key_buffer = [0u8; 5];
 
         if !config.skip_schema_id {
             value_buffer[1..].clone_from_slice(&value_schema_id.to_be_bytes());
@@ -446,20 +710,13 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
             key_sql_schema: key_schema.clone(),
             key_avro_schema,
             value_buffer,
-            key_buffer,
             skip_schema_id: config.skip_schema_id,
             update_format: config.update_format,
             cdc_field: config.cdc_field,
             value_avro_schema_with_cdc,
+            pool: None,
+            workers: config.workers,
         })
-    }
-
-    fn view_name(&self) -> &SqlIdentifier {
-        &self.value_sql_schema.name
-    }
-
-    fn index_name(&self) -> Option<&SqlIdentifier> {
-        self.key_sql_schema.as_ref().map(|schema| &schema.name)
     }
 
     fn serialize_avro_value(
@@ -551,165 +808,80 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
         Ok(())
     }
 
-    /// Serialize key and/or value needed for this operation by the given output format.
-    fn serialize(&mut self, cursor: &mut dyn SerCursor) -> AnyResult<Option<IndexedOperationType>> {
-        let Some(operation_type) =
-            indexed_operation_type(self.view_name(), self.index_name().unwrap(), cursor)?
-        else {
-            return Ok(None);
-        };
-
-        let cdc_field = match operation_type {
-            IndexedOperationType::Insert => "I",
-            IndexedOperationType::Delete => "D",
-            IndexedOperationType::Upsert => "U",
-        };
-
-        // Second pass: serialize the key and value for the operation.
-        cursor.rewind_vals();
-
-        if let Some(key_schema) = self.key_avro_schema.as_ref() {
-            let avro_key = cursor
-                .key_to_avro(key_schema, &HashMap::new())
-                .map_err(|e| anyhow!("error converting record key to Avro format: {e}"))?;
-
-            Self::serialize_avro_value(
-                self.skip_schema_id,
-                avro_key,
-                key_schema,
-                &mut self.key_buffer,
-            )?;
-        }
-
-        while cursor.val_valid() {
-            let w = cursor.weight();
-
-            if w == 1 {
-                match operation_type {
-                    IndexedOperationType::Insert | IndexedOperationType::Upsert => {
-                        // println!("schema: {:#?}", self.value_avro_schema);
-                        let mut avro_value = cursor
-                            .val_to_avro(&self.value_avro_schema, &HashMap::new())
-                            .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
-
-                        let AvroValue::Record(items) = &mut avro_value else {
-                            bail!("expected avro value of type record, found: {avro_value:?}")
-                        };
-
-                        if let Some(field_name) = &self.cdc_field {
-                            items.push((
-                                field_name.to_owned(),
-                                AvroValue::String(cdc_field.to_owned()),
-                            ));
-                        }
-
-                        Self::serialize_avro_value(
-                            self.skip_schema_id,
-                            avro_value,
-                            self.value_avro_schema_with_cdc
-                                .as_ref()
-                                .unwrap_or(&self.value_avro_schema),
-                            &mut self.value_buffer,
-                        )?;
-                    }
-                    _ => (),
-                }
-            }
-
-            if w == -1 {
-                match operation_type {
-                    IndexedOperationType::Delete if self.update_format == AvroUpdateFormat::Raw => {
-                        let mut avro_value = cursor
-                            .val_to_avro(&self.value_avro_schema, &HashMap::new())
-                            .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
-
-                        let AvroValue::Record(items) = &mut avro_value else {
-                            bail!("expected avro value of type record, found: {avro_value:?}")
-                        };
-
-                        if let Some(field_name) = &self.cdc_field {
-                            items.push((
-                                field_name.to_owned(),
-                                AvroValue::String(cdc_field.to_owned()),
-                            ));
-                        }
-
-                        Self::serialize_avro_value(
-                            self.skip_schema_id,
-                            avro_value,
-                            self.value_avro_schema_with_cdc
-                                .as_ref()
-                                .unwrap_or(&self.value_avro_schema),
-                            &mut self.value_buffer,
-                        )?;
-                    }
-                    _ => (),
-                }
-            }
-
-            cursor.step_val();
-        }
-
-        Ok(Some(operation_type))
-    }
-
     /// Encode an indexed batch.
     fn encode_indexed(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
-        let mut cursor = batch.cursor(RecordFormat::Avro)?;
+        let pool = self
+            .pool
+            .get_or_insert_with(|| ThreadPool::new(self.workers));
 
-        while cursor.key_valid() {
-            let operation_type = self.serialize(cursor.as_mut())?;
+        let (tx, rx) = crossbeam::channel::bounded(self.workers);
 
-            let key_buffer = if self.key_avro_schema.is_some() {
-                Some(self.key_buffer.as_slice())
-            } else {
-                None
+        let mut bounds = batch.keys_factory().default_box();
+        batch.partition_keys(self.workers, &mut *bounds);
+
+        for i in 0..=bounds.len() {
+            let Some(cursor_builder) =
+                SplitCursorBuilder::from_bounds(batch.clone(), &*bounds, i, RecordFormat::Avro)
+            else {
+                break;
+            };
+            let mut encoder = AvroParallelEncoder {
+                value_sql_schema: self.value_sql_schema.clone(),
+                value_avro_schema: self.value_avro_schema.clone(),
+                key_sql_schema: self.key_sql_schema.clone(),
+                key_avro_schema: self.key_avro_schema.clone(),
+                value_buffer: vec![0u8; 5],
+                key_buffer: vec![0u8; 5],
+                skip_schema_id: self.skip_schema_id,
+                update_format: self.update_format.clone(),
+                cdc_field: self.cdc_field.clone(),
+                value_avro_schema_with_cdc: self.value_avro_schema_with_cdc.clone(),
+                consumer: tx.clone(),
             };
 
-            match (operation_type, self.update_format.clone()) {
-                (None, _) => (),
-                (Some(IndexedOperationType::Delete), AvroUpdateFormat::ConfluentJdbc) => {
-                    self.output_consumer.push_key(key_buffer, None, &[], 1);
+            pool.execute(move || {
+                let mut cursor = cursor_builder.build();
+                if let Err(e) = encoder.encode_indexed(&mut cursor) {
+                    let _ = encoder.consumer.send(ConsumerMessage::Error(e));
                 }
-                (Some(IndexedOperationType::Delete), AvroUpdateFormat::Raw) => {
-                    self.output_consumer.push_key(
-                        key_buffer,
-                        Some(&self.value_buffer),
-                        &[("op", Some(b"delete"))],
-                        1,
-                    );
-                }
-                (
-                    Some(IndexedOperationType::Insert) | Some(IndexedOperationType::Upsert),
-                    AvroUpdateFormat::ConfluentJdbc,
-                ) => {
-                    self.output_consumer
-                        .push_key(key_buffer, Some(&self.value_buffer), &[], 1);
-                }
-                (Some(IndexedOperationType::Insert), AvroUpdateFormat::Raw) => {
-                    self.output_consumer.push_key(
-                        key_buffer,
-                        Some(&self.value_buffer),
-                        &[("op", Some(b"insert"))],
-                        1,
-                    );
-                }
-                (Some(IndexedOperationType::Upsert), AvroUpdateFormat::Raw) => {
-                    self.output_consumer.push_key(
-                        key_buffer,
-                        Some(&self.value_buffer),
-                        &[("op", Some(b"update"))],
-                        1,
-                    );
-                }
-                (Some(operation_type), _) => bail!(
-                    "internal error: unexpected operation type {:?} for update format {:?}",
-                    operation_type,
-                    self.update_format
-                ),
-            }
+            });
+        }
 
-            cursor.step_key()
+        std::mem::drop(tx);
+
+        let mut errors: Vec<AnyError> = Vec::new();
+
+        while let Ok(msg) = rx.recv() {
+            match msg {
+                ConsumerMessage::PushKey {
+                    key,
+                    val,
+                    headers,
+                    num_records,
+                } => self.output_consumer.push_key(
+                    key.as_deref(),
+                    val.as_deref(),
+                    &headers
+                        .iter()
+                        .map(|(x, y)| (x.as_str(), y.as_deref()))
+                        .collect::<Vec<_>>()[..],
+                    num_records,
+                ),
+                ConsumerMessage::Error(e) => {
+                    errors.push(e);
+                }
+            }
+        }
+
+        pool.join();
+
+        if !errors.is_empty() {
+            let msg = errors
+                .iter()
+                .map(|e| format!("{e:#}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+            bail!("{} encoder worker(s) failed: {msg}", errors.len());
         }
 
         Ok(())
