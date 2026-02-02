@@ -18,7 +18,7 @@ will go through the following steps of building the application:
 
 The entire use case is implemented as a Python script written using the Feldera
 [Python SDK](pathname:///python/). It is available from our [github
-repository](https://github.com/feldera/feldera/blob/main/demo/project_demo10-FraudDetectionDeltaLake/run.py)
+repository](https://github.com/feldera/feldera-demos/blob/main/fraud-detection-delta-lake/run.py)
 and can be run from the command line or from your favorite Python notebook
 environment.
 
@@ -309,7 +309,7 @@ See [instructions](/get-started/docker) for running Feldera in Docker.
 :::note
 
 The full
-[Python script](https://github.com/feldera/feldera/blob/main/demo/project_demo10-FraudDetectionDeltaLake/run.py)
+[Python script](https://github.com/feldera/feldera-demos/blob/main/fraud-detection-delta-lake/run.py)
 for this use case also contains the code to write computed features
 to a Delta Lake, which might be preferrable when working with larger
 datasets. This functionality requires write credentials to an S3 bucket

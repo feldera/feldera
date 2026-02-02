@@ -1,9 +1,7 @@
 services:
   # Kafka connect.
   kafka-connect:
-    profiles: [ "kafka-connect",
-                "demo-debezium-mysql", "demo-snowflake-sink", "demo-debezium-jdbc",
-                "demo-debezium-postgres" ]
+    profiles: [ "kafka-connect" ]
     image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-latest}
     build:
       context: ../
@@ -33,8 +31,7 @@ services:
   # MySQL container with a toy database used in the Debezium
   # MySQL tutorial (based on MySQL 8.0).
   mysql:
-    profiles: [ "mysql",
-                "demo-debezium-mysql" ]
+    profiles: [ "mysql" ]
     image: debezium/example-mysql:2.5
     ports:
       - "3306:3306"
@@ -51,8 +48,7 @@ services:
 
   # Postgres container for testing Debezium JDBC sink connector.
   postgres:
-    profiles: [ "postgres",
-                "demo-debezium-jdbc", "demo-debezium-postgres" ]
+    profiles: [ "postgres" ]
     image: debezium/example-postgres:2.5
     ports:
       # Make sure that port numbers don't clash with the pipeline manager DB.
