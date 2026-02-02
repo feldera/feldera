@@ -1999,6 +1999,43 @@ impl<L> Drop for LeafFile<L> {
     }
 }
 
+// =============================================================================
+// Drop Implementation for NodeStorage
+// =============================================================================
+
+impl<I, L> Drop for NodeStorage<I, L> {
+    fn drop(&mut self) {
+        // Clean up spill file when NodeStorage is dropped.
+        // This ensures we don't leave orphan spill files on disk.
+        //
+        // Note: This is a best-effort cleanup. If the process crashes,
+        // spill files in temp directories will be cleaned up by the OS.
+        if let Some(ref path) = self.spill_file_path {
+            if path.exists() {
+                if let Err(e) = std::fs::remove_file(path) {
+                    // Log but don't panic - it's okay if cleanup fails
+                    tracing::debug!(
+                        "Failed to cleanup NodeStorage spill file {}: {}",
+                        path.display(),
+                        e
+                    );
+                }
+            }
+        }
+
+        // Evict entries from BufferCache if present
+        if let (Some(buffer_cache), Some(file_id)) =
+            (&self.config.buffer_cache, self.spill_file_id)
+        {
+            let cache_handle = CacheFileHandle {
+                file_id,
+                path: feldera_storage::StoragePath::default(),
+            };
+            buffer_cache.evict(&cache_handle);
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "node_storage_tests.rs"]
 mod tests;
