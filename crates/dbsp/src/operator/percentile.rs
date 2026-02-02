@@ -101,7 +101,7 @@ where
     C: Circuit,
     K: DBData,
     <K as Deserializable>::ArchivedDeser: Ord,
-    V: DBData + IsNone,  // No Interpolate bound - works with any ordered type
+    V: DBData + IsNone, // No Interpolate bound - works with any ordered type
     <V as Archive>::Archived: Ord,
 {
     /// Compute PERCENTILE_DISC for each group.

@@ -118,7 +118,7 @@ impl BlockLocation {
 /// - bytes [28..36]: total_entries (u64 LE)
 /// - bytes [36..44]: total_weight (i64 LE)
 /// - bytes [44..512]: reserved (zeros)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct FileHeader {
     /// Number of leaves stored in this file
     pub num_leaves: u64,
@@ -128,17 +128,6 @@ pub struct FileHeader {
     pub total_entries: u64,
     /// Total weight across all leaves
     pub total_weight: i64,
-}
-
-impl Default for FileHeader {
-    fn default() -> Self {
-        Self {
-            num_leaves: 0,
-            index_offset: 0,
-            total_entries: 0,
-            total_weight: 0,
-        }
-    }
 }
 
 impl FileHeader {
@@ -180,7 +169,7 @@ impl FileHeader {
         }
 
         // Verify magic
-        if &block[4..8] != &MAGIC_FILE_HEADER {
+        if block[4..8] != MAGIC_FILE_HEADER {
             return Err(FileFormatError::InvalidMagic {
                 expected: MAGIC_FILE_HEADER,
                 found: [block[4], block[5], block[6], block[7]],
@@ -351,7 +340,7 @@ pub fn verify_data_block_header(block: &[u8]) -> Result<(u64, u64), FileFormatEr
     }
 
     // Verify magic
-    if &block[4..8] != &MAGIC_DATA_BLOCK {
+    if block[4..8] != MAGIC_DATA_BLOCK {
         return Err(FileFormatError::InvalidMagic {
             expected: MAGIC_DATA_BLOCK,
             found: [block[4], block[5], block[6], block[7]],

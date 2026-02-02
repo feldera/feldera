@@ -1214,7 +1214,8 @@ where
         &mut self,
         checkpoint_dir: &std::path::Path,
         tree_id: &str,
-    ) -> Result<crate::node_storage::CommittedLeafStorage<T>, crate::node_storage::FileFormatError> {
+    ) -> Result<crate::node_storage::CommittedLeafStorage<T>, crate::node_storage::FileFormatError>
+    {
         use crate::node_storage::{CommittedLeafStorage, FileFormatError};
 
         // Ensure checkpoint directory exists
@@ -1238,20 +1239,17 @@ where
         // Move spill file to checkpoint location
         let dest_path = checkpoint_dir.join(format!("{}.leaves", tree_id));
 
-        if let Some(src_path) = self.storage.take_spill_file() {
-            if src_path.exists() {
-                // Try rename first (fast, same filesystem)
-                // Fall back to copy if rename fails (cross-filesystem)
-                if std::fs::rename(&src_path, &dest_path).is_err() {
-                    std::fs::copy(&src_path, &dest_path).map_err(|e| {
-                        FileFormatError::Io(format!(
-                            "Failed to copy spill file to checkpoint: {}",
-                            e
-                        ))
-                    })?;
-                    // Clean up source after successful copy
-                    let _ = std::fs::remove_file(&src_path);
-                }
+        if let Some(src_path) = self.storage.take_spill_file()
+            && src_path.exists()
+        {
+            // Try rename first (fast, same filesystem)
+            // Fall back to copy if rename fails (cross-filesystem)
+            if std::fs::rename(&src_path, &dest_path).is_err() {
+                std::fs::copy(&src_path, &dest_path).map_err(|e| {
+                    FileFormatError::Io(format!("Failed to copy spill file to checkpoint: {}", e))
+                })?;
+                // Clean up source after successful copy
+                let _ = std::fs::remove_file(&src_path);
             }
         }
 
@@ -1354,7 +1352,11 @@ where
     fn build_internal_nodes_from_summaries(
         summaries: &[crate::node_storage::LeafSummary<T>],
         branching_factor: usize,
-    ) -> (Vec<(InternalNodeTyped<T>, u8)>, Option<NodeLocation>, Option<LeafLocation>) {
+    ) -> (
+        Vec<(InternalNodeTyped<T>, u8)>,
+        Option<NodeLocation>,
+        Option<LeafLocation>,
+    ) {
         if summaries.is_empty() {
             return (Vec::new(), None, None);
         }
@@ -1363,7 +1365,11 @@ where
 
         if summaries.len() == 1 {
             // Single leaf - no internal nodes needed, root is the leaf
-            return (Vec::new(), Some(NodeLocation::Leaf(LeafLocation::new(0))), first_leaf);
+            return (
+                Vec::new(),
+                Some(NodeLocation::Leaf(LeafLocation::new(0))),
+                first_leaf,
+            );
         }
 
         let mut internal_nodes: Vec<(InternalNodeTyped<T>, u8)> = Vec::new();
@@ -1410,7 +1416,10 @@ where
                 let node_id = internal_nodes.len();
                 internal_nodes.push((internal_node, current_level));
 
-                next_level_locations.push(NodeLocation::Internal { id: node_id, level: current_level });
+                next_level_locations.push(NodeLocation::Internal {
+                    id: node_id,
+                    level: current_level,
+                });
                 next_level_sums.push(subtree_sums.iter().sum());
                 next_level_keys.push(current_level_keys[chunk_start].clone());
             }
@@ -1656,12 +1665,9 @@ where
     use std::io::{Error as IoError, ErrorKind};
 
     let mut serializer = AllocSerializer::<4096>::default();
-    serializer.serialize_value(value).map_err(|e| {
-        Error::IO(IoError::new(
-            ErrorKind::Other,
-            format!("Failed to serialize: {e}"),
-        ))
-    })?;
+    serializer
+        .serialize_value(value)
+        .map_err(|e| Error::IO(IoError::other(format!("Failed to serialize: {e}"))))?;
     let bytes = serializer.into_serializer().into_inner();
 
     // Copy to FBuf which has the required 512-byte alignment
@@ -1751,10 +1757,9 @@ where
         let serializable: SerializableOrderStatisticsMultiset<T> =
             rkyv::Deserialize::deserialize(archived, &mut deserializer).map_err(|e| {
                 use std::io::{Error as IoError, ErrorKind};
-                Error::IO(IoError::new(
-                    ErrorKind::Other,
-                    format!("Failed to deserialize checkpoint: {e:?}"),
-                ))
+                Error::IO(IoError::other(format!(
+                    "Failed to deserialize checkpoint: {e:?}"
+                )))
             })?;
 
         // Reconstruct the tree using bulk load for O(n) instead of O(n log n)

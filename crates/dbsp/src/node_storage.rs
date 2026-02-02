@@ -1345,16 +1345,16 @@ where
         };
 
         // Ensure parent directory exists
-        if let Some(parent) = file_path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    FileFormatError::Io(format!(
-                        "Failed to create spill directory {}: {}",
-                        parent.display(),
-                        e
-                    ))
-                })?;
-            }
+        if let Some(parent) = file_path.parent()
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                FileFormatError::Io(format!(
+                    "Failed to create spill directory {}: {}",
+                    parent.display(),
+                    e
+                ))
+            })?;
         }
 
         // Create the leaf file
@@ -1422,43 +1422,42 @@ where
         }
 
         // Try to load from BufferCache if available (Phase 7)
-        if let Some(ref buffer_cache) = self.config.buffer_cache {
-            if let (Some(file_id), Some(&(offset, size))) =
+        if let Some(ref buffer_cache) = self.config.buffer_cache
+            && let (Some(file_id), Some(&(offset, size))) =
                 (self.spill_file_id, self.leaf_block_locations.get(&id))
-            {
-                // Create a minimal FileReader for cache lookup
-                let cache_handle = CacheFileHandle {
-                    file_id,
-                    path: feldera_storage::StoragePath::default(),
-                };
+        {
+            // Create a minimal FileReader for cache lookup
+            let cache_handle = CacheFileHandle {
+                file_id,
+                path: feldera_storage::StoragePath::default(),
+            };
 
-                // Convert tuple to BlockLocation for BufferCache
-                let block_loc = BlockLocation {
-                    offset,
-                    size: size as usize,
-                };
+            // Convert tuple to BlockLocation for BufferCache
+            let block_loc = BlockLocation {
+                offset,
+                size: size as usize,
+            };
 
-                if let Some(entry) = buffer_cache.get(&cache_handle, block_loc) {
-                    // Found in BufferCache! Downcast and store in leaves
-                    if let Some(cached) = entry.downcast::<CachedLeafNode<L>>() {
-                        let leaf = cached.leaf.clone();
-                        let leaf_size = cached.size_bytes;
+            if let Some(entry) = buffer_cache.get(&cache_handle, block_loc) {
+                // Found in BufferCache! Downcast and store in leaves
+                if let Some(cached) = entry.downcast::<CachedLeafNode<L>>() {
+                    let leaf = cached.leaf.clone();
+                    let leaf_size = cached.size_bytes;
 
-                        // Store in memory
-                        while self.leaves.len() <= id {
-                            self.leaves.push(None);
-                        }
-                        self.leaves[id] = Some(leaf);
-
-                        // No longer evicted
-                        self.evicted_leaves.remove(&id);
-
-                        // Update stats
-                        self.stats.cache_hits += 1;
-                        self.stats.memory_bytes += leaf_size;
-
-                        return Ok(self.leaves[id].as_ref().unwrap());
+                    // Store in memory
+                    while self.leaves.len() <= id {
+                        self.leaves.push(None);
                     }
+                    self.leaves[id] = Some(leaf);
+
+                    // No longer evicted
+                    self.evicted_leaves.remove(&id);
+
+                    // Update stats
+                    self.stats.cache_hits += 1;
+                    self.stats.memory_bytes += leaf_size;
+
+                    return Ok(self.leaves[id].as_ref().unwrap());
                 }
             }
         }
@@ -1477,16 +1476,15 @@ where
         self.stats.cache_misses += 1;
 
         // Insert into BufferCache for future access (Phase 7)
-        if let Some(ref buffer_cache) = self.config.buffer_cache {
-            if let (Some(file_id), Some(&(offset, _size))) =
+        if let Some(ref buffer_cache) = self.config.buffer_cache
+            && let (Some(file_id), Some(&(offset, _size))) =
                 (self.spill_file_id, self.leaf_block_locations.get(&id))
-            {
-                let cached = Arc::new(CachedLeafNode {
-                    leaf: leaf.clone(),
-                    size_bytes: leaf_size,
-                });
-                buffer_cache.insert(file_id, offset, cached);
-            }
+        {
+            let cached = Arc::new(CachedLeafNode {
+                leaf: leaf.clone(),
+                size_bytes: leaf_size,
+            });
+            buffer_cache.insert(file_id, offset, cached);
         }
 
         // Store in memory (extend if needed)
@@ -1537,10 +1535,10 @@ where
             buffer_cache.evict(&cache_handle);
         }
 
-        if let Some(ref path) = self.spill_file_path {
-            if path.exists() {
-                std::fs::remove_file(path)?;
-            }
+        if let Some(ref path) = self.spill_file_path
+            && path.exists()
+        {
+            std::fs::remove_file(path)?;
         }
         self.spill_file_path = None;
         self.spill_file_id = None;
@@ -1723,9 +1721,11 @@ where
     pub fn flush_all_leaves_to_disk(&mut self) -> Result<usize, FileFormatError> {
         // Create spill file if none exists
         if self.spill_file_path.is_none() && !self.leaves.is_empty() {
-            let temp_dir = self.config.spill_directory.clone().unwrap_or_else(|| {
-                std::env::temp_dir().join("dbsp_node_storage")
-            });
+            let temp_dir = self
+                .config
+                .spill_directory
+                .clone()
+                .unwrap_or_else(|| std::env::temp_dir().join("dbsp_node_storage"));
             std::fs::create_dir_all(&temp_dir)
                 .map_err(|e| FileFormatError::Io(format!("Failed to create spill dir: {}", e)))?;
 
@@ -2042,7 +2042,7 @@ where
         }
 
         // Verify magic
-        if &index_block[4..8] != &MAGIC_INDEX_BLOCK {
+        if index_block[4..8] != MAGIC_INDEX_BLOCK {
             return Err(FileFormatError::InvalidMagic {
                 expected: MAGIC_INDEX_BLOCK,
                 found: [
@@ -2285,22 +2285,20 @@ impl<I, L> Drop for NodeStorage<I, L> {
         //
         // Note: This is a best-effort cleanup. If the process crashes,
         // spill files in temp directories will be cleaned up by the OS.
-        if let Some(ref path) = self.spill_file_path {
-            if path.exists() {
-                if let Err(e) = std::fs::remove_file(path) {
-                    // Log but don't panic - it's okay if cleanup fails
-                    tracing::debug!(
-                        "Failed to cleanup NodeStorage spill file {}: {}",
-                        path.display(),
-                        e
-                    );
-                }
-            }
+        if let Some(ref path) = self.spill_file_path
+            && path.exists()
+            && let Err(e) = std::fs::remove_file(path)
+        {
+            // Log but don't panic - it's okay if cleanup fails
+            tracing::debug!(
+                "Failed to cleanup NodeStorage spill file {}: {}",
+                path.display(),
+                e
+            );
         }
 
         // Evict entries from BufferCache if present
-        if let (Some(buffer_cache), Some(file_id)) =
-            (&self.config.buffer_cache, self.spill_file_id)
+        if let (Some(buffer_cache), Some(file_id)) = (&self.config.buffer_cache, self.spill_file_id)
         {
             let cache_handle = CacheFileHandle {
                 file_id,

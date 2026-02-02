@@ -34,8 +34,8 @@ use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use crate::{
     Circuit, DBData, Error, Runtime, Stream, ZWeight,
     algebra::{
-        AddAssignByRef, F32, F64, HasOne, HasZero, OrderStatisticsMultiset,
-        DEFAULT_BRANCHING_FACTOR,
+        AddAssignByRef, DEFAULT_BRANCHING_FACTOR, F32, F64, HasOne, HasZero,
+        OrderStatisticsMultiset,
     },
     circuit::{
         GlobalNodeId, OwnershipPreference, Scope,
@@ -44,11 +44,9 @@ use crate::{
     },
     dynamic::DowncastTrait,
     node_storage::NodeStorageConfig,
-    storage::file::{to_bytes, Deserializer},
+    storage::file::{Deserializer, to_bytes},
     trace::{BatchReader, Cursor},
-    typed_batch::{
-        BatchReader as TypedBatchReader, OrdIndexedZSet, TypedBatch,
-    },
+    typed_batch::{BatchReader as TypedBatchReader, OrdIndexedZSet, TypedBatch},
     utils::{IsNone, Tup2},
 };
 use feldera_storage::{FileCommitter, StoragePath};
@@ -314,22 +312,13 @@ where
         let total_entries: usize = self.trees.values().map(|t| t.num_keys()).sum();
 
         meta.extend([
-            (
-                Cow::Borrowed("num_keys"),
-                MetaItem::Int(num_keys),
-            ),
-            (
-                Cow::Borrowed("total_entries"),
-                MetaItem::Int(total_entries),
-            ),
+            (Cow::Borrowed("num_keys"), MetaItem::Int(num_keys)),
+            (Cow::Borrowed("total_entries"), MetaItem::Int(total_entries)),
             (
                 Cow::Borrowed("percentile_pct"),
                 MetaItem::Int((self.percentile * 100.0) as usize),
             ),
-            (
-                Cow::Borrowed("ascending"),
-                MetaItem::Bool(self.ascending),
-            ),
+            (Cow::Borrowed("ascending"), MetaItem::Bool(self.ascending)),
         ]);
     }
 
@@ -350,10 +339,10 @@ where
         let checkpoint_dir = std::path::PathBuf::from(format!("{}/{}", base, persistent_id));
         std::fs::create_dir_all(&checkpoint_dir).map_err(|e| {
             use std::io::{Error as IoError, ErrorKind};
-            Error::IO(IoError::new(
-                ErrorKind::Other,
-                format!("Failed to create checkpoint dir: {}", e),
-            ))
+            Error::IO(IoError::other(format!(
+                "Failed to create checkpoint dir: {}",
+                e
+            )))
         })?;
 
         // Save each tree's leaves using reference-based checkpointing
@@ -364,14 +353,13 @@ where
         let mut trees: Vec<(K, CommittedLeafStorage<V>)> = Vec::new();
         for (i, (key, tree)) in self.trees.iter_mut().enumerate() {
             let tree_id = format!("tree_{}", i);
-            let committed_leaf_storage = tree
-                .save_leaves(&checkpoint_dir, &tree_id)
-                .map_err(|e| {
+            let committed_leaf_storage =
+                tree.save_leaves(&checkpoint_dir, &tree_id).map_err(|e| {
                     use std::io::{Error as IoError, ErrorKind};
-                    Error::IO(IoError::new(
-                        ErrorKind::Other,
-                        format!("Failed to save tree leaves: {:?}", e),
-                    ))
+                    Error::IO(IoError::other(format!(
+                        "Failed to save tree leaves: {:?}",
+                        e
+                    )))
                 })?;
             trees.push((key.clone(), committed_leaf_storage));
         }
@@ -430,10 +418,7 @@ where
             let key: K = rkyv::Deserialize::deserialize(&archived_tree.0, &mut deserializer)
                 .map_err(|e| {
                     use std::io::{Error as IoError, ErrorKind};
-                    Error::IO(IoError::new(
-                        ErrorKind::Other,
-                        format!("Failed to deserialize key: {e:?}"),
-                    ))
+                    Error::IO(IoError::other(format!("Failed to deserialize key: {e:?}")))
                 })?;
 
             // Deserialize the CommittedLeafStorage metadata
@@ -441,10 +426,9 @@ where
                 rkyv::Deserialize::deserialize(&archived_tree.1, &mut deserializer).map_err(
                     |e| {
                         use std::io::{Error as IoError, ErrorKind};
-                        Error::IO(IoError::new(
-                            ErrorKind::Other,
-                            format!("Failed to deserialize CommittedLeafStorage: {e:?}"),
-                        ))
+                        Error::IO(IoError::other(format!(
+                            "Failed to deserialize CommittedLeafStorage: {e:?}"
+                        )))
                     },
                 )?;
 
@@ -463,20 +447,18 @@ where
             let key: K = rkyv::Deserialize::deserialize(&archived_entry.0, &mut deserializer)
                 .map_err(|e| {
                     use std::io::{Error as IoError, ErrorKind};
-                    Error::IO(IoError::new(
-                        ErrorKind::Other,
-                        format!("Failed to deserialize prev_output key: {e:?}"),
-                    ))
+                    Error::IO(IoError::other(format!(
+                        "Failed to deserialize prev_output key: {e:?}"
+                    )))
                 })?;
 
             let value: Option<V> =
                 rkyv::Deserialize::deserialize(&archived_entry.1, &mut deserializer).map_err(
                     |e| {
                         use std::io::{Error as IoError, ErrorKind};
-                        Error::IO(IoError::new(
-                            ErrorKind::Other,
-                            format!("Failed to deserialize prev_output value: {e:?}"),
-                        ))
+                        Error::IO(IoError::other(format!(
+                            "Failed to deserialize prev_output value: {e:?}"
+                        )))
                     },
                 )?;
 
@@ -524,10 +506,7 @@ where
             // Get or create tree for this key
             let storage_config = self.storage_config.clone();
             let tree = self.trees.entry(key.clone()).or_insert_with(|| {
-                OrderStatisticsMultiset::with_config(
-                    DEFAULT_BRANCHING_FACTOR,
-                    storage_config,
-                )
+                OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, storage_config)
             });
 
             // Process all values for this key
@@ -587,10 +566,7 @@ where
 
                 // Emit insertion of new value
                 if new_value.is_some() || prev_value.is_some() {
-                    tuples.push(Tup2(
-                        Tup2(key.clone(), new_value.clone()),
-                        ZWeight::one(),
-                    ));
+                    tuples.push(Tup2(Tup2(key.clone(), new_value.clone()), ZWeight::one()));
                 }
 
                 // Update prev_output
@@ -598,11 +574,11 @@ where
             }
 
             // Clean up empty trees
-            if let Some(tree) = self.trees.get(&key) {
-                if tree.is_empty() {
-                    self.trees.remove(&key);
-                    self.prev_output.remove(&key);
-                }
+            if let Some(tree) = self.trees.get(&key)
+                && tree.is_empty()
+            {
+                self.trees.remove(&key);
+                self.prev_output.remove(&key);
             }
         }
 
@@ -624,7 +600,7 @@ impl<K, V> UnaryOperator<OrdIndexedZSet<K, V>, OrdIndexedZSet<K, Option<V>>>
 where
     K: DBData,
     <K as crate::storage::file::Deserializable>::ArchivedDeser: Ord,
-    V: DBData + IsNone,  // No Interpolate bound - works with any ordered type
+    V: DBData + IsNone, // No Interpolate bound - works with any ordered type
     <V as Archive>::Archived: Ord,
 {
     async fn eval(&mut self, delta: &OrdIndexedZSet<K, V>) -> OrdIndexedZSet<K, Option<V>> {
@@ -642,10 +618,7 @@ where
             // Get or create tree for this key
             let storage_config = self.storage_config.clone();
             let tree = self.trees.entry(key.clone()).or_insert_with(|| {
-                OrderStatisticsMultiset::with_config(
-                    DEFAULT_BRANCHING_FACTOR,
-                    storage_config,
-                )
+                OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, storage_config)
             });
 
             // Process all values for this key
@@ -705,10 +678,7 @@ where
 
                 // Emit insertion of new value
                 if new_value.is_some() || prev_value.is_some() {
-                    tuples.push(Tup2(
-                        Tup2(key.clone(), new_value.clone()),
-                        ZWeight::one(),
-                    ));
+                    tuples.push(Tup2(Tup2(key.clone(), new_value.clone()), ZWeight::one()));
                 }
 
                 // Update prev_output
@@ -716,11 +686,11 @@ where
             }
 
             // Clean up empty trees
-            if let Some(tree) = self.trees.get(&key) {
-                if tree.is_empty() {
-                    self.trees.remove(&key);
-                    self.prev_output.remove(&key);
-                }
+            if let Some(tree) = self.trees.get(&key)
+                && tree.is_empty()
+            {
+                self.trees.remove(&key);
+                self.prev_output.remove(&key);
             }
         }
 
@@ -775,7 +745,7 @@ where
     #[track_caller]
     pub fn percentile_cont_stateful(
         &self,
-        _persistent_id: Option<&str>,  // TODO: Implement checkpoint/restore
+        _persistent_id: Option<&str>, // TODO: Implement checkpoint/restore
         percentile: f64,
         ascending: bool,
     ) -> Stream<C, OrdIndexedZSet<K, Option<V>>> {
@@ -805,7 +775,7 @@ where
     C: Circuit,
     K: DBData,
     <K as crate::storage::file::Deserializable>::ArchivedDeser: Ord,
-    V: DBData + IsNone,  // No Interpolate bound - works with any ordered type
+    V: DBData + IsNone, // No Interpolate bound - works with any ordered type
     <V as Archive>::Archived: Ord,
 {
     /// Compute PERCENTILE_DISC incrementally with persistent state.
@@ -827,7 +797,7 @@ where
     #[track_caller]
     pub fn percentile_disc_stateful(
         &self,
-        _persistent_id: Option<&str>,  // TODO: Implement checkpoint/restore
+        _persistent_id: Option<&str>, // TODO: Implement checkpoint/restore
         percentile: f64,
         ascending: bool,
     ) -> Stream<C, OrdIndexedZSet<K, Option<V>>> {
@@ -873,12 +843,13 @@ mod tests {
         let result = output.consolidate();
         // Median of [10.0, 20.0, 30.0, 40.0, 50.0] is 30.0
         // Delta should be: remove old (20.0), add new (30.0)
-        assert_eq!(result, indexed_zset! { 1 => { Some(F64::new(20.0)) => -1, Some(F64::new(30.0)) => 1 } });
+        assert_eq!(
+            result,
+            indexed_zset! { 1 => { Some(F64::new(20.0)) => -1, Some(F64::new(30.0)) => 1 } }
+        );
 
         // Step 3: Delete a value
-        input.append(&mut vec![
-            Tup2(1, Tup2(F64::new(30.0), -1)),
-        ]);
+        input.append(&mut vec![Tup2(1, Tup2(F64::new(30.0), -1))]);
         circuit.transaction().unwrap();
 
         let result = output.consolidate();
@@ -886,7 +857,10 @@ mod tests {
         // pos = 0.5 * (4-1) = 1.5, lower_idx = 1, upper_idx = 2
         // values are 20.0 and 40.0, fraction = 0.5
         // interpolated = 20.0 + 0.5 * (40.0 - 20.0) = 30.0
-        assert_eq!(result, indexed_zset! { 1 => { Some(F64::new(30.0)) => -1, Some(F64::new(30.0)) => 1 } });
+        assert_eq!(
+            result,
+            indexed_zset! { 1 => { Some(F64::new(30.0)) => -1, Some(F64::new(30.0)) => 1 } }
+        );
     }
 
     #[test]
@@ -1023,13 +997,15 @@ mod tests {
         };
 
         // Insert some data into the trees
-        let mut tree1 = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, storage_config.clone());
+        let mut tree1 =
+            OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, storage_config.clone());
         tree1.insert(F64::new(10.0), 1);
         tree1.insert(F64::new(20.0), 1);
         tree1.insert(F64::new(30.0), 1);
         op1.trees.insert(1, tree1);
 
-        let mut tree2 = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, storage_config.clone());
+        let mut tree2 =
+            OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, storage_config.clone());
         tree2.insert(F64::new(100.0), 1);
         tree2.insert(F64::new(200.0), 1);
         op1.trees.insert(2, tree2);
@@ -1079,7 +1055,7 @@ mod tests {
         let mut op2: PercentileOperator<i32, F64, ContMode> = PercentileOperator {
             trees: BTreeMap::new(),
             prev_output: BTreeMap::new(),
-            percentile: 0.0, // Different from op1
+            percentile: 0.0,  // Different from op1
             ascending: false, // Different from op1
             storage_config: storage_config.clone(),
             global_id: GlobalNodeId::root(),

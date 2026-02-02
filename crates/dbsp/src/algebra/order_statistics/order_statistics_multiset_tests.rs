@@ -1,13 +1,16 @@
 #[cfg(test)]
 mod tests {
-    use crate::algebra::{OrderStatisticsMultiset, ZWeight, DEFAULT_BRANCHING_FACTOR};
+    use crate::algebra::{DEFAULT_BRANCHING_FACTOR, OrderStatisticsMultiset, ZWeight};
     use crate::node_storage::NodeStorageConfig;
 
     fn new_tree<T>() -> OrderStatisticsMultiset<T>
     where
         T: crate::DBData,
     {
-        OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, NodeStorageConfig::memory_only())
+        OrderStatisticsMultiset::with_config(
+            DEFAULT_BRANCHING_FACTOR,
+            NodeStorageConfig::memory_only(),
+        )
     }
 
     #[test]
