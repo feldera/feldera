@@ -1662,7 +1662,7 @@ where
     use feldera_storage::fbuf::FBuf;
     use rkyv::ser::Serializer as RkyvSerializer;
     use rkyv::ser::serializers::AllocSerializer;
-    use std::io::{Error as IoError, ErrorKind};
+    use std::io::Error as IoError;
 
     let mut serializer = AllocSerializer::<4096>::default();
     serializer
@@ -1756,7 +1756,7 @@ where
         let mut deserializer = Deserializer::new(0);
         let serializable: SerializableOrderStatisticsMultiset<T> =
             rkyv::Deserialize::deserialize(archived, &mut deserializer).map_err(|e| {
-                use std::io::{Error as IoError, ErrorKind};
+                use std::io::Error as IoError;
                 Error::IO(IoError::other(format!(
                     "Failed to deserialize checkpoint: {e:?}"
                 )))

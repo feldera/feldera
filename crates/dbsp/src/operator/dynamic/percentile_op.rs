@@ -338,7 +338,7 @@ where
         // Create checkpoint directory
         let checkpoint_dir = std::path::PathBuf::from(format!("{}/{}", base, persistent_id));
         std::fs::create_dir_all(&checkpoint_dir).map_err(|e| {
-            use std::io::{Error as IoError, ErrorKind};
+            use std::io::Error as IoError;
             Error::IO(IoError::other(format!(
                 "Failed to create checkpoint dir: {}",
                 e
@@ -355,7 +355,7 @@ where
             let tree_id = format!("tree_{}", i);
             let committed_leaf_storage =
                 tree.save_leaves(&checkpoint_dir, &tree_id).map_err(|e| {
-                    use std::io::{Error as IoError, ErrorKind};
+                    use std::io::Error as IoError;
                     Error::IO(IoError::other(format!(
                         "Failed to save tree leaves: {:?}",
                         e
@@ -417,7 +417,7 @@ where
             // Deserialize the key
             let key: K = rkyv::Deserialize::deserialize(&archived_tree.0, &mut deserializer)
                 .map_err(|e| {
-                    use std::io::{Error as IoError, ErrorKind};
+                    use std::io::Error as IoError;
                     Error::IO(IoError::other(format!("Failed to deserialize key: {e:?}")))
                 })?;
 
@@ -425,7 +425,7 @@ where
             let committed_leaf_storage: CommittedLeafStorage<V> =
                 rkyv::Deserialize::deserialize(&archived_tree.1, &mut deserializer).map_err(
                     |e| {
-                        use std::io::{Error as IoError, ErrorKind};
+                        use std::io::Error as IoError;
                         Error::IO(IoError::other(format!(
                             "Failed to deserialize CommittedLeafStorage: {e:?}"
                         )))
@@ -446,7 +446,7 @@ where
         for archived_entry in archived.prev_output.iter() {
             let key: K = rkyv::Deserialize::deserialize(&archived_entry.0, &mut deserializer)
                 .map_err(|e| {
-                    use std::io::{Error as IoError, ErrorKind};
+                    use std::io::Error as IoError;
                     Error::IO(IoError::other(format!(
                         "Failed to deserialize prev_output key: {e:?}"
                     )))
@@ -455,7 +455,7 @@ where
             let value: Option<V> =
                 rkyv::Deserialize::deserialize(&archived_entry.1, &mut deserializer).map_err(
                     |e| {
-                        use std::io::{Error as IoError, ErrorKind};
+                        use std::io::Error as IoError;
                         Error::IO(IoError::other(format!(
                             "Failed to deserialize prev_output value: {e:?}"
                         )))
