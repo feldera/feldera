@@ -152,6 +152,166 @@ FROM players;
 -- Returns ALL rows with their ranks
 ```
 
+#### Detailed Analysis: Can OrderStatisticsMultiset Be Used?
+
+**OrderStatisticsMultiset data model**:
+```rust
+// Leaf stores (value, weight) pairs - NOT individual rows
+LeafNode { entries: Vec<(T, ZWeight)> }
+
+// Operations:
+// - rank(value): sum of weights of all values < value  → O(log n)
+// - select_kth(k): find value at cumulative position k → O(log n)
+```
+
+| Function | Required Query | OrderStatisticsMultiset Support |
+|----------|----------------|--------------------------------|
+| **RANK()** | Count of rows with smaller values | ✅ `rank(value) + 1` works directly |
+| **DENSE_RANK()** | Count of distinct values smaller | ❌ Needs `subtree_key_count` augmentation |
+| **ROW_NUMBER()** | Unique position per row | ❌ Cannot distinguish rows with same value |
+
+---
+
+#### RANK(): Works As-Is ✅
+
+**Semantics**: `RANK() = 1 + (count of rows with ORDER BY value < current row's value)`
+
+```
+Values:     [1, 2, 2, 3]  (value 2 has weight 2)
+RANK():     [1, 2, 2, 4]
+```
+
+**Why OrderStatisticsMultiset works**:
+- `rank(value)` returns sum of weights of all values < `value`
+- For value 3: `rank(3) = weight(1) + weight(2) = 1 + 2 = 3`
+- Window RANK = `rank(value) + 1 = 4` ✓
+
+**Data flow for RANK()**:
+```
+1. Original rows in Spine: (partition_key, row_data, order_by_value)
+2. Per partition: OrderStatisticsMultiset<order_by_value> with weights
+3. Output: for each row, compute tree.rank(row.order_by_value) + 1
+```
+
+**Complexity**: O(n log n) for n rows (each row does O(log n) rank lookup)
+
+---
+
+#### DENSE_RANK(): Needs Modification ⚠️
+
+**Semantics**: `DENSE_RANK() = 1 + (count of distinct ORDER BY values < current row's value)`
+
+```
+Values:        [1, 2, 2, 3]
+DENSE_RANK():  [1, 2, 2, 3]  (no gaps)
+RANK():        [1, 2, 2, 4]  (gap at 3)
+```
+
+**Why OrderStatisticsMultiset doesn't work directly**:
+- `rank(3)` returns weight sum = 3, not distinct count = 2
+- Need count of distinct keys, not sum of weights
+
+**Required modification** - add key count augmentation:
+```rust
+struct InternalNodeTyped<T> {
+    keys: Vec<T>,
+    children: Vec<NodeLocation>,
+    subtree_sums: Vec<ZWeight>,       // Existing: sum of weights
+    subtree_key_counts: Vec<usize>,   // NEW: count of distinct keys
+}
+```
+
+With this augmentation:
+- `dense_rank(value)` = count of distinct keys < value → O(log n)
+- Same tree structure, same NodeStorage infrastructure
+- Additional O(1) space per internal node entry
+
+---
+
+#### ROW_NUMBER(): Needs Different Structure ❌
+
+**Semantics**: Each row gets unique sequential number 1..n, ties broken arbitrarily
+
+```
+Values:        [1, 2, 2, 3]
+ROW_NUMBER():  [1, 2, 3, 4]  (both 2s get different numbers)
+```
+
+**Why OrderStatisticsMultiset cannot support this**:
+- Tree stores `(value → weight)`, not individual rows
+- For two rows with `value=2`, tree sees `weight=2`, not two separate rows
+- Cannot distinguish or order rows with identical ORDER BY values
+
+**Options for ROW_NUMBER()**:
+
+| Option | Structure | Key | Weight | Pros | Cons |
+|--------|-----------|-----|--------|------|------|
+| **A. Extended key** | OrderStatisticsMultiset | `(value, row_id)` | 1 | Same tree ops | Larger keys, always unique |
+| **B. Row storage** | New structure | `value` | N/A | Preserves rows | Different data model |
+| **C. Post-join** | OSM + Spine | `value` | count | Reuses OSM | Complex join logic |
+
+**Option A (Extended Key)** is most practical:
+```rust
+// Instead of: OrderStatisticsMultiset<OrderByValue>
+// Use:        OrderStatisticsMultiset<(OrderByValue, RowId)>
+
+// For rows: [(id=A, val=1), (id=B, val=2), (id=C, val=2), (id=D, val=3)]
+// Tree keys: [(1,A), (2,B), (2,C), (3,D)]  all with weight=1
+// ROW_NUMBER(id=C) = rank((2,C)) + 1 = 3 ✓
+```
+
+This transforms the weighted multiset into an ordered set with compound keys.
+
+**Same NodeStorage infrastructure** works - just different key type.
+
+---
+
+#### Summary: Data Structure Requirements
+
+| Function | OrderStatisticsMultiset<T> | Modification Needed |
+|----------|---------------------------|---------------------|
+| RANK() | ✅ Use as-is | None |
+| DENSE_RANK() | ⚠️ Modify | Add `subtree_key_count` augmentation |
+| ROW_NUMBER() | ❌ Different key | Use `OrderStatisticsMultiset<(T, RowId)>` with weight=1 |
+
+**All three can use the same NodeStorage infrastructure** - the differences are:
+1. **RANK**: Standard `(value → weight)` multiset
+2. **DENSE_RANK**: Same structure + key count augmentation
+3. **ROW_NUMBER**: `((value, row_id) → 1)` ordered set (degenerate multiset)
+
+---
+
+#### Architecture for General Window Ranking
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Window Ranking Operator                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Input: Stream<(PartitionKey, RowData, OrderByValue)>           │
+│                                                                  │
+│  Per-Partition State (NodeStorage-backed):                       │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  RANK():       OrderStatisticsMultiset<OrderByValue>    │    │
+│  │                (value → weight)                          │    │
+│  ├─────────────────────────────────────────────────────────┤    │
+│  │  DENSE_RANK(): OrderStatisticsMultiset<OrderByValue>    │    │
+│  │                + subtree_key_count augmentation          │    │
+│  ├─────────────────────────────────────────────────────────┤    │
+│  │  ROW_NUMBER(): OrderStatisticsMultiset<(OrderByValue,   │    │
+│  │                                         RowId)>         │    │
+│  │                (compound_key → 1)                        │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                  │
+│  Original Rows: Spine/Trace for row data retrieval              │
+│                                                                  │
+│  Output: for each (partition, row):                             │
+│          rank_value = tree.rank(key) + 1                        │
+│          emit (row, rank_value)                                  │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 **Why Spine struggles with general ranking**:
 - TopK can discard non-top elements (bounded state)
 - General ranking must track ALL elements and their positions

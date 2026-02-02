@@ -47,8 +47,6 @@ pub use uuid::*;
 #[doc(hidden)]
 pub mod variant;
 pub use variant::*;
-// Re-export OrderStatisticsMultiset and PercentileSemigroup from dbsp for use in compiled SQL
-pub use dbsp::operator::{OrderStatisticsMultiset, PercentileSemigroup};
 #[doc(hidden)]
 pub mod rfc3339;
 #[doc(hidden)]
