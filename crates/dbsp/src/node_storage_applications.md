@@ -322,9 +322,140 @@ This transforms the weighted multiset into an ordered set with compound keys.
 - For each row, `rank(value)` gives its position
 - Incremental: when values change, only affected ranks update
 
-**Caveat**: Per-row output is inherently O(n) for n rows. The benefit is:
-1. O(log n) per individual rank query (vs O(n) scan)
-2. Efficient spilling for large partitions (only hot leaves in memory)
+---
+
+#### Output Strategies for Window Ranking
+
+**The fundamental challenge**: Inserting one row can shift ranks of O(n) existing rows.
+
+```
+Before: [10, 20, 30, 40, 50]  →  ranks: [1, 2, 3, 4, 5]
+Insert 15:                    →  ranks: [1, 2, 3, 4, 5, 6]
+                                         ↑  4 rows changed!
+```
+
+Three strategies for handling output, with different trade-offs:
+
+---
+
+##### Option 1: Full Materialization (Current Approach)
+
+Compute and emit ranks for ALL rows after each batch.
+
+```
+Per batch:
+  1. Update tree: O(B log n)
+  2. Iterate all rows, query rank, emit: O(n log n)
+```
+
+| Metric | Complexity |
+|--------|------------|
+| State update | O(B log n) |
+| Output | O(n log n) |
+| **Total** | **O(n log n)** |
+
+**Pros**: Simple, correct, no new infrastructure needed.
+**Cons**: Output cost dominates; doesn't leverage O(log n) queries.
+
+---
+
+##### Option 2: Delta-Aware Output
+
+Only emit rows whose ranks actually changed.
+
+```
+Per batch:
+  1. Update tree: O(B log n)
+  2. For each inserted value V:
+     - Identify rows with value > V (ranks shifted)
+     - Emit (row, old_rank, new_rank) for affected rows
+```
+
+| Metric | Complexity |
+|--------|------------|
+| State update | O(B log n) |
+| Output | O(affected_rows) |
+| **Total** | **O(B log n + affected)** |
+
+Where `affected_rows`:
+- Worst case: O(n) (insert smallest value)
+- Best case: O(1) (insert largest value)
+- Average: O(n/2) assuming uniform distribution
+
+**Pros**: Avoids redundant output for unchanged rows.
+**Cons**: Still O(n) worst case; requires tracking "affected range."
+
+---
+
+##### Option 3: Join-Based Lookup (On-Demand)
+
+Don't materialize ranks eagerly. Compute only when downstream requests specific rows.
+
+**Why this matters**: Many queries filter window function results:
+```sql
+SELECT * FROM (
+    SELECT *, rank() OVER (ORDER BY score) AS rk FROM players
+) WHERE player_id IN (SELECT id FROM active_players)  -- Only need ranks for active players!
+```
+
+**Architecture**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Rank State: OrderStatisticsMultiset                         │
+│  (maintained incrementally, ranks NOT materialized)          │
+│                         │                                    │
+│                         ▼ rank_lookup(value) → O(log n)      │
+│  ┌─────────────────┐  ┌──────────────────────────────────┐  │
+│  │ Query Stream    │──│ Rank Lookup Join                  │  │
+│  │ (filtered rows) │  │ emit (row, tree.rank(val) + 1)   │  │
+│  └─────────────────┘  └──────────────────────────────────┘  │
+│                                    │                         │
+│                         Output: O(Q log n) where Q = query   │
+│                                 stream size, not n           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+| Metric | Complexity |
+|--------|------------|
+| State update | O(B log n) |
+| Output | O(Q log n) where Q = query size |
+| **Total** | **O(B log n + Q log n)** |
+
+**Pros**: O(Q log n) when Q << n; ideal for filtered queries.
+**Cons**: Requires new infrastructure (see below).
+
+**Limitation: DBSP is push-based, not pull-based**
+
+Unlike Haskell thunks (demand-driven), DBSP operators are triggered by the scheduler:
+
+```rust
+// DBSP: scheduler calls eval(), not consumer
+pub trait UnaryOperator<I, O>: Operator {
+    async fn eval(&mut self, input: &I) -> O;
+}
+```
+
+| Aspect | Haskell Thunks | DBSP |
+|--------|----------------|------|
+| Trigger | Consumer demands | Scheduler pushes |
+| Flow | Pull (lazy) | Push (eager) |
+
+**Required infrastructure for Option 3**:
+1. `RankLookupOperator` holding tree state, accepting query streams
+2. Query planner to push filters below window functions
+3. SQL pattern recognition: `WHERE rank < k` → use TopK instead
+
+**Current status**: Not implemented. Only Option 1 (full materialization) is possible today.
+
+---
+
+#### Summary: Output Strategy Trade-offs
+
+| Strategy | State Update | Output | Best For |
+|----------|--------------|--------|----------|
+| **Option 1**: Full materialization | O(B log n) | O(n log n) | Simple cases, small partitions |
+| **Option 2**: Delta-aware | O(B log n) | O(affected) | Stable data, few rank changes |
+| **Option 3**: Join-based lookup | O(B log n) | O(Q log n) | Filtered queries (Q << n) |
 
 ---
 

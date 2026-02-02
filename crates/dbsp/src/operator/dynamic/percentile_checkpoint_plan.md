@@ -12,14 +12,14 @@ nodes to disk. Checkpoint/restore is not yet implemented.
 resides in leaf nodes.** This matches `OrderStatisticsMultiset`, where all `(value, weight)`
 pairs are stored in leaves.
 
-The core principle is: **don't re-serialize data that's already on disk**. Checkpoint
-references existing spill files rather than duplicating data.
+The core principle is: **checkpoint only leaves; reconstruct internal nodes on restore.**
 
-This works regardless of `max_spillable_level`:
-- **`max_spillable_level = 0` (default):** Only leaves spill. Checkpoint serializes
-  internal nodes (~2%) in metadata, references leaf spill file.
-- **`max_spillable_level > 0`:** Internal nodes can also spill. Checkpoint references
-  both internal and leaf data in spill file(s), metadata is even smaller.
+This approach:
+- **Keeps checkpoint format independent of `max_spillable_level`** - critical because
+  this setting could change between checkpoint and restore (recompilation, different config)
+- **Rebuilds internal nodes from leaf summaries** in O(num_leaves) without reading leaf contents
+- **Reuses checkpoint file as spill file** - zero re-serialization, zero bulk reads
+- **Simplifies checkpoint format** - only one node type to handle
 
 ## Goals
 
@@ -64,13 +64,25 @@ struct LeafNode<T> {
 - Separator keys: copies of values that also exist in leaves
 - Subtree sums: derived/aggregated from leaf data (can be recomputed)
 
-This B+ tree property is why the reference-based checkpoint works efficiently:
-- Checkpoint the leaves (where all data lives) → reference spill files
-- Serialize internal nodes (small, derived) → include in metadata
+This B+ tree property is why "checkpoint only leaves" works efficiently:
+- **Leaves contain all data** → checkpoint only the leaf file
+- **Internal nodes are derived** → reconstruct from leaf summaries on restore (O(num_leaves))
 
-### NodeStorage Spill Levels
+### Why Checkpoint Only Leaves?
 
-NodeStorage supports different spill configurations:
+1. **Config Independence**: `max_spillable_level` could change between checkpoint and restore
+   (recompilation, different settings). If we checkpoint internal nodes, the format would
+   depend on which nodes were spilled vs in-memory at checkpoint time.
+
+2. **Simplicity**: One node type to serialize (leaves), one reconstruction path on restore.
+
+3. **Efficiency**: With leaf summaries (first_key, weight_sum per leaf), we can rebuild
+   internal nodes in O(num_leaves) without reading leaf contents. For 1B entries with
+   ~1M leaves, this is ~1000x faster than reading all entries.
+
+### What About max_spillable_level?
+
+NodeStorage supports different spill configurations at runtime:
 
 ```rust
 /// max_spillable_level controls which nodes can be spilled:
@@ -79,26 +91,17 @@ NodeStorage supports different spill configurations:
 /// - u8::MAX: All nodes can be spilled
 ```
 
-**The checkpoint approach works for any `max_spillable_level`:**
+**The checkpoint approach is independent of `max_spillable_level`:**
 
-| Spill Level | What's on Disk | What's in Metadata |
-|-------------|----------------|-------------------|
-| 0 (default) | Leaves only | Internal nodes + leaf index |
-| 1+ | Leaves + some internal nodes | Root path + node indices |
+| Checkpoint | Always stores | Always reconstructs |
+|------------|--------------|---------------------|
+| Leaves | Leaf file + index + summaries | Internal nodes from summaries (O(num_leaves)) |
 
-The principle is the same: reference data already on disk, serialize only what's in memory.
-With higher spill levels, more data is already on disk, so metadata gets smaller.
+This means:
+- Checkpoint at `max_spillable_level = 0` → restore at `max_spillable_level = 2` ✓
+- Checkpoint at `max_spillable_level = 2` → restore at `max_spillable_level = 0` ✓
 
-### Generalization
-
-The approach generalizes to any `NodeStorage`-backed tree:
-1. Spilled nodes are already serialized to files → reference them
-2. In-memory nodes are serialized in checkpoint metadata
-3. The higher the spill level, the smaller the metadata
-
-For OrderStatisticsMultiset:
-- With `max_spillable_level = 0`: ~2% in metadata (internal nodes), ~98% referenced (leaves)
-- With higher levels: even less in metadata, more referenced
+The checkpoint format doesn't change regardless of runtime settings
 
 ## Approach: Reference-Based Checkpointing
 
@@ -140,40 +143,50 @@ fn restore(&mut self, ...) {
 ### How PercentileOperator Should Do It
 
 ```rust
-// Per-tree checkpoint metadata
-struct CommittedNodeStorage<I> {
+// Per-tree checkpoint metadata (leaves only - internal nodes reconstructed on restore)
+struct CommittedLeafStorage<K> {
     /// Path to the spill file containing all leaf data
     spill_file_path: String,
-
-    /// All internal nodes - always in memory, small (<2% of tree)
-    internal_nodes: Vec<I>,
 
     /// Index into spill file: leaf_id -> (offset, size)
     leaf_block_locations: Vec<(usize, u64, u32)>,
 
-    /// Tree structure metadata
-    root_location: Option<NodeLocation>,
-    leaf_count: usize,
+    /// Per-leaf summaries for O(num_leaves) index reconstruction
+    /// Allows rebuilding internal nodes WITHOUT reading leaf contents
+    leaf_summaries: Vec<LeafSummary<K>>,
+
+    /// Total entries and weight (for validation)
     total_entries: usize,
     total_weight: ZWeight,
 }
 
+/// Summary of a leaf node - enough to rebuild internal nodes without reading leaf contents
+struct LeafSummary<K> {
+    first_key: K,         // For building separator keys in internal nodes
+    weight_sum: ZWeight,  // For building subtree_sums in internal nodes
+}
+
 // Operator checkpoint
-struct CommittedPercentile<K, I> {
-    /// Per-key tree metadata (references spill files, doesn't contain leaf data)
-    trees: Vec<(K, CommittedNodeStorage<I>)>,
+struct CommittedPercentile<K> {
+    /// Per-key tree metadata (references leaf files only)
+    trees: Vec<(K, CommittedLeafStorage<K>)>,
 
     /// Previous outputs for delta computation
     prev_output: Vec<(K, Option<V>)>,
 }
 ```
 
+**Key optimizations:**
+1. Internal nodes are NOT stored - rebuilt from `leaf_summaries` in O(num_leaves)
+2. Leaf contents are NOT read on restore - checkpoint file used directly as spill file
+3. Already-spilled leaves are NOT re-serialized on checkpoint - just move the file
+
 ### Checkpoint Size Comparison
 
-| Approach | Checkpoint Contains | Size for 1B entries |
-|----------|---------------------|---------------------|
+| Approach | Checkpoint Contains | Size for 1B entries (~1M leaves) |
+|----------|---------------------|----------------------------------|
 | Direct serialization | All entries | ~50+ GB |
-| Reference-based | Internal nodes + index | ~100 MB |
+| Reference-based (this plan) | Leaf file + index + summaries | ~32 MB |
 
 ## Implementation Details
 
@@ -193,42 +206,49 @@ impl<I, L> Drop for NodeStorage<I, L> {
 
 **Need to add:**
 
-1. **`save()` method** - Persist tree and return metadata:
+1. **`save_leaves()` method** - Checkpoint leaves to file:
    ```rust
    impl<I, L> NodeStorage<I, L> {
-       /// Checkpoint the storage, returning metadata that references the spill file.
+       /// Checkpoint the leaf data, returning metadata that references the spill file.
        ///
        /// This:
-       /// 1. Flushes all dirty leaves to the spill file
-       /// 2. Moves the spill file to a checkpoint-managed location
-       /// 3. Returns metadata with the file path and internal nodes
-       /// 4. Clears the internal spill_file_path (checkpointer owns the file now)
-       pub fn save(
+       /// 1. Writes only dirty + never-spilled leaves (skips already-spilled clean!)
+       /// 2. Moves the spill file to checkpoint location (O(1) rename)
+       /// 3. Collects leaf summaries for O(num_leaves) restore
+       /// 4. Returns metadata (checkpoint file becomes spill file on restore)
+       ///
+       /// Already-spilled clean leaves are NOT re-serialized.
+       /// Internal nodes are NOT checkpointed - rebuilt from summaries on restore.
+       pub fn save_leaves(
            &mut self,
            checkpoint_dir: &StoragePath,
            tree_id: &str,
-       ) -> Result<CommittedNodeStorage<I>, Error> {
-           // Flush any remaining dirty leaves
-           self.flush_dirty_to_disk()?;
+       ) -> Result<CommittedLeafStorage<L::Key>, Error> {
+           // Write leaves not yet on disk (dirty + never-spilled)
+           // Already-spilled clean leaves: SKIPPED - no re-serialization!
+           self.flush_all_leaves_to_disk()?;
 
-           // Move/rename spill file to checkpoint location
+           // Collect leaf summaries BEFORE moving file
+           // (need access to leaf data for first_key, weight_sum)
+           let leaf_summaries = self.collect_leaf_summaries();
+
+           // Move spill file to checkpoint location - O(1) filesystem rename
            let dest_path = checkpoint_dir.child(format!("{}.leaves", tree_id));
            if let Some(ref src_path) = self.spill_file_path {
                std::fs::rename(src_path, &dest_path)?;
            }
 
-           // Build metadata
-           let committed = CommittedNodeStorage {
+           // Build metadata with summaries for fast restore
+           let committed = CommittedLeafStorage {
                spill_file_path: dest_path.to_string(),
-               internal_nodes: self.internal_nodes.clone(),
-               leaf_block_locations: self.leaf_block_locations.iter()
-                   .map(|(id, (off, sz))| (*id, *off, *sz))
-                   .collect(),
-               root_location: /* ... */,
-               // ...
+               leaf_block_locations: self.leaf_block_locations.clone(),
+               leaf_summaries,  // Enables O(num_leaves) restore
+               total_entries: self.total_entries(),
+               total_weight: self.total_weight(),
            };
 
-           // Clear our reference - checkpointer owns the file now
+           // Clear our reference - file now owned by checkpoint
+           // On restore, this same file becomes the new spill file
            self.spill_file_path = None;
 
            Ok(committed)
@@ -236,30 +256,54 @@ impl<I, L> Drop for NodeStorage<I, L> {
    }
    ```
 
-2. **`restore()` method** - Rebuild from checkpoint:
+2. **Optimized restore** (uses checkpoint file directly, no bulk reading):
    ```rust
-   impl<I, L> NodeStorage<I, L> {
-       /// Restore storage from a checkpoint.
+   impl<T: DBData> OrderStatisticsMultiset<T> {
+       /// Restore from checkpoint - O(num_leaves), not O(num_entries).
        ///
-       /// This points the storage at an existing spill file without copying data.
-       pub fn restore(committed: CommittedNodeStorage<I>) -> Result<Self, Error> {
-           let mut storage = Self::new();
+       /// This:
+       /// 1. Points NodeStorage at the checkpoint file (no copy!)
+       /// 2. Rebuilds internal nodes from leaf_summaries (no leaf I/O!)
+       /// 3. Marks all leaves as evicted (lazy-loaded on demand)
+       ///
+       /// The checkpoint file becomes the live spill file.
+       pub fn restore(committed: CommittedLeafStorage<T>) -> Result<Self, Error> {
+           let mut storage = NodeStorage::new();
 
-           // Restore internal nodes (small, always in memory)
-           storage.internal_nodes = committed.internal_nodes;
-
-           // Point at existing spill file
+           // Point at checkpoint file - it becomes our spill file
            storage.spill_file_path = Some(committed.spill_file_path.into());
            storage.leaf_block_locations = committed.leaf_block_locations
                .into_iter()
                .map(|(id, off, sz)| (id, (off, sz)))
                .collect();
 
-           // All leaves start as evicted (loaded on demand)
-           storage.evicted_leaves = (0..committed.leaf_count).collect();
-           storage.spilled_leaves = storage.evicted_leaves.clone();
+           // All leaves start evicted - loaded on demand from checkpoint file
+           let num_leaves = committed.leaf_summaries.len();
+           storage.mark_all_leaves_evicted(num_leaves);
 
-           Ok(storage)
+           // Build internal nodes from summaries - O(num_leaves), no leaf I/O
+           storage.internal_nodes = Self::build_internal_nodes_from_summaries(
+               &committed.leaf_summaries
+           );
+
+           Ok(Self {
+               storage,
+               total_weight: committed.total_weight,
+               // ... other fields derived from summaries
+           })
+       }
+
+       /// Build internal node tree from leaf summaries.
+       /// Uses first_key for separators, weight_sum for subtree_sums.
+       fn build_internal_nodes_from_summaries(
+           summaries: &[LeafSummary<T>]
+       ) -> Vec<InternalNode<T>> {
+           // Bottom-up construction:
+           // 1. Group leaves into parent nodes using first_key as separators
+           // 2. Aggregate weight_sum for subtree_sums
+           // 3. Recursively build higher levels
+           // O(num_leaves) total
+           todo!()
        }
    }
    ```
@@ -288,11 +332,11 @@ impl<K, V, Mode> Operator for PercentileOperator<K, V, Mode> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         let checkpoint_dir = base.child(pid);
 
-        // Save each tree's NodeStorage
+        // Save each tree's leaves (internal nodes are NOT saved)
         let mut trees = Vec::new();
         for (key, tree) in &mut self.trees {
             let tree_id = format!("tree_{}", trees.len());
-            let committed = tree.storage_mut().save(&checkpoint_dir, &tree_id)?;
+            let committed = tree.storage_mut().save_leaves(&checkpoint_dir, &tree_id)?;
             trees.push((key.clone(), committed));
         }
 
@@ -301,7 +345,7 @@ impl<K, V, Mode> Operator for PercentileOperator<K, V, Mode> {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
-        // Write metadata file (small - just internal nodes + index)
+        // Write metadata file (small - just leaf index + prev_output)
         let committed = CommittedPercentile { trees, prev_output };
         let as_bytes = to_bytes(&committed)?;
         files.push(
@@ -321,13 +365,13 @@ impl<K, V, Mode> Operator for PercentileOperator<K, V, Mode> {
         let content = Runtime::storage_backend()
             .unwrap()
             .read(&checkpoint_dir.child("metadata.dat"))?;
-        let committed: CommittedPercentile<K, _> = deserialize(&content)?;
+        let committed: CommittedPercentile<K> = deserialize(&content)?;
 
-        // Restore trees from their spill files
+        // Restore trees by reading leaves and reconstructing internal nodes
         self.trees.clear();
-        for (key, node_storage_meta) in committed.trees {
-            let storage = NodeStorage::restore(node_storage_meta)?;
-            let tree = OrderStatisticsMultiset::from_storage(storage);
+        for (key, leaf_storage_meta) in committed.trees {
+            // This reads leaves and rebuilds the entire tree via from_sorted_entries()
+            let tree = OrderStatisticsMultiset::restore(leaf_storage_meta)?;
             self.trees.insert(key, tree);
         }
 
@@ -341,21 +385,52 @@ impl<K, V, Mode> Operator for PercentileOperator<K, V, Mode> {
 
 ### Changes to OrderStatisticsMultiset
 
-Need methods to access/set internal storage:
+Need methods for checkpoint/restore:
 
 ```rust
-impl<T> OrderStatisticsMultiset<T> {
-    /// Get mutable access to the underlying NodeStorage.
+impl<T: DBData> OrderStatisticsMultiset<T> {
+    /// Get mutable access to the underlying NodeStorage (for checkpoint).
     pub fn storage_mut(&mut self) -> &mut OsmNodeStorage<T> {
         &mut self.storage
     }
 
-    /// Construct from existing NodeStorage (for restore).
-    pub fn from_storage(storage: OsmNodeStorage<T>, /* metadata */) -> Self {
+    /// Collect leaf summaries for checkpoint metadata.
+    /// Called after flush_all_leaves_to_disk().
+    pub fn collect_leaf_summaries(&self) -> Vec<LeafSummary<T>> {
+        self.storage.leaves.iter().map(|leaf| {
+            LeafSummary {
+                first_key: leaf.entries.first().map(|(k, _)| k.clone()),
+                weight_sum: leaf.entries.iter().map(|(_, w)| *w).sum(),
+            }
+        }).collect()
+    }
+
+    /// Restore from checkpoint - O(num_leaves), not O(num_entries).
+    ///
+    /// Key insight: We rebuild internal nodes from leaf_summaries,
+    /// NOT by reading leaf contents. The checkpoint file becomes
+    /// the live spill file with lazy-loaded leaves.
+    pub fn restore(committed: CommittedLeafStorage<T>) -> Result<Self, Error> {
+        // See implementation in "Optimized restore" section above
+        // ...
+    }
+
+    /// Build internal nodes from leaf summaries.
+    /// O(num_leaves) - no leaf content I/O required.
+    fn build_internal_nodes_from_summaries(
+        summaries: &[LeafSummary<T>]
+    ) -> Vec<InternalNode<T>> {
+        // Bottom-up: group leaves, use first_key for separators,
+        // aggregate weight_sum for subtree_sums
+        // ...
+    }
+
+    /// Construct from restored NodeStorage.
+    pub fn from_storage(storage: OsmNodeStorage<T>, total_weight: ZWeight) -> Self {
         Self {
             storage,
-            root: /* from metadata */,
-            total_weight: /* from metadata */,
+            total_weight,
+            // root derived from storage.internal_nodes
             // ...
         }
     }
@@ -366,61 +441,95 @@ impl<T> OrderStatisticsMultiset<T> {
 
 ```
 <checkpoint_base>/<persistent_id>/
-├── metadata.dat              # Small: internal nodes + indices + prev_output
-├── tree_0.leaves             # Spill file for key 0 (leaf data)
-├── tree_1.leaves             # Spill file for key 1 (leaf data)
+├── metadata.dat              # Small: leaf indices + prev_output (NO internal nodes)
+├── tree_0.leaves             # Leaf data for key 0
+├── tree_1.leaves             # Leaf data for key 1
 ├── tree_2.leaves             # ...
 └── ...
 ```
 
 **metadata.dat contains:**
-- Internal nodes for all trees (~2% of tree data)
 - Leaf block locations (index into .leaves files)
-- Tree structure metadata
+- Leaf summaries (first_key, weight_sum per leaf) for O(num_leaves) index reconstruction
+- Total entries and weights per tree (for validation)
 - prev_output map
+- **Note: NO internal nodes** - they're reconstructed from summaries on restore
 
 **.leaves files contain:**
-- Raw leaf node data (already serialized by NodeStorage)
+- Raw leaf node data: `Vec<(T, ZWeight)>` entries
 - Same format as current spill files
+- Sorted order is preserved (leaves form a linked list in B+ tree)
+
+**Checkpoint metadata size for 1B entries (~1M leaves):**
+- ~1M leaves × 16 bytes per leaf location ≈ 16 MB
+- ~1M leaves × 16 bytes per leaf summary (8-byte key + 8-byte weight) ≈ 16 MB
+- Plus prev_output entries (small)
+- Total: ~32 MB (vs ~50+ GB for direct serialization)
 
 ## Checkpoint Flow
 
 ```
 checkpoint():
   for each tree:
-    1. flush_all_to_disk()             # Force ALL leaves to disk (even if not spilled yet)
-    2. Move spill file to checkpoint/  # Take ownership
-    3. Collect metadata (internal nodes, index)
+    1. flush_all_leaves_to_disk()      # Write leaves not yet on disk
+    2. Move spill file to checkpoint/  # O(1) filesystem rename
+    3. Collect leaf metadata:
+       - leaf_block_locations (already tracked by NodeStorage)
+       - leaf_summaries (first_key, weight_sum per leaf)
 
-  Write metadata.dat (small file)
+  Write metadata.dat (small file with leaf indices + summaries + prev_output)
 ```
+
+### Leaf Categories at Checkpoint Time
+
+Leaves fall into three categories:
+
+| Category | Location | Action on Checkpoint |
+|----------|----------|---------------------|
+| Already spilled (clean) | On disk, unchanged | **No write** - already in spill file |
+| Dirty | Modified since flush | **Must write** - append to spill file |
+| Never spilled | In memory only | **Must write** - append to spill file |
+
+**Checkpoint cost = O(dirty + never-spilled leaves)**
+
+For a steady-state system where most leaves are already spilled:
+- Most leaves are "already spilled (clean)" → no I/O
+- Only recent modifications need writing
+- Move file is O(1)
 
 ### Edge Case: Small Trees (No Spill File Yet)
 
 If a tree is small and hasn't triggered spilling:
 - No spill file exists yet
-- All leaves are in memory
+- All leaves are in memory (category: "never spilled")
 
-**Solution:** `flush_all_to_disk()` must handle this case:
+**Solution:** `flush_all_leaves_to_disk()` handles this:
 ```rust
-pub fn flush_all_to_disk(&mut self, path: Option<&Path>) -> Result<(), Error> {
-    // If no spill file exists, create one
+pub fn flush_all_leaves_to_disk(&mut self) -> Result<(), Error> {
+    // Create spill file if none exists
     if self.spill_file_path.is_none() {
-        self.create_spill_file(path)?;
+        self.create_spill_file()?;
     }
 
-    // Flush ALL leaves, not just dirty ones
+    // Write leaves that aren't already on disk
     for leaf_id in 0..self.leaves.len() {
-        if !self.spilled_leaves.contains(&leaf_id) {
-            self.flush_leaf_to_disk(leaf_id)?;
+        if !self.is_leaf_on_disk(leaf_id) {
+            self.write_leaf_to_disk(leaf_id)?;
         }
+        // Already-spilled clean leaves: skip (no re-serialization!)
     }
+
+    // Collect leaf summaries for index reconstruction on restore
+    self.collect_leaf_summaries();
 
     Ok(())
 }
 ```
 
-This ensures checkpoint works regardless of whether spilling has occurred.
+This ensures:
+- Small trees work (creates file if needed)
+- Large trees are efficient (skips already-spilled leaves)
+- No re-serialization of data already on disk
 
 ## Restore Flow
 
@@ -429,89 +538,186 @@ restore():
   Read metadata.dat
 
   for each tree:
-    1. Create NodeStorage pointing at .leaves file
-    2. Set evicted_leaves = all leaves (lazy loading)
-    3. Restore internal nodes from metadata
+    1. Point NodeStorage at the checkpoint .leaves file (don't read contents!)
+    2. Restore leaf_block_locations from checkpoint
+    3. Mark all leaves as "evicted" (on disk, lazy-loaded on demand)
+    4. Rebuild internal nodes from leaf_summaries:
+       - Separator keys from first_key of each leaf
+       - Subtree sums aggregated from weight_sum of each leaf
+       - O(num_leaves) time, NOT O(num_entries)
 
-  Leaves loaded on-demand when accessed
+  Result: Fully reconstructed tree, checkpoint file IS the spill file
 ```
+
+### Restore is O(num_leaves), Not O(num_entries)
+
+The key optimization: we rebuild internal nodes from `leaf_summaries` without
+reading leaf contents. For 1B entries with ~1M leaves, this is ~1000x faster.
+
+```rust
+fn restore_optimized(committed: CommittedLeafStorage<K>) -> OrderStatisticsMultiset<K> {
+    let mut storage = NodeStorage::new();
+
+    // 1. Point at checkpoint file - DON'T copy or read it
+    storage.spill_file_path = Some(committed.spill_file_path.into());
+    storage.leaf_block_locations = committed.leaf_block_locations;
+
+    // 2. All leaves are cold (on disk) - will be lazy-loaded on access
+    storage.mark_all_leaves_evicted();
+
+    // 3. Build internal nodes from summaries - O(num_leaves)
+    storage.internal_nodes = build_internal_nodes_from_summaries(
+        &committed.leaf_summaries
+    );
+
+    OrderStatisticsMultiset::from_storage(storage, committed.total_weight)
+}
+```
+
+### Post-Restore: Checkpoint File Becomes Spill File
+
+After restore, the checkpoint file IS the live spill file:
+- Leaf access → read from checkpoint file at recorded offset
+- Same format, same offsets, zero transformation
+- If a leaf is modified → appended to file (or new file) as normal
+- Next checkpoint → same process repeats
+
+**No copying, no re-serialization, no bulk reading of leaf data.**
 
 ## Benefits
 
-1. **Fast checkpoint**: Only serialize internal nodes (~2% of data) + small index
-2. **No data duplication**: Leaf data already on disk, just reference it
-3. **Fast restore**: No deserialization of leaf data, load on demand
-4. **Bounded memory**: Checkpoint doesn't load all data into memory
+1. **Fast checkpoint**: Skip already-spilled leaves, only write dirty + never-spilled
+2. **No re-serialization**: Already-spilled data stays as-is, just move the file
+3. **Fast restore**: O(num_leaves) index rebuild, not O(num_entries) data read
+4. **Zero-copy restore**: Checkpoint file becomes live spill file directly
+5. **Config-independent format**: Same checkpoint format regardless of `max_spillable_level`
+6. **Correctness**: Internal node reconstruction guarantees correct subtree_sums
 
 ## Required Changes Summary
 
 | Component | Change |
 |-----------|--------|
-| `NodeStorage` | Add `save()`, `restore()`, `flush_all_to_disk()` methods |
+| `NodeStorage` | Add `save_leaves()`, `flush_all_leaves_to_disk()` methods |
+| `NodeStorage` | Add `mark_all_leaves_evicted()`, `is_leaf_on_disk()` methods |
 | `NodeStorage` | Handle edge case: create spill file if none exists |
-| `OrderStatisticsMultiset` | Add `storage_mut()`, `from_storage()` methods |
+| `OrderStatisticsMultiset` | Add `storage_mut()`, `restore()`, `collect_leaf_summaries()` methods |
+| `OrderStatisticsMultiset` | Add `build_internal_nodes_from_summaries()`, `from_storage()` methods |
 | `PercentileOperator` | Implement `checkpoint()`, `restore()` using above |
-| Spill file lifecycle | Checkpoint takes ownership; Drop doesn't delete checkpoint files |
+| Spill file lifecycle | Checkpoint takes ownership; restore reuses file as spill file |
 
 ### NodeStorage Methods Detail
 
 ```rust
 impl<I, L> NodeStorage<I, L> {
-    /// Force all leaves to disk, creating spill file if needed.
-    /// Unlike flush_dirty_to_disk(), this writes ALL leaves.
-    pub fn flush_all_to_disk(&mut self, path: Option<&Path>) -> Result<usize, Error>;
+    /// Write leaves not yet on disk (dirty + never-spilled).
+    /// Skips already-spilled clean leaves - no re-serialization!
+    pub fn flush_all_leaves_to_disk(&mut self) -> Result<(), Error>;
 
-    /// Checkpoint: flush all, move file, return metadata.
-    pub fn save(&mut self, checkpoint_dir: &StoragePath, id: &str)
-        -> Result<CommittedNodeStorage<I>, Error>;
+    /// Check if a leaf is already on disk (spilled and not dirty).
+    pub fn is_leaf_on_disk(&self, leaf_id: usize) -> bool;
 
-    /// Restore: point at existing spill file, lazy-load leaves.
-    pub fn restore(committed: CommittedNodeStorage<I>) -> Result<Self, Error>;
+    /// Checkpoint: flush unwritten leaves, move file, return metadata.
+    pub fn save_leaves(&mut self, checkpoint_dir: &StoragePath, id: &str)
+        -> Result<CommittedLeafStorage<L::Key>, Error>;
+
+    /// Mark all leaves as evicted (on disk, not in memory).
+    /// Used during restore to indicate leaves should be lazy-loaded.
+    pub fn mark_all_leaves_evicted(&mut self, num_leaves: usize);
+
+    /// Take ownership of spill file path.
+    pub fn take_spill_file(&mut self) -> Option<PathBuf>;
+}
+```
+
+### OrderStatisticsMultiset Methods Detail
+
+```rust
+impl<T: DBData> OrderStatisticsMultiset<T> {
+    /// Collect leaf summaries for checkpoint (first_key, weight_sum per leaf).
+    pub fn collect_leaf_summaries(&self) -> Vec<LeafSummary<T>>;
+
+    /// Restore from checkpoint - O(num_leaves), checkpoint file becomes spill file.
+    pub fn restore(committed: CommittedLeafStorage<T>) -> Result<Self, Error>;
+
+    /// Build internal nodes from summaries without reading leaf contents.
+    fn build_internal_nodes_from_summaries(summaries: &[LeafSummary<T>]) -> Vec<InternalNode<T>>;
+
+    /// Construct from restored NodeStorage.
+    pub fn from_storage(storage: OsmNodeStorage<T>, total_weight: ZWeight) -> Self;
 }
 ```
 
 ## Testing Strategy
 
-1. **Unit tests for NodeStorage save/restore:**
-   - Save/restore with various spill states
-   - Verify lazy loading works after restore
+1. **Unit tests for NodeStorage checkpoint:**
+   - `flush_all_leaves_to_disk()` with various states:
+     - All in memory (never spilled) → all written
+     - Partially spilled → only unspilled written
+     - Fully spilled (clean) → nothing written (verify no re-serialization)
+     - Mix of dirty + clean + never-spilled → correct subset written
+   - Verify `is_leaf_on_disk()` correctly identifies leaf states
+   - Verify leaf_summaries collected correctly
 
-2. **Integration tests for PercentileOperator:**
+2. **Unit tests for OrderStatisticsMultiset restore:**
+   - `build_internal_nodes_from_summaries()` produces correct tree structure
+   - Verify separator keys match first_key from summaries
+   - Verify subtree_sums match aggregated weight_sum
+   - Verify restored tree gives same percentile results as original
+
+3. **Integration tests for checkpoint file reuse:**
+   - Checkpoint → restore → verify checkpoint file is now spill file
+   - After restore, access leaves → verify loaded from checkpoint file
+   - After restore, modify tree → verify new data appended correctly
+   - Checkpoint again → verify cycle works
+
+4. **Integration tests for PercentileOperator:**
    - Checkpoint/restore with multiple keys
    - Verify percentile computation correct after restore
    - Verify incremental updates work after restore
+   - Test with different `max_spillable_level` settings at checkpoint vs restore
 
-3. **Scale tests:**
-   - Checkpoint with millions of entries
-   - Measure checkpoint file size (should be small)
-   - Measure checkpoint/restore time
-
-## Timeline Estimate
-
-1. NodeStorage save/restore methods: 4-6 hours
-2. OrderStatisticsMultiset integration: 2-3 hours
-3. PercentileOperator checkpoint/restore: 3-4 hours
-4. Testing: 4-6 hours
-
-**Total: ~2-3 days**
+5. **Performance tests:**
+   - Checkpoint with large tree (mostly spilled) → verify O(dirty + unspilled)
+   - Restore with large tree → verify O(num_leaves), not O(num_entries)
+   - Verify no bulk leaf reads during restore (mock/instrument file I/O)
+   - Measure checkpoint metadata size (~32 MB for 1B entries)
 
 ## Comparison with Alternatives
 
-| Approach | Checkpoint Size | Checkpoint Time | Complexity |
-|----------|-----------------|-----------------|------------|
-| Direct serialization | O(all data) | O(all data) | Low |
-| **Reference-based (this plan)** | O(internal nodes) | O(flush dirty) | Medium |
-| Always-persistent tree | O(metadata only) | O(1) | High |
+| Approach | Checkpoint Size | Checkpoint Time | Restore Time | Complexity |
+|----------|-----------------|-----------------|--------------|------------|
+| Direct serialization | O(all data) | O(all data) | O(all data) | Low |
+| **Optimized (this plan)** | O(num_leaves) | O(dirty + unspilled) | O(num_leaves) | Medium |
+| Always-persistent tree | O(metadata only) | O(1) | O(1) | High |
 
 **Direct serialization:** Serialize all tree data to checkpoint file. Simple but
 creates huge checkpoints for large trees. Impractical for billions of entries.
 
-**Reference-based (this plan):** Flush leaves to spill files, checkpoint references
-the files. Internal nodes (~2%) serialized in metadata. Good balance of efficiency
-and complexity.
+**Optimized leaves-only (this plan):**
+- Checkpoint: Skip already-spilled leaves, write only dirty + never-spilled, move file
+- Restore: Rebuild internal nodes from leaf_summaries, use checkpoint file as spill file
+- No re-serialization of already-spilled data
+- No bulk reading of leaf contents on restore
+- Checkpoint format independent of `max_spillable_level`
 
 **Always-persistent tree:** Tree is always backed by persistent storage (like a
 database B+ tree). Checkpoint is just a metadata snapshot since data is already
 durable. Would require significant architectural changes to NodeStorage - essentially
 making it a persistent data structure rather than a memory-with-spill structure.
 Not worth the complexity for the current use case.
+
+### Performance Summary
+
+For a steady-state system with 1B entries (~1M leaves), mostly already spilled:
+
+| Operation | Cost | Example |
+|-----------|------|---------|
+| Checkpoint (steady state) | O(dirty + unspilled) | ~1000 leaves = fast |
+| Checkpoint (file move) | O(1) | Filesystem rename |
+| Checkpoint metadata | O(num_leaves) | ~32 MB write |
+| Restore (index rebuild) | O(num_leaves) | ~1M leaves = fast |
+| Restore (leaf I/O) | O(0) | Zero - file used directly |
+| First leaf access | O(1) | Read from checkpoint file |
+
+This achieves nearly the same performance as "checkpoint whatever NodeStorage spilled"
+while maintaining a config-independent checkpoint format.

@@ -72,9 +72,24 @@ The SQL compiler generates code using `DBSPPercentileOperator`, which calls the 
 3. `ToRustVisitor` generates: `input.map_index(|k,v| ...).percentile_cont(0.5, true)`
 4. At runtime, `PercentileOperator` maintains incremental state per key
 
+## Fault Tolerance
+
+The operator implements checkpoint/restore for fault tolerance with O(num_leaves) complexity:
+
+### Checkpoint
+- Flushes dirty tree leaves to disk via `save_leaves()`
+- Stores `CommittedLeafStorage<V>` metadata (file path, leaf summaries)
+- Leaf summaries contain (first_key, weight_sum, entry_count) per leaf
+
+### Restore
+- Rebuilds internal nodes from leaf summaries (no leaf I/O required)
+- Checkpoint file becomes the live spill file (zero-copy ownership transfer)
+- Leaves loaded lazily on demand from disk
+
+This approach is O(num_leaves) instead of O(num_entries), enabling fast recovery for large trees.
+
 ## Limitations
 
-- **Checkpoint/restore**: Not yet implemented (TODO)
 - **Numeric interpolation**: Generic implementation returns discrete lower bound
 
 ## Related Documentation

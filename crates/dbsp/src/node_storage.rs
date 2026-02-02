@@ -292,6 +292,12 @@ impl NodeStorageConfig {
     /// let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
     /// ```
     pub fn from_runtime() -> Self {
+        // Check if we're in a runtime context
+        if Runtime::runtime().is_none() {
+            // No runtime - use memory-only mode (for unit tests)
+            return Self::memory_only();
+        }
+
         // Check if storage is available in the Runtime
         let storage_backend = Runtime::storage_backend().ok();
 
@@ -554,6 +560,100 @@ pub struct StorageStats {
 }
 
 // =============================================================================
+// Checkpoint Data Structures
+// =============================================================================
+
+/// Summary of a leaf node - enough to rebuild internal nodes without reading leaf contents.
+///
+/// This enables O(num_leaves) restore instead of O(num_entries):
+/// - `first_key`: Used to build separator keys in internal nodes
+/// - `weight_sum`: Used to build subtree_sums in internal nodes
+///
+/// # Serialization
+///
+/// LeafSummary is serialized as part of checkpoint metadata. The key type `K`
+/// must support rkyv serialization.
+#[derive(Debug, Clone, Archive, RkyvSerialize, RkyvDeserialize)]
+#[archive(bound(serialize = "__S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer"))]
+#[archive(check_bytes)]
+pub struct LeafSummary<K> {
+    /// First key in the leaf (for building separator keys in internal nodes)
+    pub first_key: Option<K>,
+    /// Sum of weights in the leaf (for building subtree_sums in internal nodes)
+    pub weight_sum: ZWeight,
+    /// Number of entries in the leaf
+    pub entry_count: usize,
+}
+
+impl<K> LeafSummary<K> {
+    /// Create a new leaf summary.
+    pub fn new(first_key: Option<K>, weight_sum: ZWeight, entry_count: usize) -> Self {
+        Self {
+            first_key,
+            weight_sum,
+            entry_count,
+        }
+    }
+}
+
+/// Committed (checkpoint) state for NodeStorage leaves.
+///
+/// This struct stores metadata that references a leaf file on disk, enabling:
+/// - O(num_leaves) restore (internal nodes rebuilt from summaries)
+/// - Zero-copy restore (checkpoint file becomes the live spill file)
+/// - No re-serialization of already-spilled leaves
+///
+/// # File Layout
+///
+/// The checkpoint consists of:
+/// - A `.leaves` file containing all leaf data (block-based format)
+/// - This metadata stored in the main checkpoint file
+///
+/// # Restore Process
+///
+/// On restore:
+/// 1. Point NodeStorage at the checkpoint `.leaves` file (no copy!)
+/// 2. Rebuild internal nodes from `leaf_summaries` (no leaf I/O!)
+/// 3. Mark all leaves as evicted (lazy-loaded on demand)
+#[derive(Debug, Clone, Archive, RkyvSerialize, RkyvDeserialize)]
+#[archive(bound(serialize = "__S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer"))]
+#[archive(check_bytes)]
+pub struct CommittedLeafStorage<K> {
+    /// Path to the spill file containing all leaf data
+    pub spill_file_path: String,
+
+    /// Index into spill file: Vec of (leaf_id, offset, size)
+    /// Sorted by leaf_id for binary search
+    pub leaf_block_locations: Vec<(usize, u64, u32)>,
+
+    /// Per-leaf summaries for O(num_leaves) index reconstruction
+    /// Allows rebuilding internal nodes WITHOUT reading leaf contents
+    pub leaf_summaries: Vec<LeafSummary<K>>,
+
+    /// Total number of entries across all leaves (for validation)
+    pub total_entries: usize,
+
+    /// Total weight across all leaves (for validation)
+    pub total_weight: ZWeight,
+
+    /// Number of leaves
+    pub num_leaves: usize,
+}
+
+impl<K> Default for CommittedLeafStorage<K> {
+    fn default() -> Self {
+        Self {
+            spill_file_path: String::new(),
+            leaf_block_locations: Vec::new(),
+            leaf_summaries: Vec::new(),
+            total_entries: 0,
+            total_weight: 0,
+            num_leaves: 0,
+        }
+    }
+}
+
+// =============================================================================
 // Internal Node with Metadata
 // =============================================================================
 
@@ -670,7 +770,7 @@ pub struct NodeStorage<I, L> {
     /// Block locations for each spilled leaf (for BufferCache keys)
     /// Maps leaf_id -> (offset, size) in the spill file
     #[size_of(skip)]
-    leaf_block_locations: std::collections::HashMap<usize, (u64, u32)>,
+    pub leaf_block_locations: std::collections::HashMap<usize, (u64, u32)>,
 }
 
 // =============================================================================
@@ -911,6 +1011,30 @@ where
         // Wrap with metadata (starts dirty)
         self.internal_nodes.push(NodeWithMeta::new(internal));
         self.update_dirty_stats();
+
+        NodeLocation::Internal { id, level }
+    }
+
+    /// Allocate a new internal node as clean (for restore purposes).
+    ///
+    /// Used during restore when internal nodes are rebuilt from summaries
+    /// and should not be marked as needing persistence.
+    ///
+    /// # Arguments
+    /// * `internal` - The internal node to allocate
+    /// * `level` - The level of this node (1 = parent of leaves, 2 = grandparent, etc.)
+    pub fn alloc_internal_clean(&mut self, internal: I, level: u8) -> NodeLocation {
+        debug_assert!(level >= 1, "Internal nodes must have level >= 1");
+        let id = self.internal_nodes.len();
+        let node_size = Self::estimate_internal_size(&internal);
+
+        self.stats.internal_node_count += 1;
+        self.stats.memory_bytes += node_size;
+
+        // Wrap with metadata but immediately mark clean
+        let mut node_with_meta = NodeWithMeta::new(internal);
+        node_with_meta.mark_clean();
+        self.internal_nodes.push(node_with_meta);
 
         NodeLocation::Internal { id, level }
     }
@@ -1569,6 +1693,154 @@ where
         self.stats.cache_misses += count as u64;
         Ok(count)
     }
+
+    // =========================================================================
+    // Checkpoint Methods
+    // =========================================================================
+
+    /// Check if a leaf is already on disk (spilled and not dirty).
+    ///
+    /// Returns true if the leaf has been written to disk and hasn't been
+    /// modified since. Such leaves don't need re-serialization during checkpoint.
+    #[inline]
+    pub fn is_leaf_on_disk(&self, leaf_id: usize) -> bool {
+        // A leaf is on disk if it's in spilled_leaves and not dirty
+        self.spilled_leaves.contains(&leaf_id) && !self.dirty_leaves.contains(&leaf_id)
+    }
+
+    /// Flush all leaves to disk, writing only those not yet persisted.
+    ///
+    /// This method handles three categories of leaves:
+    /// - Already spilled (clean): SKIP - no re-serialization needed
+    /// - Dirty: MUST write - modified since last flush
+    /// - Never spilled: MUST write - only in memory
+    ///
+    /// Creates a spill file if none exists (handles small trees).
+    ///
+    /// # Returns
+    ///
+    /// Number of leaves written to disk.
+    pub fn flush_all_leaves_to_disk(&mut self) -> Result<usize, FileFormatError> {
+        // Create spill file if none exists
+        if self.spill_file_path.is_none() && !self.leaves.is_empty() {
+            let temp_dir = self.config.spill_directory.clone().unwrap_or_else(|| {
+                std::env::temp_dir().join("dbsp_node_storage")
+            });
+            std::fs::create_dir_all(&temp_dir)
+                .map_err(|e| FileFormatError::Io(format!("Failed to create spill dir: {}", e)))?;
+
+            // Generate unique filename using timestamp and thread id
+            let unique_id = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let thread_id = std::thread::current().id();
+            let file_name = format!("leaves_{}_{:?}.dat", unique_id, thread_id);
+            self.spill_file_path = Some(temp_dir.join(file_name));
+        }
+
+        let path = match &self.spill_file_path {
+            Some(p) => p.clone(),
+            None => return Ok(0), // No leaves to flush
+        };
+
+        // Open or create the leaf file
+        let mut leaf_file: LeafFile<L> = if path.exists() {
+            // Open existing file for appending
+            LeafFile::open(&path)?
+        } else {
+            // Create new file
+            LeafFile::create(&path)?
+        };
+
+        let mut count = 0;
+
+        // Write leaves that aren't already on disk
+        for leaf_id in 0..self.leaves.len() {
+            // Skip if already on disk and clean
+            if self.is_leaf_on_disk(leaf_id) {
+                continue;
+            }
+
+            // Get the leaf - skip if evicted
+            let leaf = match &self.leaves[leaf_id] {
+                Some(leaf) => leaf,
+                None => continue, // Already evicted, should be in spilled_leaves
+            };
+
+            // Write to file
+            let location = leaf_file.write_leaf(leaf_id as u64, leaf)?;
+
+            // Update tracking
+            self.leaf_block_locations
+                .insert(leaf_id, (location.offset, location.size));
+            self.spilled_leaves.insert(leaf_id);
+            self.dirty_leaves.remove(&leaf_id);
+            count += 1;
+        }
+
+        // Finalize the file (writes index)
+        leaf_file.finalize()?;
+
+        self.stats.leaves_written += count as u64;
+        Ok(count)
+    }
+
+    /// Take ownership of the spill file path.
+    ///
+    /// After calling this, Drop will not delete the file. Used during checkpoint
+    /// to transfer file ownership to the checkpointer.
+    ///
+    /// # Returns
+    ///
+    /// The spill file path, if any.
+    pub fn take_spill_file(&mut self) -> Option<PathBuf> {
+        self.spill_file_path.take()
+    }
+
+    /// Mark all leaves as evicted (on disk, not in memory).
+    ///
+    /// Used during restore to indicate leaves should be lazy-loaded from the
+    /// checkpoint file. The checkpoint file becomes the live spill file.
+    ///
+    /// # Arguments
+    ///
+    /// - `num_leaves`: Number of leaves in the checkpoint
+    /// - `spill_file_path`: Path to the checkpoint file (becomes spill file)
+    /// - `block_locations`: Index into the checkpoint file
+    pub fn mark_all_leaves_evicted(
+        &mut self,
+        num_leaves: usize,
+        spill_file_path: PathBuf,
+        block_locations: Vec<(usize, u64, u32)>,
+    ) {
+        // Set up the spill file
+        self.spill_file_path = Some(spill_file_path);
+
+        // Clear existing leaves
+        self.leaves.clear();
+        self.leaves.resize_with(num_leaves, || None);
+
+        // Mark all leaves as spilled (on disk) and evicted (not in memory)
+        self.spilled_leaves.clear();
+        self.evicted_leaves.clear();
+        self.dirty_leaves.clear();
+
+        for i in 0..num_leaves {
+            self.spilled_leaves.insert(i);
+            self.evicted_leaves.insert(i);
+        }
+
+        // Set up block locations for lazy loading
+        self.leaf_block_locations.clear();
+        for (leaf_id, offset, size) in block_locations {
+            self.leaf_block_locations.insert(leaf_id, (offset, size));
+        }
+
+        // Update stats
+        self.stats.leaf_node_count = num_leaves;
+        self.stats.evicted_leaf_count = num_leaves;
+    }
 }
 
 // =============================================================================
@@ -1624,10 +1896,13 @@ impl<'a, I, L> NodeRefMut<'a, I, L> {
 // =============================================================================
 
 use super::algebra::order_statistics::order_statistics_file_format::{
-    BlockLocation as FileBlockLocation, DATA_BLOCK_HEADER_SIZE, FILE_HEADER_SIZE, FileFormatError,
-    FileHeader, INDEX_ENTRY_SIZE, IndexEntry, MAGIC_INDEX_BLOCK, align_to_block,
-    create_data_block_header, set_block_checksum, verify_data_block_header,
+    BlockLocation as FileBlockLocation, DATA_BLOCK_HEADER_SIZE, FILE_HEADER_SIZE, FileHeader,
+    INDEX_ENTRY_SIZE, IndexEntry, MAGIC_INDEX_BLOCK, align_to_block, create_data_block_header,
+    set_block_checksum, verify_data_block_header,
 };
+
+// Re-export FileFormatError for use by OrderStatisticsMultiset
+pub use super::algebra::order_statistics::order_statistics_file_format::FileFormatError;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Read as IoRead, Seek, SeekFrom, Write as IoWrite};
