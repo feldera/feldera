@@ -14,7 +14,7 @@ use apache_avro::{
 };
 use arrow::record_batch::RecordBatch;
 use dbsp::circuit::NodeId;
-use dbsp::dynamic::{DynData, DynVec};
+use dbsp::dynamic::{ClonableTrait, DynData, DynVec, Factory};
 use dbsp::operator::StagedBuffers;
 use dyn_clone::DynClone;
 use feldera_sqllib::Variant;
@@ -281,6 +281,10 @@ pub trait SerBatchReader: 'static + Send + Sync {
 
     fn snapshot(&self) -> Arc<dyn SerBatchReader>;
 
+    fn keys_factory(&self) -> &'static dyn Factory<DynVec<DynData>>;
+
+    fn data_factory(&self) -> &'static dyn Factory<DynData>;
+
     fn sample_keys(&self, sample_size: usize, sample: &mut DynVec<DynData>);
 
     fn partition_keys(&self, num_partitions: usize, bounds: &mut DynVec<DynData>);
@@ -352,6 +356,228 @@ pub trait SerTrace: SerBatchReader {
     fn insert(&mut self, batch: Arc<dyn SerBatch>);
 
     fn as_batch_reader(&self) -> &dyn SerBatchReader;
+}
+
+pub struct BatchSplitter {
+    batch: Arc<dyn SerBatchReader>,
+    bounds: Box<DynVec<DynData>>,
+    position: AtomicUsize,
+    format: RecordFormat,
+}
+
+impl BatchSplitter {
+    pub fn new(batch: Arc<dyn SerBatchReader>, workers: usize, format: RecordFormat) -> Self {
+        let mut bounds = batch.keys_factory().default_box();
+        batch.partition_keys(workers, &mut *bounds);
+
+        Self {
+            batch,
+            bounds,
+            position: AtomicUsize::new(0),
+            format,
+        }
+    }
+
+    fn get_bound(&self, n: usize) -> Option<&DynData> {
+        // The 0th bound is always None, as it is from the beginning of the cursor.
+        if n == 0 {
+            None
+        } else if n <= self.bounds.len() {
+            Some(self.bounds.index(n - 1).as_data())
+        } else {
+            // The last bound is always None, as it is to the end of the cursor.
+            None
+        }
+    }
+
+    pub fn next_split(&self) -> Option<SplitCursorBuilder> {
+        let curr = self.position.load(std::sync::atomic::Ordering::SeqCst);
+
+        if curr > self.bounds.len() {
+            return None;
+        }
+
+        let start_key = self.get_bound(curr);
+        let end_key = self.get_bound(curr + 1);
+
+        let mut cursor = self.batch.cursor(self.format.clone()).unwrap();
+
+        self.position
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Seek to start.
+        // If none, the cursor will be at the beginning of the batch.
+        if let Some(start_key) = start_key {
+            cursor.seek_key_exact(start_key);
+        }
+
+        // The start key must always be valid, as we've just seeked to it.
+        let start_key = cursor.get_key().map(|s| {
+            let mut default_box = self.batch.data_factory().default_box();
+            s.clone_to(default_box.as_mut());
+            default_box
+        })?;
+
+        // The end key may be None, as we do not know how many more keys are in between this
+        // split in the batch.
+        // For all we know, the start_key might be the last key in the batch, so end_key being None is valid.
+        let end_key = end_key.map(|e| {
+            let mut default_box = self.batch.data_factory().default_box();
+            e.clone_to(default_box.as_mut());
+            default_box
+        });
+
+        Some(SplitCursorBuilder {
+            batch: self.batch.clone(),
+            start_key,
+            end_key,
+            format: self.format.clone(),
+        })
+    }
+}
+
+pub struct SplitCursorBuilder {
+    batch: Arc<dyn SerBatchReader>,
+    start_key: Box<DynData>,
+    end_key: Option<Box<DynData>>,
+    format: RecordFormat,
+}
+
+impl SplitCursorBuilder {
+    pub fn build<'a>(&'a self) -> SplitCursor<'a> {
+        let mut cursor = self.batch.cursor(self.format.clone()).unwrap();
+        cursor.seek_key_exact(self.start_key.as_data());
+
+        SplitCursor {
+            cursor,
+            start_key: self.start_key.clone(),
+            end_key: self.end_key.clone(),
+        }
+    }
+}
+
+pub struct SplitCursor<'a> {
+    cursor: Box<dyn SerCursor + 'a>,
+    start_key: Box<DynData>,
+    end_key: Option<Box<DynData>>,
+}
+
+impl SplitCursor<'_> {
+    fn finished(&self) -> bool {
+        if let Some(ref end_key) = self.end_key
+            && let Some(current_key) = self.cursor.get_key()
+        {
+            return current_key >= end_key.as_data();
+        }
+
+        false
+    }
+}
+
+impl SerCursor for SplitCursor<'_> {
+    fn key_valid(&self) -> bool {
+        self.cursor.key_valid() && !self.finished()
+    }
+
+    fn val_valid(&self) -> bool {
+        self.cursor.val_valid()
+    }
+
+    fn key(&self) -> &DynData {
+        self.cursor.key()
+    }
+
+    fn get_key(&self) -> Option<&DynData> {
+        self.cursor.get_key()
+    }
+
+    fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_key(dst)
+    }
+
+    fn key_to_json(&mut self) -> AnyResult<serde_json::Value> {
+        self.cursor.key_to_json()
+    }
+
+    fn serialize_key_fields(
+        &mut self,
+        fields: &HashSet<String>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.cursor.serialize_key_fields(fields, dst)
+    }
+
+    fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
+        self.cursor.serialize_key_to_arrow(dst)
+    }
+
+    fn serialize_key_to_arrow_with_metadata(
+        &mut self,
+        metadata: &dyn erased_serde::Serialize,
+        dst: &mut ArrayBuilder,
+    ) -> AnyResult<()> {
+        self.cursor
+            .serialize_key_to_arrow_with_metadata(metadata, dst)
+    }
+
+    fn serialize_val_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
+        self.cursor.serialize_val_to_arrow(dst)
+    }
+
+    fn serialize_val_to_arrow_with_metadata(
+        &mut self,
+        metadata: &dyn erased_serde::Serialize,
+        dst: &mut ArrayBuilder,
+    ) -> AnyResult<()> {
+        self.cursor
+            .serialize_val_to_arrow_with_metadata(metadata, dst)
+    }
+
+    #[cfg(feature = "with-avro")]
+    fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
+        self.cursor.key_to_avro(schema, refs)
+    }
+
+    fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_key_weight(dst)
+    }
+
+    fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_val(dst)
+    }
+
+    fn val_to_json(&mut self) -> AnyResult<serde_json::Value> {
+        self.cursor.val_to_json()
+    }
+
+    #[cfg(feature = "with-avro")]
+    fn val_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
+        self.cursor.val_to_avro(schema, refs)
+    }
+
+    fn weight(&mut self) -> i64 {
+        self.cursor.weight()
+    }
+
+    fn step_key(&mut self) {
+        self.cursor.step_key();
+    }
+
+    fn step_val(&mut self) {
+        self.cursor.step_val();
+    }
+
+    fn rewind_keys(&mut self) {
+        self.cursor.seek_key_exact(self.start_key.as_data());
+    }
+
+    fn rewind_vals(&mut self) {
+        self.cursor.rewind_vals();
+    }
+
+    fn seek_key_exact(&mut self, key: &DynData) -> bool {
+        self.cursor.seek_key_exact(key)
+    }
 }
 
 /// Cursor that allows serializing the contents of a type-erased batch.
@@ -471,11 +697,11 @@ pub trait SerBatchReaderHandle: Send + Sync + DynClone {
     fn num_nonempty_mailboxes(&self) -> usize;
 
     /// Like [`OutputHandle::take_from_worker`](`dbsp::OutputHandle::take_from_worker`),
-    /// but returns output batch as a [`SyncSerBatchReader`] trait object.
+    /// but returns output batch as a [`SerBatchReader`] trait object.
     fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatchReader>>;
 
     /// Like [`OutputHandle::take_from_all`](`dbsp::OutputHandle::take_from_all`),
-    /// but returns output batches as [`SyncSerBatchReader`] trait objects.
+    /// but returns output batches as [`SerBatchReader`] trait objects.
     fn take_from_all(&self) -> Vec<Arc<dyn SerBatchReader>>;
 
     /// Concatenate outputs from all workers into a single batch reader.

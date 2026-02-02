@@ -13,7 +13,11 @@ use apache_avro::schema::NamesRef;
 #[cfg(feature = "with-avro")]
 use apache_avro::types::Value as AvroValue;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
-use dbsp::{Batch, BatchReader, OutputHandle, Trace, trace::Cursor};
+use dbsp::{
+    Batch, BatchReader, OutputHandle, Trace,
+    dynamic::Factory,
+    trace::{BatchReaderFactories, Cursor},
+};
 use dbsp::{
     DBData,
     trace::{WithSnapshot, merge_batches},
@@ -468,6 +472,14 @@ where
             .sample_keys(&mut thread_rng(), sample_size, sample);
     }
 
+    fn keys_factory(&self) -> &'static dyn Factory<DynVec<DynData>> {
+        self.batch.inner().factories().keys_factory()
+    }
+
+    fn data_factory(&self) -> &'static dyn Factory<DynData> {
+        self.batch.inner().factories().key_factory()
+    }
+
     fn partition_keys(&self, num_partitions: usize, bounds: &mut DynVec<DynData>) {
         self.batch.inner().partition_keys(num_partitions, bounds);
     }
@@ -785,6 +797,9 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &DynData) -> bool {
-        self.cursor.seek_key_exact(key, None)
+        let val = self.cursor.seek_key_exact(key, None);
+        self.update_key();
+        self.update_val();
+        val
     }
 }

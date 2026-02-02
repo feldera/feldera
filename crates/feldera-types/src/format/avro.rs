@@ -249,4 +249,16 @@ pub struct AvroEncoderConfig {
     /// assigned by the registry in the
     #[serde(flatten)]
     pub registry_config: AvroSchemaRegistryConfig,
+
+    /// The number of workers to use during encoding.
+    ///
+    /// Avro encoder supports encoding multiple records in parallel. This configuration specifies
+    /// the number of workers to run in parallel.
+    /// Default: 1
+    #[serde(default = "default_encoder_workers")]
+    pub workers: usize,
+}
+
+fn default_encoder_workers() -> usize {
+    1
 }

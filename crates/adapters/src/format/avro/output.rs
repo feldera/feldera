@@ -10,6 +10,7 @@ use apache_avro::Schema;
 use apache_avro::schema::RecordField;
 use apache_avro::{Schema as AvroSchema, to_avro_datum, types::Value as AvroValue};
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_adapterlib::catalog::BatchSplitter;
 use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::format::avro::{
     AvroEncoderConfig, AvroEncoderKeyMode, AvroUpdateFormat, SubjectNameStrategy,
@@ -132,6 +133,9 @@ pub(crate) struct AvroEncoder {
 
     /// Avro Schema when the CDC field is Some.
     value_avro_schema_with_cdc: Option<AvroSchema>,
+
+    /// The number of workers to run in parallel.
+    workers: usize,
 }
 
 /// `true` - this config will create messages with key and value components.
@@ -451,6 +455,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
             update_format: config.update_format,
             cdc_field: config.cdc_field,
             value_avro_schema_with_cdc,
+            workers: config.workers,
         })
     }
 
@@ -655,61 +660,64 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
 
     /// Encode an indexed batch.
     fn encode_indexed(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
-        let mut cursor = batch.cursor(RecordFormat::Avro)?;
+        let splitter = BatchSplitter::new(batch, self.workers, RecordFormat::Avro);
 
-        while cursor.key_valid() {
-            let operation_type = self.serialize(cursor.as_mut())?;
+        while let Some(cursor_builder) = splitter.next_split() {
+            let mut cursor = cursor_builder.build();
+            while cursor.key_valid() {
+                let operation_type = self.serialize(&mut cursor)?;
 
-            let key_buffer = if self.key_avro_schema.is_some() {
-                Some(self.key_buffer.as_slice())
-            } else {
-                None
-            };
+                let key_buffer = if self.key_avro_schema.is_some() {
+                    Some(self.key_buffer.as_slice())
+                } else {
+                    None
+                };
 
-            match (operation_type, self.update_format.clone()) {
-                (None, _) => (),
-                (Some(IndexedOperationType::Delete), AvroUpdateFormat::ConfluentJdbc) => {
-                    self.output_consumer.push_key(key_buffer, None, &[], 1);
+                match (operation_type, self.update_format.clone()) {
+                    (None, _) => (),
+                    (Some(IndexedOperationType::Delete), AvroUpdateFormat::ConfluentJdbc) => {
+                        self.output_consumer.push_key(key_buffer, None, &[], 1);
+                    }
+                    (Some(IndexedOperationType::Delete), AvroUpdateFormat::Raw) => {
+                        self.output_consumer.push_key(
+                            key_buffer,
+                            Some(&self.value_buffer),
+                            &[("op", Some(b"delete"))],
+                            1,
+                        );
+                    }
+                    (
+                        Some(IndexedOperationType::Insert) | Some(IndexedOperationType::Upsert),
+                        AvroUpdateFormat::ConfluentJdbc,
+                    ) => {
+                        self.output_consumer
+                            .push_key(key_buffer, Some(&self.value_buffer), &[], 1);
+                    }
+                    (Some(IndexedOperationType::Insert), AvroUpdateFormat::Raw) => {
+                        self.output_consumer.push_key(
+                            key_buffer,
+                            Some(&self.value_buffer),
+                            &[("op", Some(b"insert"))],
+                            1,
+                        );
+                    }
+                    (Some(IndexedOperationType::Upsert), AvroUpdateFormat::Raw) => {
+                        self.output_consumer.push_key(
+                            key_buffer,
+                            Some(&self.value_buffer),
+                            &[("op", Some(b"update"))],
+                            1,
+                        );
+                    }
+                    (Some(operation_type), _) => bail!(
+                        "internal error: unexpected operation type {:?} for update format {:?}",
+                        operation_type,
+                        self.update_format
+                    ),
                 }
-                (Some(IndexedOperationType::Delete), AvroUpdateFormat::Raw) => {
-                    self.output_consumer.push_key(
-                        key_buffer,
-                        Some(&self.value_buffer),
-                        &[("op", Some(b"delete"))],
-                        1,
-                    );
-                }
-                (
-                    Some(IndexedOperationType::Insert) | Some(IndexedOperationType::Upsert),
-                    AvroUpdateFormat::ConfluentJdbc,
-                ) => {
-                    self.output_consumer
-                        .push_key(key_buffer, Some(&self.value_buffer), &[], 1);
-                }
-                (Some(IndexedOperationType::Insert), AvroUpdateFormat::Raw) => {
-                    self.output_consumer.push_key(
-                        key_buffer,
-                        Some(&self.value_buffer),
-                        &[("op", Some(b"insert"))],
-                        1,
-                    );
-                }
-                (Some(IndexedOperationType::Upsert), AvroUpdateFormat::Raw) => {
-                    self.output_consumer.push_key(
-                        key_buffer,
-                        Some(&self.value_buffer),
-                        &[("op", Some(b"update"))],
-                        1,
-                    );
-                }
-                (Some(operation_type), _) => bail!(
-                    "internal error: unexpected operation type {:?} for update format {:?}",
-                    operation_type,
-                    self.update_format
-                ),
+
+                cursor.step_key()
             }
-
-            cursor.step_key()
         }
 
         Ok(())
