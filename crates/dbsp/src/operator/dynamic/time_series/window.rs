@@ -5,7 +5,9 @@ use crate::{
     algebra::{IndexedZSet, NegByRef},
     circuit::{
         Circuit, GlobalNodeId, Scope, Stream,
-        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
+        metadata::{
+            BatchSizeStats, INPUT_BATCHES_LABEL, MetaItem, OUTPUT_BATCHES_LABEL, OperatorMeta,
+        },
         operator_traits::Operator,
         splitter_output_chunk_size,
     },
@@ -29,6 +31,7 @@ use feldera_storage::{FileCommitter, StoragePath};
 use futures::Stream as AsyncStream;
 use rkyv::Deserialize;
 use std::{borrow::Cow, cell::RefCell, marker::PhantomData, rc::Rc, sync::Arc};
+use tokio::time::{Duration, Instant};
 
 impl Stream<RootCircuit, MonoIndexedZSet> {
     pub fn dyn_window_mono(
@@ -107,6 +110,19 @@ where
     delta: RefCell<Option<SpineSnapshot<B>>>,
     flush: RefCell<bool>,
 
+    cursor_creation_time: RefCell<Duration>,
+    seek_start_time: RefCell<Duration>,
+    seek_after_end_time: RefCell<Duration>,
+    seek_start_time2: RefCell<Duration>,
+    region1_time: RefCell<Duration>,
+    region2_time: RefCell<Duration>,
+    region3_time: RefCell<Duration>,
+    region1_keys: RefCell<usize>,
+    region1_vals: RefCell<usize>,
+    region2_keys: RefCell<usize>,
+    region2_vals: RefCell<usize>,
+    shrink_time: RefCell<Duration>,
+
     // Input batch sizes.
     input_batch_stats: RefCell<BatchSizeStats>,
 
@@ -132,6 +148,18 @@ where
             flush: RefCell::new(false),
             input_batch_stats: RefCell::new(BatchSizeStats::new()),
             output_batch_stats: RefCell::new(BatchSizeStats::new()),
+            cursor_creation_time: RefCell::new(Duration::from_nanos(0)),
+            seek_start_time: RefCell::new(Duration::from_nanos(0)),
+            seek_after_end_time: RefCell::new(Duration::from_nanos(0)),
+            seek_start_time2: RefCell::new(Duration::from_nanos(0)),
+            region1_time: RefCell::new(Duration::from_nanos(0)),
+            region2_time: RefCell::new(Duration::from_nanos(0)),
+            region3_time: RefCell::new(Duration::from_nanos(0)),
+            region1_keys: RefCell::new(0),
+            region1_vals: RefCell::new(0),
+            region2_keys: RefCell::new(0),
+            region2_vals: RefCell::new(0),
+            shrink_time: RefCell::new(Duration::from_nanos(0)),
 
             _phantom: PhantomData,
         }
@@ -164,6 +192,18 @@ where
         meta.extend(metadata! {
             INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
             OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+            "cursor_creation_time" => MetaItem::Duration(*self.cursor_creation_time.borrow()),
+            "seek_start_time" => MetaItem::Duration(*self.seek_start_time.borrow()),
+            "seek_after_end_time" => MetaItem::Duration(*self.seek_after_end_time.borrow()),
+            "seek_start_time2" => MetaItem::Duration(*self.seek_start_time2.borrow()),
+            "shrink_time" => MetaItem::Duration(*self.shrink_time.borrow()),
+            "region1_time" => MetaItem::Duration(*self.region1_time.borrow()),
+            "region2_time" => MetaItem::Duration(*self.region2_time.borrow()),
+            "region3_time" => MetaItem::Duration(*self.region3_time.borrow()),
+            "region1_keys" => MetaItem::Count(*self.region1_keys.borrow()),
+            "region1_vals" => MetaItem::Count(*self.region1_vals.borrow()),
+            "region2_keys" => MetaItem::Count(*self.region2_keys.borrow()),
+            "region2_vals" => MetaItem::Count(*self.region2_vals.borrow()),
         });
     }
 
@@ -356,12 +396,19 @@ where
             let mut tuple = self.factories.weighted_item_factory().default_box();
             let mut key = self.factories.key_factory().default_box();
 
+            let start_time = Instant::now();
             let mut trace_cursor = trace.unwrap().cursor();
+            *self.cursor_creation_time.borrow_mut() += start_time.elapsed();
+
             let mut batch_cursor = delta.cursor();
 
             if let Some((start0, end0)) = bounds0 {
                 // Retract tuples in `trace` that slid out of the window (region 1).
+                let start_time = Instant::now();
                 seek_start(&mut trace_cursor, &start0, self.left_inclusive);
+                *self.seek_start_time.borrow_mut() += start_time.elapsed();
+
+                let start_time = Instant::now();
                 while trace_cursor.key_valid()
                     && before_start(&trace_cursor, &start1, self.left_inclusive)
                     && before_end(&trace_cursor, &end0, self.right_inclusive)
@@ -384,12 +431,16 @@ where
                         }
 
                         trace_cursor.step_val();
+                        *self.region1_vals.borrow_mut() += 1;
                     };
                     trace_cursor.step_key();
+                    *self.region1_keys.borrow_mut() += 1;
                 }
+                *self.region1_time.borrow_mut() += start_time.elapsed();
 
                 // If the window shrunk, retract values that dropped off the right end of the
                 // window.
+                let start_time = Instant::now();
                 if end1 < end0 {
                     seek_after_end(&mut trace_cursor, &end1, self.right_inclusive);
 
@@ -419,12 +470,20 @@ where
                         trace_cursor.step_key();
                     }
                 }
+                *self.shrink_time.borrow_mut() += start_time.elapsed();
 
+                let start_time = Instant::now();
                 // Add tuples in `trace` that slid into the window (region 3).
                 seek_after_end(&mut trace_cursor, &end0, self.right_inclusive);
+                *self.seek_after_end_time.borrow_mut() += start_time.elapsed();
 
+                let start_time = Instant::now();
                 // In case start1 > end0
                 seek_start(&mut trace_cursor, &start1, self.left_inclusive);
+                *self.seek_start_time2.borrow_mut() += start_time.elapsed();
+
+
+                let start_time = Instant::now();
                 // trace_cursor.seek_key(max(end0, &start1));
                 while trace_cursor.key_valid() && before_end(&trace_cursor, &end1, self.right_inclusive)
                 {
@@ -447,11 +506,15 @@ where
                         }
 
                         trace_cursor.step_val();
+                        *self.region2_vals.borrow_mut() += 1;
                     };
                     trace_cursor.step_key();
+                    *self.region2_keys.borrow_mut() += 1;
                 }
+                *self.region2_time.borrow_mut() += start_time.elapsed();
             };
 
+            let start_time = Instant::now();
             // Insert tuples in `batch` that fall within the new window.
             seek_start(&mut batch_cursor, &start1, self.left_inclusive);
             // batch_cursor.seek_key(&start1);
@@ -478,6 +541,7 @@ where
                 };
                 batch_cursor.step_key();
             }
+            *self.region3_time.borrow_mut() += start_time.elapsed();
 
             *self.window.borrow_mut() = Some((start1, end1));
 
