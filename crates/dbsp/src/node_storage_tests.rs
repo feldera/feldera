@@ -874,6 +874,9 @@ mod tests {
             storage.alloc_leaf(leaf2);
 
             storage.flush_dirty_to_disk(Some(&path)).unwrap();
+
+            // Take ownership of the spill file to prevent auto-cleanup on drop
+            let _ = storage.take_spill_file();
         }
 
         // Read back using LeafFile directly

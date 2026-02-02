@@ -1099,6 +1099,19 @@ where
         &mut self.storage
     }
 
+    /// Reload all evicted leaves from disk into memory.
+    ///
+    /// This is useful after restoring from a checkpoint when you need
+    /// to iterate over all entries (since the iterator requires leaves
+    /// to be in memory).
+    ///
+    /// # Returns
+    /// * Ok(count) - Number of leaves reloaded
+    /// * Err - If loading fails
+    pub fn reload_evicted_leaves(&mut self) -> Result<usize, crate::node_storage::FileFormatError> {
+        self.storage.reload_evicted_leaves()
+    }
+
     /// Merge another multiset into this one.
     ///
     /// This is the semigroup operation for combining partial aggregates.
@@ -1146,6 +1159,294 @@ where
     #[inline]
     pub fn total_count(&self) -> ZWeight {
         self.total_weight
+    }
+
+    // =========================================================================
+    // Checkpoint Methods
+    // =========================================================================
+
+    /// Collect leaf summaries for checkpoint metadata.
+    ///
+    /// Returns a summary for each leaf containing:
+    /// - `first_key`: First key in the leaf (for building separator keys)
+    /// - `weight_sum`: Total weight in the leaf (for building subtree_sums)
+    /// - `entry_count`: Number of entries
+    ///
+    /// This enables O(num_leaves) restore - internal nodes are rebuilt
+    /// from summaries without reading leaf contents.
+    pub fn collect_leaf_summaries(&self) -> Vec<crate::node_storage::LeafSummary<T>> {
+        use crate::node_storage::LeafSummary;
+
+        let mut summaries = Vec::new();
+        let mut current_leaf = self.first_leaf;
+
+        while let Some(leaf_loc) = current_leaf {
+            let leaf = self.storage.get_leaf(leaf_loc);
+
+            let first_key = leaf.entries.first().map(|(k, _)| k.clone());
+            let weight_sum = leaf.total_weight();
+            let entry_count = leaf.entries.len();
+
+            summaries.push(LeafSummary::new(first_key, weight_sum, entry_count));
+            current_leaf = leaf.next_leaf;
+        }
+
+        summaries
+    }
+
+    /// Checkpoint the tree's leaves to disk.
+    ///
+    /// This method:
+    /// 1. Flushes all dirty/never-spilled leaves to disk
+    /// 2. Collects leaf summaries for O(num_leaves) restore
+    /// 3. Moves the spill file to checkpoint location
+    /// 4. Returns metadata referencing the checkpoint file
+    ///
+    /// # Arguments
+    ///
+    /// - `checkpoint_dir`: Directory for checkpoint files
+    /// - `tree_id`: Unique identifier for this tree's checkpoint file
+    ///
+    /// # Returns
+    ///
+    /// `CommittedLeafStorage` containing metadata for restore.
+    pub fn save_leaves(
+        &mut self,
+        checkpoint_dir: &std::path::Path,
+        tree_id: &str,
+    ) -> Result<crate::node_storage::CommittedLeafStorage<T>, crate::node_storage::FileFormatError> {
+        use crate::node_storage::{CommittedLeafStorage, FileFormatError};
+
+        // Ensure checkpoint directory exists
+        std::fs::create_dir_all(checkpoint_dir)
+            .map_err(|e| FileFormatError::Io(format!("Failed to create checkpoint dir: {}", e)))?;
+
+        // Collect summaries BEFORE flushing (need access to all leaf data)
+        let leaf_summaries = self.collect_leaf_summaries();
+
+        // Flush all leaves to disk
+        self.storage.flush_all_leaves_to_disk()?;
+
+        // Get block locations from storage
+        let leaf_block_locations: Vec<(usize, u64, u32)> = self
+            .storage
+            .leaf_block_locations
+            .iter()
+            .map(|(&id, &(offset, size))| (id, offset, size))
+            .collect();
+
+        // Move spill file to checkpoint location
+        let dest_path = checkpoint_dir.join(format!("{}.leaves", tree_id));
+
+        if let Some(src_path) = self.storage.take_spill_file() {
+            if src_path.exists() {
+                // Try rename first (fast, same filesystem)
+                // Fall back to copy if rename fails (cross-filesystem)
+                if std::fs::rename(&src_path, &dest_path).is_err() {
+                    std::fs::copy(&src_path, &dest_path).map_err(|e| {
+                        FileFormatError::Io(format!(
+                            "Failed to copy spill file to checkpoint: {}",
+                            e
+                        ))
+                    })?;
+                    // Clean up source after successful copy
+                    let _ = std::fs::remove_file(&src_path);
+                }
+            }
+        }
+
+        // Compute totals
+        let total_entries: usize = leaf_summaries.iter().map(|s| s.entry_count).sum();
+        let total_weight: ZWeight = leaf_summaries.iter().map(|s| s.weight_sum).sum();
+        let num_leaves = leaf_summaries.len();
+
+        Ok(CommittedLeafStorage {
+            spill_file_path: dest_path.to_string_lossy().to_string(),
+            leaf_block_locations,
+            leaf_summaries,
+            total_entries,
+            total_weight,
+            num_leaves,
+        })
+    }
+
+    /// Restore from checkpoint - O(num_leaves), not O(num_entries).
+    ///
+    /// This method:
+    /// 1. Points NodeStorage at the checkpoint file (no copy!)
+    /// 2. Rebuilds internal nodes from leaf_summaries (no leaf I/O!)
+    /// 3. Marks all leaves as evicted (lazy-loaded on demand)
+    ///
+    /// The checkpoint file becomes the live spill file.
+    ///
+    /// # Arguments
+    ///
+    /// - `committed`: Checkpoint metadata from `save_leaves()`
+    /// - `branching_factor`: Branching factor for the tree
+    /// - `storage_config`: Configuration for the storage backend
+    ///
+    /// # Returns
+    ///
+    /// A restored `OrderStatisticsMultiset`.
+    pub fn restore_from_committed(
+        committed: crate::node_storage::CommittedLeafStorage<T>,
+        branching_factor: usize,
+        storage_config: crate::node_storage::NodeStorageConfig,
+    ) -> Result<Self, Error> {
+        use std::path::PathBuf;
+
+        let num_leaves = committed.num_leaves;
+
+        if num_leaves == 0 {
+            // Empty tree
+            return Ok(Self::with_config(branching_factor, storage_config));
+        }
+
+        // Create storage with the checkpoint file as spill file
+        let mut storage = OsmNodeStorage::with_config(storage_config);
+
+        // Set up the checkpoint file as our spill file
+        let spill_path = PathBuf::from(&committed.spill_file_path);
+        storage.mark_all_leaves_evicted(
+            num_leaves,
+            spill_path,
+            committed.leaf_block_locations.clone(),
+        );
+
+        // Build internal nodes from leaf summaries
+        let (internal_nodes_with_levels, root_loc, first_leaf_loc) =
+            Self::build_internal_nodes_from_summaries(&committed.leaf_summaries, branching_factor);
+
+        // Add internal nodes to storage (as clean since they're rebuilt from summaries)
+        for (node, level) in internal_nodes_with_levels {
+            storage.alloc_internal_clean(node, level);
+        }
+
+        // Count total keys from summaries
+        let num_keys: usize = committed.leaf_summaries.iter().map(|s| s.entry_count).sum();
+
+        Ok(Self {
+            storage,
+            root: root_loc,
+            total_weight: committed.total_weight,
+            max_leaf_entries: branching_factor,
+            max_internal_children: branching_factor,
+            first_leaf: first_leaf_loc,
+            num_keys,
+        })
+    }
+
+    /// Build internal nodes from leaf summaries.
+    ///
+    /// Uses first_key for separator keys, weight_sum for subtree_sums.
+    /// O(num_leaves) time - no leaf content I/O required.
+    ///
+    /// # Arguments
+    ///
+    /// - `summaries`: Leaf summaries from checkpoint
+    /// - `branching_factor`: Maximum children per internal node
+    ///
+    /// # Returns
+    ///
+    /// - Vector of (internal_node, level) tuples
+    /// - Root node location (if any)
+    /// - First leaf location (if any)
+    fn build_internal_nodes_from_summaries(
+        summaries: &[crate::node_storage::LeafSummary<T>],
+        branching_factor: usize,
+    ) -> (Vec<(InternalNodeTyped<T>, u8)>, Option<NodeLocation>, Option<LeafLocation>) {
+        if summaries.is_empty() {
+            return (Vec::new(), None, None);
+        }
+
+        let first_leaf = Some(LeafLocation::new(0));
+
+        if summaries.len() == 1 {
+            // Single leaf - no internal nodes needed, root is the leaf
+            return (Vec::new(), Some(NodeLocation::Leaf(LeafLocation::new(0))), first_leaf);
+        }
+
+        let mut internal_nodes: Vec<(InternalNodeTyped<T>, u8)> = Vec::new();
+
+        // Build bottom-up: first level of internal nodes directly points to leaves
+        let mut current_level_locations: Vec<NodeLocation> = Vec::new();
+        let mut current_level_sums: Vec<ZWeight> = Vec::new();
+        let mut current_level_keys: Vec<Option<T>> = Vec::new();
+
+        // Process leaves in groups of `branching_factor`
+        for (i, summary) in summaries.iter().enumerate() {
+            current_level_locations.push(NodeLocation::Leaf(LeafLocation::new(i)));
+            current_level_sums.push(summary.weight_sum);
+            current_level_keys.push(summary.first_key.clone());
+        }
+
+        // Build internal nodes level by level
+        // Level 1 is just above leaves, level 2 above level 1, etc.
+        let mut current_level: u8 = 1;
+        while current_level_locations.len() > 1 {
+            let mut next_level_locations: Vec<NodeLocation> = Vec::new();
+            let mut next_level_sums: Vec<ZWeight> = Vec::new();
+            let mut next_level_keys: Vec<Option<T>> = Vec::new();
+
+            // Group children into internal nodes
+            for chunk_start in (0..current_level_locations.len()).step_by(branching_factor) {
+                let chunk_end = (chunk_start + branching_factor).min(current_level_locations.len());
+
+                let children: Vec<_> = current_level_locations[chunk_start..chunk_end].to_vec();
+                let subtree_sums: Vec<_> = current_level_sums[chunk_start..chunk_end].to_vec();
+
+                // Separator keys: first key of each child except the first
+                let keys: Vec<T> = current_level_keys[chunk_start + 1..chunk_end]
+                    .iter()
+                    .filter_map(|k| k.clone())
+                    .collect();
+
+                let internal_node = InternalNodeTyped {
+                    keys,
+                    children,
+                    subtree_sums: subtree_sums.clone(),
+                };
+
+                let node_id = internal_nodes.len();
+                internal_nodes.push((internal_node, current_level));
+
+                next_level_locations.push(NodeLocation::Internal { id: node_id, level: current_level });
+                next_level_sums.push(subtree_sums.iter().sum());
+                next_level_keys.push(current_level_keys[chunk_start].clone());
+            }
+
+            current_level_locations = next_level_locations;
+            current_level_sums = next_level_sums;
+            current_level_keys = next_level_keys;
+            current_level = current_level.saturating_add(1);
+        }
+
+        // The last remaining location is the root
+        let root = current_level_locations.into_iter().next();
+
+        (internal_nodes, root, first_leaf)
+    }
+
+    /// Construct from restored components.
+    ///
+    /// Used internally by `restore()` to create the final tree.
+    pub fn from_storage(
+        storage: OsmNodeStorage<T>,
+        root: Option<NodeLocation>,
+        total_weight: ZWeight,
+        max_leaf_entries: usize,
+        first_leaf: Option<LeafLocation>,
+        num_keys: usize,
+    ) -> Self {
+        Self {
+            storage,
+            root,
+            total_weight,
+            max_leaf_entries,
+            max_internal_children: max_leaf_entries,
+            first_leaf,
+            num_keys,
+        }
     }
 }
 

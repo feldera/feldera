@@ -4602,7 +4602,7 @@ FileBatch {
 ```
 
 #### **NodeStorage** (`node_storage.rs`)
-Generic spillable storage abstraction for tree-based data structures (e.g., `OrderStatisticsMultiset`). Enables nodes to spill to disk when memory is constrained. See `node_storage.md` for design details.
+Generic spillable storage abstraction for tree-based data structures (e.g., `OrderStatisticsMultiset`). Enables nodes to spill to disk when memory is constrained. See `node_storage.md` for design details, `node_storage_applications.md` for potential uses.
 
 ## Performance Architecture
 

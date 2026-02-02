@@ -579,32 +579,65 @@ Key type changes from arena-based storage:
 
 ### Checkpoint/Restore
 
-```rust
-impl<T> OrderStatisticsMultiset<T>
-where
-    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static
-       + Archive + RkyvSerialize<Serializer>,
-    Archived<T>: RkyvDeserialize<T, Deserializer>,
-    <T as Archive>::Archived: Ord,
-{
-    /// Save tree state to checkpoint
-    pub fn save(
-        &self,
-        base: &StoragePath,
-        persistent_id: &str,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error>;
+NodeStorage supports efficient O(num_leaves) checkpoint/restore for fault tolerance.
 
-    /// Restore tree from checkpoint
-    pub fn restore(
-        &mut self,
-        base: &StoragePath,
-        persistent_id: &str,
-    ) -> Result<(), Error>;
+#### Checkpoint Data Structures
+
+```rust
+/// Summary of a leaf node - enough to rebuild internal nodes without reading leaf contents.
+#[derive(Archive, RkyvSerialize, RkyvDeserialize)]
+pub struct LeafSummary<K> {
+    pub first_key: Option<K>,  // First key in leaf (for separator keys)
+    pub weight_sum: ZWeight,   // Sum of weights (for subtree_sums)
+    pub entry_count: usize,    // Number of entries
+}
+
+/// Committed (checkpoint) state for NodeStorage leaves.
+#[derive(Archive, RkyvSerialize, RkyvDeserialize)]
+pub struct CommittedLeafStorage<K> {
+    pub spill_file_path: String,                    // Path to leaf data file
+    pub leaf_block_locations: Vec<(usize, u64, u32)>, // (leaf_id, offset, size)
+    pub leaf_summaries: Vec<LeafSummary<K>>,        // Per-leaf summaries
+    pub total_entries: usize,
+    pub total_weight: ZWeight,
+    pub num_leaves: usize,
 }
 ```
 
-Uses rkyv serialization and O(n) bulk reconstruction via `from_sorted_entries()`.
+#### Checkpoint Methods
+
+```rust
+impl<I, L> NodeStorage<I, L> {
+    /// Flush all leaves to disk for checkpoint.
+    pub fn flush_all_leaves_to_disk<P: AsRef<Path>>(
+        &mut self,
+        path: Option<P>,
+    ) -> Result<usize, FileFormatError>;
+
+    /// Take ownership of spill file path (prevents cleanup on drop).
+    pub fn take_spill_file(&mut self) -> Option<PathBuf>;
+
+    /// Mark all leaves as evicted (for restore from checkpoint file).
+    pub fn mark_all_leaves_evicted(
+        &mut self,
+        num_leaves: usize,
+        spill_path: PathBuf,
+        block_locations: Vec<(usize, u64, u32)>,
+    );
+
+    /// Allocate internal node as clean (for restore).
+    pub fn alloc_internal_clean(&mut self, node: I, level: u8) -> NodeLocation;
+}
+```
+
+#### Checkpoint Flow
+
+1. **Checkpoint**: Flush leaves → collect summaries → serialize `CommittedLeafStorage`
+2. **Restore**: Deserialize metadata → rebuild internal nodes from summaries → mark leaves evicted
+3. Checkpoint file becomes live spill file (zero-copy ownership transfer)
+4. Leaves loaded lazily on demand
+
+This is O(num_leaves) instead of O(num_entries), enabling fast checkpoint/restore for large trees.
 
 ## Usage Example
 

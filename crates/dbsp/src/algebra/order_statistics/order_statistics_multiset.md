@@ -735,13 +735,55 @@ The speedup is most significant when:
 - Many select/rank queries per batch
 - Batch size (B) is small relative to state
 
+### Fault-Tolerant Checkpoint/Restore
+
+The tree supports efficient O(num_leaves) checkpoint/restore for fault tolerance:
+
+#### Checkpoint API
+
+```rust
+impl<T> OrderStatisticsMultiset<T> {
+    /// Collect leaf summaries for checkpoint metadata.
+    pub fn collect_leaf_summaries(&self) -> Vec<LeafSummary<T>>;
+
+    /// Save leaves to checkpoint file, return metadata.
+    pub fn save_leaves(
+        &mut self,
+        checkpoint_dir: &Path,
+        tree_id: &str,
+    ) -> Result<CommittedLeafStorage<T>, FileFormatError>;
+
+    /// Restore from checkpoint - O(num_leaves), not O(num_entries).
+    pub fn restore_from_committed(
+        committed: CommittedLeafStorage<T>,
+        branching_factor: usize,
+        storage_config: NodeStorageConfig,
+    ) -> Result<Self, Error>;
+
+    /// Reload evicted leaves into memory (for iteration after restore).
+    pub fn reload_evicted_leaves(&mut self) -> Result<usize, FileFormatError>;
+}
+```
+
+#### Checkpoint Flow
+
+1. **Save**: `save_leaves()` flushes leaves to disk, collects summaries
+2. **Metadata**: Returns `CommittedLeafStorage` with file path + leaf summaries
+3. **Restore**: `restore_from_committed()` rebuilds internal nodes from summaries
+4. **Lazy loading**: Leaves remain on disk, loaded on demand via `get_leaf_reloading()`
+
+#### Why O(num_leaves)?
+
+- **Checkpoint**: Only writes leaf data + small summaries (not internal nodes)
+- **Restore**: Rebuilds internal nodes from summaries without reading leaf contents
+- **Zero-copy**: Checkpoint file becomes live spill file (ownership transfer)
+- For a tree with 10M entries and B=64: ~156K leaves vs 10M entries
+
 ### Future Improvements
 
-1. **Disk-backed nodes**: Integrate with Feldera's storage layer for true spill-to-disk
-2. **Bulk loading**: O(n) construction from sorted input
-3. **Concurrent access**: Lock-free readers with write serialization
-4. **Compression**: Delta encoding for weights, prefix compression for keys
-5. **Memory-mapped I/O**: Direct node access from disk without explicit loads
+1. **Concurrent access**: Lock-free readers with write serialization
+2. **Compression**: Delta encoding for weights, prefix compression for keys
+3. **Memory-mapped I/O**: Direct node access from disk without explicit loads
 
 ## References
 
