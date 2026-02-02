@@ -553,25 +553,22 @@ where
     Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
     /// Create a new empty multiset with default branching factor.
+    ///
+    /// If running inside a DBSP Runtime with storage configured, this will
+    /// automatically enable spill-to-disk when memory pressure is high.
     pub fn new() -> Self {
-        Self::with_branching_factor(DEFAULT_BRANCHING_FACTOR)
+        Self::with_config(DEFAULT_BRANCHING_FACTOR, NodeStorageConfig::from_runtime())
     }
 
     /// Create a new empty multiset with specified branching factor.
     ///
     /// Larger branching factors are more cache/disk friendly but may have
     /// higher constant factors for small trees.
+    ///
+    /// If running inside a DBSP Runtime with storage configured, this will
+    /// automatically enable spill-to-disk when memory pressure is high.
     pub fn with_branching_factor(b: usize) -> Self {
-        let b = b.max(MIN_BRANCHING_FACTOR);
-        Self {
-            storage: OsmNodeStorage::new(),
-            root: None,
-            total_weight: 0,
-            max_leaf_entries: b,
-            max_internal_children: b,
-            first_leaf: None,
-            num_keys: 0,
-        }
+        Self::with_config(b, NodeStorageConfig::from_runtime())
     }
 
     /// Create a new empty multiset with specified branching factor and storage config.
