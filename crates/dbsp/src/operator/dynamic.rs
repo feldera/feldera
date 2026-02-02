@@ -32,6 +32,7 @@ pub mod semijoin;
 pub mod time_series;
 pub mod trace;
 pub(crate) mod upsert;
+pub mod percentile_op;
 
 /// The "standard" indexed Z-set type used by monomorphic
 /// versions of operators.

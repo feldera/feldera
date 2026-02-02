@@ -1,10 +1,18 @@
 #[cfg(test)]
 mod tests {
-    use crate::algebra::{OrderStatisticsMultiset, ZWeight};
+    use crate::algebra::{OrderStatisticsMultiset, ZWeight, DEFAULT_BRANCHING_FACTOR};
+    use crate::node_storage::NodeStorageConfig;
+
+    fn new_tree<T>() -> OrderStatisticsMultiset<T>
+    where
+        T: crate::DBData,
+    {
+        OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, NodeStorageConfig::memory_only())
+    }
 
     #[test]
     fn test_empty_tree() {
-        let tree: OrderStatisticsMultiset<i32> = OrderStatisticsMultiset::new();
+        let tree: OrderStatisticsMultiset<i32> = new_tree();
         assert_eq!(tree.total_weight(), 0);
         assert_eq!(tree.num_keys(), 0);
         assert!(tree.is_empty());
@@ -14,7 +22,7 @@ mod tests {
 
     #[test]
     fn test_single_insert() {
-        let mut tree = OrderStatisticsMultiset::new();
+        let mut tree = new_tree();
         tree.insert(10, 5);
 
         assert_eq!(tree.total_weight(), 5);
@@ -34,7 +42,7 @@ mod tests {
 
     #[test]
     fn test_multiple_inserts() {
-        let mut tree = OrderStatisticsMultiset::new();
+        let mut tree = new_tree();
         tree.insert(10, 3); // positions 0, 1, 2
         tree.insert(20, 2); // positions 3, 4
         tree.insert(15, 1); // position between: now 0,1,2=10, 3=15, 4,5=20
@@ -58,7 +66,7 @@ mod tests {
 
     #[test]
     fn test_weight_update() {
-        let mut tree = OrderStatisticsMultiset::new();
+        let mut tree = new_tree();
         tree.insert(10, 5);
         tree.insert(10, 3); // Should add to existing weight
 
@@ -69,7 +77,7 @@ mod tests {
 
     #[test]
     fn test_negative_weights() {
-        let mut tree = OrderStatisticsMultiset::new();
+        let mut tree = new_tree();
         tree.insert(10, 5);
         tree.insert(10, -2); // Reduce weight to 3
 
@@ -84,11 +92,11 @@ mod tests {
 
     #[test]
     fn test_merge() {
-        let mut tree1 = OrderStatisticsMultiset::new();
+        let mut tree1 = new_tree();
         tree1.insert(10, 3);
         tree1.insert(30, 2);
 
-        let mut tree2 = OrderStatisticsMultiset::new();
+        let mut tree2 = new_tree();
         tree2.insert(20, 1);
         tree2.insert(30, 1);
 
@@ -102,7 +110,7 @@ mod tests {
 
     #[test]
     fn test_percentile_disc() {
-        let mut tree = OrderStatisticsMultiset::new();
+        let mut tree = new_tree();
         for i in 1..=100 {
             tree.insert(i, 1);
         }
@@ -114,7 +122,7 @@ mod tests {
 
     #[test]
     fn test_percentile_cont_bounds() {
-        let mut tree = OrderStatisticsMultiset::new();
+        let mut tree = new_tree();
         tree.insert(10, 1);
         tree.insert(20, 1);
         tree.insert(30, 1);
@@ -129,7 +137,7 @@ mod tests {
 
     #[test]
     fn test_descending_select() {
-        let mut tree = OrderStatisticsMultiset::new();
+        let mut tree = new_tree();
         tree.insert(10, 2);
         tree.insert(20, 2);
         tree.insert(30, 2);
@@ -168,7 +176,7 @@ mod tests {
     #[test]
     fn test_bulk_load_matches_incremental() {
         // Build tree incrementally
-        let mut incremental: OrderStatisticsMultiset<i32> = OrderStatisticsMultiset::new();
+        let mut incremental: OrderStatisticsMultiset<i32> = new_tree();
         for i in 0..1000 {
             incremental.insert(i, (i % 10) as ZWeight + 1);
         }
@@ -297,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_compact_uses_bulk_load() {
-        let mut tree = OrderStatisticsMultiset::new();
+        let mut tree = new_tree();
         for i in 0..100 {
             tree.insert(i, 1);
         }
