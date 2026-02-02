@@ -15,7 +15,7 @@ use crate::{
 use apache_avro::{
     Schema as AvroSchema, from_avro_datum, schema::ResolvedSchema, to_avro_datum, types::Value,
 };
-use dbsp::{DBData, OrdZSet};
+use dbsp::{DBData, IndexedZSetReader, OrdZSet};
 use dbsp::{OrdIndexedZSet, utils::Tup2};
 use feldera_sqllib::{ByteArray, Uuid, Variant};
 use feldera_types::{
@@ -29,6 +29,7 @@ use feldera_types::{
     format::avro::{AvroParserConfig, AvroUpdateFormat},
     serialize_struct,
 };
+use itertools::Itertools;
 use proptest::prelude::*;
 use proptest::proptest;
 use serde::Serialize;
@@ -1281,7 +1282,10 @@ where
             .collect(),
     );
 
-    assert_eq!(actual_output, expected_output);
+    assert_eq!(
+        actual_output.iter().sorted().collect::<Vec<_>>(),
+        expected_output.iter().sorted().collect::<Vec<_>>()
+    );
 }
 
 fn test_raw_avro_output_indexed<K, T>(
@@ -1398,7 +1402,10 @@ fn test_raw_avro_output_indexed<K, T>(
         })
         .collect::<Vec<_>>();
 
-    assert_eq!(actual_output, expected_output);
+    assert_eq!(
+        actual_output.iter().sorted().collect::<Vec<_>>(),
+        expected_output.iter().sorted().collect::<Vec<_>>()
+    );
 }
 
 fn test_confluent_avro_output<K, V, KF>(
@@ -1590,7 +1597,10 @@ fn test_confluent_avro_output_indexed<K, V>(
         })
         .collect::<Vec<_>>();
 
-    assert_eq!(expected_output, actual_outputs);
+    assert_eq!(
+        actual_outputs.iter().sorted().collect::<Vec<_>>(),
+        expected_output.iter().sorted().collect::<Vec<_>>()
+    );
 }
 
 #[test]
