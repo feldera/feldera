@@ -56,6 +56,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPercentileOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
@@ -1226,6 +1227,85 @@ public class ToRustVisitor extends CircuitVisitor {
         operator.outputProducer.accept(this.innerVisitor);
         this.builder.append(")")
                 .append(this.markDistinct(operator))
+                .append(";");
+        this.tagStream(operator);
+        this.innerVisitor.setOperatorContext(null);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPPercentileOperator operator) {
+        this.computeHash(operator);
+        this.innerVisitor.setOperatorContext(operator);
+        DBSPType streamType = this.streamType(operator);
+
+        // Generate: let result: StreamType = input
+        //     .map_index(|t| ((*t.0).clone(), value_extractor_body))
+        //     .percentile_cont(percentile, ascending)  // or percentile_disc
+        //     .map_index(|k, v| (k.clone(), post_processor(v)))  // if post_processor exists
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getNodeName(this.preferHash))
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ")
+                .append(this.getInputName(operator, 0))
+                .append(".map_index(")
+                .increase();
+
+        // Generate closure: move |t: (&K, &V)| ((*t.0).clone(), value_extractor_body)
+        // The valueExtractor closure takes (key_ref, value_ref) tuple and extracts order-by value
+        // We need to wrap it in a tuple with the cloned key for map_index
+        this.builder.append("move |");
+        operator.valueExtractor.parameters[0].accept(this.innerVisitor);
+        this.builder.append("| ");
+
+        // Generate tuple: ((*param.0).clone(), body)
+        String paramName = operator.valueExtractor.parameters[0].name;
+        this.builder.append("(((*")
+                .append(paramName)
+                .append(".0).clone(), ");
+        operator.valueExtractor.body.accept(this.innerVisitor);
+        this.builder.append("))");
+
+        this.builder.decrease()
+                .append(").");
+
+        // Use percentile_cont or percentile_disc
+        if (operator.continuous) {
+            this.builder.append("percentile_cont");
+        } else {
+            this.builder.append("percentile_disc");
+        }
+        this.builder.append("(")
+                .append(Double.toString(operator.percentile))
+                .append(", ")
+                .append(Boolean.toString(operator.ascending))
+                .append(")");
+
+        // After percentile_cont/disc, add post-processing:
+        // - Flatten Option<Option<T>> to Option<T> if the extracted value was nullable
+        // - Wrap in Tup1 to match SQL aggregate output format
+        // Note: map_index takes a closure with a single tuple argument |(k, v)| not |k, v|
+        DBSPType extractedValueType = operator.valueExtractor.body.getType();
+        this.builder.append(".map_index(|(k, v)| ((*k).clone(), Tup1(");
+        if (extractedValueType.mayBeNull) {
+            // Flatten Option<Option<T>> to Option<T>
+            this.builder.append("(*v).flatten()");
+        } else {
+            // Just clone the Option<T>
+            this.builder.append("(*v).clone()");
+        }
+        this.builder.append(")))");
+
+        // Apply post-processor if exists (for type conversions like integer -> f64)
+        if (operator.postProcessor != null) {
+            this.builder.append(".map_index(|(k, v)| ((*k).clone(), (");
+            operator.postProcessor.accept(this.innerVisitor);
+            this.builder.append(")(v)))");
+        }
+
+        this.builder.append(this.markDistinct(operator))
                 .append(";");
         this.tagStream(operator);
         this.innerVisitor.setOperatorContext(null);

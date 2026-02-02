@@ -98,6 +98,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPercentileOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
@@ -785,6 +786,107 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return result;
     }
 
+    /** Implement percentile aggregates using the stateful DBSPPercentileOperator.
+     *  This operator maintains OrderStatisticsMultiset state per key for O(log n) incremental updates.
+     *  Currently only supports a single percentile aggregate per GROUP BY. */
+    DBSPSimpleOperator implementPercentileAggregates(
+            CalciteRelNode node,
+            LogicalAggregate aggregate,
+            List<AggregateCall> aggregateCalls,
+            OutputPort indexedInput,
+            DBSPType groupKeyType,
+            DBSPType inputRowType,
+            DBSPType[] aggTypes) {
+        // For now, only support single percentile aggregate
+        if (aggregateCalls.size() != 1) {
+            throw new UnsupportedException(
+                    "Multiple PERCENTILE_CONT/PERCENTILE_DISC aggregates in the same GROUP BY is not yet supported. " +
+                    "Use separate queries.", node);
+        }
+
+        AggregateCall call = aggregateCalls.get(0);
+        SqlKind kind = call.getAggregation().getKind();
+        boolean continuous = kind == SqlKind.PERCENTILE_CONT;
+
+        // Get WITHIN GROUP ORDER BY collation
+        List<RelFieldCollation> collations = call.getCollation().getFieldCollations();
+        if (collations.isEmpty()) {
+            throw new CompilationError("PERCENTILE requires ORDER BY in WITHIN GROUP clause", node);
+        }
+        if (collations.size() > 1) {
+            throw new UnsupportedException(
+                    "PERCENTILE with multiple ORDER BY expressions not yet supported", node);
+        }
+        RelFieldCollation collation = collations.get(0);
+        boolean ascending = collation.direction == RelFieldCollation.Direction.ASCENDING;
+        int orderByFieldIndex = collation.getFieldIndex();
+
+        // Get percentile value from the first argument (should be a constant)
+        // The percentile argument is in call.getArgList()
+        List<Integer> argList = call.getArgList();
+        if (argList.isEmpty()) {
+            throw new CompilationError("PERCENTILE requires a percentile argument", node);
+        }
+
+        // The first argument references a field in the input row that contains the percentile value
+        // This field should be a constant literal projected into the row
+        int percentileFieldIndex = argList.get(0);
+        double percentileValue;
+
+        // Get the input to the aggregate (usually a LogicalProject)
+        RelNode input = aggregate.getInput();
+        if (input instanceof LogicalProject project) {
+            List<RexNode> projects = project.getProjects();
+            if (percentileFieldIndex < projects.size()) {
+                RexNode percentileRex = projects.get(percentileFieldIndex);
+                if (percentileRex instanceof RexLiteral literal) {
+                    Double value = literal.getValueAs(Double.class);
+                    if (value != null) {
+                        percentileValue = value;
+                    } else {
+                        throw new CompilationError("PERCENTILE value cannot be NULL", node);
+                    }
+                } else {
+                    throw new UnsupportedException(
+                            "PERCENTILE argument must be a constant literal, not: " + percentileRex.getKind(), node);
+                }
+            } else {
+                throw new CompilationError("Invalid percentile field index: " + percentileFieldIndex, node);
+            }
+        } else {
+            // If not a LogicalProject, the percentile might be a direct field reference
+            // For now, throw an error asking for a constant
+            throw new UnsupportedException(
+                    "PERCENTILE argument must be a constant literal. Input type: " + input.getClass().getSimpleName(), node);
+        }
+
+        // Create value extractor closure: (key_ref, value_ref) -> order_by_value
+        DBSPTypeTupleBase kvRefType = indexedInput.getOutputIndexedZSetType().getKVRefType();
+        DBSPVariablePath kvVar = kvRefType.var();
+        DBSPType valueType = inputRowType.to(DBSPTypeTuple.class).getFieldType(orderByFieldIndex);
+        DBSPExpression orderByValue = kvVar.field(1).deref().field(orderByFieldIndex).applyCloneIfNeeded();
+
+        // If nullable, the percentile operator will handle nulls
+        DBSPType elementType = valueType.withMayBeNull(false);
+        DBSPClosureExpression valueExtractor = orderByValue.closure(kvVar);
+
+        // Output type: IndexedZSet<Key, Option<ElementType>>
+        DBSPType outputValueType = aggTypes[0];
+        DBSPTypeIndexedZSet outputType = makeIndexedZSet(groupKeyType, new DBSPTypeTuple(outputValueType));
+
+        // Create post-processor if needed (for type conversions like integer -> f64)
+        DBSPClosureExpression postProcessor = null;
+        // For PERCENTILE_CONT on integers, the output is f64 but element type is integer
+        // The Rust operator returns Option<ElementType>, so we may need to convert
+        // This is handled by the percentile operator itself for now
+
+        DBSPPercentileOperator percentileOp = new DBSPPercentileOperator(
+                node, percentileValue, continuous, ascending,
+                valueExtractor, postProcessor, outputType, indexedInput);
+        this.addOperator(percentileOp);
+        return percentileOp;
+    }
+
     /** Implement an AggregateList using a {@link DBSPStreamAggregateOperator} operator */
     public DBSPSimpleOperator implementAggregateList(
             CalciteRelNode node, DBSPType groupKeyType, OutputPort indexedInput, DBSPAggregateList agg) {
@@ -864,10 +966,30 @@ public class CalciteToDBSPCompiler extends RelVisitor
             result = new DBSPStreamDistinctOperator(node, ix2.outputPort());
             this.addOperator(result);
         } else {
-            aggregates = createAggregates(this.compiler(),
-                    aggregate, aggregateCalls, Linq.list(), tuple, inputRowType,
-                    aggregate.getGroupCount(), localKeys, true);
-            result = this.implementAggregateList(node, localGroupType, indexedInput.outputPort(), aggregates);
+            // Check if all aggregates are PERCENTILE_CONT or PERCENTILE_DISC
+            boolean allPercentile = aggregateCalls.stream().allMatch(
+                    call -> call.getAggregation().getKind() == SqlKind.PERCENTILE_CONT ||
+                            call.getAggregation().getKind() == SqlKind.PERCENTILE_DISC);
+            boolean anyPercentile = aggregateCalls.stream().anyMatch(
+                    call -> call.getAggregation().getKind() == SqlKind.PERCENTILE_CONT ||
+                            call.getAggregation().getKind() == SqlKind.PERCENTILE_DISC);
+
+            if (anyPercentile && !allPercentile) {
+                throw new UnsupportedException(
+                        "Mixing PERCENTILE_CONT/PERCENTILE_DISC with other aggregates is not supported. " +
+                        "Use separate GROUP BY queries.", node);
+            }
+
+            if (allPercentile) {
+                // Use the new stateful percentile operator
+                result = this.implementPercentileAggregates(node, aggregate, aggregateCalls,
+                        indexedInput.outputPort(), localGroupType, inputRowType, aggTypes);
+            } else {
+                aggregates = createAggregates(this.compiler(),
+                        aggregate, aggregateCalls, Linq.list(), tuple, inputRowType,
+                        aggregate.getGroupCount(), localKeys, true);
+                result = this.implementAggregateList(node, localGroupType, indexedInput.outputPort(), aggregates);
+            }
         }
 
         // Adjust the key such that all local groups are converted to have the same keys as the
@@ -921,11 +1043,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression mapper = new DBSPTupleExpression(node, tuple, flattenFields).closure(kv);
         DBSPSimpleOperator map = new DBSPMapOperator(node, mapper, TypeCompiler.makeZSet(tuple), result.outputPort());
         this.addOperator(map);
-        if (aggregate.getGroupCount() != 0 || aggregateCalls.isEmpty()) {
+        if (aggregate.getGroupCount() != 0 || aggregateCalls.isEmpty() || aggregates == null) {
+            // Return early if:
+            // - there's a GROUP BY (groupCount != 0)
+            // - there are no aggregates (isEmpty)
+            // - we used the percentile path (aggregates is null)
             return map.outputPort();
         }
 
-        DBSPExpression emptyResults = Objects.requireNonNull(aggregates).getEmptySetResult();
+        DBSPExpression emptyResults = aggregates.getEmptySetResult();
         DBSPBaseTupleExpression emptySetResult = DBSPTupleExpression.flatten(emptyResults);
         DBSPAggregateZeroOperator zero = new DBSPAggregateZeroOperator(node, emptySetResult, map.outputPort());
         this.addOperator(zero);
