@@ -7882,32 +7882,6 @@ services:
     # Enables end-to-end CDC pipeline testing
 ```
 
-### **Demo Orchestration** (`docker-compose-demo.yml`)
-
-**Purpose**: Complete demo scenarios showcasing Feldera capabilities.
-
-**Customer Onboarding Role**:
-- Provides working examples of Feldera integration patterns
-- Validates end-to-end functionality in release testing
-- Supports customer proof-of-concept deployments
-- Demonstrates CDC, streaming analytics, and data warehouse integration
-
-**Demo Profiles**:
-```yaml
-profiles:
-  demo-debezium-mysql:
-    # Complete CDC pipeline: MySQL → Kafka → Feldera → Analytics
-    # Showcases real-time change capture and processing
-
-  demo-supply-chain-tutorial:
-    # Business-focused demo with supply chain analytics
-    # Demonstrates SQL streaming analytics capabilities
-
-  demo-snowflake-sink:
-    # Data warehouse integration showcase
-    # End-to-end pipeline to Snowflake data warehouse
-```
-
 ## CI/CD Integration Points
 
 ### **Build Pipeline Integration**
@@ -8008,14 +7982,6 @@ docker compose -f deploy/docker-compose.yml \
 docker compose -f deploy/docker-compose.yml \
                -f deploy/docker-compose-extra.yml \
                --profile mysql --profile kafka-connect up
-```
-
-**Data Warehouse Integration**:
-```bash
-# Snowflake integration demo
-docker compose -f deploy/docker-compose.yml \
-               -f deploy/docker-compose-demo.yml \
-               --profile demo-snowflake-sink up
 ```
 
 ## Best Practices

@@ -308,26 +308,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     }
 
     @Test
-    public void testProjectFiles() throws IOException, InterruptedException, SQLException {
-        // Compiles all the programs in the tests directory
-        final String projectsDirectory = "../../demo/";
-        final File dir = new File(projectsDirectory);
-        File[] subdirs = dir.listFiles(File::isDirectory);
-        Objects.requireNonNull(subdirs);
-        for (File subdir: subdirs) {
-            if (!subdir.getName().contains("project_"))
-                continue;
-            FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
-            String[] sqlFiles = subdir.list(filter);
-            Assert.assertNotNull(sqlFiles);
-            for (String sqlFile: sqlFiles) {
-                String path = subdir.getPath() + "/" + sqlFile;
-                this.compileFile(path, true);
-            }
-        }
-    }
-
-    @Test
     public void testUnionWarning() throws SQLException {
         final String script = "../../crates/pipeline-manager/demos/sql/02-sec-ops.sql";
         CompilerMessages messages = CompilerMain.execute(
