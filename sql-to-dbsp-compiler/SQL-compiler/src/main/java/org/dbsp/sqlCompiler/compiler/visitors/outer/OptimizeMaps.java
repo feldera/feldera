@@ -105,15 +105,19 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                     .append("Map -> MapIndex")
                     .newline();
             // mapIndex(map) = mapIndex
-            DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
-            DBSPClosureExpression newFunction = operator.getClosureFunction()
-                    .applyAfter(this.compiler(), expression, Maybe.MAYBE);
-            CalciteRelNode node = operator.getRelNode().after(source.node().getRelNode());
-            DBSPSimpleOperator result = new DBSPMapIndexOperator(
-                    node, newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0))
-                    .copyAnnotations(operator).copyAnnotations(source.simpleNode());
-            this.map(operator, result);
-            return;
+            DBSPClosureExpression sourceFunction = source.simpleNode().getClosureFunction();
+            DBSPClosureExpression afterFunction = operator.getClosureFunction();
+            boolean shouldInline = afterFunction.shouldInlineComposition(this.compiler, sourceFunction);
+            if (shouldInline) {
+                DBSPClosureExpression newFunction = afterFunction
+                        .applyAfter(this.compiler(), sourceFunction, Maybe.YES);
+                CalciteRelNode node = operator.getRelNode().after(source.node().getRelNode());
+                DBSPSimpleOperator result = new DBSPMapIndexOperator(
+                        node, newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0))
+                        .copyAnnotations(operator).copyAnnotations(source.simpleNode());
+                this.map(operator, result);
+                return;
+            }
         } else if (source.node().is(DBSPMapIndexOperator.class) && this.canMergeSource(source, size)) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .append("MapIndex -> MapIndex")
@@ -472,14 +476,18 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .append("Map -> Map")
                     .newline();
-            DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
-            DBSPClosureExpression newFunction = operator.getClosureFunction()
-                    .applyAfter(this.compiler(), expression, Maybe.MAYBE);
-            DBSPSimpleOperator result = source.simpleNode()
-                    .withFunction(newFunction, operator.outputType)
-                    .to(DBSPSimpleOperator.class);
-            this.map(operator, result);
-            return;
+            DBSPClosureExpression sourceFunction = source.simpleNode().getClosureFunction();
+            DBSPClosureExpression afterFunction = operator.getClosureFunction();
+            boolean shouldInline = afterFunction.shouldInlineComposition(this.compiler, sourceFunction);
+            if (shouldInline) {
+                DBSPClosureExpression newFunction = afterFunction
+                        .applyAfter(this.compiler(), sourceFunction, Maybe.YES);
+                DBSPSimpleOperator result = source.simpleNode()
+                        .withFunction(newFunction, operator.outputType)
+                        .to(DBSPSimpleOperator.class);
+                this.map(operator, result);
+                return;
+            }
         } else if (source.node().is(DBSPDeindexOperator.class) && inputFanout == 1) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")

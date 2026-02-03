@@ -1,13 +1,17 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.HashString;
+import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
+import org.junit.Assert;
 import org.junit.Test;
+
+import java.io.PrintStream;
 
 public class Regression2Tests extends SqlIoTest {
     @Test
@@ -105,5 +109,97 @@ public class Regression2Tests extends SqlIoTest {
                 Utilities.enforce(this.found);
             }
         });
+    }
+
+    @Test
+    public void unusedFieldTest() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;  // show warnings
+        String sql = """
+                CREATE TABLE T (
+                    item string,
+                    user_id bigint,
+                    id bigint not null PRIMARY KEY,
+                    item_id bigint,
+                    company_id bigint,
+                    updated_at timestamp,
+                    type string,
+                    status int
+                );
+                
+                CREATE TABLE S (
+                    origin_id bigint,
+                    item string,
+                    id bigint not null PRIMARY KEY,
+                    item_id bigint,
+                    company_id bigint,
+                    project_id bigint,
+                    updated_at timestamp
+                );
+                
+                CREATE VIEW V (
+                  company_id,
+                  item_id,
+                  item,
+                  latest_status,
+                  updated_at,
+                  user_id,
+                  row_num)
+                AS with ED as (
+                        SELECT
+                            id,
+                            company_id,
+                            item_id,
+                            item,
+                            origin_id,
+                            updated_at
+                            FROM S
+                            WHERE item in ('A','B','C','D','E','F')
+                                AND origin_id IS NOT NULL
+                    )
+                select
+                    coalesce(T.company_id, ED.company_id) as company_id,
+                    coalesce(T.item_id, ED.item_id) as item_id,
+                    coalesce(T.item, ED.item)    as item,
+                    case when ED.item_id is not null then '0' else
+                        case
+                            when T.status = 0 then 'a'
+                            when T.status = 1 then 'b'
+                            when T.status = 2 then 'c'
+                            when T.status = 3 then 'd'
+                            when T.status = 4 then 'e'
+                            when T.status = 5 then 'f'
+                        end
+                    end,
+                    coalesce(T.updated_at, ED.updated_at) as updated_at,
+                    T.user_id,
+                    row_number() over(
+                        partition by
+                            coalesce(T.company_id, ED.company_id),
+                            coalesce(T.item_id, ED.item_id),
+                            coalesce(T.item, ED.item)
+                        ORDER BY
+                            coalesce(T.updated_at, ED.updated_at) desc,
+                            coalesce(T.id, ED.id) desc
+                    ) as row_num
+                from T
+                full outer join ED
+                    on T.item_id = ED.item_id
+                    and T.item = ED.item
+                    and T.company_id = ED.company_id
+                where (
+                    T.item in ('A','B','C','D','E','F')
+                    OR ED.item in ('A','B','C','D','E','F')
+                )
+                qualify row_num = 1;
+                """;
+        compiler.submitStatementsForCompilation(sql);
+        PrintStream save = System.err;
+        System.setErr(NullPrintStream.INSTANCE);
+        var ccs = this.getCCS(compiler);
+        System.setErr(save);
+        String messages = ccs.compiler.messages.toString();
+        Assert.assertTrue(messages.contains("of table 's' is unused"));
+        Assert.assertTrue(messages.contains("of table 't' is unused"));
     }
 }

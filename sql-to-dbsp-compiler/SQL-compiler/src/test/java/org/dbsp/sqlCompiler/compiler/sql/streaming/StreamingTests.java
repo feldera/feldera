@@ -35,8 +35,11 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.util.Linq;
+import org.dbsp.util.NullPrintStream;
 import org.junit.Assert;
 import org.junit.Test;
+
+import java.io.PrintStream;
 
 /** Tests that exercise streaming features. */
 public class StreamingTests extends StreamingTestBase {
@@ -875,7 +878,10 @@ public class StreamingTests extends StreamingTestBase {
         compiler.options.ioOptions.quiet = false;  // show warnings
         compiler.submitStatementForCompilation(OtherTests.ddl);
         compiler.submitStatementsForCompilation(query);
+        PrintStream save = System.err;
+        System.setErr(NullPrintStream.INSTANCE);
         var ccs = this.getCCS(compiler);
+        System.setErr(save);
         CircuitVisitor visitor = new CircuitVisitor(compiler) {
             boolean found = false;
 
