@@ -352,6 +352,7 @@ select
       [ WHERE booleanExpression ]
       [ GROUP BY [ ALL | DISTINCT ] { groupItem [, groupItem ]* } ]
       [ HAVING booleanExpression ]
+      [ QUALIFY booleanExpression ]
 ```
 
 <a id="lateral"></a>
@@ -585,6 +586,9 @@ on aggregation](aggregates.md#window-aggregate-functions).
 Currently we require window ranges to have constant values.  This
 precludes ranges such as `INTERVAL 1 YEAR`, which have variable sizes.
 The window bounds must be non-negative constant values.
+
+The `QUALIFY` clause is applicable only to window aggregates, and it
+filters the result produced by the window aggregate.
 
 ## Table functions
 
