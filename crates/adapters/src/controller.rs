@@ -6699,14 +6699,48 @@ impl CheckpointThread {
         loop {
             let completed = self.status.num_total_completed_records();
             if completed >= threshold {
+                if long_wait.elapsed() > Duration::from_secs(10) {
+                    info!(
+                        "Checkpoint unblocked after {} seconds",
+                        long_wait.elapsed().as_secs()
+                    );
+                }
                 break;
             }
+            let processed = self.status.num_total_processed_records();
             sleep(Duration::from_millis(100));
             long_wait.check(|elapsed| {
-                info!(
-                    "Cannot complete checkpoint until all {threshold} records computed before the checkpoint started have been transmitted to their output connectors. After {} seconds, only {completed} records have been transmitted. Continuing to wait for completion...",
-                    elapsed.as_secs()
-                )
+                if processed < threshold {
+                    // The circuit is still computing on the inputs.
+                    info!(
+                        "Cannot complete checkpoint until all {threshold} records ingested before the checkpoint started have been processed and the derived outputs have been transmitted to output connectors. After {} seconds, only {processed} records have been processed. Continuing to wait for completion...",
+                        elapsed.as_secs()
+                    );
+                } else {
+                    // Computation is complete; we're waiting for the outputs to be transmitted.
+                    let pending_output_descr = self.status.pending_output_records().iter().filter_map(|(endpoint_name, (queued_records, queued_batches, buffered_records))| {
+                        if *queued_records > 0 || *buffered_records > 0 {
+                            let queued_descr = if *queued_records > 0 {
+                                format!("{queued_records} queued records in {queued_batches} batches")
+                            } else {
+                                String::new()
+                            };
+                            let buffered_descr = if *buffered_records > 0 {
+                                format!("{buffered_records} buffered records")
+                            } else {
+                                String::new()
+                            };
+                            Some(format!("{endpoint_name}: {}", [queued_descr, buffered_descr].join(" and ")))
+                        } else {
+                            None
+                        }
+                    }).collect::<Vec<_>>().join("; ");
+
+                    info!(
+                        "Cannot complete checkpoint until all {threshold} records ingested before the checkpoint started have been processed and the derived outputs have been transmitted to output connectors. After {} seconds, all ingested records have been processed, but not all outputs have been transmitted. The following outputs are still being processed by output connectors: {pending_output_descr}. Continuing to wait for completion...",
+                        elapsed.as_secs()
+                    );
+                }
             });
         }
 

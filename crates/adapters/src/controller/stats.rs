@@ -703,6 +703,34 @@ impl ControllerStatus {
             .load(Ordering::Acquire)
     }
 
+    /// Get information about outstanding output records at each output endpoint.
+    ///
+    /// Returns a map of output endpoint names to the number of queued records, queued batches, and buffered records.
+    pub fn pending_output_records(&self) -> BTreeMap<String, (u64, u64, u64)> {
+        let mut pending_output_records = BTreeMap::new();
+        for endpoint_stats in self.output_status().values() {
+            pending_output_records.insert(
+                endpoint_stats.endpoint_name.clone(),
+                (
+                    endpoint_stats
+                        .metrics
+                        .queued_records
+                        .load(Ordering::Acquire),
+                    endpoint_stats
+                        .metrics
+                        .queued_batches
+                        .load(Ordering::Acquire),
+                    endpoint_stats
+                        .metrics
+                        .buffered_records
+                        .load(Ordering::Acquire),
+                ),
+            );
+        }
+
+        pending_output_records
+    }
+
     /// Update `global_metrics.total_completed_records`.
     ///
     /// Must be invoked any time this metric can change, i.e., after every output

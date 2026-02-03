@@ -708,6 +708,10 @@ impl LongOperationWarning {
     pub fn next_warning(&self) -> Instant {
         self.start + self.warn_threshold
     }
+
+    pub fn elapsed(&self) -> Duration {
+        self.start.elapsed()
+    }
 }
 
 #[cfg(test)]
