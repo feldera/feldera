@@ -1169,7 +1169,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM transactions
                 WHERE ts BETWEEN now() - INTERVAL 1 DAY AND now() + INTERVAL 1 DAY""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new Inspector(ccs.compiler, 2, 1, 1);
+        CircuitVisitor visitor = new Inspector(ccs.compiler, 1, 1, 1);
         ccs.visit(visitor);
         ccs.step("""
                  INSERT INTO transactions VALUES (1, '2024-01-01 00:00:10');
@@ -1224,7 +1224,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE id + ts/2 - SIN(id) >= year(now()) + 10 AND
                       id + ts/2 - SIN(id) <= EXTRACT(CENTURY FROM now()) * 20;""";
         CompilerCircuit cc = this.getCC(sql);
-        CircuitVisitor visitor = new Inspector(cc.compiler, 2, 1, 1);
+        CircuitVisitor visitor = new Inspector(cc.compiler, 1, 1, 1);
         cc.visit(visitor);
     }
 
@@ -1245,7 +1245,7 @@ public class StreamingTests extends StreamingTestBase {
                       id >= EXTRACT(CENTURY FROM now()) * 20 AND
                       id = 4;""";
         CompilerCircuit cc = this.getCC(sql);
-        CircuitVisitor visitor = new Inspector(cc.compiler, 3, 1, 1);
+        CircuitVisitor visitor = new Inspector(cc.compiler, 2, 1, 1);
         cc.visit(visitor);
     }
 

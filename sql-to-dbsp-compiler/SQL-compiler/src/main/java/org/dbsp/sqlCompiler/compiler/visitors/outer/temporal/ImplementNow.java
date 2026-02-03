@@ -20,10 +20,12 @@ public class ImplementNow extends Passes {
         RewriteNow rewriteNow = new RewriteNow(compiler);
         CircuitContainsNow cn = new CircuitContainsNow(compiler);
         CircuitTransform breakFilters = new Repeat(compiler, new BreakFilters(compiler));
+        CircuitTransform mergeFilters = new MergeFilters(compiler);
         // Check if there is any operator containing NOW
         this.passes.add(cn);
         // If there is, break filters that contain NOW into simpler filters
         this.passes.add(new Conditional(compiler, breakFilters, cn::found));
+        this.passes.add(new Conditional(compiler, mergeFilters, cn::found));
         // Rewrite MAP and FILTER operators
         this.passes.add(new Conditional(compiler, rewriteNow, cn::found));
         // Remove the NOW table
