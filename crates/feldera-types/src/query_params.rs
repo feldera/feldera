@@ -1,6 +1,6 @@
 //! Types for the query parameters of the pipeline endpoints.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::runtime_status::RuntimeDesiredStatus;
@@ -42,23 +42,25 @@ impl Default for ActivateParams {
     }
 }
 
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+#[serde(default)]
 pub struct SamplyProfileParams {
-    #[serde(default = "default_samply_profile_duration")]
     pub duration_secs: u64,
 }
 
-/// Default for the `duration_secs` query parameter when POST a pipeline samply profile.
-fn default_samply_profile_duration() -> u64 {
-    30
+/// Default query parameters for POST of a pipeline samply profile.
+impl Default for SamplyProfileParams {
+    fn default() -> Self {
+        Self { duration_secs: 30 }
+    }
 }
 
 /// Query parameters to retrieve samply profile.
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+#[derive(Debug, Default, Deserialize, Serialize, IntoParams, ToSchema)]
 #[into_params(parameter_in = Query)]
+#[serde(default)]
 pub struct SamplyProfileGetParams {
     /// If true, returns 204 redirect with Retry-After header if profile collection is in progress.
     /// If false or not provided, returns the last collected profile.
-    #[serde(default)]
     pub latest: bool,
 }
