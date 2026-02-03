@@ -1381,7 +1381,7 @@ impl TokenListInner {
     /// * Set `total_circuit_input_records` as the global offset for all tokens that are <= connector_input_records,
     ///   and that don't have a global offset yet.
     /// * GC all but one tokens whose global offset is `<= total_completed_records`.
-    /// * Remove old tokens that exceed queue capacity.
+    /// * Remove tokens that exceed queue capacity.
     ///
     /// # Arguments
     ///
@@ -1415,17 +1415,13 @@ impl TokenListInner {
                 false
             }
         });
-
         if first_completed > 0 {
-            for _ in 0..first_completed - 1 {
-                self.token_list.pop_front();
-            }
+            self.token_list.drain(0..first_completed - 1);
         }
 
-        // Remove old tokens.
-        while self.token_list.len() > MAX_TOKENLIST_LEN {
-            self.token_list.pop_back();
-        }
+        // If we've overflowed, delete the newest ones so that the old ones have
+        // a chance to complete.
+        self.token_list.truncate(MAX_TOKENLIST_LEN);
     }
 
     /// Create a token to track records ingested by the connector up to now.
@@ -1436,11 +1432,10 @@ impl TokenListInner {
     ///   (not all of these record have been pushed to the circuit).
     fn add_token(&mut self, token_input_records: u64) {
         // Don't track more than one token for the same offset.
-        if !self.token_list.is_empty() {
+        if let Some((token, _label)) = self.token_list.back() {
             // The number of ingested records grows monotonically.
-            debug_assert!(self.token_list[self.token_list.len() - 1].0 <= token_input_records);
-
-            if self.token_list[self.token_list.len() - 1].0 >= token_input_records {
+            debug_assert!(*token <= token_input_records);
+            if *token >= token_input_records {
                 return;
             }
         }
