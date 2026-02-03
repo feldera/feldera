@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.HashString;
@@ -201,5 +202,28 @@ public class Regression2Tests extends SqlIoTest {
         String messages = ccs.compiler.messages.toString();
         Assert.assertTrue(messages.contains("of table 's' is unused"));
         Assert.assertTrue(messages.contains("of table 't' is unused"));
+    }
+
+    @Test
+    public void testTwoWindows() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(id INT, x TIMESTAMP);
+                CREATE VIEW V AS
+                SELECT * FROM T WHERE x < NOW() - INTERVAL 10 SECONDS
+                                AND x > NOW() - INTERVAL 20 SECONDS;""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int windows = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator window) {
+                this.windows++;
+            }
+
+            @Override
+            public void endVisit() {
+                // Check that only one window was used to implement both conditions.
+                Assert.assertEquals(1, this.windows);
+            }
+        });
     }
 }
