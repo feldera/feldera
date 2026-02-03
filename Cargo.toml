@@ -65,8 +65,12 @@ async-stream = "0.3.5"
 async-trait = "0.1"
 atomic = "0.6.0"
 awc = "3.5.1"
-aws-config = "1.1.7"
-aws-sdk-s3 = "1.86.0"
+aws-config = "1.8.13"
+aws-sdk-s3 = { version = "1.122.0", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+  "sigv4a",
+] }
 aws-types = "1.1.7"
 backoff = "0.4.0"
 base64 = "0.22.1"
@@ -99,8 +103,8 @@ dbsp = { path = "crates/dbsp", version = "0.239.0" }
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.14.1"
 #deltalake = "0.26.2"
-deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "77ef46e" }
-deltalake-catalog-unity = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "77ef46e" }
+deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "06f42db5344f4ad8560af341352572488a4e6e06" }
+deltalake-catalog-unity = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "06f42db5344f4ad8560af341352572488a4e6e06" }
 directories = "6.0"
 dirs = "5.0"
 dyn-clone = "1.0.17"

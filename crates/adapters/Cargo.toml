@@ -65,7 +65,6 @@ awc = { workspace = true, features = [
     "cookies",
     "rustls-0_23-webpki-roots",
 ] }
-aws-config = { workspace = true }
 async-nats = { workspace = true }
 async-stream = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
@@ -87,7 +86,8 @@ rdkafka = { workspace = true, features = [
     "zstd",
     "libz",
 ], optional = true }
-aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
+aws-config = { workspace = true }
+aws-sdk-s3 = { workspace = true }
 aws-types = { workspace = true }
 actix = { workspace = true }
 actix-web = { workspace = true, features = [
@@ -180,7 +180,7 @@ cpu-time = "1.0.0"
 memory-stats = { version = "1.2.0", features = ["always_use_statm"] }
 feldera-ir = { workspace = true }
 base64 = { workspace = true }
-aws-msk-iam-sasl-signer = "1.0.0"
+aws-msk-iam-sasl-signer = "1.0.1"
 aws-credential-types = "1.2.3"
 feldera-sqllib = { workspace = true }
 inventory = { workspace = true }
