@@ -566,7 +566,7 @@ macro_rules! star_join_body {
     }};
 }
 
-/// Generate a `inner_star_joinN` function.
+/// Generate a `inner_star_joinN`/`inner_star_joinN_nested` function.
 ///
 /// Call this macro for every number N in order to generate an N-way inner star join
 /// operator for both RootCircuit and NestedCircuit.
@@ -577,91 +577,96 @@ macro_rules! star_join_body {
 /// Example generated function signature:
 ///
 /// ```text
-/// impl<K, V1> Stream<RootCircuit, OrdIndexedZSet<K, V1>>
-/// where
-///     K: DBData,
-///     V1: DBData,
-/// {
-///     pub fn inner_star_join4<V2, V3, V4, OV>(
-///         &self,
+///     pub fn inner_star_join4<K, V1, V2, V3, V4, OV>(
+///         stream1: &Stream<crate::RootCircuit, OrdIndexedZSet<K, V1>>,
 ///         stream2: &Stream<crate::RootCircuit, OrdIndexedZSet<K, V2>>,
 ///         stream3: &Stream<crate::RootCircuit, OrdIndexedZSet<K, V3>>,
 ///         stream4: &Stream<crate::RootCircuit, OrdIndexedZSet<K, V4>>,
 ///         join_func: impl Fn(&K, &V1, &V2, &V3, &V4) -> OV + Clone + 'static,
 ///     ) -> Stream<RootCircuit, OrdZSet<OV>>
 ///     where
+///         K: DBData,
+///         V1: DBData,
 ///         V2: DBData,
 ///         V3: DBData,
 ///         V4: DBData,
 ///         OV: DBData;
-/// }
+///
+///     pub fn inner_star_join4_nested<K, V1, V2, V3, V4, OV>(
+///         stream1: &Stream<crate::NestedCircuit, OrdIndexedZSet<K, V1>>,
+///         stream2: &Stream<crate::NestedCircuit, OrdIndexedZSet<K, V2>>,
+///         stream3: &Stream<crate::NestedCircuit, OrdIndexedZSet<K, V3>>,
+///         stream4: &Stream<crate::NestedCircuit, OrdIndexedZSet<K, V4>>,
+///     ) -> Stream<NestedCircuit, OrdZSet<OV>>
+///         join_func: impl Fn(&K, &V1, &V2, &V3, &V4) -> OV + Clone + 'static,
+///     where
+///         K: DBData,
+///         V1: DBData,
+///         V2: DBData,
+///         V3: DBData,
+///         V4: DBData,
+///         OV: DBData;
 /// ```
 #[macro_export]
 macro_rules! define_inner_star_join {
     ($n:literal) => {
         seq_macro::seq!(I in 2..=$n {
             paste::paste! {
-                impl<K, V1> $crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V1>>
+                #[allow(unused)]
+                pub fn [<inner_star_join $n>]<K, V1, #(V~I,)* OV>(
+                    stream1: &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V1>>,
+                    #(
+                        stream~I: &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V~I>>,
+                    )*
+                    join_func: impl Fn(&K, &V1, #(&V~I,)*) -> OV + Clone + 'static,
+                ) -> $crate::Stream<$crate::RootCircuit, $crate::OrdZSet<OV>>
                 where
                     K: $crate::DBData,
                     V1: $crate::DBData,
+                    #(V~I: $crate::DBData,)*
+                    OV: $crate::DBData,
                 {
-                    pub fn [<inner_star_join $n>]<#(V~I,)* OV>(
-                        &self,
-                        #(
-                            stream~I: &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V~I>>,
-                        )*
-                        join_func: impl Fn(&K, &V1, #(&V~I,)*) -> OV + Clone + 'static,
-                    ) -> $crate::Stream<$crate::RootCircuit, $crate::OrdZSet<OV>>
-                    where
-                        #(V~I: $crate::DBData,)*
-                        OV: $crate::DBData,
-                    {
-                        $crate::inner_star_join_root_body!(
-                            self,
-                            [#(stream~I,)*],
-                            join_func,
-                            [V1, #(V~I,)*],
-                            [#((I - 2),)*],
-                            K,
-                            OV
-                        )
-                    }
+                    $crate::inner_star_join_root_body!(
+                        stream1,
+                        [#(stream~I,)*],
+                        join_func,
+                        [V1, #(V~I,)*],
+                        [#((I - 2),)*],
+                        K,
+                        OV
+                    )
                 }
 
-                impl<K, V1> $crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<K, V1>>
+                #[allow(unused)]
+                pub fn [<inner_star_join $n _nested>]<K, V1, #(V~I,)* OV>(
+                    stream1: &$crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<K, V1>>,
+                    #(
+                        stream~I: &$crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<K, V~I>>,
+                    )*
+                    join_func: impl Fn(&K, &V1, #(&V~I,)*) -> OV + Clone + 'static,
+                ) -> $crate::Stream<$crate::NestedCircuit, $crate::OrdZSet<OV>>
                 where
                     K: $crate::DBData,
                     V1: $crate::DBData,
+                    #(V~I: $crate::DBData,)*
+                    OV: $crate::DBData,
                 {
-                    pub fn [<inner_star_join $n>]<#(V~I,)* OV>(
-                        &self,
-                        #(
-                            stream~I: &$crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<K, V~I>>,
-                        )*
-                        join_func: impl Fn(&K, &V1, #(&V~I,)*) -> OV + Clone + 'static,
-                    ) -> $crate::Stream<$crate::NestedCircuit, $crate::OrdZSet<OV>>
-                    where
-                        #(V~I: $crate::DBData,)*
-                        OV: $crate::DBData,
-                    {
-                        $crate::inner_star_join_body!(
-                            self,
-                            [#(stream~I,)*],
-                            join_func,
-                            [V1, #(V~I,)*],
-                            [#((I - 2),)*],
-                            K,
-                            OV
-                        )
-                    }
+                    $crate::inner_star_join_body!(
+                        stream1,
+                        [#(stream~I,)*],
+                        join_func,
+                        [V1, #(V~I,)*],
+                        [#((I - 2),)*],
+                        K,
+                        OV
+                    )
                 }
             }
         });
     };
 }
 
-/// Generate a `inner_star_join_indexN` function.
+/// Generate a `inner_star_join_indexN`/`inner_star_join_indexN_nested` function.
 ///
 /// Call this macro for every number N in order to generate an N-way inner star join
 /// index operator for both RootCircuit and NestedCircuit.
@@ -672,99 +677,107 @@ macro_rules! define_inner_star_join {
 /// Example generated function signature:
 ///
 /// ```text
-/// impl<K, V1> Stream<RootCircuit, OrdIndexedZSet<K, V1>>
-/// where
-///     K: DBData,
-///     V1: DBData,
-/// {
-///     pub fn inner_star_join_index4<V2, V3, V4, OK, OV, It>(
-///         &self,
+///     pub fn inner_star_join_index4<K, V1, V2, V3, V4, OK, OV, It>(
+///         stream1: &Stream<RootCircuit, OrdIndexedZSet<K, V1>>,
 ///         stream2: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
 ///         stream3: &Stream<RootCircuit, OrdIndexedZSet<K, V3>>,
 ///         stream4: &Stream<RootCircuit, OrdIndexedZSet<K, V4>>,
 ///         join_func: impl Fn(&K, &V1, &V2, &V3, &V4) -> It + Clone + 'static,
 ///     ) -> Stream<RootCircuit, OrdIndexedZSet<OK, OV>>
 ///     where
+///         K: DBData,
+///         V1: DBData,
 ///         V2: DBData,
 ///         V3: DBData,
 ///         V4: DBData,
 ///         OK: DBData,
 ///         OV: DBData,
 ///         It: IntoIterator<Item = (OK, OV)> + 'static;
-/// }
+///
+///     pub fn inner_star_join_index4_nested<K, V1, V2, V3, V4, OK, OV, It>(
+///         stream1: &Stream<NestedCircuit, OrdIndexedZSet<K, V1>>,
+///         stream2: &Stream<NestedCircuit, OrdIndexedZSet<K, V2>>,
+///         stream3: &Stream<NestedCircuit, OrdIndexedZSet<K, V3>>,
+///         stream4: &Stream<NestedCircuit, OrdIndexedZSet<K, V4>>,
+///         join_func: impl Fn(&K, &V1, &V2, &V3, &V4) -> It + Clone + 'static,
+///     ) -> Stream<NestedCircuit, OrdIndexedZSet<OK, OV>>
+///     where
+///         K: DBData,
+///         V1: DBData,
+///         V2: DBData,
+///         V3: DBData,
+///         V4: DBData,
+///         OK: DBData,
+///         OV: DBData,
+///         It: IntoIterator<Item = (OK, OV)> + 'static;
 /// ```
 #[macro_export]
 macro_rules! define_inner_star_join_index {
     ($n:literal) => {
         seq_macro::seq!(I in 2..=$n {
             paste::paste! {
-                impl<K, V1> $crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V1>>
+                #[allow(unused)]
+                pub fn [<inner_star_join_index $n>]<K, V1, #(V~I,)* OK, OV, It>(
+                    stream1: &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V1>>,
+                    #(
+                        stream~I: &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V~I>>,
+                    )*
+                    join_func: impl Fn(&K, &V1, #(&V~I,)*) -> It + Clone + 'static,
+                ) -> $crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<OK, OV>>
                 where
                     K: $crate::DBData,
                     V1: $crate::DBData,
+                    #(V~I: $crate::DBData,)*
+                    OK: $crate::DBData,
+                    OV: $crate::DBData,
+                    It: IntoIterator<Item = (OK, OV)> + 'static,
                 {
-                    pub fn [<inner_star_join_index $n>]<#(V~I,)* OK, OV, It>(
-                        &self,
-                        #(
-                            stream~I: &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V~I>>,
-                        )*
-                        join_func: impl Fn(&K, &V1, #(&V~I,)*) -> It + Clone + 'static,
-                    ) -> $crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<OK, OV>>
-                    where
-                        #(V~I: $crate::DBData,)*
-                        OK: $crate::DBData,
-                        OV: $crate::DBData,
-                        It: IntoIterator<Item = (OK, OV)> + 'static,
-                    {
-                        $crate::inner_star_join_index_root_body!(
-                            self,
-                            [#(stream~I,)*],
-                            join_func,
-                            [V1, #(V~I,)*],
-                            [#((I - 2),)*],
-                            K,
-                            OK,
-                            OV
-                        )
-                    }
+                    $crate::inner_star_join_index_root_body!(
+                        stream1,
+                        [#(stream~I,)*],
+                        join_func,
+                        [V1, #(V~I,)*],
+                        [#((I - 2),)*],
+                        K,
+                        OK,
+                        OV
+                    )
                 }
 
-                impl<K, V1> $crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<K, V1>>
+                #[allow(unused)]
+                pub fn [<inner_star_join_index $n _nested>]<K, V1, #(V~I,)* OK, OV, It>(
+                    stream1: &$crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<K, V1>>,
+                    #(
+                        stream~I: &$crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<K, V~I>>,
+                    )*
+                    join_func: impl Fn(&K, &V1, #(&V~I,)*) -> It + Clone + 'static,
+                ) -> $crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<OK, OV>>
                 where
                     K: $crate::DBData,
                     V1: $crate::DBData,
+                    #(V~I: $crate::DBData,)*
+                    OK: $crate::DBData,
+                    OV: $crate::DBData,
+                    It: IntoIterator<Item = (OK, OV)> + 'static,
                 {
-                    pub fn [<inner_star_join_index $n>]<#(V~I,)* OK, OV, It>(
-                        &self,
-                        #(
-                            stream~I: &$crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<K, V~I>>,
-                        )*
-                        join_func: impl Fn(&K, &V1, #(&V~I,)*) -> It + Clone + 'static,
-                    ) -> $crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<OK, OV>>
-                    where
-                        #(V~I: $crate::DBData,)*
-                        OK: $crate::DBData,
-                        OV: $crate::DBData,
-                        It: IntoIterator<Item = (OK, OV)> + 'static,
-                    {
-                        $crate::inner_star_join_index_body!(
-                            self,
-                            [#(stream~I,)*],
-                            join_func,
-                            [V1, #(V~I,)*],
-                            [#((I - 2),)*],
-                            K,
-                            OK,
-                            OV
-                        )
-                    }
+                    $crate::inner_star_join_index_body!(
+                        stream1,
+                        [#(stream~I,)*],
+                        join_func,
+                        [V1, #(V~I,)*],
+                        [#((I - 2),)*],
+                        K,
+                        OK,
+                        OV
+                    )
                 }
             }
+
         });
     };
 }
 
-/// Generate a `inner_star_join_flatmapN` function.
+/// Generate a `inner_star_join_flatmapN`/`inner_star_join_flatmapN_nested` function.
 ///
 /// Call this macro for every number N in order to generate an N-way inner star join
 /// flatmap operator for both RootCircuit and NestedCircuit.
@@ -775,87 +788,93 @@ macro_rules! define_inner_star_join_index {
 /// Example generated function signature:
 ///
 /// ```text
-/// impl<K, V1> Stream<RootCircuit, OrdIndexedZSet<K, V1>>
-/// where
-///     K: DBData,
-///     V1: DBData,
-/// {
-///     pub fn inner_star_join_flatmap4<V2, V3, V4, OV, It>(
-///         &self,
+///     pub fn inner_star_join_flatmap4<K, V1, V2, V3, V4, OV, It>(
+///         stream1: &Stream<RootCircuit, OrdIndexedZSet<K, V1>>,
 ///         stream2: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
 ///         stream3: &Stream<RootCircuit, OrdIndexedZSet<K, V3>>,
 ///         stream4: &Stream<RootCircuit, OrdIndexedZSet<K, V4>>,
 ///         join_func: impl Fn(&K, &V1, &V2, &V3, &V4) -> It + Clone + 'static,
 ///     ) -> Stream<RootCircuit, OrdZSet<OV>>
 ///     where
+///         K: DBData,
+///         V1: DBData,
 ///         V2: DBData,
 ///         V3: DBData,
 ///         V4: DBData,
 ///         OV: DBData,
 ///         It: IntoIterator<Item = OV> + 'static;
-/// }
+///
+///     pub fn inner_star_join_flatmap4_nested<K, V1, V2, V3, V4, OV, It>(
+///         stream1: &Stream<NestedCircuit, OrdIndexedZSet<K, V1>>,
+///         stream2: &Stream<NestedCircuit, OrdIndexedZSet<K, V2>>,
+///         stream3: &Stream<NestedCircuit, OrdIndexedZSet<K, V3>>,
+///         stream4: &Stream<NestedCircuit, OrdIndexedZSet<K, V4>>,
+///         join_func: impl Fn(&K, &V1, &V2, &V3, &V4) -> It + Clone + 'static,
+///     ) -> Stream<NestedCircuit, OrdZSet<OV>>
+///     where
+///         K: DBData,
+///         V1: DBData,
+///         V2: DBData,
+///         V3: DBData,
+///         V4: DBData,
+///         OV: DBData,
+///         It: IntoIterator<Item = OV> + 'static;
 /// ```
 #[macro_export]
 macro_rules! define_inner_star_join_flatmap {
     ($n:literal) => {
         seq_macro::seq!(I in 2..=$n {
             paste::paste! {
-                impl<K, V1> $crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V1>>
+                #[allow(unused)]
+                pub fn [<inner_star_join_flatmap $n>]<K, V1, #(V~I,)* OV, It>(
+                    stream1: &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V1>>,
+                    #(
+                        stream~I: &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V~I>>,
+                    )*
+                    join_func: impl Fn(&K, &V1, #(&V~I,)*) -> It + Clone + 'static,
+                ) -> $crate::Stream<$crate::RootCircuit, $crate::OrdZSet<OV>>
                 where
                     K: $crate::DBData,
                     V1: $crate::DBData,
+                    #(V~I: $crate::DBData,)*
+                    OV: $crate::DBData,
+                    It: IntoIterator<Item = OV> + 'static,
                 {
-                    pub fn [<inner_star_join_flatmap $n>]<#(V~I,)* OV, It>(
-                        &self,
-                        #(
-                            stream~I: &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V~I>>,
-                        )*
-                        join_func: impl Fn(&K, &V1, #(&V~I,)*) -> It + Clone + 'static,
-                    ) -> $crate::Stream<$crate::RootCircuit, $crate::OrdZSet<OV>>
-                    where
-                        #(V~I: $crate::DBData,)*
-                        OV: $crate::DBData,
-                        It: IntoIterator<Item = OV> + 'static,
-                    {
-                        $crate::inner_star_join_flatmap_root_body!(
-                            self,
-                            [#(stream~I,)*],
-                            join_func,
-                            [V1, #(V~I,)*],
-                            [#((I - 2),)*],
-                            K,
-                            OV
-                        )
-                    }
+                    $crate::inner_star_join_flatmap_root_body!(
+                        stream1,
+                        [#(stream~I,)*],
+                        join_func,
+                        [V1, #(V~I,)*],
+                        [#((I - 2),)*],
+                        K,
+                        OV
+                    )
                 }
 
-                impl<K, V1> $crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<K, V1>>
+                #[allow(unused)]
+                pub fn [<inner_star_join_flatmap $n _nested>]<K, V1, #(V~I,)* OV, It>(
+                    stream1: &$crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<K, V1>>,
+                    #(
+                        stream~I: &$crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<K, V~I>>,
+                    )*
+                    join_func: impl Fn(&K, &V1, #(&V~I,)*) -> It + Clone + 'static,
+                ) -> $crate::Stream<$crate::NestedCircuit, $crate::OrdZSet<OV>>
                 where
                     K: $crate::DBData,
                     V1: $crate::DBData,
+                    #(V~I: $crate::DBData,)*
+                    OV: $crate::DBData,
+                    It: IntoIterator<Item = OV> + 'static,
                 {
-                    pub fn [<inner_star_join_flatmap $n>]<#(V~I,)* OV, It>(
-                        &self,
-                        #(
-                            stream~I: &$crate::Stream<$crate::NestedCircuit, $crate::OrdIndexedZSet<K, V~I>>,
-                        )*
-                        join_func: impl Fn(&K, &V1, #(&V~I,)*) -> It + Clone + 'static,
-                    ) -> $crate::Stream<$crate::NestedCircuit, $crate::OrdZSet<OV>>
-                    where
-                        #(V~I: $crate::DBData,)*
-                        OV: $crate::DBData,
-                        It: IntoIterator<Item = OV> + 'static,
-                    {
-                        $crate::inner_star_join_flatmap_body!(
-                            self,
-                            [#(stream~I,)*],
-                            join_func,
-                            [V1, #(V~I,)*],
-                            [#((I - 2),)*],
-                            K,
-                            OV
-                        )
-                    }
+                    $crate::inner_star_join_flatmap_body!(
+                        stream1,
+                        [#(stream~I,)*],
+                        join_func,
+                        [V1, #(V~I,)*],
+                        [#((I - 2),)*],
+                        K,
+                        OV
+                    )
                 }
             }
         });
@@ -876,61 +895,54 @@ macro_rules! define_inner_star_join_flatmap {
 /// Example generated function signature:
 ///
 /// ```text
-/// impl<K, V1> Stream<RootCircuit, OrdIndexedZSet<K, V1>>
-/// where
-///     K: DBData,
-///     V1: DBData,
-/// {
-///     pub fn star_join4<V2, V3, V4, OV>(
-///         &self,
+///     pub fn star_join4<K, V1, V2, V3, V4, OV>(
+///         stream1: &Stream<RootCircuit, OrdIndexedZSet<K, V1>>,
 ///         (stream2, saturate2): (&Stream<RootCircuit, OrdIndexedZSet<K, V2>>, bool),
 ///         (stream3, saturate3): (&Stream<RootCircuit, OrdIndexedZSet<K, V3>>, bool),
 ///         (stream4, saturate4): (&Stream<RootCircuit, OrdIndexedZSet<K, V4>>, bool),
 ///         join_func: impl Fn(&K, &V1, &V2, &V3, &V4) -> OV + Clone + 'static,
 ///     ) -> Stream<RootCircuit, OrdZSet<OV>>
 ///     where
+///         K: DBData,
+///         V1: DBData,
 ///         V2: DBData,
 ///         V3: DBData,
 ///         V4: DBData,
 ///         OV: DBData;
-/// }
 /// ```
 #[macro_export]
 macro_rules! define_star_join {
     ($n:literal) => {
         seq_macro::seq!(I in 2..=$n {
             paste::paste! {
-                impl<K, V1> $crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V1>>
+                pub fn [<star_join $n>]<K, V1, #(V~I,)* OV>(
+                    stream1: &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V1>>,
+                    #(
+                        (stream~I, saturate~I): (
+                            &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V~I>>,
+                            bool
+                        ),
+                    )*
+                    join_func: impl Fn(&K, &V1, #(&V~I,)*) -> OV + Clone + 'static,
+                ) -> $crate::Stream<$crate::RootCircuit, $crate::OrdZSet<OV>>
                 where
                     K: $crate::DBData,
                     V1: $crate::DBData,
+                    #(V~I: $crate::DBData,)*
+                    OV: $crate::DBData,
                 {
-                    pub fn [<star_join $n>]<#(V~I,)* OV>(
-                        &self,
-                        #(
-                            (stream~I, saturate~I): (
-                                &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V~I>>,
-                                bool
-                            ),
-                        )*
-                        join_func: impl Fn(&K, &V1, #(&V~I,)*) -> OV + Clone + 'static,
-                    ) -> $crate::Stream<$crate::RootCircuit, $crate::OrdZSet<OV>>
-                    where
-                        #(V~I: $crate::DBData,)*
-                        OV: $crate::DBData,
-                    {
-                        $crate::star_join_body!(
-                            self,
-                            [#((stream~I, saturate~I),)*],
-                            join_func,
-                            [V1, #(V~I,)*],
-                            [#((I - 2),)*],
-                            K,
-                            OV
-                        )
-                    }
+                    $crate::star_join_body!(
+                        stream1,
+                        [#((stream~I, saturate~I),)*],
+                        join_func,
+                        [V1, #(V~I,)*],
+                        [#((I - 2),)*],
+                        K,
+                        OV
+                    )
                 }
             }
+
         });
     };
 }
@@ -949,13 +961,8 @@ macro_rules! define_star_join {
 /// Example generated function signature:
 ///
 /// ```text
-/// impl<K, V1> Stream<RootCircuit, OrdIndexedZSet<K, V1>>
-/// where
-///     K: DBData,
-///     V1: DBData,
-/// {
-///     pub fn star_join_index4<V2, V3, V4, OK, OV, It>(
-///         &self,
+///     pub fn star_join_index4<K, V1, V2, V3, V4, OK, OV, It>(
+///         stream1: &Stream<RootCircuit, OrdIndexedZSet<K, V1>>,
 ///         (stream2, saturate2): (
 ///             &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
 ///             bool,
@@ -971,53 +978,51 @@ macro_rules! define_star_join {
 ///         join_func: impl Fn(&K, &V1, &V2, &V3, &V4) -> It + Clone + 'static,
 ///     ) -> Stream<RootCircuit, OrdIndexedZSet<OK, OV>>
 ///     where
+///         K: DBData,
+///         V1: DBData,
 ///         V2: DBData,
 ///         V3: DBData,
 ///         V4: DBData,
 ///         OK: DBData,
 ///         OV: DBData,
 ///         It: IntoIterator<Item = (OK, OV)> + 'static;
-/// }
 /// ```
 #[macro_export]
 macro_rules! define_star_join_index {
     ($n:literal) => {
         seq_macro::seq!(I in 2..=$n {
             paste::paste! {
-                impl<K, V1> $crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V1>>
+                pub fn [<star_join_index $n>]<K, V1, #(V~I,)* OK, OV, It>(
+                    stream1: &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V1>>,
+                    #(
+                        (stream~I, saturate~I): (
+                            &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V~I>>,
+                            bool
+                        ),
+                    )*
+                    join_func: impl Fn(&K, &V1, #(&V~I,)*) -> It + Clone + 'static,
+                ) -> $crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<OK, OV>>
                 where
                     K: $crate::DBData,
                     V1: $crate::DBData,
+                    #(V~I: $crate::DBData,)*
+                    OK: $crate::DBData,
+                    OV: $crate::DBData,
+                    It: IntoIterator<Item = (OK, OV)> + 'static,
                 {
-                    pub fn [<star_join_index $n>]<#(V~I,)* OK, OV, It>(
-                        &self,
-                        #(
-                            (stream~I, saturate~I): (
-                                &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V~I>>,
-                                bool
-                            ),
-                        )*
-                        join_func: impl Fn(&K, &V1, #(&V~I,)*) -> It + Clone + 'static,
-                    ) -> $crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<OK, OV>>
-                    where
-                        #(V~I: $crate::DBData,)*
-                        OK: $crate::DBData,
-                        OV: $crate::DBData,
-                        It: IntoIterator<Item = (OK, OV)> + 'static,
-                    {
-                        $crate::star_join_index_body!(
-                            self,
-                            [#((stream~I, saturate~I),)*],
-                            join_func,
-                            [V1, #(V~I,)*],
-                            [#((I - 2),)*],
-                            K,
-                            OK,
-                            OV
-                        )
-                    }
+                    $crate::star_join_index_body!(
+                        stream1,
+                        [#((stream~I, saturate~I),)*],
+                        join_func,
+                        [V1, #(V~I,)*],
+                        [#((I - 2),)*],
+                        K,
+                        OK,
+                        OV
+                    )
                 }
             }
+
         });
     };
 }
@@ -1036,13 +1041,8 @@ macro_rules! define_star_join_index {
 /// Example generated function signature:
 ///
 /// ```text
-/// impl<K, V1> Stream<RootCircuit, OrdIndexedZSet<K, V1>>
-/// where
-///     K: DBData,
-///     V1: DBData,
-/// {
-///     pub fn star_join_flatmap4<V2, V3, V4, OV, It>(
-///         &self,
+///     pub fn star_join_flatmap4<K, V1, V2, V3, V4, OV, It>(
+///         stream1: &Stream<RootCircuit, OrdIndexedZSet<K, V1>>,
 ///         (stream2, saturate2): (
 ///             &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
 ///             bool,
@@ -1056,43 +1056,39 @@ macro_rules! define_star_join_index {
 ///             bool,
 ///         ),
 ///         join_func: impl Fn(&K, &V1, &V2, &V3, &V4) -> It + Clone + 'static,
-///     ) -> Stream<RootCircuit, OrdZSet<OV>>
+///     ) -> Stream<RootCircuit, OrdZSet<OV>>;
 /// ```
 #[macro_export]
 macro_rules! define_star_join_flatmap {
     ($n:literal) => {
         seq_macro::seq!(I in 2..=$n {
             paste::paste! {
-                impl<K, V1> $crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V1>>
+                pub fn [<star_join_flatmap $n>]<K, V1, #(V~I,)* OV, It>(
+                    stream1: &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V1>>,
+                    #(
+                        (stream~I, saturate~I): (
+                            &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V~I>>,
+                            bool
+                        ),
+                    )*
+                    join_func: impl Fn(&K, &V1, #(&V~I,)*) -> It + Clone + 'static,
+                ) -> $crate::Stream<$crate::RootCircuit, $crate::OrdZSet<OV>>
                 where
                     K: $crate::DBData,
                     V1: $crate::DBData,
+                    #(V~I: $crate::DBData,)*
+                    OV: $crate::DBData,
+                    It: IntoIterator<Item = OV> + 'static,
                 {
-                    pub fn [<star_join_flatmap $n>]<#(V~I,)* OV, It>(
-                        &self,
-                        #(
-                            (stream~I, saturate~I): (
-                                &$crate::Stream<$crate::RootCircuit, $crate::OrdIndexedZSet<K, V~I>>,
-                                bool
-                            ),
-                        )*
-                        join_func: impl Fn(&K, &V1, #(&V~I,)*) -> It + Clone + 'static,
-                    ) -> $crate::Stream<$crate::RootCircuit, $crate::OrdZSet<OV>>
-                    where
-                        #(V~I: $crate::DBData,)*
-                        OV: $crate::DBData,
-                        It: IntoIterator<Item = OV> + 'static,
-                    {
-                        $crate::star_join_flatmap_body!(
-                            self,
-                            [#((stream~I, saturate~I),)*],
-                            join_func,
-                            [V1, #(V~I,)*],
-                            [#((I - 2),)*],
-                            K,
-                            OV
-                        )
-                    }
+                    $crate::star_join_flatmap_body!(
+                        stream1,
+                        [#((stream~I, saturate~I),)*],
+                        join_func,
+                        [V1, #(V~I,)*],
+                        [#((I - 2),)*],
+                        K,
+                        OV
+                    )
                 }
             }
         });
