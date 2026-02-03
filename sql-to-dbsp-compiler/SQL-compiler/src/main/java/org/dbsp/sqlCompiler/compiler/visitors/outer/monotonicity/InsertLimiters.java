@@ -571,7 +571,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             key.getType().to(DBSPTypeTupleBase.class));
                     // Projection which only keeps the monotone part of the values
                     projection = new PartiallyMonotoneTuple(Linq.list(keyPart, value), tuple.raw, tuple.mayBeNull);
-                    int limit = 0;
+                    final int limit;
                     DBSPIntegrateTraceRetainNValuesOperator.WhichN which;
                     if (aggregator.function != null &&
                             aggregator.getFunction().is(DBSPMinMax.class)) {
