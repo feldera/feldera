@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.dbsp.sqlCompiler.circuit.IInputMapOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
@@ -85,6 +84,12 @@ public final class DBSPSourceMapOperator
     @Override
     public List<Integer> getKeyFields() {
         return this.keyFields;
+    }
+
+    @Override
+    public DBSPSourceTableOperator withMetadata(TableMetadata metadata) {
+        return new DBSPSourceMapOperator(this.getRelNode(), this.sourceName, this.keyFields,
+                this.getOutputIndexedZSetType(), this.originalRowType, metadata, this.tableName, this.comment);
     }
 
     @Override

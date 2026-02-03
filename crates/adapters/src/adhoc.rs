@@ -1,10 +1,11 @@
-use crate::PipelineError;
-use actix_web::{http::header, web::Payload, HttpRequest, HttpResponse};
+use crate::controller::ConsistentSnapshot;
+use crate::{Controller, PipelineError};
+use actix_web::{HttpRequest, HttpResponse, http::header, web::Payload};
 use actix_ws::{AggregatedMessage, CloseCode, CloseReason, Closed, Session as WsSession};
 use datafusion::common::ScalarValue;
 use datafusion::execution::memory_pool::FairSpillPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
-use datafusion::execution::SessionStateBuilder;
+use datafusion::execution::{SessionState, SessionStateBuilder};
 use datafusion::prelude::*;
 use executor::{
     hash_query_result, infallible_from_bytestring, stream_arrow_query, stream_json_query,
@@ -50,7 +51,7 @@ pub(crate) fn create_session_context(
         if !path.exists() {
             create_dir_all(&path).map_err(|error| {
                 ControllerError::io_error(
-                    String::from("unable to create ad-hoc scratch space directory during startup"),
+                    "unable to create ad-hoc scratch space directory during startup",
                     error,
                 )
             })?;
@@ -185,7 +186,7 @@ async fn adhoc_query_handler(
 }
 
 pub async fn adhoc_websocket(
-    df_session: SessionContext,
+    controller: Controller,
     req: HttpRequest,
     stream: Payload,
 ) -> Result<HttpResponse, PipelineError> {
@@ -214,16 +215,7 @@ pub async fn adhoc_websocket(
 
                     match maybe_args {
                         Ok(args) => {
-                            let df = df_session
-                                .sql_with_options(
-                                    &args.sql,
-                                    SQLOptions::new().with_allow_ddl(false),
-                                )
-                                .await
-                                .map_err(|e| PipelineError::AdHocQueryError {
-                                    error: format!("Unable to execute SQL query: {}", e),
-                                    df: Some(Box::new(e)),
-                                });
+                            let df = execute_sql(&controller, &args.sql).await;
                             match df {
                                 Ok(df) => {
                                     // If the query is successful, we handle it based on the format.
@@ -278,12 +270,36 @@ pub async fn adhoc_websocket(
     Ok(res)
 }
 
+pub(crate) fn set_snapshot(session_state: &mut SessionState, snapshot: ConsistentSnapshot) {
+    session_state.config_mut().set_extension(snapshot);
+}
+
+pub(crate) async fn execute_sql(
+    controller: &Controller,
+    sql: &str,
+) -> Result<DataFrame, PipelineError> {
+    let mut state = controller.session_context()?.state();
+    set_snapshot(
+        &mut state,
+        controller
+            .latest_consistent_snapshot()
+            .await
+            .ok_or_else(|| PipelineError::Initializing)?,
+    );
+    let logical_plan = state.create_logical_plan(sql).await?;
+    SQLOptions::new()
+        .with_allow_ddl(false)
+        .verify_plan(&logical_plan)?;
+    Ok(DataFrame::new(state, logical_plan))
+}
+
 /// Stream the result of an ad-hoc query using a HTTP streaming response.
 pub(crate) async fn stream_adhoc_result(
-    args: AdhocQueryArgs,
-    session: SessionContext,
+    controller: &Controller,
+    args: &AdhocQueryArgs,
 ) -> Result<HttpResponse, PipelineError> {
-    let df = session.sql(&args.sql).await?;
+    let df = execute_sql(controller, &args.sql).await?;
+
     // Note that once we are in the stream!{} macros any error that occurs will lead to the connection
     // in the manager being terminated and a 500 error being returned to the client.
     // We can't return an error in a stream that is already Response::Ok.

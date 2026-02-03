@@ -8,11 +8,20 @@ services:
       dockerfile: Dockerfile
     tty: true
     environment:
-      - RUST_VERSION=1.87.0
+      - RUST_VERSION=1.91.1
       - RUST_BACKTRACE=1
       - REDPANDA_BROKERS=redpanda:9092
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    cap_add:
+      - PERFMON
+      - IPC_LOCK
+    security_opt:
+      - seccomp:unconfined
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
   postgres-dev:
     image: postgres:15-alpine
     restart: always

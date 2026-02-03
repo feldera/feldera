@@ -8,12 +8,12 @@ use crate::lean_vec;
 use itertools::Itertools;
 
 use crate::utils::{
+    Tup2,
     consolidation::{
         consolidate, consolidate_from, consolidate_paired_slices, consolidate_payload_from,
         consolidate_slice, dedup_payload_starting_at, quicksort::quicksort,
         utils::retain_starting_at,
     },
-    Tup2,
 };
 
 #[test]
@@ -218,7 +218,9 @@ where
         buffer.iter().enumerate().tuple_windows()
     {
         if key > next_key {
-            panic!("tuple at index {idx} isn't sorted: ({key:?}, {value:?}) > ({next_key:?}, {next_value:?})");
+            panic!(
+                "tuple at index {idx} isn't sorted: ({key:?}, {value:?}) > ({next_key:?}, {next_value:?})"
+            );
         }
     }
 
@@ -232,11 +234,15 @@ where
         sorted_buffer.into_iter().zip(sorted_expected)
     {
         if key != expected_key {
-            panic!("key is incorrect at index {index}: {key:?} != {expected_key:?}\n left: `{buffer:?}`\nright: `{expected:?}`");
+            panic!(
+                "key is incorrect at index {index}: {key:?} != {expected_key:?}\n left: `{buffer:?}`\nright: `{expected:?}`"
+            );
         }
 
         if value != expected_value {
-            panic!("value is incorrect at index {index}: {value:?} != {expected_value:?}\n left: `{buffer:?}`\nright: `{expected:?}`");
+            panic!(
+                "value is incorrect at index {index}: {value:?} != {expected_value:?}\n left: `{buffer:?}`\nright: `{expected:?}`"
+            );
         }
     }
 }

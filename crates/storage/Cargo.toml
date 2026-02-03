@@ -3,7 +3,7 @@ name = "feldera-storage"
 description = "Storage crate for feldera"
 readme = "README.md"
 
-edition = { workspace = true }
+edition = "2024"
 version = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }

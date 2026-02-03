@@ -4,17 +4,17 @@
 use std::panic::Location;
 
 use crate::{
+    Circuit, RootCircuit, Runtime, Stream,
     algebra::{IndexedZSet, OrdIndexedZSet},
+    circuit::circuit_builder::CircuitBase as _,
     dynamic::{DataTrait, DynData, DynUnit},
     operator::{
         async_stream_operators::StreamingBinaryWrapper,
         dynamic::{
-            join::{JoinFactories, JoinTrace, TraceJoinFuncs},
-            saturate::SaturateFactories,
             MonoIndexedZSet, MonoZSet,
+            join::{JoinFactories, JoinTrace, TraceJoinFuncs},
         },
     },
-    Circuit, RootCircuit, Stream,
 };
 
 impl Stream<RootCircuit, MonoIndexedZSet> {
@@ -36,6 +36,26 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
         join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynData>,
     ) -> Stream<RootCircuit, MonoIndexedZSet> {
         self.dyn_left_join(factories, other, join_funcs)
+    }
+
+    #[track_caller]
+    pub fn dyn_left_join_balanced_mono(
+        &self,
+        factories: &JoinFactories<MonoIndexedZSet, MonoIndexedZSet, (), MonoZSet>,
+        other: &Stream<RootCircuit, MonoIndexedZSet>,
+        join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynUnit>,
+    ) -> Stream<RootCircuit, MonoZSet> {
+        self.dyn_left_join_balanced(factories, other, join_funcs)
+    }
+
+    #[track_caller]
+    pub fn dyn_left_join_balanced_index_mono(
+        &self,
+        factories: &JoinFactories<MonoIndexedZSet, MonoIndexedZSet, (), MonoIndexedZSet>,
+        other: &Stream<RootCircuit, MonoIndexedZSet>,
+        join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynData>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_left_join_balanced(factories, other, join_funcs)
     }
 }
 
@@ -65,17 +85,12 @@ where
         // - we saturate the `other` stream
         // - we set the `SATURATE` parameter to `true` for the first join operator.
 
-        let right_saturated_factories = SaturateFactories {
-            batch_factories: factories.right_factories.clone(),
-            trace_factories: factories.right_trace_factories.clone(),
-        };
-
         self.circuit().region("left_join", || {
             let left = self.dyn_shard(&factories.left_factories);
             let right = other.dyn_shard(&factories.right_factories);
             let right_saturated = right
                 //.inspect(|s| println!("right: {:?}", s))
-                .dyn_saturate(&right_saturated_factories);
+                .dyn_saturate(&factories.right_factories);
             //.inspect(|s| println!("right_saturated: {:?}", s));
 
             let left_trace = left
@@ -84,11 +99,12 @@ where
                 .dyn_accumulate_trace(&factories.right_trace_factories, &factories.right_factories);
 
             let left = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, true>::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.right_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
                     factories.timed_items_factory,
+                    true,
                     join_funcs.left,
                     Location::caller(),
                     self.circuit().clone(),
@@ -98,11 +114,12 @@ where
             );
 
             let right = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.left_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
                     factories.timed_items_factory,
+                    false,
                     join_funcs.right,
                     Location::caller(),
                     self.circuit().clone(),
@@ -116,14 +133,97 @@ where
     }
 }
 
+impl<K, V1> Stream<RootCircuit, OrdIndexedZSet<K, V1>>
+where
+    K: DataTrait + ?Sized,
+    V1: DataTrait + ?Sized,
+{
+    #[track_caller]
+    pub fn dyn_left_join_balanced<V2, Z>(
+        &self,
+        factories: &JoinFactories<OrdIndexedZSet<K, V1>, OrdIndexedZSet<K, V2>, (), Z>,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
+        join_funcs: TraceJoinFuncs<K, V1, V2, Z::Key, Z::Val>,
+    ) -> Stream<RootCircuit, Z>
+    where
+        V2: DataTrait + ?Sized,
+        Z: IndexedZSet,
+    {
+        if Runtime::num_workers() == 1 {
+            return self.dyn_left_join(factories, other, join_funcs);
+        }
+
+        // The implementation is identical to `join_balanced`, except these two changes that
+        // are necessary to implement the left join as an inner join:
+        // - we saturate the `other` stream
+        // - we set the `SATURATE` parameter to `true` for the first join operator.
+
+        self.circuit().region("left_join_balanced", || {
+            let (left_accumulator, left_trace) = self.dyn_accumulate_trace_balanced(
+                &factories.left_trace_factories,
+                &factories.left_factories,
+            );
+
+            let (_right_accumulator, right_trace) = other.dyn_accumulate_trace_balanced(
+                &factories.right_trace_factories,
+                &factories.right_factories,
+            );
+
+            let right_saturated = other
+                //.inspect(|s| println!("right: {:?}", s))
+                .dyn_saturate_balanced(&factories.right_factories);
+
+            let left = self.circuit().add_binary_operator(
+                StreamingBinaryWrapper::new(JoinTrace::new(
+                    &factories.right_trace_factories,
+                    &factories.output_factories,
+                    factories.timed_item_factory,
+                    factories.timed_items_factory,
+                    true,
+                    join_funcs.left,
+                    Location::caller(),
+                    self.circuit().clone(),
+                )),
+                &left_accumulator,
+                &right_trace,
+            );
+
+            let right = self.circuit().add_binary_operator(
+                StreamingBinaryWrapper::new(JoinTrace::new(
+                    &factories.left_trace_factories,
+                    &factories.output_factories,
+                    factories.timed_item_factory,
+                    factories.timed_items_factory,
+                    false,
+                    join_funcs.right,
+                    Location::caller(),
+                    self.circuit().clone(),
+                )),
+                &right_saturated,
+                &left_trace.accumulate_delay_trace(),
+            );
+
+            let result = left.plus(&right);
+
+            self.circuit().balancer().register_left_join(
+                result.local_node_id(),
+                self.local_node_id(),
+                other.local_node_id(),
+            );
+
+            result
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
+        DBData, OrdIndexedZSet, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
         algebra::DefaultSemigroup,
         circuit::CircuitConfig,
-        operator::{dynamic::join::test::generate_join_test_data, Fold},
+        operator::{Fold, dynamic::join::test::generate_join_test_data},
         utils::Tup2,
-        DBData, OrdIndexedZSet, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
     };
     use proptest::prelude::*;
 
@@ -200,6 +300,7 @@ mod test {
         right_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
         f: impl Fn(&K, &V, &Option<V>) -> OV + Clone + Send + 'static,
         transaction: bool,
+        balanced: bool,
     ) {
         let (mut dbsp, (left_handle, right_handle, output_handle, expected_output_handle)) =
             Runtime::init_circuit(
@@ -209,9 +310,15 @@ mod test {
                     let (right_input, right_handle) =
                         circuit.add_input_indexed_zset::<K, Option<V>>();
 
-                    let output_handle = left_input
-                        .left_join(&right_input, f.clone())
-                        .accumulate_output();
+                    let output_handle = if balanced {
+                        left_input
+                            .left_join_balanced_inner(&right_input, f.clone())
+                            .accumulate_output()
+                    } else {
+                        left_input
+                            .left_join(&right_input, f.clone())
+                            .accumulate_output()
+                    };
 
                     let f = f.clone();
 
@@ -279,6 +386,7 @@ mod test {
         right_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
         f: impl Fn(&K, &V, &Option<V>) -> It + Clone + Send + 'static,
         transaction: bool,
+        balanced: bool,
     ) where
         It: IntoIterator<Item = (OK, OV)> + 'static,
     {
@@ -290,9 +398,15 @@ mod test {
                     let (right_input, right_handle) =
                         circuit.add_input_indexed_zset::<K, Option<V>>();
 
-                    let output_handle = left_input
-                        .left_join_index(&right_input, f.clone())
-                        .accumulate_output();
+                    let output_handle = if balanced {
+                        left_input
+                            .left_join_index_balanced_inner(&right_input, f.clone())
+                            .accumulate_output()
+                    } else {
+                        left_input
+                            .left_join_index(&right_input, f.clone())
+                            .accumulate_output()
+                    };
 
                     let f = f.clone();
 
@@ -358,22 +472,43 @@ mod test {
     proptest! {
         #[test]
         fn proptest_left_join_big_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
-            proptest_left_join(inputs.0, inputs.1, |_k, v1, v2| Tup2(*v1, *v2), true);
+            proptest_left_join(inputs.0, inputs.1, |_k, v1, v2| Tup2(*v1, *v2), true, false);
         }
 
         #[test]
         fn proptest_left_join_small_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
-            proptest_left_join(inputs.0, inputs.1, |_k, v1, v2| Tup2(*v1, *v2), false);
+            proptest_left_join(inputs.0, inputs.1, |_k, v1, v2| Tup2(*v1, *v2), false, false);
         }
 
         #[test]
         fn proptest_left_join_index_big_step(inputs in generate_join_test_data(10, 5, 1, 50)) {
-            proptest_left_join_index(inputs.0, inputs.1, |k, v1, v2| vec![(*k, Tup2(*v1, *v2))], true);
+            proptest_left_join_index(inputs.0, inputs.1, |k, v1, v2| vec![(*k, Tup2(*v1, *v2))], true, false);
         }
 
         #[test]
         fn proptest_left_join_index_small_step(inputs in generate_join_test_data(10, 5, 1, 50)) {
-            proptest_left_join_index(inputs.0, inputs.1, |k, v1, v2| vec![(*k, Tup2(*v1, *v2))], false);
+            proptest_left_join_index(inputs.0, inputs.1, |k, v1, v2| vec![(*k, Tup2(*v1, *v2))], false, false);
         }
+
+        #[test]
+        fn proptest_left_join_balanced_big_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
+            proptest_left_join(inputs.0, inputs.1, |_k, v1, v2| Tup2(*v1, *v2), true, true);
+        }
+
+        #[test]
+        fn proptest_left_join_balanced_small_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
+            proptest_left_join(inputs.0, inputs.1, |_k, v1, v2| Tup2(*v1, *v2), false, true);
+        }
+
+        #[test]
+        fn proptest_left_join_index_balanced_big_step(inputs in generate_join_test_data(10, 5, 1, 50)) {
+            proptest_left_join_index(inputs.0, inputs.1, |k, v1, v2| vec![(*k, Tup2(*v1, *v2))], true, true);
+        }
+
+        #[test]
+        fn proptest_left_join_index_balanced_small_step(inputs in generate_join_test_data(10, 5, 1, 50)) {
+            proptest_left_join_index(inputs.0, inputs.1, |k, v1, v2| vec![(*k, Tup2(*v1, *v2))], false, true);
+        }
+
     }
 }

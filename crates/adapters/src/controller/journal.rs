@@ -212,7 +212,7 @@ mod tests {
 
     use dbsp::{
         circuit::StorageCacheConfig,
-        storage::backend::{posixio_impl::PosixBackend, StoragePath},
+        storage::backend::{StoragePath, posixio_impl::PosixBackend},
     };
 
     use feldera_types::config::FileBackendConfig;

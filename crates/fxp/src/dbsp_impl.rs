@@ -1,12 +1,29 @@
 use dbsp::algebra::{HasOne, HasZero, MulByRef, OptionWeightType};
+use dbsp::utils::IsNone;
 use feldera_types::serde_with_context::{
-    serde_config::DecimalFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
+    DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, serde_config::DecimalFormat,
 };
 use serde::{Deserializer, Serialize, Serializer};
 use smallstr::SmallString;
 use std::fmt::Write;
 
 use crate::{DynamicDecimal, Fixed, FixedInteger};
+
+impl<const P: usize, const S: usize> IsNone for Fixed<P, S> {
+    type Inner = Self;
+
+    fn is_none(&self) -> bool {
+        false
+    }
+
+    fn unwrap_or_self(&self) -> &Self::Inner {
+        self
+    }
+
+    fn from_inner(inner: Self::Inner) -> Self {
+        inner
+    }
+}
 
 impl<const P: usize, const S: usize> OptionWeightType for Fixed<P, S> {}
 impl<const P: usize, const S: usize> OptionWeightType for &Fixed<P, S> {}
@@ -124,8 +141,8 @@ mod test {
     use std::sync::{Arc, Mutex};
 
     use dbsp::{
-        algebra::DefaultSemigroup, indexed_zset, operator::Fold, typed_batch::OrdIndexedZSet,
-        utils::Tup2, Runtime, ZWeight,
+        Runtime, ZWeight, algebra::DefaultSemigroup, indexed_zset, operator::Fold,
+        typed_batch::OrdIndexedZSet, utils::Tup2,
     };
 
     use crate::Fixed;

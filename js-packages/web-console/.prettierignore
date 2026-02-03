@@ -2,7 +2,12 @@
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
+# Svelte
+.svelte-kit/
+/build/
 # Other files
+.svelte-kit/
+build/
 src/assets
 tmp/
 playwright-report-ct

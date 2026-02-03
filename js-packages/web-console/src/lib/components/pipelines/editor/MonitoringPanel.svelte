@@ -8,7 +8,8 @@
   import PanelChangeStream from '$lib/components/pipelines/editor/TabChangeStream.svelte'
   import PanelPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
   import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
-  import PanelProfileVisualizer from '$lib/components/pipelines/editor/TabProfileVisualizer.svelte'
+  import * as TabProfileVisualizer from '$lib/components/pipelines/editor/TabProfileVisualizer.svelte'
+  import * as TabSamplyProfile from '$lib/components/pipelines/editor/TabSamplyProfile.svelte'
   import PanelLogs from '$lib/components/pipelines/editor/TabLogs.svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
@@ -46,10 +47,11 @@
       tuple('Changes Stream' as const, TabControlChangeStream, PanelChangeStream, true),
       tuple(
         'Profile Visualizer' as const,
-        TabControlProfileVisualizer,
-        PanelProfileVisualizer,
+        TabProfileVisualizer.Label,
+        TabProfileVisualizer.default,
         true
       ),
+      tuple('Samply' as const, TabSamplyProfile.Label, TabSamplyProfile.default, false),
       tuple('Logs' as const, TabLogs, PanelLogs, false)
     ].filter((tab) => tab[0] !== currentInteractionTab)
   )
@@ -71,16 +73,16 @@
   }
   $effect(() => {
     pipelineName
-    untrack(() => pipelineActionCallbacks.add(pipelineName, 'start_paused', switchTo))
+    untrack(() => pipelineActionCallbacks.add(pipelineName, 'start', switchTo))
     return () => {
-      pipelineActionCallbacks.remove(pipelineName, 'start_paused', switchTo)
+      pipelineActionCallbacks.remove(pipelineName, 'start', switchTo)
     }
   })
   const forgetCurrentTab = async () => currentTab.remove()
   $effect(() => {
     untrack(() => pipelineActionCallbacks.add('', 'delete', forgetCurrentTab))
     return () => {
-      pipelineActionCallbacks.remove('', 'start_paused', forgetCurrentTab)
+      pipelineActionCallbacks.remove('', 'delete', forgetCurrentTab)
     }
   })
 
@@ -101,12 +103,12 @@
   {@const errorCount = errors.length - warningCount}
   <span class="pr-1">Errors</span>
   {#if warningCount !== 0}
-    <span class="inline-block min-w-6 rounded px-1 font-medium preset-filled-warning-200-800">
+    <span class="inline-block min-w-6 rounded preset-filled-warning-200-800 px-1 font-medium">
       {warningCount}
     </span>
   {/if}
   {#if errorCount !== 0}
-    <span class="inline-block min-w-6 rounded px-1 font-medium preset-filled-error-50-950">
+    <span class="inline-block min-w-6 rounded preset-filled-error-50-950 px-1 font-medium">
       {errorCount}
     </span>
   {/if}
@@ -127,10 +129,6 @@
   <span class="hidden sm:inline"> Changes Stream </span>
 {/snippet}
 
-{#snippet TabControlProfileVisualizer()}
-  <span class=""> Profiler </span>
-{/snippet}
-
 {#snippet TabLogs()}
   <span>Logs</span>
 {/snippet}
@@ -139,13 +137,13 @@
   {#snippet tabBarEnd()}
     {#if currentTab.value !== 'Errors'}
       <div class="ml-auto flex">
-        <ClipboardCopyButton value={pipeline.current.id} class="h-8 w-auto preset-tonal-surface">
+        <ClipboardCopyButton
+          value={pipeline.current.id}
+          class="h-8 w-auto! gap-2 preset-tonal-surface px-4"
+        >
           <span class="text-base font-normal text-surface-950-50"> Pipeline ID </span>
         </ClipboardCopyButton>
-        <Tooltip
-          placement="top"
-          class="z-10 text-nowrap rounded bg-white text-base text-surface-950-50 dark:bg-black"
-        >
+        <Tooltip placement="top">
           {pipeline.current.id}
         </Tooltip>
         <DownloadSupportBundle {pipelineName} />

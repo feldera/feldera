@@ -3,8 +3,8 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
     circuit::{
-        operator_traits::{BinaryOperator, Operator},
         Circuit, OwnershipPreference, Scope, Stream,
+        operator_traits::{BinaryOperator, Operator},
     },
 };
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
@@ -234,11 +234,12 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
+        Circuit, RootCircuit,
         algebra::HasZero,
         circuit::OwnershipPreference,
         operator::{Generator, Inspect},
         typed_batch::OrdZSet,
-        zset, Circuit, RootCircuit,
+        zset,
     };
 
     #[test]

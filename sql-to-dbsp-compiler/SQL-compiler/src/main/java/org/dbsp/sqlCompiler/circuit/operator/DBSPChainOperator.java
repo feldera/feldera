@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -37,7 +38,7 @@ import java.util.List;
 /** A Chain operator performs a linear chain of Map/Filter/MapIndex operations.
  * In the end it is lowered to a {@link DBSPFlatMapOperator} or
  * {@link DBSPFlatMapIndexOperator} operator, depending on the last operation. */
-public class DBSPChainOperator extends DBSPUnaryOperator {
+public class DBSPChainOperator extends DBSPUnaryOperator implements ILinear {
     public final ComputationChain chain;
 
     public DBSPChainOperator(CalciteRelNode node, ComputationChain chain, boolean isMultiset, OutputPort source) {
@@ -185,10 +186,13 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
                     }
                     case Filter: {
                         foundFilter = true;
-                        stat = new DBSPExpressionStatement(
-                                new DBSPIfExpression(node, this.call(compiler, comp.closure, currentArg).not(),
-                                        new DBSPReturnExpression(node, none),
-                                        null));
+                        DBSPExpression condition = this.call(compiler, comp.closure, currentArg).not();
+                        Simplify simplify = new Simplify(compiler);
+                        condition = simplify.apply(condition).to(DBSPExpression.class);
+                        DBSPExpression cond = new DBSPIfExpression(node, condition,
+                                new DBSPReturnExpression(node, none),
+                                null).simplify();
+                        stat = new DBSPExpressionStatement(cond);
                         break;
                     }
                     default: {

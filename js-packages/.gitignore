@@ -1,0 +1,36 @@
+node_modules
+
+# Output
+.output
+.svelte-kit
+build
+dist
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Pipeline Manager tmp build folder
+pipeline-manager-*/
+
+# Asset preprocessing temporary directories
+tmp/

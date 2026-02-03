@@ -1,6 +1,7 @@
-import { getAuthConfig } from '$lib/services/pipelineManager'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
+import { getAuthConfig } from '$lib/services/pipelineManager'
+
 // import { decode } from '@auth/core/jwt'
 //
 // import { SvelteKitAuth } from '@auth/sveltekit'
@@ -9,6 +10,7 @@ import { match, P } from 'ts-pattern'
 // import Google from '@auth/sveltekit/providers/google'
 // import { sequence } from '@sveltejs/kit/hooks'
 
+import type { StringMap } from '@axa-fr/oidc-client'
 // import type {
 //   AuthorizationEndpointHandler,
 //   CommonProviderOptions,
@@ -19,7 +21,6 @@ import { match, P } from 'ts-pattern'
 //   TokenEndpointHandler
 // } from '@auth/sveltekit/providers'
 import { resolve } from '$lib/functions/svelte'
-import type { StringMap } from '@axa-fr/oidc-client'
 
 // type AuthDetails =
 //   | {

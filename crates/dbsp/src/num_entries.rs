@@ -3,8 +3,8 @@
 use impl_trait_for_tuples::impl_for_tuples;
 use std::{
     num::{
-        NonZeroI128, NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI8, NonZeroIsize, NonZeroU128,
-        NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize,
+        NonZeroI8, NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI128, NonZeroIsize, NonZeroU8,
+        NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZeroUsize,
     },
     rc::Rc,
     sync::Arc,
@@ -159,7 +159,7 @@ num_entries_scalar_test! {
 
 // FIXME: This is incorrect, it doesn't take into account any entries
 //        of the underlying types
-#[impl_for_tuples(12)]
+#[impl_for_tuples(14)]
 impl NumEntries for Tuple {
     const CONST_NUM_ENTRIES: Option<usize> = Some(1);
 

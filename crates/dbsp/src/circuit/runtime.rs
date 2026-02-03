@@ -1,8 +1,11 @@
 //! A multithreaded runtime for evaluating DBSP circuits in a data-parallel
 //! fashion.
 
-use crate::circuit::checkpointer::Checkpointer;
+use super::CircuitConfig;
+use super::dbsp_handle::{Layout, Mode};
+use crate::SchedulerError;
 use crate::circuit::DevTweaks;
+use crate::circuit::checkpointer::Checkpointer;
 use crate::error::Error as DbspError;
 use crate::operator::communication::Exchange;
 use crate::storage::backend::StorageBackend;
@@ -10,14 +13,13 @@ use crate::storage::file::format::Compression;
 use crate::storage::file::to_bytes;
 use crate::storage::file::writer::Parameters;
 use crate::trace::unaligned_deserialize;
-use crate::SchedulerError;
 use crate::{
-    storage::{backend::StorageError, buffer_cache::BufferCache, dirlock::LockedDirectory},
     DetailedError,
+    storage::{backend::StorageError, buffer_cache::BufferCache, dirlock::LockedDirectory},
 };
-use core_affinity::{get_core_ids, CoreId};
+use core_affinity::{CoreId, get_core_ids};
 use crossbeam::sync::{Parker, Unparker};
-use enum_map::{enum_map, Enum, EnumMap};
+use enum_map::{Enum, EnumMap, enum_map};
 use feldera_types::config::{StorageCompression, StorageConfig, StorageOptions};
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
@@ -37,17 +39,14 @@ use std::{
     fmt::{Debug, Display, Error as FmtError, Formatter},
     panic::{self, Location, PanicHookInfo},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, RwLock, Weak,
+        atomic::{AtomicBool, Ordering},
     },
     thread::{Builder, JoinHandle, Result as ThreadResult},
 };
 use tokio::sync::Notify;
 use tracing::{debug, error, info, warn};
 use typedmap::TypedDashMap;
-
-use super::dbsp_handle::{Layout, Mode};
-use super::CircuitConfig;
 
 /// The number of tuples a stateful operator outputs per step during replay.
 pub const DEFAULT_REPLAY_STEP_SIZE: usize = 10000;
@@ -62,6 +61,8 @@ pub enum Error {
     },
     /// The storage directory supplied does not match the runtime circuit.
     IncompatibleStorage,
+    /// Error deserializing checkpointed state.
+    CheckpointParseError(String),
     Terminated,
 }
 
@@ -71,6 +72,7 @@ impl DetailedError for Error {
             Self::WorkerPanic { .. } => Cow::from("WorkerPanic"),
             Self::Terminated => Cow::from("Terminated"),
             Self::IncompatibleStorage => Cow::from("IncompatibleStorage"),
+            Self::CheckpointParseError(_) => Cow::from("CheckpointParseError"),
         }
     }
 }
@@ -90,6 +92,9 @@ impl Display for Error {
             Self::Terminated => f.write_str("circuit has been terminated"),
             Self::IncompatibleStorage => {
                 f.write_str("Supplied storage directory does not fit the runtime circuit")
+            }
+            Self::CheckpointParseError(error) => {
+                write!(f, "Error deserializing checkpointed state: {error}")
             }
         }
     }
@@ -265,7 +270,7 @@ struct RuntimeInner {
     kill_signal: AtomicBool,
     // Background threads spawned by this runtime, including for aux threads, in no specific order.
     background_threads: Mutex<Vec<JoinHandle<()>>>,
-    aux_threads: Mutex<Vec<JoinHandle<()>>>,
+    aux_threads: Mutex<Vec<(JoinHandle<()>, Unparker)>>,
     buffer_caches: Vec<EnumMap<ThreadType, Arc<BufferCache>>>,
     pin_cpus: Vec<EnumMap<ThreadType, CoreId>>,
     worker_sequence_numbers: Vec<AtomicUsize>,
@@ -313,22 +318,29 @@ fn map_pin_cpus(layout: &Layout, pin_cpus: &[usize]) -> Vec<EnumMap<ThreadType, 
         .collect::<IndexSet<_>>();
     if pin_cpus.len() < 2 * nworkers {
         if !pin_cpus.is_empty() {
-            warn!("ignoring CPU pinning request because {nworkers} workers require {} pinned CPUs but only {} were specified",
-                      2 * nworkers, pin_cpus.len())
+            warn!(
+                "ignoring CPU pinning request because {nworkers} workers require {} pinned CPUs but only {} were specified",
+                2 * nworkers,
+                pin_cpus.len()
+            )
         }
         return Vec::new();
     }
 
     let Some(core_ids) = get_core_ids() else {
-        warn!("ignoring CPU pinning request because this system's core ids list could not be obtained");
+        warn!(
+            "ignoring CPU pinning request because this system's core ids list could not be obtained"
+        );
         return Vec::new();
     };
     let core_ids = core_ids.iter().copied().collect::<IndexSet<_>>();
 
     let missing_cpus = pin_cpus.difference(&core_ids).copied().collect::<Vec<_>>();
     if !missing_cpus.is_empty() {
-        warn!("ignoring CPU pinning request because requested CPUs {missing_cpus:?} are not available (available CPUs are: {})",
-              display_core_ids(core_ids.iter()));
+        warn!(
+            "ignoring CPU pinning request because requested CPUs {missing_cpus:?} are not available (available CPUs are: {})",
+            display_core_ids(core_ids.iter())
+        );
         return Vec::new();
     }
 
@@ -358,14 +370,13 @@ impl RuntimeInner {
                 LockedDirectory::new_blocking(storage.config.path(), Duration::from_secs(60))?;
             let backend = storage.backend;
 
-            if let Some(init_checkpoint) = storage.init_checkpoint {
-                if !backend
+            if let Some(init_checkpoint) = storage.init_checkpoint
+                && !backend
                     .exists(&Checkpointer::checkpoint_dir(init_checkpoint).child("CHECKPOINT"))?
-                {
-                    return Err(DbspError::Storage(StorageError::CheckpointNotFound(
-                        init_checkpoint,
-                    )));
-                }
+            {
+                return Err(DbspError::Storage(StorageError::CheckpointNotFound(
+                    init_checkpoint,
+                )));
             }
 
             Some(RuntimeStorage {
@@ -443,10 +454,10 @@ fn panic_hook(panic_info: &PanicHookInfo<'_>, default_panic_hook: &dyn Fn(&Panic
     default_panic_hook(panic_info);
 
     RUNTIME.with(|runtime| {
-        if let Ok(runtime) = runtime.try_borrow() {
-            if let Some(runtime) = runtime.as_ref() {
-                runtime.panic(panic_info);
-            }
+        if let Ok(runtime) = runtime.try_borrow()
+            && let Some(runtime) = runtime.as_ref()
+        {
+            runtime.panic(panic_info);
         }
     })
 }
@@ -650,20 +661,32 @@ impl Runtime {
     /// The auxiliary thread will have access to the runtime's resources, including the
     /// storage backend. The current use case for this is to be able to use spines outside
     /// of the DBSP worker threads, e.g., to maintain output buffers.
-    pub fn spawn_aux_thread<F>(&self, thread_name: &str, f: F)
+    ///
+    /// # Arguments
+    ///
+    /// * `thread_name` - The name of the thread.
+    /// * `parker` - The thread will use this parker when waiting for work. Use it to unpark
+    ///   the thread when terminating the runtime.
+    /// * `f` - The function to execute in the thread.
+    pub fn spawn_aux_thread<F>(&self, thread_name: &str, parker: Parker, f: F)
     where
-        F: FnOnce() + Send + 'static,
+        F: FnOnce(Parker) + Send + 'static,
     {
         let runtime = self.clone();
+        let unparker = parker.unparker().clone();
         let handle = Builder::new()
             .name(thread_name.to_string())
-            .spawn(|| {
+            .spawn(move || {
                 RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
-                f()
+                f(parker)
             })
             .expect("failed to spawn auxiliary thread");
 
-        self.inner().aux_threads.lock().unwrap().push(handle)
+        self.inner()
+            .aux_threads
+            .lock()
+            .unwrap()
+            .push((handle, unparker))
     }
 
     /// Returns this runtime's buffer cache for thread type `thread_type` in
@@ -1050,6 +1073,94 @@ impl Consensus {
     }
 }
 
+/// A synchronization primitive that allows multiple threads within a runtime to broadcast
+/// a value to all other workers.
+pub(crate) enum Broadcast<T> {
+    SingleThreaded,
+    MultiThreaded {
+        notify_sender: Arc<Notify>,
+        notify_receiver: Arc<Notify>,
+        exchange: Arc<Exchange<T>>,
+    },
+}
+
+impl<T> Broadcast<T>
+where
+    T: Clone + Send + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
+{
+    pub fn new() -> Self {
+        match Runtime::runtime() {
+            Some(runtime) if Runtime::num_workers() > 1 => {
+                let worker_index = Runtime::worker_index();
+                let exchange_id = runtime.sequence_next();
+                let exchange = Exchange::with_runtime(
+                    &runtime,
+                    exchange_id,
+                    // TODO: handle serialization/deserialization errors better.
+                    Box::new(|x| rmp_serde::to_vec(&x).unwrap()),
+                    Box::new(|data| rmp_serde::from_slice(&data).unwrap()),
+                );
+
+                let notify_sender = Arc::new(Notify::new());
+                let notify_sender_clone = notify_sender.clone();
+                let notify_receiver = Arc::new(Notify::new());
+                let notify_receiver_clone = notify_receiver.clone();
+
+                exchange.register_sender_callback(worker_index, move || {
+                    notify_sender_clone.notify_one()
+                });
+
+                exchange.register_receiver_callback(worker_index, move || {
+                    notify_receiver_clone.notify_one()
+                });
+
+                Self::MultiThreaded {
+                    notify_sender,
+                    notify_receiver,
+                    exchange,
+                }
+            }
+            _ => Self::SingleThreaded,
+        }
+    }
+
+    /// Returns values broadcast by all workers (including the current worker), indexed by worker id.
+    ///
+    /// # Arguments
+    ///
+    /// * `local` - Value broadcast by the current worker.
+    pub async fn collect(&self, local: T) -> Result<Vec<T>, SchedulerError> {
+        match self {
+            Self::SingleThreaded => Ok(vec![local]),
+            Self::MultiThreaded {
+                notify_sender,
+                notify_receiver,
+                exchange,
+            } => {
+                while !exchange.try_send_all(Runtime::worker_index(), &mut repeat(local.clone())) {
+                    if Runtime::kill_in_progress() {
+                        return Err(SchedulerError::Killed);
+                    }
+                    notify_sender.notified().await;
+                }
+                // Receive the status of each peer, compute global result
+                // as a logical and of all peer statuses.
+                let mut result = Vec::with_capacity(Runtime::num_workers());
+                while !exchange
+                    .try_receive_all(Runtime::worker_index(), |status| result.push(status))
+                {
+                    if Runtime::kill_in_progress() {
+                        return Err(SchedulerError::Killed);
+                    }
+                    // Sleep if other threads are still working.
+                    notify_receiver.notified().await;
+                }
+                Ok(result)
+            }
+        }
+    }
+}
+
 /// Handle returned by `Runtime::run`.
 #[derive(Debug)]
 pub struct RuntimeHandle {
@@ -1098,6 +1209,16 @@ impl RuntimeHandle {
         for (_worker, unparker) in self.workers.iter() {
             unparker.unpark();
         }
+
+        self.runtime
+            .inner()
+            .aux_threads
+            .lock()
+            .unwrap()
+            .iter()
+            .for_each(|(_h, unparker)| {
+                unparker.unpark();
+            });
     }
 
     /// Wait for all workers in the runtime to terminate.
@@ -1132,7 +1253,7 @@ impl RuntimeHandle {
             .lock()
             .unwrap()
             .drain(..)
-            .for_each(|h| {
+            .for_each(|(h, _unparker)| {
                 let _ = h.join();
             });
 
@@ -1178,13 +1299,13 @@ impl RuntimeHandle {
 mod tests {
     use super::Runtime;
     use crate::{
+        Circuit, RootCircuit,
         circuit::{
+            CircuitConfig, Layout,
             dbsp_handle::{CircuitStorageConfig, DevTweaks, Mode},
             schedule::{DynamicScheduler, Scheduler},
-            CircuitConfig, Layout,
         },
         operator::Generator,
-        Circuit, RootCircuit,
     };
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
     use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};
@@ -1249,7 +1370,8 @@ mod tests {
                 root.transaction().unwrap();
             }
 
-            assert_eq!(&*data.borrow(), &(1..101).collect::<Vec<usize>>());
+            // The scheduler allocates the first value for metadata exchange; therefore the output starts from 2.
+            assert_eq!(&*data.borrow(), &(2..102).collect::<Vec<usize>>());
         })
         .expect("failed to start runtime");
 

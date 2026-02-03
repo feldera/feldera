@@ -1,5 +1,6 @@
 use super::{AggOutputFunc, IncAggregateLinearFactories};
 use crate::{
+    Circuit, DBData, DBWeight, DynZWeight, Stream, Timestamp, ZWeight,
     algebra::{
         AddAssignByRef, AddByRef, HasZero, IndexedZSet, IndexedZSetReader, MulByRef, NegByRef,
         OrdIndexedZSet,
@@ -7,8 +8,8 @@ use crate::{
     declare_trait_object,
     dynamic::{ClonableTrait, DataTrait, Erase, Factory, Weight, WeightTrait, WithFactory},
     trace::Deserializable,
-    Circuit, DBData, DBWeight, DynZWeight, Stream, Timestamp, ZWeight,
 };
+use feldera_macros::IsNone;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
@@ -78,6 +79,7 @@ where
     Archive,
     Serialize,
     Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(bound(archive = "<T as Archive>::Archived: Ord, <R as Archive>::Archived: Ord"))]

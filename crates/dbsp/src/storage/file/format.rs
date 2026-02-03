@@ -76,9 +76,9 @@
 //!
 //! Decompressing a compressed block yields the regular index or data block
 //! format starting with a [`BlockHeader`].
+use crate::storage::tracking_bloom_filter::TrackingBloomFilter;
 use crate::storage::{buffer_cache::FBuf, file::BLOOM_FILTER_SEED};
-
-use binrw::{binrw, binwrite, BinRead, BinResult, BinWrite, Error as BinError};
+use binrw::{BinRead, BinResult, BinWrite, Error as BinError, binrw, binwrite};
 #[cfg(doc)]
 use crc32c;
 use fastbloom::BloomFilter;
@@ -87,7 +87,17 @@ use num_traits::FromPrimitive;
 use size_of::SizeOf;
 
 /// Increment this on each incompatible change.
-pub const VERSION_NUMBER: u32 = 3;
+///
+/// - v1: Initial version.
+/// - v2: TODO.
+/// - v3: Bloom filter format change.
+/// - v4: Tup None optimizations.
+/// - v5: Change in representation for Timestamp, ShortInterval
+///
+/// When a new version is created, make sure to generate new golden
+/// files for it in crate `storage-test-compat` to check for
+/// backwards compatibility.
+pub const VERSION_NUMBER: u32 = 5;
 
 /// Magic number for data blocks.
 pub const DATA_BLOCK_MAGIC: [u8; 4] = *b"LFDB";
@@ -499,11 +509,13 @@ pub struct FilterBlock {
     pub data: Vec<u64>,
 }
 
-impl From<FilterBlock> for BloomFilter {
+impl From<FilterBlock> for TrackingBloomFilter {
     fn from(block: FilterBlock) -> Self {
-        BloomFilter::from_vec(block.data)
-            .seed(&BLOOM_FILTER_SEED)
-            .hashes(block.num_hashes)
+        TrackingBloomFilter::new(
+            BloomFilter::from_vec(block.data)
+                .seed(&BLOOM_FILTER_SEED)
+                .hashes(block.num_hashes),
+        )
     }
 }
 
@@ -525,8 +537,8 @@ pub struct FilterBlockRef<'a> {
     pub data: &'a [u64],
 }
 
-impl<'a> From<&'a BloomFilter> for FilterBlockRef<'a> {
-    fn from(value: &'a BloomFilter) -> Self {
+impl<'a> From<&'a TrackingBloomFilter> for FilterBlockRef<'a> {
+    fn from(value: &'a TrackingBloomFilter) -> Self {
         FilterBlockRef {
             header: BlockHeader::new(&FILTER_BLOCK_MAGIC),
             num_hashes: value.num_hashes(),

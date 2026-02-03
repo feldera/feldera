@@ -45,8 +45,8 @@ public final class DBSPJoinOperator extends DBSPJoinBaseOperator {
     public DBSPJoinOperator(
             CalciteRelNode node, DBSPTypeZSet outputType,
             DBSPExpression function, boolean isMultiset,
-            OutputPort left, OutputPort right) {
-        super(node, "join", function, outputType, isMultiset, left, right);
+            OutputPort left, OutputPort right, boolean balanced) {
+        super(node, joinOperationName("join", balanced), function, outputType, isMultiset, left, right, balanced);
         this.checkResultType(function, this.getOutputZSetElementType());
         Utilities.enforce(left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType));
     }
@@ -59,7 +59,7 @@ public final class DBSPJoinOperator extends DBSPJoinBaseOperator {
             return new DBSPJoinOperator(
                 this.getRelNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(function),
-                this.isMultiset, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+                this.isMultiset, newInputs.get(0), newInputs.get(1), this.balanced).copyAnnotations(this);
         return this;
     }
 
@@ -77,9 +77,10 @@ public final class DBSPJoinOperator extends DBSPJoinBaseOperator {
     @SuppressWarnings("unused")
     public static DBSPJoinOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        boolean balanced = Utilities.getBooleanProperty(node, "balanced");
         return new DBSPJoinOperator(
                 CalciteEmptyRel.INSTANCE, info.getZsetType(), info.getFunction(),
-                info.isMultiset(), info.getInput(0), info.getInput(1))
+                info.isMultiset(), info.getInput(0), info.getInput(1), balanced)
                 .addAnnotations(info.annotations(), DBSPJoinOperator.class);
     }
 }

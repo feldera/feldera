@@ -19,6 +19,8 @@ RUN apt-get update --fix-missing && apt-get install -y \
     # pkg-config is required for cargo to find libssl
     libssl-dev pkg-config \
     cmake \
+    # Go is required to build aws-lc-fips-sys when rustls is built with FIPS
+    golang-go \
     # rdkafka dependency needs libsasl2-dev and a CXX compiler
     libsasl2-dev libzstd-dev zlib1g-dev build-essential \
     # bindgen needs this (at least the dec crate uses bindgen)
@@ -61,6 +63,13 @@ RUN  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmo
         | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null \
     && apt-get update \
     && apt-get install -y docker-ce-cli
+
+## Install nodejs
+RUN mkdir -p /etc/apt/keyrings
+RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+ENV NODE_MAJOR=20
+RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+RUN apt-get update --fix-missing && apt-get install -y nodejs
 
 # Install helm cli tool
 RUN curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 && chmod +x get_helm.sh \
@@ -115,7 +124,7 @@ ENV PATH="/home/ubuntu/.local/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.cargo/bin:
 # Install rust
 ENV RUSTUP_HOME=/home/ubuntu/.rustup
 ENV CARGO_HOME=/home/ubuntu/.cargo
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile default --default-toolchain 1.87.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile default --default-toolchain 1.91.1
 RUN cargo install --locked cargo-machete@0.7.0 cargo-edit@0.13.1 just@1.40.0
 
 # Install uv
@@ -124,7 +133,7 @@ RUN uv python install 3.10
 RUN uv tool install pre-commit --with pre-commit-uv --force-reinstall
 
 # Install Bun.js
-RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.22"
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.3"
 
 # Install gradle, the version needs to match the version that calcite uses which avoid reinstalling this every time we run build.sh
 RUN cd /home/ubuntu \

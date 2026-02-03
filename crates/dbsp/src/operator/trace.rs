@@ -1,10 +1,10 @@
 use crate::{
+    Circuit, DBData, DBWeight, Stream,
     circuit::metadata::MetaItem,
-    dynamic::{DowncastTrait, DynData, Erase},
+    dynamic::{DowncastTrait, DynData, Erase, WithFactory},
     operator::TraceBound,
     trace::{BatchReaderFactories, Filter},
     typed_batch::{Batch, DynBatch, DynBatchReader, Spine, TypedBatch, TypedBox},
-    Circuit, DBData, DBWeight, Stream,
 };
 use dyn_clone::clone_box;
 use size_of::SizeOf;
@@ -219,6 +219,61 @@ where
                 }))
                 .with_metadata(metadata)
             }),
+        );
+    }
+
+    #[track_caller]
+    pub fn integrate_trace_retain_values_last_n<TS, RV>(
+        &self,
+        bounds_stream: &Stream<C, TypedBox<TS, DynData>>,
+        retain_value_func: RV,
+        n: usize,
+    ) where
+        TS: DBData + Erase<DynData>,
+        RV: Fn(&B::Val, &TS) -> bool + Clone + Send + Sync + 'static,
+    {
+        self.inner().dyn_integrate_trace_retain_values_last_n(
+            &bounds_stream.inner_data(),
+            Box::new(move |ts: &DynData| {
+                let metadata = MetaItem::String(format!("{ts:?}"));
+                let ts = clone_box(ts);
+                let retain_val_func = retain_value_func.clone();
+                Filter::new(Box::new(move |v: &B::DynV| {
+                    retain_val_func(unsafe { v.downcast::<B::Val>() }, unsafe {
+                        ts.as_ref().downcast::<TS>()
+                    })
+                }))
+                .with_metadata(metadata)
+            }),
+            n,
+        );
+    }
+
+    #[track_caller]
+    pub fn integrate_trace_retain_values_top_n<TS, RV>(
+        &self,
+        bounds_stream: &Stream<C, TypedBox<TS, DynData>>,
+        retain_value_func: RV,
+        n: usize,
+    ) where
+        TS: DBData + Erase<DynData>,
+        RV: Fn(&B::Val, &TS) -> bool + Clone + Send + Sync + 'static,
+    {
+        self.inner().dyn_integrate_trace_retain_values_top_n(
+            WithFactory::<B::Val>::FACTORY,
+            &bounds_stream.inner_data(),
+            Box::new(move |ts: &DynData| {
+                let metadata = MetaItem::String(format!("{ts:?}"));
+                let ts = clone_box(ts);
+                let retain_val_func = retain_value_func.clone();
+                Filter::new(Box::new(move |v: &B::DynV| {
+                    retain_val_func(unsafe { v.downcast::<B::Val>() }, unsafe {
+                        ts.as_ref().downcast::<TS>()
+                    })
+                }))
+                .with_metadata(metadata)
+            }),
+            n,
         );
     }
 

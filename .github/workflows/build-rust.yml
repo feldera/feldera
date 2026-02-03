@@ -4,8 +4,10 @@ on:
   workflow_call:
 
 env:
-  CARGO_FLAGS: "--release --locked --all-targets --features pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue"
+  CARGO_FLAGS: "--release --locked --all-targets"
+  CARGO_FEATURES_BASE: "fips,pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue"
   FELDERA_PLATFORM_VERSION_SUFFIX: ${{ github.sha }}
+  FELDERA_BUILD_ORIGIN: ci
   RUSTC_WRAPPER: sccache
   SCCACHE_CACHE_SIZE: ${{ vars.SCCACHE_CACHE_SIZE }}
   SCCACHE_BUCKET: ${{ vars.SCCACHE_BUCKET }}
@@ -31,7 +33,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
+      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
 
     steps:
       - name: Show Kubernetes node
@@ -67,7 +69,8 @@ jobs:
 
       - name: Build Rust binaries
         run: |
-          cargo build ${{ env.CARGO_FLAGS }} --target=${{ matrix.target }}
+          FEATURES="${{ env.CARGO_FEATURES_BASE }}"
+          cargo build ${{ env.CARGO_FLAGS }} --features "$FEATURES" --target=${{ matrix.target }}
 
       - name: Print sccache stats
         run: |
@@ -77,10 +80,11 @@ jobs:
       - name: Collect executables
         id: collect
         run: |
+          FEATURES="${{ env.CARGO_FEATURES_BASE }}"
           # Run again with --message-format=json to list out executables
           # (No real recompile since nothing has changed).
           # Then transform newlines to spaces for the artifact step.
-          EXES=$(cargo build ${{ env.CARGO_FLAGS }} --target=${{ matrix.target }} --message-format=json \
+          EXES=$(cargo build ${{ env.CARGO_FLAGS }} --features "$FEATURES" --target=${{ matrix.target }} --message-format=json \
             | jq -r '.executable | select(. != null)' | tr '\n' ' ')
           echo "Found executables: $EXES"
           # Save it as an output variable for subsequent steps
@@ -94,6 +98,18 @@ jobs:
           for exe in ${{ steps.collect.outputs.executables }}; do
             cp "$exe" build-artifacts/
           done
+          rm build-artifacts/tutorial*
+          rm build-artifacts/galen-*
+          rm build-artifacts/fraud-*
+          rm build-artifacts/degrees
+          rm build-artifacts/coord
+          rm build-artifacts/ldbc_graphalytics-*
+          rm build-artifacts/logging_demo-*
+          rm build-artifacts/nexmark_gen-*
+          rm build-artifacts/orgchart
+          rm build-artifacts/path-*
+          rm build-artifacts/pool
+
           mkdir -p build-release-artifacts
           # Move the executables we ship to users to a separate directory
           mv build-artifacts/fda build-release-artifacts/

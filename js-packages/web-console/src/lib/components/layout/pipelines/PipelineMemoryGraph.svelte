@@ -1,8 +1,5 @@
 <script lang="ts">
-  import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-
-  import { Chart } from 'svelte-echarts'
-  import { init, use, type EChartsType } from 'echarts/core'
+  import type { EChartsOption } from 'echarts'
   import { LineChart } from 'echarts/charts'
   import {
     GridComponent,
@@ -10,16 +7,18 @@
     TitleComponent,
     TooltipComponent
   } from 'echarts/components'
+  import { type EChartsType, init, use } from 'echarts/core'
   import { CanvasRenderer } from 'echarts/renderers'
-  import { tuple } from '$lib/functions/common/tuple'
-  import { humanSize } from '$lib/functions/common/string'
-  import type { Pipeline } from '$lib/services/pipelineManager'
   import type { ECMouseEvent } from 'svelte-echarts'
-  import type { EChartsOption } from 'echarts'
-  import { rgbToHex } from '$lib/functions/common/color'
+  import { Chart } from 'svelte-echarts'
+  import { getThemeColor } from '$lib/functions/common/color'
+  import { humanSize } from '$lib/functions/common/string'
+  import { tuple } from '$lib/functions/common/tuple'
+  import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
+  import type { Pipeline } from '$lib/services/pipelineManager'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
 
-  let {
+  const {
     pipeline,
     metrics,
     refetchMs,
@@ -39,19 +38,17 @@
     TooltipComponent
   ])
 
-  let pipelineName = $derived(pipeline.current.name)
+  const pipelineName = $derived(pipeline.current.name)
 
   const valueMax = $derived(metrics.length ? Math.max(...metrics.map((v) => v.m.toNumber())) : 0)
-  const yMaxStep = $derived(Math.pow(2, Math.ceil(Math.log2(valueMax * 1.25))))
+  const yMaxStep = $derived(2 ** Math.ceil(Math.log2(valueMax * 1.25)))
   const yMax = $derived(valueMax !== 0 ? yMaxStep : 1024 * 2048)
   const yMin = 0
   const maxMemoryMb = $derived(
     pipeline.current.runtimeConfig?.resources?.memory_mb_max ?? undefined
   )
 
-  let primaryColor = rgbToHex(
-    getComputedStyle(document.body).getPropertyValue('--color-primary-500').trim()
-  )
+  const primaryColor = getThemeColor('--color-primary-500').format('hex')
 
   let ref: EChartsType | undefined = $state()
 
@@ -100,7 +97,7 @@
     })
   })
 
-  let options: EChartsOption = {
+  const options: EChartsOption = {
     animationDuration: 0,
     animationDurationUpdate: 0,
     animationEasingUpdate: 'linear' as const,
@@ -188,7 +185,7 @@
     ]
   }
 
-  const handleSeriesHover = <T,>(setValue: (value: T | null) => void) => ({
+  const handleSeriesHover = <T>(setValue: (value: T | null) => void) => ({
     mouseover: (e: CustomEvent<ECMouseEvent>) => {
       if (e.detail.componentType !== 'series') {
         return

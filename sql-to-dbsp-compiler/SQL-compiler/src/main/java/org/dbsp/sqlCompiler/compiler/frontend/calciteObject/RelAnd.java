@@ -41,11 +41,6 @@ public class RelAnd extends CalciteRelNode {
                 .decrease().append("}");
     }
 
-    @Override
-    public SourcePositionRange getPositionRange() {
-        return super.getPositionRange();
-    }
-
     public void add(LastRel rel) {
         for (LastRel inside: this.nodes)
             if (inside.equals(rel))

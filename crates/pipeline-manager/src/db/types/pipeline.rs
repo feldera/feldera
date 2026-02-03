@@ -31,6 +31,7 @@ impl Display for PipelineId {
 pub fn runtime_status_to_string(runtime_status: RuntimeStatus) -> String {
     match runtime_status {
         RuntimeStatus::Unavailable => "unavailable",
+        RuntimeStatus::Coordination => "coordination",
         RuntimeStatus::Standby => "standby",
         RuntimeStatus::AwaitingApproval => "awaiting_approval",
         RuntimeStatus::Initializing => "initializing",
@@ -49,6 +50,7 @@ pub fn runtime_status_to_string(runtime_status: RuntimeStatus) -> String {
 pub fn parse_string_as_runtime_status(s: String) -> Result<RuntimeStatus, DBError> {
     match s.as_str() {
         "unavailable" => Ok(RuntimeStatus::Unavailable),
+        "coordination" => Ok(RuntimeStatus::Coordination),
         "standby" => Ok(RuntimeStatus::Standby),
         "awaiting_approval" => Ok(RuntimeStatus::AwaitingApproval),
         "initializing" => Ok(RuntimeStatus::Initializing),
@@ -66,6 +68,7 @@ pub fn parse_string_as_runtime_status(s: String) -> Result<RuntimeStatus, DBErro
 pub fn runtime_desired_status_to_string(runtime_desired_status: RuntimeDesiredStatus) -> String {
     match runtime_desired_status {
         RuntimeDesiredStatus::Unavailable => "unavailable",
+        RuntimeDesiredStatus::Coordination => "coordination",
         RuntimeDesiredStatus::Standby => "standby",
         RuntimeDesiredStatus::Paused => "paused",
         RuntimeDesiredStatus::Running => "running",
@@ -211,6 +214,9 @@ pub struct ExtendedPipelineDescr {
     /// Checksum of the binary file itself.
     pub program_binary_integrity_checksum: Option<String>,
 
+    /// Checksum of the program information.
+    pub program_info_integrity_checksum: Option<String>,
+
     /// Resource or runtime error that caused the pipeline to stop unexpectedly.
     ///
     /// Can only be set when `Stopping` or `Stopped`.
@@ -252,6 +258,10 @@ pub struct ExtendedPipelineDescr {
     /// Timestamp when the `deployment_resources_status` last changed.
     pub deployment_resources_status_since: DateTime<Utc>,
 
+    /// Details about the resources status.
+    /// No assumptions should be made about the structure of this JSON value.
+    pub deployment_resources_status_details: Option<serde_json::Value>,
+
     /// Resources desired status of the current deployment.
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
 
@@ -261,6 +271,8 @@ pub struct ExtendedPipelineDescr {
     /// Observed runtime status of the current deployment.
     pub deployment_runtime_status: Option<RuntimeStatus>,
 
+    /// Details about the runtime status.
+    /// No assumptions should be made about the structure of this JSON value.
     pub deployment_runtime_status_details: Option<serde_json::Value>,
 
     /// Timestamp when the `deployment_runtime_status` observation last changed.

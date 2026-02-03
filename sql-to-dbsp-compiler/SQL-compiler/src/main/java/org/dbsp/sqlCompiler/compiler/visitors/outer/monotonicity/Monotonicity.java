@@ -56,12 +56,14 @@ import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTimeAddSub;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -76,6 +78,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -670,7 +673,8 @@ public class Monotonicity extends CircuitVisitor {
         DBSPType rightTsType = rightTsField.getType();
         if (rightTsType.mayBeNull) {
             // The function takes non-nullable timestamps
-            rightTsField = rightTsField.nullabilityCast(rightTsType.withMayBeNull(false), false);
+            rightTsField = rightTsField.nullabilityCast(
+                    rightTsType.withMayBeNull(false), DBSPCastExpression.CastType.SqlUnsafe);
         }
         // We know the right timestamp is not nullable, so the result type is from the left timestamp
         DBSPExpression min = ExpressionCompiler.makeBinaryExpression(node.getNode(), leftTsField.getType(),
@@ -783,8 +787,11 @@ public class Monotonicity extends CircuitVisitor {
             return tuple.makeTuple(fields);
         } else if (type.is(DBSPTypeRef.class)) {
             return makeNoExpression(type.ref()).borrow();
+        } else if (type.is(DBSPTypeUser.class)) {
+            // Can happen for e.g., user-defined aggregates
+            return new NoExpression(CalciteObject.EMPTY, type);
         } else {
-            throw new InternalCompilerError("Monotonicity information for type " + type.asSqlString(),
+            throw new InternalCompilerError("Monotonicity information for type " + type,
                     type.getNode());
         }
     }
@@ -1001,8 +1008,6 @@ public class Monotonicity extends CircuitVisitor {
 
         static DBSPOpcode inverse(DBSPOpcode opcode) {
             return switch (opcode) {
-                case TS_ADD -> DBSPOpcode.TS_SUB;
-                case TS_SUB -> DBSPOpcode.TS_ADD;
                 case ADD -> DBSPOpcode.SUB;
                 case SUB -> DBSPOpcode.ADD;
                 case LT -> DBSPOpcode.GTE;
@@ -1019,32 +1024,46 @@ public class Monotonicity extends CircuitVisitor {
          * @return True if the expression is a comparison that has been added. */
         boolean addIfOffsetOfColumn(DBSPExpression smaller, DBSPExpression larger, DBSPOpcode opcode, DBSPParameter param) {
             DBSPBinaryExpression binary = larger.as(DBSPBinaryExpression.class);
-            if (binary == null)
+            DBSPTimeAddSub ts = larger.as(DBSPTimeAddSub.class);
+            DBSPOpcode binOpcode;
+            DBSPExpression left;
+            DBSPExpression right;
+            if (binary != null) {
+                binOpcode = binary.opcode;
+                left = binary.left;
+                right = binary.right;
+            }
+            else if (ts != null) {
+                binOpcode = ts.opcode;
+                left = ts.left;
+                right = ts.right;
+            }
+            else {
                 return false;
-            if (binary.opcode != DBSPOpcode.ADD && binary.opcode != DBSPOpcode.SUB &&
-                binary.opcode != DBSPOpcode.TS_ADD && binary.opcode != DBSPOpcode.TS_SUB)
+            }
+            if (binOpcode != DBSPOpcode.ADD && binOpcode != DBSPOpcode.SUB)
                 return false;
-            DBSPOpcode inverse = inverse(binary.opcode);
-            int column = isColumn(binary.left, param);
-            if (column >= 0 && binary.right.is(DBSPLiteral.class)) {
+            DBSPOpcode inverse = inverse(binOpcode);
+            int column = isColumn(left, param);
+            if (column >= 0 && right.is(DBSPLiteral.class)) {
                 // col + constant, col - constant
                 DBSPExpression newSmaller =
                         ExpressionCompiler.makeBinaryExpression(larger.getNode(), larger.getType(),
-                                inverse, smaller, binary.right);
+                                inverse, smaller, right);
                 Comparison comp = new Comparison(column, newSmaller, opcode, param);
                 this.comparisons.add(comp);
                 return true;
             }
 
-            if ((binary.opcode == DBSPOpcode.SUB) || (binary.opcode == DBSPOpcode.TS_SUB))
+            if (binOpcode == DBSPOpcode.SUB)
                 return false;
 
             // constant + col
-            column = isColumn(binary.right, param);
-            if (column >= 0 && binary.left.is(DBSPLiteral.class)) {
+            column = isColumn(right, param);
+            if (column >= 0 && left.is(DBSPLiteral.class)) {
                 DBSPExpression newSmaller =
                         ExpressionCompiler.makeBinaryExpression(larger.getNode(), larger.getType(),
-                                inverse, smaller, binary.left);
+                                inverse, smaller, left);
                 Comparison comp = new Comparison(column, newSmaller, opcode, param);
                 this.comparisons.add(comp);
                 return true;

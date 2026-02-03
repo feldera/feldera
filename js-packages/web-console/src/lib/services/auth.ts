@@ -1,4 +1,5 @@
 import * as AxaOidc from '@axa-fr/oidc-client'
+
 const { OidcClient } = AxaOidc
 
 let selectedTenant: string | undefined =

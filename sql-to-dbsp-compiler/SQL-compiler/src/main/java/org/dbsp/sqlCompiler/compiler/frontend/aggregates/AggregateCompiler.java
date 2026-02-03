@@ -56,6 +56,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -275,7 +276,7 @@ public class AggregateCompiler implements ICompilerComponent {
 
         // TODO: should this be looking at the filter argument?
         DBSPExpression increment = new DBSPI64Literal(result).cast(
-                this.node, this.nullableResultType, false);
+                this.node, this.nullableResultType, DBSPCastExpression.CastType.SqlUnsafe);
         DBSPVariablePath accumulator = this.nullableResultType.var();
         DBSPTypeUser semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
                 false, accumulator.getType());
@@ -567,7 +568,8 @@ public class AggregateCompiler implements ICompilerComponent {
         if (!leftType.withMayBeNull(rightType.mayBeNull).sameType(rightType)) {
             if (!rightType.is(DBSPTypeBaseType.class)) {
                 // These can also be different DECIMAL types
-                right = right.applyCloneIfNeeded().cast(node, leftType.withMayBeNull(rightType.mayBeNull), false);
+                right = right.applyCloneIfNeeded().cast(node, leftType.withMayBeNull(rightType.mayBeNull),
+                        DBSPCastExpression.CastType.SqlUnsafe);
             }
         }
 
@@ -634,7 +636,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 condition = agg;
             DBSPExpression first = new DBSPIfExpression(
                     this.node, condition,
-                    this.getAggregatedValue().cast(this.node, typedZero.getType(), false),
+                    this.getAggregatedValue().cast(this.node, typedZero.getType(), DBSPCastExpression.CastType.SqlUnsafe),
                     typedZero);
             DBSPExpression second = new DBSPIfExpression(node, condition, one, realZero);
             DBSPExpression mapBody = new DBSPTupleExpression(first, second, one);
@@ -645,7 +647,7 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPExpression postBody = new DBSPIfExpression(node,
                     ExpressionCompiler.makeBinaryExpression(node,
                             DBSPTypeBool.create(false), DBSPOpcode.NEQ, postVar.field(1), realZero),
-                    postVar.field(0).cast(this.node, this.nullableResultType, false), zero);
+                    postVar.field(0).cast(this.node, this.nullableResultType, DBSPCastExpression.CastType.SqlUnsafe), zero);
             post = postBody.closure(postVar);
             map = mapBody.closure(this.v);
             this.setResult(new LinearAggregate(node, map, post, zero));
@@ -656,14 +658,15 @@ public class AggregateCompiler implements ICompilerComponent {
 
             DBSPExpression weighted = new DBSPBinaryExpression(node,
                     this.partialResultType, DBSPOpcode.MUL_WEIGHT,
-                    aggregatedValue.cast(this.node, this.partialResultType, false), this.compiler.weightVar);
+                    aggregatedValue.cast(this.node, this.partialResultType, DBSPCastExpression.CastType.SqlUnsafe), this.compiler.weightVar);
             increment = this.incrementOperation(
                     node, DBSPOpcode.AGG_ADD, this.partialResultType,
                     accumulator, weighted, this.filterArgument());
             DBSPTypeUser semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "DefaultOptSemigroup",
                     false, this.partialResultType.withMayBeNull(false));
             DBSPVariablePath postVar = this.partialResultType.var();
-            DBSPClosureExpression postProcess = postVar.cast(this.node, this.nullableResultType, false).closure(postVar);
+            DBSPClosureExpression postProcess = postVar.cast(
+                    this.node, this.nullableResultType, DBSPCastExpression.CastType.SqlUnsafe).closure(postVar);
             this.setResult(new NonLinearAggregate(
                     node, DBSPLiteral.none(this.partialResultType), this.makeRowClosure(increment, accumulator), postProcess, zero, semigroup));
         }
@@ -690,12 +693,14 @@ public class AggregateCompiler implements ICompilerComponent {
             else
                 condition = agg;
             DBSPExpression first = new DBSPIfExpression(
-                    this.node, condition, this.getAggregatedValue().cast(this.node, typedZero.getType(), false),
+                    this.node, condition, this.getAggregatedValue().cast(
+                            this.node, typedZero.getType(), DBSPCastExpression.CastType.SqlUnsafe),
                     typedZero);
             DBSPExpression mapBody = new DBSPTupleExpression(first, one);
             DBSPVariablePath postVar = mapBody.getType().var();
             // post = |x| cast(x.0, result_type)
-            post = postVar.field(0).cast(this.node, this.resultType, false).closure(postVar);
+            post = postVar.field(0).cast(this.node, this.resultType, DBSPCastExpression.CastType.SqlUnsafe)
+                    .closure(postVar);
             map = mapBody.closure(this.v);
             this.setResult(new LinearAggregate(this.node, map, post, zero));
         } else {
@@ -704,7 +709,8 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPVariablePath accumulator = this.partialResultType.withMayBeNull(false).var();
             DBSPExpression weighted = new DBSPBinaryExpression(
                     this.node, this.partialResultType,
-                    DBSPOpcode.MUL_WEIGHT, aggregatedValue.cast(this.node, this.partialResultType, false),
+                    DBSPOpcode.MUL_WEIGHT, aggregatedValue.cast(
+                            this.node, this.partialResultType, DBSPCastExpression.CastType.SqlUnsafe),
                     this.compiler.weightVar);
             increment = this.incrementOperation(
                     this.node, DBSPOpcode.AGG_ADD_NON_NULL, accumulator.getType(),
@@ -716,7 +722,8 @@ public class AggregateCompiler implements ICompilerComponent {
                     accumulator.getType().withMayBeNull(false));
             DBSPVariablePath postVar = accumulator.getType().var();
             // post = |x| cast(accumulator, result_type)
-            DBSPClosureExpression post = postVar.cast(this.node, this.resultType, false).closure(postVar);
+            DBSPClosureExpression post = postVar.cast(this.node, this.resultType, DBSPCastExpression.CastType.SqlUnsafe)
+                    .closure(postVar);
             this.setResult(new NonLinearAggregate(
                     this.node, typedZero, this.makeRowClosure(increment, accumulator), post, zero, semigroup));
         }
@@ -783,7 +790,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 condition = agg;
             DBSPExpression first = new DBSPIfExpression(
                     node, condition,
-                    this.getAggregatedValue().cast(this.node, typedZero.getType(), false),
+                    this.getAggregatedValue().cast(this.node, typedZero.getType(), DBSPCastExpression.CastType.SqlUnsafe),
                     typedZero);
             DBSPExpression second = new DBSPIfExpression(node, condition, one, typedZero);
             DBSPExpression mapBody = new DBSPTupleExpression(first, second, one);
@@ -794,7 +801,7 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPExpression postBody = new DBSPIfExpression(node,
                     ExpressionCompiler.makeBinaryExpression(node,
                             DBSPTypeBool.create(false), DBSPOpcode.NEQ, postVar.field(1), typedZero),
-                    div.cast(this.node, this.nullableResultType, false), postZero);
+                    div.cast(this.node, this.nullableResultType, DBSPCastExpression.CastType.SqlUnsafe), postZero);
             post = postBody.closure(postVar);
             map = mapBody.closure(this.v);
             return new LinearAggregate(node, map, post, postZero);
@@ -810,7 +817,8 @@ public class AggregateCompiler implements ICompilerComponent {
             final int countIndex = 1;
             DBSPExpression countAccumulator = accumulator.field(countIndex);
             DBSPExpression sumAccumulator = accumulator.field(sumIndex);
-            DBSPExpression aggregatedValue = this.getAggregatedValue().cast(this.node, intermediateResultType, false);
+            DBSPExpression aggregatedValue = this.getAggregatedValue().cast(
+                    this.node, intermediateResultType, DBSPCastExpression.CastType.SqlUnsafe);
             DBSPType intermediateResultTypeNonNull = intermediateResultType.withMayBeNull(false);
             DBSPExpression plusOne = intermediateResultTypeNonNull.to(IsNumericType.class).getOne();
 
@@ -836,7 +844,7 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPExpression divide = ExpressionCompiler.makeBinaryExpression(
                     node, this.resultType, DBSPOpcode.DIV,
                     a.field(sumIndex), a.field(countIndex));
-            divide = divide.cast(this.node, this.nullableResultType, false);
+            divide = divide.cast(this.node, this.nullableResultType, DBSPCastExpression.CastType.SqlUnsafe);
             DBSPClosureExpression post = new DBSPClosureExpression(
                     node, divide, a.asParameter());
             DBSPTypeUser semigroup = new DBSPTypeUser(node, SEMIGROUP, "PairSemigroup", false,
@@ -870,7 +878,8 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression sumAccumulator = accumulator.field(sumIndex);
         DBSPExpression sumSquaresAccumulator = accumulator.field(sumSquaresIndex);
 
-        DBSPExpression aggregatedValue = this.getAggregatedValue().cast(this.node, intermediateResultType, false);
+        DBSPExpression aggregatedValue = this.getAggregatedValue().cast(
+                this.node, intermediateResultType, DBSPCastExpression.CastType.SqlUnsafe);
         DBSPType intermediateResultTypeNonNull = intermediateResultType.withMayBeNull(false);
         DBSPExpression plusOne = intermediateResultTypeNonNull.to(IsNumericType.class).getOne();
 
@@ -919,14 +928,14 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPType sqrtType = new DBSPTypeDouble(node, intermediateResultType.mayBeNull);
         DBSPExpression div = ExpressionCompiler.makeBinaryExpression(
                 this.node, intermediateResultType, DBSPOpcode.DIV_NULL,
-                sub, denom).cast(this.node, sqrtType, false);
+                sub, denom).cast(this.node, sqrtType, DBSPCastExpression.CastType.SqlUnsafe);
         // Prevent sqrt from negative values if computations are unstable
         DBSPExpression max = ExpressionCompiler.makeBinaryExpression(
                 this.node, sqrtType, DBSPOpcode.MAX,
                 div, sqrtType.to(IsNumericType.class).getZero());
         DBSPExpression sqrt = ExpressionCompiler.compilePolymorphicFunction(
                 false, "sqrt", this.node, sqrtType, Linq.list(max), 1);
-        sqrt = sqrt.cast(this.node, this.nullableResultType, false);
+        sqrt = sqrt.cast(this.node, this.nullableResultType, DBSPCastExpression.CastType.SqlUnsafe);
         DBSPClosureExpression post = new DBSPClosureExpression(node, sqrt, a.asParameter());
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
         DBSPTypeUser semigroup = new DBSPTypeUser(node, SEMIGROUP, "TripleSemigroup", false,
@@ -965,7 +974,8 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPExpression isNull = this.getAggregatedValue().is_null();
             DBSPPath path = new DBSPPath(LinearAggregate.userDefinedAccumulatorTypeName(function.getName()), "zero");
             DBSPExpression accumulatorZero = new DBSPApplyExpression(new DBSPPathExpression(DBSPTypeAny.getDefault(), path), innerAccumType);
-            DBSPExpression unwrappedAggregated = this.getAggregatedValue().unwrapIfNullable();
+            DBSPExpression unwrappedAggregated = this.getAggregatedValue()
+                    .unwrapIfNullable("Aggregated value should not be NULL");
             DBSPExpression callMap =
                     new DBSPTupleExpression(
                             new DBSPIfExpression(this.node, isNull, accumulatorZero,

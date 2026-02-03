@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.apache.calcite.avatica.util.DateTimeUtils;
 import org.apache.calcite.util.TimestampString;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -38,24 +39,64 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 
 public final class DBSPTimestampLiteral extends DBSPLiteral {
-    /** Milliseconds since 1970-01-01 */
+    /** Microseconds since 1970-01-01 */
     @Nullable public final Long value;
 
-    public DBSPTimestampLiteral(CalciteObject node, DBSPType type, @Nullable Long value) {
+    /** Returns the number of microseconds since the epoch. */
+    static long getMicrosSinceEpoch(TimestampString ts) {
+        var v = ts.toString();
+        final int year = Integer.parseInt(v.substring(0, 4));
+        final int month = Integer.parseInt(v.substring(5, 7));
+        final int day = Integer.parseInt(v.substring(8, 10));
+        final long h = Long.parseLong(v.substring(11, 13));
+        final long m = Long.parseLong(v.substring(14, 16));
+        final long s = Long.parseLong(v.substring(17, 19));
+        long micros = 0;
+        if (v.length() >= 20) {
+            // "1999-12-31 12:34:56" has 19 characters
+            // "1999-12-31 12:34:56.789123" has 26, our maximum precision
+            // "1999-12-31 12:34:56.789123456" has 29, but we ignore the last 3
+            String fraction = v.substring(20, Math.min(26, v.length()));
+            micros = Long.parseLong(fraction);
+            for (int i = v.length(); i < 26; i++)
+                micros *= 10;
+        }
+        final int d = DateTimeUtils.ymdToUnixDate(year, month, day);
+        return (d * DateTimeUtils.MILLIS_PER_DAY
+                + h * DateTimeUtils.MILLIS_PER_HOUR
+                + m * DateTimeUtils.MILLIS_PER_MINUTE
+                + s * DateTimeUtils.MILLIS_PER_SECOND) * 1000
+                + micros;
+    }
+
+    DBSPTimestampLiteral(CalciteObject node, DBSPType type, @Nullable Long value) {
         super(node, type, value == null);
         this.value = value;
     }
 
-    public DBSPTimestampLiteral(CalciteObject node, DBSPType type, TimestampString value) {
-        this(node, type, value.getMillisSinceEpoch());
+    public static DBSPTimestampLiteral fromMicroseconds(CalciteObject node, DBSPType type, @Nullable Long value) {
+        return new DBSPTimestampLiteral(node, type, value);
     }
 
-    public DBSPTimestampLiteral(long value) {
+    public DBSPTimestampLiteral(CalciteObject node, DBSPType type, TimestampString value) {
+        this(node, type, getMicrosSinceEpoch(value));
+    }
+
+    DBSPTimestampLiteral(long value) {
         this(value, false);
+    }
+
+    public static DBSPTimestampLiteral fromMilliseconds(long value) {
+        return new DBSPTimestampLiteral(value * 1000);
+    }
+
+    public static DBSPTimestampLiteral fromMicroseconds(long value) {
+        return new DBSPTimestampLiteral(value);
     }
 
     public DBSPTimestampLiteral(long value, boolean mayBeNull) {
@@ -70,10 +111,10 @@ public final class DBSPTimestampLiteral extends DBSPLiteral {
         this(CalciteObject.EMPTY, DBSPTypeTimestamp.create(mayBeNull), createTimestampString(string));
     }
 
-    private static final String INSTANT_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS";
+    private static final DateTimeFormatter INSTANT_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS");
 
     public DBSPTimestampLiteral(Instant instant, boolean mayBeNull) {
-        this(DateTimeFormatter.ofPattern(INSTANT_FORMAT).format(instant), mayBeNull);
+        this(INSTANT_FORMAT.format(instant), mayBeNull);
     }
 
     static TimestampString createTimestampString(String timestamp) {
@@ -112,7 +153,13 @@ public final class DBSPTimestampLiteral extends DBSPLiteral {
     public TimestampString getTimestampString() {
         if (this.isNull)
             return null;
-        return TimestampString.fromMillisSinceEpoch(Objects.requireNonNull(this.value));
+        long micros = Objects.requireNonNull(this.value);
+        Instant instant = Instant.ofEpochSecond(
+                micros / 1_000_000,
+                (micros % 1_000_000) * 1_000);
+        return new TimestampString(instant
+                .atZone(ZoneId.of("UTC"))
+                .format(INSTANT_FORMAT));
     }
 
     @Override
@@ -122,7 +169,7 @@ public final class DBSPTimestampLiteral extends DBSPLiteral {
                     .append(this.type)
                     .append(")null");
         else
-            return builder.append(TimestampString.fromMillisSinceEpoch(this.value).toString());
+            return builder.append(this.wrapSome(Objects.requireNonNull(this.getTimestampString()).toString()));
     }
 
     @Override

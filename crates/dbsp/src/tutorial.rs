@@ -192,6 +192,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -248,6 +249,7 @@
 //! # Serialize,
 //! # rkyv::Deserialize,
 //! # serde::Deserialize,
+//! # feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -303,6 +305,7 @@
 //! use rkyv::{Archive, Serialize};
 //! use size_of::SizeOf;
 //! use chrono::NaiveDate;
+//! use dbsp::utils;
 //!
 //! #[derive(
 //!     Clone,
@@ -318,6 +321,7 @@
 //!     Serialize,
 //!     rkyv::Deserialize,
 //!     serde::Deserialize,
+//!     feldera_macros::IsNone,
 //! )]
 //! #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -362,6 +366,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -443,6 +448,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -521,6 +527,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -602,6 +609,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -718,7 +726,7 @@
 //! # use chrono::{Datelike, NaiveDate};
 //! # use csv::Reader;
 //! # use dbsp::utils::{Tup2, Tup3};
-//! # use dbsp::{OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight};
+//! # use dbsp::{OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader};
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
 //! #
@@ -736,6 +744,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -874,7 +883,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -893,6 +902,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1030,7 +1040,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1049,6 +1059,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1171,6 +1182,7 @@
 //!     Serialize,
 //!     rkyv::Deserialize,
 //!     serde::Deserialize,
+//!     feldera_macros::IsNone,
 //! )]
 //! #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! struct VaxMonthly {
@@ -1209,7 +1221,7 @@
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1228,6 +1240,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1250,6 +1263,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct VaxMonthly {
@@ -1365,7 +1379,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1384,6 +1398,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1481,7 +1496,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1500,6 +1515,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1600,7 +1616,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1619,6 +1635,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1681,7 +1698,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1700,6 +1717,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1822,7 +1840,7 @@
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1841,6 +1859,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1863,6 +1882,7 @@
 //! #     Serialize,
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
+//! #     feldera_macros::IsNone,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct VaxMonthly {
@@ -2016,7 +2036,7 @@
 //! use dbsp::{
 //!     operator::Generator,
 //!     utils::{Tup3, Tup4},
-//!     zset, zset_set, Circuit, OrdZSet, RootCircuit, Stream,
+//!     zset, zset_set, Circuit, OrdZSet, RootCircuit, Stream, IndexedZSetReader
 //! };
 //!
 //! fn main() -> Result<()> {
@@ -2150,7 +2170,7 @@
 //! #     indexed_zset,
 //! #     operator::{Generator, Min},
 //! #     utils::{Tup2, Tup3, Tup4},
-//! #     zset_set, Circuit, NestedCircuit, OrdIndexedZSet, RootCircuit, Stream,
+//! #     zset_set, Circuit, NestedCircuit, OrdIndexedZSet, RootCircuit, Stream, IndexedZSetReader
 //! # };
 //! #
 //! type Accumulator =
@@ -2276,8 +2296,8 @@
 //! let (mut circuit, (/*handles*/)) = Runtime::init_circuit(4, build_circuit)?;
 //! ```
 use crate::{
-    operator::{Aggregator, Max},
-    utils::{Tup0, Tup1, Tup10},
     CircuitHandle, IndexedZSet, OrdPartitionedIndexedZSet, OutputHandle, RootCircuit, Runtime,
     Stream, ZSet, ZSetHandle,
+    operator::{Aggregator, Max},
+    utils::{Tup0, Tup1, Tup10},
 };

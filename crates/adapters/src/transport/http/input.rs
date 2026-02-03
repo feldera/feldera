@@ -1,13 +1,13 @@
 use crate::format::StreamSplitter;
 use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand};
 use crate::{
-    server::{PipelineError, MAX_REPORTED_PARSE_ERRORS},
-    transport::InputReader,
     ControllerError, InputConsumer, PipelineState, TransportInputEndpoint,
+    server::{MAX_REPORTED_PARSE_ERRORS, PipelineError},
+    transport::InputReader,
 };
 use crate::{InputBuffer, ParseError, Parser};
 use actix_web::web::Payload;
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use anyhow::{Error as AnyError, Result as AnyResult, anyhow};
 use atomic::Atomic;
 use chrono::{DateTime, Utc};
 use circular_queue::CircularQueue;
@@ -22,10 +22,10 @@ use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{
     hash::Hasher,
-    sync::{atomic::Ordering, Arc, Mutex},
+    sync::{Arc, Mutex, atomic::Ordering},
     time::Duration,
 };
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::{sync::watch, time::timeout};
 use tracing::{debug, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
@@ -57,7 +57,6 @@ impl HttpInputTransport {
 struct HttpInputEndpointDetails {
     consumer: Box<dyn InputConsumer>,
     parser: Box<dyn Parser>,
-    splitter: StreamSplitter,
     queue: InputQueue<Vec<u8>>,
 }
 
@@ -96,7 +95,7 @@ impl HttpInputEndpointInner {
                     let mut total = BufferSize::empty();
                     let mut hasher = Xxh3Default::new();
                     for chunk in chunks {
-                        let (mut buffer, errors) = details.parser.parse(&chunk, &None);
+                        let (mut buffer, errors) = details.parser.parse(&chunk, None);
                         details.consumer.buffered(buffer.len());
                         details.consumer.parse_errors(errors);
                         total += buffer.len();
@@ -171,33 +170,26 @@ impl HttpInputEndpoint {
 
     fn push(
         &self,
-        bytes: Option<&[u8]>,
+        chunk: &[u8],
         errors: &mut CircularQueue<ParseError>,
         timestamp: DateTime<Utc>,
     ) -> usize {
         let mut guard = self.inner.details.lock().unwrap();
         let details = guard.as_mut().unwrap();
-        if let Some(bytes) = bytes {
-            details.splitter.append(bytes);
-        }
         let mut total_errors = 0;
-        while let Some(chunk) = details.splitter.next(bytes.is_none()) {
-            let (buffer, new_errors) = details.parser.parse(chunk, &None);
-            let aux = if details.consumer.pipeline_fault_tolerance() == Some(FtModel::ExactlyOnce) {
-                Vec::from(chunk)
-            } else {
-                Vec::new()
-            };
-            details
-                .queue
-                .push_with_aux((buffer, new_errors.clone()), timestamp, aux);
-            total_errors += new_errors.len();
-            for error in new_errors {
-                errors.push(error);
-            }
+        let (buffer, new_errors) = details.parser.parse(chunk, None);
+        let aux = if details.consumer.pipeline_fault_tolerance() == Some(FtModel::ExactlyOnce) {
+            Vec::from(chunk)
+        } else {
+            Vec::new()
+        };
+        details
+            .queue
+            .push_with_aux((buffer, new_errors.clone()), timestamp, aux);
+        total_errors += new_errors.len();
+        for error in new_errors {
+            errors.push(error);
         }
-        drop(guard);
-
         total_errors
     }
 
@@ -239,6 +231,16 @@ impl HttpInputEndpoint {
         let mut num_errors = 0;
         let mut status_watch = self.inner.status_notifier.subscribe();
 
+        let mut splitter = StreamSplitter::new(
+            self.inner
+                .details
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .parser
+                .splitter(),
+        );
         loop {
             let pipeline_state = self.state();
 
@@ -261,13 +263,8 @@ impl HttpInputEndpoint {
                     let timestamp = Utc::now();
 
                     // Check pipeline status at least every second.
-
-                    match timeout(Duration::from_millis(1_000), payload.next()).await {
-                        Err(_elapsed) => (),
-                        Ok(Some(Ok(bytes))) => {
-                            num_bytes += bytes.len();
-                            num_errors += self.push(Some(&bytes), &mut errors, timestamp);
-                        }
+                    let eoi = match timeout(Duration::from_millis(1_000), payload.next()).await {
+                        Err(_elapsed) => continue,
                         Ok(Some(Err(e))) => {
                             self.error(true, anyhow!(e.to_string()), None);
                             Err(ControllerError::input_transport_error(
@@ -276,10 +273,18 @@ impl HttpInputEndpoint {
                                 anyhow!(e),
                             ))?
                         }
-                        Ok(None) => {
-                            num_errors += self.push(None, &mut errors, timestamp);
-                            break;
+                        Ok(Some(Ok(bytes))) => {
+                            num_bytes += bytes.len();
+                            splitter.append(&bytes);
+                            false
                         }
+                        Ok(None) => true,
+                    };
+                    while let Some(chunk) = splitter.next(eoi) {
+                        num_errors += self.push(chunk, &mut errors, timestamp);
+                    }
+                    if eoi {
+                        break;
                     }
                 }
             }
@@ -311,13 +316,11 @@ impl TransportInputEndpoint for HttpInputEndpoint {
         _schema: Relation,
         _resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
-        let splitter = StreamSplitter::new(parser.splitter());
         let queue = InputQueue::new(consumer.clone());
         *self.inner.details.lock().unwrap() = Some(HttpInputEndpointDetails {
             consumer,
             parser,
             queue,
-            splitter,
         });
         Ok(Box::new(self.clone()))
     }

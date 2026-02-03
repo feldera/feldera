@@ -1,8 +1,8 @@
 <script lang="ts">
-  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { slide } from 'svelte/transition'
+  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
 
-  let {
+  const {
     header,
     message,
     actions = [],
@@ -17,7 +17,7 @@
     style: 'info' | 'warning' | 'error'
   } = $props()
   let showMore = $state(false)
-  let textClass = $derived(
+  const textClass = $derived(
     style === 'info'
       ? 'text-surface-950-50'
       : style === 'warning'
@@ -50,8 +50,8 @@
         {/if}
       </div>
       <span
-        class="{textClass} whitespace-pre-wrap break-all {showMore
-          ? 'max-h-[30vh] overflow-auto'
+        class="{textClass} break-all whitespace-pre-wrap {showMore
+          ? 'scrollbar max-h-[30vh] overflow-auto '
           : 'line-clamp-1'}"
       >
         {message}

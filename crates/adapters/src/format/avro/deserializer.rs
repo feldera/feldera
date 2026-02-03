@@ -25,9 +25,9 @@
 // under the License.
 
 use apache_avro::{
+    BigDecimal, Decimal, Error, Schema,
     schema::{RecordSchema, SchemaKind},
     types::Value,
-    BigDecimal, Decimal, Error, Schema,
 };
 use erased_serde::Deserializer as ErasedDeserializer;
 use feldera_adapterlib::catalog::AvroSchemaRefs;
@@ -39,8 +39,8 @@ use serde::{
 };
 use std::{
     collections::{
-        hash_map::{Keys, Values},
         HashMap,
+        hash_map::{Keys, Values},
     },
     slice::Iter,
 };
@@ -203,14 +203,14 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
             Value::TimeMillis(i) => visitor.visit_i64(*i as i64 * 1000),
             Value::Float(f) => visitor.visit_f32(*f),
             Value::Double(d) => visitor.visit_f64(*d),
-            Value::Record(ref fields) => visitor.visit_map(RecordDeserializer::new(fields, schema, self.refs)?),
-            Value::Array(ref fields) => visitor.visit_seq(SeqDeserializer::new(fields, schema, self.refs)?),
-            Value::String(ref s) => visitor.visit_borrowed_str(s),
+            Value::Record(fields) => visitor.visit_map(RecordDeserializer::new(fields, schema, self.refs)?),
+            Value::Array(fields) => visitor.visit_seq(SeqDeserializer::new(fields, schema, self.refs)?),
+            Value::String(s) => visitor.visit_borrowed_str(s),
             Value::Uuid(uuid) => visitor.visit_str(&uuid.to_string()),
-            Value::Map(ref items) => visitor.visit_map(MapDeserializer::new(items, schema, self.refs)?),
-            Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => visitor.visit_bytes(bytes),
-            Value::Decimal(ref d) => visitor.visit_str(&deserialize_decimal(d, schema)?),
-            Value::Enum(_, ref s) => visitor.visit_borrowed_str(s),
+            Value::Map(items) => visitor.visit_map(MapDeserializer::new(items, schema, self.refs)?),
+            Value::Bytes(bytes) | Value::Fixed(_, bytes) => visitor.visit_bytes(bytes),
+            Value::Decimal(d) => visitor.visit_str(&deserialize_decimal(d, schema)?),
+            Value::Enum(_, s) => visitor.visit_borrowed_str(s),
             value => Err(de::Error::custom(format!(
                 "incorrect value of type: {:?}",
                 SchemaKind::from(value)
@@ -234,11 +234,11 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
         V: Visitor<'de>,
     {
         match unwrap_union(self.input, self.schema).0 {
-            Value::String(ref s) | Value::Enum(_, ref s) => visitor.visit_borrowed_str(s),
-            Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => ::std::str::from_utf8(bytes)
+            Value::String(s) | Value::Enum(_, s) => visitor.visit_borrowed_str(s),
+            Value::Bytes(bytes) | Value::Fixed(_, bytes) => ::std::str::from_utf8(bytes)
                 .map_err(|e| de::Error::custom(e.to_string()))
                 .and_then(|s| visitor.visit_borrowed_str(s)),
-            Value::Uuid(ref u) => visitor.visit_str(&u.to_string()),
+            Value::Uuid(u) => visitor.visit_str(&u.to_string()),
             v => Err(de::Error::custom(format!(
                 "expected a String|Bytes|Fixed|Uuid, but got {v:?}"
             ))),
@@ -250,13 +250,11 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
         V: Visitor<'de>,
     {
         match unwrap_union(self.input, self.schema).0 {
-            Value::String(ref s) | Value::Enum(_, ref s) => visitor.visit_borrowed_str(s),
-            Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => {
-                String::from_utf8(bytes.to_owned())
-                    .map_err(|e| de::Error::custom(e.to_string()))
-                    .and_then(|s| visitor.visit_string(s))
-            }
-            Value::Uuid(ref u) => visitor.visit_str(&u.to_string()),
+            Value::String(s) | Value::Enum(_, s) => visitor.visit_borrowed_str(s),
+            Value::Bytes(bytes) | Value::Fixed(_, bytes) => String::from_utf8(bytes.to_owned())
+                .map_err(|e| de::Error::custom(e.to_string()))
+                .and_then(|s| visitor.visit_string(s)),
+            Value::Uuid(u) => visitor.visit_str(&u.to_string()),
             v => Err(de::Error::custom(format!(
                 "expected a String|Bytes|Fixed|Uuid|Union|Enum, but got {v:?}"
             ))),
@@ -270,10 +268,10 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
         let (value, schema) = unwrap_union(self.input, self.schema);
 
         match value {
-            Value::String(ref s) => visitor.visit_bytes(s.as_bytes()),
-            Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => visitor.visit_bytes(bytes),
-            Value::Uuid(ref u) => visitor.visit_bytes(u.as_bytes()),
-            Value::Decimal(ref d) => visitor.visit_str(&deserialize_decimal(d, schema)?),
+            Value::String(s) => visitor.visit_bytes(s.as_bytes()),
+            Value::Bytes(bytes) | Value::Fixed(_, bytes) => visitor.visit_bytes(bytes),
+            Value::Uuid(u) => visitor.visit_bytes(u.as_bytes()),
+            Value::Decimal(d) => visitor.visit_str(&deserialize_decimal(d, schema)?),
             v => Err(de::Error::custom(format!(
                 "expected a String|Bytes|Fixed|Uuid|Decimal, but got {v:?}",
             ))),
@@ -285,8 +283,8 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
         V: Visitor<'de>,
     {
         match unwrap_union(self.input, self.schema).0 {
-            Value::String(ref s) => visitor.visit_byte_buf(s.clone().into_bytes()),
-            Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => {
+            Value::String(s) => visitor.visit_byte_buf(s.clone().into_bytes()),
+            Value::Bytes(bytes) | Value::Fixed(_, bytes) => {
                 visitor.visit_byte_buf(bytes.to_owned())
             }
             v => Err(de::Error::custom(format!(
@@ -358,7 +356,7 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     {
         let (value, schema) = unwrap_union(self.input, self.schema);
         match value {
-            Value::Array(ref items) => {
+            Value::Array(items) => {
                 visitor.visit_seq(SeqDeserializer::new(items, schema, self.refs)?)
             }
             Value::Null => visitor.visit_seq(SeqDeserializer::new(&[], schema, self.refs)?),
@@ -393,9 +391,7 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     {
         let (value, schema) = unwrap_union(self.input, self.schema);
         match value {
-            Value::Map(ref items) => {
-                visitor.visit_map(MapDeserializer::new(items, schema, self.refs)?)
-            }
+            Value::Map(items) => visitor.visit_map(MapDeserializer::new(items, schema, self.refs)?),
             v => Err(de::Error::custom(format_args!(
                 "expected a record or a map, but got: {v:?}",
             ))),
@@ -414,7 +410,7 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
         let (value, schema) = unwrap_union(self.input, self.schema);
 
         match value {
-            Value::Record(ref fields) => {
+            Value::Record(fields) => {
                 visitor.visit_map(RecordDeserializer::new(fields, schema, self.refs)?)
             }
             v => Err(de::Error::custom(format!("expected a Record, got: {v:?}",))),

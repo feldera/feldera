@@ -2,10 +2,11 @@ use std::{
     borrow::Cow,
     marker::PhantomData,
     panic::Location,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{Arc, atomic::AtomicUsize},
 };
 
 use crate::{
+    Batch, BatchReader, Circuit, Scope, Stream,
     circuit::{
         metadata::OperatorLocation,
         operator_traits::{BinaryOperator, Operator},
@@ -14,7 +15,6 @@ use crate::{
         Batch as DynBatch, BatchReaderFactories, Spine as DynSpine, SpineSnapshot, WithSnapshot,
     },
     typed_batch::{Spine, TypedBatch},
-    Batch, BatchReader, Circuit, Scope, Stream,
 };
 
 impl<C, B> Stream<C, B>

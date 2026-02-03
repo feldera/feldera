@@ -160,12 +160,12 @@ impl Display for PipelineDiff {
             writeln!(f, "Could not compute program diff: {err}")?;
         }
 
-        if let Some(diff) = &self.program_diff {
-            if !diff.is_empty() {
-                writeln!(f, "Program changes:")?;
-                for change in diff.to_string().lines() {
-                    writeln!(f, "  {change}")?;
-                }
+        if let Some(diff) = &self.program_diff
+            && !diff.is_empty()
+        {
+            writeln!(f, "Program changes:")?;
+            for change in diff.to_string().lines() {
+                writeln!(f, "  {change}")?;
             }
         }
 

@@ -1,8 +1,9 @@
 use crate::{
+    Circuit, Position, RootCircuit, Scope, Stream,
     algebra::{OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
         circuit_builder::StreamId,
-        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
+        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
         operator_traits::Operator,
         splitter_output_chunk_size,
     },
@@ -13,10 +14,9 @@ use crate::{
         async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper},
     },
     trace::{
-        spine_async::SpineCursor, Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Spine,
-        SpineSnapshot, WithSnapshot,
+        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Spine, SpineSnapshot,
+        WithSnapshot, spine_async::SpineCursor,
     },
-    Circuit, Position, RootCircuit, Scope, Stream,
 };
 use async_stream::stream;
 use futures::Stream as AsyncStream;
@@ -25,15 +25,7 @@ use std::{
 };
 
 circuit_cache_key!(SaturateId<C, B: Batch>(StreamId => Stream<C, Option<SpineSnapshot<B>>>));
-
-pub struct SaturateFactories<K, V>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-{
-    pub batch_factories: <OrdIndexedZSet<K, V> as BatchReader>::Factories,
-    pub trace_factories: <Spine<OrdIndexedZSet<K, V>> as BatchReader>::Factories,
-}
+circuit_cache_key!(BalancedSaturateId<C, B: Batch>(StreamId => Stream<C, Option<SpineSnapshot<B>>>));
 
 impl<K, V> Stream<RootCircuit, OrdIndexedZSet<K, V>>
 where
@@ -65,7 +57,7 @@ where
     ///
     pub fn dyn_saturate(
         &self,
-        factories: &SaturateFactories<K, V>,
+        factories: &<OrdIndexedZSet<K, V> as BatchReader>::Factories,
     ) -> Stream<RootCircuit, Option<SpineSnapshot<OrdIndexedZSet<K, V>>>> {
         // We use the Saturate operator to compute ghost tuples and concatenate
         // its output with the original stream to obtain the complete saturated stream.
@@ -89,24 +81,21 @@ where
             .cache_get_or_insert_with(SaturateId::new(self.stream_id()), || {
                 self.circuit()
                     .region("saturate", || {
-                        let stream = self.dyn_shard(&factories.batch_factories);
+                        let stream = self.dyn_shard(factories);
 
                         let delayed_trace = stream
-                            .dyn_accumulate_trace(
-                                &factories.trace_factories,
-                                &factories.batch_factories,
-                            )
+                            .dyn_accumulate_trace(factories, factories)
                             .accumulate_delay_trace();
 
                         let ghost = self.circuit().add_binary_operator(
-                            StreamingBinaryWrapper::new(Saturate::new(&factories.batch_factories)),
-                            &stream.dyn_accumulate(&factories.batch_factories),
+                            StreamingBinaryWrapper::new(Saturate::new(factories)),
+                            &stream.dyn_accumulate(factories),
                             &delayed_trace,
                         );
 
                         ghost.mark_sharded();
 
-                        let output_factories = factories.batch_factories.clone();
+                        let output_factories = factories.clone();
 
                         // Plus
                         let result = stream.circuit().add_binary_operator(
@@ -119,8 +108,8 @@ where
                                 },
                                 Location::caller(),
                             ),
-                            &stream.dyn_accumulate(&factories.batch_factories),
-                            &ghost.dyn_accumulate(&factories.batch_factories),
+                            &stream.dyn_accumulate(factories),
+                            &ghost.dyn_accumulate(factories),
                         );
 
                         // `result` is also the saturated version of the sharded stream.
@@ -128,6 +117,56 @@ where
                             .cache_insert(SaturateId::new(stream.stream_id()), result.clone());
                         result.mark_sharded();
                         result
+                    })
+                    .clone()
+            })
+            .clone()
+    }
+
+    pub fn dyn_saturate_balanced(
+        &self,
+        factories: &<OrdIndexedZSet<K, V> as BatchReader>::Factories,
+    ) -> Stream<RootCircuit, Option<SpineSnapshot<OrdIndexedZSet<K, V>>>> {
+        self.circuit()
+            .cache_get_or_insert_with(BalancedSaturateId::new(self.stream_id()), || {
+                self.circuit()
+                    .region("saturate_balanced", || {
+                        // let stream = self.dyn_shard(&factories.batch_factories);
+
+                        // let delayed_trace = stream
+                        //     .dyn_accumulate_trace(
+                        //         &factories.trace_factories,
+                        //         &factories.batch_factories,
+                        //     )
+                        //     .accumulate_delay_trace();
+
+                        let (accumulator, trace) =
+                            self.dyn_accumulate_trace_balanced(factories, factories);
+
+                        let delayed_trace = trace.accumulate_delay_trace();
+
+                        let ghost = self.circuit().add_binary_operator(
+                            StreamingBinaryWrapper::new(Saturate::new(factories)),
+                            &accumulator,
+                            &delayed_trace,
+                        );
+
+                        let output_factories = factories.clone();
+
+                        // Plus
+                        self.circuit().add_binary_operator(
+                            AccumulateApply2::new(
+                                move |stream, saturation| {
+                                    SpineSnapshot::concat(
+                                        output_factories.clone(),
+                                        vec![&stream, &saturation],
+                                    )
+                                },
+                                Location::caller(),
+                            ),
+                            &accumulator,
+                            &ghost.dyn_accumulate(factories),
+                        )
                     })
                     .clone()
             })

@@ -87,16 +87,16 @@ fn find_cycle(edges: &[(String, String, String)]) -> Option<Vec<(String, String)
 
     // Perform DFS from each node
     for node in graph.keys() {
-        if !visited.contains(node) {
-            if let Some(cycle) = dfs(
+        if !visited.contains(node)
+            && let Some(cycle) = dfs(
                 node,
                 &graph,
                 &mut visited,
                 &mut recursion_stack,
                 &mut stack_set,
-            ) {
-                return Some(cycle);
-            }
+            )
+        {
+            return Some(cycle);
         }
     }
 

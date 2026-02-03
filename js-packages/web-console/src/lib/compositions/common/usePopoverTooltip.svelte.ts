@@ -1,8 +1,8 @@
 import { untrack } from 'svelte'
 
-export const usePopoverTooltip = (popoverElement: () => HTMLElement | undefined) => {
-  let tooltipDetails: { element: HTMLElement; value: any } | undefined = $state()
-  let popupData: { x: number; y: number; targetWidth: number; text: string } | undefined = $state()
+export const usePopoverTooltip = <T = any>(popoverElement: () => HTMLElement | undefined) => {
+  let tooltipDetails: { element: HTMLElement; value: T } | undefined = $state()
+  let popupData: { x: number; y: number; targetWidth: number; value: T } | undefined = $state()
   let hoverCount = $state(0)
   $effect(() => {
     if (hoverCount > 3) {
@@ -43,7 +43,7 @@ export const usePopoverTooltip = (popoverElement: () => HTMLElement | undefined)
       hoverCount = 0
     }
   })
-  let showTooltip = $derived(hoverCount > 0)
+  const showTooltip = $derived(hoverCount > 0)
   $effect(() => {
     const el = popoverElement()
     if (!el) {
@@ -57,13 +57,13 @@ export const usePopoverTooltip = (popoverElement: () => HTMLElement | undefined)
       el.hidePopover()
       return
     }
-    const text = tooltipDetails.value
+    const value = tooltipDetails.value
     const rect = tooltipDetails.element.getBoundingClientRect()
     popupData = {
       x: 0,
       y: 0,
       targetWidth: 0,
-      text
+      value
     }
     el.showPopover()
     requestAnimationFrame(() => {
@@ -72,18 +72,18 @@ export const usePopoverTooltip = (popoverElement: () => HTMLElement | undefined)
         x: Math.min(Math.max(0, rect.left), window.innerWidth - rect2.width),
         y: Math.min(rect.top, window.innerHeight - rect2.height),
         targetWidth: tooltipDetails!.element.clientWidth,
-        text
+        value
       }
     })
   })
   type CustomMouseEvent = MouseEvent & {
     currentTarget: EventTarget & HTMLTableCellElement
   }
-  const showTooltipWith = (e: CustomMouseEvent, value: any) => {
+  const showTooltipWith = (e: CustomMouseEvent, value: T) => {
     tooltipDetails = { element: e.currentTarget, value }
     ++hoverCount
   }
-  const showTooltipCb = (value: any) => (e: CustomMouseEvent) => showTooltipWith(e, value)
+  const showTooltipCb = (value: T) => (e: CustomMouseEvent) => showTooltipWith(e, value)
   const onmouseleave = (e: CustomMouseEvent) => {
     requestAnimationFrame(() => {
       hoverCount -= hoverCount > 0 ? 1 : 0

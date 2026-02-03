@@ -39,7 +39,6 @@ import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.sql.validate.SqlUserDefinedAggFunction;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
-import org.dbsp.sqlCompiler.compiler.backend.MerkleInner;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
@@ -121,20 +120,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     public ProgramIdentifier canonicalName(String name, boolean nameIsQuoted) {
         String canon = this.options.canonicalName(name, nameIsQuoted);
         return new ProgramIdentifier(canon, nameIsQuoted);
-    }
-
-    public String generateStructName(ProgramIdentifier typeName, List<DBSPTypeStruct.Field> fields) {
-        StringBuilder builder = new StringBuilder();
-        builder.append(typeName);
-        builder.append("[");
-        for (var field: fields) {
-            builder.append(field.getName())
-                    .append(":")
-                    .append(field.getType())
-                    .append(",");
-        }
-        builder.append("]");
-        return MerkleInner.hash(builder.toString()).makeIdentifier("struct");
     }
 
     /** Where does the compiled program come from? */
@@ -271,8 +256,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return this.typeCompiler;
     }
 
-    public void registerStruct(DBSPTypeStruct type) {
-        this.globalTypes.register(type);
+    public void registerUDT(ProgramIdentifier name, DBSPTypeStruct type) {
+        this.globalTypes.register(name, type);
     }
 
     @Nullable

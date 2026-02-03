@@ -13,7 +13,7 @@ use crate::zset_set;
 /// value, weight)` tuples `(1, 3, -1), (1, 2, 1), (2, 2, 1)`:
 ///
 /// ```
-/// use dbsp::{indexed_zset, IndexedZSet};
+/// use dbsp::{indexed_zset, IndexedZSet, IndexedZSetReader};
 ///
 /// let zset = indexed_zset! {1 => {3 => -1, 2 => 1}, 2 => {2 => 1}};
 /// assert_eq!(
@@ -23,13 +23,13 @@ use crate::zset_set;
 /// ```
 #[macro_export]
 macro_rules! indexed_zset {
-    ($key_type:ty => $val_type:ty: $($key:expr => { $($value:expr => $weight:expr),* }),* $(,)?) => {{
+    ($key_type:ty => $val_type:ty: $($key:expr_2021 => { $($value:expr_2021 => $weight:expr_2021),* }),* $(,)?) => {{
         let batch = ::std::vec![ $( $( $crate::utils::Tup2($crate::utils::Tup2($key, $value), $weight) ),* ),* ];
 
         $crate::typed_batch::OrdIndexedZSet::<$key_type, $val_type>::from_tuples((), batch)
     }};
 
-    ($($key:expr => { $($value:expr => $weight:expr),* }),* $(,)?) => {{
+    ($($key:expr_2021 => { $($value:expr_2021 => $weight:expr_2021),* }),* $(,)?) => {{
         let batch = ::std::vec![ $( $( $crate::utils::Tup2($crate::utils::Tup2($key, $value), $weight) ),* ),* ];
 
         $crate::typed_batch::OrdIndexedZSet::from_tuples((), batch)
@@ -49,7 +49,7 @@ macro_rules! indexed_zset {
 /// tuples `(1, -1), (2, 1)`:
 ///
 /// ```
-/// use dbsp::{zset, IndexedZSet};
+/// use dbsp::{zset, IndexedZSet, IndexedZSetReader};
 ///
 /// let zset = zset! {1 => -1, 2 => 1};
 /// assert_eq!(
@@ -59,7 +59,7 @@ macro_rules! indexed_zset {
 /// ```
 #[macro_export]
 macro_rules! zset {
-    ( $( $key:expr => $weight:expr ),* $(,)?) => {{
+    ( $( $key:expr_2021 => $weight:expr_2021 ),* $(,)?) => {{
         let batch = ::std::vec![ $( $crate::utils::Tup2($crate::utils::Tup2($key, ()), $weight) ),* ];
 
         $crate::typed_batch::OrdZSet::from_tuples((), batch)
@@ -78,7 +78,7 @@ macro_rules! zset {
 /// tuples `(1, 1), (2, 1), (-3, 1)`:
 ///
 /// ```
-/// use dbsp::{zset_set, IndexedZSet};
+/// use dbsp::{zset_set, IndexedZSet, IndexedZSetReader};
 ///
 /// let zset = zset_set! {1, 2, -3};
 /// assert_eq!(
@@ -88,7 +88,7 @@ macro_rules! zset {
 /// ```
 #[macro_export]
 macro_rules! zset_set {
-    ( $( $key:expr ),* $(,)?) => {{
+    ( $( $key:expr_2021 ),* $(,)?) => {{
         let batch = ::std::vec![ $( $crate::utils::Tup2($crate::utils::Tup2($key, ()), 1) ),* ];
 
         $crate::typed_batch::OrdZSet::from_tuples((), batch)
@@ -97,7 +97,7 @@ macro_rules! zset_set {
 
 #[cfg(test)]
 mod test {
-    use crate::{indexed_zset, zset};
+    use crate::{indexed_zset, typed_batch::IndexedZSetReader, zset};
 
     #[test]
     fn zset_test() {

@@ -1,5 +1,6 @@
 use crate::format::{Splitter, Sponge};
-use crate::test::kafka::{BufferConsumer, TestStructMetadata};
+use crate::test::data::TestStructMetadata;
+use crate::test::kafka::BufferConsumer;
 use crate::test::{
     generate_test_batches, mock_input_pipeline, wait, wait_for_output_count,
     wait_for_output_ordered, wait_for_output_unordered,
@@ -7,36 +8,41 @@ use crate::test::{
 use crate::transport::kafka::ft::input::Metadata;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::{
-    test::{
-        kafka::{KafkaResources, TestProducer},
-        test_circuit, TestStruct,
-    },
     Controller, InputConsumer, ParseError,
+    test::{
+        TestStruct,
+        kafka::{KafkaResources, TestProducer},
+        test_circuit,
+    },
 };
 use crate::{InputBuffer, InputReader, Parser, TransportInputEndpoint};
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
 use csv::ReaderBuilder as CsvReaderBuilder;
 use dbsp::operator::StagedBuffers;
+use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
+use feldera_macros::IsNone;
 use feldera_sqllib::{ByteArray, SqlString, Variant};
 use feldera_types::config::{
-    default_max_batch_size, default_max_queued_records, ConnectorConfig, FormatConfig, FtModel,
-    InputEndpointConfig, OutputBufferConfig, TransportConfig,
+    ConnectorConfig, FormatConfig, FtModel, InputEndpointConfig, OutputBufferConfig,
+    TransportConfig, default_max_batch_size, default_max_queued_records,
 };
-use feldera_types::program_schema::Relation;
+use feldera_types::deserialize_table_record;
+use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::secret_resolver::default_secrets_directory;
 use feldera_types::transport::kafka::{
-    default_group_join_timeout_secs, default_redpanda_server, KafkaInputConfig, KafkaLogLevel,
-    KafkaStartFromConfig,
+    KafkaInputConfig, KafkaLogLevel, KafkaStartFromConfig, default_group_join_timeout_secs,
+    default_redpanda_server,
 };
 use parquet::data_type::AsBytes;
 use proptest::prelude::*;
 use rdkafka::message::{BorrowedMessage, Header, Headers};
 use rdkafka::{Message, Timestamp};
 use rmpv::Value as RmpValue;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
+use size_of::SizeOf;
 use std::any::Any;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -48,16 +54,16 @@ use std::thread::sleep;
 use std::{
     mem,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
 };
 use tempfile::TempDir;
 use tracing::info;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 fn init_test_logger() {
     let _ = tracing_subscriber::registry()
@@ -323,7 +329,7 @@ impl Parser for DummyParser {
     fn parse(
         &mut self,
         data: &[u8],
-        _metadata: &Option<Variant>,
+        _metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         (
             Some(Box::new(DummyInputBuffer {
@@ -2350,10 +2356,10 @@ proptest! {
 }
 
 #[test]
-fn test_kafka_metadata() {
+fn test_kafka_metadata_json() {
     init_test_logger();
 
-    let topic = "kafka_metadata_test_topic";
+    let topic = "kafka_metadata_json_test_topic";
     let _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
 
     let config = serde_json::from_value(json!({
@@ -2380,7 +2386,7 @@ fn test_kafka_metadata() {
     }))
     .unwrap();
 
-    info!("test_kafka_metadata: Building input pipeline");
+    info!("test_kafka_metadata_json: Building input pipeline");
 
     let (endpoint, _, _, zset) =
         mock_input_pipeline::<TestStructMetadata, TestStructMetadata>(config, Relation::empty())
@@ -2390,7 +2396,7 @@ fn test_kafka_metadata() {
 
     let producer = TestProducer::new();
 
-    info!("test_kafka_metadata: Test: Receive from a topic with a single partition");
+    info!("test_kafka_metadata_json: Test: Receive from a topic with a single partition");
 
     // Send data to a topic with a single partition;
     producer.send_message(
@@ -2421,7 +2427,7 @@ fn test_kafka_metadata() {
                 ),
             ]))),
             SqlString::from(topic),
-            feldera_sqllib::Timestamp::new(0),
+            feldera_sqllib::Timestamp::from_microseconds(0),
             0,
             0,
         ),
@@ -2429,14 +2435,194 @@ fn test_kafka_metadata() {
             1,
             Variant::Map(Arc::new(BTreeMap::new())),
             SqlString::from(topic),
-            feldera_sqllib::Timestamp::new(0),
+            feldera_sqllib::Timestamp::from_microseconds(0),
             0,
             1,
         ),
     ];
 
     let mut received = wait_for_output_count(&zset, 2, flush);
-    received[0].kafka_timestamp = feldera_sqllib::Timestamp::new(0);
-    received[1].kafka_timestamp = feldera_sqllib::Timestamp::new(0);
+    received[0].kafka_timestamp = feldera_sqllib::Timestamp::from_microseconds(0);
+    received[1].kafka_timestamp = feldera_sqllib::Timestamp::from_microseconds(0);
+    assert_eq!(received, expected);
+}
+
+/// Used to test passing of record metadata from Kafka connector to deserializer.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+pub struct TestRawStructMetadata {
+    pub data: SqlString,
+    pub kafka_headers: Variant,
+    pub kafka_topic: SqlString,
+    pub kafka_timestamp: feldera_sqllib::Timestamp,
+    pub kafka_partition: i32,
+    pub kafka_offset: i64,
+}
+
+deserialize_table_record!(TestRawStructMetadata["TestRawStructMetadata", Variant, 6] {
+    (data, "data", false, SqlString, |_| None),
+    (kafka_headers, "kafka_headers", false, Variant, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().map(|metadata| metadata.index_string("kafka_headers"))),
+    (kafka_topic, "kafka_topic", false, SqlString, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| SqlString::try_from(metadata.index_string("kafka_topic")).ok())),
+    (kafka_timestamp, "kafka_timestamp", false, feldera_sqllib::Timestamp, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| feldera_sqllib::Timestamp::try_from(metadata.index_string("kafka_timestamp")).ok())),
+    (kafka_partition, "kafka_partition", false, i32, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| i32::try_from(metadata.index_string("kafka_partition")).ok())),
+    (kafka_offset, "kafka_offset", false, i64, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| i64::try_from(metadata.index_string("kafka_offset")).ok()))
+});
+
+impl TestRawStructMetadata {
+    pub fn new(
+        data: SqlString,
+        kafka_headers: Variant,
+        kafka_topic: SqlString,
+        kafka_timestamp: feldera_sqllib::Timestamp,
+        kafka_partition: i32,
+        kafka_offset: i64,
+    ) -> Self {
+        Self {
+            data,
+            kafka_headers,
+            kafka_topic,
+            kafka_timestamp,
+            kafka_partition,
+            kafka_offset,
+        }
+    }
+
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("data".into(), ColumnType::varchar(false)),
+            Field::new(
+                "kafka_headers".into(),
+                ColumnType::map(
+                    false,
+                    ColumnType::varchar(false),
+                    ColumnType::varbinary(false),
+                ),
+            ),
+            Field::new("kafka_topic".into(), ColumnType::varchar(false)),
+            Field::new("kafka_timestamp".into(), ColumnType::timestamp(false)),
+            Field::new("kafka_partition".into(), ColumnType::int(false)),
+            Field::new("kafka_offset".into(), ColumnType::bigint(false)),
+        ]
+    }
+
+    pub fn relation_schema() -> Relation {
+        Relation::new(
+            SqlIdentifier::new("TestRawStructMetadata", false),
+            Self::schema(),
+            false,
+            BTreeMap::new(),
+        )
+    }
+}
+
+#[test]
+fn test_kafka_metadata_raw() {
+    init_test_logger();
+
+    let topic = "kafka_metadata_raw_test_topic";
+    let _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+
+    let config = serde_json::from_value(json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "kafka_input",
+            "config": {
+                "topic": topic,
+                "log_level": "debug",
+                "auto.offset.reset": "earliest",
+                "include_headers": true,
+                "include_topic": true,
+                "include_timestamp": true,
+                "include_partition": true,
+                "include_offset": true
+            }
+        },
+        "format": {
+            "name": "raw",
+            "config": {
+                "mode": "blob",
+                "column_name": "data"
+            }
+        }
+    }))
+    .unwrap();
+
+    info!("test_kafka_metadata_raw: Building input pipeline");
+
+    let (endpoint, _, _, zset) =
+        mock_input_pipeline::<TestRawStructMetadata, TestRawStructMetadata>(
+            config,
+            TestRawStructMetadata::relation_schema(),
+        )
+        .unwrap();
+
+    endpoint.extend();
+
+    let producer = TestProducer::new();
+
+    info!("test_kafka_metadata_raw: Test: Receive from a topic with a single partition");
+
+    // Send data to a topic with a single partition;
+    producer.send_message(
+        b"foo",
+        topic,
+        Some(BTreeMap::from([
+            ("header1".to_string(), Some(b"foobar".to_vec())),
+            ("header2".to_string(), None),
+        ])),
+    );
+    producer.send_message(b"bar", topic, None);
+
+    let flush = || {
+        endpoint.queue(false);
+    };
+
+    let expected = vec![
+        TestRawStructMetadata::new(
+            SqlString::from("foo"),
+            Variant::Map(Arc::new(BTreeMap::from([
+                (
+                    Variant::String(SqlString::from("header1")),
+                    Variant::Binary(ByteArray::new(b"foobar")),
+                ),
+                (
+                    Variant::String(SqlString::from("header2")),
+                    Variant::SqlNull,
+                ),
+            ]))),
+            SqlString::from(topic),
+            feldera_sqllib::Timestamp::from_microseconds(0),
+            0,
+            0,
+        ),
+        TestRawStructMetadata::new(
+            SqlString::from("bar"),
+            Variant::Map(Arc::new(BTreeMap::new())),
+            SqlString::from(topic),
+            feldera_sqllib::Timestamp::from_microseconds(0),
+            0,
+            1,
+        ),
+    ];
+
+    let mut received = wait_for_output_count(&zset, 2, flush);
+    received[0].kafka_timestamp = feldera_sqllib::Timestamp::from_microseconds(0);
+    received[1].kafka_timestamp = feldera_sqllib::Timestamp::from_microseconds(0);
     assert_eq!(received, expected);
 }

@@ -1,4 +1,5 @@
 use crate::{
+    Circuit, DynZWeight, Stream, ZWeight,
     dynamic::{DowncastTrait, DynData},
     operator::dynamic::{
         aggregate::{IncAggregateLinearFactories, StreamLinearAggregateFactories},
@@ -6,7 +7,6 @@ use crate::{
     },
     storage::file::Deserializable,
     typed_batch::{DynOrdIndexedZSet, IndexedZSet, OrdIndexedZSet},
-    Circuit, DynZWeight, Stream, ZWeight,
 };
 
 impl<C, Z> Stream<C, Z>

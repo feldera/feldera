@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.dbsp.sqlCompiler.compiler.IHasSourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.ExtendedSqlParserPos;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -22,14 +23,24 @@ public class SourcePositionRange implements IHasSourcePositionRange {
         this.end = end;
     }
 
-    public SourcePositionRange(@Nullable SqlParserPos pos) {
+    public SourcePositionRange(@Nullable SqlParserPos pos, boolean skipInternal) {
         if (pos == null) {
             this.start = SourcePosition.INVALID;
             this.end = SourcePosition.INVALID;
         } else {
-            this.start = new SourcePosition(pos.getLineNum(), pos.getColumnNum());
-            this.end = new SourcePosition(pos.getEndLineNum(), pos.getEndColumnNum());
+            if (pos instanceof ExtendedSqlParserPos epos &&
+                skipInternal && epos.internal) {
+                this.start = SourcePosition.INVALID;
+                this.end = SourcePosition.INVALID;
+            } else {
+                this.start = new SourcePosition(pos.getLineNum(), pos.getColumnNum());
+                this.end = new SourcePosition(pos.getEndLineNum(), pos.getEndColumnNum());
+            }
         }
+    }
+
+    public SourcePositionRange(@Nullable SqlParserPos pos) {
+        this(pos, true);
     }
 
     public boolean isValid() {

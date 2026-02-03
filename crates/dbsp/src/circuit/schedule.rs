@@ -2,7 +2,7 @@
 
 #![allow(async_fn_in_trait)]
 
-use super::{trace::SchedulerEvent, Circuit, GlobalNodeId, NodeId};
+use super::{Circuit, GlobalNodeId, NodeId, trace::SchedulerEvent};
 use crate::{DetailedError, Position};
 use itertools::Itertools;
 use serde::Serialize;
@@ -70,11 +70,17 @@ impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
             Self::OwnershipConflict { origin, consumers } => {
-                write!(f, "ownership conflict: output of node '{origin}' is consumed by value by the following nodes: [{}]",
-                               consumers.iter().map(ToString::to_string).format(","))
+                write!(
+                    f,
+                    "ownership conflict: output of node '{origin}' is consumed by value by the following nodes: [{}]",
+                    consumers.iter().map(ToString::to_string).format(",")
+                )
             }
             Self::CyclicCircuit { node_id } => {
-                write!(f, "unschedulable circuit due to a cyclic topology: cycle through node '{node_id}'")
+                write!(
+                    f,
+                    "unschedulable circuit due to a cyclic topology: cycle through node '{node_id}'"
+                )
             }
             Error::CommitWithoutTransaction => {
                 f.write_str("commit invoked outside of a transaction")
@@ -137,6 +143,10 @@ impl CommitProgress {
         debug_assert!(!self.remaining.contains(&node_id));
 
         self.in_progress.insert(node_id, progress);
+    }
+
+    pub fn get_in_progress(&self) -> &BTreeMap<NodeId, Option<Position>> {
+        &self.in_progress
     }
 
     pub fn summary(&self) -> CommitProgressSummary {
@@ -214,7 +224,11 @@ impl Display for CommitProgressSummary {
         write!(
             f,
             "completed: {} operators, evaluating: {} operators [{}/{} changes processed], remaining: {} operators",
-            self.completed, self.in_progress, self.in_progress_processed_records, self.in_progress_total_records, self.remaining
+            self.completed,
+            self.in_progress,
+            self.in_progress_processed_records,
+            self.in_progress_total_records,
+            self.remaining
         )
     }
 }
@@ -333,6 +347,10 @@ where
 
         Ok(())
     }
+
+    fn flush(&self);
+
+    fn is_flush_complete(&self) -> bool;
 }
 
 /// An executor executes a circuit by evaluating all of its operators using a
@@ -341,16 +359,28 @@ where
 pub trait Executor<C>: 'static {
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error>;
 
-    fn start_commit_transaction(&self) -> Result<(), Error>;
-
-    fn is_commit_complete(&self) -> bool;
-
-    fn commit_progress(&self) -> CommitProgress;
-
+    /// Start a transaction.
+    ///
+    /// Only called on the executor in the top-level circuit.
     fn start_transaction<'a>(
         &'a self,
         circuit: &'a C,
     ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+
+    /// Start committing the current transaction.
+    ///
+    /// Only called on the executor in the top-level circuit.
+    fn start_commit_transaction(&self) -> Result<(), Error>;
+
+    /// Check if the current transaction is complete.
+    ///
+    /// Only called on the executor in the top-level circuit.
+    fn is_commit_complete(&self) -> bool;
+
+    /// Get the commit progress.
+    ///
+    /// Only called on the executor in the top-level circuit.
+    fn commit_progress(&self) -> CommitProgress;
 
     fn step<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 
@@ -358,6 +388,16 @@ pub trait Executor<C>: 'static {
         &'a self,
         circuit: &'a C,
     ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+
+    /// The ChildNode operator that wraps this circuit is being flushed.
+    ///
+    /// Only called on nested circuits.
+    fn flush(&self);
+
+    /// Check if the current flush operation is complete.
+    ///
+    /// Only called on nested circuits.
+    fn is_flush_complete(&self) -> bool;
 }
 
 /// An iterative executor evaluates the circuit until the `termination_check`
@@ -388,10 +428,26 @@ where
     C: Circuit,
     S: Scheduler + 'static,
 {
+    /// Only called on the executor in the top-level circuit.
     fn start_transaction<'a>(
         &'a self,
         _circuit: &C,
     ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        unimplemented!()
+    }
+
+    /// Only called on the executor in the top-level circuit.
+    fn start_commit_transaction(&self) -> Result<(), Error> {
+        unimplemented!()
+    }
+
+    /// Only called on the executor in the top-level circuit.
+    fn commit_progress(&self) -> CommitProgress {
+        unimplemented!()
+    }
+
+    /// Only called on the executor in the top-level circuit.
+    fn is_commit_complete(&self) -> bool {
         unimplemented!()
     }
 
@@ -426,16 +482,12 @@ where
         self.scheduler.prepare(circuit, nodes)
     }
 
-    fn start_commit_transaction(&self) -> Result<(), Error> {
-        Ok(())
+    fn flush(&self) {
+        self.scheduler.flush();
     }
 
-    fn commit_progress(&self) -> CommitProgress {
-        CommitProgress::new()
-    }
-
-    fn is_commit_complete(&self) -> bool {
-        true
+    fn is_flush_complete(&self) -> bool {
+        self.scheduler.is_flush_complete()
     }
 }
 
@@ -495,14 +547,24 @@ where
     fn commit_progress(&self) -> CommitProgress {
         self.scheduler.commit_progress()
     }
+
+    /// Only called on nested circuits.
+    fn flush(&self) {
+        unimplemented!()
+    }
+
+    /// Only called on nested circuits.
+    fn is_flush_complete(&self) -> bool {
+        unimplemented!()
+    }
 }
 
 /// Some useful tools for developing schedulers.
 mod util {
 
     use crate::circuit::{
-        circuit_builder::StreamId, schedule::Error, Circuit, GlobalNodeId, NodeId,
-        OwnershipPreference,
+        Circuit, GlobalNodeId, NodeId, OwnershipPreference, circuit_builder::StreamId,
+        schedule::Error,
     };
     use petgraph::graphmap::DiGraphMap;
     use std::{collections::HashMap, ops::Deref};

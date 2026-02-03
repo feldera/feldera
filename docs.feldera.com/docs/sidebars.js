@@ -70,6 +70,7 @@ const installation = {
                     ]
                 },
                 'get-started/enterprise/https',
+                'get-started/enterprise/parallel-compilation',
             ]
         }
     ]
@@ -153,7 +154,17 @@ const guides = {
                 'use_cases/otel/grafana'
             ]
         },
-        'tutorials/rest_api/index',
+        {
+            type: 'category',
+            label: 'Rest API',
+            link: {
+                type: 'doc',
+                id: 'tutorials/rest_api/index'
+            },
+            items: [
+                'tutorials/rest_api/cluster-monitoring'
+            ]
+        },
         'tutorials/monitoring/index'
     ]
 };
@@ -417,6 +428,11 @@ const pipelines = {
         "pipelines/checkpoint-sync",
         "pipelines/transactions",
         "pipelines/latency",
+        {
+            type: 'doc',
+            label: "Sidecar Containers",
+            id: "pipelines/sidecar",
+        },
     ]
 };
 
@@ -448,6 +464,8 @@ const operations = {
         'operations/guide',
         'operations/memory',
         'operations/metrics',
+        'operations/json-logging',
+        'operations/visualizing-profiles',
     ]
 };
 

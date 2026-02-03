@@ -26,7 +26,9 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.IInputMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IContainsIntegrator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputMapOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
@@ -40,6 +42,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
@@ -74,8 +77,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
-import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.CircuitWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -254,6 +257,7 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    /** True if a declaration should local to a circuit */
     boolean declareInside(DBSPDeclaration decl) {
         return decl.item.is(DBSPStaticItem.class) || decl.item.is(DBSPFunctionItem.class);
     }
@@ -266,7 +270,10 @@ public class ToRustVisitor extends CircuitVisitor {
         for (DBSPDeclaration decl : circuit.declarations) {
             if (!this.declareInside(decl) &&
                     !this.globalDeclarations.contains(decl.getName())) {
-                decl.accept(this.innerVisitor);
+                this.generateNestedStructs(decl.item, true);
+                if (!decl.item.is(DBSPStructItem.class))
+                    // If it's a StructItem the previous call already declared it
+                    decl.accept(this.innerVisitor);
                 this.globalDeclarations.declare(decl.getName());
             }
         }
@@ -314,6 +321,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
         for (DBSPDeclaration decl: circuit.declarations) {
             if (this.declareInside(decl)) {
+                this.generateNestedStructs(decl.item, false);
                 decl.accept(this);
             }
         }
@@ -437,43 +445,73 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     public static class FindNestedStructs extends InnerVisitor {
-        final List<DBSPTypeStruct> structs;
+        final List<DBSPStructItem> structs;
+        final Set<String> found = new HashSet<>();
 
-        public FindNestedStructs(DBSPCompiler compiler, List<DBSPTypeStruct> result) {
+        /** Create a visitor to find struct types; deposit an item for each type found in 'result' */
+        public FindNestedStructs(DBSPCompiler compiler, List<DBSPStructItem> result) {
             super(compiler);
             this.structs = result;
         }
 
         @Override
+        public VisitDecision preorder(DBSPStructItem item) {
+            this.structs.add(item);
+            return VisitDecision.CONTINUE;
+        }
+
+        @Override
         public void postorder(DBSPTypeStruct struct) {
-            for (DBSPTypeStruct str: this.structs)
-                if (str.name.equals(struct.name))
-                    return;
-            this.structs.add(struct);
+            // Scan in postorder; structs cannot be mutually recursive, so this will
+            // build a topological order of sorts (at least for the root struct)
+            if (this.found.contains(struct.hashName))
+                return;
+            this.structs.add(new DBSPStructItem(struct, null));
+            this.found.add(struct.hashName);
         }
     }
 
     final Set<String> structsGenerated = new HashSet<>();
 
-    void generateStructHelpers(DBSPType struct, @Nullable TableMetadata metadata) {
-        List<DBSPTypeStruct> nested = new ArrayList<>();
-        FindNestedStructs fn = new FindNestedStructs(this.compiler, nested);
-        fn.apply(struct);
-        for (DBSPTypeStruct s: nested) {
-            DBSPStructItem item = new DBSPStructItem(s, metadata);
-            if (this.structsGenerated.contains(item.getName()))
-                continue;
-            item.accept(this.innerVisitor);
-            this.structsGenerated.add(item.getName());
+    void generateStructItem(DBSPStructItem item) {
+        if (this.structsGenerated.contains(item.getName()))
+            return;
+        item.accept(this.innerVisitor);
+        this.structsGenerated.add(item.getName());
+    }
+
+    void generateNestedStructs(IDBSPInnerNode node, boolean global) {
+        List<DBSPStructItem> structs = new ArrayList<>();
+        FindNestedStructs fn = new FindNestedStructs(this.compiler, structs);
+        fn.apply(node);
+        DBSPStructItem item = node.as(DBSPStructItem.class);
+        if (item != null && item.metadata != null) {
+            // Discover structs used in the metadata
+            for (int i = 0; i < item.metadata.getColumnCount(); i++) {
+                InputColumnMetadata meta = item.metadata.getColumnMetadata(i);
+                if (meta.defaultValue != null)
+                    fn.apply(meta.defaultValue);
+                if (meta.lateness != null)
+                    fn.apply(meta.lateness);
+                if (meta.watermark != null)
+                    fn.apply(meta.watermark);
+            }
+        }
+
+        for (DBSPStructItem found: structs) {
+            if (!global || !this.globalDeclarations.contains(found.getName())) {
+                this.generateStructItem(found);
+            }
         }
     }
 
     /** Emit the call to the function associated with the operator, including the open parens */
     void operationCall(DBSPSimpleOperator operator) {
         this.builder.append(operator.operation);
-        if (operator.containsIntegrator &&
+        if (operator.is(IContainsIntegrator.class) &&
                 !operator.is(DBSPJoinBaseOperator.class) &&
-                !operator.is(DBSPAntiJoinOperator.class)) {
+                !operator.is(DBSPAntiJoinOperator.class) &&
+                !operator.is(DBSPIntegrateOperator.class)) {
             this.builder.append("_persistent(hash, ");
         } else {
             this.builder.append("(");
@@ -526,7 +564,9 @@ public class ToRustVisitor extends CircuitVisitor {
         // Note that this is never a problem for SourceMapOperators with lateness, due to the
         // nature of the circuits synthesized for them.
         this.builder.newline();
-        this.generateStructHelpers(operator.originalRowType, operator.metadata);
+        var item = new DBSPStructItem(operator.originalRowType, operator.metadata);
+        this.generateNestedStructs(item, false);
+
         String registerFunction = operator.metadata.materialized ?
                 "register_materialized_input_zset" : "register_input_zset";
         this.builder.append("catalog.")
@@ -589,9 +629,9 @@ public class ToRustVisitor extends CircuitVisitor {
         this.computeHash(operator.asOperator());
         DBSPTypeStruct type = operator.getOriginalRowType();
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
-                new ProgramIdentifier(operator.getOriginalRowType().sanitizedName + "_key", false));
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_key", false));
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
-                new ProgramIdentifier(operator.getOriginalRowType().sanitizedName + "_upsert", false));
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_upsert", false));
         this.writeComments(operator.asOperator())
                 .append("let (")
                 .append(operator.asOperator().getNodeName(this.preferHash))
@@ -614,7 +654,7 @@ public class ToRustVisitor extends CircuitVisitor {
             type.toTupleDeep().accept(this.innerVisitor);
             this.builder.append(", changes: &");
             upsertStruct.toTupleDeep().accept(this.innerVisitor);
-            this.builder.append("| {");
+            this.builder.append("| {").increase();
             int index = 0;
             for (DBSPTypeStruct.Field field: upsertStruct.fields.values()) {
                 String name = field.getSanitizedName();
@@ -633,7 +673,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 }
                 index++;
             }
-            this.builder.append("})");
+            this.builder.decrease().append("})");
         }
         this.builder.decrease().append(");").newline();
         this.tagStream(operator.asOperator());
@@ -647,9 +687,9 @@ public class ToRustVisitor extends CircuitVisitor {
         this.computeHash(operator.asOperator());
         DBSPTypeStruct type = operator.getOriginalRowType();
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
-                new ProgramIdentifier(operator.getOriginalRowType().sanitizedName + "_key", false));
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_key", false));
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
-                new ProgramIdentifier(operator.getOriginalRowType().sanitizedName + "_upsert", false));
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_upsert", false));
         this.writeComments(operator.asOperator());
         this.builder.append("let (")
                 .append(operator.getOutput(0).getName(this.preferHash))
@@ -710,9 +750,9 @@ public class ToRustVisitor extends CircuitVisitor {
     public VisitDecision sourceMapPostfix(IInputMapOperator operator) {
         DBSPTypeStruct type = operator.getOriginalRowType();
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
-                new ProgramIdentifier(operator.getOriginalRowType().sanitizedName + "_key", false));
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_key", false));
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
-                new ProgramIdentifier(operator.getOriginalRowType().sanitizedName + "_upsert", false));
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_upsert", false));
         if (this.options.ioOptions.sqlNames) {
             this.builder.append("let ")
                     .append(operator.getTableName().name())
@@ -723,9 +763,9 @@ public class ToRustVisitor extends CircuitVisitor {
         }
 
         if (!this.useHandles) {
-            this.generateStructHelpers(type, operator.getMetadata());
-            this.generateStructHelpers(keyStructType, operator.getMetadata());
-            this.generateStructHelpers(upsertStruct, operator.getMetadata());
+            this.generateNestedStructs(new DBSPStructItem(type, operator.getMetadata()), false);
+            this.generateNestedStructs(new DBSPStructItem(keyStructType, null), false);
+            this.generateNestedStructs(new DBSPStructItem(upsertStruct, operator.getMetadata()), false);
 
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.getTableName());
             JsonNode j = tableDescription.asJson(true);
@@ -767,9 +807,15 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(".clone(), ")
                     .append(this.handleName(operator.asOperator()))
                     .append(".clone() , ");
-            operator.getKeyFunc().accept(this.innerVisitor);
+
+            CanonicalForm cf = new CanonicalForm(this.compiler);
+            DBSPExpression key = operator.getKeyFunc();
+            key = cf.apply(key).to(DBSPExpression.class);
+            key.accept(this.innerVisitor);
             this.builder.append(", ");
-            operator.getUpdateKeyFunc(upsertStruct).accept(this.innerVisitor);
+            DBSPExpression update = operator.getUpdateKeyFunc(upsertStruct);
+            update = cf.apply(update).to(DBSPExpression.class);
+            update.accept(this.innerVisitor);
             this.builder.append(", ");
             json.accept(this.innerVisitor);
             this.builder.append(");")
@@ -854,12 +900,12 @@ public class ToRustVisitor extends CircuitVisitor {
 
         this.builder.append(".");
         this.operationCall(operator);
+        this.innerVisitor.setOperatorContext(operator);
         this.builder.append("&")
                 .append(this.getInputName(operator, 1))
                 // FIXME: temporary workaround until the compiler learns about TypedBox
                 .append(".apply(|bound| TypedBox::<_, DynData>::new(bound.clone()))")
                 .append(", ");
-        this.innerVisitor.setOperatorContext(operator);
         operator.getFunction().accept(this.innerVisitor);
         this.innerVisitor.setOperatorContext(null);
         this.builder.append(");");
@@ -889,6 +935,30 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPIntegrateTraceRetainValuesOperator operator) {
         return this.retainOperator(operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getNodeName(this.preferHash));
+        this.builder.append(" = ")
+                .append(this.getInputName(operator, 0));
+
+        this.builder.append(".");
+        this.operationCall(operator);
+        this.innerVisitor.setOperatorContext(operator);
+        this.builder.append("&")
+                .append(this.getInputName(operator, 1))
+                // FIXME: temporary workaround until the compiler learns about TypedBox
+                .append(".apply(|bound| TypedBox::<_, DynData>::new(bound.clone()))")
+                .append(", ");
+        operator.getFunction().accept(this.innerVisitor);
+        this.builder.append(", ")
+                .append(operator.n);
+        this.builder.append(");");
+        this.innerVisitor.setOperatorContext(null);
+        return VisitDecision.STOP;
     }
 
     @Override
@@ -947,8 +1017,8 @@ public class ToRustVisitor extends CircuitVisitor {
         this.writeComments(operator);
         this.innerVisitor.setOperatorContext(operator);
         if (!this.useHandles) {
-            DBSPType type = operator.originalRowType;
-            this.generateStructHelpers(type, null);
+            final DBSPType type = operator.originalRowType;
+            this.generateNestedStructs(type, false);
             this.computeHash(operator);
             if (operator.isIndex()) {
                 DBSPTypeRawTuple raw = operator.originalRowType.to(DBSPTypeRawTuple.class);
@@ -1215,6 +1285,8 @@ public class ToRustVisitor extends CircuitVisitor {
         String operation = "join_index";
         if (operator.is(DBSPLeftJoinIndexOperator.class))
             operation = "left_join_index";
+        if (operator.balanced)
+            operation += "_balanced";
         this.computeHash(operator);
         this.innerVisitor.setOperatorContext(operator);
         DBSPType streamType = this.streamType(operator);
@@ -1271,7 +1343,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.operation);
         this.builder.append("_persistent");
         this.builder.append("::<_, _, _, ");
-        operator.comparator.accept(this.innerVisitor);
+        this.builder.append(operator.comparator.to(DBSPComparatorExpression.class).getComparatorStructName());
         this.builder.append(", _>")
                 .append("(hash, ")
                 .increase();
@@ -1620,7 +1692,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     // Keeps track of tables that have to be materialized at a different point in the circuit.
-    Bijection<DBSPSourceMultisetOperator, DBSPControlledKeyFilterOperator> materialization = new Bijection<>();
+    final Bijection<DBSPSourceMultisetOperator, DBSPControlledKeyFilterOperator> materialization = new Bijection<>();
 
     void discoverLateMaterializations(DBSPCircuit circuit) {
         // Discover input nodes that immediately feed the left input of a controlled_key_filter operator.

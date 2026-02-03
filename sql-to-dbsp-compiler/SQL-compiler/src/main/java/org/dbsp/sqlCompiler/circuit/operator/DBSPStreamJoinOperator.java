@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -42,8 +43,9 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
     public DBSPStreamJoinOperator(CalciteRelNode node, DBSPTypeZSet outputType,
                                   // Closure from key, valueLeft, valueRight to result type
                                   DBSPExpression function, boolean isMultiset,
-                                  OutputPort left, OutputPort right) {
-        super(node, "stream_join", function, outputType, isMultiset, left, right);
+                                  OutputPort left, OutputPort right, boolean balanced) {
+        super(node, "stream_join", function, outputType, isMultiset, left, right, balanced);
+        Utilities.enforce(!balanced);
         DBSPType elementResultType = this.getOutputZSetElementType();
         this.checkResultType(function, elementResultType);
     }
@@ -65,7 +67,7 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
             return new DBSPStreamJoinOperator(
                     this.getRelNode(), outputType.to(DBSPTypeZSet.class),
                     Objects.requireNonNull(function),
-                    this.isMultiset, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+                    this.isMultiset, newInputs.get(0), newInputs.get(1), this.balanced).copyAnnotations(this);
         }
         return this;
     }
@@ -75,8 +77,9 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator {
     @SuppressWarnings("unused")
     public static DBSPStreamJoinOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
+        boolean balanced = Utilities.getBooleanProperty(node, "balanced");
         return new DBSPStreamJoinOperator(CalciteEmptyRel.INSTANCE, info.getZsetType(),
-                info.getFunction(), info.isMultiset(), info.getInput(0), info.getInput(1))
+                info.getFunction(), info.isMultiset(), info.getInput(0), info.getInput(1), balanced)
                 .addAnnotations(info.annotations(), DBSPStreamJoinOperator.class);
     }
 }

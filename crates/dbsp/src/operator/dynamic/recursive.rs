@@ -1,14 +1,14 @@
 //! Convenience API for defining recursive computations.
 
 use crate::{
+    Timestamp,
     algebra::IndexedZSet,
     circuit::{
-        circuit_builder::IterativeCircuit, schedule::Error as SchedulerError, ChildCircuit,
-        Circuit, Stream,
+        ChildCircuit, Circuit, Stream, circuit_builder::IterativeCircuit,
+        schedule::Error as SchedulerError,
     },
-    operator::{dynamic::distinct::DistinctFactories, DelayedFeedback},
+    operator::{DelayedFeedback, dynamic::distinct::DistinctFactories},
     trace::Spine,
-    Timestamp,
 };
 
 use crate::circuit::checkpointer::Checkpoint;
@@ -98,7 +98,7 @@ where
 // TODO: `impl RecursiveStreams for Vec<Stream>`.
 
 #[allow(clippy::unused_unit)]
-#[impl_for_tuples(12)]
+#[impl_for_tuples(14)]
 #[tuple_types_custom_trait_bound(Clone + RecursiveStreams<C>)]
 impl<C> RecursiveStreams<C> for Tuple {
     for_tuples!( type Feedback = ( #( Tuple::Feedback ),* ); );
@@ -187,8 +187,8 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        operator::Generator, typed_batch::OrdZSet, utils::Tup2, zset, Circuit, FallbackZSet,
-        RootCircuit, Runtime, Stream,
+        Circuit, FallbackZSet, RootCircuit, Runtime, Stream, operator::Generator,
+        typed_batch::OrdZSet, utils::Tup2, zset,
     };
     use std::{
         thread,

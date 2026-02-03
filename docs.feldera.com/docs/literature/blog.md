@@ -99,6 +99,9 @@
 
 ## Principles, Implementation, and engineering
 
+* Introducing Feldera's Visual Profiler
+  https://www.feldera.com/blog/introducing-feldera's-visual-profiler
+
 * Constant folding in Calcite
   https://www.feldera.com/blog/constant-folding-in-calcite
 

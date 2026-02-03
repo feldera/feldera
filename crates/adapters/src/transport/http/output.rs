@@ -1,14 +1,14 @@
 use crate::{AsyncErrorCallback, OutputEndpoint, TransportConfig};
-use actix_web::{http::header::ContentType, web::Bytes, HttpResponse};
-use anyhow::{anyhow, bail, Result as AnyResult};
+use actix_web::{HttpResponse, http::header::ContentType, web::Bytes};
+use anyhow::{Result as AnyResult, anyhow, bail};
 use async_stream::stream;
 use crossbeam::sync::ShardedLock;
-use serde::{ser::SerializeStruct, Serializer};
+use serde::{Serializer, ser::SerializeStruct};
 use serde_json::value::RawValue;
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -152,10 +152,9 @@ impl HttpOutputEndpointInner {
         // A failure simply means that there are no receivers.
         if let Some(Ok(_)) = self.sender.read().unwrap().as_ref().map(|sender| {
             sender.try_send((Buffer::new(seq_number, Bytes::from(json_buf)), ack_sender))
-        }) {
-            if let Some(ack_receiver) = ack_receiver {
-                let _ = ack_receiver.blocking_recv();
-            }
+        }) && let Some(ack_receiver) = ack_receiver
+        {
+            let _ = ack_receiver.blocking_recv();
         }
 
         Ok(())

@@ -101,6 +101,12 @@ pub enum RunnerError {
         pipeline_name: String,
         error: String,
     },
+
+    /// Error using OpenSSL for certificate management
+    OpenSSL {
+        /// OpenSSL errors.
+        errors: String,
+    },
 }
 
 impl DetailedError for RunnerError {
@@ -173,6 +179,7 @@ impl DetailedError for RunnerError {
             RunnerError::PipelineInteractionInvalidResponse { .. } => {
                 Cow::from("PipelineInteractionInvalidResponse")
             }
+            RunnerError::OpenSSL { .. } => Cow::from("OpenSSL"),
         }
     }
 }
@@ -326,20 +333,22 @@ impl Display for RunnerError {
             } => {
                 write!(
                     f,
-                    "Unable to interact with pipeline '{pipeline_name}' because the deployment status ({status}) \
-                    indicates it is not (yet) fully provisioned"
+                    "Unable to interact with pipeline because the deployment status ({status}) indicates it is not (yet) fully provisioned{}",
+                    pipeline_suffix(pipeline_name)
                 )
             }
             Self::PipelineUnavailable { pipeline_name } => {
                 write!(
                     f,
-                    "Unable to interact with pipeline '{pipeline_name}' because its status is currently 'unavailable'"
+                    "Unable to interact with pipeline because its status is currently 'unavailable'{}",
+                    pipeline_suffix(pipeline_name)
                 )
             }
             Self::PipelineMissingDeploymentLocation { pipeline_name } => {
                 write!(
                     f,
-                    "Unable to interact with pipeline '{pipeline_name}' because its deployment location is missing despite it being fully provisioned"
+                    "Unable to interact with pipeline because its deployment location is missing despite it being fully provisioned{}",
+                    pipeline_suffix(pipeline_name)
                 )
             }
             Self::PipelineInteractionUnreachable {
@@ -349,7 +358,8 @@ impl Display for RunnerError {
             } => {
                 write!(
                     f,
-                    "Error sending HTTP request to pipeline '{pipeline_name}': {error}\nFailed request: {request}"
+                    "Error sending HTTP request to pipeline: {error} Failed request: {request}{}",
+                    pipeline_suffix(pipeline_name)
                 )
             }
             Self::PipelineInteractionInvalidResponse {
@@ -358,16 +368,28 @@ impl Display for RunnerError {
             } => {
                 write!(
                     f,
-                    "Encountered an unexpected invalid response when interacting with pipeline '{pipeline_name}': {error}"
+                    "Encountered an unexpected invalid response when interacting with pipeline: {error}{}",
+                    pipeline_suffix(pipeline_name)
+                )
+            }
+            Self::OpenSSL { errors } => {
+                write!(
+                    f,
+                    "Error using OpenSSL for certificate management: {errors}"
                 )
             }
         }
     }
 }
 
+fn pipeline_suffix(name: &str) -> String {
+    let display_name = if name.is_empty() { "N/A" } else { name };
+    format!(" pipeline-id=N/A pipeline-name=\"{display_name}\"")
+}
+
 impl From<RunnerError> for ErrorResponse {
     fn from(val: RunnerError) -> Self {
-        ErrorResponse::from(&val)
+        ErrorResponse::from_error_nolog(&val)
     }
 }
 
@@ -413,6 +435,7 @@ impl ResponseError for RunnerError {
             Self::PipelineMissingDeploymentLocation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineInteractionUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::PipelineInteractionInvalidResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::OpenSSL { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

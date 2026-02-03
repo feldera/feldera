@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use anyhow::{anyhow, Result as AnyResult};
+use anyhow::{Result as AnyResult, anyhow};
 use clap::Parser;
 use csv::Reader;
 use dbsp::circuit::Layout;
@@ -35,7 +35,7 @@ async fn main() -> AnyResult<()> {
     let hosts = exchange
         .iter()
         .map(|&address| (address, nworkers))
-        .collect();
+        .collect::<Vec<_>>();
     for (server_addr, exchange_addr) in pool.iter().zip(exchange.iter()) {
         let mut transport = tarpc::serde_transport::tcp::connect(server_addr, Bincode::default);
         transport.config_mut().max_frame_length(usize::MAX);

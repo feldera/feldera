@@ -11,7 +11,7 @@ use std::{
     alloc, cmp,
     cmp::Ordering,
     fmt::Debug,
-    mem::{align_of, size_of, MaybeUninit},
+    mem::{MaybeUninit, align_of, size_of},
     ops::Range,
 };
 

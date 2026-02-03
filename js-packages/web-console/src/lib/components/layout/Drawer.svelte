@@ -1,9 +1,10 @@
 <script lang="ts">
-  import type { Snippet } from '$lib/types/svelte'
+  import InlineDrawer from '$lib/components/layout/InlineDrawer.svelte'
 
   import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
-  import InlineDrawer from '$lib/components/layout/InlineDrawer.svelte'
   import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
+  import type { Snippet } from '$lib/types/svelte'
+
   const isTablet = useIsTablet()
 
   let {
@@ -13,7 +14,7 @@
     width
   }: {
     open: boolean
-    side: 'right' | 'left' | 'top' | 'bottom'
+    side: 'right' | 'left'
     children: Snippet
     width: string
   } = $props()

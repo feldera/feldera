@@ -19,6 +19,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer;
 
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptPredicateList;
+import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.plan.RelRule;
@@ -114,7 +115,8 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
      * @see CoreRules#FILTER_REDUCE_EXPRESSIONS
      */
     public static class FilterReduceExpressionsRule
-            extends org.apache.calcite.rel.rules.ReduceExpressionsRule<org.apache.calcite.rel.rules.ReduceExpressionsRule.FilterReduceExpressionsRule.FilterReduceExpressionsRuleConfig> {
+            extends org.apache.calcite.rel.rules.ReduceExpressionsRule<
+            org.apache.calcite.rel.rules.ReduceExpressionsRule.FilterReduceExpressionsRule.FilterReduceExpressionsRuleConfig> {
         /** Creates a FilterReduceExpressionsRule. */
         protected FilterReduceExpressionsRule(FilterReduceExpressionsRule.FilterReduceExpressionsRuleConfig config) {
             super(config);
@@ -471,7 +473,7 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
             }
             if (reduced) {
                 call.transformTo(LogicalWindow
-                        .create(window.getTraitSet(), window.getInput(),
+                        .create(window.getTraitSet(), window.getHints(), window.getInput(),
                                 window.getConstants(), window.getRowType(), groups));
                 call.getPlanner().prune(window);
             }
@@ -537,6 +539,8 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
                         expList, predicates, treatDynamicCallsAsConstant);
 
         boolean simplified = false;
+        /*
+        Some Calcite simplifications are wrong, in particular the ones producing TIMESTAMP results.
         for (int i = 0; i < expList.size(); i++) {
             final RexNode expr2 =
                     simplify.simplifyPreservingType(expList.get(i), unknownAs,
@@ -546,6 +550,7 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
                 simplified = true;
             }
         }
+         */
 
         if (reduced && simplified) {
             return !originExpList.equals(expList);
@@ -559,6 +564,8 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
                                                        RelOptPredicateList predicates, boolean treatDynamicCallsAsConstant) {
         // Replace predicates on CASE to CASE on predicates.
         boolean changed = new ReduceExpressionsRule.CaseShuttle().mutate(expList);
+        // Apply our custom rewrite rules
+        changed = changed || new RexOptimize(simplify.rexBuilder).mutate(expList);
 
         // Find reducible expressions.
         final List<RexNode> constExps = new ArrayList<>();
@@ -956,7 +963,13 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
                 callConstancy = ReducibleExprLocator.Constancy.NON_CONSTANT;
             }
             // https://github.com/feldera/feldera/issues/4700:
-            // Disable all expression evaluations for TIME and TIMESTAMP values, since they are broken in Calcite.
+            // Disable all expression evaluations for TIME and TIMESTAMP values, since they are broken in Calcite:
+            // Calcite does not support TIMESTAMP with precisions above 3
+            SqlTypeName resultType = call.getType().getSqlTypeName();
+            if (resultType == SqlTypeName.TIMESTAMP ||
+                    resultType == SqlTypeName.TIME ||
+                    SqlTypeName.INTERVAL_TYPES.contains(resultType))
+                callConstancy = Constancy.NON_CONSTANT;
             for (int iOperand = 0; iOperand < operandCount; ++iOperand) {
                 RexNode operand = call.getOperands().get(iOperand);
                 SqlTypeName operandType = operand.getType().getSqlTypeName();
@@ -1022,28 +1035,38 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
         }
     }
 
+    /** Change the builder factory for a rule to not simplify */
+    static <C extends RelRule.Config> C noSimplify(C c, Class<C> clazz) {
+        return c.withRelBuilderFactory(RelBuilder.proto(RelBuilder.Config.DEFAULT.withSimplify(false))).as(clazz);
+    }
+
     public static final FilterReduceExpressionsRule FILTER_REDUCE_EXPRESSIONS =
             new FilterReduceExpressionsRule(
-                    org.apache.calcite.rel.rules.ReduceExpressionsRule
-                            .FilterReduceExpressionsRule.FilterReduceExpressionsRuleConfig.DEFAULT);
+                    noSimplify(
+                            org.apache.calcite.rel.rules.ReduceExpressionsRule.FilterReduceExpressionsRule.FilterReduceExpressionsRuleConfig.DEFAULT,
+                            org.apache.calcite.rel.rules.ReduceExpressionsRule.FilterReduceExpressionsRule.FilterReduceExpressionsRuleConfig.class));
 
     public static final ProjectReduceExpressionsRule PROJECT_REDUCE_EXPRESSIONS =
             new ProjectReduceExpressionsRule(
-                    org.apache.calcite.rel.rules.ReduceExpressionsRule
-                            .ProjectReduceExpressionsRule.ProjectReduceExpressionsRuleConfig.DEFAULT);
+                    noSimplify(
+                            org.apache.calcite.rel.rules.ReduceExpressionsRule.ProjectReduceExpressionsRule.ProjectReduceExpressionsRuleConfig.DEFAULT,
+                            org.apache.calcite.rel.rules.ReduceExpressionsRule.ProjectReduceExpressionsRule.ProjectReduceExpressionsRuleConfig.class));
 
     public static final JoinReduceExpressionsRule JOIN_REDUCE_EXPRESSIONS =
             new JoinReduceExpressionsRule(
-                    org.apache.calcite.rel.rules.ReduceExpressionsRule
-                            .JoinReduceExpressionsRule.JoinReduceExpressionsRuleConfig.DEFAULT);
+                    noSimplify(
+                            org.apache.calcite.rel.rules.ReduceExpressionsRule.JoinReduceExpressionsRule.JoinReduceExpressionsRuleConfig.DEFAULT,
+                            org.apache.calcite.rel.rules.ReduceExpressionsRule.JoinReduceExpressionsRule.JoinReduceExpressionsRuleConfig.class));
 
     public static final WindowReduceExpressionsRule WINDOW_REDUCE_EXPRESSIONS =
             new WindowReduceExpressionsRule(
-                    org.apache.calcite.rel.rules.ReduceExpressionsRule
-                            .WindowReduceExpressionsRule.WindowReduceExpressionsRuleConfig.DEFAULT);
+                    noSimplify(
+                            org.apache.calcite.rel.rules.ReduceExpressionsRule.WindowReduceExpressionsRule.WindowReduceExpressionsRuleConfig.DEFAULT,
+                            org.apache.calcite.rel.rules.ReduceExpressionsRule.WindowReduceExpressionsRule.WindowReduceExpressionsRuleConfig.class));
 
     public static final CalcReduceExpressionsRule CALC_REDUCE_EXPRESSIONS =
             new CalcReduceExpressionsRule(
-                    org.apache.calcite.rel.rules.ReduceExpressionsRule
-                            .CalcReduceExpressionsRule.CalcReduceExpressionsRuleConfig.DEFAULT);
+                    noSimplify(
+                            org.apache.calcite.rel.rules.ReduceExpressionsRule.CalcReduceExpressionsRule.CalcReduceExpressionsRuleConfig.DEFAULT,
+                            org.apache.calcite.rel.rules.ReduceExpressionsRule.CalcReduceExpressionsRule.CalcReduceExpressionsRuleConfig.class));
 }

@@ -30,6 +30,7 @@ use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
 use feldera_types::error::{DetailedError, ErrorResponse};
+use openssl::error::ErrorStack;
 use serde::Serialize;
 use std::{
     borrow::Cow,
@@ -99,6 +100,16 @@ impl From<RunnerError> for ManagerError {
     }
 }
 
+impl From<ErrorStack> for ManagerError {
+    fn from(value: ErrorStack) -> Self {
+        Self::RunnerError {
+            runner_error: RunnerError::OpenSSL {
+                errors: value.to_string(),
+            },
+        }
+    }
+}
+
 impl Display for ManagerError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
@@ -150,4 +161,10 @@ pub(crate) fn source_error(mut err: &dyn StdError) -> &dyn StdError {
         err = src;
     }
     err
+}
+
+impl From<ManagerError> for ErrorResponse {
+    fn from(val: ManagerError) -> Self {
+        ErrorResponse::from_error_nolog(&val)
+    }
 }

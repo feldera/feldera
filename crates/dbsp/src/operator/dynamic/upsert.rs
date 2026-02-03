@@ -1,10 +1,11 @@
 use crate::{
+    Circuit, DBData, Stream, Timestamp, ZWeight,
     algebra::{AddAssignByRef, HasOne, HasZero, IndexedZSet, PartialOrder, ZSet, ZTrace},
     circuit::{
-        circuit_builder::register_replay_stream,
-        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
-        operator_traits::{BinaryOperator, Operator},
         OwnershipPreference, Scope, WithClock,
+        circuit_builder::register_replay_stream,
+        metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL, OperatorMeta},
+        operator_traits::{BinaryOperator, Operator},
     },
     dynamic::{ClonableTrait, DataTrait, DynOpt, DynPairs, DynUnit, Erase},
     operator::dynamic::{
@@ -17,7 +18,6 @@ use crate::{
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, TupleBuilder,
     },
-    Circuit, DBData, Stream, Timestamp, ZWeight,
 };
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
@@ -241,7 +241,7 @@ where
         //                 │                  │               │
         //                 │                  │   ┌───────┐   │
         //                 └──────────────────┴───┤Z1Trace│◄──┘
-        //                    z1trace             └───────┘
+        //                    delayed_trace       └───────┘
         // ```
         circuit.region("upsert", || {
             let bounds = <TraceBounds<K, V>>::unbounded();
@@ -386,24 +386,27 @@ where
             B::Builder::with_capacity(&self.batch_factories, updates.len(), updates.len() * 2);
         let mut builder = TupleBuilder::new(&self.batch_factories, builder);
 
-        let val_filter = self.bounds.effective_val_filter();
+        // let val_filter = self.bounds.effective_val_filter();
         let key_filter = self.bounds.effective_key_filter();
 
         for kv in updates.dyn_iter() {
             let (key, val) = kv.split();
 
-            if let Some(key_filter) = &key_filter {
-                if !(key_filter.filter_func())(key) {
-                    continue;
-                }
+            if let Some(key_filter) = &key_filter
+                && !(key_filter.filter_func())(key)
+            {
+                continue;
             }
 
             if let Some(val) = val.get() {
-                if let Some(val_filter) = &val_filter {
-                    if !(val_filter.filter_func())(val) {
-                        continue;
-                    }
-                }
+                // We used to have this check to filter out records before inserting them.
+                // It doesn't work for LastN filters, plus I'm not sure it's useful anyway,
+                // since GC normally happens in the background.
+                // if let Some(val_filter) = &val_filter
+                //     && !(val_filter.filter_func())(val)
+                // {
+                //     continue;
+                // }
 
                 let (kv, weight) = item.split_mut();
                 let (k, v) = kv.split_mut();

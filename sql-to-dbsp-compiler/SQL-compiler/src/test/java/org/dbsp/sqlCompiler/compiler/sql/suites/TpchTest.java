@@ -97,7 +97,7 @@ public class TpchTest extends BaseSQLTests {
     }
 
     @Test
-    public void compilerTpch21() throws IOException {
+    public void compileTpch21() throws IOException {
         var cc = this.compileQuery(21);
         cc.visit(new CircuitVisitor(cc.compiler) {
             void someKey(DBSPJoinBaseOperator operator) {
@@ -124,7 +124,7 @@ public class TpchTest extends BaseSQLTests {
     }
 
     @Test
-    public void compilerTpch2() throws IOException {
+    public void compileTpch2() throws IOException {
         var cc = this.compileQuery(2);
         cc.visit(new CircuitVisitor(cc.compiler) {
             void someKey(DBSPJoinBaseOperator operator) {

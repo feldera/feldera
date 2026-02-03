@@ -6,19 +6,20 @@
 // communication, including 1-to-N and N-to-1.
 
 use crate::{
+    NumEntries,
     circuit::{
+        Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
         metadata::{
-            BatchSizeStats, MetaItem, OperatorLocation, OperatorMeta, EXCHANGE_WAIT_TIME,
-            INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL,
+            BatchSizeStats, EXCHANGE_WAIT_TIME, INPUT_BATCHES_LABEL, MetaItem,
+            OUTPUT_BATCHES_LABEL, OperatorLocation, OperatorMeta,
         },
         operator_traits::{Operator, SinkOperator, SourceOperator},
         tokio::TOKIO,
-        Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
     },
-    circuit_cache_key, NumEntries,
+    circuit_cache_key,
 };
 use crossbeam_utils::CachePadded;
-use futures::{future, prelude::*};
+use futures::{future, prelude::*, stream::FuturesUnordered};
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -26,8 +27,8 @@ use std::{
     net::SocketAddr,
     ops::Range,
     sync::{
-        atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex, RwLock,
+        atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, SystemTime},
 };
@@ -80,7 +81,6 @@ type ExchangeDirectory = Arc<RwLock<HashMap<ExchangeId, Arc<InnerExchange>>>>;
 #[derive(Clone)]
 struct ExchangeServer(ExchangeDirectory);
 
-#[tarpc::server]
 impl ExchangeService for ExchangeServer {
     async fn exchange(
         self,
@@ -381,6 +381,10 @@ pub(crate) struct Exchange<T> {
     serialize: Box<dyn Fn(T) -> Vec<u8> + Send + Sync>,
 }
 
+async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
+    tokio::spawn(fut);
+}
+
 // Stop Rust from complaining about unused field.
 #[allow(dead_code)]
 struct ExchangeListener(DropGuard);
@@ -398,7 +402,7 @@ impl ExchangeListener {
                 .map(server::BaseChannel::with_defaults)
                 .map(move |channel| {
                     let server = ExchangeServer(directory.clone());
-                    channel.execute(server.serve())
+                    channel.execute(server.serve()).for_each(spawn)
                 })
                 .buffer_unordered(10)
                 .for_each(|_| async {});
@@ -512,7 +516,7 @@ where
     ///
     /// Once this function returns true, a subsequent `try_send_all` operation
     /// is guaranteed to succeed for `sender`.
-    fn ready_to_send(&self, sender: usize) -> bool {
+    pub fn ready_to_send(&self, sender: usize) -> bool {
         self.inner.ready_to_send(sender)
     }
 
@@ -569,7 +573,7 @@ where
         let this = self.clone();
         let runtime = Runtime::runtime().unwrap();
         TOKIO.spawn(async move {
-            let mut futures = Vec::new();
+            let mut futures = FuturesUnordered::new();
 
             // For each range of worker IDs `receivers` on a remote host,
             // accumulate all of the data from our local `senders` to all
@@ -606,9 +610,9 @@ where
                 ));
             }
 
-            // Wait for each send to complete.
-            for future in futures {
-                future.await.unwrap();
+            // Wait for all the sends to complete.
+            while let Some(result) = futures.next().await {
+                result.unwrap();
             }
 
             // Record that the sends completed.
@@ -634,7 +638,7 @@ where
 
     /// Read all incoming messages for `receiver`.
     ///
-    /// Values are passed to callback function `cb`.
+    /// Values are passed to callback function `cb` in the order of worker indexes.
     ///
     /// # Errors
     ///
@@ -1007,7 +1011,7 @@ impl<IF, T, L> ExchangeReceiver<IF, T, L>
 where
     T: Send + 'static + Clone,
 {
-    fn new(
+    pub(crate) fn new(
         worker_index: usize,
         location: OperatorLocation,
         exchange: Arc<Exchange<(T, bool)>>,
@@ -1138,6 +1142,11 @@ where
                 (self.combine)(&mut combined, x)
             });
         if self.flush_count == Runtime::num_workers() {
+            // println!(
+            //     "{} exchange_receiver::eval received all inputs",
+            //     Runtime::worker_index()
+            // );
+
             self.flush_complete = true;
             self.flush_count = 0;
         }
@@ -1261,14 +1270,14 @@ where
 mod tests {
     use super::Exchange;
     use crate::{
+        Circuit, RootCircuit,
         circuit::{
-            schedule::{DynamicScheduler, Scheduler},
             Runtime,
+            schedule::{DynamicScheduler, Scheduler},
         },
-        operator::{communication::new_exchange_operators, Generator},
+        operator::{Generator, communication::new_exchange_operators},
         storage::file::{to_bytes, to_bytes_dyn},
         trace::unaligned_deserialize,
-        Circuit, RootCircuit,
     };
     use std::thread::yield_now;
 

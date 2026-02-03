@@ -48,7 +48,8 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
-        extends DBSPBinaryOperator {
+        extends DBSPBinaryOperator
+        implements INonLinearAggregate {
     @Nullable
     public final DBSPAggregateList aggregateList;
     public final DBSPClosureExpression partitioningFunction;
@@ -71,7 +72,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
             DBSPTypeIndexedZSet outputType,
             OutputPort dataInput, OutputPort waterlineInput) {
         super(node, "partitioned_rolling_aggregate_with_waterline",
-                function, outputType, true, dataInput, waterlineInput, true);
+                function, outputType, true, dataInput, waterlineInput);
         this.aggregateList = aggregateList;
         this.lower = lower;
         this.upper = upper;

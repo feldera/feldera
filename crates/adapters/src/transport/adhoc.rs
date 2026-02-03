@@ -1,11 +1,11 @@
 use crate::catalog::ArrowStream;
 use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand};
 use crate::{
-    server::PipelineError, transport::InputReader, ControllerError, InputConsumer, PipelineState,
-    TransportInputEndpoint,
+    ControllerError, InputConsumer, PipelineState, TransportInputEndpoint, server::PipelineError,
+    transport::InputReader,
 };
 use crate::{InputBuffer, Parser};
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use anyhow::{Error as AnyError, Result as AnyResult, anyhow};
 use arrow::array::RecordBatch;
 use arrow::datatypes::Schema;
 use atomic::Atomic;
@@ -19,15 +19,15 @@ use feldera_types::program_schema::Relation;
 use feldera_types::transport::adhoc::AdHocInputConfig;
 use futures::future::{BoxFuture, FutureExt};
 use futures_util::StreamExt;
-use parquet::arrow::async_writer::AsyncFileWriter;
 use parquet::arrow::AsyncArrowWriter;
+use parquet::arrow::async_writer::AsyncFileWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{
     hash::Hasher,
-    sync::{atomic::Ordering, Arc, Mutex},
+    sync::{Arc, Mutex, atomic::Ordering},
     time::Duration,
 };
 use tokio::{
@@ -277,7 +277,7 @@ impl InputReader for AdHocInputEndpoint {
                 let mut total = BufferSize::empty();
                 let mut hasher = Xxh3Default::new();
                 for chunk in chunks {
-                    let (mut buffer, errors) = details.parser.parse(&chunk, &None);
+                    let (mut buffer, errors) = details.parser.parse(&chunk, None);
                     details.consumer.buffered(buffer.len());
                     details.consumer.parse_errors(errors);
                     total += buffer.len();

@@ -31,7 +31,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.util.Utilities;
@@ -99,8 +99,7 @@ public class TableContents implements ICompilerComponent {
     public void addToTable(ProgramIdentifier tableName, DBSPZSetExpression value, DBSPCompiler compiler) {
         DBSPZSetExpression table = this.tableContents.get(tableName);
         Simplify simplify = new Simplify(compiler);
-        ExpandCasts expand = new ExpandCasts(compiler);
-        var expanded = expand.apply(value);
+        var expanded = CreateRuntimeErrorWrappers.wrapCasts(compiler, value);
         var simplified = simplify.apply(expanded);
         table.addUsingCast(simplified.to(DBSPZSetExpression.class));
     }

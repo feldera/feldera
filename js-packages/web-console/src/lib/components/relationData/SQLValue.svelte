@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { SQLValueJS } from '$lib/types/sql.ts'
   import { BigNumber } from 'bignumber.js'
   import type { HTMLTdAttributes } from 'svelte/elements'
   import JSONbig from 'true-json-bigint'
+  import type { SQLValueJS } from '$lib/types/sql'
 
   const trim = (str: string) => str.slice(0, 50) + (str.length >= 50 ? '...' : '')
 
@@ -19,7 +19,7 @@
     if (!Array.isArray(value)) {
       return JSONbig.stringify(value, undefined, 1)
     }
-    let str = [] as string[]
+    const str = [] as string[]
     let i = 0
     let chunksLength = 0
     while (chunksLength < minLength && i < value.length) {
@@ -31,28 +31,19 @@
     return `[${str.join(',\n  ')}${i < value.length ? '' : ']'}`
   }
 
-  let {
+  const {
     value,
     props,
     class: _class,
     ...rest
   }: { value: SQLValueJS } & {
-    props?: (formatter: (value: SQLValueJS) => string) => HTMLTdAttributes
+    props?: HTMLTdAttributes
   } & HTMLTdAttributes = $props()
-  let thumb = $derived(value === null ? 'NULL' : trim(stringifyUntilLength(value, 50)))
-  let displayValue = (value: SQLValueJS) => {
-    return value === null
-      ? 'NULL'
-      : typeof value === 'string'
-        ? value
-        : BigNumber.isBigNumber(value)
-          ? value.toFixed()
-          : JSONbig.stringify(value, undefined, 1)
-  }
+  const thumb = $derived(value === null ? 'NULL' : trim(stringifyUntilLength(value, 50)))
 </script>
 
 <td
-  {...props?.(displayValue)}
+  {...props}
   class:italic={value === null}
   class="px-3 {typeof value === 'number' || BigNumber.isBigNumber(value)
     ? 'text-right'

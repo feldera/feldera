@@ -22,6 +22,8 @@ RUN apt-get update --fix-missing && \
    gnupg2 \
    sudo \
    build-essential \
+   # Go is required to build aws-lc-fips-sys when rustls is built with FIPS
+   golang-go \
    openssl \
    cmake \
    pkg-config \
@@ -40,12 +42,12 @@ RUN apt-get install -y \
    hub numactl openjdk-21-jre-headless maven
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-## Install nodejs (optional)
+## Install nodejs
 RUN mkdir -p /etc/apt/keyrings
 RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
 ENV NODE_MAJOR=20
 RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
-RUN apt update --fix-missing && apt install nodejs
+RUN apt update --fix-missing && apt install -y nodejs
 
 ## Install Redpanda rpk to enable preparing demos
 
@@ -69,7 +71,7 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 ENV PATH="$HOME/.cargo/bin:$PATH"
 
 ## Install Bun.js
-RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.22"
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.3"
 ENV PATH="$HOME/.bun/bin:$PATH"
 RUN $HOME/.bun/bin/bun install --global @hey-api/openapi-ts @anthropic-ai/claude-code
 
@@ -78,5 +80,8 @@ RUN \
    rustup component add rustfmt && \
    rustup component add clippy && \
    cargo install cargo-make
+
+## Install Samply
+RUN echo "pass" | sudo curl --proto '=https' --tlsv1.2 -LsSf https://github.com/feldera/samply/releases/download/v0.13.2/samply-installer.sh | sh
 
 ENV PATH="$HOME/.local/bin:$PATH"

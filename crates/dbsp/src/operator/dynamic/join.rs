@@ -1,6 +1,6 @@
 use crate::algebra::{ZBatch, ZBatchReader, ZCursor};
-use crate::circuit::circuit_builder::StreamId;
-use crate::circuit::metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL};
+use crate::circuit::circuit_builder::{CircuitBase, StreamId};
+use crate::circuit::metadata::{BatchSizeStats, NUM_ALLOCATIONS_LABEL, OUTPUT_BATCHES_LABEL};
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::DynData;
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
@@ -9,17 +9,18 @@ use crate::trace::cursor::SaturatingCursor;
 use crate::trace::spine_async::WithSnapshot;
 use crate::trace::{Spine, SpineSnapshot, Trace};
 use crate::{
+    DBData, ZWeight,
     algebra::{
         IndexedZSet, IndexedZSetReader, Lattice, MulByRef, OrdIndexedZSet, OrdZSet, PartialOrder,
         ZSet,
     },
     circuit::{
+        Circuit, RootCircuit, Scope, Stream, WithClock,
         metadata::{
-            MetaItem, OperatorLocation, OperatorMeta, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL,
+            MetaItem, NUM_ENTRIES_LABEL, OperatorLocation, OperatorMeta, SHARED_BYTES_LABEL,
             USED_BYTES_LABEL,
         },
         operator_traits::{BinaryOperator, Operator},
-        Circuit, RootCircuit, Scope, Stream, WithClock,
     },
     circuit_cache_key,
     dynamic::{
@@ -32,7 +33,6 @@ use crate::{
         BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, WeightedItem,
     },
     utils::Tup2,
-    DBData, ZWeight,
 };
 use crate::{DynZWeight, NestedCircuit, Position, Runtime};
 use async_stream::stream;
@@ -41,7 +41,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::{
     borrow::Cow,
-    cmp::{min, Ordering},
+    cmp::{Ordering, min},
     collections::HashMap,
     marker::PhantomData,
     ops::Deref,
@@ -86,6 +86,7 @@ impl<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized> TraceJoinFuncs<K
         }
     }
 }
+
 pub trait JoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized>:
     Fn(&K, &V1, &V2, &mut OK, &mut OV)
 {
@@ -533,6 +534,26 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
         self.dyn_join_generic(factories, other, join_funcs)
     }
 
+    #[track_caller]
+    pub fn dyn_join_mono_balanced(
+        &self,
+        factories: &JoinFactories<MonoIndexedZSet, MonoIndexedZSet, (), OrdZSet<DynData>>,
+        other: &Stream<RootCircuit, MonoIndexedZSet>,
+        join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynUnit>,
+    ) -> Stream<RootCircuit, MonoZSet> {
+        self.dyn_join_generic_balanced(factories, other, join_funcs)
+    }
+
+    #[track_caller]
+    pub fn dyn_join_index_mono_balanced(
+        &self,
+        factories: &JoinFactories<MonoIndexedZSet, MonoIndexedZSet, (), MonoIndexedZSet>,
+        other: &Stream<RootCircuit, MonoIndexedZSet>,
+        join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynData>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_join_generic_balanced(factories, other, join_funcs)
+    }
+
     pub fn dyn_antijoin_mono(
         &self,
         factories: &AntijoinFactories<MonoIndexedZSet, MonoZSet, ()>,
@@ -684,11 +705,12 @@ where
                 .dyn_accumulate_trace(&factories.right_trace_factories, &factories.right_factories);
 
             let left = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.right_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
                     factories.timed_items_factory,
+                    false,
                     join_funcs.left,
                     Location::caller(),
                     self.circuit().clone(),
@@ -698,11 +720,12 @@ where
             );
 
             let right = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.left_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
                     factories.timed_items_factory,
+                    false,
                     join_funcs.right,
                     Location::caller(),
                     self.circuit().clone(),
@@ -806,6 +829,79 @@ where
                 },
             )
             .clone()
+    }
+}
+
+impl<I1> Stream<RootCircuit, I1>
+where
+    I1: IndexedZSet,
+{
+    #[track_caller]
+    pub fn dyn_join_generic_balanced<I2, Z>(
+        &self,
+        factories: &JoinFactories<I1, I2, (), Z>,
+        other: &Stream<RootCircuit, I2>,
+        join_funcs: TraceJoinFuncs<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
+    ) -> Stream<RootCircuit, Z>
+    where
+        I2: IndexedZSet<Key = I1::Key>,
+        Z: IndexedZSet,
+    {
+        if Runtime::num_workers() == 1 {
+            return self.dyn_join_generic(factories, other, join_funcs);
+        }
+
+        self.circuit().region("join_balanced", || {
+            let (left_accumulator, left_trace) = self.dyn_accumulate_trace_balanced(
+                &factories.left_trace_factories,
+                &factories.left_factories,
+            );
+
+            let (right_accumulator, right_trace) = other.dyn_accumulate_trace_balanced(
+                &factories.right_trace_factories,
+                &factories.right_factories,
+            );
+
+            let left = self.circuit().add_binary_operator(
+                StreamingBinaryWrapper::new(JoinTrace::new(
+                    &factories.right_trace_factories,
+                    &factories.output_factories,
+                    factories.timed_item_factory,
+                    factories.timed_items_factory,
+                    false,
+                    join_funcs.left,
+                    Location::caller(),
+                    self.circuit().clone(),
+                )),
+                &left_accumulator,
+                &right_trace,
+            );
+
+            let right = self.circuit().add_binary_operator(
+                StreamingBinaryWrapper::new(JoinTrace::new(
+                    &factories.left_trace_factories,
+                    &factories.output_factories,
+                    factories.timed_item_factory,
+                    factories.timed_items_factory,
+                    false,
+                    join_funcs.right,
+                    Location::caller(),
+                    self.circuit().clone(),
+                )),
+                &right_accumulator,
+                &left_trace.accumulate_delay_trace(),
+            );
+
+            let result = left.plus(&right);
+
+            self.circuit().balancer().register_join(
+                result.local_node_id(),
+                self.local_node_id(),
+                other.local_node_id(),
+            );
+
+            result
+        })
     }
 }
 
@@ -1144,9 +1240,9 @@ impl JoinStats {
     }
 }
 
-/// The `SATURATE` parameter controls whether the right side of the join
+/// The `saturate` property controls whether the right side of the join
 /// (the trace) should be wrapped in a `SaturatingCursor`. See [`Stream::dyn_left_join`].
-pub struct JoinTrace<I, B, T, Z, Clk, const SATURATE: bool = false>
+pub struct JoinTrace<I, B, T, Z, Clk>
 where
     I: WithSnapshot,
     B: ZBatch,
@@ -1160,6 +1256,7 @@ where
     clock: Clk,
     timed_items_factory:
         &'static dyn Factory<DynPairs<DynDataTyped<T::Time>, WeightedItem<Z::Key, Z::Val, Z::R>>>,
+    saturate: bool,
     join_func: RefCell<
         TraceJoinFunc<
             <I::Batch as BatchReader>::Key,
@@ -1183,13 +1280,14 @@ where
     _types: PhantomData<(I, B, T, Z)>,
 }
 
-impl<I, B, T, Z, Clk, const SATURATE: bool> JoinTrace<I, B, T, Z, Clk, SATURATE>
+impl<I, B, T, Z, Clk> JoinTrace<I, B, T, Z, Clk>
 where
     I: WithSnapshot,
     B: ZBatch,
     T: ZBatchReader,
     Z: IndexedZSet,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         right_factories: &T::Factories,
         output_factories: &Z::Factories,
@@ -1199,6 +1297,7 @@ where
         timed_items_factory: &'static dyn Factory<
             DynPairs<DynDataTyped<T::Time>, WeightedItem<Z::Key, Z::Val, Z::R>>,
         >,
+        saturate: bool,
         join_func: TraceJoinFunc<
             <I::Batch as BatchReader>::Key,
             <I::Batch as BatchReader>::Val,
@@ -1214,6 +1313,7 @@ where
             output_factories: output_factories.clone(),
             timed_item_factory,
             timed_items_factory,
+            saturate,
             clock,
             join_func: RefCell::new(join_func),
             location,
@@ -1228,7 +1328,7 @@ where
     }
 }
 
-impl<I, B, T, Z, Clk, const SATURATE: bool> Operator for JoinTrace<I, B, T, Z, Clk, SATURATE>
+impl<I, B, T, Z, Clk> Operator for JoinTrace<I, B, T, Z, Clk>
 where
     I: WithSnapshot + 'static,
     B: ZBatch,
@@ -1252,11 +1352,12 @@ where
     }
 
     fn clock_end(&mut self, _scope: Scope) {
-        debug_assert!(self
-            .future_outputs
-            .borrow()
-            .keys()
-            .all(|time| !time.less_equal(&self.clock.time())));
+        debug_assert!(
+            self.future_outputs
+                .borrow()
+                .keys()
+                .all(|time| !time.less_equal(&self.clock.time()))
+        );
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -1305,7 +1406,7 @@ where
             NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
             "batch sizes" => batch_sizes,
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => MetaItem::Count(bytes.distinct_allocations()),
+            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
             "left inputs" => stats.lhs_tuples,
             "right inputs" => stats.rhs_tuples,
@@ -1344,7 +1445,7 @@ where
 /// - If `swap` is `false`, the `delta_cursor` is the primary cursor.
 ///
 /// This is used to optimize the join operation by iterating over the smaller cursor.
-struct JointKeyCursor<'a, C1, K, V1, V2, T, const SATURATE: bool>
+struct JointKeyCursor<'a, C1, K, V1, V2, T>
 where
     C1: Cursor<K, V1, (), DynZWeight>,
     K: DataTrait + ?Sized,
@@ -1353,12 +1454,12 @@ where
     T: Timestamp,
 {
     delta_cursor: C1,
-    trace_cursor: SaturatingCursor<'a, K, V2, T, SATURATE>,
+    trace_cursor: SaturatingCursor<'a, K, V2, T>,
     swap: bool,
     phantom: PhantomData<fn(&K, &V1, &V2, &T)>,
 }
 
-impl<'a, C1, K, V1, V2, T, const SATURATE: bool> JointKeyCursor<'a, C1, K, V1, V2, T, SATURATE>
+impl<'a, C1, K, V1, V2, T> JointKeyCursor<'a, C1, K, V1, V2, T>
 where
     C1: ZCursor<K, V1, ()>,
     K: DataTrait + ?Sized,
@@ -1366,7 +1467,7 @@ where
     V2: DataTrait + ?Sized,
     T: Timestamp,
 {
-    pub fn new(left: C1, right: SaturatingCursor<'a, K, V2, T, SATURATE>, swap: bool) -> Self {
+    pub fn new(left: C1, right: SaturatingCursor<'a, K, V2, T>, swap: bool) -> Self {
         Self {
             delta_cursor: left,
             trace_cursor: right,
@@ -1417,8 +1518,7 @@ where
     }
 }
 
-impl<I, B, T, Z, Clk, const SATURATE: bool> StreamingBinaryOperator<Option<I>, T, Z>
-    for JoinTrace<I, B, T, Z, Clk, SATURATE>
+impl<I, B, T, Z, Clk> StreamingBinaryOperator<Option<I>, T, Z> for JoinTrace<I, B, T, Z, Clk>
 where
     I: WithSnapshot + 'static,
     I::Batch: ZBatchReader<Time = ()>,
@@ -1460,7 +1560,7 @@ where
             let delta_len = delta.len();
 
             let trace = trace.unwrap();
-            let trace_len = if SATURATE { usize::MAX } else { trace.len() };
+            let trace_len = if self.saturate { usize::MAX } else { trace.len() };
 
             *self.empty_input.borrow_mut() = delta.is_empty();
             *self.empty_output.borrow_mut() = true;
@@ -1481,7 +1581,8 @@ where
                 Box::new(trace.cursor())
             };
 
-            let trace_cursor = SaturatingCursor::<'_, _, _, _, SATURATE>::new(
+            let trace_cursor = SaturatingCursor::new(
+                self.saturate,
                 trace_cursor,
                 self.right_factories.key_factory(),
                 self.right_factories.val_factory()
@@ -1575,12 +1676,12 @@ where
                 }
 
                 // Consolidate the spine for the current timestamp and return it.
-                let output = self.future_outputs.borrow_mut()
+
+
+                self.future_outputs.borrow_mut()
                     .remove(&time)
                     .and_then(|spine| spine.consolidate())
-                    .unwrap_or_else(|| Z::dyn_empty(&self.output_factories));
-
-                output
+                    .unwrap_or_else(|| Z::dyn_empty(&self.output_factories))
             } else {
                 let mut output_tuples = self.output_factories.weighted_items_factory().default_box();
                 output_tuples.reserve(chunk_size);
@@ -1670,16 +1771,16 @@ where
 #[cfg(test)]
 pub(crate) mod test {
     use crate::{
+        DBData, Runtime, Stream, ZWeight,
         circuit::CircuitConfig,
         indexed_zset,
-        operator::Generator,
         typed_batch::{OrdZSet, TypedBatch},
         utils::Tup2,
-        zset, Circuit, DBData, RootCircuit, Runtime, Stream, ZWeight,
+        zset,
     };
     use std::vec;
 
-    fn do_join_test(workers: usize, transaction: bool) {
+    fn do_join_test(workers: usize, transaction: bool, balanced: bool) {
         let mut input1 = vec![
             vec![
                 Tup2(Tup2(1, "a".to_string()), 1i64),
@@ -1811,21 +1912,41 @@ pub(crate) mod test {
                     }
                 });*/
 
-                let join_output = index1
-                    .join(&index2, |&k: &u64, s1, s2| {
-                        Tup2(k, format!("{} {}", s1, s2))
-                    })
-                    .accumulate_output();
+                let join_output = if balanced {
+                    index1
+                        .join_balanced_inner(&index2, |&k: &u64, s1, s2| {
+                            Tup2(k, format!("{} {}", s1, s2))
+                        })
+                        .accumulate_output()
+                } else {
+                    index1
+                        .join(&index2, |&k: &u64, s1, s2| {
+                            Tup2(k, format!("{} {}", s1, s2))
+                        })
+                        .accumulate_output()
+                };
 
-                let join_flatmap_output = index1
-                    .join_flatmap(&index2, |&k: &u64, s1, s2| {
-                        if s1.as_str() == "a" {
-                            None
-                        } else {
-                            Some(Tup2(k, format!("{} {}", s1, s2)))
-                        }
-                    })
-                    .accumulate_output();
+                let join_flatmap_output = if balanced {
+                    index1
+                        .join_flatmap_balanced_inner(&index2, |&k: &u64, s1, s2| {
+                            if s1.as_str() == "a" {
+                                None
+                            } else {
+                                Some(Tup2(k, format!("{} {}", s1, s2)))
+                            }
+                        })
+                        .accumulate_output()
+                } else {
+                    index1
+                        .join_flatmap(&index2, |&k: &u64, s1, s2| {
+                            if s1.as_str() == "a" {
+                                None
+                            } else {
+                                Some(Tup2(k, format!("{} {}", s1, s2)))
+                            }
+                        })
+                        .accumulate_output()
+                };
 
                 Ok((
                     input_handle1,
@@ -1887,40 +2008,103 @@ pub(crate) mod test {
 
     #[test]
     fn join_test_mt() {
-        do_join_test(1, false);
-        do_join_test(2, false);
-        do_join_test(4, false);
-        do_join_test(16, false);
+        do_join_test(1, false, false);
+        do_join_test(2, false, false);
+        do_join_test(4, false, false);
+        do_join_test(16, false, false);
     }
 
     #[test]
     fn join_test_mt_one_transaction() {
-        do_join_test(1, true);
-        do_join_test(2, true);
-        do_join_test(4, true);
-        do_join_test(16, true);
+        do_join_test(1, true, false);
+        do_join_test(2, true, false);
+        do_join_test(4, true, false);
+        do_join_test(16, true, false);
+    }
+
+    #[test]
+    fn join_balanced_test_mt() {
+        do_join_test(1, false, true);
+        do_join_test(2, false, true);
+        do_join_test(4, false, true);
+        do_join_test(16, false, true);
+    }
+
+    #[test]
+    fn join_balanced_test_mt_one_transaction() {
+        do_join_test(1, true, true);
+        do_join_test(2, true, true);
+        do_join_test(4, true, true);
+        do_join_test(16, true, true);
     }
 
     // Compute pairwise reachability relation between graph nodes as the
     // transitive closure of the edge relation.
     #[test]
     fn join_trace_test() {
-        let circuit = RootCircuit::build(move |circuit| {
-            // Changes to the edges relation.
-            let mut edges: vec::IntoIter<OrdZSet<Tup2<u64, u64>>> = vec![
-                zset! { Tup2(1, 2) => 1 },
-                zset! { Tup2(2, 3) => 1},
-                zset! { Tup2(1, 3) => 1},
-                zset! { Tup2(3, 1) => 1},
-                zset! { Tup2(3, 1) => -1},
-                zset! { Tup2(1, 2) => -1},
-                zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
-                zset! {Tup2 (2, 3) => -1, Tup2(3, 2) => 1 },
-            ]
-            .into_iter();
+        let (mut circuit, (edges_handle, paths_handle)) = Runtime::init_circuit(
+            CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+            move |circuit| {
+                let (edges, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
 
-            // Expected content of the reachability relation.
-            let mut outputs: vec::IntoIter<OrdZSet<Tup2<u64, u64>>> = vec![
+                let paths = circuit
+                    .recursive(|child, paths_delayed: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
+                        // ```text
+                        //                             distinct
+                        //               ┌───┐          ┌───┐
+                        // edges         │   │          │   │  paths
+                        // ────┬────────►│ + ├──────────┤   ├────────┬───►
+                        //     │         │   │          │   │        │
+                        //     │         └───┘          └───┘        │
+                        //     │           ▲                         │
+                        //     │           │                         │
+                        //     │         ┌─┴─┐                       │
+                        //     │         │   │                       │
+                        //     └────────►│ X │ ◄─────────────────────┘
+                        //               │   │
+                        //               └───┘
+                        //               join
+                        // ```
+                        let edges = edges.delta0(child);
+
+                        let paths_inverted: Stream<_, OrdZSet<Tup2<u64, u64>>> =
+                            paths_delayed.map(|&Tup2(x, y)| Tup2(y, x));
+
+                        let paths_inverted_indexed =
+                            paths_inverted.map_index(|Tup2(k, v)| (*k, *v));
+                        let edges_indexed = edges.map_index(|Tup2(k, v)| (*k, *v));
+
+                        Ok(edges.plus(
+                            &paths_inverted_indexed
+                                .join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
+                        ))
+                    })
+                    .unwrap();
+
+                let paths_handle = paths
+                    .accumulate_integrate()
+                    .stream_distinct()
+                    .accumulate_output();
+
+                Ok((edges_handle, paths_handle))
+            },
+        )
+        .unwrap();
+
+        // Changes to the edges relation.
+        let edges = vec![
+            vec![Tup2(Tup2(1u64, 2u64), 1i64)],
+            vec![Tup2(Tup2(2, 3), 1)],
+            vec![Tup2(Tup2(1, 3), 1)],
+            vec![Tup2(Tup2(3, 1), 1)],
+            vec![Tup2(Tup2(3, 1), -1)],
+            vec![Tup2(Tup2(1, 2), -1)],
+            vec![Tup2(Tup2(2, 4), 1), Tup2(Tup2(4, 1), 1)],
+            vec![Tup2(Tup2(2, 3), -1), Tup2(Tup2(3, 2), 1)],
+        ];
+
+        // Expected content of the reachability relation.
+        let mut expected_outputs: vec::IntoIter<OrdZSet<Tup2<u64, u64>>> = vec![
                 zset! { Tup2(1, 2) => 1 },
                 zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
                 zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
@@ -1936,49 +2120,15 @@ pub(crate) mod test {
             ]
             .into_iter();
 
-            let edges: Stream<_, OrdZSet<Tup2<u64, u64>>> =
-                circuit
-                    .add_source(Generator::new(move || edges.next().unwrap()));
-
-            let paths = circuit.recursive(|child, paths_delayed: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
-                // ```text
-                //                             distinct
-                //               ┌───┐          ┌───┐
-                // edges         │   │          │   │  paths
-                // ────┬────────►│ + ├──────────┤   ├────────┬───►
-                //     │         │   │          │   │        │
-                //     │         └───┘          └───┘        │
-                //     │           ▲                         │
-                //     │           │                         │
-                //     │         ┌─┴─┐                       │
-                //     │         │   │                       │
-                //     └────────►│ X │ ◄─────────────────────┘
-                //               │   │
-                //               └───┘
-                //               join
-                // ```
-                let edges = edges.delta0(child);
-
-                let paths_inverted: Stream<_, OrdZSet<Tup2<u64, u64>>> = paths_delayed
-                    .map(|&Tup2(x, y)| Tup2(y, x));
-
-                let paths_inverted_indexed = paths_inverted.map_index(|Tup2(k,v)| (*k, *v));
-                let edges_indexed = edges.map_index(|Tup2(k, v)| (*k, *v));
-
-                Ok(edges.plus(&paths_inverted_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
-            })
-            .unwrap();
-
-            paths.integrate().stream_distinct().inspect(move |ps| {
-                assert_eq!(*ps, outputs.next().unwrap());
-            });
-            Ok(())
-        })
-        .unwrap().0;
-
-        for _ in 0..8 {
+        for mut edges in edges.into_iter() {
+            edges_handle.append(&mut edges);
             //eprintln!("{}", i);
             circuit.transaction().unwrap();
+
+            assert_eq!(
+                paths_handle.concat().consolidate(),
+                expected_outputs.next().unwrap()
+            );
         }
     }
 
@@ -2125,6 +2275,7 @@ pub(crate) mod test {
     }
 
     fn proptest_join<K: DBData, V: DBData>(
+        balanced: bool,
         mut left_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
         mut right_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
         f: impl Fn(&K, &V, &V) -> V + Clone + Send + 'static,
@@ -2137,8 +2288,13 @@ pub(crate) mod test {
                     let (left_input, left_handle) = circuit.add_input_indexed_zset::<K, V>();
                     let (right_input, right_handle) = circuit.add_input_indexed_zset::<K, V>();
 
-                    let output_handle =
-                        left_input.join(&right_input, f.clone()).accumulate_output();
+                    let output_handle = if balanced {
+                        left_input
+                            .join_balanced_inner(&right_input, f.clone())
+                            .accumulate_output()
+                    } else {
+                        left_input.join(&right_input, f.clone()).accumulate_output()
+                    };
 
                     let f = f.clone();
                     let expected_output_handle = circuit
@@ -2261,23 +2417,35 @@ pub(crate) mod test {
 
         #[test]
         fn proptest_join_big_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
-            proptest_join(inputs.0, inputs.1, |_k, v1, v2| v1 + v2, true);
+            proptest_join(false, inputs.0, inputs.1, |_k, v1, v2| v1 + v2, true);
         }
 
         #[test]
         fn proptest_join_small_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
-            proptest_join(inputs.0, inputs.1, |_k, v1, v2| v1 + v2, false);
+            proptest_join(false, inputs.0, inputs.1, |_k, v1, v2| v1 + v2, false);
         }
+
+        #[test]
+        fn proptest_balanced_join_big_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
+            proptest_join(true, inputs.0, inputs.1, |_k, v1, v2| v1 + v2, true);
+        }
+
+        #[test]
+        fn proptest_balanced_join_small_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
+            proptest_join(true, inputs.0, inputs.1, |_k, v1, v2| v1 + v2, false);
+        }
+
     }
 }
 
 #[cfg(all(test, not(feature = "backend-mode")))]
 mod propagate_test {
     use crate::{
+        Circuit, FallbackZSet, RootCircuit, Stream, Timestamp,
         circuit::WithClock,
         operator::{DelayedFeedback, Generator},
         typed_batch::{OrdZSet, Spine},
-        zset, Circuit, FallbackZSet, RootCircuit, Stream, Timestamp,
+        zset,
     };
     use rkyv::{Archive, Deserialize, Serialize};
     use size_of::SizeOf;

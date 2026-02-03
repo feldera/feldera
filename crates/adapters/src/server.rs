@@ -1,41 +1,52 @@
-use crate::controller::{CompletionToken, ControllerBuilder};
+use crate::adhoc::set_snapshot;
+use crate::controller::{CompletionToken, ConsistentSnapshot, ControllerBuilder};
 use crate::format::{get_input_format, get_output_format};
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
 };
-use crate::util::{RateLimitCheckResult, TokenBucketRateLimiter};
+use crate::static_compile::catalog::OUTPUT_MAPPING;
+use crate::util::{LongOperationWarning, RateLimitCheckResult, TokenBucketRateLimiter};
+use crate::{Catalog, dyn_event};
 use crate::{
+    CircuitCatalog, Controller, ControllerError, FormatConfig, InputEndpointConfig, OutputEndpoint,
+    OutputEndpointConfig, PipelineConfig, TransportInputEndpoint,
     adhoc::{adhoc_websocket, stream_adhoc_result},
     controller::ConnectorConfig,
     ensure_default_crypto_provider,
+    samply::{SamplyProfile, SamplyState, SamplyStatus},
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
-    CircuitCatalog, Controller, ControllerError, FormatConfig, InputEndpointConfig, OutputEndpoint,
-    OutputEndpointConfig, PipelineConfig, TransportInputEndpoint,
 };
-use crate::{dyn_event, Catalog};
+use actix_web::HttpResponseBuilder;
 use actix_web::body::MessageBody;
 use actix_web::dev::Service;
 use actix_web::http::KeepAlive;
 use actix_web::{
+    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder, ResponseError,
     dev::{ServiceFactory, ServiceRequest},
     get,
-    http::header,
     http::StatusCode,
+    http::header,
     post, rt,
     web::{self, Data as WebData, Payload, Query},
-    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder, ResponseError,
 };
+use arrow::ipc::writer::StreamWriter;
 use async_stream;
+use atomic::Atomic;
+use bytes::Bytes;
 use chrono::Utc;
 use clap::Parser;
-use colored::{ColoredString, Colorize};
-use dbsp::{circuit::CircuitConfig, DBSPHandle};
+use colored::Colorize;
+use dbsp::circuit::Layout;
+use dbsp::circuit::checkpointer::Checkpointer;
+use dbsp::{DBSPHandle, circuit::CircuitConfig};
 use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
 use feldera_adapterlib::PipelineState;
+use feldera_adapterlib::errors::controller::ConfigError;
 use feldera_observability as observability;
+use feldera_observability::json_logging::init_pipeline_logging_with_id;
 use feldera_storage::{StorageBackend, StoragePath};
 use feldera_types::adapter_stats::{
     EndpointErrorStats, InputEndpointErrorMetrics, OutputEndpointErrorMetrics,
@@ -49,8 +60,11 @@ use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
 use feldera_types::constants::STATUS_FILE;
+use feldera_types::coordination::{AdHocScan, CoordinationActivate, Labels, Step, StepRequest};
 use feldera_types::pipeline_diff::PipelineDiff;
-use feldera_types::query_params::{ActivateParams, MetricsFormat, MetricsParameters};
+use feldera_types::query_params::{
+    ActivateParams, MetricsFormat, MetricsParameters, SamplyProfileGetParams, SamplyProfileParams,
+};
 use feldera_types::runtime_status::{
     BootstrapPolicy, ExtendedRuntimeStatus, ExtendedRuntimeStatusError, RuntimeDesiredStatus,
     RuntimeStatus,
@@ -59,40 +73,43 @@ use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
 use feldera_types::{
     checkpoint::CheckpointMetadata,
-    config::{default_max_batch_size, TransportConfig},
+    config::{TransportConfig, default_max_batch_size},
     transport::http::HttpInputConfig,
 };
 use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
+use futures::StreamExt;
+use futures::stream::unfold;
 use futures_util::FutureExt;
+use futures_util::stream::once;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, VecDeque};
+use std::convert::Infallible;
 use std::ffi::OsStr;
 use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::io::ErrorKind;
+use std::mem::take;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::{
     borrow::Cow,
     net::TcpListener,
-    sync::{atomic::Ordering, Arc, Mutex, Weak},
+    sync::{Arc, Mutex, Weak},
     thread,
 };
 use tokio::spawn;
 use tokio::sync::Notify;
 use tokio::task::spawn_blocking;
 use tokio::time::sleep;
-use tokio_stream::{wrappers::BroadcastStream, StreamExt};
-use tracing::{debug, error, info, info_span, warn, Instrument, Level, Subscriber};
-use tracing_subscriber::fmt::format::Format;
-use tracing_subscriber::fmt::{FormatEvent, FormatFields};
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::registry::LookupSpan;
-use tracing_subscriber::util::SubscriberInitExt;
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::wrappers::WatchStream;
+use tracing::{Instrument, Level, debug, error, info, info_span, warn};
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
@@ -102,7 +119,7 @@ pub mod metrics;
 #[cfg(target_family = "unix")]
 mod stack_overflow_backtrace;
 
-pub use self::error::{ErrorResponse, PipelineError, MAX_REPORTED_PARSE_ERRORS};
+pub use self::error::{ErrorResponse, MAX_REPORTED_PARSE_ERRORS, PipelineError};
 
 #[derive(Debug, Clone, Default)]
 pub enum InitializationState {
@@ -161,6 +178,10 @@ impl CheckpointSyncState {
             }
         }
     }
+
+    fn completed_periodic(&mut self, uuid: uuid::Uuid) {
+        self.status.periodic = Some(uuid);
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -218,9 +239,10 @@ pub(crate) struct ServerState {
     /// The other locks in this structure nest inside `desired_status`.
     desired_status: Mutex<RuntimeDesiredStatus>,
 
-    bootstrap_policy: Mutex<BootstrapPolicy>,
+    /// Bootstrap policy.
+    bootstrap_policy: Atomic<BootstrapPolicy>,
 
-    /// Notified when `desired_status` changes.
+    /// Notified when `desired_status` or `phase` changes.
     desired_status_change: Arc<Notify>,
 
     /// `phase` nests inside `controller`.
@@ -243,15 +265,38 @@ pub(crate) struct ServerState {
     /// Leaf lock.
     sync_checkpoint_state: Mutex<CheckpointSyncState>,
 
+    /// Leaf lock.
+    /// Samply profiling state.
+    samply_state: Arc<Mutex<SamplyState>>,
+
     /// Deployment ID.
     deployment_id: Uuid,
 
     metadata: String,
 
+    storage: Option<Arc<dyn StorageBackend>>,
+
     // rate limiter based on tags
     // NOTE: we assume that there are a finite small number
     // of tags, so using String is fine.
     rate_limiter: TokenBucketRateLimiter<String>,
+
+    coordination_activate: Mutex<Option<CoordinationActivate>>,
+
+    /// Current collection of leases.
+    leases: Mutex<HashMap<Step, Lease>>,
+}
+
+/// Leases on snapshots of particular steps.
+///
+/// A lease gives the coordinator the ability to read tables within a step with
+/// `/coordination/adhoc/scan`, to enable multihost ad-hoc queries.
+struct Lease {
+    /// Number of leaseholders (usually 1).
+    reference_count: usize,
+
+    /// The snapshot held by the lease.
+    snapshot: ConsistentSnapshot,
 }
 
 impl ServerState {
@@ -261,6 +306,7 @@ impl ServerState {
         desired_status: RuntimeDesiredStatus,
         bootstrap_policy: BootstrapPolicy,
         deployment_id: Uuid,
+        storage: Option<Arc<dyn StorageBackend>>,
     ) -> Self {
         // Max 10 errors per minute
         let rate_limiter = TokenBucketRateLimiter::new(10, Duration::from_secs(60));
@@ -272,9 +318,13 @@ impl ServerState {
             checkpoint_state: Default::default(),
             sync_checkpoint_state: Default::default(),
             desired_status: Mutex::new(desired_status),
-            bootstrap_policy: Mutex::new(bootstrap_policy),
+            bootstrap_policy: Atomic::new(bootstrap_policy),
             deployment_id,
+            storage,
             rate_limiter,
+            samply_state: Default::default(),
+            coordination_activate: Default::default(),
+            leases: Default::default(),
         }
     }
 
@@ -285,6 +335,7 @@ impl ServerState {
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             deployment_id,
+            None,
         )
     }
 
@@ -309,10 +360,9 @@ impl ServerState {
     /// This function checks for this situation  and returns a missing controller error
     /// instead of `e`.
     fn maybe_missing_controller_error(&self, e: ControllerError) -> PipelineError {
-        if let Err(missing_controller_error) = self.controller() {
-            missing_controller_error
-        } else {
-            e.into()
+        match self.controller() {
+            Err(missing_controller_error) => missing_controller_error,
+            _ => e.into(),
         }
     }
 
@@ -349,11 +399,11 @@ impl ServerState {
     }
 
     pub fn bootstrap_policy(&self) -> BootstrapPolicy {
-        *self.bootstrap_policy.lock().unwrap()
+        self.bootstrap_policy.load(Ordering::Acquire)
     }
 
     fn set_bootstrap_policy(&self, policy: BootstrapPolicy) {
-        *self.bootstrap_policy.lock().unwrap() = policy;
+        self.bootstrap_policy.store(policy, Ordering::Release)
     }
 
     fn phase(&self) -> PipelinePhase {
@@ -362,6 +412,7 @@ impl ServerState {
 
     pub fn set_phase(&self, phase: PipelinePhase) {
         *self.phase.lock().unwrap() = phase;
+        self.desired_status_change.notify_waiters();
     }
 }
 
@@ -423,6 +474,11 @@ pub struct ServerArgs {
     /// whether it is a new start (id changed) or an automatic restart (id remains the same).
     #[arg(long)]
     pub deployment_id: Uuid,
+
+    /// Host identifier for this pipeline instance in multihost deployments.
+    /// Helps distinguish logs originating from different hosts.
+    #[arg(long)]
+    pub host_id: Option<usize>,
 }
 
 pub trait CircuitBuilderFunc:
@@ -501,10 +557,7 @@ pub fn run_server(
     let port = listener
         .local_addr()
         .map_err(|e| {
-            ControllerError::io_error(
-                "retrieving local socket address of the TCP listener".to_string(),
-                e,
-            )
+            ControllerError::io_error("retrieving local socket address of the TCP listener", e)
         })?
         .port();
 
@@ -514,7 +567,11 @@ pub fn run_server(
         eprintln!("{e}");
     })?;
 
-    let _guard = observability::init("https://f0ec61ff0f8483e9ec8117645ad0c0e1@o4510219052253184.ingest.us.sentry.io/4510299519844352", "pipeline", env!("CARGO_PKG_VERSION"));
+    let _guard = observability::init(
+        "https://f0ec61ff0f8483e9ec8117645ad0c0e1@o4510219052253184.ingest.us.sentry.io/4510299519844352",
+        "pipeline",
+        env!("CARGO_PKG_VERSION"),
+    );
     let config_cln = config.clone();
     sentry::configure_scope(|scope| {
         if let Some(id) = config_cln.name.as_ref() {
@@ -523,27 +580,38 @@ pub fn run_server(
     });
 
     // Initialize the logger by setting its filter and template.
-    let pipeline_name = format!(
-        "[{}]",
-        config
-            .given_name
-            .as_ref()
-            .or(config.name.as_ref())
-            .cloned()
-            .unwrap_or_default()
-    )
-    .cyan();
-    tracing_subscriber::registry()
-        .with(sentry::integrations::tracing::layer())
-        .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
-        .with(get_env_filter(&config))
-        .try_init()
+    let pipeline_label = config
+        .given_name
+        .as_ref()
+        .or(config.name.as_ref())
+        .cloned()
+        .unwrap_or_default();
+    let pipeline_name = if let Some(host_id) = args.host_id.as_ref() {
+        format!("[{} host={}]", pipeline_label, host_id).cyan()
+    } else {
+        format!("[{}]", pipeline_label).cyan()
+    };
+
+    let pipeline_id = config
+        .name
+        .as_ref()
+        .and_then(|name| name.strip_prefix("pipeline-"))
+        .map(|id| id.to_string());
+    init_pipeline_logging_with_id(pipeline_name, pipeline_id, get_env_filter(&config))
         .unwrap_or_else(|e| {
             // This happens in unit tests when another test has initialized logging.
             eprintln!("Failed to initialize logging: {e}.")
         });
+    if let Some(provider) = rustls::crypto::CryptoProvider::get_default() {
+        observability::fips::log_rustls_provider_fips_status(
+            "startup default provider",
+            provider.fips(),
+        );
+    }
     if config.global.tracing {
-        warn!("Pipeline tracing was enabled but the 'tracing' option was deprecated, use `FELDERA_SENTRY_ENABLED` for tracing.");
+        warn!(
+            "Pipeline tracing was enabled but the 'tracing' option was deprecated, use `FELDERA_SENTRY_ENABLED` for tracing."
+        );
     }
 
     // Install stack overflow handler early, before creating the controller and parsing DevTweaks.
@@ -593,6 +661,10 @@ pub fn run_server(
                 );
                 info!("Desired status from storage: {:?}", stored.desired_status);
             }) {
+            _ if args.initial == RuntimeDesiredStatus::Coordination => {
+                // Always defer to the coordinator if there is one.
+                (args.initial, args.bootstrap_policy)
+            }
             Some(stored) if stored.deployment_id == args.deployment_id => {
                 // This is an automatic restart (otherwise the deployment ID would
                 // have changed).  Use the stored desired status.
@@ -641,7 +713,8 @@ pub fn run_server(
 
         if !matches!(
             initial_status,
-            RuntimeDesiredStatus::Running
+            RuntimeDesiredStatus::Coordination
+                | RuntimeDesiredStatus::Running
                 | RuntimeDesiredStatus::Paused
                 | RuntimeDesiredStatus::Standby,
         ) {
@@ -654,6 +727,7 @@ pub fn run_server(
             initial_status,
             bootstrap_policy,
             args.deployment_id,
+            builder.storage().clone(),
         ));
 
         // Initialize the pipeline in a separate thread.  On success, this thread
@@ -673,6 +747,7 @@ pub fn run_server(
             runtime.spawn(async move {
                 let mut prev_stored_status = None;
                 loop {
+                    let notify = state.desired_status_change.notified();
                     let desired_status = state.desired_status();
                     let bootstrap_policy = state.bootstrap_policy();
                     let stored_status = StoredStatus {
@@ -685,7 +760,7 @@ pub fn run_server(
                         spawn_blocking(move || stored_status.write(&*storage));
                     }
                     prev_stored_status = Some(stored_status);
-                    state.desired_status_change.notified().await;
+                    notify.await;
                 }
             });
         }
@@ -798,19 +873,16 @@ pub fn run_server(
             .with_no_client_auth()
             .with_single_cert(cert_chain, key_der)
             .expect("server configuration should be built");
+        observability::fips::log_rustls_fips_status("HTTPS server config", server_config.fips());
 
         server
             .listen_rustls_0_23(listener, server_config)
-            .map_err(|e| {
-                ControllerError::io_error("binding HTTPS server to the listener".to_string(), e)
-            })?
+            .map_err(|e| ControllerError::io_error("binding HTTPS server to the listener", e))?
             .run()
     } else {
         server
             .listen(listener)
-            .map_err(|e| {
-                ControllerError::io_error("binding HTTP server to the listener".to_string(), e)
-            })?
+            .map_err(|e| ControllerError::io_error("binding HTTP server to the listener", e))?
             .run()
     };
 
@@ -826,13 +898,13 @@ pub fn run_server(
         let tmp_server_port_file = format!("{SERVER_PORT_FILE}.tmp");
         tokio::fs::write(&tmp_server_port_file, format!("{}\n", port))
             .await
-            .map_err(|e| ControllerError::io_error("writing server port file".to_string(), e))?;
+            .map_err(|e| ControllerError::io_error("writing server port file", e))?;
         tokio::fs::rename(&tmp_server_port_file, SERVER_PORT_FILE)
             .await
-            .map_err(|e| ControllerError::io_error("renaming server port file".to_string(), e))?;
+            .map_err(|e| ControllerError::io_error("renaming server port file", e))?;
         server
             .await
-            .map_err(|e| ControllerError::io_error("in the HTTP server".to_string(), e))
+            .map_err(|e| ControllerError::io_error("in the HTTP server", e))
     })?;
 
     Ok(())
@@ -946,41 +1018,11 @@ fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>, tag: Op
         error!("{error}");
     }
 
-    if is_fatal_controller_error(&error) {
-        if let Ok(controller) = state.take_controller() {
-            state.set_phase(PipelinePhase::Failed(error));
-            controller.initiate_stop();
-        }
-    }
-}
-
-struct PipelineFormat {
-    pipeline_name: ColoredString,
-    inner: Format,
-}
-
-impl PipelineFormat {
-    pub fn new(pipeline_name: ColoredString) -> Self {
-        Self {
-            pipeline_name,
-            inner: Format::default(),
-        }
-    }
-}
-
-impl<S, N> FormatEvent<S, N> for PipelineFormat
-where
-    S: Subscriber + for<'a> LookupSpan<'a>,
-    N: for<'a> FormatFields<'a> + 'static,
-{
-    fn format_event(
-        &self,
-        ctx: &tracing_subscriber::fmt::FmtContext<'_, S, N>,
-        mut writer: tracing_subscriber::fmt::format::Writer<'_>,
-        event: &tracing::Event<'_>,
-    ) -> std::fmt::Result {
-        write!(writer, "{} ", self.pipeline_name)?;
-        self.inner.format_event(ctx, writer, event)
+    if is_fatal_controller_error(&error)
+        && let Ok(controller) = state.take_controller()
+    {
+        state.set_phase(PipelinePhase::Failed(error));
+        controller.initiate_stop();
     }
 }
 
@@ -1003,52 +1045,102 @@ fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
         }
     }
 
-    // Otherwise, fall back to `INFO`.
-    EnvFilter::try_new("info").unwrap()
+    // Otherwise, fall back to `INFO`, except for `tarpc`, which is too verbose
+    // at that level.
+    EnvFilter::try_new("tarpc=warn,info").unwrap()
 }
 
 fn do_bootstrap(
-    builder: ControllerBuilder,
+    mut builder: ControllerBuilder,
     circuit_factory: CircuitFactoryFunc,
     state: &WebData<ServerState>,
 ) -> Result<(), ControllerError> {
-    let weak_state_ref = Arc::downgrade(state);
-    match state.desired_status() {
-        RuntimeDesiredStatus::Unavailable => unreachable!(),
-        RuntimeDesiredStatus::Running
-        | RuntimeDesiredStatus::Paused
-        | RuntimeDesiredStatus::Suspended => {
-            // First, if necessary, download the latest checkpoint from S3.
-            if let Some(sync) = builder.is_pull_necessary() {
-                builder.pull_once(sync)?;
+    let mut activation_warning = LongOperationWarning::new(Duration::from_secs(1));
+    let controller_init = loop {
+        match state.desired_status() {
+            RuntimeDesiredStatus::Unavailable => unreachable!(),
+            RuntimeDesiredStatus::Coordination => {
+                if let Some(mut ca) = state.coordination_activate.lock().unwrap().take() {
+                    *OUTPUT_MAPPING.lock().unwrap() = take(&mut ca.output_assignment);
+
+                    builder = builder.with_layout(
+                        Layout::new_multihost(&ca.exchanges, ca.local_address).map_err(|e| {
+                            ControllerError::Config {
+                                config_error: Box::new(ConfigError::InvalidLayout(e)),
+                            }
+                        })?,
+                    );
+
+                    match ca.desired_status {
+                        RuntimeDesiredStatus::Coordination
+                        | RuntimeDesiredStatus::Unavailable
+                        | RuntimeDesiredStatus::Suspended => {
+                            return Err(ControllerError::InvalidInitialStatus(ca.desired_status));
+                        }
+                        RuntimeDesiredStatus::Paused
+                        | RuntimeDesiredStatus::Running
+                        | RuntimeDesiredStatus::Standby => (),
+                    }
+                    builder.config.inputs = std::mem::take(&mut ca.inputs);
+                    builder.config.outputs = std::mem::take(&mut ca.outputs);
+                    *state.desired_status.lock().unwrap() = ca.desired_status;
+                    match ca.checkpoint {
+                        Some(checkpoint_uuid) => {
+                            break builder.open_checkpoint(checkpoint_uuid);
+                        }
+                        None => break builder.open_without_checkpoint(),
+                    }
+                }
+                activation_warning.check(|elapsed| {
+                    warn!(
+                        "Still waiting for activation from coordinator after {} seconds.",
+                        elapsed.as_secs()
+                    );
+                });
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            RuntimeDesiredStatus::Running
+            | RuntimeDesiredStatus::Paused
+            | RuntimeDesiredStatus::Suspended => {
+                // First, if necessary, download the latest checkpoint from S3.
+                if let Some(sync) = builder.is_pull_necessary() {
+                    builder.pull_once(sync)?;
+                }
+                break builder.open_latest_checkpoint();
+            }
+            RuntimeDesiredStatus::Standby => {
+                state.set_phase(PipelinePhase::Initializing(InitializationState::Standby));
+
+                builder
+                    .continuous_pull(|| state.desired_status() != RuntimeDesiredStatus::Standby)?;
+
+                let mut desired_status = state.desired_status.lock().unwrap();
+                if *desired_status == RuntimeDesiredStatus::Standby {
+                    warn!(
+                        "Exited standby mode without specifying a new desired state, defaulting to paused"
+                    );
+                    *desired_status = RuntimeDesiredStatus::Paused;
+                    state.desired_status_change.notify_waiters();
+                }
+                break builder.open_latest_checkpoint();
             }
         }
-        RuntimeDesiredStatus::Standby => {
-            state.set_phase(PipelinePhase::Initializing(InitializationState::Standby));
-
-            builder.continuous_pull(|| state.desired_status() != RuntimeDesiredStatus::Standby)?;
-
-            let mut desired_status = state.desired_status.lock().unwrap();
-            if *desired_status == RuntimeDesiredStatus::Standby {
-                warn!("Exited standby mode without specifying a new desired state, defaulting to paused");
-                *desired_status = RuntimeDesiredStatus::Paused;
-                state.desired_status_change.notify_waiters();
-            }
-        }
-    }
-
-    let controller_init = builder.open_checkpoint()?;
+    }?;
 
     let controller = controller_init.init(
         Some((**state).clone()),
         circuit_factory,
-        Box::new(move |e, t| error_handler(&weak_state_ref, e, t))
-            as Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
+        Box::new({
+            let weak_state_ref = Arc::downgrade(state);
+            move |e, t| error_handler(&weak_state_ref, e, t)
+        }) as Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     )?;
 
     let desired_status = state.desired_status.lock().unwrap();
     match *desired_status {
-        RuntimeDesiredStatus::Unavailable | RuntimeDesiredStatus::Standby => unreachable!(),
+        RuntimeDesiredStatus::Unavailable
+        | RuntimeDesiredStatus::Standby
+        | RuntimeDesiredStatus::Coordination => unreachable!(),
         RuntimeDesiredStatus::Paused | RuntimeDesiredStatus::Suspended => controller.pause(),
         RuntimeDesiredStatus::Running => controller.start(),
     };
@@ -1078,12 +1170,11 @@ where
                 HttpResponse::Ok().body("<html><head><title>DBSP server</title></head></html>")
             }),
         )
-        .service(checkpoint_sync)
         .service(start)
         .service(pause)
         .service(activate)
         .service(approve)
-        .service(status)
+        .service(status_handler)
         .service(suspendable)
         .service(start_transaction)
         .service(commit_transaction)
@@ -1099,9 +1190,13 @@ where
         .service(heap_profile)
         .service(dump_profile)
         .service(dump_json_profile)
+        .service(samply_profile)
+        .service(get_samply_profile)
         .service(lir)
         .service(checkpoint)
         .service(checkpoint_status)
+        .service(checkpoints)
+        .service(checkpoint_sync)
         .service(sync_checkpoint_status)
         .service(suspend)
         .service(input_endpoint)
@@ -1110,6 +1205,19 @@ where
         .service(start_input_endpoint)
         .service(input_endpoint_status)
         .service(output_endpoint_status)
+        .service(rebalance)
+        .service(coordination_activate_handler)
+        .service(coordination_status)
+        .service(coordination_step_request)
+        .service(coordination_step_status)
+        .service(coordination_checkpoint_status)
+        .service(coordination_checkpoint_prepare)
+        .service(coordination_checkpoint_release)
+        .service(coordination_transaction_status)
+        .service(coordination_adhoc_catalog)
+        .service(coordination_adhoc_lease)
+        .service(coordination_adhoc_scan)
+        .service(coordination_labels_incomplete)
 }
 
 /// Implements `/start`, `/pause`, `/activate`:
@@ -1174,21 +1282,11 @@ async fn activate(
     state: WebData<ServerState>,
     args: Query<ActivateParams>,
 ) -> Result<HttpResponse, PipelineError> {
-    let desired_status = match args.initial.as_str() {
-        "paused" => RuntimeDesiredStatus::Paused,
-        "running" => RuntimeDesiredStatus::Running,
-        _ => {
-            return Err(PipelineError::InvalidActivateStatusString(
-                args.initial.clone(),
-            ))
-        }
-    };
-
-    match desired_status {
+    match args.initial {
         RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
-            state_transition(state, "activate", desired_status, true).await
+            state_transition(state, "activate", args.initial, true).await
         }
-        _ => Err(PipelineError::InvalidActivateStatus(desired_status)),
+        _ => Err(PipelineError::InvalidActivateStatus(args.initial)),
     }
 }
 
@@ -1220,32 +1318,46 @@ async fn approve(state: WebData<ServerState>) -> Result<HttpResponse, PipelineEr
 ///
 /// This endpoint is designed to be non-blocking.
 #[get("/status")]
-async fn status(
+async fn status_handler(
     state: WebData<ServerState>,
 ) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
+    get_status(&state)
+}
+
+#[allow(clippy::result_large_err)]
+fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
     let runtime_desired_status = state.desired_status();
     match state.controller() {
         Ok(controller) => {
-            let bootstrapping = controller.status().bootstrap_in_progress();
+            fn inner_status(
+                runtime_desired_status: RuntimeDesiredStatus,
+                controller: &Controller,
+                default_status: RuntimeStatus,
+            ) -> ExtendedRuntimeStatus {
+                ExtendedRuntimeStatus {
+                    runtime_status: if controller.status().bootstrap_in_progress() {
+                        RuntimeStatus::Bootstrapping
+                    } else if controller.is_replaying() {
+                        RuntimeStatus::Replaying
+                    } else {
+                        default_status
+                    },
+                    runtime_status_details: json!(""),
+                    runtime_desired_status,
+                }
+            }
+
             return match controller.status().global_metrics.get_state() {
-                PipelineState::Paused => Ok(ExtendedRuntimeStatus {
-                    runtime_status: if bootstrapping {
-                        RuntimeStatus::Bootstrapping
-                    } else {
-                        RuntimeStatus::Paused
-                    },
-                    runtime_status_details: json!(""),
+                PipelineState::Paused => Ok(inner_status(
                     runtime_desired_status,
-                }),
-                PipelineState::Running => Ok(ExtendedRuntimeStatus {
-                    runtime_status: if bootstrapping {
-                        RuntimeStatus::Bootstrapping
-                    } else {
-                        RuntimeStatus::Running
-                    },
-                    runtime_status_details: json!(""),
+                    &controller,
+                    RuntimeStatus::Paused,
+                )),
+                PipelineState::Running => Ok(inner_status(
                     runtime_desired_status,
-                }),
+                    &controller,
+                    RuntimeStatus::Running,
+                )),
                 PipelineState::Terminated => Err(ExtendedRuntimeStatusError {
                     status_code: StatusCode::INTERNAL_SERVER_ERROR,
                     error: feldera_types::error::ErrorResponse {
@@ -1318,7 +1430,10 @@ async fn status(
             } else {
                 let mut status_code = e.status_code();
                 if status_code == StatusCode::SERVICE_UNAVAILABLE {
-                    error!("Endpoint /status: unexpected status code {status_code} has been converted into {} for error {e}", StatusCode::SERVICE_UNAVAILABLE);
+                    error!(
+                        "Endpoint /status: unexpected status code {status_code} has been converted into {} for error {e}",
+                        StatusCode::SERVICE_UNAVAILABLE
+                    );
                     status_code = StatusCode::INTERNAL_SERVER_ERROR;
                 }
                 let e = PipelineError::ControllerError { error: e };
@@ -1383,17 +1498,17 @@ async fn query(
 ) -> impl Responder {
     let args = args.into_inner();
     tracing::debug!("processing adhoc query: {:?}", args.sql);
-    let session_ctxt = state.controller()?.session_context()?;
+    let controller = state.controller()?;
     if !request_is_websocket(&request) {
-        stream_adhoc_result(args, session_ctxt).await
+        stream_adhoc_result(&controller, &args).await
     } else {
-        adhoc_websocket(session_ctxt, request, stream).await
+        adhoc_websocket(controller, request, stream).await
     }
 }
 
 #[get("/stats")]
 async fn stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    Ok(HttpResponse::Ok().json(state.controller()?.status()))
+    Ok(HttpResponse::Ok().json(state.controller()?.status().to_api_type()))
 }
 
 /// This endpoint returns a subset of stats that don't need updating and so is more performant than /stats
@@ -1597,11 +1712,136 @@ async fn lir(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError>
         .body(state.controller()?.lir().as_zip()))
 }
 
+#[post("/samply_profile")]
+async fn samply_profile(
+    state: WebData<ServerState>,
+    query_params: web::Query<SamplyProfileParams>,
+) -> Result<HttpResponse, PipelineError> {
+    let duration = query_params.duration_secs;
+    let controller = state.controller()?;
+
+    let state_samply_state = state.samply_state.clone();
+
+    // Check if profiling is already in progress
+    {
+        let samply_state = state_samply_state.lock().unwrap();
+        if matches!(samply_state.samply_status, SamplyStatus::InProgress { .. }) {
+            return Ok(HttpResponse::Conflict().json(ErrorResponse {
+                message: "samply profile collection is already in progress".to_string(),
+                error_code: "SamplyProfilingInProgress".into(),
+                details: serde_json::Value::Null,
+            }));
+        }
+    }
+
+    // Set the state to InProgress with expected completion time
+    let expected_after = chrono::Utc::now() + chrono::Duration::seconds(duration as i64);
+    state_samply_state
+        .lock()
+        .unwrap()
+        .start_profiling(expected_after);
+
+    spawn(async move {
+        let result = controller.async_samply_profile(duration).await;
+        state_samply_state
+            .lock()
+            .unwrap()
+            .complete_profiling(result);
+    });
+
+    // Wait to check if it errored out immediately
+    sleep(Duration::from_millis(600)).await;
+
+    // Check if profiling is still running or failed immediately
+    let samply_state = state.samply_state.lock().unwrap();
+    Ok(match samply_state.samply_status {
+        // Profile is still running - return success
+        SamplyStatus::InProgress { .. } => HttpResponse::Accepted().finish(),
+        // Profile completed during wait - check if it failed
+        SamplyStatus::Idle => match &samply_state.last_profile {
+            Some(Err(error)) => samply_profile_error_response(error),
+            _ => HttpResponse::InternalServerError().json(ErrorResponse {
+                message: "samply profiling completed unexpectedly".to_string(),
+                error_code: "SamplyProfilingUnexpectedCompletion".into(),
+                details: serde_json::Value::Null,
+            }),
+        },
+    })
+}
+
+#[get("/samply_profile")]
+async fn get_samply_profile(
+    state: WebData<ServerState>,
+    query_params: web::Query<SamplyProfileGetParams>,
+) -> Result<HttpResponse, PipelineError> {
+    let samply_state = state.samply_state.lock().unwrap();
+
+    // If latest=true, check if profiling is in progress and return 204 No Content
+    if query_params.latest
+        && let SamplyStatus::InProgress { expected_after } = samply_state.samply_status
+    {
+        let now = chrono::Utc::now();
+        let retry_after_secs = (expected_after - now).num_seconds().max(0);
+
+        return Ok(HttpResponse::NoContent()
+            .insert_header(("Retry-After", retry_after_secs.to_string()))
+            .finish());
+    }
+
+    // Return the last profile result
+    Ok(samply_profile_response(&samply_state.last_profile))
+}
+
+/// Helper function to construct error response for samply profiling failure
+fn samply_profile_error_response(error: &str) -> HttpResponse {
+    HttpResponse::InternalServerError().json(ErrorResponse {
+        message: "failed to profile the pipeline using samply".to_string(),
+        error_code: "SamplyProfilingFailure".into(),
+        details: serde_json::Value::String(error.to_string()),
+    })
+}
+
+/// Helper function to construct HttpResponse from SamplyProfile result
+fn samply_profile_response(last_profile: &SamplyProfile) -> HttpResponse {
+    match last_profile {
+        Some(Ok(bytes)) => {
+            let bytes = bytes.clone();
+            let byte_stream = once(async move { Ok::<_, PipelineError>(web::Bytes::from(bytes)) });
+
+            HttpResponse::Ok()
+                .content_type("application/gzip")
+                .insert_header((
+                    "Content-Disposition",
+                    format!(
+                        "attachment; filename=\"{}-samply_profile.json.gz\"",
+                        chrono::Local::now().to_rfc3339()
+                    ),
+                ))
+                .streaming(byte_stream)
+        }
+        Some(Err(error)) => samply_profile_error_response(error),
+        None => HttpResponse::BadRequest().json(json!({
+            "message": "no samply profile found; trigger a samply profile by making a POST request to `/samply_profile`",
+            "error_code": "NoSamplyProfile",
+            "details": null
+        })),
+    }
+}
+
+fn get_checkpoints(state: &ServerState) -> Result<VecDeque<CheckpointMetadata>, PipelineError> {
+    Ok(match &state.storage {
+        Some(backend) => {
+            Checkpointer::read_checkpoints(&**backend).map_err(ControllerError::dbsp_error)?
+        }
+        None => Default::default(),
+    })
+}
+
 #[post("/checkpoint/sync")]
 async fn checkpoint_sync(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     let controller = state.controller()?;
 
-    let Some(last_checkpoint) = state.checkpoint_state.lock().unwrap().last_checkpoint else {
+    let Some(last_checkpoint) = get_checkpoints(&state)?.back().map(|c| c.uuid) else {
         return Ok(HttpResponse::BadRequest().json(ErrorResponse {
                     message: "no checkpoints found; make a POST request to `/checkpoint` to make a new checkpoint".to_string(),
                     error_code: "400".into(),
@@ -1643,9 +1883,23 @@ async fn checkpoint_status(state: WebData<ServerState>) -> impl Responder {
     HttpResponse::Ok().json(state.checkpoint_state.lock().unwrap().status.clone())
 }
 
+#[get("/checkpoints")]
+async fn checkpoints(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponse::Ok().json(get_checkpoints(&state)?))
+}
+
 #[get("/checkpoint/sync_status")]
-async fn sync_checkpoint_status(state: WebData<ServerState>) -> impl Responder {
-    HttpResponse::Ok().json(state.sync_checkpoint_state.lock().unwrap().status.clone())
+async fn sync_checkpoint_status(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    let mut sync_state = state.sync_checkpoint_state.lock().unwrap();
+
+    let controller = state.controller()?;
+    if let Some(chk) = controller.last_checkpoint_sync().id {
+        sync_state.completed_periodic(chk);
+    }
+
+    Ok(HttpResponse::Ok().json(sync_state.status.clone()))
 }
 
 /// Suspends the pipeline and terminate the circuit.
@@ -1658,9 +1912,11 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
     match *desired_status {
         RuntimeDesiredStatus::Unavailable => unreachable!(),
         RuntimeDesiredStatus::Standby => {
-            return Err(PipelineError::InvalidTransition("suspend", *desired_status))
+            return Err(PipelineError::InvalidTransition("suspend", *desired_status));
         }
-        RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
+        RuntimeDesiredStatus::Coordination
+        | RuntimeDesiredStatus::Running
+        | RuntimeDesiredStatus::Paused => {
             info!("suspend: Transitioning from {desired_status:?} to Suspended");
             *desired_status = RuntimeDesiredStatus::Suspended;
             state.desired_status_change.notify_waiters();
@@ -1684,10 +1940,10 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
                     tokio::time::sleep(Duration::from_millis(50)).await;
                 }
                 state.set_phase(PipelinePhase::Suspended);
-                if let Ok(controller) = state.take_controller() {
-                    if let Err(error) = controller.async_stop().await {
-                        error!("stopping controller failed ({error})");
-                    }
+                if let Ok(controller) = state.take_controller()
+                    && let Err(error) = controller.async_stop().await
+                {
+                    error!("stopping controller failed ({error})");
                 }
             }
 
@@ -1959,11 +2215,11 @@ async fn output_endpoint(
         // returning it to actix, so the only way to run cleanup code
         // when the HTTP request terminates is to piggyback on the
         // destructor.
-        if let Some(state) = weak_state.upgrade() {
-            if let Ok(controller) = state.controller() {
-                controller.disconnect_output(&endpoint_id);
-                controller.unregister_api_connection();
-            }
+        if let Some(state) = weak_state.upgrade()
+            && let Ok(controller) = state.controller()
+        {
+            controller.disconnect_output(&endpoint_id);
+            controller.unregister_api_connection();
         }
     })))
 }
@@ -2038,6 +2294,271 @@ async fn completion_status(
     }
 }
 
+#[post("/rebalance")]
+async fn rebalance(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.rebalance().await?;
+
+    Ok(HttpResponse::Ok().into())
+}
+
+#[post("/coordination/activate")]
+async fn coordination_activate_handler(
+    state: WebData<ServerState>,
+    args: web::Json<CoordinationActivate>,
+) -> Result<HttpResponse, PipelineError> {
+    *state.coordination_activate.lock().unwrap() = Some(args.into_inner());
+    state.desired_status_change.notify_waiters();
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[get("/coordination/status")]
+async fn coordination_status(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let stream = unfold((state, None), |(state, prev)| async move {
+        let status = match prev {
+            None => get_status(&state),
+            Some(prev) => loop {
+                let notify = state.desired_status_change.notified();
+                let status = get_status(&state);
+                if status != prev {
+                    break status;
+                }
+                notify.await;
+            },
+        };
+        Some((status.clone(), (state, Some(status))))
+    });
+    Ok(
+        HttpResponseBuilder::new(StatusCode::OK).streaming(stream.map(|value| {
+            Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
+        })),
+    )
+}
+
+#[post("/coordination/step/request")]
+async fn coordination_step_request(
+    state: WebData<ServerState>,
+    args: web::Json<StepRequest>,
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.set_coordination_request(args.clone());
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[get("/coordination/step/status")]
+async fn coordination_step_status(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
+        WatchStream::new(state.controller()?.step_watcher()).map(|value| {
+            Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
+        }),
+    ))
+}
+
+#[get("/coordination/checkpoint/status")]
+async fn coordination_checkpoint_status(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
+        WatchStream::new(state.controller()?.checkpoint_watcher()).filter_map(|value| async {
+            value.map(|value| {
+                Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
+            })
+        }),
+    ))
+}
+
+#[post("/coordination/checkpoint/prepare")]
+async fn coordination_checkpoint_prepare(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.prepare_checkpoint();
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[post("/coordination/checkpoint/release")]
+async fn coordination_checkpoint_release(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.release_checkpoint();
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[get("/coordination/transaction/status")]
+async fn coordination_transaction_status(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
+        WatchStream::new(state.controller()?.transaction_watcher()).map(|value| {
+            Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
+        }),
+    ))
+}
+
+#[get("/coordination/adhoc/catalog")]
+async fn coordination_adhoc_catalog(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponse::Ok().json(state.controller()?.adhoc_catalog()))
+}
+
+#[post("/coordination/adhoc/lease")]
+async fn coordination_adhoc_lease(
+    state: WebData<ServerState>,
+    step: web::Json<Step>,
+) -> Result<HttpResponse, PipelineError> {
+    let step = *step;
+
+    // Grab the snapshot for the step.
+    let controller = state.controller()?;
+    let snapshot = controller.consistent_snapshot(step).await.ok_or_else(|| {
+        PipelineError::AdHocQueryError {
+            error: format!("snapshot for step {step} is not available"),
+            df: None,
+        }
+    })?;
+
+    // Add the snapshot to the table of leases.
+    state
+        .leases
+        .lock()
+        .unwrap()
+        .entry(step)
+        .or_insert(Lease {
+            reference_count: 0,
+            snapshot,
+        })
+        .reference_count += 1;
+
+    // Prepare a drop guard to remove the snapshot from the table when the
+    // client closes the connection.
+    struct DropGuard {
+        state: WebData<ServerState>,
+        step: Step,
+    }
+    impl Drop for DropGuard {
+        fn drop(&mut self) {
+            if let Entry::Occupied(mut occupied) =
+                self.state.leases.lock().unwrap().entry(self.step)
+            {
+                occupied.get_mut().reference_count -= 1;
+                if occupied.get().reference_count == 0 {
+                    occupied.remove();
+                }
+            } else {
+                unreachable!()
+            }
+        }
+    }
+    let drop_guard = DropGuard {
+        state: state.clone(),
+        step,
+    };
+
+    // Prepare a stream to send the client.
+    //
+    // Really, we should only have to send a single response, then hang.
+    // However, actix-web doesn't like that; it seems that it only checks for
+    // connection drop when there is some data to send, which might be related
+    // to [bug 1313].
+    //
+    // We do get prompt enough dropping if we send something once a second or
+    // so.  There's not much reason to try to drop the leases faster than that,
+    // since not much in the way of changes can accumulate in just a second.
+    //
+    // [bug 1313]: https://github.com/actix/actix-web/issues/1313
+    let stream = once(async { Ok::<_, PipelineError>(Bytes::from("OK\n")) }).chain(unfold(
+        drop_guard,
+        move |drop_guard| async move {
+            sleep(Duration::from_secs(1)).await;
+            Some((Ok(Bytes::from(format!("Leased step {step}\n"))), drop_guard))
+        },
+    ));
+
+    // Return a streaming response.  The client can close the stream to drop the
+    // lease.
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(stream))
+}
+
+#[post("/coordination/adhoc/scan")]
+async fn coordination_adhoc_scan(
+    state: WebData<ServerState>,
+    scan: web::Json<AdHocScan>,
+) -> Result<HttpResponse, PipelineError> {
+    // Get the snapshot for the specified step.
+    let snapshot = state
+        .leases
+        .lock()
+        .unwrap()
+        .get(&scan.step)
+        .ok_or_else(|| PipelineError::AdHocQueryError {
+            error: format!("no lease for step {}", scan.step),
+            df: None,
+        })?
+        .snapshot
+        .clone();
+
+    // Get the scan results as a stream.
+    let controller = state.controller()?;
+    let session_context = controller.session_context()?;
+    let mut session_state = session_context.state();
+    set_snapshot(&mut session_state, snapshot);
+    let table = session_context
+        .table_provider(scan.table.sql_name())
+        .await?;
+    let execution = table
+        .scan(&session_state, scan.projection.as_ref(), &[], None)
+        .await?;
+    let mut stream = execution.execute(
+        scan.worker - controller.workers().start,
+        session_state.task_ctx(),
+    )?;
+
+    // Take the first batch out of the stream and report an error if there was
+    // one.  After the first batch, there is no way to properly report an error,
+    // so this at least allows us to report errors at the point they are most
+    // likely.
+    let first_batch = match stream.next().await {
+        Some(Err(error)) => return Err(error.into()),
+        other => other,
+    }
+    .into_iter();
+
+    let schema = stream.schema();
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
+        futures_util::stream::iter(first_batch).chain(stream).map(
+            move |batch| -> Result<Bytes, PipelineError> {
+                let mut writer = StreamWriter::try_new(Vec::new(), &schema)?;
+                writer.write(&batch?)?;
+                Ok(writer.into_inner()?.into())
+            },
+        ),
+    ))
+}
+
+/// Stream the set of incomplete labels.
+#[get("/coordination/labels/incomplete")]
+async fn coordination_labels_incomplete(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    let controller = state.controller()?;
+    let notify = controller.input_completion_notify();
+
+    let response_stream = async_stream::stream! {
+        loop {
+            let notify = notify.notified();
+            let labels = format!("{}\n", serde_json::to_string(&Labels {
+                incomplete: controller.incomplete_labels()
+            }).unwrap());
+            yield Ok::<_, actix_web::Error>(web::Bytes::from(labels));
+            notify.await;
+        }
+    };
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/x-ndjson")
+        .streaming(response_stream))
+}
+
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 struct StoredStatus {
     /// Desired status.
@@ -2074,20 +2595,20 @@ impl StoredStatus {
 #[cfg(test)]
 #[cfg(feature = "with-kafka")]
 mod test_with_kafka {
-    use super::{bootstrap, build_app, parse_config, ServerArgs, ServerState};
+    use super::{ServerArgs, ServerState, bootstrap, build_app, parse_config};
     use crate::{
         controller::{ControllerBuilder, MAX_API_CONNECTIONS},
         ensure_default_crypto_provider,
         server::{InitializationState, PipelinePhase},
         test::{
-            async_wait, generate_test_batches,
+            TestStruct, async_wait, generate_test_batches,
             http::{TestHttpReceiver, TestHttpSender},
             kafka::{BufferConsumer, KafkaResources, TestProducer},
-            test_circuit, TestStruct,
+            test_circuit,
         },
     };
     use actix_test::TestServer;
-    use actix_web::{http::StatusCode, middleware::Logger, web::Data as WebData, App};
+    use actix_web::{App, http::StatusCode, middleware::Logger, web::Data as WebData};
     use feldera_types::runtime_status::RuntimeDesiredStatus;
     use feldera_types::{
         completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
@@ -2097,7 +2618,7 @@ mod test_with_kafka {
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
     };
-    use serde_json::{self, json, Value as JsonValue};
+    use serde_json::{self, Value as JsonValue, json};
     use std::{
         io::Write,
         thread,
@@ -2185,6 +2706,7 @@ outputs:
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             Uuid::new_v4(),
+            None,
         ));
         let state_clone = state.clone();
 
@@ -2200,6 +2722,7 @@ outputs:
             initial: RuntimeDesiredStatus::Paused,
             bootstrap_policy: BootstrapPolicy::Allow,
             deployment_id: uuid::Uuid::nil(),
+            host_id: None,
         };
 
         let config = parse_config(&args.config_file).unwrap();
@@ -2335,13 +2858,15 @@ outputs:
         // 6 seconds.  If everything works as intended, this should _not_
         // trigger the API connection limit error.
         for _ in 0..2 * MAX_API_CONNECTIONS {
-            assert!(server
-                .post("/egress/test_output1")
-                .send()
-                .await
-                .unwrap()
-                .status()
-                .is_success());
+            assert!(
+                server
+                    .post("/egress/test_output1")
+                    .send()
+                    .await
+                    .unwrap()
+                    .status()
+                    .is_success()
+            );
             sleep(Duration::from_millis(150));
         }
 
@@ -2474,6 +2999,7 @@ outputs:
             RuntimeDesiredStatus::Paused,
             BootstrapPolicy::Allow,
             Uuid::default(),
+            None,
         ));
         let state_clone = state.clone();
 
@@ -2489,6 +3015,7 @@ outputs:
             initial: RuntimeDesiredStatus::Paused,
             bootstrap_policy: BootstrapPolicy::Allow,
             deployment_id: Uuid::default(),
+            host_id: None,
         };
 
         let config = parse_config(&args.config_file).unwrap();

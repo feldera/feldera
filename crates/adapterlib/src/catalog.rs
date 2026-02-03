@@ -1,15 +1,16 @@
 use std::any::Any;
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
-use std::sync::atomic::AtomicUsize;
+use std::ops::Range;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 use anyhow::Result as AnyResult;
 #[cfg(feature = "with-avro")]
 use apache_avro::{
+    Schema as AvroSchema,
     schema::{Name as AvroName, NamesRef},
     types::Value as AvroValue,
-    Schema as AvroSchema,
 };
 use arrow::record_batch::RecordBatch;
 use dbsp::circuit::NodeId;
@@ -42,7 +43,7 @@ pub enum RecordFormat {
     Parquet(SqlSerdeConfig),
     #[cfg(feature = "with-avro")]
     Avro,
-    Raw,
+    Raw(String),
 }
 
 /// An input handle that deserializes and buffers records.
@@ -679,4 +680,8 @@ pub struct OutputCollectionHandles {
     /// Incremented every time an output connector is attached to this stream; decremented when
     /// the output connector is detached.
     pub enable_count: Arc<AtomicUsize>,
+
+    /// In a multihost pipeline, this is the range of workers that gathers the
+    /// output collection's data.  In a single-host pipeline, this is `None`.
+    pub workers: Option<Range<usize>>,
 }

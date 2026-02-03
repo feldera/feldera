@@ -90,7 +90,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 
 /** Miscellaneous tests that do not fit into standard categories */
@@ -230,7 +229,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         writer.add(tester);
         writer.write(compiler);
         stream.close();
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
     }
 
     @Test
@@ -263,7 +262,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         writer.add(tester);
         writer.write(compiler);
         outputStream.close();
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
     }
 
     @Test
@@ -308,28 +307,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     }
 
     @Test
-    public void testProjectFiles() throws IOException, InterruptedException, SQLException {
-        // Compiles all the programs in the tests directory
-        final String projectsDirectory = "../../demo/";
-        final File dir = new File(projectsDirectory);
-        File[] subdirs = dir.listFiles(File::isDirectory);
-        Objects.requireNonNull(subdirs);
-        for (File subdir: subdirs) {
-            if (!subdir.getName().contains("project_"))
-                continue;
-            FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
-            String[] sqlFiles = subdir.list(filter);
-            Assert.assertNotNull(sqlFiles);
-            for (String sqlFile: sqlFiles) {
-                String path = subdir.getPath() + "/" + sqlFile;
-                this.compileFile(path, true);
-            }
-        }
-    }
-
-    @Test
     public void testUnionWarning() throws SQLException {
-        final String script = "../../demo/packaged/sql/02-sec-ops.sql";
+        final String script = "../../crates/pipeline-manager/demos/sql/02-sec-ops.sql";
         CompilerMessages messages = CompilerMain.execute(
                 "-i", "--alltables", "-q", "--ignoreOrder", "-o", BaseSQLTests.TEST_FILE_PATH, script);
         for (int i = 0; i < messages.warningCount(); i++) {
@@ -340,7 +319,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     @Test
     public void testPackagedDemos() throws SQLException, IOException, InterruptedException {
-        final String projectsDirectory = "../../demo/packaged/sql";
+        final String projectsDirectory = "../../crates/pipeline-manager/demos/sql";
         final File dir = new File(projectsDirectory);
         FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
         String[] sqlFiles = dir.list(filter);
@@ -512,7 +491,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
             fr.write(rustHandlesTest);
         }
         if (!BaseSQLTests.skipRust)
-            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, true);
+            BaseSQLTests.compileAndTestRust(true);
 
         // Second test
         message = CompilerMain.execute(
@@ -525,7 +504,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
             fr.write(rustCatalogTest);
         }
         if (!BaseSQLTests.skipRust)
-            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, true);
+            BaseSQLTests.compileAndTestRust(true);
     }
 
     @Test
@@ -592,7 +571,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
             fr.write(rustCatalogTest);
         }
         if (!BaseSQLTests.skipRust)
-            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, true);
+            BaseSQLTests.compileAndTestRust(true);
     }
 
     @Test
@@ -666,9 +645,11 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 REMOVE FROM T VALUES(3, 'Z');""").simplify(compiler);
         String set = change.getSet(0).toString();
         Assert.assertEquals("""
-                TableData[name=t, data=zset!(Tup2::new(Some(1), "x", ) => 1i64,
-                Tup2::new(Some(2), "Y", ) => -1i64,
-                Tup2::new(Some(3), "Z", ) => -1i64,), primaryKeys=[]]""", set);
+                TableData[name=t, data=zset!(
+                    Tup2::new(Some(1), Some("x"), ) => 1i64,
+                    Tup2::new(Some(2), Some("Y"), ) => -1i64,
+                    Tup2::new(Some(3), Some("Z"), ) => -1i64,
+                ), primaryKeys=[]]""", set);
     }
 
     @Test
@@ -784,7 +765,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     @Test
     public void rustFmt() throws IOException, InterruptedException {
-        // Don't run this in CI we don't recompile at the point where we run the tests
+        // Don't run this in CI so we don't recompile at the point where we run the tests
         if (System.getenv("CI") != null)
             return;
         // Check that the rust library is properly formatted

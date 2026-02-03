@@ -10,7 +10,7 @@
     "license": {
       "name": "MIT OR Apache-2.0"
     },
-    "version": "0.196.0"
+    "version": "0.237.0"
   },
   "paths": {
     "/config/authentication": {
@@ -237,14 +237,141 @@
         ]
       }
     },
+    "/v0/cluster/events": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "List Cluster Events",
+        "description": "Retrieve a list of retained cluster monitor events ordered from most recent to least recent.\n\nThe returned events only have limited details, the full details can be retrieved using\nthe `GET /v0/cluster/events/<event-id>` endpoint.\n\nCluster monitor events are collected at a periodic interval (every 10s), however only\nevery 10 minutes or if the overall health changes, does it get inserted into the database\n(and thus, served by this endpoint). At most 1000 events are retained (newest first),\nand events older than 72h are deleted. The latest event, if it already exists, is never\ncleaned up.",
+        "operationId": "list_cluster_events",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ClusterMonitorEventSelectedInfo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/cluster/events/{event_id}": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Get Cluster Event",
+        "description": "Get specific cluster monitor event.\n\nThe identifiers of the events can be retrieved via `GET /v0/cluster/events`.\nAt most 1000 events are retained (newest first), and events older than 72h are deleted.\nThe latest event, if it already exists, is never cleaned up.\nThis endpoint can return a 404 for an event that no longer exists due to clean-up.",
+        "operationId": "get_cluster_event",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "Cluster monitor event identifier or `latest`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "selector",
+            "in": "query",
+            "description": "The `selector` parameter limits which fields are returned.\nLimiting which fields is particularly handy for instance when frequently\nmonitoring over low bandwidth connections while being only interested\nin status.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ClusterMonitorEventFieldSelector"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterMonitorEventSelectedInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/cluster_healthz": {
       "get": {
         "tags": [
           "Platform"
         ],
         "summary": "Check Cluster Health",
-        "description": "Retrieve the health status of the Feldera control-plane.",
-        "operationId": "get_health",
+        "description": "Determine the latest cluster health via the latest cluster monitor event.",
+        "operationId": "get_cluster_health",
         "responses": {
           "200": {
             "description": "All services healthy",
@@ -456,6 +583,7 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 16,
+                      "hosts": 1,
                       "storage": {
                         "backend": {
                           "name": "default"
@@ -493,7 +621,8 @@
                       "http_workers": null,
                       "io_workers": null,
                       "dev_tweaks": {},
-                      "logging": null
+                      "logging": null,
+                      "pipeline_template_configmap": null
                     },
                     "program_code": "CREATE TABLE table1 ( col1 INT );",
                     "udf_rust": "",
@@ -522,6 +651,7 @@
                     "deployment_desired_status": "Stopped",
                     "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                     "deployment_resources_status": "Stopped",
+                    "deployment_resources_status_details": null,
                     "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                     "deployment_resources_desired_status": "Stopped",
                     "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
@@ -540,6 +670,7 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 10,
+                      "hosts": 1,
                       "storage": {
                         "backend": {
                           "name": "default"
@@ -577,7 +708,8 @@
                       "http_workers": null,
                       "io_workers": null,
                       "dev_tweaks": {},
-                      "logging": null
+                      "logging": null,
+                      "pipeline_template_configmap": null
                     },
                     "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
                     "udf_rust": "",
@@ -606,6 +738,7 @@
                     "deployment_desired_status": "Stopped",
                     "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                     "deployment_resources_status": "Stopped",
+                    "deployment_resources_status_details": null,
                     "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                     "deployment_resources_desired_status": "Stopped",
                     "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
@@ -654,6 +787,7 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
+                  "hosts": 1,
                   "storage": {
                     "backend": {
                       "name": "default"
@@ -691,7 +825,8 @@
                   "http_workers": null,
                   "io_workers": null,
                   "dev_tweaks": {},
-                  "logging": null
+                  "logging": null,
+                  "pipeline_template_configmap": null
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -723,6 +858,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
@@ -760,7 +896,8 @@
                     "http_workers": null,
                     "io_workers": null,
                     "dev_tweaks": {},
-                    "logging": null
+                    "logging": null,
+                    "pipeline_template_configmap": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -789,10 +926,12 @@
                   "deployment_desired_status": "Stopped",
                   "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_status": "Stopped",
+                  "deployment_resources_status_details": null,
                   "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_runtime_status": null,
+                  "deployment_runtime_status_details": null,
                   "deployment_runtime_status_since": null,
                   "deployment_runtime_desired_status": null,
                   "deployment_runtime_desired_status_since": null
@@ -899,6 +1038,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
@@ -936,7 +1076,8 @@
                     "http_workers": null,
                     "io_workers": null,
                     "dev_tweaks": {},
-                    "logging": null
+                    "logging": null,
+                    "pipeline_template_configmap": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -965,6 +1106,7 @@
                   "deployment_desired_status": "Stopped",
                   "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_status": "Stopped",
+                  "deployment_resources_status_details": null,
                   "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
@@ -1040,6 +1182,7 @@
                 "description": "Description of the pipeline example1",
                 "runtime_config": {
                   "workers": 16,
+                  "hosts": 1,
                   "storage": {
                     "backend": {
                       "name": "default"
@@ -1077,7 +1220,8 @@
                   "http_workers": null,
                   "io_workers": null,
                   "dev_tweaks": {},
-                  "logging": null
+                  "logging": null,
+                  "pipeline_template_configmap": null
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -1109,6 +1253,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
@@ -1146,7 +1291,8 @@
                     "http_workers": null,
                     "io_workers": null,
                     "dev_tweaks": {},
-                    "logging": null
+                    "logging": null,
+                    "pipeline_template_configmap": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1175,10 +1321,12 @@
                   "deployment_desired_status": "Stopped",
                   "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_status": "Stopped",
+                  "deployment_resources_status_details": null,
                   "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_runtime_status": null,
+                  "deployment_runtime_status_details": null,
                   "deployment_runtime_status_since": null,
                   "deployment_runtime_desired_status": null,
                   "deployment_runtime_desired_status_since": null
@@ -1202,6 +1350,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
@@ -1239,7 +1388,8 @@
                     "http_workers": null,
                     "io_workers": null,
                     "dev_tweaks": {},
-                    "logging": null
+                    "logging": null,
+                    "pipeline_template_configmap": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1268,10 +1418,12 @@
                   "deployment_desired_status": "Stopped",
                   "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_status": "Stopped",
+                  "deployment_resources_status_details": null,
                   "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_runtime_status": null,
+                  "deployment_runtime_status_details": null,
                   "deployment_runtime_status_since": null,
                   "deployment_runtime_desired_status": null,
                   "deployment_runtime_desired_status_since": null
@@ -1464,6 +1616,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
@@ -1501,7 +1654,8 @@
                     "http_workers": null,
                     "io_workers": null,
                     "dev_tweaks": {},
-                    "logging": null
+                    "logging": null,
+                    "pipeline_template_configmap": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1530,10 +1684,12 @@
                   "deployment_desired_status": "Stopped",
                   "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_status": "Stopped",
+                  "deployment_resources_status_details": null,
                   "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_runtime_status": null,
+                  "deployment_runtime_status_details": null,
                   "deployment_runtime_status_since": null,
                   "deployment_runtime_desired_status": null,
                   "deployment_runtime_desired_status_since": null
@@ -1642,7 +1798,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/RuntimeDesiredStatus"
             }
           }
         ],
@@ -1694,7 +1850,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -1705,7 +1861,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -1716,7 +1872,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -1727,7 +1883,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -1815,7 +1971,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -1826,7 +1982,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -1837,7 +1993,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -1848,7 +2004,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -1936,7 +2092,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -1947,7 +2103,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -1958,7 +2114,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -1969,7 +2125,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2057,7 +2213,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2068,7 +2224,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2079,7 +2235,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2090,7 +2246,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2178,7 +2334,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2189,7 +2345,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2200,7 +2356,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2211,7 +2367,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2299,7 +2455,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2310,7 +2466,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2321,7 +2477,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2332,7 +2488,128 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/checkpoints": {
+      "get": {
+        "tags": [
+          "Pipeline Lifecycle"
+        ],
+        "summary": "Get the checkpoints for a pipeline",
+        "description": "Retrieve the current checkpoints made by a pipeline.",
+        "operationId": "get_checkpoints",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Checkpoints retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckpointMetadata"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "status": "Stopped",
+                        "desired_status": "Provisioned"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2420,7 +2697,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2431,7 +2708,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2442,7 +2719,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2453,7 +2730,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2541,7 +2818,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2552,7 +2829,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2563,7 +2840,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2574,7 +2851,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2728,7 +3005,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2739,7 +3016,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2750,7 +3027,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2761,7 +3038,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2888,7 +3165,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2899,7 +3176,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2910,7 +3187,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -2921,7 +3198,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3126,7 +3403,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3137,7 +3414,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3148,7 +3425,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3159,7 +3436,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3258,7 +3535,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3269,7 +3546,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3280,7 +3557,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3291,7 +3568,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3455,7 +3732,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3466,7 +3743,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3477,7 +3754,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3488,7 +3765,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3672,7 +3949,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3683,7 +3960,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3694,7 +3971,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3705,7 +3982,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3900,7 +4177,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3911,7 +4188,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3922,7 +4199,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3933,7 +4210,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -3942,6 +4219,64 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/rebalance": {
+      "post": {
+        "tags": [
+          "Pipeline Lifecycle"
+        ],
+        "summary": "Initiate rebalancing.",
+        "description": "Initiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically\nwhen the drift in the size of joined relations exceeds a threshold. This endpoint forces the balancer\nto reevaluate and apply an optimal partitioning policy regardless of the threshold.\n\nThis operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.",
+        "operationId": "post_pipeline_rebalance",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rebalancing started successfully"
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -4020,6 +4355,279 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/samply_profile": {
+      "get": {
+        "tags": [
+          "Metrics & Debugging"
+        ],
+        "summary": "Get Samply Profile",
+        "description": "Retrieve the last samply profile of a pipeline, regardless of whether profiling is currently in progress.\nIf ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 307 with Retry-After header.",
+        "operationId": "get_pipeline_samply_profile",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "latest",
+            "in": "query",
+            "description": "If true, returns 204 redirect with Retry-After header if profile collection is in progress.\nIf false or not provided, returns the last collected profile.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Samply profile as a gzip containing the profile that can be inspected by the samply tool. Note: may return 204 No Content with Retry-After header if latest=true and profiling is in progress.",
+            "content": {
+              "application/gzip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No samply profile exists for the pipeline, create one by calling `POST /pipelines/{pipeline_name}/samply_profile?duration_secs=30`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "status": "Stopped",
+                        "desired_status": "Provisioned"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Metrics & Debugging"
+        ],
+        "summary": "Start a Samply profile",
+        "description": "Profile the pipeline using the Samply profiler for the next `duration_secs` seconds.",
+        "operationId": "start_samply_profile",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "duration_secs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Started profiling the pipeline with the Samply tool"
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Samply profile collection is already in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "status": "Stopped",
+                        "desired_status": "Provisioned"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -4187,7 +4795,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4198,7 +4806,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4209,7 +4817,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4220,7 +4828,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4266,7 +4874,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ControllerStatus"
                 }
               }
             }
@@ -4308,7 +4916,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4319,7 +4927,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4330,7 +4938,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4341,7 +4949,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4640,7 +5248,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4651,7 +5259,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4757,7 +5365,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4768,7 +5376,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4779,7 +5387,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4790,7 +5398,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4900,7 +5508,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4911,7 +5519,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4922,7 +5530,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -4933,7 +5541,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5044,7 +5652,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5055,7 +5663,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5066,7 +5674,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5077,7 +5685,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5232,7 +5840,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5243,7 +5851,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5254,7 +5862,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5265,7 +5873,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5353,7 +5961,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5364,7 +5972,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5375,7 +5983,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5386,7 +5994,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5443,6 +6051,7 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
+                    "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
@@ -5480,7 +6089,8 @@
                     "http_workers": null,
                     "io_workers": null,
                     "dev_tweaks": {},
-                    "logging": null
+                    "logging": null,
+                    "pipeline_template_configmap": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -5509,10 +6119,12 @@
                   "deployment_desired_status": "Stopped",
                   "deployment_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_status": "Stopped",
+                  "deployment_resources_status_details": null,
                   "deployment_resources_status_since": "1970-01-01T00:00:00Z",
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_runtime_status": null,
+                  "deployment_runtime_status_details": null,
                   "deployment_runtime_status_since": null,
                   "deployment_runtime_desired_status": null,
                   "deployment_runtime_desired_status_since": null
@@ -5672,7 +6284,7 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5683,7 +6295,7 @@
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5694,7 +6306,7 @@
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -5705,7 +6317,7 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
                         "pipeline_name": "my_pipeline",
@@ -6018,6 +6630,53 @@
           }
         }
       },
+      "CheckpointMetadata": {
+        "type": "object",
+        "description": "Holds meta-data about a checkpoint that was taken for persistent storage\nand recovery of a circuit's state.",
+        "required": [
+          "uuid",
+          "fingerprint"
+        ],
+        "properties": {
+          "fingerprint": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Fingerprint of the circuit at the time of the checkpoint.",
+            "minimum": 0
+          },
+          "identifier": {
+            "type": "string",
+            "description": "An optional name for the checkpoint.",
+            "nullable": true
+          },
+          "processed_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of records processed.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total size of the checkpoint files in bytes.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "steps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of steps made.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A unique identifier for the given checkpoint.\n\nThis is used to identify the checkpoint in the file-system hierarchy."
+          }
+        }
+      },
       "CheckpointResponse": {
         "type": "object",
         "description": "Response to a checkpoint request.",
@@ -6093,6 +6752,105 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "ClusterMonitorEvent": {
+        "type": "object",
+        "description": "Brief cluster monitoring event with only the identifier, timestamp and health conclusions.",
+        "required": [
+          "id",
+          "recorded_at",
+          "api_status",
+          "compiler_status",
+          "runner_status"
+        ],
+        "properties": {
+          "api_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "compiler_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ClusterMonitorEventId"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp at which the event was recorded in the database. Because collecting the data for\nthe health checks can take time, this timestamp is approximate."
+          },
+          "runner_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          }
+        }
+      },
+      "ClusterMonitorEventFieldSelector": {
+        "type": "string",
+        "enum": [
+          "all",
+          "status"
+        ]
+      },
+      "ClusterMonitorEventId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Cluster monitor event identifier."
+      },
+      "ClusterMonitorEventSelectedInfo": {
+        "type": "object",
+        "description": "Cluster monitor event information which has a selected subset of optional fields.\nIf an optional field is not selected (i.e., is `None`), it will not be serialized.",
+        "required": [
+          "id",
+          "recorded_at",
+          "all_healthy",
+          "api_status",
+          "compiler_status",
+          "runner_status"
+        ],
+        "properties": {
+          "all_healthy": {
+            "type": "boolean"
+          },
+          "api_resources_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "api_self_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "api_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "compiler_resources_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "compiler_self_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "compiler_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ClusterMonitorEventId"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "runner_resources_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "runner_self_info": {
+            "type": "string",
+            "nullable": true
+          },
+          "runner_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
           }
         }
       },
@@ -6173,6 +6931,7 @@
           "Stopped",
           "Provisioning",
           "Unavailable",
+          "Coordination",
           "Standby",
           "AwaitingApproval",
           "Initializing",
@@ -6193,6 +6952,34 @@
           "optimized",
           "optimized_symbols"
         ]
+      },
+      "CompletedWatermark": {
+        "type": "object",
+        "description": "A watermark that has been fully processed by the pipeline.",
+        "required": [
+          "metadata",
+          "ingested_at",
+          "processed_at",
+          "completed_at"
+        ],
+        "properties": {
+          "completed_at": {
+            "type": "string",
+            "description": "Timestamp when all outputs produced from this input have been pushed to all output endpoints."
+          },
+          "ingested_at": {
+            "type": "string",
+            "description": "Timestamp when the data was ingested from the wire."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Metadata that describes the position in the input stream (e.g., Kafka partition/offset pairs)."
+          },
+          "processed_at": {
+            "type": "string",
+            "description": "Timestamp when the data was processed by the circuit."
+          }
+        }
       },
       "CompletionStatus": {
         "type": "string",
@@ -6273,11 +7060,16 @@
           "revision",
           "runtime_revision",
           "changelog_url",
-          "build_info"
+          "build_info",
+          "build_source"
         ],
         "properties": {
           "build_info": {
             "$ref": "#/components/schemas/BuildInformation"
+          },
+          "build_source": {
+            "type": "string",
+            "description": "Build source: \"ci\" for GitHub Actions builds, \"source\" for local builds"
           },
           "changelog_url": {
             "type": "string",
@@ -6328,6 +7120,7 @@
       },
       "ConnectOptions": {
         "type": "object",
+        "description": "Options for connecting to a NATS server.",
         "required": [
           "server_url"
         ],
@@ -6335,8 +7128,21 @@
           "auth": {
             "$ref": "#/components/schemas/Auth"
           },
+          "connection_timeout_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Connection timeout\n\nHow long to wait when establishing the initial connection to the\nNATS server.",
+            "minimum": 0
+          },
+          "request_timeout_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Request timeout in seconds.\n\nHow long to wait for responses to requests.",
+            "minimum": 0
+          },
           "server_url": {
-            "type": "string"
+            "type": "string",
+            "description": "NATS server URL (e.g., \"nats://localhost:4222\")."
           }
         }
       },
@@ -6418,6 +7224,23 @@
           }
         }
       },
+      "ConnectorTransactionPhase": {
+        "type": "object",
+        "description": "Connector transaction phase with debugging label.",
+        "required": [
+          "phase"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Optional label for debugging.",
+            "nullable": true
+          },
+          "phase": {
+            "$ref": "#/components/schemas/TransactionPhase"
+          }
+        }
+      },
       "ConsumerConfig": {
         "type": "object",
         "required": [
@@ -6472,6 +7295,42 @@
           },
           "replay_policy": {
             "$ref": "#/components/schemas/ReplayPolicy"
+          }
+        }
+      },
+      "ControllerStatus": {
+        "type": "object",
+        "description": "Complete pipeline statistics returned by the `/stats` endpoint.\n\nThis schema definition matches the serialized JSON structure from\n`adapters::controller::ControllerStatus`. The actual implementation with\natomics and mutexes lives in the adapters crate, which uses ExternalControllerStatus to\nregister this OpenAPI schema, making it available to pipeline-manager\nwithout requiring a direct dependency on the adapters crate.",
+        "required": [
+          "global_metrics",
+          "inputs",
+          "outputs"
+        ],
+        "properties": {
+          "global_metrics": {
+            "$ref": "#/components/schemas/GlobalControllerMetrics"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InputEndpointStatus"
+            },
+            "description": "Input endpoint configs and metrics."
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutputEndpointStatus"
+            },
+            "description": "Output endpoint configs and metrics."
+          },
+          "suspend_error": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SuspendError"
+              }
+            ],
+            "nullable": true
           }
         }
       },
@@ -6789,6 +7648,12 @@
             "type": "string",
             "description": "Table URI.\n\nExample: \"s3://feldera-fraud-detection-data/demographics_train\""
           },
+          "verbose": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Enable verbose logging.\n\nWhen enabled, the connector will log detailed information at INFO level.\n\nSupported values:\n* 0 - no verbose logging\n* 1 - log all Delta log entries in follow and cdc modes.\n* >1 - reserved for future use",
+            "minimum": 0
+          },
           "version": {
             "type": "integer",
             "format": "int64",
@@ -6933,7 +7798,6 @@
         ],
         "properties": {
           "details": {
-            "type": "object",
             "description": "Detailed error metadata.\nThe contents of this field is determined by `error_code`."
           },
           "error_code": {
@@ -6945,6 +7809,66 @@
             "type": "string",
             "description": "Human-readable error message.",
             "example": "Explanation of the error that occurred."
+          }
+        }
+      },
+      "ExtendedClusterMonitorEvent": {
+        "type": "object",
+        "description": "Extended cluster monitoring event with full details.",
+        "required": [
+          "id",
+          "recorded_at",
+          "api_status",
+          "api_self_info",
+          "api_resources_info",
+          "compiler_status",
+          "compiler_self_info",
+          "compiler_resources_info",
+          "runner_status",
+          "runner_self_info",
+          "runner_resources_info"
+        ],
+        "properties": {
+          "api_resources_info": {
+            "type": "string",
+            "description": "Human-readable API server(s) status report of the resources backing the API server(s)\n-- in particular, the Kubernetes objects."
+          },
+          "api_self_info": {
+            "type": "string",
+            "description": "Human-readable API server(s) status report."
+          },
+          "api_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "compiler_resources_info": {
+            "type": "string",
+            "description": "Human-readable API server(s) status report of the resources backing the compiler server(s)\n-- in particular, the Kubernetes objects."
+          },
+          "compiler_self_info": {
+            "type": "string",
+            "description": "Human-readable compiler server(s) status report."
+          },
+          "compiler_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ClusterMonitorEventId"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp at which the event was recorded in the database. Because collecting the data for\nthe health checks can take time, this timestamp is approximate."
+          },
+          "runner_resources_info": {
+            "type": "string",
+            "description": "Human-readable API server(s) status report of the resources backing the runner\n-- in particular, the Kubernetes objects."
+          },
+          "runner_self_info": {
+            "type": "string",
+            "description": "Human-readable runner status report."
+          },
+          "runner_status": {
+            "$ref": "#/components/schemas/MonitorStatus"
           }
         }
       },
@@ -7137,12 +8061,168 @@
         },
         "additionalProperties": false
       },
+      "GetClusterEventParameters": {
+        "type": "object",
+        "description": "Query parameters to GET a cluster monitor event.",
+        "properties": {
+          "selector": {
+            "$ref": "#/components/schemas/ClusterMonitorEventFieldSelector"
+          }
+        }
+      },
       "GetPipelineParameters": {
         "type": "object",
         "description": "Query parameters to GET a pipeline or a list of pipelines.",
         "properties": {
           "selector": {
             "$ref": "#/components/schemas/PipelineFieldSelector"
+          }
+        }
+      },
+      "GlobalControllerMetrics": {
+        "type": "object",
+        "description": "Global controller metrics.",
+        "required": [
+          "state",
+          "bootstrap_in_progress",
+          "transaction_status",
+          "transaction_id",
+          "transaction_initiators",
+          "rss_bytes",
+          "cpu_msecs",
+          "uptime_msecs",
+          "start_time",
+          "incarnation_uuid",
+          "initial_start_time",
+          "storage_bytes",
+          "storage_mb_secs",
+          "runtime_elapsed_msecs",
+          "buffered_input_records",
+          "buffered_input_bytes",
+          "total_input_records",
+          "total_input_bytes",
+          "total_processed_records",
+          "total_processed_bytes",
+          "total_completed_records",
+          "pipeline_complete"
+        ],
+        "properties": {
+          "bootstrap_in_progress": {
+            "type": "boolean",
+            "description": "The pipeline has been resumed from a checkpoint and is currently bootstrapping new and modified views."
+          },
+          "buffered_input_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of bytes currently buffered by all endpoints.",
+            "minimum": 0
+          },
+          "buffered_input_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of records currently buffered by all endpoints.",
+            "minimum": 0
+          },
+          "cpu_msecs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "CPU time used by the pipeline across all threads, in milliseconds.",
+            "minimum": 0
+          },
+          "incarnation_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Uniquely identifies the pipeline process that started at start_time."
+          },
+          "initial_start_time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Time at which the pipeline process from which we resumed started, in seconds since the epoch.",
+            "minimum": 0
+          },
+          "pipeline_complete": {
+            "type": "boolean",
+            "description": "True if the pipeline has processed all input data to completion."
+          },
+          "rss_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Resident set size of the pipeline process, in bytes.",
+            "minimum": 0
+          },
+          "runtime_elapsed_msecs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Time elapsed while the pipeline is executing a step, multiplied by the number of threads, in milliseconds.",
+            "minimum": 0
+          },
+          "start_time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Time at which the pipeline process started, in seconds since the epoch.",
+            "minimum": 0
+          },
+          "state": {
+            "$ref": "#/components/schemas/PipelineState"
+          },
+          "storage_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Current storage usage in bytes.",
+            "minimum": 0
+          },
+          "storage_mb_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Storage usage integrated over time, in megabytes * seconds.",
+            "minimum": 0
+          },
+          "total_completed_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of input records processed to completion.",
+            "minimum": 0
+          },
+          "total_input_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of bytes received from all endpoints.",
+            "minimum": 0
+          },
+          "total_input_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of records received from all endpoints.",
+            "minimum": 0
+          },
+          "total_processed_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total bytes of input records processed by the DBSP engine.",
+            "minimum": 0
+          },
+          "total_processed_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of input records processed by the DBSP engine.",
+            "minimum": 0
+          },
+          "transaction_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "ID of the current transaction or 0 if no transaction is in progress."
+          },
+          "transaction_initiators": {
+            "$ref": "#/components/schemas/TransactionInitiators"
+          },
+          "transaction_status": {
+            "$ref": "#/components/schemas/TransactionStatus"
+          },
+          "uptime_msecs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Time since the pipeline process started, in milliseconds.",
+            "minimum": 0
           }
         }
       },
@@ -7194,10 +8274,18 @@
       "HealthStatus": {
         "type": "object",
         "required": [
-          "runner",
-          "compiler"
+          "all_healthy",
+          "api",
+          "compiler",
+          "runner"
         ],
         "properties": {
+          "all_healthy": {
+            "type": "boolean"
+          },
+          "api": {
+            "$ref": "#/components/schemas/ServiceStatus"
+          },
           "compiler": {
             "$ref": "#/components/schemas/ServiceStatus"
           },
@@ -7319,6 +8407,105 @@
           }
         ],
         "description": "Describes an input connector configuration"
+      },
+      "InputEndpointMetrics": {
+        "type": "object",
+        "description": "Performance metrics for an input endpoint.",
+        "required": [
+          "total_bytes",
+          "total_records",
+          "buffered_records",
+          "buffered_bytes",
+          "num_transport_errors",
+          "num_parse_errors",
+          "end_of_input"
+        ],
+        "properties": {
+          "buffered_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of bytes currently buffered by the endpoint (not yet consumed by the circuit).",
+            "minimum": 0
+          },
+          "buffered_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of records currently buffered by the endpoint (not yet consumed by the circuit).",
+            "minimum": 0
+          },
+          "end_of_input": {
+            "type": "boolean",
+            "description": "True if end-of-input has been signaled."
+          },
+          "num_parse_errors": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of parse errors.",
+            "minimum": 0
+          },
+          "num_transport_errors": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of transport errors.",
+            "minimum": 0
+          },
+          "total_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total bytes pushed to the endpoint since it was created.",
+            "minimum": 0
+          },
+          "total_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total records pushed to the endpoint since it was created.",
+            "minimum": 0
+          }
+        }
+      },
+      "InputEndpointStatus": {
+        "type": "object",
+        "description": "Input endpoint status information.",
+        "required": [
+          "endpoint_name",
+          "config",
+          "metrics",
+          "paused",
+          "barrier"
+        ],
+        "properties": {
+          "barrier": {
+            "type": "boolean",
+            "description": "Endpoint is currently a barrier to checkpointing and suspend."
+          },
+          "completed_frontier": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CompletedWatermark"
+              }
+            ],
+            "nullable": true
+          },
+          "config": {
+            "$ref": "#/components/schemas/ShortEndpointConfig"
+          },
+          "endpoint_name": {
+            "type": "string",
+            "description": "Endpoint name."
+          },
+          "fatal_error": {
+            "type": "string",
+            "description": "The first fatal error that occurred at the endpoint.",
+            "nullable": true
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/InputEndpointMetrics"
+          },
+          "paused": {
+            "type": "boolean",
+            "description": "Endpoint has been paused by the user."
+          }
+        }
       },
       "IntervalUnit": {
         "type": "string",
@@ -7769,6 +8956,28 @@
         },
         "additionalProperties": {}
       },
+      "MonitorStatus": {
+        "type": "string",
+        "enum": [
+          "InitialUnhealthy",
+          "Unhealthy",
+          "Healthy"
+        ]
+      },
+      "MultihostConfig": {
+        "type": "object",
+        "description": "Configuration for a multihost Feldera pipeline.\n\nThis configuration is primarily for the coordinator.",
+        "required": [
+          "hosts"
+        ],
+        "properties": {
+          "hosts": {
+            "type": "integer",
+            "description": "Number of hosts to launch.\n\nFor the configuration to be truly multihost, this should be at least 2.\nA value of 1 still runs the multihost coordinator but it only\ncoordinates a single host.",
+            "minimum": 0
+          }
+        }
+      },
       "NatsInputConfig": {
         "type": "object",
         "required": [
@@ -7981,6 +9190,110 @@
         ],
         "description": "Describes an output connector configuration"
       },
+      "OutputEndpointMetrics": {
+        "type": "object",
+        "description": "Performance metrics for an output endpoint.",
+        "required": [
+          "transmitted_records",
+          "transmitted_bytes",
+          "queued_records",
+          "queued_batches",
+          "buffered_records",
+          "buffered_batches",
+          "num_encode_errors",
+          "num_transport_errors",
+          "total_processed_input_records",
+          "memory"
+        ],
+        "properties": {
+          "buffered_batches": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of batches in the buffer.",
+            "minimum": 0
+          },
+          "buffered_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of records pushed to the output buffer.",
+            "minimum": 0
+          },
+          "memory": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Extra memory in use beyond that used for queuing records.",
+            "minimum": 0
+          },
+          "num_encode_errors": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of encoding errors.",
+            "minimum": 0
+          },
+          "num_transport_errors": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of transport errors.",
+            "minimum": 0
+          },
+          "queued_batches": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of queued batches.",
+            "minimum": 0
+          },
+          "queued_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of queued records.",
+            "minimum": 0
+          },
+          "total_processed_input_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The number of input records processed by the circuit.",
+            "minimum": 0
+          },
+          "transmitted_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bytes sent on the underlying transport.",
+            "minimum": 0
+          },
+          "transmitted_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Records sent on the underlying transport.",
+            "minimum": 0
+          }
+        }
+      },
+      "OutputEndpointStatus": {
+        "type": "object",
+        "description": "Output endpoint status information.",
+        "required": [
+          "endpoint_name",
+          "config",
+          "metrics"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ShortEndpointConfig"
+          },
+          "endpoint_name": {
+            "type": "string",
+            "description": "Endpoint name."
+          },
+          "fatal_error": {
+            "type": "string",
+            "description": "The first fatal error that occurred at the endpoint.",
+            "nullable": true
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/OutputEndpointMetrics"
+          }
+        }
+      },
       "PartialProgramInfo": {
         "type": "object",
         "description": "Program information is the result of the SQL compilation.",
@@ -8056,6 +9369,34 @@
           }
         }
       },
+      "PermanentSuspendError": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "StorageRequired"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "EnterpriseFeature"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "UnsupportedInputEndpoint"
+            ],
+            "properties": {
+              "UnsupportedInputEndpoint": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "Reasons why a pipeline does not support suspend and resume operations."
+      },
       "PipelineConfig": {
         "allOf": [
           {
@@ -8096,6 +9437,12 @@
                   "model": "none",
                   "checkpoint_interval_secs": 60
                 }
+              },
+              "hosts": {
+                "type": "integer",
+                "description": "Number of DBSP hosts.\n\nThe worker threads are evenly divided among the hosts.  For single-host\ndeployments, this should be 1 (the default).\n\nMultihost pipelines are an enterprise-only preview feature.",
+                "default": 1,
+                "minimum": 0
               },
               "http_workers": {
                 "type": "integer",
@@ -8153,6 +9500,15 @@
                 },
                 "description": "Optionally, a list of CPU numbers for CPUs to which the pipeline may pin\nits worker threads.  Specify at least twice as many CPU numbers as\nworkers.  CPUs are generally numbered starting from 0.  The pipeline\nmight not be able to honor CPU pinning requests.\n\nCPU pinning can make pipelines run faster and perform more consistently,\nas long as different pipelines running on the same machine are pinned to\ndifferent CPUs.",
                 "default": []
+              },
+              "pipeline_template_configmap": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PipelineTemplateConfig"
+                  }
+                ],
+                "default": null,
+                "nullable": true
               },
               "provisioning_timeout_secs": {
                 "type": "integer",
@@ -8217,9 +9573,6 @@
           },
           {
             "type": "object",
-            "required": [
-              "inputs"
-            ],
             "properties": {
               "given_name": {
                 "type": "string",
@@ -8232,6 +9585,14 @@
                 "additionalProperties": {
                   "$ref": "#/components/schemas/InputEndpointConfig"
                 }
+              },
+              "multihost": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/MultihostConfig"
+                  }
+                ],
+                "nullable": true
               },
               "name": {
                 "type": "string",
@@ -8419,6 +9780,9 @@
           "deployment_resources_status": {
             "$ref": "#/components/schemas/ResourcesStatus"
           },
+          "deployment_resources_status_details": {
+            "nullable": true
+          },
           "deployment_resources_status_since": {
             "type": "string",
             "format": "date-time"
@@ -8442,6 +9806,9 @@
                 "$ref": "#/components/schemas/RuntimeStatus"
               }
             ],
+            "nullable": true
+          },
+          "deployment_runtime_status_details": {
             "nullable": true
           },
           "deployment_runtime_status_since": {
@@ -8590,6 +9957,9 @@
           "deployment_resources_status": {
             "$ref": "#/components/schemas/ResourcesStatus"
           },
+          "deployment_resources_status_details": {
+            "nullable": true
+          },
           "deployment_resources_status_since": {
             "type": "string",
             "format": "date-time"
@@ -8707,6 +10077,33 @@
           }
         }
       },
+      "PipelineState": {
+        "type": "string",
+        "description": "Pipeline state.",
+        "enum": [
+          "Paused",
+          "Running",
+          "Terminated"
+        ]
+      },
+      "PipelineTemplateConfig": {
+        "type": "object",
+        "description": "Configuration for supplying a custom pipeline StatefulSet template via a Kubernetes ConfigMap.\n\nOperators can provide a custom StatefulSet YAML that the Kubernetes runner will use when\ncreating pipeline StatefulSets for a pipeline. The custom template must be stored as the\nvalue of a key in a ConfigMap in the same namespace as the pipeline; set `name` to the\nConfigMap name and `key` to the entry that contains the template.\n\nRecommendations and requirements:\n- **Start from the default template and modify it as needed.** The default template is present\nin ConfigMap named as `<release-name>-pipeline-template`, with key `pipelineTemplate` in the release\nnamespace and should be used as a reference.\n- The template must contain a valid Kubernetes `StatefulSet` manifest in YAML form. The\nrunner substitutes variables in the template before parsing; therefore the final YAML\nmust be syntactically valid.\n- The runner performs simple string substitution for the following placeholders. Please ensure these\nplaceholders are placed at appropriate location for their semantics:\n- `{id}`: pipeline Kubernetes name (used for object names and labels)\n- `{namespace}`: Kubernetes namespace where the pipeline runs\n- `{pipeline_executor_image}`: container image used to run the pipeline executor\n- `{binary_ref}`: program binary reference passed as an argument\n- `{program_info_ref}`: program info reference passed as an argument\n- `{pipeline_storage_path}`: mount path for persistent pipeline storage\n- `{storage_class_name}`: storage class name to use for PVCs (if applicable)\n- `{deployment_id}`: UUID identifying the deployment instance\n- `{deployment_initial}`: initial desired runtime status (e.g., `provisioning`)\n- `{bootstrap_policy}`: bootstrap policy value when applicable",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Key in the ConfigMap containing the pipeline template.\n\nIf not set, defaults to `pipelineTemplate`.",
+            "default": "pipelineTemplate"
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the ConfigMap containing the pipeline template."
+          }
+        }
+      },
       "PostPutPipeline": {
         "type": "object",
         "description": "Create a new pipeline (POST), or fully update an existing pipeline (PUT).\nFields which are optional and not provided will be set to their empty type value\n(for strings: an empty string `\"\"`, for objects: an empty dictionary `{}`).",
@@ -8779,6 +10176,14 @@
           }
         }
       },
+      "PostgresWriteMode": {
+        "type": "string",
+        "description": "PostgreSQL write mode.\n\nDetermines how the PostgreSQL output connector writes data to the target table.",
+        "enum": [
+          "materialized",
+          "cdc"
+        ]
+      },
       "PostgresWriterConfig": {
         "type": "object",
         "description": "Postgres output connector configuration.",
@@ -8787,6 +10192,16 @@
           "table"
         ],
         "properties": {
+          "cdc_op_column": {
+            "type": "string",
+            "description": "Name of the operation metadata column in CDC mode.\n\nOnly used when `mode = \"cdc\"`. This column will contain:\n- `\"i\"` for insert operations\n- `\"u\"` for upsert operations\n- `\"d\"` for delete operations\n\nDefault: `\"__feldera_op\"`",
+            "default": "__feldera_op"
+          },
+          "cdc_ts_column": {
+            "type": "string",
+            "description": "Name of the timestamp metadata column in CDC mode.\n\nOnly used when `mode = \"cdc\"`. This column will contain the timestamp\n(in RFC 3339 format) when the batch of updates was output\nby the pipeline.\n\nDefault: `\"__feldera_ts\"`",
+            "default": "__feldera_ts"
+          },
           "max_buffer_size_bytes": {
             "type": "integer",
             "description": "The maximum buffer size in for a single operation.\nNote that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are\nseparate.\nDefault: 1 MiB",
@@ -8799,9 +10214,17 @@
             "nullable": true,
             "minimum": 0
           },
+          "mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PostgresWriteMode"
+              }
+            ],
+            "default": "materialized"
+          },
           "on_conflict_do_nothing": {
             "type": "boolean",
-            "description": "Specifies how the connector handles conflicts when executing an `INSERT`\ninto a table with a primary key. By default, an existing row with the same\nkey is overwritten. Setting this flag to `true` preserves the existing row\nand ignores the new insert.\n\nThis setting does not affect `UPDATE` statements, which always replace the\nvalue associated with the key.\n\nDefault: `false`"
+            "description": "Specifies how the connector handles conflicts when executing an `INSERT`\ninto a table with a primary key. By default, an existing row with the same\nkey is overwritten. Setting this flag to `true` preserves the existing row\nand ignores the new insert.\n\nThis setting does not affect `UPDATE` statements, which always replace the\nvalue associated with the key.\n\nThis setting is not supported when `mode = \"cdc\"`, since all operations\nare performed as append-only `INSERT`s into the target table.\nAny conflict in CDC mode will result in an error.\n\nDefault: `false`"
           },
           "ssl_ca_location": {
             "type": "string",
@@ -9569,6 +10992,12 @@
               "checkpoint_interval_secs": 60
             }
           },
+          "hosts": {
+            "type": "integer",
+            "description": "Number of DBSP hosts.\n\nThe worker threads are evenly divided among the hosts.  For single-host\ndeployments, this should be 1 (the default).\n\nMultihost pipelines are an enterprise-only preview feature.",
+            "default": 1,
+            "minimum": 0
+          },
           "http_workers": {
             "type": "integer",
             "format": "int64",
@@ -9625,6 +11054,15 @@
             },
             "description": "Optionally, a list of CPU numbers for CPUs to which the pipeline may pin\nits worker threads.  Specify at least twice as many CPU numbers as\nworkers.  CPUs are generally numbered starting from 0.  The pipeline\nmight not be able to honor CPU pinning requests.\n\nCPU pinning can make pipelines run faster and perform more consistently,\nas long as different pipelines running on the same machine are pinned to\ndifferent CPUs.",
             "default": []
+          },
+          "pipeline_template_configmap": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PipelineTemplateConfig"
+              }
+            ],
+            "default": null,
+            "nullable": true
           },
           "provisioning_timeout_secs": {
             "type": "integer",
@@ -9691,6 +11129,7 @@
         "type": "string",
         "enum": [
           "Unavailable",
+          "Coordination",
           "Standby",
           "Paused",
           "Running",
@@ -9702,6 +11141,7 @@
         "description": "Runtime status of the pipeline.\n\nOf the statuses, only `Unavailable` is determined by the runner. All other statuses are\ndetermined by the pipeline and taken over by the runner.",
         "enum": [
           "Unavailable",
+          "Coordination",
           "Standby",
           "Initializing",
           "AwaitingApproval",
@@ -9772,6 +11212,12 @@
             "type": "integer",
             "format": "int32",
             "description": "Controls the number of S3 objects fetched in parallel.\n\nIncreasing this value can improve throughput by enabling greater concurrency.\nHowever, higher concurrency may lead to timeouts or increased memory usage due to in-memory buffering.\n\nRecommended range: 1–10. Default: 8.",
+            "minimum": 0
+          },
+          "max_retries": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Retry `max_retries` times with exponential backoff.\nIf the object changes during a retry attempt, the remaining part of the object will not be processed.\nRecommended range: 3-10. Default: 5.",
             "minimum": 0
           },
           "no_sign_request": {
@@ -9862,6 +11308,19 @@
           "tenant_name": {
             "type": "string",
             "description": "Current user's tenant name"
+          }
+        }
+      },
+      "ShortEndpointConfig": {
+        "type": "object",
+        "description": "Schema definition for endpoint config that only includes the stream field.",
+        "required": [
+          "stream"
+        ],
+        "properties": {
+          "stream": {
+            "type": "string",
+            "description": "The name of the stream."
           }
         }
       },
@@ -10338,6 +11797,41 @@
           "Clearing"
         ]
       },
+      "SuspendError": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "Permanent"
+            ],
+            "properties": {
+              "Permanent": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PermanentSuspendError"
+                },
+                "description": "Pipeline does not support suspend-and-resume.\n\nThese reasons only change if the pipeline's configuration changes, e.g.\nif a pipeline has an input connector that does not support\nsuspend-and-resume, and then that input connector is removed."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "Temporary"
+            ],
+            "properties": {
+              "Temporary": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TemporarySuspendError"
+                },
+                "description": "Pipeline supports suspend-and-resume, but a suspend requested now will\nbe delayed."
+              }
+            }
+          }
+        ],
+        "description": "Whether a pipeline supports checkpointing and suspend-and-resume."
+      },
       "SyncConfig": {
         "type": "object",
         "required": [
@@ -10407,6 +11901,13 @@
             "default": 10,
             "minimum": 0
           },
+          "push_interval": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The interval (in seconds) between each push of checkpoints to object store.\n\nDefault: disabled (no periodic push).",
+            "nullable": true,
+            "minimum": 0
+          },
           "region": {
             "type": "string",
             "description": "The region that this bucket is in.\n\nLeave empty for Minio or the default region (`us-east-1` for AWS).",
@@ -10460,6 +11961,46 @@
           }
         }
       },
+      "TemporarySuspendError": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "Replaying"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "Bootstrapping"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "TransactionInProgress"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "InputEndpointBarrier"
+            ],
+            "properties": {
+              "InputEndpointBarrier": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "string",
+            "enum": [
+              "Coordination"
+            ]
+          }
+        ],
+        "description": "Reasons why a pipeline cannot be suspended at this time."
+      },
       "TenantId": {
         "type": "string",
         "format": "uuid"
@@ -10485,6 +12026,53 @@
             "description": "Time series.\n\nThese report 60 seconds of samples, one per second."
           }
         }
+      },
+      "TransactionInitiators": {
+        "type": "object",
+        "description": "Information about entities that initiated the current transaction.",
+        "required": [
+          "initiated_by_connectors"
+        ],
+        "properties": {
+          "initiated_by_api": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TransactionPhase"
+              }
+            ],
+            "nullable": true
+          },
+          "initiated_by_connectors": {
+            "type": "object",
+            "description": "Transaction phases initiated by connectors, indexed by endpoint name.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ConnectorTransactionPhase"
+            }
+          },
+          "transaction_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "ID assigned to the transaction (None if no transaction is in progress).",
+            "nullable": true
+          }
+        }
+      },
+      "TransactionPhase": {
+        "type": "string",
+        "description": "Transaction phase.",
+        "enum": [
+          "Started",
+          "Committed"
+        ]
+      },
+      "TransactionStatus": {
+        "type": "string",
+        "description": "Transaction status summarized as a single value.",
+        "enum": [
+          "NoTransaction",
+          "TransactionInProgress",
+          "CommitInProgress"
+        ]
       },
       "TransportConfig": {
         "oneOf": [

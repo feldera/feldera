@@ -1,7 +1,12 @@
 import unittest
 from feldera import PipelineBuilder, Pipeline
-from feldera.testutils import unique_pipeline_name
+from feldera.testutils import (
+    unique_pipeline_name,
+    FELDERA_TEST_NUM_WORKERS,
+    FELDERA_TEST_NUM_HOSTS,
+)
 from tests import TEST_CLIENT
+from feldera.runtime_config import RuntimeConfig
 
 
 class NegativeCompilationTests(unittest.TestCase):
@@ -23,7 +28,13 @@ Code snippet:
                                      ^^^^""".strip()
         with self.assertRaises(Exception) as err:
             PipelineBuilder(
-                TEST_CLIENT, name=pipeline_name, sql=sql
+                TEST_CLIENT,
+                name=pipeline_name,
+                sql=sql,
+                runtime_config=RuntimeConfig(
+                    workers=FELDERA_TEST_NUM_WORKERS,
+                    hosts=FELDERA_TEST_NUM_HOSTS,
+                ),
             ).create_or_replace()
         got_err: str = err.exception.args[0].strip()
         assert expected == got_err
@@ -36,7 +47,14 @@ Code snippet:
 
         with self.assertRaises(Exception) as err:
             PipelineBuilder(
-                TEST_CLIENT, name=pipeline_name, sql=sql, udf_rust="Davy Jones"
+                TEST_CLIENT,
+                name=pipeline_name,
+                sql=sql,
+                udf_rust="Davy Jones",
+                runtime_config=RuntimeConfig(
+                    workers=FELDERA_TEST_NUM_WORKERS,
+                    hosts=FELDERA_TEST_NUM_HOSTS,
+                ),
             ).create_or_replace()
 
         assert "Davy Jones" in err.exception.args[0].strip()
@@ -45,7 +63,15 @@ Code snippet:
         sql = "create taabl;"
         name = unique_pipeline_name("test_program_error0")
         try:
-            _ = PipelineBuilder(TEST_CLIENT, name, sql).create_or_replace()
+            _ = PipelineBuilder(
+                TEST_CLIENT,
+                name,
+                sql,
+                runtime_config=RuntimeConfig(
+                    workers=FELDERA_TEST_NUM_WORKERS,
+                    hosts=FELDERA_TEST_NUM_HOSTS,
+                ),
+            ).create_or_replace()
         except Exception:
             pass
         pipeline = Pipeline.get(name, TEST_CLIENT)
@@ -57,7 +83,15 @@ Code snippet:
     def test_program_error1(self):
         sql = ""
         name = unique_pipeline_name("test_program_error1")
-        _ = PipelineBuilder(TEST_CLIENT, name, sql).create_or_replace()
+        _ = PipelineBuilder(
+            TEST_CLIENT,
+            name,
+            sql,
+            runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+            ),
+        ).create_or_replace()
         pipeline = Pipeline.get(name, TEST_CLIENT)
         err = pipeline.program_error()
         assert err["sql_compilation"]["exit_code"] == 0
@@ -69,7 +103,15 @@ Code snippet:
         sql = "SELECT invalid"
         name = unique_pipeline_name("test_errors0")
         try:
-            _ = PipelineBuilder(TEST_CLIENT, name, sql).create_or_replace()
+            _ = PipelineBuilder(
+                TEST_CLIENT,
+                name,
+                sql,
+                runtime_config=RuntimeConfig(
+                    workers=FELDERA_TEST_NUM_WORKERS,
+                    hosts=FELDERA_TEST_NUM_HOSTS,
+                ),
+            ).create_or_replace()
         except Exception:
             pass
         pipeline = Pipeline.get(name, TEST_CLIENT)
@@ -95,7 +137,13 @@ Code snippet:
         );
         """
         pipeline = PipelineBuilder(
-            TEST_CLIENT, name=unique_pipeline_name("test_initialization_error"), sql=sql
+            TEST_CLIENT,
+            name=unique_pipeline_name("test_initialization_error"),
+            sql=sql,
+            runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+            ),
         ).create_or_replace()
         with self.assertRaises(RuntimeError) as err:
             pipeline.start()

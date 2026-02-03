@@ -1,4 +1,7 @@
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
+    DBData, DBWeight, Error, NumEntries,
     algebra::{NegByRef, ZRingValue},
     circuit::checkpointer::Checkpoint,
     dynamic::{
@@ -6,24 +9,22 @@ use crate::{
         WeightTraitTyped, WithFactory,
     },
     trace::{
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
+        Filter, GroupFilter, MergeCursor, Serializer, VecValBatch, WeightedItem,
         cursor::Position,
         deserialize_indexed_wset,
         layers::{
             Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
         },
-        serialize_indexed_wset, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder,
-        Cursor, Deserializer, Filter, MergeCursor, Serializer, VecValBatch, WeightedItem,
+        serialize_indexed_wset,
     },
     utils::Tup2,
-    DBData, DBWeight, Error, NumEntries,
 };
 use itertools::{EitherOrBoth, Itertools};
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::fmt::{self, Debug, Display};
-
-use crate::trace::ord::merge_batcher::MergeBatcher;
 
 pub struct VecIndexedWSetFactories<K, V, R>
 where
@@ -411,7 +412,7 @@ where
     fn consuming_cursor(
         &mut self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn crate::trace::MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_>
     {
         if key_filter.is_none() && value_filter.is_none() {
@@ -447,8 +448,8 @@ where
         self.layer.approximate_byte_size()
     }
 
-    fn filter_size(&self) -> usize {
-        0
+    fn filter_stats(&self) -> BloomFilterStats {
+        BloomFilterStats::default()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)

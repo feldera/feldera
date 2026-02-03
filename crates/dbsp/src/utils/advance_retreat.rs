@@ -1,7 +1,7 @@
 use crate::utils::bytes_of;
 use std::{
     cmp::min,
-    mem::{size_of, MaybeUninit},
+    mem::{MaybeUninit, size_of},
 };
 
 const DEFAULT_SMALL_LIMIT: usize = 8;

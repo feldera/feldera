@@ -115,10 +115,12 @@ pub struct PipelineInfo {
     pub deployment_desired_status: CombinedDesiredStatus,
     pub deployment_desired_status_since: DateTime<Utc>,
     pub deployment_resources_status: ResourcesStatus,
+    pub deployment_resources_status_details: Option<serde_json::Value>,
     pub deployment_resources_status_since: DateTime<Utc>,
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
     pub deployment_runtime_status: Option<RuntimeStatus>,
+    pub deployment_runtime_status_details: Option<serde_json::Value>,
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
@@ -161,10 +163,12 @@ pub struct PipelineInfoInternal {
     pub deployment_desired_status: CombinedDesiredStatus,
     pub deployment_desired_status_since: DateTime<Utc>,
     pub deployment_resources_status: ResourcesStatus,
+    pub deployment_resources_status_details: Option<serde_json::Value>,
     pub deployment_resources_status_since: DateTime<Utc>,
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
     pub deployment_runtime_status: Option<RuntimeStatus>,
+    pub deployment_runtime_status_details: Option<serde_json::Value>,
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
@@ -212,12 +216,15 @@ impl PipelineInfoInternal {
                 extended_pipeline.deployment_runtime_desired_status_since,
             ),
             deployment_resources_status: extended_pipeline.deployment_resources_status,
+            deployment_resources_status_details: extended_pipeline
+                .deployment_resources_status_details,
             deployment_resources_status_since: extended_pipeline.deployment_resources_status_since,
             deployment_resources_desired_status: extended_pipeline
                 .deployment_resources_desired_status,
             deployment_resources_desired_status_since: extended_pipeline
                 .deployment_resources_desired_status_since,
             deployment_runtime_status: extended_pipeline.deployment_runtime_status,
+            deployment_runtime_status_details: extended_pipeline.deployment_runtime_status_details,
             deployment_runtime_status_since: extended_pipeline.deployment_runtime_status_since,
             deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
             deployment_runtime_desired_status_since: extended_pipeline
@@ -264,6 +271,8 @@ pub struct PipelineSelectedInfo {
     pub deployment_desired_status: CombinedDesiredStatus,
     pub deployment_desired_status_since: DateTime<Utc>,
     pub deployment_resources_status: ResourcesStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deployment_resources_status_details: Option<Option<serde_json::Value>>,
     pub deployment_resources_status_since: DateTime<Utc>,
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
@@ -318,6 +327,8 @@ pub struct PipelineSelectedInfoInternal {
     pub deployment_desired_status: CombinedDesiredStatus,
     pub deployment_desired_status_since: DateTime<Utc>,
     pub deployment_resources_status: ResourcesStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deployment_resources_status_details: Option<Option<serde_json::Value>>,
     pub deployment_resources_status_since: DateTime<Utc>,
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
@@ -375,6 +386,9 @@ impl PipelineSelectedInfoInternal {
                 extended_pipeline.deployment_runtime_desired_status_since,
             ),
             deployment_resources_status: extended_pipeline.deployment_resources_status,
+            deployment_resources_status_details: Some(
+                extended_pipeline.deployment_resources_status_details,
+            ),
             deployment_resources_status_since: extended_pipeline.deployment_resources_status_since,
             deployment_resources_desired_status: extended_pipeline
                 .deployment_resources_desired_status,
@@ -432,6 +446,7 @@ impl PipelineSelectedInfoInternal {
                 extended_pipeline.deployment_runtime_desired_status_since,
             ),
             deployment_resources_status: extended_pipeline.deployment_resources_status,
+            deployment_resources_status_details: None,
             deployment_resources_status_since: extended_pipeline.deployment_resources_status_since,
             deployment_resources_desired_status: extended_pipeline
                 .deployment_resources_desired_status,
@@ -804,8 +819,9 @@ async fn fetch_connector_error_stats(
     // Check status code - quietly ignore 404 (endpoint not available on older pipelines)
     if response.status() == actix_web::http::StatusCode::NOT_FOUND {
         debug!(
-            "Pipeline '{}' does not support /stats/errors endpoint (404), skipping error stats",
-            pipeline_name
+            pipeline = %pipeline_name,
+            pipeline_id = "N/A",
+            "Pipeline does not support /stats/errors endpoint (404), skipping error stats"
         );
         return None;
     }
@@ -817,8 +833,9 @@ async fn fetch_connector_error_stats(
         Ok(response) => response,
         Err(e) => {
             error!(
-                "Failed to deserialize pipeline stats response for '{}': {}",
-                pipeline_name, e
+                pipeline = %pipeline_name,
+                pipeline_id = "N/A",
+                "Failed to deserialize pipeline stats response: {e}"
             );
             return None;
         }
@@ -954,7 +971,6 @@ pub(crate) async fn post_pipeline(
     body: web::Json<PostPutPipelineInternal>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_descr: PipelineDescr = body.into_inner().into();
-    let name = pipeline_descr.name.clone();
     let pipeline = state
         .db
         .lock()
@@ -969,8 +985,10 @@ pub(crate) async fn post_pipeline(
     let returned_pipeline = PipelineInfoInternal::new(pipeline);
 
     info!(
-        "Created pipeline {name:?} ({}) (tenant: {})",
-        returned_pipeline.id, *tenant_id
+        pipeline = %returned_pipeline.name,
+        pipeline_id = %returned_pipeline.id,
+        tenant = %tenant_id.0,
+        "Created pipeline"
     );
     Ok(HttpResponse::Created()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1039,16 +1057,21 @@ pub(crate) async fn put_pipeline(
 
     if is_new {
         info!(
-            "Created pipeline {pipeline_name:?} ({}) (tenant: {})",
-            returned_pipeline.id, *tenant_id
+            pipeline = %returned_pipeline.name,
+            pipeline_id = %returned_pipeline.id,
+            tenant = %tenant_id.0,
+            "Created pipeline"
         );
         Ok(HttpResponse::Created()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
             .json(returned_pipeline))
     } else {
         info!(
-            "Fully updated pipeline {pipeline_name:?} ({}) to version {} (tenant: {})",
-            returned_pipeline.id, returned_pipeline.version, *tenant_id
+            pipeline = %returned_pipeline.name,
+            pipeline_id = %returned_pipeline.id,
+            tenant = %tenant_id.0,
+            version = %returned_pipeline.version,
+            "Fully updated pipeline"
         );
         Ok(HttpResponse::Ok()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1121,8 +1144,12 @@ pub(crate) async fn patch_pipeline(
     let returned_pipeline = PipelineInfoInternal::new(pipeline);
 
     info!(
-        "Partially updated pipeline {pipeline_name:?} ({}) to version {} (tenant: {})",
-        returned_pipeline.id, returned_pipeline.version, *tenant_id
+        pipeline = %returned_pipeline.name,
+        pipeline_id = %returned_pipeline.id,
+        tenant = %tenant_id.0,
+        version = %returned_pipeline.version,
+        "Partially updated pipeline to version {}",
+        returned_pipeline.version
     );
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1206,8 +1233,12 @@ pub(crate) async fn post_update_runtime(
     let returned_pipeline = PipelineInfoInternal::new(pipeline);
 
     info!(
-        "Updated pipeline {pipeline_name:?} ({}) platform_version to {} (tenant: {})",
-        returned_pipeline.id, returned_pipeline.platform_version, *tenant_id
+        pipeline = %returned_pipeline.name,
+        pipeline_id = %returned_pipeline.id,
+        tenant = %tenant_id.0,
+        platform_version = %returned_pipeline.platform_version,
+        "Updated pipeline platform_version to {}",
+        returned_pipeline.platform_version
     );
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1253,8 +1284,10 @@ pub(crate) async fn delete_pipeline(
         .await?;
 
     info!(
-        "Deleted pipeline {pipeline_name:?} ({}) (tenant: {})",
-        pipeline_id, *tenant_id
+        pipeline = %pipeline_name,
+        pipeline_id = %pipeline_id,
+        tenant = %tenant_id.0,
+        "Deleted pipeline"
     );
     Ok(HttpResponse::Ok().finish())
 }
@@ -1355,8 +1388,11 @@ pub(crate) async fn post_pipeline_start(
     };
 
     info!(
-        "Accepted action: going to start pipeline {pipeline_name:?} ({pipeline_id}) as {} (tenant: {})",
-        initial, *tenant_id
+        pipeline_id = %pipeline_id,
+        pipeline = %pipeline_name,
+        tenant = %tenant_id.0,
+        "Accepted action: going to start pipeline as {}",
+        initial
     );
     Ok(HttpResponse::Accepted().json(json!("Pipeline is starting")))
 }
@@ -1442,8 +1478,10 @@ pub(crate) async fn post_pipeline_stop(
             .set_deployment_resources_desired_status_stopped(*tenant_id, &pipeline_name)
             .await?;
         info!(
-            "Accepted action: going to forcefully stop pipeline {pipeline_name:?} ({pipeline_id}) (tenant: {})",
-            *tenant_id
+            pipeline_id = %pipeline_id,
+            pipeline = %pipeline_name,
+            tenant = %tenant_id.0,
+            "Accepted action: going to forcefully stop pipeline"
         );
         Ok(HttpResponse::Accepted().json(json!("Pipeline is forcefully stopping")))
     } else {
@@ -1466,8 +1504,10 @@ pub(crate) async fn post_pipeline_stop(
                 .await?;
             if was_set {
                 info!(
-                    "Accepted action: going to forcefully stop pipeline {pipeline_name:?} ({pipeline_id}) (tenant: {}) because it is not provisioned",
-                    *tenant_id
+                    pipeline_id = %pipeline_id,
+                    pipeline = %pipeline_name,
+                    tenant = %tenant_id.0,
+                    "Accepted action: going to forcefully stop pipeline because it is not provisioned"
                 );
                 Ok(HttpResponse::Accepted().json(json!("Pipeline is forcefully stopping")))
             } else {
@@ -1494,8 +1534,10 @@ pub(crate) async fn post_pipeline_stop(
                     .is_ok_and(|v| v.status() == actix_web::http::StatusCode::ACCEPTED)
                 {
                     info!(
-                        "Accepted action: going to non-forcefully stop pipeline {pipeline_name:?} ({pipeline_id}) (tenant: {})",
-                        *tenant_id
+                        pipeline = %pipeline_name,
+                        pipeline_id = %pipeline_id,
+                        tenant = %tenant_id.0,
+                        "Accepted action: going to non-forcefully stop pipeline"
                     );
                 }
                 response
@@ -1553,8 +1595,10 @@ pub(crate) async fn post_pipeline_clear(
         .await?;
 
     info!(
-        "Accepted storage action: going to clear storage of pipeline {pipeline_name:?} ({pipeline_id}) (tenant: {})",
-        *tenant_id
+        pipeline_id = %pipeline_id,
+        pipeline = %pipeline_name,
+        tenant = %tenant_id.0,
+        "Accepted storage action: going to clear storage of pipeline"
     );
     Ok(HttpResponse::Accepted().json(json!("Pipeline storage is being cleared")))
 }

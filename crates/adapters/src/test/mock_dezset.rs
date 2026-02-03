@@ -1,19 +1,19 @@
+use crate::{
+    ControllerError, DeCollectionHandle,
+    catalog::{ArrowStream, DeCollectionStream, RecordFormat},
+    format::{InputBuffer, raw::raw_serde_config},
+    static_compile::deinput::{
+        CsvDeserializerFromBytes, DeserializerFromBytes, JsonDeserializerFromBytes,
+        RawDeserializerFromBytes, fraction, fraction_take,
+    },
+};
 #[cfg(feature = "with-avro")]
 use crate::{catalog::AvroStream, format::avro::from_avro_value};
-use crate::{
-    catalog::{ArrowStream, DeCollectionStream, RecordFormat},
-    format::{raw::raw_serde_config, InputBuffer},
-    static_compile::deinput::{
-        fraction, fraction_take, CsvDeserializerFromBytes, DeserializerFromBytes,
-        JsonDeserializerFromBytes, RawDeserializerFromBytes,
-    },
-    ControllerError, DeCollectionHandle,
-};
 use anyhow::Result as AnyResult;
 #[cfg(feature = "with-avro")]
-use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
+use apache_avro::{Schema as AvroSchema, types::Value as AvroValue};
 use arrow::array::RecordBatch;
-use dbsp::{operator::StagedBuffers, DBData};
+use dbsp::{DBData, operator::StagedBuffers};
 use erased_serde::Deserializer as ErasedDeserializer;
 #[cfg(feature = "with-avro")]
 use feldera_adapterlib::catalog::AvroSchemaRefs;
@@ -30,7 +30,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use super::{wait, DEFAULT_TIMEOUT_MS};
+use super::{DEFAULT_TIMEOUT_MS, wait};
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
 pub enum MockUpdate<T, U> {
@@ -174,13 +174,14 @@ where
             RecordFormat::Avro => {
                 todo!()
             }
-            RecordFormat::Raw => Ok(Box::new(MockDeZSetStream::<
+            RecordFormat::Raw(column_name) => Ok(Box::new(MockDeZSetStream::<
                 RawDeserializerFromBytes,
                 T,
                 U,
                 _,
             >::new(
-                self.clone(), raw_serde_config()
+                self.clone(),
+                (raw_serde_config(), column_name.clone()),
             ))),
         }
     }
@@ -292,7 +293,11 @@ where
     }
 }
 
-impl<T, U> StagedBuffers for MockDeZSetStreamStagedBuffers<T, U> {
+impl<T, U> StagedBuffers for MockDeZSetStreamStagedBuffers<T, U>
+where
+    T: Send + Sync,
+    U: Send + Sync,
+{
     fn flush(&mut self) {
         self.handle
             .0

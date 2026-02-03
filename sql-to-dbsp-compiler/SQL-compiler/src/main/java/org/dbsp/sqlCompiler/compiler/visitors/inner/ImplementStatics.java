@@ -58,7 +58,7 @@ public class ImplementStatics extends ExpressionTranslator {
         public void postorder(DBSPHandleErrorExpression expression) {
             DBSPExpression source = this.getE(expression.source);
             DBSPExpression result = new DBSPHandleErrorExpression(
-                    expression.getNode(), this.index++, source, expression.hasSourcePosition);
+                    expression.getNode(), this.index++, expression.runtimeBehavior, source, expression.hasSourcePosition);
             this.map(expression, result);
         }
     }

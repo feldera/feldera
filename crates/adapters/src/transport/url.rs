@@ -1,16 +1,16 @@
 use super::{
     InputConsumer, InputEndpoint, InputReader, InputReaderCommand, TransportInputEndpoint,
 };
-use crate::{ensure_default_crypto_provider, format::StreamSplitter, InputBuffer, Parser};
+use crate::{InputBuffer, Parser, ensure_default_crypto_provider, format::StreamSplitter};
 use actix::System;
 use actix_web::http::StatusCode;
 use actix_web::{
     dev::{Decompress, Payload},
-    http::header::{ByteRangeSpec, ContentRangeSpec, Range as ActixRange, CONTENT_RANGE},
+    http::header::{ByteRangeSpec, CONTENT_RANGE, ContentRangeSpec, Range as ActixRange},
 };
-use anyhow::{anyhow, bail, Result as AnyResult};
+use anyhow::{Result as AnyResult, anyhow, bail};
 use awc::error::HeaderValue;
-use awc::{http::header::HeaderMap, Client, ClientResponse, Connector};
+use awc::{Client, ClientResponse, Connector, http::header::HeaderMap};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use feldera_adapterlib::format::BufferSize;
@@ -18,11 +18,11 @@ use feldera_adapterlib::transport::{InputCommandReceiver, Resume, Watermark};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::url::UrlInputConfig;
-use futures::{future::OptionFuture, StreamExt};
+use futures::{StreamExt, future::OptionFuture};
 use serde::{Deserialize, Serialize};
 use std::thread;
 use std::{
-    cmp::{min, Ordering},
+    cmp::{Ordering, min},
     collections::VecDeque,
     hash::Hasher,
     ops::Range,
@@ -32,8 +32,8 @@ use std::{
 };
 use tokio::{
     select,
-    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-    time::{sleep_until, Instant},
+    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
+    time::{Instant, sleep_until},
 };
 use tracing::{info_span, warn};
 use xxhash_rust::xxh3::Xxh3Default;
@@ -100,7 +100,10 @@ struct UrlStream<'a> {
 fn get_response_starting_offset(status: StatusCode, headers: &HeaderMap) -> AnyResult<u64> {
     if status != StatusCode::PARTIAL_CONTENT {
         if headers.get(CONTENT_RANGE).is_some() {
-            bail!("HTTP response contains the Content-Range header but its status code ({}) is not 206 Partial Content", status);
+            bail!(
+                "HTTP response contains the Content-Range header but its status code ({}) is not 206 Partial Content",
+                status
+            );
         }
         Ok(0)
     } else {
@@ -115,14 +118,21 @@ fn get_response_starting_offset(status: StatusCode, headers: &HeaderMap) -> AnyR
                     ..
                 } => Ok(start),
                 ContentRangeSpec::Bytes { range: None, .. } => {
-                    bail!("HTTP response is 206 Partial Content but has a Content-Range which indicates it is unsatisfiable");
+                    bail!(
+                        "HTTP response is 206 Partial Content but has a Content-Range which indicates it is unsatisfiable"
+                    );
                 }
                 other => {
-                    bail!("expected byte range in HTTP response Content-Range header, instead received: {other}");
+                    bail!(
+                        "expected byte range in HTTP response Content-Range header, instead received: {other}"
+                    );
                 }
             },
             _ => {
-                bail!("HTTP response should have only a single Content-Range header, but {} are present", content_range_values.len());
+                bail!(
+                    "HTTP response should have only a single Content-Range header, but {} are present",
+                    content_range_values.len()
+                );
             }
         }
     }
@@ -176,7 +186,9 @@ impl<'a> UrlStream<'a> {
                 // info!("HTTP response status code: {}", status);
 
                 if status.as_u16() == StatusCode::RANGE_NOT_SATISFIABLE {
-                    warn!("Received HTTP status code 416 (RANGE_NOT_SATISFIABLE)--connector has reached the end of input.");
+                    warn!(
+                        "Received HTTP status code 416 (RANGE_NOT_SATISFIABLE)--connector has reached the end of input."
+                    );
                     return Ok(None);
                 }
 
@@ -325,7 +337,7 @@ impl UrlInputReader {
                 splitter.append(&bytes);
                 remainder -= bytes.len();
                 while let Some(chunk) = splitter.next(remainder == 0) {
-                    let (mut buffer, errors) = parser.parse(chunk, &None);
+                    let (mut buffer, errors) = parser.parse(chunk, None);
                     consumer.parse_errors(errors);
                     consumer.buffered(buffer.len());
                     total += buffer.len();
@@ -418,7 +430,7 @@ impl UrlInputReader {
                         let Some(chunk) = splitter.next(eof) else {
                             break;
                         };
-                        let (buffer, errors) = parser.parse(chunk, &None);
+                        let (buffer, errors) = parser.parse(chunk, None);
                         consumer.buffered(buffer.len());
                         consumer.parse_errors(errors);
 
@@ -462,16 +474,15 @@ struct Metadata {
 mod test {
     use crate::{
         test::{
-            mock_input_pipeline, wait, MockDeZSet, MockInputConsumer, MockInputParser,
-            DEFAULT_TIMEOUT_MS,
+            DEFAULT_TIMEOUT_MS, MockDeZSet, MockInputConsumer, MockInputParser,
+            mock_input_pipeline, wait,
         },
         transport::InputReader,
     };
     use actix::System;
     use actix_web::{
-        middleware,
+        App, FromRequest, Handler, HttpResponse, HttpServer, Responder, Result, middleware,
         web::{self, Bytes},
-        App, FromRequest, Handler, HttpResponse, HttpServer, Responder, Result,
     };
     use async_stream::stream;
     use feldera_types::deserialize_without_context;

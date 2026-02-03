@@ -23,14 +23,9 @@ feldera-types = { workspace = true }
 feldera-cloud1-client = { workspace = true }
 feldera-ir = { workspace = true }
 
-# Cryptography provider
-# Make sure this is the same rustls version used by other crates in the dependency tree.
-# See the `ensure_default_crypto_provider` function at the root of this crate.
-rustls = { workspace = true }
-
 # Logging
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 colored = { workspace = true }
 sentry = { workspace = true }
 feldera-observability = { workspace = true }
@@ -97,6 +92,7 @@ awc = { workspace = true, features = ["rustls-0_23", "rustls-0_23-native-roots"]
 reqwest = { workspace = true, features = ["json", "rustls-tls-native-roots"] }
 cached = { workspace = true }
 crossbeam = { workspace = true }
+rustls = { workspace = true }
 
 # System interaction
 dirs = { workspace = true }  # For: discovering home directory
@@ -117,11 +113,12 @@ tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_mal
 default = ["postgresql_embedded"]
 feldera-enterprise = []
 runtime-version = []
+fips = ["rustls/fips"]
 
 [build-dependencies]
 change-detection = { workspace = true }
 static-files = { workspace = true }
-vergen-gitcl = { version = "1.0.0", features = ["build", "cargo", "rustc", "si"] }
+vergen-gitcl = { workspace = true, features = ["build", "cargo", "rustc", "si"] }
 
 [dev-dependencies]
 proptest = { workspace = true }

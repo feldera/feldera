@@ -62,6 +62,7 @@ public class DBSPTypeString extends DBSPTypeBaseType implements IHasPrecision {
         return new DBSPTypeString(node, precision, fixed, mayBeNull);
     }
 
+    /** The type representing VARCHAR without limits */
     public static DBSPTypeString varchar(boolean mayBeNull) {
         if (mayBeNull)
             return VARCHAR_NULLABLE;

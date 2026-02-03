@@ -1234,6 +1234,46 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         return buffer
 
+    def start_samply_profile(self, pipeline_name: str, duration: int):
+        """
+        Start the profiling this pipeline with samply.
+
+        :param pipeline_name: The name of the pipeline
+        :param duration: The duration of the profile in seconds (default: 30)
+        :raises FelderaAPIError: If the pipeline does not exist or if there's an error
+        """
+
+        if duration <= 0:
+            raise ValueError("Duration must be a positive integer")
+
+        params = {"duration_secs": duration}
+
+        self.http.post(
+            path=f"/pipelines/{pipeline_name}/samply_profile",
+            params=params,
+        )
+
+    def get_samply_profile(self, pipeline_name: str) -> bytes:
+        """
+        Get the most recent available samply profile for the given pipeline.
+
+        :param pipeline_name: The name of the pipeline
+        :return: The samply profile as bytes (GZIP file)
+        :raises FelderaAPIError: If the pipeline does not exist or if there's an error
+        """
+
+        resp = self.http.get(
+            path=f"/pipelines/{pipeline_name}/samply_profile",
+            stream=True,
+        )
+
+        buffer = b""
+        for chunk in resp.iter_content(chunk_size=1024):
+            if chunk:
+                buffer += chunk
+
+        return buffer
+
     def generate_completion_token(
         self, pipeline_name: str, table_name: str, connector_name: str
     ) -> str:
@@ -1261,3 +1301,33 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             )
 
         return token
+
+    def get_cluster_events(self) -> list[dict]:
+        """
+        Retrieves all cluster events (status fields only).
+
+        :returns: List of cluster events.
+        """
+        return self.http.get(path="/cluster/events")
+
+    def get_cluster_event(self, event_id: str, selector: str = "status") -> dict:
+        """
+        Retrieves a specific cluster event.
+
+        :param event_id: Identifier (UUID) of the event to retrieve, or `latest` for the latest event.
+        :param selector: (Optional) Limit the returned fields. Valid values: "all", "status" (default).
+
+        :returns: Event (fields limited based on selector).
+        """
+        # Selector of fields
+        if selector not in ["all", "status"]:
+            raise ValueError(f"invalid selector: {selector}")
+
+        # Issue request and return response
+        return self.http.get(path=f"/cluster/events/{event_id}?selector={selector}")
+
+    def rebalance_pipeline(self, pipeline_name: str):
+        self.http.post(path=f"/pipelines/{pipeline_name}/rebalance")
+
+    def get_checkpoints(self, pipeline_name: str):
+        return self.http.get(path=f"/pipelines/{pipeline_name}/checkpoints")

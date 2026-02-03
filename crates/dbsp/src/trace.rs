@@ -26,16 +26,17 @@
 //! time: reading a trace might obtain out of order and duplicate times among
 //! the `(time, diff)` pairs associated with a key and value.
 
-use crate::circuit::metadata::{MetaItem, OperatorMeta};
+use crate::circuit::metadata::OperatorMeta;
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::trace::cursor::{
-    DefaultPushCursor, FilteredMergeCursor, PushCursor, UnfilteredMergeCursor,
+    DefaultPushCursor, FilteredMergeCursor, FilteredMergeCursorWithSnapshot, PushCursor,
+    UnfilteredMergeCursor,
 };
+use crate::utils::IsNone;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
-use dyn_clone::DynClone;
 use enum_map::Enum;
 use feldera_storage::{FileCommitter, FileReader, StoragePath};
 use rand::Rng;
@@ -46,6 +47,7 @@ use std::sync::Arc;
 use std::{fmt::Debug, hash::Hash};
 
 pub mod cursor;
+pub mod filter;
 pub mod layers;
 pub mod ord;
 pub mod spine_async;
@@ -68,15 +70,17 @@ pub use ord::{
     VecWSetFactories,
 };
 
-use rkyv::{archived_root, de::deserializers::SharedDeserializeMap, Deserialize};
+use rkyv::{Deserialize, archived_root};
 
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::{
+    Error, NumEntries, Timestamp,
     algebra::MonoidValue,
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
     storage::file::reader::Error as ReaderError,
-    Error, NumEntries, Timestamp,
 };
 pub use cursor::{Cursor, MergeCursor};
+pub use filter::{Filter, GroupFilter};
 pub use layers::Trie;
 
 /// Trait for data stored in batches.
@@ -87,13 +91,35 @@ pub use layers::Trie;
 /// `DBData` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::Key: DBData` and `B::Val: DBData`.
 pub trait DBData:
-    Default + Clone + Eq + Ord + Hash + SizeOf + Send + Sync + Debug + ArchivedDBData + 'static
+    Default
+    + Clone
+    + Eq
+    + Ord
+    + Hash
+    + SizeOf
+    + Send
+    + Sync
+    + Debug
+    + ArchivedDBData
+    + IsNone<Inner: ArchivedDBData>
+    + 'static
 {
 }
 
 /// Automatically implement DBData for everything that satisfied the bounds.
 impl<T> DBData for T where
-    T: Default + Clone + Eq + Ord + Hash + SizeOf + Send + Sync + Debug + ArchivedDBData + 'static /* as ArchivedDBData>::Repr: Ord + PartialOrd<T>, */
+    T: Default
+        + Clone
+        + Eq
+        + Ord
+        + Hash
+        + SizeOf
+        + Send
+        + Sync
+        + Debug
+        + ArchivedDBData
+        + IsNone<Inner: ArchivedDBData>
+        + 'static
 {
 }
 
@@ -116,7 +142,7 @@ pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
     let mut aligned_bytes = FBuf::new();
     aligned_bytes.extend_from_slice(bytes);
     unsafe { archived_root::<T>(&aligned_bytes[..]) }
-        .deserialize(&mut SharedDeserializeMap::new())
+        .deserialize(&mut Deserializer::default())
         .unwrap()
 }
 
@@ -140,52 +166,6 @@ pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
 /// `B: BatchReader` implies `B::R: DBWeight`.
 pub trait DBWeight: DBData + MonoidValue {}
 impl<T> DBWeight for T where T: DBData + MonoidValue {}
-
-pub trait FilterFunc<V: ?Sized>: Fn(&V) -> bool + DynClone + Send + Sync {}
-
-impl<V: ?Sized, F> FilterFunc<V> for F where F: Fn(&V) -> bool + Clone + Send + Sync + 'static {}
-
-dyn_clone::clone_trait_object! {<V: ?Sized> FilterFunc<V>}
-
-pub struct Filter<V: ?Sized> {
-    filter_func: Box<dyn FilterFunc<V>>,
-    metadata: MetaItem,
-}
-
-impl<V: ?Sized> Filter<V> {
-    pub fn new(filter_func: Box<dyn FilterFunc<V>>) -> Self {
-        Self {
-            filter_func,
-            metadata: MetaItem::String(String::new()),
-        }
-    }
-
-    pub fn with_metadata(mut self, metadata: MetaItem) -> Self {
-        self.metadata = metadata;
-        self
-    }
-
-    pub fn filter_func(&self) -> &dyn FilterFunc<V> {
-        self.filter_func.as_ref()
-    }
-
-    pub fn metadata(&self) -> &MetaItem {
-        &self.metadata
-    }
-
-    pub fn include(this: &Option<Filter<V>>, value: &V) -> bool {
-        this.as_ref().is_none_or(|f| (f.filter_func)(value))
-    }
-}
-
-impl<V: ?Sized> Clone for Filter<V> {
-    fn clone(&self) -> Self {
-        Self {
-            filter_func: self.filter_func.clone(),
-            metadata: self.metadata.clone(),
-        }
-    }
-}
 
 pub trait BatchReaderFactories<
     K: DataTrait + ?Sized,
@@ -235,12 +215,12 @@ pub trait BatchFactories<K: DataTrait + ?Sized, V: DataTrait + ?Sized, T, R: Wei
 pub trait Trace: BatchReader {
     /// The type of an immutable collection of updates.
     type Batch: Batch<
-        Key = Self::Key,
-        Val = Self::Val,
-        Time = Self::Time,
-        R = Self::R,
-        Factories = Self::Factories,
-    >;
+            Key = Self::Key,
+            Val = Self::Val,
+            Time = Self::Time,
+            R = Self::R,
+            Factories = Self::Factories,
+        >;
 
     /// Allocates a new empty trace.
     fn new(factories: &Self::Factories) -> Self;
@@ -305,10 +285,10 @@ pub trait Trace: BatchReader {
     /// or at all.  This method is just a hint that values that don't pass the
     /// filter are no longer of interest to the consumer of the trace and
     /// can be garbage collected.
-    fn retain_values(&mut self, filter: Filter<Self::Val>);
+    fn retain_values(&mut self, filter: GroupFilter<Self::Val>);
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
-    fn value_filter(&self) -> &Option<Filter<Self::Val>>;
+    fn value_filter(&self) -> &Option<GroupFilter<Self::Val>>;
 
     /// Writes this trace to storage beneath `base`, using `pid` as a file name
     /// prefix.  Adds the files that were written to `files` so that they can be
@@ -403,15 +383,53 @@ where
     fn merge_cursor(
         &self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         if key_filter.is_none() && value_filter.is_none() {
             Box::new(UnfilteredMergeCursor::new(self.cursor()))
-        } else {
+        } else if let Some(GroupFilter::Simple(filter)) = value_filter {
             Box::new(FilteredMergeCursor::new(
-                UnfilteredMergeCursor::new(self.cursor()),
+                self.cursor(),
                 key_filter,
-                value_filter,
+                Some(filter),
+            ))
+        } else {
+            // Other forms of GroupFilters cannot be evaluated without a trace snapshot -- don't filter values
+            // in such cursors.
+            Box::new(FilteredMergeCursor::new(self.cursor(), key_filter, None))
+        }
+    }
+
+    /// Similar to `merge_cursor`, but invoked in the context of a spine merger.
+    /// Takes the current spine snapshot as an extra argument and uses it to evaluate `value_filter` precisely.
+    fn merge_cursor_with_snapshot<'a, S>(
+        &'a self,
+        key_filter: Option<Filter<Self::Key>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
+        snapshot: &'a Option<Arc<S>>,
+    ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + 'a>
+    where
+        S: BatchReader<Key = Self::Key, Val = Self::Val, Time = Self::Time, R = Self::R>,
+    {
+        let Some(snapshot) = snapshot else {
+            return self.merge_cursor(key_filter, value_filter);
+        };
+        if key_filter.is_none() && value_filter.is_none() {
+            Box::new(UnfilteredMergeCursor::new(self.cursor()))
+        } else if value_filter.is_none() {
+            Box::new(FilteredMergeCursor::new(self.cursor(), key_filter, None))
+        } else if let Some(GroupFilter::Simple(filter)) = value_filter {
+            Box::new(FilteredMergeCursor::new(
+                self.cursor(),
+                key_filter,
+                Some(filter),
+            ))
+        } else {
+            Box::new(FilteredMergeCursorWithSnapshot::new(
+                self.cursor(),
+                key_filter,
+                value_filter.unwrap(),
+                snapshot,
             ))
         }
     }
@@ -420,7 +438,7 @@ where
     fn consuming_cursor(
         &mut self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         self.merge_cursor(key_filter, value_filter)
     }
@@ -449,10 +467,14 @@ where
     /// the implementation need not attempt to cache the return value.
     fn approximate_byte_size(&self) -> usize;
 
-    /// Number of bytes used as a Bloom filter for [Cursor::seek_key_exact].
-    ///
-    /// Only some kinds of batches use a filter; others should return 0.
-    fn filter_size(&self) -> usize;
+    /// Statistics of the Bloom filter used by [Cursor::seek_key_exact].
+    /// The Bloom filter (kept in memory) is used there to quickly check
+    /// whether a key might be present in the batch, before doing a
+    /// binary tree lookup within the batch to be exactly sure.
+    /// The statistics include for example the size in bytes and the hit rate.
+    /// Only some kinds of batches use a filter; others should return
+    /// `BloomFilterStats::default()`.
+    fn filter_stats(&self) -> BloomFilterStats;
 
     /// Where the batch's data is stored.
     fn location(&self) -> BatchLocation {
@@ -574,7 +596,7 @@ where
     fn merge_cursor(
         &self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         (**self).merge_cursor(key_filter, value_filter)
     }
@@ -587,8 +609,8 @@ where
     fn approximate_byte_size(&self) -> usize {
         (**self).approximate_byte_size()
     }
-    fn filter_size(&self) -> usize {
-        (**self).filter_size()
+    fn filter_stats(&self) -> BloomFilterStats {
+        (**self).filter_stats()
     }
     fn location(&self) -> BatchLocation {
         (**self).location()
@@ -612,7 +634,7 @@ where
     fn consuming_cursor(
         &mut self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         (**self).merge_cursor(key_filter, value_filter)
     }
@@ -645,11 +667,11 @@ where
 {
     /// A batch type equivalent to `Self`, but with timestamp type `T` instead of `Self::Time`.
     type Timed<T: Timestamp>: Batch<
-        Key = <Self as BatchReader>::Key,
-        Val = <Self as BatchReader>::Val,
-        Time = T,
-        R = <Self as BatchReader>::R,
-    >;
+            Key = <Self as BatchReader>::Key,
+            Val = <Self as BatchReader>::Val,
+            Time = T,
+            R = <Self as BatchReader>::R,
+        >;
 
     /// A type used to assemble batches from disordered updates.
     type Batcher: Batcher<Self>;
@@ -1131,7 +1153,7 @@ pub fn merge_batches<B, T>(
     factories: &B::Factories,
     batches: T,
     key_filter: &Option<Filter<B::Key>>,
-    value_filter: &Option<Filter<B::Val>>,
+    value_filter: &Option<GroupFilter<B::Val>>,
 ) -> B
 where
     T: IntoIterator<Item = B>,
@@ -1175,10 +1197,10 @@ pub fn merge_batches_by_reference<'a, B, T>(
     factories: &B::Factories,
     batches: T,
     key_filter: &Option<Filter<B::Key>>,
-    value_filter: &Option<Filter<B::Val>>,
+    value_filter: &Option<GroupFilter<B::Val>>,
 ) -> B
 where
-    T: IntoIterator<Item = &'a B> + Clone,
+    T: IntoIterator<Item = &'a B>,
     B: Batch,
 {
     // Collect input batches, discarding empty batches.
@@ -1363,11 +1385,11 @@ where
 #[cfg(test)]
 mod serialize_test {
     use crate::{
+        DynZWeight, OrdIndexedZSet,
         algebra::OrdIndexedZSet as DynOrdIndexedZSet,
         dynamic::DynData,
         indexed_zset,
-        trace::{deserialize_indexed_wset, serialize_indexed_wset, BatchReader},
-        DynZWeight, OrdIndexedZSet,
+        trace::{BatchReader, deserialize_indexed_wset, serialize_indexed_wset},
     };
 
     #[test]

@@ -10,10 +10,10 @@ use crate::{
     storage::{
         buffer_cache::BufferCache,
         file::{
-            reader::{
-                decompress, ColumnSpec, DataBlock, Error, FilteredKeys, Reader, TreeBlock, TreeNode,
-            },
             Factories,
+            reader::{
+                ColumnSpec, DataBlock, Error, FilteredKeys, Reader, TreeBlock, TreeNode, decompress,
+            },
         },
     },
     trace::{VecIndexedWSet, VecIndexedWSetFactories},
@@ -198,15 +198,15 @@ where
             pending: 0,
             _phantom: PhantomData,
         };
-        if !this.keys.is_empty() {
-            if let Some(node) = &reader.columns[0].root {
-                let mut reads = Vec::new();
-                this.try_read(
-                    Fetch0Read::new(0..this.keys.len(), node.clone()),
-                    &mut reads,
-                )?;
-                this.start_reads(reads);
-            }
+        if !this.keys.is_empty()
+            && let Some(node) = &reader.columns[0].root
+        {
+            let mut reads = Vec::new();
+            this.try_read(
+                Fetch0Read::new(0..this.keys.len(), node.clone()),
+                &mut reads,
+            )?;
+            this.start_reads(reads);
         }
         Ok(this)
     }
@@ -266,6 +266,7 @@ where
                 &read.node,
                 &self.cache,
                 self.reader.file_handle().file_id(),
+                self.reader.file.version,
             )
             .unwrap();
             self.process_read(&read.keys, tree_block, reads)?;
@@ -486,15 +487,15 @@ where
             out_of_order: BTreeMap::new(),
             pending: 0,
         };
-        if !this.rows.is_empty() {
-            if let Some(node) = &source.reader.columns[1].root {
-                let mut reads = Vec::new();
-                this.try_read(
-                    Fetch1Read::new(Rows::new(&this.rows), node.clone()),
-                    &mut reads,
-                )?;
-                this.start_reads(reads);
-            }
+        if !this.rows.is_empty()
+            && let Some(node) = &source.reader.columns[1].root
+        {
+            let mut reads = Vec::new();
+            this.try_read(
+                Fetch1Read::new(Rows::new(&this.rows), node.clone()),
+                &mut reads,
+            )?;
+            this.start_reads(reads);
         }
         Ok(this)
     }
@@ -581,6 +582,7 @@ where
                 &read.node,
                 &self.cache,
                 self.reader.file_handle().file_id(),
+                self.reader.file.version,
             )
             .unwrap();
             self.process_read(read.keys, tree_block, reads)?;

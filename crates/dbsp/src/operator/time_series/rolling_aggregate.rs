@@ -1,7 +1,9 @@
 use crate::{
+    DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream, ZWeight,
     algebra::{MulByRef, UnsignedPrimInt},
     dynamic::{DowncastTrait, DynData, DynDataTyped, DynOpt, DynPair, DynWeight},
     operator::{
+        Aggregator,
         dynamic::{
             aggregate::DynAggregatorImpl,
             time_series::{
@@ -10,11 +12,9 @@ use crate::{
                 PartitionedRollingAverageFactories, RelRange,
             },
         },
-        Aggregator,
     },
     typed_batch::{DynOrdIndexedZSet, TypedBatch, TypedBox},
     utils::Tup2,
-    DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream, ZWeight,
 };
 use std::{mem::take, ops::Div};
 

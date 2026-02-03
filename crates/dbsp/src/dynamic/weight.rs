@@ -1,8 +1,8 @@
 use crate::{
+    DBWeight,
     algebra::{AddAssignByRef, AddByRef, HasZero},
     declare_trait_object, declare_typed_trait_object,
     dynamic::data::DataTyped,
-    DBWeight,
 };
 
 use super::{Data, DataTrait, DataTraitTyped};
@@ -42,11 +42,11 @@ impl<T: DBWeight> Weight for T {
     }
 
     unsafe fn raw_add(&self, rhs: *const u8, result: *mut u8) {
-        *(result as *mut Self) = AddByRef::add_by_ref(self, &*(rhs as *const Self))
+        unsafe { *(result as *mut Self) = AddByRef::add_by_ref(self, &*(rhs as *const Self)) }
     }
 
     unsafe fn raw_add_assign(&mut self, rhs: *const u8) {
-        AddAssignByRef::add_assign_by_ref(self, &*(rhs as *const Self))
+        unsafe { AddAssignByRef::add_assign_by_ref(self, &*(rhs as *const Self)) }
     }
 }
 

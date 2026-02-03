@@ -1,27 +1,27 @@
 //! [StorageBackend] implementation using POSIX I/O.
 
 use super::{
-    BlockLocation, FileId, FileReader, FileRw, FileWriter, StorageCacheFlags, StorageError,
-    MUTABLE_EXTENSION,
+    BlockLocation, FileId, FileReader, FileRw, FileWriter, MUTABLE_EXTENSION, StorageCacheFlags,
+    StorageError,
 };
+use crate::Runtime;
 use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED};
 use crate::storage::{buffer_cache::FBuf, init};
-use crate::Runtime;
 use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
     WRITE_LATENCY_MICROSECONDS,
 };
 use feldera_storage::tokio::TOKIO;
 use feldera_storage::{
-    append_to_path, default_read_async, FileCommitter, StorageBackend, StorageBackendFactory,
-    StorageFileType, StoragePath, StoragePathPart,
+    FileCommitter, StorageBackend, StorageBackendFactory, StorageFileType, StoragePath,
+    StoragePathPart, append_to_path, default_read_async,
 };
 use feldera_types::config::{
     FileBackendConfig, StorageBackendConfig, StorageCacheConfig, StorageConfig,
 };
 use std::ffi::OsString;
 use std::fmt::Debug;
-use std::fs::{create_dir_all, DirEntry};
+use std::fs::{DirEntry, create_dir_all};
 use std::io::{ErrorKind, IoSlice, Write};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -31,8 +31,8 @@ use std::{
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicI64, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicI64, Ordering},
     },
 };
 use tracing::warn;

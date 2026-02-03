@@ -1,4 +1,4 @@
-use crate::{some_function1, some_polymorphic_function1, some_polymorphic_function2, SqlString};
+use crate::{SqlString, some_function1, some_polymorphic_function1, some_polymorphic_function2};
 use dbsp::algebra::{F32, F64};
 use lexical_core::format::STANDARD;
 use lexical_core::{ToLexicalWithOptions, WriteFloatOptions};

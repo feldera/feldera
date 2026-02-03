@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
@@ -20,52 +21,50 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
-import org.dbsp.util.ExplicitShuffle;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Shuffle;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.List;
 import java.util.Objects;
 
 /** Discovers whether a closure is just a projection:
  * selects some fields from the input tuple.
- * A conservative approximation. */
+ * A conservative approximation; it does not handle nested tuples. */
 public class Projection extends InnerVisitor {
     @Nullable
     public DBSPClosureExpression expression;
     /** Set to true if this is indeed a projection. */
     public boolean isProjection;
-    /** Parameters of the enclosing closure. */
+    /** Parameters of the analyzed closure. */
     @Nullable public DBSPParameter[] parameters;
     final ResolveReferences resolver;
     /** If true consider casts from a type to the same type non-nullable as noops */
     final boolean allowNoopCasts;
-    /** If true consider projections functions that return nested tuples to a bigger depth than 2 */
+    /** If true, analyze functions that return nested tuples to a bigger depth than 2; these can be projections */
     final boolean allowDeepTuples;
 
-    /** If the description can be described as a shuffle, this is it.
-     * For a projection to be described as a shuffle,
-     * it cannot contain constant fields, or nested fields.
-     * (a.1, a.3) can
-     * (2, a.3, a.3.2) cannot
-     * Only makes sense for functions with a single parameter. */
-    @Nullable
-    List<Integer> shuffle;
+    /** True if the analyzed function only contains tuple from fields of the input parameter.
+     * E.g., it cannot contain constant fields, or nested fields.
+     * (a.1, a.3) returns true, while
+     * (2, a.3, a.3.2) return false.
+     * Only defined for functions with a single parameter. */
+    boolean onlyFieldAccesses;
 
     /** A pair containing an input (parameter) number (0, 1, 2, etc.)
      * and an index field in the tuple of the corresponding input .*/
-    public record InputAndFieldIndex(int inputIndex, int fieldIndex) {}
+    public record InputAndFieldIndex(int inputIndex, int fieldIndex) {
+        @Override
+        public String toString() {
+            return this.inputIndex + "." + this.fieldIndex;
+        }
+    }
 
     /**
      * A list describing how each output of a projection is computed.
@@ -109,25 +108,24 @@ public class Projection extends InnerVisitor {
     @Nullable
     IOMap ioMap;
 
-    void notShuffle() {
-        this.shuffle = null;
+    /** The analyzed function does not only contain simple field accesses */
+    void notOnlyFields() {
+        this.onlyFieldAccesses = false;
         this.ioMap = null;
     }
 
     VisitDecision notProjection() {
-        this.notShuffle();
+        this.notOnlyFields();
         this.isProjection = false;
         this.parameters = null;
         return VisitDecision.STOP;
     }
 
-    int currentParameterIndex = -1;
-
     public Projection(DBSPCompiler compiler, boolean allowNoopCasts, boolean allowDeepTuples) {
         super(compiler);
         this.isProjection = true;
         this.ioMap = new IOMap();
-        this.shuffle = new ArrayList<>();
+        this.onlyFieldAccesses = true;
         this.resolver = new ResolveReferences(compiler, false);
         this.allowNoopCasts = allowNoopCasts;
         this.allowDeepTuples = allowDeepTuples;
@@ -162,15 +160,15 @@ public class Projection extends InnerVisitor {
         return this.notProjection();
     }
 
-    @Override
-    public VisitDecision preorder(DBSPVariablePath path) {
-        IDBSPDeclaration declaration = this.resolver.reference.getDeclaration(path);
+    /** Which parameter of the current function is referenced by this variable?
+     * @return -1 if there is no such parameter. */
+    int getParameterIndex(DBSPVariablePath var) {
+        IDBSPDeclaration declaration = this.resolver.reference.getDeclaration(var);
         if (!declaration.is(DBSPParameter.class)) {
-            return this.notProjection();
+            return -1;
         }
         DBSPParameter param = declaration.to(DBSPParameter.class);
-        this.currentParameterIndex = ArrayUtils.indexOf(this.parameters, param);
-        return VisitDecision.CONTINUE;
+        return ArrayUtils.indexOf(this.parameters, param);
     }
 
     @Override
@@ -183,7 +181,15 @@ public class Projection extends InnerVisitor {
                     expression.expression.to(DBSPFieldExpression.class)
                             .expression.is(DBSPVariablePath.class);
         if (!legal) {
-            this.notShuffle();
+            this.notOnlyFields();
+        }
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPVariablePath var) {
+        if (this.getParameterIndex(var) < 0) {
+            return this.notProjection();
         }
         return VisitDecision.CONTINUE;
     }
@@ -191,9 +197,7 @@ public class Projection extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
         DBSPType type = expression.getType();
-        if (!expression.source.getType().withMayBeNull(true)
-                .sameType(type.withMayBeNull(true)) ||
-                !this.allowNoopCasts) {
+        if (!expression.source.getType().sameTypeIgnoringNullability(type) || !this.allowNoopCasts) {
             // A cast which only changes nullability is
             // considered an identity function
             return this.notProjection();
@@ -205,18 +209,16 @@ public class Projection extends InnerVisitor {
     public VisitDecision preorder(DBSPFieldExpression field) {
         if (!field.expression.is(DBSPDerefExpression.class) &&
             !field.expression.is(DBSPUnwrapCustomOrdExpression.class)) {
-            this.notShuffle();
+            this.notOnlyFields();
             return VisitDecision.CONTINUE;
         }
-        if (this.shuffle != null)
-            this.shuffle.add(field.fieldNo);
         return VisitDecision.CONTINUE;
     }
 
     @Override
     public VisitDecision preorder(DBSPUnwrapCustomOrdExpression field) {
         if (!field.expression.is(DBSPDerefExpression.class)) {
-            this.notShuffle();
+            this.notOnlyFields();
             return VisitDecision.CONTINUE;
         }
         return VisitDecision.CONTINUE;
@@ -228,25 +230,39 @@ public class Projection extends InnerVisitor {
             this.notProjection();
             return VisitDecision.CONTINUE;
         }
-        if (this.shuffle != null)
-            this.shuffle.add(field.fieldNo);
         return VisitDecision.CONTINUE;
+    }
+
+    void field(DBSPExpression source, int field) {
+        if (this.ioMap == null)
+            return;
+
+        // Extract the variable from patterns of the form var.field or (*var).field
+        DBSPVariablePath var = null;
+        if (source.is(DBSPDerefExpression.class))
+            source = source.to(DBSPDerefExpression.class).expression;
+        if (source.is(DBSPVariablePath.class))
+            var = source.to(DBSPVariablePath.class);
+        if (var == null) {
+            this.notProjection();
+            return;
+        }
+        int paramIndex = this.getParameterIndex(var);
+        if (paramIndex >= 0) {
+            this.ioMap.add(paramIndex, field);
+        } else {
+            this.notProjection();
+        }
     }
 
     @Override
     public void postorder(DBSPFieldExpression field) {
-        if (this.ioMap != null) {
-            Utilities.enforce(this.currentParameterIndex >= 0);
-            this.ioMap.add(this.currentParameterIndex, field.fieldNo);
-        }
+        this.field(field.expression, field.fieldNo);
     }
 
     @Override
     public void postorder(DBSPCustomOrdField field) {
-        if (this.ioMap != null) {
-            Utilities.enforce(this.currentParameterIndex >= 0);
-            this.ioMap.add(this.currentParameterIndex, field.fieldNo);
-        }
+        this.field(field.expression, field.fieldNo);
     }
 
     @Override
@@ -257,18 +273,30 @@ public class Projection extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPUnwrapExpression expression) { return VisitDecision.CONTINUE; }
 
+    VisitDecision checkNestedTuples(DBSPBaseTupleExpression expression) {
+        if (expression.fields != null) {
+            // If this creates a nested tuple, give up.
+            for (DBSPExpression field : expression.fields)
+                if (field.type.is(DBSPTypeTupleBase.class)) {
+                    this.notOnlyFields();
+                    return VisitDecision.STOP;
+                }
+        }
+        return VisitDecision.CONTINUE;
+    }
+
     @Override
     public VisitDecision preorder(DBSPTupleExpression expression) {
-        return VisitDecision.CONTINUE;
+        return this.checkNestedTuples(expression);
     }
 
     @Override
     public VisitDecision preorder(DBSPRawTupleExpression expression) {
-        return VisitDecision.CONTINUE;
+        return this.checkNestedTuples(expression);
     }
 
     public VisitDecision preorder(DBSPLiteral expression) {
-        this.notShuffle();
+        this.notOnlyFields();
         return VisitDecision.CONTINUE;
     }
 
@@ -307,10 +335,7 @@ public class Projection extends InnerVisitor {
             return this.notProjection();
         // Currently skip expressions that return nested tuples
         if (!this.isSimpletuple(expression.body.getType())) {
-            if (this.allowDeepTuples) {
-                // Give up maintaining the iomap
-                this.notShuffle();
-            } else {
+            if (!this.allowDeepTuples) {
                 return this.notProjection();
             }
         }
@@ -319,66 +344,38 @@ public class Projection extends InnerVisitor {
         return VisitDecision.CONTINUE;
     }
 
-    public Shuffle getShuffle() {
-        Utilities.enforce(this.isProjection);
-        Utilities.enforce(this.parameters != null);
-        DBSPType type = this.parameters[0].getType();
-        int size = type.deref().to(DBSPTypeTupleBase.class).size();
-        return new ExplicitShuffle(size, Objects.requireNonNull(this.shuffle));
-    }
-
-    /** Compose this projection with a constant expression.
-     * @param before Constant expression.
-     * @return A new constant expression. */
-    public DBSPExpression applyAfter(DBSPZSetExpression before) {
-        Objects.requireNonNull(this.expression);
-
-        Map<DBSPExpression, Long> result = new HashMap<>();
-        InnerPasses inner = new InnerPasses(
-                new BetaReduction(this.compiler),
-                new Simplify(this.compiler)
-        );
-
-        DBSPType elementType = this.expression.getResultType();
-        for (Map.Entry<DBSPExpression, Long> entry: before.data.entrySet()) {
-            DBSPExpression row = entry.getKey();
-            DBSPExpression apply = this.expression.call(row.borrow());
-            DBSPExpression simplified = inner.apply(apply).to(DBSPExpression.class);
-            result.put(simplified, entry.getValue());
-        }
-        return new DBSPZSetExpression(result, elementType);
-    }
-
     @Override
     public void startVisit(IDBSPInnerNode node) {
         this.resolver.apply(node);
         super.startVisit(node);
         this.ioMap = new IOMap();
-        this.shuffle = new ArrayList<>();
+        this.onlyFieldAccesses = true;
         this.isProjection = true;
     }
 
     @Override
     public void endVisit() {
         if (this.ioMap != null && this.expression != null) {
-            DBSPTypeTupleBase bodyType = this.expression.body.getType().to(DBSPTypeTupleBase.class);
-            int iomapSize = this.ioMap.fields().size();
-            if (bodyType.is(DBSPTypeRawTuple.class)) {
-                Utilities.enforce(bodyType.tupFields.length == 2);
-                int totalSize = bodyType.tupFields[0].to(DBSPTypeTupleBase.class).size() +
-                        bodyType.tupFields[1].to(DBSPTypeTupleBase.class).size();
-                Utilities.enforce(iomapSize == totalSize,
-                        () -> "IOMap has " + iomapSize + " fields, but expected " + totalSize);
-            } else {
-                Utilities.enforce(iomapSize == bodyType.size(),
-                        () -> "IOMap has " + iomapSize + " fields, but expected " + bodyType.size());
+            DBSPTypeTupleBase bodyType = this.expression.body.getType().as(DBSPTypeTupleBase.class);
+            if (bodyType != null) {
+                int iomapSize = this.ioMap.fields().size();
+                if (bodyType.is(DBSPTypeRawTuple.class)) {
+                    Utilities.enforce(bodyType.tupFields.length == 2);
+                    int totalSize = bodyType.tupFields[0].to(DBSPTypeTupleBase.class).size() +
+                            bodyType.tupFields[1].to(DBSPTypeTupleBase.class).size();
+                    Utilities.enforce(iomapSize == totalSize,
+                            () -> "IOMap has " + iomapSize + " fields, but expected " + totalSize);
+                } else {
+                    Utilities.enforce(iomapSize == bodyType.size(),
+                            () -> "IOMap has " + iomapSize + " fields, but expected " + bodyType.size());
+                }
             }
         }
     }
 
-    public boolean isShuffle() {
+    public boolean isOnlyFieldAccesses() {
         Utilities.enforce(Objects.requireNonNull(this.parameters).length == 1);
-        return this.shuffle != null;
+        return this.onlyFieldAccesses;
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")

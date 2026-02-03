@@ -51,6 +51,7 @@ state is tracked by the storage status.
 - `deployment_initial` (set when desired status becomes `Provisioned`, unset becoming `Stopping`
   or desired status becomes `Stopped` while status is still `Stopped`)
 - `deployment_resources_status`
+- `deployment_resources_status_details` (unset becoming `Stopped`)
 - `deployment_resources_status_since`
 - `deployment_resources_desired_status`
 - `deployment_resources_desired_status_since`
@@ -146,6 +147,7 @@ The one exception to this is `/stop?force=false`, which will result in a forcefu
 
 **Relevant API fields:**
 - `deployment_runtime_status`
+- `deployment_runtime_status_details`
 - `deployment_runtime_status_since`
 - `deployment_runtime_desired_status`
 - `deployment_runtime_desired_status_since`
@@ -155,6 +157,7 @@ The one exception to this is `/stop?force=false`, which will result in a forcefu
 | Runtime status        | Description                                                                                                                                                                                                                                                                                                                                                  |
 |-----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Unavailable**       | Unable to determine the current runtime status. This status is never returned by the pipeline endpoint itself, but only determined by the runner. This can occur notably in two scenarios: (1) the runner is unable to (in time) receive a response for its sent request to the pipeline status endpoint, or (2) it received back a 503 Service Unavailable. |
+| **Coordination**      | In a multihost pipeline, this status indicates that an individual host is waiting for instructions from the coordinator.  This status should never be visible to the user, since the user does not connect directly to individual hosts in a multihost pipeline.                                                                                             |
 | **Standby***          | The pipeline constantly pulling the latest checkpoint to S3 but not processing any inputs.                                                                                                                                                                                                                                                                   |
 | **AwaitingApproval*** | The pipeline has been modified and is currently awaiting the user's approval to proceed with bootstrapping modified views. See [Modifying a Pipeline](/pipelines/modifying) for details.                                                                                                                                                                     |
 | **Initializing**      | The input and output connectors are establishing connections to their data sources and sinks respectively.                                                                                                                                                                                                                                                   |

@@ -484,7 +484,14 @@ public class CastTests extends SqlIoTest {
                 "Cast function cannot convert value of type DATE NOT NULL to type INTEGER");
 
         this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(X'01' AS TIME)",
-                "Cast function cannot convert BINARY value to ");
+                "CAST cannot be used to convert BINARY(1) to TIME");
+    }
+
+    @Test
+    public void testIntervalCast() {
+        this.getCCS("CREATE VIEW V AS SELECT " +
+                "CAST(CAST('3:4' AS INTERVAL MINUTES TO SECONDS) AS INTERVAL HOURS TO MINUTES)," +
+                "CAST(CAST('3:4' AS INTERVAL MINUTES TO SECONDS) AS INTERVAL HOURS);");
     }
 
     @Test
@@ -581,8 +588,6 @@ public class CastTests extends SqlIoTest {
 
         final CanConvert T = CanConvert.T;
         final CanConvert F = CanConvert.F;
-        // TODO: https://issues.apache.org/jira/browse/CALCITE-6779
-        final CanConvert N = CanConvert.N;
 
         // Rows and columns match the array of types above.
         final CanConvert[][] legal = {
@@ -590,14 +595,14 @@ public class CastTests extends SqlIoTest {
 /*From                                                                                                                    */
 /* N */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F },
 /* B */{ F, T, F, F, F, F, F, F, F, F, F, F, F, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F },
-/* I8*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
-/*I16*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
-/*I32*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
-/*I64*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
-/* U8*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
-/*U16*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
-/*U32*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
-/*U64*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/* I8*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/*I16*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/*I32*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/*I64*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/* U8*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/*U16*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/*U32*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
+/*U64*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
 /*Dec*/{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T, T, T, T, F, T, F, F, T, F, F, F, F, T, F, F, F, F, T, F },
 /* r */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F, F, F, F, T, F },
 /* d */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F, F, F, F, T, F },
@@ -625,7 +630,7 @@ public class CastTests extends SqlIoTest {
 /* a */{ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, F, T, F },
 /* m */{ F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, F },
 /* V */{ F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T },
-/* U */{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, N, N, N, F, F, F, T, T },
+/* U */{ F, F, F, F, F, F, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, T, T },
         };
 
         Assert.assertEquals(types.length, legal.length);
@@ -658,7 +663,9 @@ public class CastTests extends SqlIoTest {
                 if (ok == CanConvert.F) {
                     if (!value.equals("NULL") && !from.equals("NULL") && !to.equals("NULL")) {
                         String statement = "CREATE VIEW V AS SELECT CAST(CAST(" + value + " AS " + from + ") AS " + to + ")";
-                        this.statementsFailingInCompilation(statement, "Cast function cannot convert");
+                        // Calcite and our extra validator produce different error messages,
+                        // but they both include the string 'convert'
+                        this.statementsFailingInCompilation(statement, "convert");
                     }
                     continue;
                 }

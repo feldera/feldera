@@ -4,7 +4,7 @@ keywords = ["DBSP", "streaming", "analytics", "Nexmark", "benchmark"]
 categories = []
 publish = false
 
-edition = { workspace = true }
+edition = "2024"
 version = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
@@ -41,6 +41,7 @@ cached = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 rkyv = { workspace = true, features = ["std", "size_64"] }
 size-of = { workspace = true, features = ["hashbrown", "xxhash-xxh3", "rust_decimal"] }
+feldera-macros = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

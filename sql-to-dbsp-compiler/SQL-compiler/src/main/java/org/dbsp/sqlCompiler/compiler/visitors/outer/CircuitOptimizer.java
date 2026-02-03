@@ -33,7 +33,7 @@ import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ImplementStatics;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
@@ -73,6 +73,8 @@ public class CircuitOptimizer extends Passes {
         // this.dump(3);
         // First part of optimizations may still synthesize some circuit components
         this.add(new ImplementNow(compiler));
+        if (compiler.options.ioOptions.correlatedColumns)
+            this.add(new Lineage(compiler));
         this.add(new DeterministicFunctions(compiler));
         this.add(new NoConnectorMetadata(compiler).getCircuitVisitor(true));
         this.add(new StopOnError(compiler));
@@ -127,7 +129,6 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveDeindexOperators(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         this.add(new RemoveIdentityOperators(compiler));
-        this.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
         this.add(new OptimizeWithGraph(compiler,
                 g -> new OptimizeMaps(compiler, false, g, operatorsAnalyzed)));
@@ -141,13 +142,15 @@ public class CircuitOptimizer extends Passes {
         this.add(new LowerAsof(compiler));
         this.add(new LowerCircuitVisitor(compiler));
         this.add(new AdjustSqlIndex(compiler).circuitRewriter(true));
+        this.add(new OptimizeWithGraph(compiler, g -> new BalancedJoins(compiler, g), 1));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
         this.add(new ImplementChains(compiler));
-        // Lowering may surface additional casts that need to be expanded
-        this.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
-        this.add(new CSE(compiler));
+        this.add(new ExpandCasts(compiler));
+        this.add(new Simplify(compiler).getCircuitRewriter(true));
         this.add(new ExpandJoins(compiler));
         this.add(new RemoveViewOperators(compiler, true));
+        this.add(new OptimizeWithGraph(compiler, g -> new PushDifferentialsUp(compiler, g)));
+        this.add(new CSE(compiler));
         this.add(new CircuitRewriter(compiler, new InnerCSE(compiler), true, InnerCSE::process));
         this.add(new CreateRuntimeErrorWrappers(compiler).getCircuitRewriter(true));
         this.add(new OptimizeWithGraph(compiler, g -> new StrayGC(compiler, g)));
@@ -161,6 +164,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new CompactNames(compiler));
         this.add(new MerkleOuter(compiler, true));
         this.add(new MerkleOuter(compiler, false));
+        this.add(new CircuitStatistics(compiler));
     }
 
     public DBSPCircuit optimize(DBSPCircuit input) {

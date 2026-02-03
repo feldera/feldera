@@ -11,6 +11,7 @@ import org.apache.calcite.rel.core.Correlate;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
+import org.apache.calcite.rel.rules.SingleValuesOptimizationRules;
 import org.apache.calcite.sql2rel.RelDecorrelator;
 import org.apache.calcite.tools.RelBuilder;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -193,17 +194,19 @@ public class CalciteOptimizer implements IWritesLogs {
 
         this.addStep(new SimpleOptimizerStep("Constant fold", 2,
                 CoreRules.COERCE_INPUTS,
+                SingleValuesOptimizationRules.JOIN_LEFT_INSTANCE,
+                SingleValuesOptimizationRules.JOIN_RIGHT_INSTANCE,
+                SingleValuesOptimizationRules.JOIN_LEFT_PROJECT_INSTANCE,
+                SingleValuesOptimizationRules.JOIN_RIGHT_PROJECT_INSTANCE,
                 ReduceExpressionsRule.FILTER_REDUCE_EXPRESSIONS,
                 ReduceExpressionsRule.PROJECT_REDUCE_EXPRESSIONS,
                 ReduceExpressionsRule.JOIN_REDUCE_EXPRESSIONS,
                 ReduceExpressionsRule.WINDOW_REDUCE_EXPRESSIONS,
                 ReduceExpressionsRule.CALC_REDUCE_EXPRESSIONS,
                 CoreRules.CALC_REDUCE_DECIMALS,
-                CoreRules.FILTER_VALUES_MERGE,
-                CoreRules.PROJECT_FILTER_VALUES_MERGE,
-                // Rule is buggy; disabled due to
-                // https://github.com/feldera/feldera/issues/217
-                // CoreRules.PROJECT_VALUES_MERGE
+                ValuesReduceRule.FILTER_VALUES_MERGE,
+                ValuesReduceRule.PROJECT_FILTER_VALUES_MERGE,
+                ValuesReduceRule.PROJECT_VALUES_MERGE,
                 CoreRules.AGGREGATE_VALUES));
         this.addStep(new SimpleOptimizerStep("Remove empty relations", 0,
                 PruneEmptyRules.UNION_INSTANCE,
@@ -233,7 +236,7 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.SORT_REMOVE_CONSTANT_KEYS));
         this.addStep(new SimpleOptimizerStep("Simplify correlates", 0,
                 CoreRules.PROJECT_CORRELATE_TRANSPOSE,
-                FilterCorrelateRule.FILTER_CORRELATE));
+                CoreRules.FILTER_CORRELATE));
         this.addStep(merge);
 
         var joinOrder = new BaseOptimizerStep("Join order", 2) {
@@ -249,12 +252,10 @@ public class CalciteOptimizer implements IWritesLogs {
                         CoreRules.JOIN_EXPAND_OR_TO_UNION_RULE,
                         CoreRules.JOIN_CONDITION_PUSH,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
-                        // Below rule crashes with test NaiveIncrementalTests.inTest
                         // CoreRules.JOIN_PUSH_TRANSITIVE_PREDICATES,
-                        // https://issues.apache.org/jira/browse/CALCITE-5387
-                        // TODO: Rule is unsound
-                        // https://github.com/feldera/feldera/issues/1702
-                        CoreRules.FILTER_INTO_JOIN
+                        CoreRules.FILTER_INTO_JOIN,
+                        // Sometimes this sequence generates extra filters which can be merged
+                        CoreRules.FILTER_MERGE
                 );
                 OuterJoinFinder finder = new OuterJoinFinder();
                 finder.run(node);
@@ -280,8 +281,8 @@ public class CalciteOptimizer implements IWritesLogs {
         this.addStep(joinOrder);
 
         this.addStep(new SimpleOptimizerStep("Decorrelate UNNEST", 2,
-                new DecorrelateUnnest(),
-                new DecorrelateProjectedUnnest()));
+                CoreRules.UNNEST_DECORRELATE,
+                CoreRules.UNNEST_PROJECT_DECORRELATE));
         this.addStep(new SimpleOptimizerStep("Decorrelate inner queries 1", 2,
                 new InnerDecorrelator()));
         this.addStep(new SimpleOptimizerStep("Correlate/Union", 2,
@@ -310,14 +311,13 @@ public class CalciteOptimizer implements IWritesLogs {
         this.addStep(new SimpleOptimizerStep("Expand windows", 0,
                 CoreRules.PROJECT_OVER_SUM_TO_SUM0_RULE,
                 // I suspect that in the absence of the above rule
-                // there is a bug in Calcite in RexOVer which causes
+                // there is a bug in Calcite in RexOver which causes
                 // the following rule to crash the ComplexQueriesTest.calcite6020issueTest().
                 // See discussion in https://issues.apache.org/jira/browse/CALCITE-6020
                 CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW
         ));
         this.addStep(new SimpleOptimizerStep("Isolate DISTINCT aggregates", 0,
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN,
-                // Rule is unsound https://issues.apache.org/jira/browse/CALCITE-6403
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES
         ));
         var hyper = new BaseOptimizerStep("Hypergraph", 0) {
@@ -337,7 +337,7 @@ public class CalciteOptimizer implements IWritesLogs {
         // this.addStep(merge); -- messes up the shape of uncollect
 
         this.addStep(new SimpleOptimizerStep("Move projections", 0,
-                // Rule is unsound: https://issues.apache.org/jira/browse/CALCITE-6681
+                // Tests that fail: IncrementalRegressionTests.issue5182, issue5182a, issue5182b
                 // CoreRules.PROJECT_CORRELATE_TRANSPOSE,
                 CoreRules.PROJECT_WINDOW_TRANSPOSE,
                 CoreRules.PROJECT_SET_OP_TRANSPOSE,
@@ -369,8 +369,6 @@ public class CalciteOptimizer implements IWritesLogs {
                         CoreRules.JOIN_EXPAND_OR_TO_UNION_RULE,
                         CoreRules.EXPAND_FILTER_DISJUNCTION_GLOBAL,
                         CoreRules.EXPAND_JOIN_DISJUNCTION_GLOBAL,
-                        // TODO: Rule is unsound
-                        // https://github.com/feldera/feldera/issues/1702
                         CoreRules.FILTER_INTO_JOIN
                 );
                 return this.builder.build();

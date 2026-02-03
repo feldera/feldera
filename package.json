@@ -1,13 +1,15 @@
 {
   "name": "feldera-js",
+  "dependencies": {
+    "@sveltejs/kit": "^2.49.5",
+    "svelte": "^5.46.4"
+  },
   "private": true,
-  "workspaces": ["js-packages/*"],
   "scripts": {
     "split-claude": "bun scripts/claude.js split",
-    "merge-claude": "bun scripts/claude.js merge"
+    "merge-claude": "bun scripts/claude.js merge",
+    "clean": "rm -rf node_modules js-packages/*/node_modules js-packages/*/dist js-packages/*/build js-packages/*/.svelte-kit target/debug/build/pipeline-manager-* target/release/build/pipeline-manager-*",
+    "check": "cd js-packages/profiler-lib && bun run check && cd ../profiler-layout && bun run check && cd ../profiler-app && bun run check && cd ../web-console && bun run check"
   },
-  "dependencies": {
-    "@sveltejs/kit": "^2.48.4",
-    "svelte": "^5.43.6"
-  }
+  "workspaces": ["js-packages/*"]
 }

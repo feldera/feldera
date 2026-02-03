@@ -54,22 +54,23 @@ use std::{
 };
 
 use crate::{
+    Position,
     circuit::{
-        runtime::{Consensus, Runtime},
+        Circuit, GlobalNodeId, NodeId,
+        circuit_builder::CircuitMetadata,
+        runtime::{Broadcast, Runtime},
         schedule::{
-            util::{circuit_graph, ownership_constraints},
             CommitProgress, Error, Scheduler,
+            util::{circuit_graph, ownership_constraints},
         },
         trace::SchedulerEvent,
-        Circuit, GlobalNodeId, NodeId,
     },
-    Position,
 };
 use petgraph::algo::toposort;
 use tokio::{select, sync::Notify, task::JoinSet};
 
 #[derive(Debug)]
-enum FlushState {
+pub enum FlushState {
     /// The operator is waiting for all predecessors to be flushed.
     UnflushedDependencies(usize),
     /// `flush` has been called, but `flush_complete` hasn't yet returned
@@ -180,8 +181,26 @@ struct Inner {
 
     transaction_phase: TransactionPhase,
 
-    /// Used to synchronize commit completion across all workers.
-    global_commit_consensus: Consensus,
+    /// Used to synchronize commit completion and flush completion across all workers.
+    ///
+    /// This could be implemented using two separate consensus objects, but we combine them
+    /// to reduce the number of communication cycles.
+    ///
+    /// The first bool is true if the commit is complete for the current transaction for
+    /// the local circuit.
+    ///
+    /// The second bool is true if the circuit has received a flush request from the current
+    /// _parent_ circuit transaction. Once all workers have completed the local transaction and
+    /// report flush=true, the circuit can report is_flush_complete=true to the parent.
+    global_commit_consensus: Broadcast<(bool, bool)>,
+
+    /// Broadcast object used to exchange metadata with peers.
+    metadata_broadcast: Broadcast<CircuitMetadata>,
+
+    // True before the circuit has executed any steps.
+    before_first_step: bool,
+
+    flush_state: bool,
 }
 
 impl Inner {
@@ -199,8 +218,7 @@ impl Inner {
             debug_assert_ne!(successor.unsatisfied_dependencies, 0);
             successor.unsatisfied_dependencies -= 1;
             if flush_complete {
-                let FlushState::UnflushedDependencies(ref mut n) = &mut successor.flush_state
-                else {
+                let FlushState::UnflushedDependencies(n) = &mut successor.flush_state else {
                     panic!(
                         "Internal scheduler error: node {node_id} is in state {:?} while it still has unflushed dependencies",
                         successor.flush_state
@@ -343,7 +361,10 @@ impl Inner {
             handles: JoinSet::new(),
             waiting: false,
             transaction_phase: TransactionPhase::Idle,
-            global_commit_consensus: Consensus::new(),
+            global_commit_consensus: Broadcast::new(),
+            metadata_broadcast: Broadcast::new(),
+            before_first_step: true,
+            flush_state: false,
         };
 
         // Setup scheduler callbacks.
@@ -361,6 +382,10 @@ impl Inner {
                     scheduler.notifications.notify(node_id);
                 }
             }
+        }
+
+        if circuit.root_scope() == 0 {
+            circuit.balancer().prepare(circuit);
         }
 
         Ok(scheduler)
@@ -422,12 +447,21 @@ impl Inner {
         }
     }
 
-    fn start_transaction(&mut self) {
-        // Reset unsatisfied dependencies, initialize runnable queue.
+    fn start_transaction<C>(&mut self, circuit: &C)
+    where
+        C: Circuit,
+    {
+        // Reset unflushed dependencies.
         for task in self.tasks.values_mut() {
             task.flush_state = FlushState::UnflushedDependencies(task.num_predecessors);
         }
         self.transaction_phase = TransactionPhase::Started;
+
+        circuit.notify_start_transaction();
+
+        if circuit.root_scope() == 0 {
+            circuit.balancer().start_transaction();
+        }
     }
 
     fn start_commit_transaction(&mut self) -> Result<(), Error> {
@@ -457,8 +491,38 @@ impl Inner {
                 }
             }
         }
+        // if Runtime::worker_index() == 0 {
+        //     println!(
+        //         "{}",
+        //         serde_json::to_string(&circuit.metadata_exchange().get_global_metadata()).unwrap()
+        //     );
+        // }
 
         commit_progress
+    }
+
+    async fn exchange_metadata<C>(&mut self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit,
+    {
+        if circuit.root_scope() != 0 {
+            return Ok(());
+        }
+
+        let metadata = circuit.metadata_exchange().local_metadata().clone();
+        let global_metadata = self.metadata_broadcast.collect(metadata).await?;
+        circuit
+            .metadata_exchange()
+            .set_global_metadata(global_metadata);
+        Ok(())
+    }
+
+    fn flush(&mut self) {
+        self.flush_state = true;
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        !self.flush_state
     }
 
     async fn step<C>(&mut self, circuit: &C) -> Result<(), Error>
@@ -470,15 +534,47 @@ impl Inner {
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
+
+        if self.before_first_step {
+            self.before_first_step = false;
+            self.exchange_metadata(circuit).await?;
+            if circuit.root_scope() == 0 {
+                circuit.balancer().update_metadata();
+            }
+        }
+        if circuit.root_scope() == 0 {
+            circuit.balancer().start_step();
+        }
         let result = self.do_step(circuit).await;
+
+        // Exchange metadata with peers.
+        self.exchange_metadata(circuit).await?;
+        if circuit.root_scope() == 0 {
+            circuit.balancer().update_metadata();
+        }
+
         if let TransactionPhase::Committing(unflushed_operators) = &self.transaction_phase {
-            let commit_complete = self
+            let statuses = self
                 .global_commit_consensus
-                .check(*unflushed_operators == 0)
+                .collect((*unflushed_operators == 0, self.flush_state))
                 .await?;
+
+            let commit_complete = statuses
+                .iter()
+                .all(|(commit_complete, _flush_complete)| *commit_complete);
 
             if commit_complete {
                 self.transaction_phase = TransactionPhase::CommitComplete;
+                let flush_complete = statuses
+                    .iter()
+                    .all(|(_commit_complete, flush_complete)| *flush_complete);
+                if flush_complete {
+                    self.flush_state = false;
+                }
+
+                if circuit.root_scope() == 0 {
+                    circuit.balancer().transaction_committed();
+                }
             }
         }
 
@@ -627,13 +723,13 @@ impl Scheduler for DynamicScheduler {
         Ok(())
     }
 
-    async fn start_transaction<C>(&self, _circuit: &C) -> Result<(), Error>
+    async fn start_transaction<C>(&self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
     {
         let inner = &mut *self.inner_mut();
 
-        inner.start_transaction();
+        inner.start_transaction(circuit);
 
         Ok(())
     }
@@ -658,5 +754,13 @@ impl Scheduler for DynamicScheduler {
 
     fn commit_progress(&self) -> super::CommitProgress {
         self.inner().commit_progress()
+    }
+
+    fn flush(&self) {
+        self.inner_mut().flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.inner().is_flush_complete()
     }
 }

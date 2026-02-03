@@ -1,12 +1,12 @@
 use crate::{
-    circuit::{metadata::OperatorLocation, trace::EdgeKind, GlobalNodeId, NodeId},
+    circuit::{GlobalNodeId, NodeId, metadata::OperatorLocation, trace::EdgeKind},
     monitor::visual_graph::{
         ClusterNode, Edge as VisEdge, Graph as VisGraph, Node as VisNode, SimpleNode,
     },
 };
 use std::{
     borrow::Cow,
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     slice,
 };
 

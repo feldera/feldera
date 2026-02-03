@@ -34,7 +34,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
@@ -56,6 +58,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INTERNED_STRING;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.RAW_TUPLE;
 
 /** Inner visitor that rewrites expressions by
@@ -73,7 +76,7 @@ public class InternInner extends ExpressionTranslator {
     final Set<DBSPStringLiteral> globalStrings;
     /** If true add string literals to globalStrings and replace with an intern(literal) call. */
     final boolean internConstants;
-    /** If true unintern immediately every expression with intered type */
+    /** If true unintern immediately every expression with interned type */
     final boolean uninternEverything;
 
     public InternInner(DBSPCompiler compiler, boolean internConstants,
@@ -251,7 +254,7 @@ public class InternInner extends ExpressionTranslator {
     public static DBSPExpression callUnintern(DBSPExpression interned, DBSPType originalType) {
         return new DBSPApplyExpression(
                 interned.getNode(), uninternFunction, InternInner.nullableString, interned)
-                .cast(interned.getNode(), originalType, false);
+                .cast(interned.getNode(), originalType, DBSPCastExpression.CastType.SqlUnsafe);
     }
 
     public DBSPExpression callUninternRecursive(DBSPExpression interned, DBSPType originalType) {
@@ -267,7 +270,7 @@ public class InternInner extends ExpressionTranslator {
                 Utilities.enforce(internedType.code == originalType.code);
                 DBSPTypeTupleBase tuple = originalType.to(DBSPTypeTupleBase.class);
                 DBSPExpression[] fields = new DBSPExpression[tuple.size()];
-                DBSPExpression safeSource = interned.unwrapIfNullable();
+                DBSPExpression safeSource = interned.unwrapIfNullable("Tuple should not be NULL");
                 for (int i = 0; i < tuple.size(); i++) {
                     DBSPExpression simplified = Simplify.simplify(this.compiler, safeSource.field(i));
                     fields[i] = callUninternRecursive(simplified, tuple.getFieldType(i));
@@ -296,7 +299,7 @@ public class InternInner extends ExpressionTranslator {
     }
 
     public static DBSPExpression callIntern(DBSPExpression argument) {
-        argument = argument.cast(argument.getNode(), nullableString, false);
+        argument = argument.cast(argument.getNode(), nullableString, DBSPCastExpression.CastType.SqlUnsafe);
         return new DBSPApplyExpression(internFunction, DBSPTypeInterned.INSTANCE, argument);
     }
 
@@ -328,10 +331,26 @@ public class InternInner extends ExpressionTranslator {
     }
 
     @Override
+    public void postorder(DBSPSomeExpression expression) {
+        DBSPExpression source = this.getE(expression.expression);
+        if (source.getType().is(DBSPTypeInterned.class))
+            // The interned type is always nullable; we cannot apply Some to a nullable value.
+            this.map(expression, source);
+        else
+            this.map(expression, new DBSPSomeExpression(expression.getNode(), source));
+    }
+
+    @Override
     public void postorder(DBSPAssignmentExpression expression) {
         DBSPExpression left = this.getE(expression.left);
         DBSPExpression result = new DBSPAssignmentExpression(left, this.uninternIfNecessary(expression.right));
         this.map(expression, result);
+    }
+
+    DBSPExpression applyClone(DBSPExpression expression) {
+        if (expression.is(DBSPApplyExpression.class))
+            return expression;
+        return expression.applyCloneIfNeeded();
     }
 
     Pair<DBSPExpression, DBSPExpression> uninternBothOrNone(
@@ -339,6 +358,7 @@ public class InternInner extends ExpressionTranslator {
             DBSPType originalLeftType, DBSPType originalRightType) {
         DBSPTypeCode lCode = left.getType().code;
         DBSPTypeCode rCode = right.getType().code;
+        boolean mayBeNull = left.getType().mayBeNull;
         if (lCode == DBSPTypeCode.TUPLE || lCode == DBSPTypeCode.RAW_TUPLE) {
             Utilities.enforce(lCode == rCode);
             DBSPTypeTupleBase lTuple = originalLeftType.to(DBSPTypeTupleBase.class);
@@ -348,12 +368,28 @@ public class InternInner extends ExpressionTranslator {
             DBSPExpression[] rExpr = new DBSPExpression[lTuple.size()];
             for (int i = 0; i < lTuple.size(); i++) {
                 var fields = this.uninternBothOrNone(
-                        left.field(i).simplify(), right.field(i).simplify(),
+                        left.unwrapIfNullable("Cannot be NULL").field(i).simplify(),
+                        right.unwrapIfNullable("Cannot be NULL").field(i).simplify(),
                         lTuple.getFieldType(i), rTuple.getFieldType(i));
-                lExpr[i] = fields.left.applyCloneIfNeeded();
-                rExpr[i] = fields.right.applyCloneIfNeeded();
+                lExpr[i] = this.applyClone(fields.left);
+                rExpr[i] = this.applyClone(fields.right);
             }
-            return Pair.of(lTuple.makeTuple(lExpr), lTuple.makeTuple(rExpr));
+            DBSPExpression leftResult;
+            DBSPExpression rightResult;
+            if (lCode == DBSPTypeCode.TUPLE) {
+                leftResult = new DBSPTupleExpression(mayBeNull, lExpr);
+                rightResult = new DBSPTupleExpression(mayBeNull, rExpr);
+            } else {
+                leftResult = new DBSPRawTupleExpression(lExpr);
+                rightResult = new DBSPRawTupleExpression(rExpr);
+            }
+            if (mayBeNull) {
+                leftResult = new DBSPIfExpression(left.getNode(), left.is_null(),
+                        leftResult.getType().none(), leftResult).simplify();
+                rightResult = new DBSPIfExpression(right.getNode(), right.is_null(),
+                        rightResult.getType().none(), rightResult).simplify();
+            }
+            return Pair.of(leftResult, rightResult);
         }
         if (lCode == DBSPTypeCode.INTERNED_STRING && rCode != DBSPTypeCode.INTERNED_STRING) {
             left = callUnintern(left, originalLeftType);
@@ -438,6 +474,16 @@ public class InternInner extends ExpressionTranslator {
         } else {
             super.postorder(expression);
         }
+    }
+
+    @Override
+    public void postorder(DBSPUnwrapExpression expression) {
+        DBSPExpression source = this.getE(expression.expression);
+        if (source.getType().code == INTERNED_STRING) {
+            source = this.uninternIfNecessary(expression.expression);
+        }
+        DBSPExpression result = new DBSPUnwrapExpression(expression.message, source);
+        this.map(expression, result);
     }
 
     @Override

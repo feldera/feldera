@@ -58,7 +58,8 @@ pub enum StorageError {
     ObjectStore { kind: ErrorKind, message: String },
 
     /// The requested storage backend is not available.
-    #[error("The requested storage backend ({0:?}) is not available in the open-source version of feldera"
+    #[error(
+        "The requested storage backend ({0:?}) is not available in the open-source version of feldera"
     )]
     BackendNotSupported(Box<StorageBackendConfig>),
 

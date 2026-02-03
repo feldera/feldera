@@ -37,6 +37,13 @@ import java.util.List;
 
 /** Describes a table as produced by a CREATE TABLE DDL statement. */
 public class CreateTableStatement extends CreateRelationStatement {
+    // Some pre-defined property names
+    public static final String MATERIALIZED = "materialized";
+    public static final String APPEND_ONLY = "append_only";
+    public static final String SKIP_UNUSED_COLUMNS = "skip_unused_columns";
+    public static final String CONNECTORS = "connectors";
+    public static final String EXPECTED_SIZE = "expected_size";
+
     public final List<ForeignKey> foreignKeys;
 
     public CreateTableStatement(ParsedStatement node,
@@ -49,16 +56,25 @@ public class CreateTableStatement extends CreateRelationStatement {
     }
 
     public boolean isMaterialized() {
-        String mat = this.getPropertyValue("materialized");
+        String mat = this.getPropertyValue(MATERIALIZED);
         if (mat == null)
             return false;
         return mat.equalsIgnoreCase("true");
     }
 
     public boolean isAppendOnly() {
-        String mat = this.getPropertyValue("append_only");
+        String mat = this.getPropertyValue(APPEND_ONLY);
         if (mat == null)
             return false;
+        return mat.equalsIgnoreCase("true");
+    }
+
+    /** Return 'null' if the field is not defined */
+    @Nullable
+    public Boolean skipUnusedColumns() {
+        String mat = this.getPropertyValue(SKIP_UNUSED_COLUMNS);
+        if (mat == null)
+            return null;
         return mat.equalsIgnoreCase("true");
     }
 

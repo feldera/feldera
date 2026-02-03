@@ -23,6 +23,8 @@
   import { usePopoverTooltip } from '$lib/compositions/common/usePopoverTooltip.svelte'
   import { useReverseScrollContainer } from '$lib/compositions/common/useReverseScrollContainer.svelte'
   import ScrollDownFab from '$lib/components/other/ScrollDownFab.svelte'
+  import SQLValueTooltip from '$lib/components/other/SQLValueTooltip.svelte'
+  import type { SQLValueJS } from '$lib/types/sql'
 
   let {
     changeStream
@@ -31,25 +33,14 @@
   } = $props()
 
   let popupRef: HTMLElement | undefined = $state()
-  let tooltip = usePopoverTooltip(() => popupRef)
+  let tooltip = usePopoverTooltip<SQLValueJS>(() => popupRef)
 
   const reverseScroll = useReverseScrollContainer({
     observeContentSize: () => changeStream.rows.length
   })
 </script>
 
-<div
-  class="bg-white-dark absolute m-0 max-h-[90%] w-max max-w-lg -translate-x-[4.5px] -translate-y-[2.5px] overflow-auto border border-surface-500 px-2 py-2 scrollbar"
-  popover="manual"
-  bind:this={popupRef}
-  style={tooltip.data
-    ? `left: ${tooltip.data.x}px; top: ${tooltip.data.y}px; min-width: ${tooltip.data.targetWidth + 8}px`
-    : ''}
->
-  <div class="whitespace-break-spaces break-words text-surface-950-50">
-    {tooltip.data?.text}
-  </div>
-</div>
+<SQLValueTooltip bind:popupRef tooltipData={tooltip.data}></SQLValueTooltip>
 
 <div class="bg-white-dark relative flex w-full flex-1 flex-col rounded">
   {#if changeStream.totalSkippedBytes}
@@ -67,7 +58,7 @@
         }
       }}
       <div
-        class="h-full overflow-auto scrollbar"
+        class="scrollbar h-full overflow-auto"
         use:reverseScroll.action
         {onscroll}
         bind:clientHeight={_.clientHeight}
@@ -100,30 +91,28 @@
         {@const data = 'insert' in row ? row.insert : row.delete}
         <tr
           style="{style} {padding}"
-          class="h-7 select-none whitespace-nowrap even:bg-surface-50-950"
+          class="h-7 whitespace-nowrap select-none even:bg-surface-50-950"
           oncopy={(e) => {
             e.clipboardData!.setData('text/plain', JSONbig.stringify(row))
             e.preventDefault()
           }}
         >
           {#if 'insert' in row}
-            <td class="block h-7 w-20 bg-opacity-30 pt-1 text-center font-mono bg-success-100-900">
+            <td class=" block h-7 w-20 bg-success-100-900/70 pt-1 text-center font-mono">
               Insert
             </td>
           {:else}
-            <td class="block h-7 w-20 bg-opacity-30 pt-1 text-center font-mono bg-error-100-900">
-              Delete
-            </td>
+            <td class=" block h-7 w-20 bg-error-100-900/70 pt-1 text-center font-mono"> Delete </td>
           {/if}
 
           {#each Object.values(data) as value}
             <SQLValue
               {value}
               class="cursor-pointer"
-              props={(format) => ({
-                onclick: tooltip.showTooltip(format(value)),
+              props={{
+                onclick: tooltip.showTooltip(value),
                 onmouseleave: tooltip.onmouseleave
-              })}
+              }}
             ></SQLValue>
           {/each}
         </tr>

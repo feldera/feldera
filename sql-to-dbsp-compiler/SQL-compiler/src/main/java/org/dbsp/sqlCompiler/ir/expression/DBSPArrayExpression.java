@@ -40,6 +40,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -60,6 +61,8 @@ public final class DBSPArrayExpression extends DBSPExpression
     public DBSPArrayExpression(DBSPTypeArray arrayType, boolean isNull) {
         super(CalciteObject.EMPTY, arrayType);
         this.data = isNull ? null : new ArrayList<>();
+        if (this.data == null)
+            Utilities.enforce(arrayType.mayBeNull);
         this.arrayType = arrayType;
     }
 
@@ -199,6 +202,10 @@ public final class DBSPArrayExpression extends DBSPExpression
         if (otherExpression == null)
             return false;
         return context.equivalent(this.data, otherExpression.data);
+    }
+
+    public boolean isNull() {
+        return this.data == null;
     }
 
     public String toSqlString() {

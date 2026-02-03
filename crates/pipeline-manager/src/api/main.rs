@@ -2,7 +2,6 @@ use crate::api::demo::{read_demos_from_directories, Demo};
 use crate::api::endpoints;
 use crate::api::support_data_collector::SupportDataCollector;
 use crate::auth::JwkCache;
-use crate::cluster_health::HealthStatus;
 use crate::config::{ApiServerConfig, CommonConfig};
 use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
@@ -216,9 +215,12 @@ It contains the following fields:
         endpoints::pipeline_interaction::get_checkpoint_status,
         endpoints::pipeline_interaction::sync_checkpoint,
         endpoints::pipeline_interaction::get_checkpoint_sync_status,
+        endpoints::pipeline_interaction::get_checkpoints,
         endpoints::pipeline_interaction::post_pipeline_pause,
         endpoints::pipeline_interaction::post_pipeline_resume,
         endpoints::pipeline_interaction::post_pipeline_activate,
+        endpoints::pipeline_interaction::get_pipeline_samply_profile,
+        endpoints::pipeline_interaction::start_samply_profile,
         endpoints::pipeline_interaction::post_pipeline_approve,
         endpoints::pipeline_interaction::completion_token,
         endpoints::pipeline_interaction::completion_status,
@@ -226,6 +228,7 @@ It contains the following fields:
         endpoints::pipeline_interaction::commit_transaction,
         endpoints::pipeline_interaction::get_pipeline_time_series,
         endpoints::pipeline_interaction::get_pipeline_time_series_stream,
+        endpoints::pipeline_interaction::post_pipeline_rebalance,
 
         // API keys
         endpoints::api_key::list_api_keys,
@@ -242,8 +245,10 @@ It contains the following fields:
         // Metrics
         endpoints::metrics::get_metrics,
 
-        // Cluster Health
-        endpoints::cluster_healthz::get_health
+        // Cluster
+        endpoints::cluster::list_cluster_events,
+        endpoints::cluster::get_cluster_event,
+        endpoints::cluster::get_cluster_health
     ),
     components(schemas(
         // Authentication
@@ -316,8 +321,20 @@ It contains the following fields:
         crate::api::endpoints::api_key::NewApiKeyRequest,
         crate::api::endpoints::api_key::NewApiKeyResponse,
 
+        // Monitor
+        crate::db::types::monitor::MonitorStatus,
+        crate::db::types::monitor::ClusterMonitorEventId,
+        crate::db::types::monitor::ClusterMonitorEvent,
+        crate::db::types::monitor::ExtendedClusterMonitorEvent,
+        crate::api::endpoints::cluster::ClusterMonitorEventSelectedInfo,
+        crate::api::endpoints::cluster::GetClusterEventParameters,
+        crate::api::endpoints::cluster::ClusterMonitorEventFieldSelector,
+        crate::api::endpoints::cluster::HealthStatus,
+        crate::api::endpoints::cluster::ServiceStatus,
+
         // From the feldera-types crate
         feldera_types::config::PipelineConfig,
+        feldera_types::config::MultihostConfig,
         feldera_types::config::StorageConfig,
         feldera_types::config::StorageCacheConfig,
         feldera_types::config::StorageOptions,
@@ -337,6 +354,7 @@ It contains the following fields:
         feldera_types::config::ResourceConfig,
         feldera_types::config::ObjectStorageConfig,
         feldera_types::config::FtModel,
+        feldera_types::config::PipelineTemplateConfig,
         feldera_types::transport::adhoc::AdHocInputConfig,
         feldera_types::transport::clock::ClockConfig,
         feldera_types::transport::file::FileInputConfig,
@@ -379,6 +397,7 @@ It contains the following fields:
         feldera_types::transport::iceberg::GlueCatalogConfig,
         feldera_types::transport::postgres::PostgresReaderConfig,
         feldera_types::transport::postgres::PostgresWriterConfig,
+        feldera_types::transport::postgres::PostgresWriteMode,
         feldera_types::transport::redis::RedisOutputConfig,
         feldera_types::transport::http::Chunk,
         feldera_types::transport::clock::ClockConfig,
@@ -405,17 +424,32 @@ It contains the following fields:
         feldera_types::checkpoint::CheckpointStatus,
         feldera_types::checkpoint::CheckpointResponse,
         feldera_types::checkpoint::CheckpointFailure,
+        feldera_types::checkpoint::CheckpointMetadata,
         feldera_types::transaction::StartTransactionResponse,
         feldera_types::time_series::TimeSeries,
         feldera_types::time_series::SampleStatistics,
+        feldera_types::suspend::SuspendError,
+        feldera_types::suspend::PermanentSuspendError,
+        feldera_types::suspend::TemporarySuspendError,
+
+        // Adapter statistics
+        feldera_types::adapter_stats::ExternalControllerStatus,
+        feldera_types::adapter_stats::ExternalGlobalControllerMetrics,
+        feldera_types::adapter_stats::ExternalInputEndpointStatus,
+        feldera_types::adapter_stats::ExternalInputEndpointMetrics,
+        feldera_types::adapter_stats::ExternalOutputEndpointStatus,
+        feldera_types::adapter_stats::ExternalOutputEndpointMetrics,
+        feldera_types::adapter_stats::ExternalCompletedWatermark,
+        feldera_types::adapter_stats::ExternalTransactionInitiators,
+        feldera_types::adapter_stats::ExternalTransactionPhase,
+        feldera_types::adapter_stats::ExternalConnectorTransactionPhase,
+        feldera_types::adapter_stats::PipelineState,
+        feldera_types::adapter_stats::ShortEndpointConfig,
+        feldera_types::adapter_stats::TransactionStatus,
 
         // Telemetry & License
         feldera_cloud1_client::license::DisplaySchedule,
         feldera_cloud1_client::license::LicenseInformation,
-
-        // Cluster health check
-        crate::cluster_health::HealthStatus,
-        crate::cluster_health::ServiceStatus,
     ),),
     tags(
         (name = "Pipeline management", description = "Create, retrieve, update, delete and deploy pipelines."),
@@ -514,6 +548,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::sync_checkpoint)
         .service(endpoints::pipeline_interaction::get_checkpoint_status)
         .service(endpoints::pipeline_interaction::get_checkpoint_sync_status)
+        .service(endpoints::pipeline_interaction::get_checkpoints)
         .service(endpoints::pipeline_interaction::post_pipeline_pause)
         .service(endpoints::pipeline_interaction::post_pipeline_resume)
         .service(endpoints::pipeline_interaction::post_pipeline_activate)
@@ -529,7 +564,10 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::get_pipeline_circuit_json_profile)
         .service(endpoints::pipeline_interaction::get_pipeline_dataflow_graph)
         .service(endpoints::pipeline_interaction::get_pipeline_heap_profile)
+        .service(endpoints::pipeline_interaction::get_pipeline_samply_profile)
+        .service(endpoints::pipeline_interaction::start_samply_profile)
         .service(endpoints::pipeline_interaction::support_bundle::get_pipeline_support_bundle)
+        .service(endpoints::pipeline_interaction::post_pipeline_rebalance)
         .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)
         .service(endpoints::pipeline_interaction::completion_token)
         .service(endpoints::pipeline_interaction::completion_status)
@@ -547,7 +585,9 @@ fn api_scope() -> Scope {
         // Metrics of all pipelines belonging to this tenant
         .service(endpoints::metrics::get_metrics)
         // Cluster health check
-        .service(endpoints::cluster_healthz::get_health)
+        .service(endpoints::cluster::list_cluster_events)
+        .service(endpoints::cluster::get_cluster_event)
+        .service(endpoints::cluster::get_cluster_health)
 }
 
 struct SecurityAddon;
@@ -586,7 +626,6 @@ pub(crate) struct ServerState {
     probe: Arc<Mutex<DbProbe>>,
     pub demos: Vec<Demo>,
     pub license_check: Arc<RwLock<Option<LicenseCheck>>>,
-    pub health_check: Arc<RwLock<Option<HealthStatus>>>,
 }
 
 impl ServerState {
@@ -595,7 +634,6 @@ impl ServerState {
         config: ApiServerConfig,
         db: Arc<Mutex<StoragePostgres>>,
         license_check: Arc<RwLock<Option<LicenseCheck>>>,
-        health_check: Arc<RwLock<Option<HealthStatus>>>,
     ) -> AnyResult<Self> {
         let runner = RunnerInteraction::new(common_config.clone(), db.clone());
         let db_copy = db.clone();
@@ -609,7 +647,6 @@ impl ServerState {
             probe: DbProbe::new(db_copy).await,
             demos,
             license_check,
-            health_check,
         })
     }
 
@@ -618,16 +655,9 @@ impl ServerState {
         let common_config = CommonConfig::test_config();
         let api_config = ApiServerConfig::test_config();
         let license_check = Arc::new(RwLock::new(None::<LicenseCheck>));
-        let health_check = Arc::new(RwLock::new(None));
-        Self::new(
-            common_config,
-            api_config,
-            db.clone(),
-            license_check,
-            health_check,
-        )
-        .await
-        .unwrap()
+        Self::new(common_config, api_config, db.clone(), license_check)
+            .await
+            .unwrap()
     }
 }
 
@@ -675,7 +705,6 @@ pub async fn run(
     common_config: CommonConfig,
     api_config: ApiServerConfig,
     license_check: Arc<RwLock<Option<LicenseCheck>>>,
-    health_check: Arc<RwLock<Option<HealthStatus>>>,
 ) -> AnyResult<()> {
     let listener = TcpListener::bind((common_config.bind_address.clone(), common_config.api_port))
         .unwrap_or_else(|_| {
@@ -685,14 +714,7 @@ pub async fn run(
             )
         });
     let state = WebData::new(
-        ServerState::new(
-            common_config.clone(),
-            api_config.clone(),
-            db,
-            license_check,
-            health_check,
-        )
-        .await?,
+        ServerState::new(common_config.clone(), api_config.clone(), db, license_check).await?,
     );
     let auth_configuration = match api_config.auth_provider {
         crate::config::AuthProviderType::None => None,

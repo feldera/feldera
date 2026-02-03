@@ -3,6 +3,8 @@ import unittest
 from feldera import PipelineBuilder
 from tests.platform.helper import gen_pipeline_name
 from tests import TEST_CLIENT
+from feldera.runtime_config import RuntimeConfig
+from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 
 @gen_pipeline_name
@@ -145,6 +147,10 @@ ByteArray::new(&val.data.to_be_bytes()[16..])
         sql=sql,
         udf_rust=udfs,
         udf_toml=toml,
+        runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
+        ),
     ).create_or_replace()
 
     pipeline.start()

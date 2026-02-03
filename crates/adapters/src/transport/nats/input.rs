@@ -34,10 +34,10 @@ mod config_utils;
 mod test;
 
 use crate::{
-    transport::{InputQueue, InputReaderCommand},
     InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint,
+    transport::{InputQueue, InputReaderCommand},
 };
-use anyhow::{anyhow, Context, Error as AnyError, Result as AnyResult};
+use anyhow::{Context, Error as AnyError, Result as AnyResult, anyhow};
 use async_nats::{
     self,
     jetstream::{self, consumer as nats_consumer},
@@ -58,15 +58,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::cmp;
 use std::hash::Hasher;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::{
     select,
-    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{info, info_span, Instrument};
+use tracing::{Instrument, error, info, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
 
 type NatsConsumerConfig = nats_consumer::pull::OrderedConfig;
@@ -122,7 +122,7 @@ impl TransportInputEndpoint for NatsInputEndpoint {
         &self,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
-        _schema: Relation,
+        schema: Relation,
         resume_info: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>> {
         let resume_info = Metadata::from_resume_info(resume_info)?;
@@ -133,6 +133,7 @@ impl TransportInputEndpoint for NatsInputEndpoint {
             resume_info,
             consumer,
             parser,
+            &schema.name.name(),
         )?))
     }
 }
@@ -147,18 +148,61 @@ impl NatsReader {
         resume_info: Metadata,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
+        table_name: &str,
     ) -> AnyResult<Self> {
-        let span = info_span!("nats_input");
+        let span = info_span!(
+            "nats_input",
+            table = %table_name,
+            server_url = %config.connection_config.server_url,
+            stream_name = %config.stream_name,
+            // Note: this is consumer_name from config, not the created name with unique suffix.
+            consumer_name = config.consumer_config.name.as_deref().unwrap_or(""),
+            consumer_description = config.consumer_config.description.as_deref().unwrap_or(""),
+            filter_subjects = ?config.consumer_config.filter_subjects,
+        );
         let (command_sender, command_receiver) = unbounded_channel();
-        let nats_connection = TOKIO
-            .block_on(Self::connect_nats(&config.connection_config).instrument(span.clone()))?;
+
+        // Connect to NATS and verify stream exists (early validation).
+        // This ensures we fail fast with a clear error if the server is
+        // unreachable or the stream doesn't exist.
+        let (nats_connection, jetstream) = TOKIO
+            .block_on(
+                async {
+                    let client = Self::connect_nats(&config.connection_config).await?;
+                    let js = jetstream::new(client.clone());
+                    Self::verify_stream_exists(&js, &config.stream_name).await?;
+                    Ok::<_, AnyError>((client, js))
+                }
+                .instrument(span.clone()),
+            )
+            .map_err(|e| {
+                error!(
+                    server_url = %config.connection_config.server_url,
+                    stream_name = %config.stream_name,
+                    connection_timeout_secs = config.connection_config.connection_timeout_secs,
+                    request_timeout_secs = config.connection_config.request_timeout_secs,
+                    "NATS initialization failed: {e:#}"
+                );
+                e.context(format!(
+                    "NATS initialization failed for stream '{}' at server '{}' \
+                (connection_timeout={}s, request_timeout={}s)",
+                    config.stream_name,
+                    config.connection_config.server_url,
+                    config.connection_config.connection_timeout_secs,
+                    config.connection_config.request_timeout_secs,
+                ))
+            })?;
+
+        // The connection is established but we don't need the client reference
+        // in the worker - it stays alive as long as the jetstream context exists.
+        drop(nats_connection);
 
         let consumer_clone = consumer.clone();
         TOKIO.spawn(async move {
             Self::worker_task(
                 config,
                 resume_info,
-                jetstream::new(nats_connection),
+                jetstream,
                 consumer_clone,
                 parser,
                 command_receiver,
@@ -178,9 +222,31 @@ impl NatsReader {
 
         let client = connect_options
             .connect(&connection_config.server_url)
-            .await?;
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to connect to NATS server at {}",
+                    connection_config.server_url
+                )
+            })?;
 
         Ok(client)
+    }
+
+    /// Verifies that the specified stream exists on the JetStream server.
+    ///
+    /// This provides early validation during initialization.
+    /// If the stream doesn't exist, we fail fast with a clear error
+    /// instead of timing out later during consumer creation.
+    async fn verify_stream_exists(
+        jetstream: &jetstream::Context,
+        stream_name: &str,
+    ) -> Result<(), AnyError> {
+        jetstream
+            .get_stream(stream_name)
+            .await
+            .with_context(|| format!("Failed to get stream '{stream_name}'"))?;
+        Ok(())
     }
 
     async fn worker_task(
@@ -322,9 +388,27 @@ async fn create_nats_consumer(
         };
     }
 
-    Ok(jetstream
-        .create_consumer_strict_on_stream(consumer_config, stream_name)
-        .await?)
+    // Add a unique suffix to named consumers.
+    // If consumer is unnamed, NATS automatically generates a random name.
+    //
+    // This fixes "consumer already exists" errors that occurred with rapid
+    // pipeline restarts/replays before the previous consumer expires (inactive_threshold).
+    consumer_config.name = consumer_config
+        .name
+        .map(|n| format!("{n}_{}", uuid::Uuid::now_v7()));
+
+    jetstream
+        .create_consumer_strict_on_stream(consumer_config.clone(), stream_name)
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to create consumer on stream '{}' (start_sequence={}, deliver_policy={:?}, filter_subjects={:?})",
+                stream_name,
+                message_start_sequence,
+                consumer_config.deliver_policy,
+                consumer_config.filter_subjects,
+            )
+        })
 }
 
 async fn consume_nats_messages_until(
@@ -355,7 +439,7 @@ async fn consume_nats_messages_until(
                     }
                 };
                 let data = &message.payload;
-                let (buffer, errors) = parser.parse(data, &None);
+                let (buffer, errors) = parser.parse(data, None);
                 consumer.parse_errors(errors);
                 if let Some(mut buffer) = buffer {
                     buffer.hash(&mut hasher);
@@ -373,7 +457,10 @@ async fn consume_nats_messages_until(
                     cmp::Ordering::Less => (),     // Still more messages to consume
                     cmp::Ordering::Equal => break, // This was the final message we wanted
                     cmp::Ordering::Greater => {
-                        return Err(anyhow!("Received unexpected message with offset {}; maybe the requested messages have been deleted?", info.stream_sequence));
+                        return Err(anyhow!(
+                            "Received unexpected message with offset {}; maybe the requested messages have been deleted?",
+                            info.stream_sequence
+                        ));
                     }
                 }
             }
@@ -427,7 +514,7 @@ async fn spawn_nats_reader(
                                 // This is the checkpoint position if we need to restart.
                                 next_sequence.store(info.stream_sequence + 1, Ordering::Release);
                                 let data = &message.payload;
-                                queue.push_with_aux(parser.parse(data, &None), Utc::now(), info.stream_sequence);
+                                queue.push_with_aux(parser.parse(data, None), Utc::now(), info.stream_sequence);
                             }
                             Err(error) => {
                                 consumer.error(false, anyhow!("NATS error: {error}"), Some("nats-input"));

@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  let openFiles: Record<
+  const openFiles: Record<
     string,
     {
       sync: DecoupledStateProxy<string>
@@ -13,9 +13,8 @@
     inherit: true,
     rules: [{ token: 'string.sql', foreground: '#7a3d00' }],
     colors: {
-      'editor.background': rgbToHex(
-        getComputedStyle(document.body).getPropertyValue('--body-background-color').trim()
-      )
+      'editor.background': getThemeColor('--body-background-color').format('hex'),
+      'editor.inactiveSelectionBackground': '#add6ff90' // More visible selection when editor is not focused
     }
   })
 
@@ -24,9 +23,8 @@
     inherit: true,
     rules: [{ token: 'string.sql', foreground: '#d9731a' }],
     colors: {
-      'editor.background': rgbToHex(
-        getComputedStyle(document.body).getPropertyValue('--body-background-color-dark').trim()
-      )
+      'editor.background': getThemeColor('--body-background-color-dark').format('hex'),
+      'editor.inactiveSelectionBackground': '#264f7890' // More visible selection when editor is not focused
     }
   })
 
@@ -55,8 +53,8 @@
   import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
   import MonacoEditor from '$lib/components/MonacoEditorRunes.svelte'
   import * as MonacoImports from 'monaco-editor'
-  import { editor, KeyCode, KeyMod } from 'monaco-editor/esm/vs/editor/editor.api'
-  import type { EditorLanguage } from 'monaco-editor/esm/metadata'
+  import { editor, KeyCode, KeyMod } from 'monaco-editor/esm/vs/editor/editor.api.js'
+  import type { EditorLanguage } from 'monaco-editor/esm/metadata.js'
   import PipelineEditorStatusBar from '$lib/components/layout/pipelines/PipelineEditorStatusBar.svelte'
   import { page } from '$app/state'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
@@ -65,8 +63,7 @@
   import { GenericOverlayWidget } from '$lib/components/monacoEditor/GenericOverlayWidget'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
-  import { rgbToHex } from '$lib/functions/common/color'
-  import type { $ } from 'bun'
+  import { getThemeColor } from '$lib/functions/common/color'
 
   void MonacoImports // Explicitly import all monaco-editor esm modules
 
@@ -110,8 +107,7 @@
   } = $props()
 
   let editorRef: editor.IStandaloneCodeEditor = $state()!
-  const { editorFontSize, autoSavePipeline, showMinimap, showStickyScroll } =
-    useCodeEditorSettings()
+  const { editorFontSize, autoSaveFiles, showMinimap, showStickyScroll } = useCodeEditorSettings()
 
   $effect(() => {
     _editorRef = editorRef
@@ -140,7 +136,7 @@
     _isFocused = isFocused
   })
 
-  let wait = $derived(autoSavePipeline.value ? 2000 : ('decoupled' as const))
+  let wait = $derived(autoSaveFiles.value ? 2000 : ('decoupled' as const))
   let file = $derived(files.find((f) => f.name === currentFileName)!)
 
   function isReadonlyProperty<T>(obj: T, prop: keyof T) {
@@ -241,7 +237,7 @@
 
   $effect(() => {
     // Trigger save right away when autosave is turned on
-    if (!autoSavePipeline.value) {
+    if (!autoSaveFiles.value) {
       return
     }
     setTimeout(() => Object.values(openFiles).forEach((file) => file.sync.push()))
@@ -251,19 +247,115 @@
     if (!editorRef) {
       return
     }
-    const [, fileName, line, , column] =
-      page.url.hash.match(new RegExp(`#(${pipelineFileNameRegex}):(\\d+)(:(\\d+))?`)) ?? []
-    if (!line) {
+
+    // This effect detects when the code editor should scroll to reveal a source position or multiple source ranges
+    // Supported formats:
+    // 1. Simple: #filename:line:column (scroll only)
+    // 2. Range(s): #filename:startLine:startColumn-endLine:endColumn,startLine2:startColumn2-endLine2:endColumn2 (multiple selections)
+
+    const selection = parseSourcePosition(page.url)
+    if (!selection) {
       return
     }
-    if (currentFileName !== fileName) {
-      currentFileName = fileName
+
+    if (currentFileName !== selection.fileName) {
+      currentFileName = selection.fileName
     }
+
     setTimeout(() => {
-      editorRef.revealPosition({ lineNumber: parseInt(line), column: parseInt(column) ?? 1 })
+      if ('ranges' in selection) {
+        const { ranges } = selection
+        // Range format found - create selections for multiple source positions
+        editorRef.setSelections(
+          ranges.map((range) => ({
+            selectionStartLineNumber: range.startLine,
+            selectionStartColumn: range.startColumn,
+            positionLineNumber: range.endLine,
+            positionColumn: range.endColumn
+          }))
+        )
+        // Reveal the first selection in center
+        editorRef.revealRangeInCenter({
+          startLineNumber: ranges[0].startLine,
+          startColumn: ranges[0].startColumn,
+          endLineNumber: ranges[0].endLine,
+          endColumn: ranges[0].endColumn
+        })
+      } else {
+        // Simple format, single position: `line:column` (scroll only)
+        editorRef.revealPosition({ lineNumber: selection.line, column: selection.column })
+      }
+
       window.location.hash = ''
     }, 50)
   })
+
+  /**
+   * Parse source position(s) from URL anchor.
+   *
+   * Supported formats:
+   * 1. Simple: "line:column"
+   * 2. Range(s): "startLine:startColumn-endLine:endColumn,startLine2:startColumn2-endLine2:endColumn2"
+   */
+  function parseSourcePosition(url: URL):
+    | {
+        fileName: string
+        ranges: {
+          startLine: number
+          startColumn: number
+          endLine: number
+          endColumn: number
+        }[]
+      }
+    | {
+        fileName: string
+        line: number
+        column: number
+      }
+    | null {
+    const hashMatch = url.hash.match(new RegExp(`#(${pipelineFileNameRegex}):(.+)`))
+    if (!hashMatch) {
+      return null
+    }
+
+    const [, fileName, positionString] = hashMatch
+
+    if (!positionString) {
+      return null
+    }
+
+    // Try to match all ranges pattern: startLine:startColumn-endLine:endColumn
+    const rangeMatches = [...positionString.matchAll(/(\d+):(\d+)-(\d+):(\d+)/g)]
+
+    if (rangeMatches.length > 0) {
+      return {
+        fileName,
+        ranges: rangeMatches.map((match) => {
+          const [, startLine, startColumn, endLine, endColumn] = match
+          return {
+            startLine: parseInt(startLine),
+            startColumn: parseInt(startColumn),
+            endLine: parseInt(endLine),
+            endColumn: parseInt(endColumn)
+          }
+        })
+      }
+    }
+
+    // Simple format, single position: `line:column` (scroll only)
+    const parts = positionString.split(':')
+    const position = {
+      fileName,
+      line: parseInt(parts[0]),
+      column: parseInt(parts[1]) || 1
+    }
+
+    if (isNaN(position.line)) {
+      return null
+    }
+
+    return position
+  }
 
   let placeholderContent = $derived(file.placeholder)
   $effect(() => {
@@ -291,7 +383,7 @@
 </script>
 
 <div class="hidden" bind:this={conflictWidgetRef}>
-  <div class="relative flex flex-col gap-4 p-4 bg-surface-50-950">
+  <div class="relative flex flex-col gap-4 bg-surface-50-950 p-4">
     <div>
       <span class="fd fd-triangle-alert text-[20px] text-warning-500"> </span>
       The pipeline code was changed outside this window since you started editing.<br />
@@ -299,13 +391,13 @@
     </div>
     <div class="flex flex-nowrap justify-end gap-4">
       <button
-        class=" !rounded-0 px-2 py-1 bg-surface-100-900 hover:preset-outlined-primary-500"
+        class=" !rounded-0 bg-surface-100-900 px-2 py-1 hover:preset-outlined-primary-500"
         onclick={() => openFiles[filePath].sync.pull()}
       >
         Accept Remote
       </button>
       <button
-        class=" !rounded-0 px-2 py-1 bg-surface-100-900 hover:preset-outlined-primary-500"
+        class=" !rounded-0 bg-surface-100-900 px-2 py-1 hover:preset-outlined-primary-500"
         onclick={() => openFiles[filePath].sync.push()}
       >
         Accept Local
@@ -393,11 +485,6 @@
 
 {#snippet statusBar()}
   <div class="flex h-9 flex-nowrap gap-3">
-    <!-- <PipelineEditorStatusBar
-      {autoSavePipeline}
-      downstreamChanged={openFiles[filePath].sync.downstreamChanged}
-      saveCode={() => openFiles[filePath].sync.push()}
-    ></PipelineEditorStatusBar> -->
     {@render statusBarCenter?.()}
   </div>
   <div class="ml-auto flex flex-nowrap gap-x-2">

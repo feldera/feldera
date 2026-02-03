@@ -13,6 +13,8 @@ RUN apt update --fix-missing && apt install \
   # pkg-config is required for cargo to find libssl
   libssl-dev pkg-config \
   cmake \
+  # Go is required to build aws-lc-fips-sys when rustls is built with FIPS
+  golang-go \
   # rdkafka dependency needs libsasl2-dev zlib and a CXX compiler
   libsasl2-dev zlib1g-dev build-essential \
   # To install rust
@@ -26,7 +28,9 @@ RUN apt update --fix-missing && apt install \
   # Otherwise, postgresql_embedded complains when it tries to set timezeone to UTC
   tzdata \
   # Used by pipeline manager to switch runtime versions
-  git
+  git \
+  # Used to set capabilities to the samply profiler
+  libcap2-bin
 
 # Add AWS RDS bundle to trusted certificate store
 RUN curl -sS https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
@@ -61,11 +65,11 @@ COPY --chown=ubuntu sql-to-dbsp-compiler/lib feldera/sql-to-dbsp-compiler/lib
 COPY --chown=ubuntu sql-to-dbsp-compiler/temp feldera/sql-to-dbsp-compiler/temp
 COPY --chown=ubuntu sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp feldera/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
 # Copy over demos
-RUN mkdir -p feldera/demo/packaged/sql
-COPY --chown=ubuntu demo/packaged/sql feldera/demo/packaged/sql
+RUN mkdir -p feldera/demos/sql
+COPY --chown=ubuntu crates/pipeline-manager/demos/sql feldera/demos/sql
 
 # Install cargo and rust for this non-root user
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.87.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.91.1
 # The download URL for mold uses x86_64/aarch64 whereas dpkg --print-architecture says amd64/arm64
 RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86_64/g"`; \
   curl -LO https://github.com/rui314/mold/releases/download/v2.40.1/mold-2.40.1-$arch-linux.tar.gz \
@@ -75,6 +79,9 @@ RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86
 ENV PATH="$PATH:/home/ubuntu/.cargo/bin:/home/ubuntu/mold/bin"
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib"
 
+# Install Samply for profiling
+RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/feldera/samply/releases/download/v0.13.2/samply-installer.sh | sh
+
 #
 # Build phase to specifically customize for the feldera OSS container
 #
@@ -83,4 +90,4 @@ FROM base AS release
 # Run the precompile phase to speed up Rust compilations during deployment
 RUN ./feldera/build/pipeline-manager --bind-address=0.0.0.0 --sql-compiler-path=$HOME/feldera/build/sql2dbsp-jar-with-dependencies.jar --compilation-cargo-lock-path=$HOME/feldera/Cargo.lock --dbsp-override-path=$HOME/feldera --precompile
 ENV BANNER_ADDR=localhost
-ENTRYPOINT ["./feldera/build/pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-path=/home/ubuntu/feldera/build/sql2dbsp-jar-with-dependencies.jar", "--compilation-cargo-lock-path=/home/ubuntu/feldera/Cargo.lock", "--dbsp-override-path=/home/ubuntu/feldera", "--demos-dir", "/home/ubuntu/feldera/demo/packaged/sql"]
+ENTRYPOINT ["./feldera/build/pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-path=/home/ubuntu/feldera/build/sql2dbsp-jar-with-dependencies.jar", "--compilation-cargo-lock-path=/home/ubuntu/feldera/Cargo.lock", "--dbsp-override-path=/home/ubuntu/feldera", "--demos-dir", "/home/ubuntu/feldera/demos/sql"]

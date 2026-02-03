@@ -1,10 +1,10 @@
 use crate::{
+    Circuit, DBData, Stream,
     dynamic::{DowncastTrait, DynData, Erase},
     operator::dynamic::join_range::StreamJoinRangeFactories,
     typed_batch::{
         DynOrdIndexedZSet, DynOrdZSet, IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdZSet,
     },
-    Circuit, DBData, Stream,
 };
 
 impl<C, I1> Stream<C, I1>

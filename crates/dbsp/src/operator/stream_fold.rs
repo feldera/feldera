@@ -1,8 +1,8 @@
 use crate::circuit::checkpointer::Checkpoint;
 use crate::{
-    circuit::OwnershipPreference,
-    operator::{z1::DelayedId, Z1},
     Circuit, NumEntries, RootCircuit, Stream,
+    circuit::OwnershipPreference,
+    operator::{Z1, z1::DelayedId},
 };
 use size_of::SizeOf;
 

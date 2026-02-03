@@ -1,11 +1,6 @@
 //! A CLI App for the Feldera REST API.
 
-use std::collections::BTreeMap;
-use std::convert::Infallible;
-use std::fs::File;
-use std::io::{stdout, ErrorKind, Read, Write};
-use std::path::PathBuf;
-
+use chrono::Utc;
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
 use feldera_observability as observability;
@@ -16,17 +11,22 @@ use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
 use json_to_table::json_to_table;
 use log::{debug, error, info, trace, warn};
-use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use reqwest::StatusCode;
+use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use serde_json::json;
+use std::collections::BTreeMap;
+use std::convert::Infallible;
+use std::fs::File;
+use std::io::{ErrorKind, Read, Write, stdout};
+use std::path::PathBuf;
 use tabled::builder::Builder;
 use tabled::settings::Style;
 use tempfile::tempfile;
 use tokio::process::Command;
 use tokio::runtime::Handle;
-use tokio::time::{sleep, timeout, Duration, Instant};
+use tokio::time::{Duration, Instant, sleep, timeout};
 use tracing_log::LogTracer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod adhoc;
 mod bench;
@@ -34,8 +34,7 @@ mod cli;
 mod debug;
 mod shell;
 
-pub(crate) const UPGRADE_NOTICE: &str =
-    "Try upgrading to the latest CLI version to resolve this issue. Also make sure the pipeline is recompiled with the latest version of feldera. Report it on github.com/feldera/feldera if the issue persists.";
+pub(crate) const UPGRADE_NOTICE: &str = "Try upgrading to the latest CLI version to resolve this issue. Also make sure the pipeline is recompiled with the latest version of feldera. Report it on github.com/feldera/feldera if the issue persists.";
 
 use crate::adhoc::handle_adhoc_query;
 use crate::cli::*;
@@ -231,14 +230,15 @@ fn handle_errors_fatal(
                     eprint!("{}", msg);
                     let h = Handle::current();
                     // This spawns a separate thread because it's very hard to make this function async, I tried.
-                    let st = std::thread::spawn(move || {
-                        if let Ok(body) = h.block_on(r.text()) {
+                    let st = std::thread::spawn(move || match h.block_on(r.text()) {
+                        Ok(body) => {
                             if let Ok(error) = serde_json::from_str::<ErrorResponse>(&body) {
                                 eprintln!(": {}", error.message);
                             } else {
                                 eprintln!(": {body}");
                             }
-                        } else {
+                        }
+                        _ => {
                             eprintln!();
                         }
                     });
@@ -859,7 +859,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         .deployment_runtime_status_details
                         .clone();
 
-                    println!("Pipeline definition has changed since the last checkpoint. The pipeline is awaiting approval to proceed with bootstrapping the modified components. Run 'fda approve' to approve the changes or 'fda stop' to terminate the pipeline. Summary of changes:");
+                    println!(
+                        "Pipeline definition has changed since the last checkpoint. The pipeline is awaiting approval to proceed with bootstrapping the modified components. Run 'fda approve' to approve the changes or 'fda stop' to terminate the pipeline. Summary of changes:"
+                    );
 
                     let diff_str = match diff {
                         // Normally shouldn't happen.
@@ -1107,7 +1109,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
 
             match format {
                 OutputFormat::Text => {
-                    let table = json_to_table(&serde_json::Value::Object(response.into_inner()))
+                    let stats_value = serde_json::to_value(response.as_ref())
+                        .expect("Failed to serialize pipeline stats");
+                    let table = json_to_table(&stats_value)
                         .collapse()
                         .into_pool_table()
                         .to_string();
@@ -1131,7 +1135,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 OutputFormat::Json => MetricsFormat::Json,
                 OutputFormat::Prometheus => MetricsFormat::Prometheus,
                 _ => {
-                    eprintln!("`{format}` is not supported as a metrics format (use `--format json` or `--format prometheus`)");
+                    eprintln!(
+                        "`{format}` is not supported as a metrics format (use `--format json` or `--format prometheus`)"
+                    );
                     std::process::exit(1);
                 }
             };
@@ -1448,7 +1454,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     command.stdin(tempfile);
                     match command.status().await {
                         Err(e) => {
-                            eprintln!("ERROR: Failed to execute `{command_name}` ({e}). `pprof` is probably not installed. Install it from <https://github.com/google/pprof>.");
+                            eprintln!(
+                                "ERROR: Failed to execute `{command_name}` ({e}). `pprof` is probably not installed. Install it from <https://github.com/google/pprof>."
+                            );
                             std::process::exit(1);
                         }
                         Ok(exit_status) if !exit_status.success() => {
@@ -1763,12 +1771,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     1,
                 ))
                 .unwrap();
-            let current_transaction_id = stats
-                .into_inner()
-                .get("global_metrics")
-                .and_then(|v| v.get("transaction_id"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as u64;
+            let current_transaction_id = stats.into_inner().global_metrics.transaction_id;
 
             // Check if there's no transaction in progress
             if current_transaction_id == 0 {
@@ -1779,14 +1782,14 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             }
 
             // Verify transaction ID if provided
-            if let Some(expected_transaction_id) = transaction_id {
-                if current_transaction_id != expected_transaction_id {
-                    eprintln!(
-                        "Specified transaction {} doesn't match current active transaction {}",
-                        expected_transaction_id, current_transaction_id
-                    );
-                    std::process::exit(1);
-                }
+            if let Some(expected_transaction_id) = transaction_id
+                && current_transaction_id != expected_transaction_id as i64
+            {
+                eprintln!(
+                    "Specified transaction {} doesn't match current active transaction {}",
+                    expected_transaction_id, current_transaction_id
+                );
+                std::process::exit(1);
             }
 
             let actual_transaction_id = current_transaction_id;
@@ -1818,12 +1821,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         ))
                         .unwrap();
 
-                    let current_transaction_id = stats
-                        .into_inner()
-                        .get("global_metrics")
-                        .and_then(|v| v.get("transaction_id"))
-                        .and_then(|v| v.as_i64())
-                        .unwrap_or(0) as u64;
+                    let current_transaction_id = stats.into_inner().global_metrics.transaction_id;
 
                     // If transaction_id is 0, it means the transaction has been committed
                     if current_transaction_id != actual_transaction_id {
@@ -1850,6 +1848,20 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     std::process::exit(1);
                 }
             }
+        }
+        PipelineAction::Rebalance { name } => {
+            client
+                .post_pipeline_rebalance()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to initiate rebalancing",
+                    1,
+                ))
+                .unwrap();
+            println!("Initiated rebalancing for pipeline {name}.");
         }
         PipelineAction::Bench { args } => bench::bench(client, format, args).await,
     }
@@ -1894,7 +1906,9 @@ async fn connector(
     match action {
         ConnectorAction::Start => {
             if !relation_is_table {
-                eprintln!("Can not start the output connector '{connector}'. Only input connectors (connectors attached to a table) can be started.");
+                eprintln!(
+                    "Can not start the output connector '{connector}'. Only input connectors (connectors attached to a table) can be started."
+                );
                 std::process::exit(1);
             }
             client
@@ -1915,7 +1929,9 @@ async fn connector(
         }
         ConnectorAction::Pause => {
             if !relation_is_table {
-                eprintln!("Can not pause the output connector '{connector}'. Only input connectors (connectors attached to a table) can be paused.");
+                eprintln!(
+                    "Can not pause the output connector '{connector}'. Only input connectors (connectors attached to a table) can be paused."
+                );
                 std::process::exit(1);
             }
             client
@@ -2207,8 +2223,143 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
     }
 }
 
+async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
+    match action {
+        ClusterAction::Events => {
+            let response = client
+                .list_cluster_events()
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Unable to retrieve cluster events",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    let mut rows = vec![];
+                    rows.push([
+                        "id".to_string(),
+                        "recorded_at".to_string(),
+                        "all_healthy".to_string(),
+                        "api_status".to_string(),
+                        "compiler_status".to_string(),
+                        "runner_status".to_string(),
+                    ]);
+                    for event in response.iter() {
+                        rows.push([
+                            event.id.to_string(),
+                            format!(
+                                "{} ({:.0}s ago)",
+                                event.recorded_at,
+                                (Utc::now() - event.recorded_at).as_seconds_f64()
+                            ),
+                            event.all_healthy.to_string(),
+                            event.api_status.to_string(),
+                            event.compiler_status.to_string(),
+                            event.runner_status.to_string(),
+                        ]);
+                    }
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize cluster events")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        ClusterAction::Event { id, selector } => {
+            let response = client
+                .get_cluster_event()
+                .event_id(id)
+                .selector(selector)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Unable to retrieve cluster event",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    let mut rows = vec![];
+                    rows.push(["Field".to_string(), "Value".to_string()]);
+                    rows.push(["id".to_string(), response.id.to_string()]);
+                    rows.push([
+                        "recorded_at".to_string(),
+                        format!(
+                            "{} ({:.0}s ago)",
+                            response.recorded_at,
+                            (Utc::now() - response.recorded_at).as_seconds_f64()
+                        ),
+                    ]);
+                    rows.push(["all_healthy".to_string(), response.all_healthy.to_string()]);
+                    rows.push(["api_status".to_string(), response.api_status.to_string()]);
+                    if let Some(value) = &response.api_self_info {
+                        rows.push(["api_self_info".to_string(), value.to_string()]);
+                    }
+                    if let Some(value) = &response.api_resources_info {
+                        rows.push(["api_resources_info".to_string(), value.to_string()]);
+                    }
+                    rows.push([
+                        "compiler_status".to_string(),
+                        response.compiler_status.to_string(),
+                    ]);
+                    if let Some(value) = &response.compiler_self_info {
+                        rows.push(["compiler_self_info".to_string(), value.to_string()]);
+                    }
+                    if let Some(value) = &response.compiler_resources_info {
+                        rows.push(["compiler_resources_info".to_string(), value.to_string()]);
+                    }
+                    rows.push([
+                        "runner_status".to_string(),
+                        response.runner_status.to_string(),
+                    ]);
+                    if let Some(value) = &response.runner_self_info {
+                        rows.push(["runner_self_info".to_string(), value.to_string()]);
+                    }
+                    if let Some(value) = &response.runner_resources_info {
+                        rows.push(["runner_resources_info".to_string(), value.to_string()]);
+                    }
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize cluster events")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+}
+
 fn main() {
-    let _guard = observability::init("https://18aa37ae23e7130b57b91aaad432bc18@o4510219052253184.ingest.us.sentry.io/4510298809827328", "fda", env!("CARGO_PKG_VERSION"));
+    let _guard = observability::init(
+        "https://18aa37ae23e7130b57b91aaad432bc18@o4510219052253184.ingest.us.sentry.io/4510298809827328",
+        "fda",
+        env!("CARGO_PKG_VERSION"),
+    );
     init_logging("warn");
 
     tokio::runtime::Builder::new_multi_thread()
@@ -2240,7 +2391,8 @@ fn main() {
                 Commands::Apikey { action } => api_key_commands(cli.format, action, client()).await,
                 Commands::Pipelines => pipelines(cli.format, client()).await,
                 Commands::Pipeline(action) => pipeline(cli.format, action, client()).await,
-                Commands::Debug { action } => debug::debug(action),
+                Commands::Cluster { action } => cluster(cli.format, action, client()).await,
+                Commands::Debug { action } => debug::debug(cli.format, action, client()).await,
             }
         })
 }

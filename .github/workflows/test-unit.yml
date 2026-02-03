@@ -22,7 +22,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
+      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
 
     steps:
       - name: Checkout repository
@@ -53,7 +53,7 @@ jobs:
 
       - name: Python SDK unit-tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} feldera -vv
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/unit -vv
         working-directory: python
 
       - name: feldera-types
@@ -72,9 +72,32 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/feldera_sqllib-*
 
+      - name: feldera-macros
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: |
+          ./build/tuple_formats-*
+          ./build/tuple_proptest-*
+
+      - name: storage-test-compat
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: ../../build/storage_test_compat-*
+        working-directory: crates/storage-test-compat
+
       - name: feldera-ir
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/feldera_ir-*
+
+      - name: fda
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: ./build/fda-*
+
+      - name: datagen
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: ./build/feldera_datagen-*
+
+      - name: feldera-storage
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: ./build/feldera_storage-*
 
       - name: readers
         if: ${{ vars.CI_DRY_RUN != 'true' }}

@@ -1,2 +1,2 @@
-This directory contains some test files with JSON data obtained from
-the pipeline for testing the profile visualization code.
+This directory contains test profile bundles (.zip files) for testing
+the profile visualization code.

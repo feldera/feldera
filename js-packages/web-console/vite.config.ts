@@ -1,16 +1,18 @@
-import devtoolsJson from 'vite-plugin-devtools-json'
-
-import { defineConfig, type PluginOption, type UserConfig } from 'vite'
-
+import { monaco } from '@bithero/monaco-editor-vite-plugin'
 import svg from '@poppanator/sveltekit-svg'
 import { sveltekit } from '@sveltejs/kit/vite'
+import tailwindcss from '@tailwindcss/vite'
+import { defineConfig, type PluginOption, type UserConfig } from 'vite'
+import devtoolsJson from 'vite-plugin-devtools-json'
 import virtual from 'vite-plugin-virtual'
 import { felderaApiJsonSchemas } from './src/lib/functions/felderaApiJsonSchemas'
-import { monaco } from '@bithero/monaco-editor-vite-plugin'
+
+// TODO: remove Prettier
 
 export default defineConfig(async () => {
   return {
     plugins: [
+      tailwindcss(),
       sveltekit(),
       svg(),
       virtual({
@@ -38,14 +40,11 @@ export default defineConfig(async () => {
           'links',
           'multicursor',
           'parameterHints',
-          // 'quickCommand',
           'quickOutline',
           'smartSelect',
           'suggest',
-          // 'toggleHighContrast',
           'wordHighlighter',
           'wordOperations'
-          // 'wordPartOperations'
         ]
       }),
       devtoolsJson()

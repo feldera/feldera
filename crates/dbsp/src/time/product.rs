@@ -1,9 +1,10 @@
 use crate::{
+    Scope,
     algebra::{Lattice, PartialOrder},
     time::Timestamp,
     trace::Batch,
-    Scope,
 };
+use feldera_macros::IsNone;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::fmt::{Debug, Display, Formatter};
@@ -22,6 +23,7 @@ use std::fmt::{Debug, Display, Formatter};
     Archive,
     Serialize,
     Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(bound(

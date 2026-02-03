@@ -25,6 +25,8 @@ package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
+import org.apache.calcite.rel.type.RelDataTypeFieldImpl;
+import org.apache.calcite.rel.type.RelRecordType;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
@@ -34,7 +36,6 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelStruct;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
@@ -60,8 +61,8 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeKeyword;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
@@ -259,6 +260,29 @@ public class TypeCompiler implements ICompilerComponent {
         throw new UnimplementedException("Cast from " + right + " to " + left, left.getNode());
     }
 
+    public static RelDataType removeDuplicateFields(RelDataType rowType) {
+        FreshName names = new FreshName(new HashSet<>());
+        List<RelDataTypeField> fields = new ArrayList<>();
+        boolean duplicates = false;
+        if (rowType.isStruct()) {
+            for (RelDataTypeField field: rowType.getFieldList()) {
+                String name = field.getName();
+                if (names.isUsed(name)) {
+                    duplicates = true;
+                    name = names.freshName(name, true);
+                    fields.add(new RelDataTypeFieldImpl(name, field.getIndex(), field.getType()));
+                } else {
+                    fields.add(field);
+                    names.add(name);
+                }
+            }
+        }
+        if (!duplicates)
+            return rowType;
+        Utilities.enforce(rowType.getFieldCount() == fields.size());
+        return new RelRecordType(rowType.getStructKind(), fields, rowType.isNullable());
+    }
+
     public DBSPType convertType(
             CalciteObject node, ProgramIdentifier name,
             List<RelColumnMetadata> columns, boolean asStruct, boolean mayBeNull) {
@@ -269,8 +293,7 @@ public class TypeCompiler implements ICompilerComponent {
             DBSPType fType = this.convertType(range, col.getType(), true);
             fields.add(new DBSPTypeStruct.Field(col.node, col.getName(), index++, fType));
         }
-        String saneName = this.compiler.generateStructName(name, fields);
-        DBSPTypeStruct struct = new DBSPTypeStruct(node, name, saneName, fields, mayBeNull);
+        DBSPTypeStruct struct = new DBSPTypeStruct(node, name, fields, mayBeNull);
         if (asStruct) {
             return struct;
         } else {
@@ -284,7 +307,6 @@ public class TypeCompiler implements ICompilerComponent {
     }
 
     public static DBSPTypeStruct asStruct(
-            DBSPCompiler compiler,
             CalciteObject node, ProgramIdentifier name,
             List<ViewColumnMetadata> columns, boolean mayBeNull) {
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
@@ -292,8 +314,7 @@ public class TypeCompiler implements ICompilerComponent {
         for (ViewColumnMetadata col : columns) {
             fields.add(new DBSPTypeStruct.Field(col.node, col.getName(), index++, col.getType()));
         }
-        String saneName = compiler.generateStructName(name, fields);
-        return new DBSPTypeStruct(node, name, saneName, fields, mayBeNull);
+        return new DBSPTypeStruct(node, name, fields, mayBeNull);
     }
 
     final Set<Integer> timePrecisionsWarned = new HashSet<>();
@@ -310,29 +331,20 @@ public class TypeCompiler implements ICompilerComponent {
         boolean nullable = dt.isNullable();
         DBSPTypeStruct struct;
         if (dt.isStruct()) {
-            boolean isNamedStruct = dt instanceof RelStruct;
-            if (isNamedStruct) {
-                RelStruct rs = (RelStruct) dt;
-                ProgramIdentifier simpleName = Utilities.toIdentifier(rs.typeName);
-                // Struct must be already declared
-                struct = Objects.requireNonNull(this.compiler.getStructByName(simpleName));
-            } else {
-                List<DBSPTypeStruct.Field> fields = new ArrayList<>();
-                FreshName fieldNameGen = new FreshName(new HashSet<>());
-                int index = 0;
-                for (RelDataTypeField field : dt.getFieldList()) {
-                    DBSPType type = this.convertType(context, field.getType(), true);
-                    String fieldName = field.getName();
-                    if (this.compiler().options.languageOptions.lenient)
-                        // If we are not lenient and names are duplicated
-                        // we will get an exception below where we create the struct.
-                        fieldName = fieldNameGen.freshName(fieldName, true);
-                    fields.add(new DBSPTypeStruct.Field(
-                            CalciteObject.create(dt), new ProgramIdentifier(fieldName), index++, type));
-                }
-                String saneName = this.compiler.generateStructName(new ProgramIdentifier("*", false), fields);
-                struct = new DBSPTypeStruct(node, new ProgramIdentifier(saneName, false), saneName, fields, nullable);
+            List<DBSPTypeStruct.Field> fields = new ArrayList<>();
+            FreshName fieldNameGen = new FreshName(new HashSet<>());
+            int index = 0;
+            for (RelDataTypeField field : dt.getFieldList()) {
+                DBSPType type = this.convertType(context, field.getType(), asStruct);
+                String fieldName = field.getName();
+                if (this.compiler().options.languageOptions.lenient)
+                    // If we are not lenient and names are duplicated
+                    // we will get an exception below where we create the struct.
+                    fieldName = fieldNameGen.freshName(fieldName, true);
+                fields.add(new DBSPTypeStruct.Field(
+                        CalciteObject.create(dt), new ProgramIdentifier(fieldName), index++, type));
             }
+            struct = new DBSPTypeStruct(node, new ProgramIdentifier("", false), fields, nullable);
             if (asStruct) {
                 return struct.withMayBeNull(dt.isNullable());
             } else {
@@ -426,7 +438,10 @@ public class TypeCompiler implements ICompilerComponent {
                     RelDataType kt = Objects.requireNonNull(dt.getKeyType());
                     DBSPType keyType = this.convertType(context, kt, asStruct);
                     if (keyType.code == DBSPTypeCode.NULL) {
-                        throw new CompilationError("MAP key type cannot be NULL");
+                        throw new CompilationError("MAP key type cannot be NULL", context);
+                    }
+                    if (keyType.code == DBSPTypeCode.MAP) {
+                        throw new CompilationError("MAP key type cannot be MAP", context);
                     }
                     RelDataType vt = Objects.requireNonNull(dt.getValueType());
                     DBSPType valueType = this.convertType(context, vt, asStruct);
@@ -445,31 +460,31 @@ public class TypeCompiler implements ICompilerComponent {
                     throw new UnimplementedException("Support for SQL type " + Utilities.singleQuote(tn.getName())
                             + " not yet implemented", node);
                 case INTERVAL_YEAR:
-                    return new DBSPTypeMonthsInterval(node, DBSPTypeMonthsInterval.Units.YEARS, nullable);
+                    return new DBSPTypeLongInterval(node, DBSPTypeLongInterval.Units.YEARS, nullable);
                 case INTERVAL_YEAR_MONTH:
-                    return new DBSPTypeMonthsInterval(node, DBSPTypeMonthsInterval.Units.YEARS_TO_MONTHS, nullable);
+                    return new DBSPTypeLongInterval(node, DBSPTypeLongInterval.Units.YEARS_TO_MONTHS, nullable);
                 case INTERVAL_MONTH:
-                    return new DBSPTypeMonthsInterval(node, DBSPTypeMonthsInterval.Units.MONTHS, nullable);
+                    return new DBSPTypeLongInterval(node, DBSPTypeLongInterval.Units.MONTHS, nullable);
                 case INTERVAL_DAY:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.DAYS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.DAYS, nullable);
                 case INTERVAL_DAY_HOUR:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.DAYS_TO_HOURS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.DAYS_TO_HOURS, nullable);
                 case INTERVAL_DAY_MINUTE:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.DAYS_TO_MINUTES, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.DAYS_TO_MINUTES, nullable);
                 case INTERVAL_DAY_SECOND:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.DAYS_TO_SECONDS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.DAYS_TO_SECONDS, nullable);
                 case INTERVAL_HOUR:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.HOURS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.HOURS, nullable);
                 case INTERVAL_HOUR_MINUTE:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.HOURS_TO_MINUTES, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.HOURS_TO_MINUTES, nullable);
                 case INTERVAL_HOUR_SECOND:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.HOURS_TO_SECONDS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.HOURS_TO_SECONDS, nullable);
                 case INTERVAL_MINUTE:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.MINUTES, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.MINUTES, nullable);
                 case INTERVAL_MINUTE_SECOND:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.MINUTES_TO_SECONDS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.MINUTES_TO_SECONDS, nullable);
                 case INTERVAL_SECOND:
-                    return new DBSPTypeMillisInterval(node, DBSPTypeMillisInterval.Units.SECONDS, nullable);
+                    return new DBSPTypeShortInterval(node, DBSPTypeShortInterval.Units.SECONDS, nullable);
                 case GEOMETRY:
                     return DBSPTypeGeoPoint.create(node, nullable);
                 case TIMESTAMP:

@@ -5,7 +5,7 @@ readme = "README.md"
 publish = false
 categories = ["database", "api-bindings", "network-programming"]
 keywords = { workspace = true }
-edition = { workspace = true }
+edition = "2024"
 version = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
@@ -50,6 +50,7 @@ feldera-enterprise = []
 iceberg-tests-fs = []
 iceberg-tests-glue = []
 iceberg-tests-rest = []
+fips = ["rustls/fips"]
 
 [dependencies]
 feldera-types = { workspace = true }
@@ -72,6 +73,7 @@ bytestring = "1.4.0"
 circular-queue = { workspace = true, features = ["serde_support"] }
 crossbeam = { workspace = true }
 dbsp = { workspace = true }
+semver = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
 erased-serde = { workspace = true }
 serde_yaml = { workspace = true }
@@ -108,7 +110,6 @@ utoipa = { workspace = true }
 chrono = { workspace = true, features = ["rkyv-64", "serde"] }
 colored = { workspace = true }
 uuid = { workspace = true, features = ["v4", "std"] }
-rustls = { workspace = true }
 rkyv = { workspace = true, features = ["std", "size_64"] }
 csv-core = { workspace = true }
 rand = { workspace = true, features = ["small_rng"] }
@@ -157,7 +158,7 @@ governor = { workspace = true }
 nonzero_ext = { workspace = true }
 xxhash-rust = { workspace = true, features = ["xxh3"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 comfy-table = { workspace = true }
 tokio-postgres = { workspace = true, features = [
     "with-serde_json-1",
@@ -186,6 +187,7 @@ inventory = { workspace = true }
 backtrace = { workspace = true }
 itertools = { workspace = true }
 metrics-process = { version = "2.4.0", default-features = false }
+rustls = { workspace = true }
 serde_json_path_to_error = { workspace = true }
 smallstr = { workspace = true }
 dashmap = { workspace = true }
@@ -194,6 +196,7 @@ thread-id = { workspace = true }
 parking_lot = { workspace = true }
 backoff = { workspace = true }
 sentry = { workspace = true }
+zip = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]
@@ -208,6 +211,7 @@ nix = { workspace = true, features = ["signal", "mman", "time", "feature"] }
 [dev-dependencies]
 actix-test = { workspace = true }
 bstr = { workspace = true, features = ["serde1"] }
+feldera-macros = { workspace = true }
 serde_json = { workspace = true }
 size-of = { workspace = true }
 tempfile = { workspace = true }

@@ -5,7 +5,7 @@
   import { getRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
   import type { ProgramStatus } from '$lib/services/pipelineManager'
 
-  let {
+  const {
     pipelineName,
     runtimeVersion,
     baseRuntimeVersion,
@@ -19,7 +19,7 @@
     programStatus: ProgramStatus | undefined
   } = $props()
 
-  let { version, status } = $derived(
+  const { version, status } = $derived(
     getRuntimeVersion(
       {
         runtime: runtimeVersion,
@@ -42,16 +42,16 @@
     </div>
   {/if}
   {#if status === 'custom'}
-    <span class="chip relative h-5 text-sm text-surface-700-300 preset-outlined-surface-200-800">
+    <span class="relative chip h-5 preset-outlined-surface-200-800 text-sm text-surface-700-300">
       Custom
       <div class="fd fd-info pl-2 text-[14px] text-warning-600-400"></div>
     </span>
   {:else if status === 'update_available'}
-    <span class="chip h-5 text-sm text-tertiary-500 !ring-tertiary-500 preset-outlined">
+    <span class="chip h-5 preset-outlined-tertiary-800-200 text-sm text-tertiary-800-200">
       Update available
     </span>
   {:else}
-    <span class="chip h-5 text-sm preset-outlined-success-600-400"> Latest </span>
+    <span class="chip h-5 preset-outlined-success-600-400 text-sm"> Latest </span>
   {/if}
 {/if}
 <PipelineVersionTooltip {pipelineName} {status} {baseRuntimeVersion} />

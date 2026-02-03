@@ -4,10 +4,9 @@ use std::{
 };
 
 use crate::{
-    declare_trait_object,
+    DBData, declare_trait_object,
     dynamic::erase::Erase,
-    utils::{stable_sort_by, Tup2},
-    DBData,
+    utils::{Tup2, stable_sort_by},
 };
 
 use super::{DataTrait, DynPair, LeanVec, Vector};

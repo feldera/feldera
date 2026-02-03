@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.util.IJson;
 import org.dbsp.util.JsonStream;
 import org.dbsp.util.Linq;
@@ -23,6 +24,9 @@ public class TableMetadata implements IJson {
     final List<ProgramIdentifier> columnNames;
     final List<ForeignKey> foreignKeys;
     public final boolean materialized;
+    /** null if not defined */
+    @Nullable
+    public final Boolean skipUnusedColumns;
     final TableChanges changes;
 
     /** Describes the kind of changes that can be applied to the table */
@@ -35,12 +39,13 @@ public class TableMetadata implements IJson {
 
     public TableMetadata(ProgramIdentifier tableName,
                          List<InputColumnMetadata> columns, List<ForeignKey> foreignKeys,
-                         boolean materialized, boolean streaming) {
+                         boolean materialized, boolean streaming, @Nullable Boolean skipUnusedColumns) {
         this.tableName = tableName;
         this.columnMetadata = new LinkedHashMap<>();
         this.materialized = materialized;
         this.foreignKeys = foreignKeys;
         this.changes = streaming ? TableChanges.AppendOnly : TableChanges.Unrestricted;
+        this.skipUnusedColumns = skipUnusedColumns;
         this.columnNames = new ArrayList<>();
         for (InputColumnMetadata meta: columns) {
             Utilities.putNew(this.columnMetadata, meta.name, meta);
@@ -95,8 +100,11 @@ public class TableMetadata implements IJson {
         stream.beginObject();
         stream.label("tableName");
         this.tableName.asJson(visitor);
-        stream.label("materialized").append(this.materialized);
+        stream.label(CreateTableStatement.MATERIALIZED).append(this.materialized);
         stream.label("changes").append(this.changes.toString());
+        // Do not emit if not defined
+        if (this.skipUnusedColumns != null)
+            stream.label(CreateTableStatement.SKIP_UNUSED_COLUMNS).append(this.skipUnusedColumns);
         stream.label("foreignKeys");
         stream.beginArray();
         for (ForeignKey key: this.foreignKeys)
@@ -105,7 +113,7 @@ public class TableMetadata implements IJson {
         stream.label("columnMetadata");
         stream.beginArray();
         for (InputColumnMetadata col: this.columnMetadata.values())
-            col.asJson(visitor);
+            col.asJson(visitor, this.skipUnusedColumns != null);
         stream.endArray();
         stream.endObject();
     }
@@ -113,7 +121,11 @@ public class TableMetadata implements IJson {
     public static TableMetadata fromJson(JsonNode node, JsonDecoder decoder) {
         ProgramIdentifier tableName = ProgramIdentifier.fromJson(
                 Utilities.getProperty(node, "tableName"));
-        boolean materialized = Utilities.getBooleanProperty(node, "materialized");
+        boolean materialized = Utilities.getBooleanProperty(node, CreateTableStatement.MATERIALIZED);
+        Boolean skipUnusedColumns = null;
+        if (node.has(CreateTableStatement.SKIP_UNUSED_COLUMNS)) {
+            skipUnusedColumns = Utilities.getBooleanProperty(node, CreateTableStatement.SKIP_UNUSED_COLUMNS);
+        }
         String changesS = Utilities.getStringProperty(node, "changes");
         TableChanges changes = TableChanges.valueOf(changesS);
         JsonNode fk = Utilities.getProperty(node, "foreignKeys");
@@ -122,6 +134,7 @@ public class TableMetadata implements IJson {
         List<InputColumnMetadata> columnMetadata =
                 Linq.list(Linq.map(cm.elements(), e -> InputColumnMetadata.fromJson(e, decoder)));
         return new TableMetadata(
-                tableName, columnMetadata, foreignKeys, materialized, changes == TableChanges.AppendOnly);
+                tableName, columnMetadata, foreignKeys, materialized,
+                changes == TableChanges.AppendOnly, skipUnusedColumns);
     }
 }

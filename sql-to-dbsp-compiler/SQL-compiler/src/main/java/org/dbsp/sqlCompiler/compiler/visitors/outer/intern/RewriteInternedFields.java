@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregator;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
@@ -44,7 +45,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Oouter visitor which rewrites the graph to convert string types to interned strings */
+/** Outer visitor which rewrites the graph to convert string types to interned strings */
 public class RewriteInternedFields extends CircuitCloneVisitor {
     /** Operators that collect all interned strings */
     private final List<OutputPort> dynamicStrings;
@@ -94,10 +95,10 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
             DBSPType fieldType = tuple.tupFields[i];
             DBSPExpression field = var.deref().field(i).applyCloneIfNeeded();
             if (list.contains(i) && fieldType.code == DBSPTypeCode.STRING) {
-                fields[i] = field.cast(field.getNode(), InternInner.nullableString, false);
+                fields[i] = field.cast(field.getNode(), InternInner.nullableString, DBSPCastExpression.CastType.SqlUnsafe);
                 field = InternInner.callIntern(field);
                 DBSPExpression field1 = var1.deref().field(i).applyCloneIfNeeded()
-                        .cast(field.getNode(), InternInner.nullableString, false);
+                        .cast(field.getNode(), InternInner.nullableString, DBSPCastExpression.CastType.SqlUnsafe);
                 originalFields[index] = field1;
                 index++;
             }
@@ -151,7 +152,7 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
                     v.deref()
                             .field(0)
                             .applyClone()
-                            .cast(v.getNode(), InternInner.nullableString, false))
+                            .cast(v.getNode(), InternInner.nullableString, DBSPCastExpression.CastType.SqlUnsafe))
                     .closure(v);
             unnest = new DBSPMapOperator(node, clo, unnest.outputPort());
             this.addOperator(unnest);
@@ -530,9 +531,14 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
             return source;
         DBSPVariablePath var = sourceType.getKVRefType().var();
         DBSPExpression convertKey = this.unintern(var.field(0).deref(), commonKeyType);
+        DBSPExpression right = DBSPTupleExpression.flatten(var.field(1).deref());
+        if (sourceType.elementType.mayBeNull) {
+            right = new DBSPIfExpression(right.getNode(), var.field(1).is_null(),
+                    sourceType.elementType.none(),
+                    new DBSPTupleExpression(right.allFields(), true));
+        }
         DBSPClosureExpression converter = new DBSPRawTupleExpression(
-                convertKey,
-                DBSPTupleExpression.flatten(var.field(1).deref())).closure(var);
+                convertKey, right).closure(var);
         DBSPMapIndexOperator result = new DBSPMapIndexOperator(
                 source.operator.getRelNode(),
                 converter, source);
@@ -696,7 +702,7 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
                     yield expr.applyClone();
                 }
                 if (type.mayBeNull)
-                    expr = expr.nullabilityCast(type.withMayBeNull(false), false);
+                    expr = expr.nullabilityCast(type.withMayBeNull(false), DBSPCastExpression.CastType.SqlUnsafe);
                 DBSPTypeTupleBase tuple = desiredType.to(DBSPTypeTupleBase.class);
                 DBSPExpression[] fields = new DBSPExpression[tuple.size()];
                 for (int i = 0; i < tuple.size(); i++) {
@@ -713,7 +719,7 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
                     Utilities.enforce(desiredType.mayBeNull);
                     DBSPExpression positive = desiredType.none();
                     yield new DBSPIfExpression(expr.getNode(), condition,
-                            positive, convertedTuple.nullabilityCast(type, false));
+                            positive, convertedTuple.nullabilityCast(type, DBSPCastExpression.CastType.SqlUnsafe));
                 } else {
                     yield convertedTuple;
                 }
@@ -791,7 +797,7 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
                     new DBSPTypeTuple(InternInner.nullableString));
             for (var lit : this.allStringLiterals) {
                 result.append(new DBSPTupleExpression(
-                        lit.cast(lit.getNode(), InternInner.nullableString, false)));
+                        lit.cast(lit.getNode(), InternInner.nullableString, DBSPCastExpression.CastType.SqlUnsafe)));
             }
             DBSPConstantOperator constant = new DBSPConstantOperator(
                     CalciteEmptyRel.INSTANCE, result, false);
@@ -821,7 +827,7 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
         var = var.getType().var();
         func = new DBSPTupleExpression(var.deref()
                 .field(0)
-                .nullabilityCast(DBSPTypeString.varchar(false), false)
+                .nullabilityCast(DBSPTypeString.varchar(false), DBSPCastExpression.CastType.SqlUnsafe)
                 .applyCloneIfNeeded()
         ).closure(var);
         DBSPMapOperator map = new DBSPMapOperator(CalciteEmptyRel.INSTANCE, func, filter.outputPort());

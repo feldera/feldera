@@ -1,6 +1,6 @@
 use crate::{
-    dynamic::DynData, trace::BatchReaderFactories, typed_batch::TypedBox, DBData, OrdIndexedZSet,
-    RootCircuit, Stream, ZWeight,
+    DBData, OrdIndexedZSet, RootCircuit, Stream, ZWeight, dynamic::DynData,
+    trace::BatchReaderFactories, typed_batch::TypedBox,
 };
 
 impl<K, V> Stream<RootCircuit, OrdIndexedZSet<K, V>>

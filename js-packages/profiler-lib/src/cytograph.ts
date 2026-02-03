@@ -3,7 +3,7 @@
 import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular, type StylesheetJson } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
 import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
-import { CircuitProfile, type NodeId } from './profile.js';
+import { CircuitProfile, NodeAndMetric, PropertyValue, MissingValue, type NodeId } from './profile.js';
 import { CircuitSelection } from './selection.js';
 import elk from 'cytoscape-elk';
 import { Sources } from './dataflow.js';
@@ -11,6 +11,7 @@ import { Point, Size } from "./planar.js";
 import { ViewNavigator } from './navigator.js';
 import { ZSet } from "./zset.js";
 import { MetadataSelection } from './metadataSelection.js';
+import { type NodeAttributes, type TooltipCell, type ProfilerCallbacks } from './profiler.js';
 
 /** A measurement represented as a string, but also with a normalized value between 0 and 100. */
 class SerializedMeasurement {
@@ -94,13 +95,28 @@ class GraphNode {
         return this.parent;
     }
 
+    /**
+     * @returns true if the node has source position information
+     */
+    get hasSourcePosition() {
+        return this.sources.length > 0
+    }
+
     /** Returns a data structure understood by cytoscape for a node. */
     getDefinition(): NodeDefinition {
+        // Add a small SQL prefix for nodes with source positions
+        // TODO: To improve the design we can use https://github.com/kaluginserg/cytoscape-node-html-label
+        // to implement the badge that indicates that a node has the source position available
+        const label = `${this.hasSourcePosition ? "◆ " : ""}${this.id} ${this.label}`;
+
         let result = {
+            // These data attributes can be used in cytoscape.StylesheetJson to conditionally style the nodes.
+            // Example: `{ selector: 'node[?has_source]', css: { ...`
             "data": {
                 "id": this.id,
-                "label": this.id + " " + this.label,
-                "sources": this.sources
+                "label": label,
+                "sources": this.sources,
+                "has_source": this.hasSourcePosition
             }
         };
         let data = result["data"] as any;
@@ -223,6 +239,44 @@ export class Cytograph {
         return g;
     }
 
+    /** Given a metric, return the displayed nodes that have the top values for the metric. */
+    topNodes(profile: CircuitProfile, metric: string): Array<NodeAndMetric> {
+        let result: Array<NodeAndMetric> = [];
+        let range = profile.propertyRange(metric);
+        if (range.isEmpty()) {
+            return result;
+        }
+        for (const node of this.nodes) {
+            if (node.expanded) { continue; }
+            let id = node.getId();
+            let profileNode = profile.getNode(id);
+            if (profileNode.isNone()) { continue; }
+            let values = profileNode.unwrap().getMeasurements(metric);
+            let maxValue: number | null = null;
+            let max: PropertyValue | null = null;
+            for (const pv of values) {
+                const num = pv.getNumericValue();
+                if (num.isNone()) { continue; }
+                if (maxValue === null) {
+                    maxValue = num.unwrap();
+                    max = pv;
+                } else if (num.unwrap() > maxValue) {
+                    maxValue = num.unwrap();
+                    max = pv;
+                }
+            }
+            if (maxValue === null) { continue; }
+            let normalized = range.percents(maxValue);
+            if (range.isPoint()) {
+                normalized = 0;
+            }
+            result.push(new NodeAndMetric(id, max!.toString(), node.label, normalized));
+        }
+        // Sort in decreasing order
+        result.sort((a, b) => b.normalizedValue - a.normalizedValue);
+        return result;
+    }
+
     // Create a Cytograph from a CircuitProfile filtered by the specified selection.
     static fromProfile(profile: CircuitProfile, selection: CircuitSelection): Cytograph {
         let g = this.createUnderlyingGraph(profile);
@@ -262,21 +316,20 @@ export class Cytograph {
                 visibleParents.add(p);
             }
             let src = sources.toString(node.sourcePositions);
-            node.getMeasurements("operation");
-
             let operation = node.operation;
             if (operation === CircuitProfile.Z1_TRACE_OUTPUT)
                 // These nodes were modified in the profile.fixZ1Nodes() function.
                 operation = CircuitProfile.Z1_TRACE;
-            let visibleNode = new GraphNode(nodeId, node.persistentId, operation, hasChildren, expand && hasChildren, parent, src);
-            result.addNode(visibleNode);
-            inserted.set(nodeId, visibleNode);
+            let graphNode = new GraphNode(nodeId, node.persistentId, operation, hasChildren, expand && hasChildren, parent, src);
+            result.addNode(graphNode);
+            inserted.set(nodeId, graphNode);
         }
 
         for (const nodeId of profile.complexNodes.keys()) {
             let complex = profile.complexNodes.get(nodeId).unwrap();
             let parent = profile.parents.get(nodeId);
-            if (!profile.isTop(nodeId) && visibleParents.has(nodeId)) {
+            if (profile.isTop(nodeId) || // always create a node for the toplevel graph
+                visibleParents.has(nodeId)) {
                 let positions = complex.sourcePositions;
                 let src = sources.toString(positions);
                 let node = new GraphNode(nodeId, complex.persistentId, "region", true, true, parent, src);
@@ -344,7 +397,14 @@ export class CytographRendering {
     currentGraph: Cytograph | null;
     readonly cy: cytoscape.Core;
     readonly navigator: ViewNavigator;
-    // If not read, do not render
+    /**
+     * If true do not remove the node information from the screen on mouse leave
+     */
+    stickyInformation: boolean;
+    // Last node that triggered a recomputation of the layout
+    lastNode: Option<NodeId>;
+    // Current node that has tooltip displayed (for refreshing on metadata changes)
+    private currentTooltipNode: NodeId | null = null;
 
     readonly graph_style: StylesheetJson = [
         {
@@ -370,6 +430,13 @@ export class CytographRendering {
             selector: 'node[value]',
             css: {
                 'background-color': "mapData(value, 0, 100, white, red)",
+            }
+        },
+        {
+            // how to display "invisible" node, only used for the root node
+            selector: 'node[invisible]',
+            style: {
+                'display': 'none'
             }
         },
         {
@@ -444,18 +511,20 @@ export class CytographRendering {
     constructor(
         graphContainer: HTMLElement,
         navigatorContainer: HTMLElement,
-        private readonly tooltip: HTMLElement,
-        private readonly tooltipContainer: HTMLElement | undefined,
+        private readonly callbacks: ProfilerCallbacks,
         readonly graph: Graph<NodeId>,
+        readonly rootNodeId: NodeId,
         readonly selection: CircuitSelection,
         private metadataSelection: MetadataSelection,
         private message: (msg: string) => void,
-        private clearMessage: () => void) {
+        private clearMessage: () => void,
+        private onTooltipContextChanged: () => void) {
         cytoscape.use(elk);
         cytoscape.use(dblclick);
 
         this.navigator = new ViewNavigator(navigatorContainer);
         this.currentGraph = null;
+        this.stickyInformation = false;
         // Start with an empty graph
         this.cy = cytoscape({
             container: graphContainer,
@@ -464,6 +533,7 @@ export class CytographRendering {
         // double-clicking on the navigator will adjust the graph to fit
         this.navigator.setOnDoubleClick(() => this.cy.fit());
         this.cy.style(this.graph_style);
+        this.lastNode = Option.none();
     }
 
     /** Metric chosen by the user to drive the color of the nodes. */
@@ -476,18 +546,7 @@ export class CytographRendering {
         if (el === null) {
             return;
         }
-        let size = el.renderedWidth();
-        let desiredSize = 30;
-        if (size < desiredSize) {
-            let zoom = this.cy.zoom();
-            let targetZoom = zoom * desiredSize / size;
-            this.cy.zoom({
-                level: targetZoom,
-                position: el.position()
-            });
-        } else {
-            this.cy.center(el);
-        }
+        this.center(Option.some(value));
     }
 
     // Layout to use for the first graph rendering
@@ -520,7 +579,7 @@ export class CytographRendering {
         }
     };
 
-    /** The graph has changed; adjust the display. */
+    /** The graph has changed; adjust the display; this completes asynchronously */
     updateGraph(newGraph: Cytograph) {
         this.cy.startBatch();
         this.cy.container()!.style.visibility = "hidden";
@@ -546,8 +605,27 @@ export class CytographRendering {
 
     /** Center the visualization around the node with the specified id. */
     center(node: Option<NodeId>): void {
-        if (node.isSome())
-            this.cy.center(this.cy.getElementById(node.unwrap()));
+        if (!node.isSome()) {
+            return;
+        }
+
+        const el = this.cy.getElementById(node.unwrap());
+        let size = el.renderedHeight();
+        let desiredSize = 15;
+        // We determine the minimum size of found node by its height, because it is tied to font size
+        if (size < desiredSize) {
+            let zoom = this.cy.zoom();
+            let targetZoom = zoom * desiredSize / size;
+            this.cy.zoom({
+                level: targetZoom,
+                position: el.position()
+            });
+        }
+        this.cy.center(el);
+    }
+
+    topNodes(profile: CircuitProfile, metric: string): Array<NodeAndMetric> {
+        return this.currentGraph?.topNodes(profile, metric) || [];
     }
 
     /** Get a handle to the node in the rendering with the specified id. */
@@ -555,21 +633,28 @@ export class CytographRendering {
         return this.cy.getElementById(node) as NodeSingular;
     }
 
-    static percentile(m: Option<number>, range: NumericRange): number {
-        if (m.isNone())
-            return 0;
-        if (!range.isEmpty() && !range.isPoint()) {
-            return range.percents(m.unwrap());
+    static toMeasurement(m: PropertyValue, range: NumericRange): SerializedMeasurement {
+        let percentile;
+        let value = m.getNumericValue();
+        if (value.isNone())
+            percentile = 0;
+        else if (!range.isEmpty() && !range.isPoint()) {
+            percentile = range.percents(value.unwrap());
+        } else {
+            percentile = 0;
         }
-        return 0;
+
+        return new SerializedMeasurement(m.toString(), percentile);
     }
 
     /** Compute the attributes for all cytograph nodes based on the circuit profile and current selection. */
     computeAttributes(profile: CircuitProfile, selection: MetadataSelection) {
+        let workers = selection.workersVisible.getSelectedElements(profile.getWorkerNames());
+        let columnNames = [...workers.map(w => w.toString())];
+        columnNames.push("Min");
+        columnNames.push("Max");
         for (const node of this.currentGraph!.nodes) {
             let profileNode = profile.getNode(node.getId()).unwrap();
-            let workers = selection.workersVisible.getSelectedElements(profile.getWorkerNames());
-            let columnNames = workers.map(w => w.toString());
             let data = new Map<string, Array<SerializedMeasurement>>();
             // Select just the visible metrics
             // Compute per-worker attributes
@@ -577,10 +662,27 @@ export class CytographRendering {
                 let range = profile.propertyRange(metric);
                 let metrics = profileNode.getMeasurements(metric);
                 let selected = selection.workersVisible.getSelectedElements(metrics);
-                data.set(metric, selected.map(
-                    m => new SerializedMeasurement(
-                        m.toString(),
-                        CytographRendering.percentile(m.getNumericValue(), range))));
+                let measurements: Array<SerializedMeasurement> = [];
+                let min: PropertyValue = MissingValue.INSTANCE;
+                let max: PropertyValue = MissingValue.INSTANCE;
+                for (const m of selected) {
+                    measurements.push(CytographRendering.toMeasurement(m, range));
+                }
+                // Compute min and max over all metrics, including the ones not selected
+                for (const m of metrics) {
+                    if (min instanceof MissingValue ||
+                        (m.getNumericValue().isSome() && min.getNumericValue().unwrap() > m.getNumericValue().unwrap())) {
+                        min = m;
+                    }
+                    if (max instanceof MissingValue ||
+                        (m.getNumericValue().isSome() && max.getNumericValue().unwrap() < m.getNumericValue().unwrap())) {
+                        max = m;
+                    }
+                }
+
+                measurements.push(CytographRendering.toMeasurement(min, range));
+                measurements.push(CytographRendering.toMeasurement(max, range));
+                data.set(metric, measurements);
             }
             // additional key-value per node attributes
             let kv = new Map();
@@ -602,6 +704,9 @@ export class CytographRendering {
             rendered.data("has_children", node.hasChildren);
             // attach the attributes to the node
             rendered.data("attributes", attributes);
+            if (node.getId() === this.rootNodeId) {
+                rendered.data("invisible", true);
+            }
         }
     }
 
@@ -609,13 +714,13 @@ export class CytographRendering {
     computeImportance(profile: CircuitProfile, selection: MetadataSelection) {
         let rangeO = profile.dataRange.get(selection.metric);
         for (const node of this.currentGraph!.nodes) {
+            if (node.expanded) { continue; }
             let profileNode = profile.getNode(node.getId()).unwrap();
             let percents = 0;
             if (rangeO.isSome()) {
                 let range = rangeO.unwrap();
                 if (!range.isEmpty() && !range.isPoint()) {
                     let m = profileNode.getMeasurements(selection.metric);
-                    m = selection.workersVisible.getSelectedElements(m);
                     let values = m.map(v => v.getNumericValue()).filter(v => v.isSome()).map(v => v.unwrap());
                     let max = Math.max(...values, 0);
                     percents = range.percents(max);
@@ -634,6 +739,14 @@ export class CytographRendering {
         this.computeImportance(profile, selection);
         this.computeAttributes(profile, selection);
         this.cy.style().update();
+
+        // Refresh the tooltip if there's a node currently displayed
+        if (this.currentTooltipNode !== null) {
+            const node = this.getRenderedNode(this.currentTooltipNode);
+            if (node) {
+                this.displayNodeAttributes(node);
+            }
+        }
     }
 
     /** Called when the graph has changed to trigger a new layout computation. */
@@ -707,29 +820,71 @@ export class CytographRendering {
         }
     }
 
-    setEvents(onDoubleClick: (node: NodeId) => void) {
+    keyup(event: KeyboardEvent) {
+        if (event.key === "Escape") {
+            this.setStickyNodeInformation(false);
+            this.hideNodeInformation();
+        }
+    }
+
+    setStickyNodeInformation(sticky: boolean) {
+        this.stickyInformation = sticky;
+    }
+
+    setEvents(callbacks: {
+        onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined
+    }) {
+        document.addEventListener('keyup', (e) => this.keyup(e));
         this.cy
             //.on('render', () => console.log("rendering"))
             //.on('layoutstart', () => console.log("start layout"))
             .on('layoutstop', () => this.layoutComplete())
-            .on('mouseover', 'node', event => this.hover(event))
+            .on('mouseover', 'node', event => this.displayEventTargetAttributes(event, false))
             .on('mouseout', 'node', event => this.mouseOut(event))
             .on('zoom pan resize', () => this.updateNavigator(this.navigator))
+            .on('click', 'node', (e) => {
+                // Hide previous node information if any
+                this.hideNodeInformation();
+                // Display current node
+                this.displayEventTargetAttributes(e, true);
+            })
             .on('dblclick', 'node', (e) => {
                 let node = e.target as NodeSingular;
-                if (node === null || !node.data("has_children")) {
-                    // Do not dispatch double click to nodes without children
-                    return;
-                }
                 let id = e.target.id();
-                onDoubleClick(id);
+
+                if (node === null || !node.data("has_children")) {
+                    // Leaf node - dispatch dedicated double click
+                    callbacks.onNodeDoubleClick?.(id, 'leaf');
+                    return
+                }
+
+                // Group node - toggle expand/collapse and dispatch dedicated double click
+                this.hideNodeInformation();
+                this.setStickyNodeInformation(false);
+                this.lastNode = Option.some(id);
+                callbacks.onNodeDoubleClick?.(id, 'group');
             });
     }
 
     layoutComplete() {
+        // console.log("layout complete");
         this.clearMessage();
         this.cy.container()!.style.visibility = "visible";
         this.updateNavigator(this.navigator);
+        if (this.lastNode.isSome()) {
+            this.center(this.lastNode);
+            this.lastNode = Option.none();
+        }
+        // Set minimum/maximum zoom levels
+        // Do not allow to zoom in more than 1.5; this should be enough to make any node visible
+        this.cy.maxZoom(1.5);
+        const rect = this.cy.container()?.getBoundingClientRect();
+        if (rect !== undefined) {
+            const bb = this.cy.elements().boundingBox();
+            let maxRatio = Math.min(rect.height / bb.h, rect.width / bb.w);
+            // Do not allow zoom out more than required to fit the entire graph
+            this.cy.minZoom(maxRatio);
+        }
     }
 
     // The user has panned/zoomed => tell the navigator about it.
@@ -791,147 +946,123 @@ export class CytographRendering {
     }
 
     // Called when someones hovers over a node.
+    // If the previous display is sticky, do nothing.
     // Currently it displays
     // (1) the attributes of the node,
     // (2) it highlights the edges reaching the node,
     // (3) it displays the source position of the node.
-    hover(event: EventObject) {
-        if (this.cy === null)
-            return;
-
+    displayEventTargetAttributes(event: EventObject, isSticky: boolean) {
         let node: NodeSingular = event.target;
-        if (node.data("expanded") === true)
+        if (node.data("expanded") === true || (this.stickyInformation && !isSticky)) {
             return;
+        }
+
+        // Keep the information after mouse out
+        this.setStickyNodeInformation(isSticky);
+
+        this.displayNodeAttributes(node);
+    }
+
+    displayNodeAttributes(node: NodeSingular) {
+        const nodeId = node.id();
+        const attributes: Attributes = node.data().attributes;
+        const sources = node.data("sources")
+        if (this.cy === null) {
+            return;
+        }
+
+        // Track the current tooltip node for refreshing on metadata changes
+        this.currentTooltipNode = nodeId;
+        this.onTooltipContextChanged()
 
         // highlight edges
-        let reachable = this.reachableFrom(node.id(), true);
+        let reachable = this.reachableFrom(nodeId, true);
         reachable.addClass('highlight-forward');
-        reachable = this.reachableFrom(node.id(), false);
+        reachable = this.reachableFrom(nodeId, false);
         reachable.addClass('highlight-backward');
 
-        // create a table for the matrix attributes
-        let attributes: Attributes = node.data().attributes;
-        let table = document.createElement("table");
-
-        let tableWidth = 1;
+        // Build structured tooltip data
         let visible = false;
+
+        const tooltipData: NodeAttributes = {
+            columns: [],
+            rows: [],
+            attributes: new Map()
+        };
+
+        // Add matrix attributes (per-worker metrics)
         if (attributes.matrix.attributeCount() > 0 && attributes.matrix.getColumnCount() > 0) {
             visible = true;
-            let row = table.insertRow();
-            row.insertCell(0);
-            let colCount = attributes.matrix.getColumnCount();
-            tableWidth = colCount + 1;
+
+            // Set column headers (worker names)
+            const colCount = attributes.matrix.getColumnCount();
             for (let i = 0; i < colCount; i++) {
-                const th = document.createElement("th");
-                th.innerText = attributes.matrix.columnNames[i] || "";
-                row.appendChild(th);
+                tooltipData.columns.push(attributes.matrix.columnNames[i]!);
             }
 
+            // Add rows (metrics)
             const MAX_CELL_COUNT = 40;
             let matrix = attributes.matrix.getAttributes();
             let keys = [...matrix.keys()];
-            keys.sort();
+            keys.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+
             for (const key of keys) {
                 let values = matrix.get(key)!;
-                let index = 0;
-                for (const value of values) {
-                    let position = index % MAX_CELL_COUNT;
-                    if (position === 0) {
-                        // Every MAX_CELL_COUNT start a new row
-                        row = table.insertRow();
-                        let cell = row.insertCell(0);
-                        if (index === 0) {
-                            cell.innerText = key;
-                            cell.style.whiteSpace = "nowrap";
-                            if (key === this.getCurrentMetric()) {
-                                cell.style.backgroundColor = "blue";
-                            }
-                        }
-                    }
+                const cells: TooltipCell[] = [];
 
-                    let cell = row.insertCell(position + 1);
-                    let percent = value.percentile;;
-                    // Interpolate between white and red
-                    let color = `rgb(255, ${255 * (100 - percent) / 100}, ${255 * (100 - percent) / 100})`
-                    cell.style.backgroundColor = color;
-                    cell.style.color = "black";
-                    cell.innerText = value.value;
-                    cell.style.textAlign = "right";
-                    index++;
+                // Limit to MAX_CELL_COUNT cells per metric
+                for (let i = 0; i < Math.min(values.length, MAX_CELL_COUNT); i++) {
+                    const value = values[i];
+                    if (value) {
+                        cells.push({
+                            value: value.value,
+                            percentile: value.percentile
+                        });
+                    }
                 }
+
+                tooltipData.rows.push({
+                    metric: key,
+                    isCurrentMetric: key === this.getCurrentMetric(),
+                    cells
+                });
             }
         }
 
-        // display source position information
-        let sources = node.data("sources");
+        // Add source position information
         if (sources.length > 0) {
             visible = true;
-            let row = table.insertRow();
-            let cell = row.insertCell(0);
-            cell.innerText = "sources";
-
-            cell = row.insertCell(1);
-            cell.colSpan = tableWidth - 1;
-            cell.style.textAlign = "left";
-            cell.style.fontFamily = "monospace";
-            cell.style.whiteSpace = "pre-wrap";
-            cell.style.minWidth = "80ch";
-            cell.innerText = sources;
+            tooltipData.sources = sources;
         }
 
-        // display additional attributes
-        if (attributes.kv.size != 0) {
+        // Add additional key-value attributes
+        if (attributes.kv.size !== 0) {
             visible = true;
-            for (const kv of attributes.kv.entries()) {
-                let row = table.insertRow();
-                let cell = row.insertCell(0);
-                cell.innerText = kv[0];
-                cell.style.whiteSpace = "nowrap";
-
-                cell = row.insertCell(1);
-                cell.colSpan = tableWidth - 1;
-                cell.style.whiteSpace = "nowrap";
-                cell.innerText = kv[1];
+            for (const [key, value] of attributes.kv.entries()) {
+                tooltipData.attributes.set(key, value);
             }
         }
 
         if (!visible)
             return;
 
-        // display the computed table
-        this.tooltip.innerHTML = "";  // Clear previous content.
-        this.tooltip.appendChild(table);
-        this.tooltip.style.display = 'block';
-
-        // Position tooltip based on mode and container
-        if (this.tooltipContainer) {
-            // Stick to top-right of tooltip container
-            this.tooltip.style.right = '0px';
-            this.tooltip.style.top = '0px';
-            this.tooltip.style.left = 'auto';
-        } else if (!CytographRendering.FIXED_TOOLTIP_POSITION) {
-            // Follow mouse position
-            const canvasRect = this.cy.container()!.getBoundingClientRect();
-            const x = canvasRect.left + event.renderedPosition.x;
-            const y = canvasRect.top + event.renderedPosition.y;
-            this.tooltip.style.left = x + 'px';
-            this.tooltip.style.top = y + 'px';
-            this.tooltip.style.right = 'auto';
-        } else {
-            // Stick to top-right of viewport (document.body)
-            this.tooltip.style.right = '0px';
-            this.tooltip.style.top = '0px';
-            this.tooltip.style.left = 'auto';
-        }
+        // Send tooltip data via callback
+        this.callbacks.displayNodeAttributes(Option.some(tooltipData), this.stickyInformation);
     }
 
     // hide the information shown when hovering
-    mouseOut(event: EventObject) {
-        this.tooltip.style.display = 'none';
-        let node: NodeSingular = event.target;
-        let reachable = this.reachableFrom(node.id(), true);
+    mouseOut(_event: EventObject) {
+        if (!this.stickyInformation) {
+            this.hideNodeInformation();
+        }
+    }
+
+    hideNodeInformation() {
+        this.currentTooltipNode = null;
+        this.onTooltipContextChanged()
+        this.callbacks.displayNodeAttributes(Option.none(), false);
+        let reachable = this.cy.edges();
         reachable.removeClass('highlight-forward');
-        reachable = this.reachableFrom(node.id(), false);
         reachable.removeClass('highlight-backward');
     }
 
@@ -945,13 +1076,9 @@ export class CytographRendering {
         }
 
         // Hide tooltip
-        this.tooltip.style.display = 'none';
+        this.callbacks.displayNodeAttributes(Option.none(), false);
 
         // Clear references
         this.currentGraph = null;
     }
-
-    // Set to true to display the tooltip in a fixed position.
-    // Set to false to display the tooltip at the mouse position.
-    static readonly FIXED_TOOLTIP_POSITION = true;
 }

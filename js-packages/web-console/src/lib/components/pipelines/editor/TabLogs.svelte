@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  let streams: Record<
+  const streams: Record<
     string,
     {
       firstRowIndex: number
@@ -13,7 +13,7 @@
         | { closed: {}; cancelRetry: () => void; retryAtTimestamp: number }
     }
   > = {}
-  let getStreams = $state(() => streams)
+  let getStreams = new Ref(streams)
   const pipelineActionCallbacks = usePipelineActionCallbacks()
   const dropLogHistory = async (pipelineName: string) => {
     if ('open' in streams[pipelineName].stream) {
@@ -40,8 +40,13 @@
   import { unionName, type NamesInUnion } from '$lib/functions/common/union'
   import { match } from 'ts-pattern'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import { Ref } from '$lib/compositions/ref.svelte'
 
-  let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
+  let {
+    pipeline
+  }: {
+    pipeline: { current: ExtendedPipeline }
+  } = $props()
   let pipelineName = $derived(pipeline.current.name)
 
   let pipelineStatusName = $derived(unionName(pipeline.current.status))
@@ -136,7 +141,7 @@
       if (result instanceof Error) {
         streams[pipelineName].stream = { closed: {} }
         streams[pipelineName].rows.push(result.message)
-        const isServerOverloaded = (result.cause as any).status_code === 503
+        const isServerOverloaded = (result.cause as { response: Response }).response.status === 503
         tryRestartStream(pipelineName, isServerOverloaded ? attempts + 1 : 0)
         return
       }
@@ -177,7 +182,7 @@
         rowBoundaries: [],
         totalSkippedBytes: 0
       }
-      getStreams = () => streams
+      getStreams.current = streams
     })
   }
   const backoffDelaysMs = [5, 5, 15, 30, 60].map((s) => s * 1000)
@@ -202,10 +207,12 @@
   // Trigger update to display the latest rows when switching to another pipeline
   $effect(() => {
     pipelineName
-    getStreams = () => streams
+    getStreams.current = streams
   })
   $effect(() => {
-    const interval = setInterval(() => (getStreams = () => streams), 300)
+    const interval = setInterval(() => {
+      getStreams.current = streams
+    }, 300)
     return () => clearInterval(interval)
   })
   $effect(() => {
@@ -214,7 +221,7 @@
       pipelineActionCallbacks.remove('', 'delete', dropLogHistory)
     }
   })
-  let stream = $derived(getStreams()[pipelineName].stream)
+  let stream = $derived(getStreams.current[pipelineName].stream)
   const now = useInterval(() => new Date(), 1000, 1000 - (Date.now() % 1000))
 </script>
 
@@ -233,7 +240,7 @@
         {/if}
       </WarningBanner>
     {:else if !areLogsExpected(pipelineStatusName)}
-      {#if getStreams()[pipelineName].rows.length}
+      {#if getStreams.current[pipelineName].rows.length}
         <WarningBanner variant="info">
           Displaying log history from the last pipeline run. When the pipeline is started again this
           history will be cleared.
@@ -248,6 +255,6 @@
     <WarningBanner>Connecting to logs stream...</WarningBanner>
   {/if}
   {#key pipelineName}
-    <LogsStreamList logs={getStreams()[pipelineName]}></LogsStreamList>
+    <LogsStreamList logs={getStreams.current[pipelineName]}></LogsStreamList>
   {/key}
 </div>

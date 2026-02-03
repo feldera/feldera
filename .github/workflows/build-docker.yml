@@ -34,7 +34,7 @@ jobs:
             docker_platform: linux/arm64
     runs-on: ${{ matrix.runner }}
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
+      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
 
     steps:
       - name: Show Kubernetes node
@@ -174,3 +174,14 @@ jobs:
       - name: Inspect image
         run: |
           docker buildx imagetools inspect ${{ vars.FELDERA_IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Wait for image
+        run: |
+          ./.github/scripts/wait_for_images_ghcr.sh \
+            "${{ vars.FELDERA_IMAGE_NAME }}" \
+            "${{ steps.meta.outputs.version }}" \
+            "amd64,arm64"

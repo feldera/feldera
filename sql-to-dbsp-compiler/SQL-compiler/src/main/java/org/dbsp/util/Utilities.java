@@ -115,21 +115,6 @@ public class Utilities {
             throw new InternalCompilerError(message.get() + System.lineSeparator() + getCurrentStackTrace());
     }
 
-    public static TimestampString roundMillis(TimestampString ts) {
-        long millis = ts.getMillisSinceEpoch();
-        String str = ts.toString();
-        if (str.length() > 23) {
-            String next = str.substring(23, 24);
-            int nextDigit = Integer.parseInt(next);
-            if (nextDigit > 5) {
-                millis += 1;
-            }
-            return TimestampString.fromMillisSinceEpoch(millis);
-        } else {
-            return ts;
-        }
-    }
-
     /** Delete a file/directory recursively
      *
      * @param file File to delete.

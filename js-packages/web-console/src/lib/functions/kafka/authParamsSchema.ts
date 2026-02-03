@@ -1,5 +1,5 @@
-import { fromLibrdkafkaConfig, librdkafkaAuthOptions } from '$lib/functions/kafka/librdkafkaOptions'
 import * as va from 'valibot'
+import { fromLibrdkafkaConfig, librdkafkaAuthOptions } from '$lib/functions/kafka/librdkafkaOptions'
 
 const sslSchema = va.object({
   ssl_key_pem: va.optional(va.string()),

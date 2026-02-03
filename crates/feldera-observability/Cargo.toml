@@ -2,7 +2,7 @@
 name = "feldera-observability"
 description = "Shared observability utilities for Feldera services"
 publish = true
-edition = { workspace = true }
+edition = "2024"
 version = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
@@ -15,3 +15,8 @@ awc = { workspace = true }
 actix-http = { workspace = true }
 reqwest = { workspace = true }
 sentry = { workspace = true }
+chrono = { workspace = true, features = ["now"] }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+colored = { workspace = true }

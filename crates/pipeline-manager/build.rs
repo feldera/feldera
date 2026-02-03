@@ -6,11 +6,26 @@ use vergen_gitcl::*;
 
 // These are touched during the build, so it would re-build every time if we
 // don't exclude them from change detection:
-const EXCLUDE_LIST: [&str; 4] = [
+const EXCLUDE_LIST: [&str; 10] = [
     "../../js-packages/web-console/node_modules",
     "../../js-packages/web-console/build",
     "../../js-packages/web-console/.svelte-kit",
-    "../../js-packages/web-console/pipeline-manager-",
+    "../../js-packages/profiler-app/node_modules",
+    "../../js-packages/profiler-app/dist",
+    "../../js-packages/profiler-layout/node_modules",
+    "../../js-packages/profiler-layout/dist",
+    "../../js-packages/profiler-layout/.svelte-kit",
+    "../../js-packages/profiler-lib/node_modules",
+    "../../js-packages/profiler-lib/dist",
+];
+
+// Directories to include in change detection and build tracking:
+const INCLUDE_LIST: [&str; 5] = [
+    "../../js-packages/web-console/",
+    "../../js-packages/profiler-app/",
+    "../../js-packages/profiler-layout/",
+    "../../js-packages/feldera-theme/",
+    "../../js-packages/profiler-lib/",
 ];
 
 /// The build script has two modes:
@@ -36,17 +51,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build()
             .expect("Could not use WEBCONSOLE_BUILD_DIR as a website location")
     } else {
-        ChangeDetection::exclude(|path: &Path| {
+        let mut change_detection = ChangeDetection::exclude(|path: &Path| {
             EXCLUDE_LIST
             .iter()
             .any(|exclude| path.to_str().unwrap().starts_with(exclude))
-            // Also exclude web-console folder itself because we mutate things inside
-            // of it
-            || path.to_str().unwrap() == "../../js-packages/web-console/"
-        })
-        .path("../../js-packages/web-console/")
-        .path("build.rs")
-        .generate();
+            // Exclude js-packages project directories themselves because we mutate ignored dirs inside of them
+            || INCLUDE_LIST
+            .iter()
+            .any(|include| path.to_str().unwrap() == *include)
+        });
+
+        for include in INCLUDE_LIST.iter() {
+            change_detection = change_detection.path(*include);
+        }
+
+        change_detection.path("build.rs").generate();
 
         let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
         let out_dir_parts = out_dir.iter().collect::<Vec<_>>();
@@ -54,11 +73,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .collect::<PathBuf>();
 
+        // Nest the build directory inside web-console/build/
+        let nested_build_dir = Path::new("build").join(&rel_build_dir);
+
         // This should be safe because the build-script is single-threaded
         unsafe {
-            env::set_var("BUILD_DIR", rel_build_dir.clone());
+            env::set_var("BUILD_DIR", nested_build_dir.clone());
         }
-        let asset_path: PathBuf = Path::new("../../js-packages/web-console/").join(rel_build_dir);
+        let asset_path: PathBuf =
+            Path::new("../../js-packages/web-console/").join(nested_build_dir);
         let mut resource_dir = NpmBuild::new("../../js-packages/web-console")
             .executable("bun")
             .run("clean-install")
@@ -76,6 +99,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         env::var("FELDERA_PLATFORM_VERSION_SUFFIX").unwrap_or("".to_string());
     println!("cargo:rerun-if-env-changed=FELDERA_PLATFORM_VERSION_SUFFIX");
     println!("cargo:rustc-env=FELDERA_PLATFORM_VERSION_SUFFIX={platform_version_suffix}");
+
+    // Capture build source (ci vs source)
+    let build_source = env::var("FELDERA_BUILD_ORIGIN").unwrap_or("source".to_string());
+    println!("cargo:rerun-if-env-changed=FELDERA_BUILD_ORIGIN");
+    println!("cargo:rustc-env=FELDERA_BUILD_ORIGIN={build_source}");
 
     let build = BuildBuilder::default().build_timestamp(true).build()?;
     let cargo = CargoBuilder::all_cargo()?;

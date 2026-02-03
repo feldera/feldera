@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.IMultiOutput;
+import org.dbsp.sqlCompiler.circuit.operator.IMultiOutput;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
@@ -475,7 +476,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPJoinOperator(operator.getRelNode(),
                     outputType.to(DBSPTypeZSet.class), function, operator.isMultiset,
-                    sources.get(0), sources.get(1))
+                    sources.get(0), sources.get(1), operator.balanced)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -492,7 +493,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPLeftJoinOperator(operator.getRelNode(),
                     outputType.to(DBSPTypeZSet.class), function, operator.isMultiset,
-                    sources.get(0), sources.get(1))
+                    sources.get(0), sources.get(1), operator.balanced)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -509,7 +510,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPLeftJoinIndexOperator(operator.getRelNode(),
                     outputType.to(DBSPTypeIndexedZSet.class), function, operator.isMultiset,
-                    sources.get(0), sources.get(1))
+                    sources.get(0), sources.get(1), operator.balanced)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -528,7 +529,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPLeftJoinFilterMapOperator(operator.getRelNode(),
                     outputType.to(DBSPTypeZSet.class), function, filter, map, operator.isMultiset,
-                    sources.get(0), sources.get(1))
+                    sources.get(0), sources.get(1), operator.balanced)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -642,6 +643,22 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
+        List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPSimpleOperator result = operator;
+        if (!outputType.sameType(operator.outputType)
+                || Linq.different(sources, operator.inputs)
+                || function != operator.getFunction()) {
+            result = new DBSPIntegrateTraceRetainNValuesOperator(operator.getRelNode(), function,
+                    sources.get(0), sources.get(1), operator.n, operator.which)
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
     public void postorder(DBSPStreamJoinOperator operator) {
         DBSPType outputType = this.transform(operator.outputType);
         DBSPExpression function = this.transform(operator.getFunction());
@@ -651,7 +668,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || function != operator.function
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPStreamJoinOperator(operator.getRelNode(), outputType.to(DBSPTypeZSet.class),
-                    function, operator.isMultiset, sources.get(0), sources.get(1))
+                    function, operator.isMultiset, sources.get(0), sources.get(1), operator.balanced)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -671,7 +688,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || map != operator.map
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPJoinFilterMapOperator(operator.getRelNode(), outputType.to(DBSPTypeZSet.class),
-                    function, filter, map, operator.isMultiset, sources.get(0), sources.get(1))
+                    function, filter, map, operator.isMultiset, sources.get(0), sources.get(1), operator.balanced)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

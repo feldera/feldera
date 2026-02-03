@@ -1,5 +1,5 @@
-use actix_web::http::StatusCode;
 use actix_web::ResponseError;
+use actix_web::http::StatusCode;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -18,7 +18,7 @@ pub struct ErrorResponse {
     pub error_code: Cow<'static, str>,
     /// Detailed error metadata.
     /// The contents of this field is determined by `error_code`.
-    #[schema(value_type = Object)]
+    #[schema(value_type = Value)]
     pub details: JsonValue,
 }
 
@@ -88,14 +88,13 @@ impl ErrorResponse {
         }
 
         // Print error backtrace if available for an internal server error
-        if error.status_code() == StatusCode::INTERNAL_SERVER_ERROR {
-            if let Some(backtrace) = response
+        if error.status_code() == StatusCode::INTERNAL_SERVER_ERROR
+            && let Some(backtrace) = response
                 .details
                 .get("backtrace")
                 .and_then(JsonValue::as_str)
-            {
-                error!("Error backtrace:\n{backtrace}");
-            }
+        {
+            error!("Error backtrace:\n{backtrace}");
         }
 
         response

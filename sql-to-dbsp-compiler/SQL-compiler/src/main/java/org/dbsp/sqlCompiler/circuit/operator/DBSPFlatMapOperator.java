@@ -38,7 +38,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
+public final class DBSPFlatMapOperator extends DBSPUnaryOperator implements ILinear {
     public DBSPFlatMapOperator(CalciteRelNode node, DBSPExpression expression,
                                DBSPTypeZSet outputType, boolean isMultiset, OutputPort input) {
         super(node, "flat_map", expression, outputType, isMultiset, input);

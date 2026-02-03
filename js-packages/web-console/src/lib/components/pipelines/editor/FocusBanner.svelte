@@ -2,7 +2,7 @@
   import { slide } from 'svelte/transition'
   import type { Snippet } from '$lib/types/svelte'
 
-  let {
+  const {
     show,
     isFocused,
     content
@@ -13,7 +13,7 @@
   } = $props()
 
   let isInteracting = $state(false)
-  let shouldShow = $derived(show && (isFocused || isInteracting))
+  const shouldShow = $derived(show && (isFocused || isInteracting))
 
   // Handle clicks outside to hide banner
   $effect(() => {
@@ -21,17 +21,17 @@
 
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node
-      const bannerElement = document.querySelector('.focus-banner')
+      const bannerElement = globalThis.document.querySelector('.focus-banner')
 
       if (bannerElement && !bannerElement.contains(target)) {
         isInteracting = false
       }
     }
 
-    document.addEventListener('mousedown', handleClickOutside, true)
+    globalThis.document.addEventListener('mousedown', handleClickOutside, true)
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside, true)
+      globalThis.document.removeEventListener('mousedown', handleClickOutside, true)
     }
   })
 </script>

@@ -1,11 +1,11 @@
 use crate::{
+    DBData, DynZWeight, RootCircuit, Stream, ZWeight,
     dynamic::{DowncastTrait, DynData},
     operator::{
         dynamic::group::{TopKCustomOrdFactories, TopKFactories, TopKRankCustomOrdFactories},
         group::custom_ord::{CmpFunc, WithCustomOrd},
     },
     typed_batch::{IndexedZSet, OrdIndexedZSet},
-    DBData, DynZWeight, RootCircuit, Stream, ZWeight,
 };
 
 impl<B> Stream<RootCircuit, B>

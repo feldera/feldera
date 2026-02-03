@@ -13,7 +13,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.GCOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
@@ -96,7 +96,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
             this.builder().append("use ").append(dep).append("::*;").newline();
 
         boolean hasOutput = (!operator.is(DBSPViewBaseOperator.class) || useHandles) &&
-                !operator.is(GCOperator.class) &&
+                !operator.is(IGCOperator.class) &&
                 !operator.is(DBSPInternOperator.class);
         this.builder().append("pub fn create_")
                 .append(name)

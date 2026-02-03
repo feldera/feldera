@@ -1,4 +1,4 @@
-let state = $state(document.body.getAttribute('data-theme') ?? '')
+let state = $state(document.documentElement.getAttribute('data-theme') ?? '')
 
 const config = $derived({
   monospaceFontFamily: (() => {
@@ -19,7 +19,7 @@ const skeletonTheme = {
     return config
   },
   set current(name: string) {
-    document.body.setAttribute('data-theme', name)
+    document.documentElement.setAttribute('data-theme', name)
     state = name
   }
 }

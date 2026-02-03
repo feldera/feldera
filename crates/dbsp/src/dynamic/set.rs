@@ -1,8 +1,8 @@
-use crate::{declare_trait_object, trace::Deserializable, DBData};
+use crate::{DBData, declare_trait_object, trace::Deserializable};
 use rkyv::Archive;
 use size_of::SizeOf;
 use std::{
-    collections::{btree_set::Iter as BTreeSetIter, BTreeSet},
+    collections::{BTreeSet, btree_set::Iter as BTreeSetIter},
     marker::PhantomData,
     mem::take,
     ops::{Deref, DerefMut},

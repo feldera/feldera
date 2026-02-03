@@ -50,9 +50,8 @@ class HttpRequests:
 
             if response.status_code == 200:
                 health_data = response.json()
-                runner_healthy = health_data.get("runner", {}).get("healthy", False)
-                compiler_healthy = health_data.get("compiler", {}).get("healthy", False)
-                return runner_healthy and compiler_healthy
+                all_healthy = health_data.get("all_healthy", False)
+                return all_healthy
             else:
                 logging.warning(
                     f"Health check returned status {response.status_code}. The instance might be in the process of being upgraded. Waiting to see if it recovers."

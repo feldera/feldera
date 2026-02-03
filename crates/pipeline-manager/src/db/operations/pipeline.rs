@@ -29,6 +29,7 @@ use deadpool_postgres::Transaction;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
 use rmp_serde::{from_slice, to_vec};
+use serde_json::json;
 use tokio_postgres::Row;
 use tracing::{error, warn};
 use uuid::Uuid;
@@ -95,10 +96,10 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
     "p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.platform_version, p.runtime_config,
      p.program_code, p.udf_rust, p.udf_toml, p.program_config, p.program_version, p.program_status,
      p.program_status_since, p.program_error, p.program_info,
-     p.program_binary_source_checksum, p.program_binary_integrity_checksum,
+     p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_info_integrity_checksum,
      p.deployment_error, p.deployment_config, p.deployment_location, p.refresh_version,
      p.suspend_info, p.storage_status, p.deployment_id, p.deployment_initial,
-     p.deployment_resources_status, p.deployment_resources_status_since,
+     p.deployment_resources_status, p.deployment_resources_status_details, p.deployment_resources_status_since,
      p.deployment_resources_desired_status, p.deployment_resources_desired_status_since,
      p.deployment_runtime_status, p.deployment_runtime_status_details, p.deployment_runtime_status_since,
      p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy
@@ -115,7 +116,7 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
 ///   Backwards incompatible changes therein will prevent retrieval of pipelines
 ///   because an error will be returned instead.
 fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
-    assert_eq!(row.len(), 37);
+    assert_eq!(row.len(), 39);
 
     // Runtime configuration: RuntimeConfig
     let runtime_config = deserialize_json_value(row.get(7))?;
@@ -138,13 +139,13 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
     }
 
     // Deployment error: ErrorResponse
-    let deployment_error = match row.get::<_, Option<String>>(19) {
+    let deployment_error = match row.get::<_, Option<String>>(20) {
         None => None,
         Some(s) => Some(deserialize_error_response(&s)?),
     };
 
     // Deployment configuration: PipelineConfig
-    let deployment_config = match row.get::<_, Option<String>>(20) {
+    let deployment_config = match row.get::<_, Option<String>>(21) {
         None => None,
         Some(s) => Some(deserialize_json_value(&s)?),
     };
@@ -153,37 +154,44 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
     }
 
     // Suspend information
-    let suspend_info = match row.get::<_, Option<String>>(23) {
+    let suspend_info = match row.get::<_, Option<String>>(24) {
         None => None,
         Some(s) => Some(deserialize_json_value(&s)?),
     };
 
     // Deployment initial runtime status
-    let deployment_initial = match row.get::<_, Option<String>>(26) {
+    let deployment_initial = match row.get::<_, Option<String>>(27) {
         None => None,
         Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
     };
 
-    // Deployment runtime status
-    let deployment_runtime_status = match row.get::<_, Option<String>>(31) {
-        None => None,
-        Some(s) => Some(parse_string_as_runtime_status(s)?),
-    };
-
-    let deployment_runtime_status_details = match row.get::<_, Option<String>>(32) {
+    // Deployment resources status details
+    let deployment_resources_status_details = match row.get::<_, Option<String>>(29) {
         None => None,
         Some(s) => Some(deserialize_json_value(&s)?),
     };
 
-    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(33);
+    // Deployment runtime status
+    let deployment_runtime_status = match row.get::<_, Option<String>>(33) {
+        None => None,
+        Some(s) => Some(parse_string_as_runtime_status(s)?),
+    };
+
+    // Deployment runtime status details
+    let deployment_runtime_status_details = match row.get::<_, Option<String>>(34) {
+        None => None,
+        Some(s) => Some(deserialize_json_value(&s)?),
+    };
+
+    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(35);
 
     // Deployment runtime desired status
-    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(34) {
+    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(36) {
         None => None,
         Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
     };
 
-    let bootstrap_policy = match row.get::<_, Option<String>>(36) {
+    let bootstrap_policy = match row.get::<_, Option<String>>(38) {
         None => None,
         Some(s) => Some(parse_string_as_bootstrap_policy(s)?),
     };
@@ -208,23 +216,25 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         program_info,
         program_binary_source_checksum: row.get(17),
         program_binary_integrity_checksum: row.get(18),
+        program_info_integrity_checksum: row.get(19),
         deployment_error,
         deployment_config,
-        deployment_location: row.get(21),
-        refresh_version: Version(row.get(22)),
+        deployment_location: row.get(22),
+        refresh_version: Version(row.get(23)),
         suspend_info,
-        storage_status: row.get::<_, String>(24).try_into()?,
-        deployment_id: row.get(25),
+        storage_status: row.get::<_, String>(25).try_into()?,
+        deployment_id: row.get(26),
         deployment_initial,
-        deployment_resources_status: row.get::<_, String>(27).try_into()?,
-        deployment_resources_status_since: row.get(28),
-        deployment_resources_desired_status: row.get::<_, String>(29).try_into()?,
-        deployment_resources_desired_status_since: row.get(30),
+        deployment_resources_status: row.get::<_, String>(28).try_into()?,
+        deployment_resources_status_details,
+        deployment_resources_status_since: row.get(30),
+        deployment_resources_desired_status: row.get::<_, String>(31).try_into()?,
+        deployment_resources_desired_status_since: row.get(32),
         deployment_runtime_status,
         deployment_runtime_status_details,
         deployment_runtime_status_since,
         deployment_runtime_desired_status,
-        deployment_runtime_desired_status_since: row.get(35),
+        deployment_runtime_desired_status_since: row.get(37),
         bootstrap_policy,
     })
 }
@@ -688,6 +698,12 @@ pub(crate) async fn update_pipeline(
             if runtime_config.get("workers") != current.runtime_config.get("workers") {
                 not_allowed.push("`runtime_config.workers`");
             }
+            let one = json!(1);
+            if runtime_config.get("hosts").unwrap_or(&one)
+                != current.runtime_config.get("hosts").unwrap_or(&one)
+            {
+                not_allowed.push("`runtime_config.hosts`");
+            }
             if runtime_config.get("fault_tolerance")
                 != current.runtime_config.get("fault_tolerance")
             {
@@ -852,6 +868,7 @@ pub(crate) async fn set_program_status(
     new_program_info: &Option<serde_json::Value>,
     new_program_binary_source_checksum: &Option<String>,
     new_program_binary_integrity_checksum: &Option<String>,
+    new_program_info_integrity_checksum: &Option<String>,
 ) -> Result<(), DBError> {
     let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
 
@@ -882,6 +899,7 @@ pub(crate) async fn set_program_status(
         final_program_info,
         final_program_binary_source_checksum,
         final_program_binary_integrity_checksum,
+        final_program_info_integrity_checksum,
         increment_refresh_version,
     ) = match &new_program_status {
         ProgramStatus::Pending => {
@@ -892,8 +910,9 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_info_integrity_checksum.is_none()
             );
-            (None, None, None, None, None, None, true)
+            (None, None, None, None, None, None, None, true)
         }
         ProgramStatus::CompilingSql => {
             assert!(
@@ -903,8 +922,9 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_info_integrity_checksum.is_none()
             );
-            (None, None, None, None, None, None, false)
+            (None, None, None, None, None, None, None, false)
         }
         ProgramStatus::SqlCompiled => {
             assert!(
@@ -914,12 +934,14 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_some()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_info_integrity_checksum.is_none()
             );
             (
                 new_program_error_sql_compilation.clone(),
                 None,
                 None,
                 new_program_info.clone(),
+                None,
                 None,
                 None,
                 true,
@@ -933,12 +955,14 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_info_integrity_checksum.is_none()
             );
             (
                 current.program_error.sql_compilation,
                 None,
                 None,
                 current.program_info,
+                None,
                 None,
                 None,
                 false,
@@ -952,6 +976,7 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_some()
                     && new_program_binary_integrity_checksum.is_some()
+                    && new_program_info_integrity_checksum.is_some()
             );
             (
                 current.program_error.sql_compilation,
@@ -960,6 +985,7 @@ pub(crate) async fn set_program_status(
                 current.program_info,
                 new_program_binary_source_checksum.clone(),
                 new_program_binary_integrity_checksum.clone(),
+                new_program_info_integrity_checksum.clone(),
                 true,
             )
         }
@@ -971,9 +997,11 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_info_integrity_checksum.is_none()
             );
             (
                 new_program_error_sql_compilation.clone(),
+                None,
                 None,
                 None,
                 None,
@@ -990,12 +1018,14 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_info_integrity_checksum.is_none()
             );
             (
                 current.program_error.sql_compilation,
                 new_program_error_rust_compilation.clone(),
                 None,
                 current.program_info,
+                None,
                 None,
                 None,
                 true,
@@ -1009,12 +1039,14 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_info_integrity_checksum.is_none()
             );
             (
                 current.program_error.sql_compilation,
                 current.program_error.rust_compilation,
                 new_program_error_system_error.clone(),
                 current.program_info,
+                None,
                 None,
                 None,
                 true,
@@ -1055,8 +1087,9 @@ pub(crate) async fn set_program_status(
                  program_info = $3,
                  program_binary_source_checksum = $4,
                  program_binary_integrity_checksum = $5,
-                 refresh_version = $6
-             WHERE tenant_id = $7 AND id = $8",
+                 program_info_integrity_checksum = $6,
+                 refresh_version = $7
+             WHERE tenant_id = $8 AND id = $9",
         )
         .await?;
     let rows_affected = txn
@@ -1068,9 +1101,10 @@ pub(crate) async fn set_program_status(
                 &final_program_info.as_ref().map(|v| v.to_string()), // $3: program_info
                 &final_program_binary_source_checksum, // $4: program_binary_source_checksum
                 &final_program_binary_integrity_checksum, // $5: program_binary_integrity_checksum
-                &final_refresh_version.0,              // $6: refresh_version
-                &tenant_id.0,                          // $7: tenant_id
-                &pipeline_id.0,                        // $8: id
+                &final_program_info_integrity_checksum, // $6: program_info_integrity_checksum
+                &final_refresh_version.0,              // $7: refresh_version
+                &tenant_id.0,                          // $8: tenant_id
+                &pipeline_id.0,                        // $9: id
             ],
         )
         .await?;
@@ -1200,25 +1234,17 @@ pub(crate) async fn set_deployment_resources_desired_status(
     }
 }
 
-/// Sets deployment status (both resources and runtime status).
-#[allow(clippy::too_many_arguments)]
-#[rustfmt::skip]
-pub(crate) async fn set_deployment_resources_status(
+/// Checks the version guard and that the resources status transition is valid.
+/// Returns the current pipeline row in the database.
+async fn check_version_guard_and_transition_deployment_resources_status(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
     version_guard: Version,
     new_deployment_resources_status: ResourcesStatus,
-    new_deployment_runtime_status: Option<RuntimeStatus>,
-    new_deployment_runtime_status_details: Option<serde_json::Value>,
-    new_deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
-    new_deployment_error: Option<ErrorResponse>,
-    new_deployment_id: Option<Uuid>,
-    new_deployment_config: Option<serde_json::Value>,
-    new_deployment_location: Option<String>,
-    new_suspend_info: Option<serde_json::Value>,
-) -> Result<(), DBError> {
-    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
+    remain: bool,
+) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
+    let current = get_pipeline_by_id_for_monitoring(txn, tenant_id, pipeline_id).await?;
 
     // Use the version guard to check that the deployment is the intended one
     if current.version != version_guard {
@@ -1228,22 +1254,35 @@ pub(crate) async fn set_deployment_resources_status(
         });
     }
 
-    // Check that the transition from the current status to the new status is permitted
+    // Check transition is permitted by the state machine for resources status
     validate_resources_status_transition(
         current.storage_status,
         current.deployment_resources_status,
         new_deployment_resources_status,
     )?;
 
-    // Due to early start, the following do not require a successfully compiled program:
+    // If the resources status should remain the same
+    if remain && current.deployment_resources_status != new_deployment_resources_status {
+        return Err(DBError::InvalidResourcesStatusRemain {
+            current_status: current.deployment_resources_status,
+            new_status: new_deployment_resources_status,
+        });
+    }
+
+    // Generally, the pipeline must be successfully compiled to be able to transition resources
+    // status. However, the runner before transitioning from Stopped to Provisioning does a final
+    // check to make sure the compilation artifacts exists. If not all exist, compilation is
+    // triggered again.
+    //
+    // As such either (a) the pipeline is successfully compiled, or (b) the resources status
+    // transition is one of:
     // (1) Stopped -> Stopping
     // (2) Stopping -> Stopped
-    // The above occurs because in early start, the program is not (yet) successfully
-    // compiled and the runner is awaiting it to transition to Provisioning.
-    //
-    // All other deployment status transitions require a successfully compiled program.
     if !matches!(
-        (current.deployment_resources_status, new_deployment_resources_status),
+        (
+            current.deployment_resources_status,
+            new_deployment_resources_status
+        ),
         (ResourcesStatus::Stopped, ResourcesStatus::Stopping)
             | (ResourcesStatus::Stopping, ResourcesStatus::Stopped)
     ) && current.program_status != ProgramStatus::Success
@@ -1254,60 +1293,276 @@ pub(crate) async fn set_deployment_resources_status(
         });
     }
 
-    // Determine the final values of the additional fields using the current default.
-    // Note that None becomes NULL as there is no coalescing in the query.
+    Ok(current)
+}
 
-    // STOPPING INFORMATION
-    // Fields that give information about why a pipeline stopped, or about its state just before it
-    // was stopped. They are reset when the pipeline is provisioning again.
-    // - Stopped: current value
-    // - Provisioning: NULL
-    // - Provisioned: NULL
-    // - Stopping: maybe a value
-    let (final_deployment_error, final_suspend_info) = match new_deployment_resources_status {
-        ResourcesStatus::Stopped => {
-            check_precondition(new_deployment_error.is_none(), "new_deployment_error should be None when becoming Stopped")?;
-            check_precondition(new_suspend_info.is_none(), "new_suspend_info should be None when becoming Stopped")?;
-            (current.deployment_error, current.suspend_info)
-        },
-        ResourcesStatus::Provisioning | ResourcesStatus::Provisioned => {
-            check_precondition(new_deployment_error.is_none(), &format!("new_deployment_error should be None when becoming {new_deployment_resources_status}"))?;
-            check_precondition(new_suspend_info.is_none(), &format!("new_suspend_info should be None when becoming {new_deployment_resources_status}"))?;
-            (None, None)
-        },
-        ResourcesStatus::Stopping => {
-            (new_deployment_error, new_suspend_info)
-        }
-    };
+pub(crate) async fn set_deployment_resources_status_stopped(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    version_guard: Version,
+) -> Result<(), DBError> {
+    check_version_guard_and_transition_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        version_guard,
+        ResourcesStatus::Stopped,
+        false,
+    )
+    .await?;
+    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
 
-    // PROVISIONING INFORMATION
-    // Fields that give information about the parameters that were generated prior to provisioning.
-    // They are reset when the pipeline is stopping
-    // - Stopped: NULL
-    // - Provisioning: new value
-    // - Provisioned: current value
-    // - Stopping: NULL
-    let (final_deployment_id, final_deployment_config) = match new_deployment_resources_status {
-        ResourcesStatus::Stopped | ResourcesStatus::Stopping => {
-            // Stopped or Stopping: NULL
-            check_precondition(new_deployment_id.is_none(), &format!("new_deployment_id should be None when becoming {new_deployment_resources_status}"))?;
-            check_precondition(new_deployment_config.is_none(), &format!("new_deployment_config should be None when becoming {new_deployment_resources_status}"))?;
-            (None, None)
-        }
-        ResourcesStatus::Provisioning => {
-            // Provisioning: new value
-            check_precondition(new_deployment_id.is_some(), "new_deployment_id should be Some when becoming Provisioning")?;
-            check_precondition(new_deployment_config.is_some(), "new_deployment_config should be Some when becoming Provisioning")?;
-            (new_deployment_id, new_deployment_config)
-        },
-        ResourcesStatus::Provisioned => {
-            // Provisioned: existing value
-            check_precondition(new_deployment_id.is_none(), "new_deployment_id should be None when becoming Provisioned")?;
-            check_precondition(new_deployment_config.is_none(), "new_deployment_config should be None when becoming Provisioned")?;
-            (current.deployment_id, current.deployment_config)
-        },
-    };
+    set_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        ResourcesStatus::Stopped,
+        None,
+        None,
+        None,
+        None,
+        current.deployment_error,
+        None,
+        None,
+        None,
+        current.suspend_info,
+        None,
+    )
+    .await
+}
 
+pub(crate) async fn set_deployment_resources_status_provisioning(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    version_guard: Version,
+    new_deployment_id: Uuid,
+    new_deployment_config: serde_json::Value,
+) -> Result<(), DBError> {
+    check_version_guard_and_transition_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        version_guard,
+        ResourcesStatus::Provisioning,
+        false,
+    )
+    .await?;
+    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
+
+    set_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        ResourcesStatus::Provisioning,
+        None, // This will become Some again by the `remains_` function
+        None,
+        None,
+        None,
+        None,
+        Some(new_deployment_id),
+        Some(new_deployment_config),
+        None,
+        None,
+        current.deployment_initial,
+    )
+    .await
+}
+
+pub(crate) async fn remain_deployment_resources_status_provisioning(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    version_guard: Version,
+    new_deployment_resources_status_details: serde_json::Value,
+) -> Result<(), DBError> {
+    check_version_guard_and_transition_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        version_guard,
+        ResourcesStatus::Provisioning,
+        true,
+    )
+    .await?;
+
+    remain_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        Some(new_deployment_resources_status_details),
+        None,
+        None,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn set_deployment_resources_status_provisioned(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    version_guard: Version,
+    new_deployment_location: String,
+    new_deployment_resources_status_details: serde_json::Value,
+    new_deployment_runtime_status: RuntimeStatus,
+    new_deployment_runtime_status_details: serde_json::Value,
+    new_deployment_runtime_desired_status: RuntimeDesiredStatus,
+) -> Result<(), DBError> {
+    check_version_guard_and_transition_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        version_guard,
+        ResourcesStatus::Provisioned,
+        false,
+    )
+    .await?;
+    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
+
+    set_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        ResourcesStatus::Provisioned,
+        Some(new_deployment_resources_status_details),
+        Some(new_deployment_runtime_status),
+        Some(new_deployment_runtime_status_details),
+        Some(new_deployment_runtime_desired_status),
+        None,
+        current.deployment_id,
+        current.deployment_config,
+        Some(new_deployment_location),
+        None,
+        current.deployment_initial,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn remain_deployment_resources_status_provisioned(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    version_guard: Version,
+    new_deployment_resources_status_details: serde_json::Value,
+    new_deployment_runtime_status: RuntimeStatus,
+    new_deployment_runtime_status_details: serde_json::Value,
+    new_deployment_runtime_desired_status: RuntimeDesiredStatus,
+) -> Result<(), DBError> {
+    check_version_guard_and_transition_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        version_guard,
+        ResourcesStatus::Provisioned,
+        true,
+    )
+    .await?;
+
+    remain_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        Some(new_deployment_resources_status_details),
+        Some(new_deployment_runtime_status),
+        Some(new_deployment_runtime_status_details),
+        Some(new_deployment_runtime_desired_status),
+    )
+    .await
+}
+
+pub(crate) async fn set_deployment_resources_status_stopping(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    version_guard: Version,
+    new_deployment_error: Option<ErrorResponse>,
+    new_suspend_info: Option<serde_json::Value>,
+) -> Result<(), DBError> {
+    check_version_guard_and_transition_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        version_guard,
+        ResourcesStatus::Stopping,
+        false,
+    )
+    .await?;
+    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
+
+    set_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        ResourcesStatus::Stopping,
+        None, // If stopping fails, this will become Some again by the `remains_` function
+        None,
+        None,
+        None,
+        new_deployment_error,
+        current.deployment_id,
+        current.deployment_config,
+        None,
+        new_suspend_info,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn remain_deployment_resources_status_stopping(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    version_guard: Version,
+    new_deployment_resources_status_details: serde_json::Value,
+) -> Result<(), DBError> {
+    check_version_guard_and_transition_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        version_guard,
+        ResourcesStatus::Stopping,
+        true,
+    )
+    .await?;
+
+    remain_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        Some(new_deployment_resources_status_details),
+        None,
+        None,
+        None,
+    )
+    .await
+}
+
+/// Does not change the deployment resources status, but does update a subset of the fields that can
+/// be updated while the status stays the same.
+///
+/// **Important:** the arguments are NOT coalesced, meaning that if they are `None`, then the field
+/// will become NULL.
+#[allow(clippy::too_many_arguments)]
+async fn set_deployment_resources_status(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    final_deployment_resources_status: ResourcesStatus,
+    final_deployment_resources_status_details: Option<serde_json::Value>,
+    final_deployment_runtime_status: Option<RuntimeStatus>,
+    final_deployment_runtime_status_details: Option<serde_json::Value>,
+    final_deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
+    final_deployment_error: Option<ErrorResponse>,
+    final_deployment_id: Option<Uuid>,
+    final_deployment_config: Option<serde_json::Value>,
+    final_deployment_location: Option<String>,
+    final_suspend_info: Option<serde_json::Value>,
+    final_deployment_initial: Option<RuntimeDesiredStatus>,
+) -> Result<(), DBError> {
     // Validate that the new or existing deployment configuration is valid
     if let Some(deployment_config) = &final_deployment_config {
         let _ = validate_deployment_config(deployment_config).map_err(|error| {
@@ -1317,43 +1572,6 @@ pub(crate) async fn set_deployment_resources_status(
             }
         })?;
     }
-
-    // PROVISIONED INFORMATION
-    // Fields that give information about the parameters that were generated during provisioning.
-    // They are reset when the pipeline is stopping.
-    // - Stopped: NULL
-    // - Provisioning: NULL
-    // - Provisioned: new value
-    // - Stopping: NULL
-    let (
-        final_deployment_location,
-        final_deployment_runtime_status,
-        final_deployment_runtime_status_details,
-        final_deployment_runtime_desired_status
-    ) = match new_deployment_resources_status {
-        ResourcesStatus::Stopped | ResourcesStatus::Provisioning | ResourcesStatus::Stopping => {
-            // Stopped, Provisioning or Stopping: NULL
-            check_precondition(new_deployment_location.is_none(), &format!("new_deployment_location should be None when becoming {new_deployment_resources_status}"))?;
-            check_precondition(new_deployment_runtime_status.is_none(), &format!("new_deployment_runtime_status should be None when becoming {new_deployment_resources_status}"))?;
-            check_precondition(new_deployment_runtime_desired_status.is_none(), &format!("new_deployment_runtime_desired_status should be None when becoming {new_deployment_resources_status}"))?;
-            (None, None, None, None)
-        }
-        ResourcesStatus::Provisioned => {
-            // Provisioned: new value
-            check_precondition(new_deployment_location.is_some(), "new_deployment_location should be Some when becoming Provisioned")?;
-            check_precondition(new_deployment_runtime_status.is_some(), "new_deployment_runtime_status should be Some when becoming Provisioned")?;
-            check_precondition(new_deployment_runtime_desired_status.is_some(), "new_deployment_runtime_desired_status should be Some when becoming Provisioned")?;
-            (new_deployment_location, new_deployment_runtime_status, new_deployment_runtime_status_details, new_deployment_runtime_desired_status)
-        },
-    };
-
-    // deployment_initial becomes when transitioning to...
-    // Stopped or Stopping: NULL
-    // Provisioning or Provisioned: existing value
-    let final_deployment_initial = match new_deployment_resources_status {
-        ResourcesStatus::Stopped | ResourcesStatus::Stopping => None,
-        ResourcesStatus::Provisioning | ResourcesStatus::Provisioned => current.deployment_initial,
-    };
 
     // Execute query
     let stmt = txn
@@ -1366,13 +1584,15 @@ pub(crate) async fn set_deployment_resources_status(
                      deployment_id = $5,
                      deployment_initial = $6,
                      deployment_resources_status = $7,
+                     deployment_resources_status_details = $8::VARCHAR,
                      deployment_resources_status_since = CASE WHEN deployment_resources_status = $7::VARCHAR THEN deployment_resources_status_since ELSE NOW() END,
-                     deployment_runtime_status = $8::VARCHAR,
-                     deployment_runtime_status_details = $9::VARCHAR,
-                     deployment_runtime_status_since = CASE WHEN $8::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_status = $8::VARCHAR THEN deployment_runtime_status_since ELSE NOW() END) END,
-                     deployment_runtime_desired_status = $10::VARCHAR,
-                     deployment_runtime_desired_status_since = CASE WHEN $10::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_desired_status = $10::VARCHAR THEN deployment_runtime_desired_status_since ELSE NOW() END) END
-                 WHERE tenant_id = $11 AND id = $12",
+                     deployment_runtime_status = $9::VARCHAR,
+                     deployment_runtime_status_details = $10::VARCHAR,
+                     deployment_runtime_status_since = CASE WHEN $9::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_status = $9::VARCHAR THEN deployment_runtime_status_since ELSE NOW() END) END,
+                     deployment_runtime_desired_status = $11::VARCHAR,
+                     deployment_runtime_desired_status_since = CASE WHEN $11::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_desired_status = $11::VARCHAR THEN deployment_runtime_desired_status_since ELSE NOW() END) END,
+                     refresh_version = refresh_version + 1
+                 WHERE tenant_id = $12 AND id = $13",
         )
         .await?;
     let rows_affected = txn
@@ -1384,16 +1604,64 @@ pub(crate) async fn set_deployment_resources_status(
                     Some(v) => Some(serialize_error_response(&v)?),
                 }, // $1: deployment_error
                 &final_deployment_config.map(|v| v.to_string()), // $2: deployment_config
-                &final_deployment_location, // $3: deployment_location
-                &final_suspend_info.map(|v| v.to_string()), // $4: suspend_info
-                &final_deployment_id, // $5: deployment_id
+                &final_deployment_location,                      // $3: deployment_location
+                &final_suspend_info.map(|v| v.to_string()),      // $4: suspend_info
+                &final_deployment_id,                            // $5: deployment_id
                 &final_deployment_initial.map(runtime_desired_status_to_string), // $6: deployment_initial
-                &new_deployment_resources_status.to_string(), // $7: deployment_resources_status,
-                &final_deployment_runtime_status.map(runtime_status_to_string), // $8: deployment_runtime_status,
-                &final_deployment_runtime_status_details.map(|v| v.to_string()), // $9: deployment_runtime_status_details,
-                &final_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $10: deployment_runtime_desired_status,
-                &tenant_id.0, // $11: tenant_id
-                &pipeline_id.0, // $12: id
+                &final_deployment_resources_status.to_string(), // $7: deployment_resources_status,
+                &final_deployment_resources_status_details.map(|v| v.to_string()), // $8: deployment_resources_status_details,
+                &final_deployment_runtime_status.map(runtime_status_to_string), // $9: deployment_runtime_status,
+                &final_deployment_runtime_status_details.map(|v| v.to_string()), // $10: deployment_runtime_status_details,
+                &final_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $11: deployment_runtime_desired_status,
+                &tenant_id.0,   // $12: tenant_id
+                &pipeline_id.0, // $13: id
+            ],
+        )
+        .await?;
+    if rows_affected > 0 {
+        Ok(())
+    } else {
+        Err(DBError::UnknownPipeline { pipeline_id })
+    }
+}
+
+/// Does not change the deployment resources status, but does update a subset of the fields that can
+/// be updated while the status stays the same.
+///
+/// **Important:** the arguments are coalesced, meaning that if they are `None`, then the existing
+/// value remains (rather than setting it to NULL).
+async fn remain_deployment_resources_status(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    final_deployment_resources_status_details: Option<serde_json::Value>,
+    final_deployment_runtime_status: Option<RuntimeStatus>,
+    final_deployment_runtime_status_details: Option<serde_json::Value>,
+    final_deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
+) -> Result<(), DBError> {
+    let stmt = txn
+        .prepare_cached(
+            "UPDATE pipeline
+                 SET deployment_resources_status_details = COALESCE($1::VARCHAR, deployment_resources_status_details),
+                     deployment_runtime_status = COALESCE($2::VARCHAR, deployment_runtime_status),
+                     deployment_runtime_status_details = COALESCE($3::VARCHAR, deployment_runtime_status_details),
+                     deployment_runtime_status_since = CASE WHEN $2::VARCHAR IS NULL THEN deployment_runtime_status_since ELSE (CASE WHEN deployment_runtime_status = $2::VARCHAR THEN deployment_runtime_status_since ELSE NOW() END) END,
+                     deployment_runtime_desired_status = COALESCE($4::VARCHAR, deployment_runtime_desired_status),
+                     deployment_runtime_desired_status_since = CASE WHEN $4::VARCHAR IS NULL THEN deployment_runtime_desired_status_since ELSE (CASE WHEN deployment_runtime_desired_status = $4::VARCHAR THEN deployment_runtime_desired_status_since ELSE NOW() END) END,
+                     refresh_version = refresh_version + 1
+                 WHERE tenant_id = $5 AND id = $6",
+        )
+        .await?;
+    let rows_affected = txn
+        .execute(
+            &stmt,
+            &[
+                &final_deployment_resources_status_details.map(|v| v.to_string()), // $1: deployment_resources_status_details,
+                &final_deployment_runtime_status.map(runtime_status_to_string), // $2: deployment_runtime_status,
+                &final_deployment_runtime_status_details.map(|v| v.to_string()), // $3: deployment_runtime_status_details,
+                &final_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $4: deployment_runtime_desired_status,
+                &tenant_id.0,   // $5: tenant_id
+                &pipeline_id.0, // $6: id
             ],
         )
         .await?;
@@ -1601,14 +1869,23 @@ pub(crate) async fn get_next_rust_compilation(
 }
 
 /// Retrieves the list of successfully compiled pipeline programs (pipeline identifier, program version,
-/// program binary source checksum, program binary integrity checksum) AND pipeline programs that
+/// program binary source checksum, program binary integrity checksum, program info integrity checksum) AND pipeline programs that
 /// are currently being compiled (pipeline identifier, program version) across all tenants.
 pub(crate) async fn list_pipeline_programs_across_all_tenants(
     txn: &Transaction<'_>,
-) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError> {
+) -> Result<
+    Vec<(
+        PipelineId,
+        Version,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )>,
+    DBError,
+> {
     let stmt = txn
         .prepare_cached(
-            "SELECT p.id, p.program_version, p.program_binary_source_checksum, p.program_binary_integrity_checksum
+            "SELECT p.id, p.program_version, p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_info_integrity_checksum
              FROM pipeline AS p
              WHERE p.program_status = 'success' OR p.program_status = 'compiling_rust'
              ORDER BY p.id ASC
@@ -1624,6 +1901,7 @@ pub(crate) async fn list_pipeline_programs_across_all_tenants(
                 Version(row.get(1)),
                 row.get::<_, Option<String>>(2),
                 row.get::<_, Option<String>>(3),
+                row.get::<_, Option<String>>(4),
             )
         })
         .collect())
@@ -1717,7 +1995,11 @@ pub(crate) async fn get_support_bundle_data(
         match bundle {
             Ok(bundle) => bundles.push(bundle),
             Err(e) => {
-                warn!("Skipped support bundle data for {pipeline_id}: {}", e);
+                warn!(
+                    pipeline_id = %pipeline_id,
+                    pipeline = "N/A",
+                    "Skipped support bundle data: {e}"
+                );
             }
         }
     }

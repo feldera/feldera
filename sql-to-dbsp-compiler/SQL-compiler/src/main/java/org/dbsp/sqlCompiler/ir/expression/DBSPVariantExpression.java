@@ -55,6 +55,11 @@ public class DBSPVariantExpression extends DBSPExpression implements ISameValue,
     }
 
     @Override
+    public boolean isNull() {
+        return this.value == null;
+    }
+
+    @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;

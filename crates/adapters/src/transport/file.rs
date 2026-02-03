@@ -4,11 +4,11 @@ use super::{
 };
 use crate::format::StreamSplitter;
 use crate::{InputBuffer, Parser};
-use anyhow::{bail, Error as AnyError, Result as AnyResult};
+use anyhow::{Error as AnyError, Result as AnyResult, bail};
 use chrono::Utc;
 use crossbeam::sync::{Parker, Unparker};
 use feldera_adapterlib::format::BufferSize;
-use feldera_adapterlib::transport::{parse_resume_info, Resume, Watermark};
+use feldera_adapterlib::transport::{Resume, Watermark, parse_resume_info};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::thread;
 use std::{fs::File, io::Write, time::Duration};
 use tokio::sync::mpsc::error::TryRecvError;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tracing::{error, info_span};
 use url::Url;
 use xxhash_rust::xxh3::Xxh3Default;
@@ -244,7 +244,7 @@ impl FileInputReader {
                             }
                             remainder -= n;
                             while let Some(chunk) = splitter.next(remainder == 0) {
-                                let (mut buffer, errors) = parser.parse(chunk, &None);
+                                let (mut buffer, errors) = parser.parse(chunk, None);
                                 consumer.parse_errors(errors);
                                 consumer.buffered(buffer.len());
                                 total += buffer.len();
@@ -278,7 +278,7 @@ impl FileInputReader {
                 let Some(chunk) = splitter.next(eof) else {
                     break;
                 };
-                let (buffer, errors) = parser.parse(chunk, &None);
+                let (buffer, errors) = parser.parse(chunk, None);
                 consumer.parse_errors(errors);
 
                 if let Some(buffer) = buffer {
@@ -391,7 +391,7 @@ however the File transport does not support this representation."
 
 #[cfg(test)]
 mod test {
-    use crate::test::{mock_input_pipeline, wait, DEFAULT_TIMEOUT_MS};
+    use crate::test::{DEFAULT_TIMEOUT_MS, mock_input_pipeline, wait};
     use csv::WriterBuilder as CsvWriterBuilder;
     use feldera_types::deserialize_without_context;
     use feldera_types::program_schema::Relation;

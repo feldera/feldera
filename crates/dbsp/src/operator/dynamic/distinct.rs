@@ -2,30 +2,32 @@
 
 use crate::algebra::ZBatchReader;
 use crate::circuit::circuit_builder::StreamId;
-use crate::circuit::metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL};
+use crate::circuit::metadata::{
+    BatchSizeStats, INPUT_BATCHES_LABEL, NUM_ALLOCATIONS_LABEL, OUTPUT_BATCHES_LABEL,
+};
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::{ClonableTrait, Data, DynData};
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
 use crate::trace::spine_async::{SpineCursor, WithSnapshot};
 use crate::trace::{Spine, TupleBuilder};
 use crate::{
+    DBData, Runtime, Timestamp, ZWeight,
     algebra::{
         AddByRef, HasOne, HasZero, IndexedZSet, Lattice, OrdIndexedZSet, OrdIndexedZSetFactories,
         PartialOrder, ZRingValue,
     },
     circuit::{
+        Circuit, Scope, Stream, WithClock,
         metadata::{
-            MetaItem, OperatorLocation, OperatorMeta, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL,
+            MetaItem, NUM_ENTRIES_LABEL, OperatorLocation, OperatorMeta, SHARED_BYTES_LABEL,
             USED_BYTES_LABEL,
         },
         operator_traits::{Operator, UnaryOperator},
-        Circuit, Scope, Stream, WithClock,
     },
     circuit_cache_key,
     dynamic::{DynPair, DynWeightedPairs, Erase},
     trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
     utils::Tup2,
-    DBData, Runtime, Timestamp, ZWeight,
 };
 use crate::{NestedCircuit, Position, RootCircuit};
 use async_stream::stream;
@@ -36,7 +38,7 @@ use std::panic::Location;
 use std::rc::Rc;
 use std::{
     borrow::Cow,
-    cmp::{min, Ordering},
+    cmp::{Ordering, min},
     collections::BTreeMap,
     marker::PhantomData,
     ops::Neg,
@@ -778,10 +780,10 @@ where
             trace_cursor.map_times(&mut |trace_ts, weight| {
                 // Update weights in `distinct_vals`.
                 for (ts, total_weight) in self.distinct_vals.borrow_mut().iter_mut() {
-                    if let Some(ts) = ts {
-                        if trace_ts.less_equal(ts) {
-                            *total_weight += **weight;
-                        }
+                    if let Some(ts) = ts
+                        && trace_ts.less_equal(ts)
+                    {
+                        *total_weight += **weight;
                     }
                 }
                 // Timestamp in the future - update `time_of_interest`.
@@ -919,7 +921,7 @@ where
             INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
             OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => MetaItem::Count(bytes.distinct_allocations()),
+            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
         });
     }
@@ -1201,12 +1203,13 @@ mod test {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
+        Circuit, IndexedZSetHandle, RootCircuit, Runtime, ZSetHandle,
         circuit::CircuitConfig,
         indexed_zset,
         operator::{GeneratorNested, OutputHandle},
-        typed_batch::{OrdIndexedZSet, OrdZSet, SpineSnapshot},
+        typed_batch::{IndexedZSetReader, OrdIndexedZSet, OrdZSet, SpineSnapshot},
         utils::Tup2,
-        zset, Circuit, IndexedZSetHandle, RootCircuit, Runtime, ZSetHandle,
+        zset,
     };
     use proptest::{collection, prelude::*};
 

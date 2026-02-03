@@ -7,13 +7,14 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
 /**
  * This expression is inserted very late in the circuit transformation
  * to handle (some) expressions that can lead to runtime panics.
- * Today it is only used for casts, but we hope to expand its uses.
  *
  * <p>The actual Rust representation has slightly different types
  * than this instruction; the argument type in particular will always
@@ -29,28 +30,39 @@ public class DBSPHandleErrorExpression extends DBSPExpression {
     /** Create an expression that handles an error produced by another expression.
      *
      * @param node             Calcite node of the source expression.
+     * @param runtimeBehavior  How to handle errors at runtime.
      * @param index            All error handling expressions within one operator
      *                         are densely numbered; this is the number indexing them.
+     *                         0 means "unused".
      * @param source           Expression producing a SqlResult.
      * @param hasSourcePosition True if the expression can access the source position information.
      */
-    public DBSPHandleErrorExpression(CalciteObject node, int index, DBSPExpression source, boolean hasSourcePosition) {
-        super(node, source.getType());
+    public DBSPHandleErrorExpression(CalciteObject node, int index, RuntimeBehavior runtimeBehavior,
+                                     DBSPExpression source, boolean hasSourcePosition) {
+        super(node, resultType(source.getType()));
         this.source = source;
         this.hasSourcePosition = hasSourcePosition;
 
-        RuntimeBehavior behavior;
-        if (source.is(DBSPCastExpression.class) && source.to(DBSPCastExpression.class).safe) {
+        if (source.is(DBSPCastExpression.class) &&
+                source.to(DBSPCastExpression.class).safe == DBSPCastExpression.CastType.SqlSafe) {
             index = 0;
-            behavior = RuntimeBehavior.ReturnNone;
+        } else if (source.is(DBSPBinaryExpression.class)) {
+            // A conversion function
+            index = 0;
         } else if (source.getSourcePosition().isValid() && hasSourcePosition) {
-            behavior = RuntimeBehavior.PanicWithSource;
+            // Use the supplied index
         } else {
             index = 0;
-            behavior = RuntimeBehavior.Panic;
         }
-        this.runtimeBehavior = behavior;
+        this.runtimeBehavior = runtimeBehavior;
         this.index = index;
+    }
+
+    static DBSPType resultType(DBSPType inputType) {
+        if (inputType.is(DBSPTypeSqlResult.class)) {
+            return inputType.to(DBSPTypeSqlResult.class).getWrappedType();
+        }
+        return inputType;
     }
 
     public enum RuntimeBehavior {
@@ -103,7 +115,8 @@ public class DBSPHandleErrorExpression extends DBSPExpression {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPHandleErrorExpression(this.node, this.index, this.source.deepCopy(), this.hasSourcePosition);
+        return new DBSPHandleErrorExpression(this.node, this.index, this.runtimeBehavior,
+                this.source.deepCopy(), this.hasSourcePosition);
     }
 
     @Override
@@ -121,7 +134,8 @@ public class DBSPHandleErrorExpression extends DBSPExpression {
     public static DBSPHandleErrorExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression source = fromJsonInner(node, "source", decoder, DBSPExpression.class);
         int index = Utilities.getIntProperty(node, "index");
+        RuntimeBehavior runtimeBehavior = RuntimeBehavior.valueOf(Utilities.getStringProperty(node, "runtimeBehavior"));
         boolean hasSourcePosition = Utilities.getBooleanProperty(node, "hasSourcePosition");
-        return new DBSPHandleErrorExpression(CalciteObject.EMPTY, index, source, hasSourcePosition);
+        return new DBSPHandleErrorExpression(CalciteObject.EMPTY, index, runtimeBehavior, source, hasSourcePosition);
     }
 }

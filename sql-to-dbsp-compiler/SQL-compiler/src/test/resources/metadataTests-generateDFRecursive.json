@@ -369,9 +369,7 @@
       "calcite": {
         "partial": 0
       },
-      "positions": [
-        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59}
-      ],
+      "positions": [],
       "persistent_id": "dabdc0517fb639de8ebd480cb4350e3b2054b584a8c9c42515f268f99294f72c"
     }, "s1": {
       "operation": "constant",
@@ -414,7 +412,7 @@
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37}
         ],
-        "persistent_id": "c4a85bf710dd3401e8c109627ff19a982d7ac56502679cd4ccc751868d929416"
+        "persistent_id": "eea1fb749f276517f2ad1171fc00a889b629d190a675d1cff0ad8f04db1e6a22"
       },
       "s5": {
         "operation": "flat_map_index",
@@ -435,7 +433,7 @@
           {"start_line_number":19,"start_column":17,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":21}
         ],
-        "persistent_id": "04ab9bc2922e5e848f6cb7939658e97c4e2c150331bd0654ed8d98cd85427191"
+        "persistent_id": "532b61244e3f6ecac6e439489956f24fb4bdfedc3708b4dd7601e06c20c5ffc2"
       },
       "s6": {
         "operation": "delta0",
@@ -475,7 +473,7 @@
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26}
         ],
-        "persistent_id": "181d7b128313b90121fa9cff13307d45ac1537762a0e02b5b8a12a9f916432a5"
+        "persistent_id": "d2d417d4519df7cdda5f1b3418fbfdb6b8fd0a9bd9f9b890d0631e73a66cca5a"
       },
       "s9": {
         "operation": "sum",
@@ -487,7 +485,7 @@
           "final": 10
         },
         "positions": [],
-        "persistent_id": "2802674a2b09d121d723e7df8195958a3d2bdda1a8214e853dfe38b1b85ceae7"
+        "persistent_id": "1b0a54fcd87bb8e0b251dd69693425ae5b5d3b5753a123d5a0d22fe6f5ea740e"
       }
     }, "s10": {
       "operation": "inspect",
@@ -502,7 +500,7 @@
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1},
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
       ],
-      "persistent_id": "451ae0acedceb2cceda4533904ef0fe3464c05508e468d588061c1957d064537"
+      "persistent_id": "3035407bd189e60ab4a95c6e8e3555453d98937a42f859a252171247c5bd3a46"
     }, "s11": {
       "operation": "inspect",
       "inputs": [
@@ -512,10 +510,7 @@
       "calcite": {
         "final": 0
       },
-      "positions": [
-        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59},
-        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59}
-      ],
+      "positions": [],
       "persistent_id": "42bb786d35654abe048f3d4cedb08308c085b652304d4902765d81d8afda529c"
     }
   },

@@ -1,7 +1,7 @@
 use serde::{
+    Serialize, Serializer,
     de::{Error, Unexpected},
     ser::SerializeStruct,
-    Serialize, Serializer,
 };
 use smallstr::SmallString;
 

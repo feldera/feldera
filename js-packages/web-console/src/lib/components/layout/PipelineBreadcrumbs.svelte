@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from '$lib/types/svelte'
 
-  let {
+  const {
     breadcrumbs,
     last,
     class: _class,

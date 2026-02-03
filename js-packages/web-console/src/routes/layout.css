@@ -1,0 +1,189 @@
+@import "../assets/fonts/dm-sans.css" layer(base); /* '@fontsource-variable/public-sans' */
+@import "@fontsource/dm-mono" layer(base);
+@import url("@fortawesome/fontawesome-free/css/brands.min.css") layer(base);
+
+@import "tailwindcss";
+
+/* Scan profiler packages for Tailwind classes */
+@source "../../node_modules/profiler-layout/**/*.{svelte}";
+
+@import "@skeletonlabs/skeleton";
+@import "@skeletonlabs/skeleton-svelte";
+
+@import "feldera-theme/feldera-modern.css";
+
+@plugin "tailwind-scrollbar" {
+  nocompatible: true;
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --breakpoint-*: initial;
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
+
+  --font-brands: "Font Awesome 6 Brands";
+  --font-dm-mono: "DM Mono";
+
+  --color-dark: rgb(24 24 24);
+
+  --text-xs: 10px;
+  --text-xs--line-height: 14px;
+  --text-sm: 12px;
+  --text-sm--line-height: 18px;
+  --text-base: 14px;
+  --text-base--line-height: 20px;
+  --text-lg: 16px;
+  --text-lg--line-height: 22px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 28px;
+  --text-3xl: 30px;
+  --text-3xl--line-height: 36px;
+  --text-4xl: 36px;
+  --text-4xl--line-height: 40px;
+  --text-5xl: 48px;
+  --text-5xl--line-height: 1;
+  --text-6xl: 60px;
+  --text-6xl--line-height: 1;
+  --text-7xl: 72px;
+  --text-7xl--line-height: 1;
+  --text-8xl: 96px;
+  --text-8xl--line-height: 1;
+  --text-9xl: 128px;
+  --text-9xl--line-height: 1;
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+@layer base {
+  .focused {
+    box-shadow: none;
+  }
+}
+
+.preset-grayout-surface {
+  @apply text-surface-700 hover:text-surface-950 dark:text-surface-300 dark:hover:text-surface-50;
+}
+
+.pane-divider-horizontal {
+  @apply z-1 h-0.5 transition-colors before:-mt-0.75 before:flex before:h-2 before:w-full hover:bg-primary-500 active:bg-primary-500;
+}
+
+.pane-divider-vertical {
+  @apply z-1 w-0.5 transition-colors before:-ml-0.75 before:flex before:h-full before:w-2 hover:bg-primary-500 active:bg-primary-500;
+}
+
+.bg-white-dark {
+  @apply bg-white;
+  &:where(.dark, .dark *) {
+    @apply bg-dark;
+  }
+}
+
+.bg-dark-white {
+  @apply bg-dark dark:bg-white;
+}
+
+/* Skeleton UI overrides */
+
+.btn {
+  /* gap: calc(0.5rem * var(--space-scale-factor)); */
+  padding-block: calc(var(--spacing) * 2) /* 0.25rem = 4px */;
+  padding-inline: calc(var(--spacing) * 4) /* 1rem = 16px */;
+}
+
+.btn-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.btn,
+.btn-icon {
+  &:not(:disabled) {
+    &:hover {
+      filter: brightness(93%);
+      &:where(.dark, .dark *) {
+        filter: brightness(130%);
+      }
+    }
+  }
+}
+
+/* .btn:hover,
+.btn-icon:hover {
+  --tw-brightness: brightness(0.93);
+}
+
+.btn:hover:where(.dark, .dark *),
+.btn-icon:hover:where(.dark, .dark *) {
+  --tw-brightness: brightness(1.3);
+} */
+
+.checkbox,
+.radio {
+  @apply border-none bg-white dark:bg-dark;
+}
+
+/* Remove red outline around inputs in Firefox */
+input:focus {
+  outline: none !important;
+}
+
+.text-lg {
+  /* width: calc(2rem * var(--space-scale-factor));
+  height: calc(2rem * var(--space-scale-factor));
+  padding: 0px !important; */
+}
+
+.h3 {
+  line-height: 28px;
+}
+
+.h4 {
+  line-height: 28px;
+}
+
+.h5 {
+  line-height: 20px;
+}
+
+.select {
+  appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+  print-color-adjust: exact;
+  background-position: right 0.5rem center;
+  /* top | right | bottom | left */
+  padding: 0.5rem 2.5rem 0.5rem 0.75rem;
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+}
+
+/* The end of Skeleton UI overrides */

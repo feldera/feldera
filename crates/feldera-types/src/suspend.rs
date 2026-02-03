@@ -58,7 +58,7 @@ impl Display for SuspendError {
 }
 
 /// Reasons why a pipeline does not support suspend and resume operations.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ThisError, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ThisError, ToSchema)]
 pub enum PermanentSuspendError {
     #[error("Storage must be configured")]
     StorageRequired,
@@ -84,13 +84,16 @@ pub enum TemporarySuspendError {
 
     #[error("Input endpoint {0:?} is blocking suspend")]
     InputEndpointBarrier(String),
+
+    #[error("Coordinator is blocking checkpoint")]
+    Coordination,
 }
 
 /// Response to a `/suspendable` request.
 ///
 /// Reports whether the pipeline supports suspend and resume operations.
 /// If not, provides the reasons why suspending is not supported.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct SuspendableResponse {
     /// Is the pipeline suspendable?
     pub suspendable: bool,

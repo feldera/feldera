@@ -295,6 +295,7 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                                 PipelineAutomaton::new(
                                     common_config.clone(),
                                     pipeline_id,
+                                    None,
                                     tenant_id,
                                     db.clone(),
                                     notifier.clone(),
@@ -328,11 +329,19 @@ async fn reconcile<E: PipelineExecutor + 'static>(
         for pipeline_id in finished {
             if let Some((join_handle, _, _)) = pipelines.lock().await.remove(&pipeline_id) {
                 if let Err(e) = join_handle.await {
-                    error!("Pipeline {pipeline_id} experienced a join error: {e}")
+                    error!(
+                        pipeline_id = %pipeline_id,
+                        pipeline = "N/A",
+                        "Pipeline experienced a join error: {e}"
+                    )
                 }
             } else {
                 // Should be unreachable as this loop is the only one removing entries
-                error!("Pipeline {pipeline_id} was marked as finished, and as such to be joined and removed. It has however already been removed.");
+                error!(
+                    pipeline_id = %pipeline_id,
+                    pipeline = "N/A",
+                    "Pipeline was marked as finished, and as such to be joined and removed. It has however already been removed."
+                );
             }
         }
     }

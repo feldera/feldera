@@ -1,6 +1,6 @@
 <script lang="ts">
-  import Popup from '$lib/components/common/Popup.svelte'
   import { fade } from 'svelte/transition'
+  import Popup from '$lib/components/common/Popup.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
 </script>
 
@@ -8,7 +8,7 @@
   {#snippet trigger(onclick)}
     <button
       {onclick}
-      class="fd fd-book-open btn-icon flex text-[20px] preset-tonal-surface"
+      class="fd fd-book-open btn-icon flex preset-tonal-surface text-[20px]"
       aria-label="Open extras popup"
     >
     </button>

@@ -3,11 +3,11 @@
 use std::collections::BTreeMap;
 
 use apache_avro::{
+    Schema as AvroSchema,
     schema::{
         ArraySchema, DecimalSchema, MapSchema, Name, RecordField, RecordFieldOrder, RecordSchema,
         UnionSchema,
     },
-    Schema as AvroSchema,
 };
 use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
@@ -184,15 +184,19 @@ fn validate_decimal_schema(
             if decimal_schema.precision as i64 != column_type.precision.unwrap() {
                 return Err(format!(
                     "invalid Avro schema for a column of type 'DECIMAL({},{})': expected precision {}, but found {}",
-                    column_type.precision.unwrap(), column_type.scale.unwrap(),
-                    column_type.precision.unwrap(), decimal_schema.precision
+                    column_type.precision.unwrap(),
+                    column_type.scale.unwrap(),
+                    column_type.precision.unwrap(),
+                    decimal_schema.precision
                 ));
             }
             if decimal_schema.scale as i64 != column_type.scale.unwrap() {
                 return Err(format!(
                     "invalid Avro schema for a column of type 'DECIMAL({},{})': expected scale {}, but found {}",
-                    column_type.precision.unwrap(), column_type.scale.unwrap(),
-                    column_type.scale.unwrap(), decimal_schema.scale
+                    column_type.precision.unwrap(),
+                    column_type.scale.unwrap(),
+                    column_type.scale.unwrap(),
+                    decimal_schema.scale
                 ));
             }
 
@@ -417,7 +421,9 @@ pub fn validate_field_schema(
     }
 
     if matches!(optional, OptionalField::Optional(_)) && !field_schema.nullable {
-        warn!("Avro schema defines field '{name}' as nullable, but the corresponding SQL column is non-nullable. This may lead to parsing errors if the input data includes null values.");
+        warn!(
+            "Avro schema defines field '{name}' as nullable, but the corresponding SQL column is non-nullable. This may lead to parsing errors if the input data includes null values."
+        );
     }
 
     Ok(())
@@ -581,7 +587,7 @@ impl AvroSchemaBuilder {
             SqlType::Date => AvroSchema::Date,
             SqlType::Timestamp => AvroSchema::TimestampMicros,
             SqlType::Interval(_) => {
-                return Err("not implemented: Avro encoding for the SQL interval type".to_string())
+                return Err("not implemented: Avro encoding for the SQL interval type".to_string());
             }
             SqlType::Variant =>
             // VARIANT is serialized as a JSON-encoded string.
@@ -599,7 +605,7 @@ impl AvroSchemaBuilder {
                 })
             }
             SqlType::Struct => {
-                return Err("not implemented: Avro encoding for user-defined SQL types".to_string())
+                return Err("not implemented: Avro encoding for user-defined SQL types".to_string());
             }
             SqlType::Map => {
                 let key_type = column_type.value.as_ref().ok_or(

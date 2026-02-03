@@ -47,17 +47,6 @@ All commands below should be run from the root directory of the repository.
   ... after which you can view Prometheus at http://localhost:9090
   and Grafana at http://localhost:3000
 
-- **Demo:**
-  ```bash
-  docker compose -f deploy/docker-compose.yml \
-                 -f deploy/docker-compose-dev.yml \
-                 -f deploy/docker-compose-extra.yml \
-                 -f deploy/docker-compose-demo.yml \
-                 --profile demo-debezium-mysql up --build
-  ```
-
-  The demo profiles can be found within: `deploy/docker-compose-demo.yml`
-
 - **Redpanda:**
   ```bash
   docker compose -f deploy/docker-compose.yml \

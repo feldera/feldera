@@ -1,17 +1,17 @@
-use super::{require_persistent_id, Mailbox};
+use super::{Mailbox, require_persistent_id};
 use crate::{
+    Batch, BatchReader, Circuit, Error, Runtime, Stream,
     circuit::{
-        circuit_builder::CircuitBase,
-        metadata::{BatchSizeStats, OperatorMeta, OUTPUT_BATCHES_LABEL},
-        operator_traits::{BinarySinkOperator, Operator, SinkOperator},
         GlobalNodeId, LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
+        circuit_builder::CircuitBase,
+        metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL, OperatorMeta},
+        operator_traits::{BinarySinkOperator, Operator, SinkOperator},
     },
     storage::file::to_bytes,
     trace::{
         BatchReader as DynBatchReader, BatchReaderFactories, SpineSnapshot as DynSpineSnapshot,
     },
     typed_batch::{Spine, SpineSnapshot, TypedBatch},
-    Batch, BatchReader, Circuit, Error, Runtime, Stream,
 };
 use feldera_storage::{FileCommitter, StoragePath};
 use std::{
@@ -21,8 +21,8 @@ use std::{
     marker::PhantomData,
     mem::transmute,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 use typedmap::TypedMapKey;
@@ -443,7 +443,7 @@ where
     }
 }
 
-struct AccumulateOutput<B>
+pub struct AccumulateOutput<B>
 where
     B: Batch,
 {
@@ -456,7 +456,7 @@ impl<B> AccumulateOutput<B>
 where
     B: Batch + Send,
 {
-    fn new() -> (Self, OutputHandle<SpineSnapshot<B>>) {
+    pub fn new() -> (Self, OutputHandle<SpineSnapshot<B>>) {
         let handle = OutputHandle::new();
         let mailbox = handle.mailbox(Runtime::worker_index()).clone();
 
@@ -598,7 +598,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{typed_batch::OrdZSet, utils::Tup2, Runtime};
+    use crate::{Runtime, typed_batch::OrdZSet, utils::Tup2};
 
     #[test]
     fn test_output_handle() {

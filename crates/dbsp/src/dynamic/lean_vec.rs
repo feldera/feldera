@@ -1,21 +1,20 @@
 use rkyv::{
-    out_field,
-    ser::{ScratchSpace, Serializer},
     Archive, Archived, Deserialize, DeserializeUnsized, Fallible, RelPtr, Serialize,
-    SerializeUnsized,
+    SerializeUnsized, out_field,
+    ser::{ScratchSpace, Serializer},
 };
 use size_of::{Context, SizeOf};
 use std::{
-    alloc::{self, handle_alloc_error, Layout},
-    cmp::{max, min, Ordering},
+    alloc::{self, Layout, handle_alloc_error},
+    cmp::{Ordering, max, min},
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
     iter::FusedIterator,
     marker::PhantomData,
-    mem::{align_of, forget, size_of, take, ManuallyDrop},
+    mem::{ManuallyDrop, align_of, forget, size_of, take},
     ops::{Bound, Index, IndexMut, RangeBounds},
     pin::Pin,
-    ptr::{self, drop_in_place, NonNull},
+    ptr::{self, NonNull, drop_in_place},
     slice,
 };
 
@@ -24,10 +23,10 @@ macro_rules! lean_vec {
     () => (
         $crate::dynamic::LeanVec::from(vec![])
     );
-    ($elem:expr; $n:expr) => (
+    ($elem:expr_2021; $n:expr_2021) => (
         $crate::dynamic::LeanVec::from(vec![$elem;$n])
     );
-    ($($x:expr),+ $(,)?) => (
+    ($($x:expr_2021),+ $(,)?) => (
         $crate::dynamic::LeanVec::from(vec![$($x),+])
     );
 }
@@ -62,6 +61,14 @@ impl RawVec {
         this
     }
 
+    /// Creates a `RawVec` directly from a pointer, a length, and a capacity.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` must be a valid pointer to `capacity` allocated bytes of which `length` are valid
+    /// - `val_size` must be the size of the elements in the vector
+    /// - `align` must be the alignment of the elements in the vector
+    /// - `length` must be less than or equal to `capacity`
     pub unsafe fn from_raw_parts(
         ptr: *mut u8,
         length: usize,
@@ -98,7 +105,7 @@ impl RawVec {
     /// - `new_len` must be less than or equal to [`self.capacity()`].
     /// - The elements at `old_len..new_len` must be initialized.
     ///
-    /// [`self.capacity()`]: RawVec ::capacity
+    /// [`self.capacity()`]: RawVec::capacity
     pub unsafe fn set_len(&mut self, new_len: usize) {
         debug_assert!(new_len <= self.capacity());
         self.length = new_len;
@@ -177,14 +184,24 @@ impl RawVec {
         }
     }
 
+    /// # Safety
+    ///
+    /// - `idx` must be less than the length of the vector
     pub unsafe fn index_unchecked(&self, idx: usize) -> *const u8 {
-        debug_assert!(idx < self.len());
-        self.as_ptr().add(idx * self.val_size)
+        unsafe {
+            debug_assert!(idx < self.len());
+            self.as_ptr().add(idx * self.val_size)
+        }
     }
 
+    /// # Safety
+    ///
+    /// - `idx` must be less than the length of the vector
     pub unsafe fn index_mut_unchecked(&mut self, idx: usize) -> *mut u8 {
-        debug_assert!(idx < self.len());
-        self.as_mut_ptr().add(idx * self.val_size)
+        unsafe {
+            debug_assert!(idx < self.len());
+            self.as_mut_ptr().add(idx * self.val_size)
+        }
     }
 
     pub fn range<R>(&self, range: R) -> (*const u8, usize)
@@ -226,6 +243,10 @@ impl RawVec {
         self.length += 1;
     }
 
+    /// # Safety
+    ///
+    /// - `value` must be a valid pointer to an instance of the current vector's type
+    /// - the vector must have available capacity greater than zero
     pub unsafe fn push_unchecked(&mut self, value: *const u8) {
         debug_assert_ne!(self.capacity(), 0, "cannot push to a vec of length zero");
         debug_assert!(
@@ -246,11 +267,14 @@ impl RawVec {
         self.length += 1;
     }
 
+    /// # Safety
+    ///
+    /// - `start` must be a valid pointer to a slice of length `length` of the current vector's type
     pub unsafe fn append_raw_range(&mut self, start: *const u8, length: usize) {
-        // Reserve space for the new element
+        // Reserve space for the new elements
         self.reserve(length);
 
-        // Copy the element into the vector
+        // Copy the elements into the vector
         // Safety: The caller guarantees that the given pointer is valid
         unsafe {
             ptr::copy_nonoverlapping(
@@ -295,6 +319,7 @@ impl RawVec {
         self.len().cmp(&other.len())
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn hash(&self, hash_func: &mut dyn FnMut(*const u8)) {
         for i in 0..self.len() {
             hash_func(self.index(i));
@@ -807,7 +832,7 @@ impl<'a> RawIter<'a> {
     }
 
     unsafe fn get_unchecked(&self, n: usize) -> *mut u8 {
-        self.ptr.add(self.val_size * n)
+        unsafe { self.ptr.add(self.val_size * n) }
     }
 
     fn iter_len(&self) -> usize {
@@ -983,7 +1008,9 @@ impl<T> ArchivedLeanVec<T> {
         resolver: LeanVecResolver,
         out: *mut Self,
     ) {
-        Self::resolve_from_len(slice.len(), pos, resolver, out);
+        unsafe {
+            Self::resolve_from_len(slice.len(), pos, resolver, out);
+        }
     }
 
     /// Resolves an archived `LeanVec` from a given length.
@@ -999,10 +1026,12 @@ impl<T> ArchivedLeanVec<T> {
         resolver: LeanVecResolver,
         out: *mut Self,
     ) {
-        let (fp, fo) = out_field!(out.ptr);
-        RelPtr::emplace(pos + fp, resolver.pos, fo);
-        let (fp, fo) = out_field!(out.len);
-        usize::resolve(&len, pos + fp, (), fo);
+        unsafe {
+            let (fp, fo) = out_field!(out.ptr);
+            RelPtr::emplace(pos + fp, resolver.pos, fo);
+            let (fp, fo) = out_field!(out.len);
+            usize::resolve(&len, pos + fp, (), fo);
+        }
     }
 
     /// Serializes an archived `LeanVec` from a given slice.
@@ -1033,7 +1062,9 @@ where
     type Archived = ArchivedLeanVec<T::Archived>;
     type Resolver = LeanVecResolver;
     unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-        ArchivedLeanVec::resolve_from_slice(self.as_slice(), pos, resolver, out);
+        unsafe {
+            ArchivedLeanVec::resolve_from_slice(self.as_slice(), pos, resolver, out);
+        }
     }
 }
 impl<S, T> Serialize<S> for LeanVec<T>
@@ -1123,15 +1154,17 @@ impl<T> LeanVec<T> {
     ///
     /// See `std::vec::from_raw_parts`.
     pub unsafe fn from_raw_parts(ptr: *mut T, length: usize, capacity: usize) -> Self {
-        Self {
-            vec: RawVec::from_raw_parts(
-                ptr as *mut u8,
-                length,
-                capacity,
-                size_of::<T>(),
-                align_of::<T>(),
-            ),
-            phantom: PhantomData,
+        unsafe {
+            Self {
+                vec: RawVec::from_raw_parts(
+                    ptr as *mut u8,
+                    length,
+                    capacity,
+                    size_of::<T>(),
+                    align_of::<T>(),
+                ),
+                phantom: PhantomData,
+            }
         }
     }
     pub const fn len(&self) -> usize {
@@ -1152,8 +1185,10 @@ impl<T> LeanVec<T> {
     ///
     /// - `new_len` must be less than or equal to `self.capacity()`.
     /// - The elements at `old_len..new_len` must be initialized.
+    ///
+    /// [`self.capacity()`]: RawVec::capacity
     pub unsafe fn set_len(&mut self, new_len: usize) {
-        self.vec.set_len(new_len)
+        unsafe { self.vec.set_len(new_len) }
     }
 
     pub const fn is_empty(&self) -> bool {
@@ -1189,11 +1224,11 @@ impl<T> LeanVec<T> {
     }
 
     pub(crate) unsafe fn get_unchecked(&self, index: usize) -> &T {
-        &*(self.vec.index_unchecked(index) as *const T)
+        unsafe { &*(self.vec.index_unchecked(index) as *const T) }
     }
 
     pub(crate) unsafe fn get_mut_unchecked(&mut self, index: usize) -> &mut T {
-        &mut *(self.vec.index_mut_unchecked(index) as *mut T)
+        unsafe { &mut *(self.vec.index_mut_unchecked(index) as *mut T) }
     }
 
     pub fn reserve(&mut self, additional: usize) {
@@ -1231,8 +1266,10 @@ impl<T> LeanVec<T> {
     ///
     /// Requires that `self.capacity() > self.len()`.
     pub unsafe fn push_unchecked(&mut self, value: T) {
-        let value = ManuallyDrop::new(value);
-        self.vec.push_unchecked(&*value as *const T as *const u8);
+        unsafe {
+            let value = ManuallyDrop::new(value);
+            self.vec.push_unchecked(&*value as *const T as *const u8);
+        }
     }
 
     pub fn extend_from_slice(&mut self, other: &[T])

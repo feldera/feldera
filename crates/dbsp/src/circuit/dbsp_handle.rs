@@ -1,17 +1,22 @@
+use crate::circuit::GlobalNodeId;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::runtime::ThreadType;
 use crate::circuit::schedule::{CommitProgress, CommitProgressSummary};
 use crate::monitor::visual_graph::Graph;
+use crate::operator::dynamic::balance::{
+    BALANCE_TAX, BalancerHint, KEY_DISTRIBUTION_REFRESH_THRESHOLD,
+    MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD, MIN_RELATIVE_IMPROVEMENT_THRESHOLD, PartitioningPolicy,
+};
 use crate::storage::backend::StorageError;
 use crate::storage::file::BLOOM_FILTER_FALSE_POSITIVE_RATE;
 use crate::trace::MergerType;
 use crate::{
-    circuit::runtime::RuntimeHandle, profile::Profiler, Error as DbspError, RootCircuit, Runtime,
-    RuntimeError,
+    Error as DbspError, RootCircuit, Runtime, RuntimeError, circuit::runtime::RuntimeHandle,
+    profile::Profiler,
 };
 use anyhow::Error as AnyError;
-use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
+use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
 use feldera_ir::LirCircuit;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
@@ -41,9 +46,9 @@ use uuid::Uuid;
 use crate::circuit::circuit_builder::Stream;
 use crate::profile::{DbspProfile, GraphProfile, WorkerProfile};
 
+use super::SchedulerError;
 use super::circuit_builder::BootstrapInfo;
 use super::runtime::WorkerPanicInfo;
-use super::SchedulerError;
 
 /// A host for some workers in the [`Layout`] for a multi-host DBSP circuit.
 #[allow(clippy::manual_non_exhaustive)]
@@ -109,7 +114,7 @@ impl Layout {
     /// host must pass its own `local_address`.  The `Runtime` on each host
     /// listens on its own address and connects to all the other addresses.
     pub fn new_multihost(
-        params: &Vec<(SocketAddr, usize)>,
+        params: &[(SocketAddr, usize)],
         local_address: SocketAddr,
     ) -> Result<Layout, LayoutError> {
         // Check that the addresses are unique.
@@ -204,7 +209,7 @@ impl Layout {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub enum LayoutError {
     /// The socket address passed to `new_multihost()` isn't in the list of
     /// hosts.
@@ -314,6 +319,63 @@ pub struct DevTweaks {
     // TODO: splitter_chunk_size_bytes, per-operator chunk size.
     pub splitter_chunk_size_records: u64,
 
+    /// Enable adaptive joins.
+    ///
+    /// Adaptive joins dynamically change their partitioning policy to avoid skew.
+    ///
+    /// Adaptive joins are disabled by default.
+    pub adaptive_joins: bool,
+
+    /// The minimum relative improvement threshold for the join balancer.
+    ///
+    /// This parameter prevents the join balancer from making changes to the
+    /// partitioning policy if the improvement is not significant, since the overhead
+    /// of such rebalancing, especially when performed frequently, can exceed the benefits.
+    ///
+    /// A rebalancing is considered significant if the relative estimated improvement for the cluster
+    /// of joins where the rebalancing is applied is at least this threshold.
+    ///
+    /// A rebalancing is applied if both this threshold and `balancer_min_absolute_improvement_threshold` are met.
+    ///
+    /// The default value is 1.2.
+    pub balancer_min_relative_improvement_threshold: f64,
+
+    /// The minimum absolute improvement threshold for the balancer.
+    ///
+    /// This parameter prevents the join balancer from making changes to the
+    /// partitioning policy if the improvement is not significant, since the overhead
+    /// of such rebalancing, especially when performed frequently, can exceed the benefits.
+    ///
+    /// A rebalancing is considered significant if the absolute estimated improvement for the cluster
+    /// of joins where the rebalancing is applied is at least this threshold. The cost model used by
+    /// the balancer is based on the number of records in the largest partition of a collection.
+    ///
+    /// A rebalancing is applied if both this threshold and `balancer_min_relative_improvement_threshold` are met.
+    ///
+    /// The default value is 10,000.
+    pub balancer_min_absolute_improvement_threshold: u64,
+
+    /// Factor that discourages the use of the Balance policy in a perfectly balanced collection.
+    ///
+    /// Assuming a perfectly balanced key distribution, the Balance policy is slightly less efficient than Shard,
+    /// since it requires computing the hash of the entire key/value pair. This factor discourages the use of this policy
+    /// if the skew is `<balancer_balance_tax`.
+    ///
+    /// The default value is 1.1.
+    pub balancer_balance_tax: f64,
+
+    /// The balancer threshold for checking for an improved partitioning policy for a stream.
+    ///
+    /// Finding a good partitioning policy for a circuit involves solving an optimization problem,
+    /// which can be relatively expensive. Instead of doing this on every step, the balancer only
+    /// checks for an improved partitioning policy if the key distribution of a stream has changed
+    /// significantly since the current solution was computed.  Specifically, it only kicks in when
+    /// the size of at least one shard of at least one stream in the cluster has changed by more than
+    /// this threshold.
+    ///
+    /// The default value is 0.1.
+    pub balancer_key_distribution_refresh_threshold: f64,
+
     /// False-positive rate for Bloom filters on batches on storage, as a
     /// fraction f, where 0 < f < 1.
     ///
@@ -341,6 +403,11 @@ impl Default for DevTweaks {
             stack_overflow_backtrace: false,
             splitter_chunk_size_records: 10_000,
             bloom_false_positive_rate: BLOOM_FILTER_FALSE_POSITIVE_RATE,
+            balancer_min_relative_improvement_threshold: MIN_RELATIVE_IMPROVEMENT_THRESHOLD,
+            balancer_min_absolute_improvement_threshold: MIN_ABSOLUTE_IMPROVEMENT_THRESHOLD,
+            balancer_balance_tax: BALANCE_TAX,
+            balancer_key_distribution_refresh_threshold: KEY_DISTRIBUTION_REFRESH_THRESHOLD,
+            adaptive_joins: false,
         }
     }
 }
@@ -366,6 +433,26 @@ impl DevTweaks {
 /// should attempt to limit their output to this chunk size.
 pub fn splitter_output_chunk_size() -> usize {
     Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records as usize)
+}
+
+pub fn balancer_min_absolute_improvement_threshold() -> u64 {
+    Runtime::with_dev_tweaks(|d| d.balancer_min_absolute_improvement_threshold)
+}
+
+pub fn balancer_min_relative_improvement_threshold() -> f64 {
+    Runtime::with_dev_tweaks(|d| d.balancer_min_relative_improvement_threshold)
+}
+
+pub fn balancer_balance_tax() -> f64 {
+    Runtime::with_dev_tweaks(|d| d.balancer_balance_tax)
+}
+
+pub fn balancer_key_distribution_refresh_threshold() -> f64 {
+    Runtime::with_dev_tweaks(|d| d.balancer_key_distribution_refresh_threshold)
+}
+
+pub fn adaptive_joins_enabled() -> bool {
+    Runtime::with_dev_tweaks(|d| d.adaptive_joins)
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.
@@ -441,6 +528,21 @@ impl CircuitConfig {
 
     pub fn with_splitter_chunk_size_records(mut self, records: u64) -> Self {
         self.dev_tweaks.splitter_chunk_size_records = records;
+        self
+    }
+
+    pub fn with_balancer_min_relative_improvement_threshold(mut self, threshold: f64) -> Self {
+        self.dev_tweaks.balancer_min_relative_improvement_threshold = threshold;
+        self
+    }
+
+    pub fn with_balancer_min_absolute_improvement_threshold(mut self, threshold: u64) -> Self {
+        self.dev_tweaks.balancer_min_absolute_improvement_threshold = threshold;
+        self
+    }
+
+    pub fn with_balancer_balance_tax(mut self, tax: f64) -> Self {
+        self.dev_tweaks.balancer_balance_tax = tax;
         self
     }
 
@@ -684,9 +786,40 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::SetBalancerHints(hints)) => {
+                        let results = hints
+                            .into_iter()
+                            .map(|(global_node_id, hint)| {
+                                circuit.set_balancer_hint(&global_node_id, hint)
+                            })
+                            .collect::<Vec<Result<(), DbspError>>>();
+                        if status_sender
+                            .send(Ok(Response::SetBalancerHints(results)))
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    Ok(Command::GetCurrentBalancerPolicy) => {
+                        let policy = circuit.get_current_balancer_policy();
+                        if status_sender
+                            .send(Ok(Response::CurrentBalancerPolicy(policy)))
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    Ok(Command::Rebalance) => {
+                        circuit.rebalance();
+                        if status_sender.send(Ok(Response::Unit)).is_err() {
+                            return;
+                        }
+                    }
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
-                    Err(TryRecvError::Empty) => parker.park(),
+                    Err(TryRecvError::Empty) => {
+                        parker.park();
+                    }
                     Err(_) => {
                         break;
                     }
@@ -770,6 +903,9 @@ enum Command {
     GetLir,
     Checkpoint(StoragePath),
     Restore(StoragePath),
+    SetBalancerHints(Vec<(GlobalNodeId, BalancerHint)>),
+    GetCurrentBalancerPolicy,
+    Rebalance,
 }
 
 impl Debug for Command {
@@ -795,6 +931,11 @@ impl Debug for Command {
             Command::GetLir => write!(f, "GetLir"),
             Command::Checkpoint(path) => f.debug_tuple("Checkpoint").field(path).finish(),
             Command::Restore(path) => f.debug_tuple("Restore").field(path).finish(),
+            Command::SetBalancerHints(hints) => {
+                f.debug_tuple("SetBalancerHints").field(hints).finish()
+            }
+            Command::GetCurrentBalancerPolicy => write!(f, "GetCurrentBalancerPolicy"),
+            Command::Rebalance => write!(f, "Rebalance"),
         }
     }
 }
@@ -810,6 +951,8 @@ enum Response {
     CheckpointCreated(Vec<Arc<dyn FileCommitter>>),
     CheckpointRestored(Option<BootstrapInfo>),
     Lir(LirCircuit),
+    SetBalancerHints(Vec<Result<(), DbspError>>),
+    CurrentBalancerPolicy(BTreeMap<GlobalNodeId, PartitioningPolicy>),
 }
 
 /// A handle to control the execution of a circuit in a multithreaded runtime.
@@ -837,6 +980,9 @@ pub struct DBSPHandle {
     /// For creating checkpoints, if we can.
     checkpointer: Option<Arc<Mutex<Checkpointer>>>,
 
+    /// Circuit fingerprint.
+    fingerprint: u64,
+
     /// Information about operators that participate in bootstrapping the new parts of the circuit.
     bootstrap_info: Option<BootstrapInfo>,
 }
@@ -862,6 +1008,14 @@ impl WorkersCommitProgress {
         let mut result = CommitProgressSummary::new();
 
         for worker_progress in self.0.values() {
+            // println!(
+            //     "{worker} in progress: {}",
+            //     worker_progress
+            //         .get_in_progress()
+            //         .keys()
+            //         .map(|k| k.to_string())
+            //         .join(", ")
+            // );
             result.merge(&worker_progress.summary());
         }
 
@@ -885,11 +1039,11 @@ impl DBSPHandle {
         // directory)?
         let checkpointer = backend
             .map(|backend| {
-                Checkpointer::new(
-                    backend,
-                    fingerprint,
-                    runtime.runtime().get_mode() == Mode::Ephemeral,
-                )
+                let checkpointer = Checkpointer::new(backend)?;
+                if runtime.runtime().get_mode() == Mode::Ephemeral {
+                    checkpointer.verify_fingerprint(fingerprint)?;
+                };
+                Ok::<_, DbspError>(checkpointer)
             })
             .transpose()?
             .map(|checkpointer| Arc::new(Mutex::new(checkpointer)));
@@ -899,6 +1053,7 @@ impl DBSPHandle {
             command_senders,
             status_receivers,
             checkpointer,
+            fingerprint,
             runtime_elapsed: Duration::ZERO,
             bootstrap_info: None,
         })
@@ -962,7 +1117,6 @@ impl DBSPHandle {
             select.recv(receiver);
         }
 
-        // Receive responses.
         fn handle_panic(this: &mut DBSPHandle) -> Result<(), DbspError> {
             // Retrieve panic info before killing the circuit.
             let panic_info = this.collect_panic_info().unwrap_or_default();
@@ -970,6 +1124,8 @@ impl DBSPHandle {
 
             Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }))
         }
+
+        // Receive responses.
         for _ in 0..self.status_receivers.len() {
             let ready = select.select();
             let worker = ready.index();
@@ -988,6 +1144,46 @@ impl DBSPHandle {
         }
 
         Ok(())
+    }
+
+    fn unicast_command(&mut self, worker: usize, command: Command) -> Result<Response, DbspError> {
+        if self.runtime.is_none() {
+            return Err(DbspError::Runtime(RuntimeError::Terminated));
+        }
+
+        // Send command.
+        if self.command_senders[worker].send(command.clone()).is_err() {
+            let panic_info = self.collect_panic_info().unwrap_or_default();
+
+            // Worker thread panicked. Exit without waiting for all workers to exit
+            // to avoid deadlocks due to workers waiting for each other.
+            self.kill_async();
+            return Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }));
+        }
+        self.runtime.as_ref().unwrap().unpark_worker(worker);
+
+        let reply = match self.status_receivers[worker].recv() {
+            Err(_) => return handle_panic(self),
+            Ok(Err(e)) => {
+                let _ = self.kill_inner();
+                return Err(e);
+            }
+            Ok(Ok(resp)) => resp,
+        };
+
+        // Receive responses.
+        fn handle_panic(this: &mut DBSPHandle) -> Result<Response, DbspError> {
+            // Retrieve panic info before killing the circuit.
+            let panic_info = this.collect_panic_info().unwrap_or_default();
+            this.kill_async();
+
+            Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }))
+        }
+        if self.panicked() {
+            return handle_panic(self);
+        }
+
+        Ok(reply)
     }
 
     /// Start and instantly commit a transaction, waiting for the commit to complete.
@@ -1183,13 +1379,8 @@ impl DBSPHandle {
     }
 
     /// Fingerprint of this circuit.
-    ///
-    /// We only keep the fingerprint if the circuit has storage, since it's to
-    /// make sure that the running circuit matches whatever we stored.
-    pub fn fingerprint(&self) -> Option<u64> {
-        self.checkpointer
-            .as_ref()
-            .map(|checkpointer| checkpointer.lock().unwrap().fingerprint())
+    pub fn fingerprint(&self) -> u64 {
+        self.fingerprint
     }
 
     /// Reset circuit state to the point of the given Commit.
@@ -1216,14 +1407,20 @@ impl DBSPHandle {
                     ));
                 }
                 let info = info.join("\n");
-                return Err(DbspError::Scheduler(SchedulerError::ReplayInfoConflict { error: format!("worker 0 and worker {i} returned different replay info after restarting from a checkpoint; this can be caused by a bug or data corruption; replay info\n{info}") }));
+                return Err(DbspError::Scheduler(SchedulerError::ReplayInfoConflict {
+                    error: format!(
+                        "worker 0 and worker {i} returned different replay info after restarting from a checkpoint; this can be caused by a bug or data corruption; replay info\n{info}"
+                    ),
+                }));
             }
         }
 
         self.bootstrap_info = worker_replay_info[&0].clone();
 
         if let Some(bootstrap_info) = &self.bootstrap_info {
-            info!("Circuit restored from checkpoint, bootstrapping new parts of the circuit: {bootstrap_info:?}");
+            info!(
+                "Circuit restored from checkpoint, bootstrapping new parts of the circuit: {bootstrap_info:?}"
+            );
         }
 
         Ok(())
@@ -1257,12 +1454,16 @@ impl DBSPHandle {
     }
 
     /// Remove the oldest checkpoint from the list.
+    /// - Prevents removing checkpoints whose UUID is in `except`.
     ///
     /// # Returns
-    /// - Metadata of the removed checkpoint, if one was removed.
-    /// - None otherwise.
-    pub fn gc_checkpoint(&mut self) -> Result<Option<CheckpointMetadata>, DbspError> {
-        self.checkpointer()?.lock().unwrap().gc_checkpoint()
+    /// - Uuid of the removed checkpoints, if any were removed.
+    /// - An empty set if there were no checkpoints to remove.
+    pub fn gc_checkpoint(
+        &mut self,
+        except: HashSet<uuid::Uuid>,
+    ) -> Result<HashSet<uuid::Uuid>, DbspError> {
+        self.checkpointer()?.lock().unwrap().gc_checkpoint(except)
     }
 
     /// Enable CPU profiler.
@@ -1306,6 +1507,7 @@ impl DBSPHandle {
         )?;
         Ok(GraphProfile {
             elapsed_time: self.start_time.elapsed(),
+            worker_offset: self.runtime().layout().local_workers().start,
             worker_graphs,
         })
     }
@@ -1361,6 +1563,47 @@ impl DBSPHandle {
         }
 
         self.kill_inner()
+    }
+
+    pub fn set_balancer_hint(
+        &mut self,
+        global_node_id: &GlobalNodeId,
+        hint: BalancerHint,
+    ) -> Result<(), DbspError> {
+        let mut result = self.set_balancer_hints(vec![(global_node_id.clone(), hint)])?;
+        result.pop().unwrap()
+    }
+
+    pub fn set_balancer_hints(
+        &mut self,
+        hints: Vec<(GlobalNodeId, BalancerHint)>,
+    ) -> Result<Vec<Result<(), DbspError>>, DbspError> {
+        let mut results = Vec::new();
+
+        self.broadcast_command(Command::SetBalancerHints(hints), |_, resp| {
+            let Response::SetBalancerHints(worker_results) = resp else {
+                panic!("Expected SetBalancerHints response, got {resp:?}");
+            };
+            results = worker_results;
+        })?;
+
+        Ok(results)
+    }
+
+    pub fn get_current_balancer_policy(
+        &mut self,
+    ) -> Result<BTreeMap<GlobalNodeId, PartitioningPolicy>, DbspError> {
+        let resp = self.unicast_command(0, Command::GetCurrentBalancerPolicy)?;
+
+        let Response::CurrentBalancerPolicy(policy) = resp else {
+            panic!("Expected GetCurrentBalancerPolicy policy response, got {resp:?}");
+        };
+        Ok(policy)
+    }
+
+    pub fn rebalance(&mut self) -> Result<(), DbspError> {
+        self.broadcast_command(Command::Rebalance, |_, _| {})?;
+        Ok(())
     }
 }
 
@@ -1438,6 +1681,7 @@ impl<'a> CheckpointBuilder<'a> {
             checkpointer,
             uuid,
             readers,
+            fingerprint: self.handle.fingerprint,
             name: self.name,
             steps: self.steps,
             processed_records: self.processed_records,
@@ -1450,6 +1694,7 @@ pub struct CheckpointCommitter {
     checkpointer: Arc<Mutex<Checkpointer>>,
     uuid: Uuid,
     readers: Vec<Vec<Arc<dyn FileCommitter>>>,
+    fingerprint: u64,
     name: Option<String>,
     steps: Option<u64>,
     processed_records: Option<u64>,
@@ -1466,6 +1711,7 @@ impl CheckpointCommitter {
         }
         self.checkpointer.lock().unwrap().commit(
             self.uuid,
+            self.fingerprint,
             self.name,
             self.steps,
             self.processed_records,
@@ -1475,7 +1721,7 @@ impl CheckpointCommitter {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::fs::{create_dir_all, File};
+    use std::fs::{File, create_dir_all};
     use std::io;
     use std::path::Path;
     use std::time::Duration;
@@ -1497,7 +1743,7 @@ pub(crate) mod tests {
     };
     use anyhow::anyhow;
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
-    use tempfile::{tempdir, TempDir};
+    use tempfile::{TempDir, tempdir};
     use uuid::Uuid;
 
     // Panic during initialization in worker thread.
@@ -1907,7 +2153,6 @@ pub(crate) mod tests {
             panic!("revert_to_unknown_checkpoint is supposed to fail");
         };
 
-        println!("revert_to_unknown_checkpoint: result: {err:?}");
         assert!(matches!(
             err,
             DbspError::Storage(StorageError::CheckpointNotFound(_))
@@ -1973,14 +2218,16 @@ pub(crate) mod tests {
             let _cpm = dbsp.checkpoint().run().expect("commit failed");
         }
 
-        let mut prev_count = count_directory_entries(temp.path()).unwrap();
+        let prev_count = count_directory_entries(temp.path()).unwrap();
         let num_checkpoints = dbsp.list_checkpoints().unwrap().len();
-        for _i in 0..num_checkpoints - Checkpointer::MIN_CHECKPOINT_THRESHOLD {
-            let _r = dbsp.gc_checkpoint();
-            let count = count_directory_entries(temp.path()).unwrap();
-            assert!(count < prev_count);
-            prev_count = count;
-        }
+
+        assert!(num_checkpoints > Checkpointer::MIN_CHECKPOINT_THRESHOLD);
+
+        // Only MIN_CHECKPONT_THRESHOLD checkpoints will be kept.
+        let _r = dbsp.gc_checkpoint(std::collections::HashSet::new());
+        let count = count_directory_entries(temp.path()).unwrap();
+        assert!(count < prev_count);
+        assert!(dbsp.list_checkpoints().unwrap().len() <= Checkpointer::MIN_CHECKPOINT_THRESHOLD);
     }
 
     /// Make sure that leftover files from uncompleted checkpoints that were
@@ -2057,21 +2304,13 @@ pub(crate) mod tests {
     #[test]
     fn fingerprint_is_different() {
         let (_tempdir, cconf) = mkconfig();
-        let fid1 = mkcircuit(&cconf).unwrap().0.fingerprint().unwrap();
-        let fid2 = mkcircuit_different(&cconf)
-            .unwrap()
-            .0
-            .fingerprint()
-            .unwrap();
+        let fid1 = mkcircuit(&cconf).unwrap().0.fingerprint();
+        let fid2 = mkcircuit_different(&cconf).unwrap().0.fingerprint();
         assert_ne!(fid1, fid2);
 
         // Unfortunately, the fingerprint isn't perfect, e.g., it thinks these two
         // circuits are the same:
-        let fid3 = mkcircuit_with_bounds(&cconf)
-            .unwrap()
-            .0
-            .fingerprint()
-            .unwrap();
+        let fid3 = mkcircuit_with_bounds(&cconf).unwrap().0.fingerprint();
         assert_eq!(fid1, fid3); // Ideally, should be assert_ne
     }
 

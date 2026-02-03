@@ -167,7 +167,7 @@ jobs:
       OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
+      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
     services:
       pipeline-manager:
         image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
@@ -185,6 +185,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          --cap-add=PERFMON
 
     steps:
       - name: Show Kubernetes node
@@ -208,8 +209,8 @@ jobs:
       - name: Validate and run packaged demos
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: |
-          (cd demo/packaged && uv run validate-preamble.py sql/*.sql)
-          uv run demo/all-packaged/run.py --api-url http://localhost:8080
+          (cd crates/pipeline-manager/demos && uv run validate-preamble.py sql/*.sql)
+          uv run crates/pipeline-manager/demos/run.py --api-url http://localhost:8080
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           FELDERA_HTTPS_TLS_CERT: ../test-tls/tls_test.crt

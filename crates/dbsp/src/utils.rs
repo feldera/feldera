@@ -2,11 +2,16 @@ mod advance_retreat;
 mod sample;
 //pub(crate) mod tests;
 mod consolidation;
+mod graph;
+mod is_none;
 mod sort;
-mod tuple;
+pub mod tuple;
 
 #[cfg(test)]
 mod vec_ext;
+
+#[cfg(test)]
+pub(crate) mod test;
 
 mod dot;
 
@@ -18,9 +23,12 @@ pub use advance_retreat::{
     advance, advance_erased, dyn_advance, dyn_retreat, retreat, retreat_erased,
 };
 pub use consolidation::{
-    consolidate, consolidate_from, consolidate_paired_slices, consolidate_payload_from,
-    consolidate_slice, ConsolidatePairedSlices,
+    ConsolidatePairedSlices, consolidate, consolidate_from, consolidate_paired_slices,
+    consolidate_payload_from, consolidate_slice,
 };
+pub use graph::components;
+
+pub use is_none::IsNone;
 
 #[allow(unused_imports)]
 pub use dot::{DotEdgeAttributes, DotNodeAttributes};
@@ -28,12 +36,13 @@ pub use dot::{DotEdgeAttributes, DotNodeAttributes};
 #[cfg(test)]
 pub use consolidation::consolidate_pairs;
 
+use itertools::Itertools as _;
 pub use sample::sample_slice;
 pub use sort::{stable_sort, stable_sort_by};
 pub use tuple::{
-    ArchivedTup0, ArchivedTup1, ArchivedTup10, ArchivedTup2, ArchivedTup3, ArchivedTup4,
-    ArchivedTup5, ArchivedTup6, ArchivedTup7, ArchivedTup8, ArchivedTup9, Tup0, Tup1, Tup10, Tup2,
-    Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9,
+    ArchivedTup0, ArchivedTup1, ArchivedTup2, ArchivedTup3, ArchivedTup4, ArchivedTup5,
+    ArchivedTup6, ArchivedTup7, ArchivedTup8, ArchivedTup9, ArchivedTup10, Tup0, Tup1, Tup2, Tup3,
+    Tup4, Tup5, Tup6, Tup7, Tup8, Tup9, Tup10, TupleBitmap, TupleFormat,
 };
 
 // mod unstable_sort;
@@ -74,7 +83,9 @@ pub(crate) unsafe fn assume(cond: bool) {
 #[cold]
 #[inline(never)]
 pub(crate) fn cursor_position_oob<P: Display>(position: P, length: usize) -> ! {
-    panic!("the cursor was at the invalid position {position} while the leaf was only {length} elements long")
+    panic!(
+        "the cursor was at the invalid position {position} while the leaf was only {length} elements long"
+    )
 }
 
 #[inline]
@@ -82,4 +93,11 @@ pub(crate) fn bytes_of<T>(slice: &[T]) -> &[std::mem::MaybeUninit<u8>] {
     // Safety: It's always sound to interpret possibly uninitialized bytes as
     // `MaybeUninit<u8>`
     unsafe { std::slice::from_raw_parts(slice.as_ptr().cast(), std::mem::size_of_val(slice)) }
+}
+
+/// Indent a string by the given number of spaces.
+pub fn indent(s: &str, indent: usize) -> String {
+    s.lines()
+        .map(|line| format!("{:indent$}{line}", "", indent = indent))
+        .join("\n")
 }

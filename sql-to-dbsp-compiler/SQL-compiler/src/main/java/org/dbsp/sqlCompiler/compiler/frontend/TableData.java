@@ -147,7 +147,7 @@ public record TableData(ProgramIdentifier name, DBSPZSetExpression data, List<In
         Set<ProgramIdentifier> seen = new HashSet<>();
         for (int i = 0; i < tables.length; i++) {
             fields[i] = tables[i].data;
-            fields[i] = CreateRuntimeErrorWrappers.process(compiler, fields[i]);
+            fields[i] = CreateRuntimeErrorWrappers.wrapCasts(compiler, fields[i]);
             if (seen.contains(tables[i].name))
                 throw new RuntimeException("Table " + tables[i].name + " already in input");
             seen.add(tables[i].name);

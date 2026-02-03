@@ -36,6 +36,14 @@ public class FreshName {
         this.used = used;
     }
 
+    public void add(String name) {
+        this.used.add(name);
+    }
+
+    public boolean isUsed(String name) {
+        return this.used.contains(name);
+    }
+
     /**
      * Generate a fresh name starting with the specified prefix.
      *

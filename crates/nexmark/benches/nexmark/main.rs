@@ -11,19 +11,19 @@ use dbsp::circuit::{
 use dbsp::storage::backend::tempdir_for_thread;
 use dbsp::utils::Tup2;
 use dbsp::{
-    mimalloc::{AllocStats, MiMalloc},
     DBSPHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
+    mimalloc::{AllocStats, MiMalloc},
 };
 use dbsp_nexmark::{
+    NexmarkSource,
     config::Config as NexmarkConfig,
     model::Event,
-    queries::{Query, ALL_QUERIES},
-    NexmarkSource,
+    queries::{ALL_QUERIES, Query},
 };
 use indicatif::{ProgressBar, ProgressStyle};
 use num_format::{Locale, ToFormattedString};
 use serde::Serialize;
-use serde_with::{serde_as, DurationSecondsWithFrac};
+use serde_with::{DurationSecondsWithFrac, serde_as};
 use size_of::HumanBytes;
 use std::{
     fs::OpenOptions,

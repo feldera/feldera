@@ -1,4 +1,4 @@
-use crate::{trace::BatchReaderFactories, typed_batch::Batch, Circuit, Stream};
+use crate::{Circuit, Stream, trace::BatchReaderFactories, typed_batch::Batch};
 
 impl<C, B> Stream<C, B>
 where

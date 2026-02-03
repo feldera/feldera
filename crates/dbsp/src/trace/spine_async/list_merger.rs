@@ -7,8 +7,8 @@ use crate::{
     dynamic::{DynDataTyped, DynWeightedPairs, Weight, WeightTrait},
     time::Timestamp,
     trace::{
-        spine_async::index_set::IndexSet, Batch, BatchFactories, BatchReaderFactories, Builder,
-        Filter, MergeCursor,
+        Batch, BatchFactories, BatchReaderFactories, Builder, Filter, GroupFilter, MergeCursor,
+        SpineSnapshot, spine_async::index_set::IndexSet,
     },
 };
 
@@ -22,7 +22,8 @@ where
     B: Batch,
 {
     batches: Vec<Arc<B>>,
-    #[borrows(batches)]
+    snapshot: Option<Arc<SpineSnapshot<B>>>,
+    #[borrows(batches, snapshot)]
     #[not_covariant]
     merger: ListMerger<Box<dyn MergeCursor<B::Key, B::Val, B::Time, B::R> + Send + 'this>, B>,
 }
@@ -35,17 +36,25 @@ where
         factories: &B::Factories,
         batches: Vec<Arc<B>>,
         key_filter: &Option<Filter<B::Key>>,
-        value_filter: &Option<Filter<B::Val>>,
+        value_filter: &Option<GroupFilter<B::Val>>,
+        snapshot: Option<Arc<SpineSnapshot<B>>>,
     ) -> Self {
         Self(
             ArcMergerInnerBuilder {
                 batches,
-                merger_builder: |batches| {
+                snapshot,
+                merger_builder: |batches, snapshot| {
                     ListMerger::new(
                         factories,
                         batches
                             .iter()
-                            .map(|b| b.merge_cursor(key_filter.clone(), value_filter.clone()))
+                            .map(|b| {
+                                b.merge_cursor_with_snapshot(
+                                    key_filter.clone(),
+                                    value_filter.clone(),
+                                    snapshot,
+                                )
+                            })
                             .collect(),
                     )
                 },
@@ -61,6 +70,11 @@ where
 }
 
 /// Merger that merges up to 64 batches at a time.
+// FIXME: can we apply GC to the output of the merger instead of individual cursors?
+// Specifically, when a LastN filter over values, we want to discard all but the last N
+// values below the waterline from the output of the merger. Instead we currently apply
+// the filter to each cursor individually, meaning that we may end up preserving upto N
+// values below the waterline per input cursor.
 pub struct ListMerger<C, B>
 where
     C: MergeCursor<B::Key, B::Val, B::Time, B::R>,
@@ -228,7 +242,10 @@ where
                         return;
                     }
                 }
-                debug_assert!(time_map_func.is_some() || self.any_values, "This assertion should fail only if B::Cursor is a spine or a CursorList, but we shouldn't be merging those");
+                debug_assert!(
+                    time_map_func.is_some() || self.any_values,
+                    "This assertion should fail only if B::Cursor is a spine or a CursorList, but we shouldn't be merging those"
+                );
                 if self.any_values {
                     self.any_values = false;
                     if self.has_mut[index] {
@@ -349,9 +366,9 @@ mod test {
     use crate::{
         dynamic::{DynData, DynWeight, Erase},
         trace::{
-            ord::vec::indexed_wset_batch::VecIndexedWSetBuilder, spine_async::index_set::IndexSet,
             Batch, BatchReader, BatchReaderFactories, Builder, ListMerger, MergeCursor,
             TupleBuilder, VecIndexedWSet, VecIndexedWSetFactories,
+            ord::vec::indexed_wset_batch::VecIndexedWSetBuilder, spine_async::index_set::IndexSet,
         },
     };
 

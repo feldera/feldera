@@ -9,6 +9,16 @@ use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus};
 use std::time::Duration;
 use uuid::Uuid;
 
+pub enum ProvisionStatus {
+    /// Pipeline resources are still being provisioned.
+    Ongoing { details: serde_json::Value },
+    /// Pipeline resources are provisioned.
+    Provisioned {
+        location: String,
+        details: serde_json::Value,
+    },
+}
+
 /// Trait to be implemented by any pipeline runner.
 /// The `PipelineAutomaton` invokes these methods per pipeline.
 #[async_trait]
@@ -39,6 +49,8 @@ pub trait PipelineExecutor: Sync + Send {
     /// while the pipeline is running). This operation is idempotent and as non-blocking as possible
     /// such that the user can stop the provisioning. After calling this once, completion should be
     /// checked using `is_provisioned()`.
+    ///
+    /// Note: `program_info` is used to discover the set of secrets to mount into the pipeline.
     #[allow(clippy::too_many_arguments)]
     async fn provision(
         &mut self,
@@ -46,23 +58,21 @@ pub trait PipelineExecutor: Sync + Send {
         bootstrap_policy: Option<BootstrapPolicy>,
         deployment_id: &Uuid,
         deployment_config: &PipelineConfig,
+        program_info: &serde_json::Value,
         program_binary_url: &str,
+        program_info_url: Option<&str>,
         program_version: Version,
         suspend_info: Option<serde_json::Value>,
     ) -> Result<(), ManagerError>;
 
     /// Validates whether the compute and possibly storage resources provisioning
-    /// initiated by `provision()` is completed.
-    ///
-    /// Returns:
-    /// - `Ok(Some(deployment_location))` if completed successfully
-    /// - `Ok(None)` if still ongoing
-    /// - `Err(...)` if resources encountered an irrecoverable failure
-    async fn is_provisioned(&mut self) -> Result<Option<String>, ManagerError>;
+    /// initiated by `provision()` is completed. An error is returned only if the resources
+    /// encountered an irrecoverable failure.
+    async fn is_provisioned(&mut self) -> Result<ProvisionStatus, ManagerError>;
 
     /// Checks the healthiness of the pipeline compute and storage resources.
     /// An error is returned only if the resources encountered an irrecoverable failure.
-    async fn check(&mut self) -> Result<(), ManagerError>;
+    async fn check(&mut self) -> Result<serde_json::Value, ManagerError>;
 
     /// Scales down to zero or deallocates the compute resources, but retains storage resources.
     /// This operation is idempotent and blocks until finished.

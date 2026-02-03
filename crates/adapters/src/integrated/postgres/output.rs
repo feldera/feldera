@@ -3,6 +3,7 @@ use std::{
 };
 
 use super::{error::BackoffError, prepared_statements::PreparedStatements};
+use crate::{ControllerError, util::indexed_operation_type};
 use crate::{
     buffer_op,
     catalog::{RecordFormat, SerBatchReader},
@@ -12,13 +13,12 @@ use crate::{
     transport::OutputEndpoint,
     util::IndexedOperationType,
 };
-use crate::{util::indexed_operation_type, ControllerError};
-use anyhow::{anyhow, Context, Result as AnyResult};
+use anyhow::{Context, Result as AnyResult, anyhow};
 use feldera_adapterlib::transport::{AsyncErrorCallback, Step};
 use feldera_types::{
     format::json::JsonFlavor,
     program_schema::{Relation, SqlIdentifier},
-    transport::postgres::PostgresWriterConfig,
+    transport::postgres::{PostgresWriteMode, PostgresWriterConfig},
 };
 use openssl::{
     pkey::PKey,
@@ -85,7 +85,9 @@ fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -
         (Some(location), None) => PathBuf::from_str(location)
             .context("failed to parse `ssl_ca_location` as file path; is the path valid?")?,
         (Some(_), Some(pem)) => {
-            tracing::warn!("postgres: both `ssl_ca_pem` and `ssl_ca_location` are provided; using `ssl_ca_pem`");
+            tracing::warn!(
+                "postgres: both `ssl_ca_pem` and `ssl_ca_location` are provided; using `ssl_ca_pem`"
+            );
             write_ca_cert_to_file(pem)?
         }
         (None, Some(pem)) => write_ca_cert_to_file(pem)?,
@@ -121,7 +123,9 @@ fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -
     // Set the client certificate, `ssl_client_pem` takes priority.
     match (&config.ssl_client_pem, &config.ssl_client_location) {
         (Some(pem), Some(_)) => {
-            tracing::warn!("postgres: both `ssl_client_pem` and `ssl_client_location` are provided; using `ssl_client_pem`");
+            tracing::warn!(
+                "postgres: both `ssl_client_pem` and `ssl_client_location` are provided; using `ssl_client_pem`"
+            );
             builder_set_client_from_pem(builder, pem)?;
         }
         (Some(pem), None) => {
@@ -138,7 +142,9 @@ fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -
     // Set the client key, `ssl_client_key` takes priority.
     match (&config.ssl_client_key, &config.ssl_client_key_location) {
         (Some(key), Some(_)) => {
-            tracing::warn!("postgres: both `ssl_client_key` and `ssl_client_key_location` are provided; using `ssl_client_key`");
+            tracing::warn!(
+                "postgres: both `ssl_client_key` and `ssl_client_key_location` are provided; using `ssl_client_key`"
+            );
             builder_set_client_key_from_pem(builder, key)?;
         }
         (Some(key), None) => {
@@ -203,6 +209,10 @@ impl PostgresOutputEndpoint {
         value_schema: &Relation,
         controller: Weak<ControllerInner>,
     ) -> Result<Self, ControllerError> {
+        config.validate().map_err(|e| {
+            ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
+        })?;
+
         let table = config.table.to_owned();
         let mut client = connect(config, endpoint_name).map_err(|e| {
             ControllerError::invalid_transport_configuration(endpoint_name, &e.inner().to_string())
@@ -245,6 +255,10 @@ impl PostgresOutputEndpoint {
         let _guard = out.span();
 
         Ok(out)
+    }
+
+    fn is_cdc(&self) -> bool {
+        matches!(self.config.mode, PostgresWriteMode::Cdc)
     }
 
     fn view_name(&self) -> &SqlIdentifier {
@@ -529,6 +543,35 @@ These statements were successfully prepared before reconnecting. Does the table 
 
         Ok(())
     }
+
+    fn serialize_cdc_fields(
+        &self,
+        op: IndexedOperationType,
+        buf: &mut Vec<u8>,
+    ) -> Result<(), anyhow::Error> {
+        let op = match op {
+            IndexedOperationType::Insert => "i",
+            IndexedOperationType::Delete => "d",
+            IndexedOperationType::Upsert => "u",
+        };
+
+        buf.pop(); // Remove the trailing '}'
+
+        // Insert CDC fields
+        write!(buf, r#","{}":"{}""#, self.config.cdc_op_column, op)
+            .context("failed when encoding CDC op field")?;
+        write!(
+            buf,
+            r#","{}":{}"#,
+            self.config.cdc_ts_column,
+            chrono::Utc::now().timestamp_micros()
+        )
+        .context("failed when encoding CDC TS field")?;
+
+        buf.push(b'}'); // Re-add the trailing '}'
+
+        Ok(())
+    }
 }
 
 impl OutputConsumer for PostgresOutputEndpoint {
@@ -620,11 +663,21 @@ impl Encoder for PostgresOutputEndpoint {
                     IndexedOperationType::Insert => {
                         let mut buf = Vec::new();
                         cursor.serialize_val(&mut buf)?;
+                        if self.is_cdc() {
+                            self.serialize_cdc_fields(op, &mut buf)?;
+                        }
                         self.insert(buf);
                     }
                     IndexedOperationType::Delete => {
                         let mut buf: Vec<u8> = Vec::new();
-                        cursor.serialize_key(&mut buf)?;
+
+                        if self.is_cdc() {
+                            cursor.serialize_val(&mut buf)?;
+                            self.serialize_cdc_fields(op, &mut buf)?;
+                        } else {
+                            cursor.serialize_key(&mut buf)?;
+                        }
+
                         self.delete(buf);
                     }
                     IndexedOperationType::Upsert => {
@@ -634,6 +687,9 @@ impl Encoder for PostgresOutputEndpoint {
 
                         let mut buf: Vec<u8> = Vec::new();
                         cursor.serialize_val(&mut buf)?;
+                        if self.is_cdc() {
+                            self.serialize_cdc_fields(op, &mut buf)?;
+                        }
                         self.upsert(buf);
                     }
                 };
@@ -690,7 +746,7 @@ mod tests {
     use feldera_adapterlib::errors::journal::ControllerError;
     use feldera_types::{
         program_schema::{ColumnType, Field, Relation, SqlType},
-        transport::postgres::PostgresWriterConfig,
+        transport::postgres::{PostgresWriteMode, PostgresWriterConfig},
     };
     use postgres::NoTls;
 
@@ -758,6 +814,9 @@ mod tests {
             ssl_client_key_location: None,
             ssl_client_location: None,
             ssl_certificate_chain_location: None,
+            mode: PostgresWriteMode::Materialized,
+            cdc_op_column: "__feldera_op".to_owned(),
+            cdc_ts_column: "__feldera_ts".to_owned(),
         }
     }
 

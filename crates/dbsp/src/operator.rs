@@ -10,7 +10,7 @@
 pub(crate) mod apply;
 pub mod apply2;
 pub mod apply3;
-pub mod apply_n;
+mod apply_n;
 mod async_stream_operators;
 pub mod communication;
 pub(crate) mod inspect;
@@ -32,6 +32,9 @@ mod transaction_z1;
 mod z1;
 
 mod accumulate_trace;
+
+#[cfg(test)]
+mod accumulate_trace_balanced;
 mod aggregate;
 mod asof_join;
 mod average;
@@ -51,15 +54,17 @@ mod non_incremental;
 mod recursive;
 pub mod sample;
 mod semijoin;
+pub mod star_join_macros;
 pub mod time_series;
 mod trace;
 
+use crate::Error;
 use crate::circuit::GlobalNodeId;
 use crate::storage::backend::StorageError;
-use crate::Error;
 
 pub use self::csv::CsvSource;
 pub use apply::Apply;
+pub use apply_n::apply_n;
 pub use condition::Condition;
 pub use delta0::Delta0;
 pub use dynamic::aggregate::{
@@ -88,7 +93,7 @@ pub use sample::{MAX_QUANTILES, MAX_SAMPLE_SIZE};
 pub use sum::Sum;
 pub use time_series::OrdPartitionedIndexedZSet;
 pub use transaction_z1::TransactionZ1;
-pub use z1::{DelayedFeedback, DelayedNestedFeedback, Z1Nested, Z1};
+pub use z1::{DelayedFeedback, DelayedNestedFeedback, Z1, Z1Nested};
 
 /// Returns a `NoPersistentId` error if `persistent_id` is `None`.
 fn require_persistent_id<'a>(

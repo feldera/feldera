@@ -2,11 +2,11 @@
   import { useTryPipeline } from '$lib/compositions/pipelines/useTryPipeline'
   import type { Demo } from '$lib/services/manager'
 
-  let { demo }: { demo: Demo & { type: string } } = $props()
+  const { demo }: { demo: Demo & { type: string } } = $props()
   const tryPipeline = useTryPipeline()
 </script>
 
-<div class="card flex flex-col border p-4 border-surface-100-900">
+<div class="flex flex-col card border border-surface-100-900 p-4">
   <div class="text-sm text-surface-700-300">{demo.type}</div>
   <button class="text-left" onclick={() => tryPipeline(demo)}>
     <span class="py-2 font-semibold">{demo.title}</span>

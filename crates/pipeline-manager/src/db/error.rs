@@ -1,3 +1,5 @@
+use crate::cluster_monitor::{MONITOR_RETENTION_HOURS, MONITOR_RETENTION_NUM};
+use crate::db::types::monitor::ClusterMonitorEventId;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::ProgramStatus;
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
@@ -105,8 +107,8 @@ pub enum DBError {
     },
     // General errors
     MissingMigrations {
-        expected: u32,
-        actual: u32,
+        expected: i32,
+        actual: i32,
     },
     DuplicateName, // When a database unique name constraint is violated
     EmptyName,
@@ -163,6 +165,10 @@ pub enum DBError {
         current_status: ResourcesStatus,
         new_status: ResourcesStatus,
     },
+    InvalidResourcesStatusRemain {
+        current_status: ResourcesStatus,
+        new_status: ResourcesStatus,
+    },
     InvalidStorageStatusTransition {
         current_status: StorageStatus,
         new_status: StorageStatus,
@@ -194,6 +200,11 @@ pub enum DBError {
     PreconditionViolation(String),
     InitialImmutableUnlessStopped,
     InitialStandbyNotAllowed,
+    InvalidMonitorStatus(String),
+    UnknownClusterMonitorEvent {
+        event_id: ClusterMonitorEventId,
+    },
+    NoClusterMonitorEventsAvailable,
 }
 
 impl DBError {
@@ -554,6 +565,15 @@ impl Display for DBError {
                     "Cannot transition from deployment resources status '{current_status}' (storage status: '{storage_status}') to '{new_status}'"
                 )
             }
+            DBError::InvalidResourcesStatusRemain {
+                current_status,
+                new_status,
+            } => {
+                write!(
+                    f,
+                    "Invalid remain as current status '{current_status}' is not equal to '{new_status}'"
+                )
+            }
             DBError::InvalidStorageStatusTransition {
                 current_status,
                 new_status,
@@ -644,6 +664,15 @@ impl Display for DBError {
                     (2) `runtime_config.storage.backend.config.sync` is configured."
                 )
             }
+            DBError::InvalidMonitorStatus(s) => {
+                write!(f, "Invalid monitor status: '{s}'")
+            }
+            DBError::UnknownClusterMonitorEvent { event_id } => {
+                write!(f, "Cluster monitor event with identifier '{event_id}' does not exist -- it might have been deleted as monitor events are only retained for {}h and at most {}", MONITOR_RETENTION_HOURS, MONITOR_RETENTION_NUM)
+            }
+            DBError::NoClusterMonitorEventsAvailable => {
+                write!(f, "There are not yet any cluster monitor events recorded")
+            }
         }
     }
 }
@@ -716,6 +745,7 @@ impl DetailedError for DBError {
             Self::InvalidResourcesStatusTransition { .. } => {
                 Cow::from("InvalidResourcesStatusTransition")
             }
+            Self::InvalidResourcesStatusRemain { .. } => Cow::from("InvalidResourcesStatusRemain"),
             Self::InvalidStorageStatusTransition { .. } => {
                 Cow::from("InvalidStorageStatusTransition")
             }
@@ -736,6 +766,9 @@ impl DetailedError for DBError {
             Self::ResumeWhileNotProvisioned => Cow::from("ResumeWhileNotProvisioned"),
             Self::InitialImmutableUnlessStopped => Cow::from("InitialImmutableUnlessStopped"),
             Self::InitialStandbyNotAllowed => Cow::from("InitialStandbyNotAllowed"),
+            Self::InvalidMonitorStatus(..) => Cow::from("InvalidMonitorStatus"),
+            Self::UnknownClusterMonitorEvent { .. } => Cow::from("UnknownClusterMonitorEvent"),
+            Self::NoClusterMonitorEventsAvailable => Cow::from("NoClusterMonitorEventsAvailable"),
         }
     }
 }
@@ -786,6 +819,7 @@ impl ResponseError for DBError {
             Self::TransitionRequiresCompiledProgram { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error
             Self::InvalidResourcesStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
+            Self::InvalidResourcesStatusRemain { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::StorageStatusImmutableUnlessStopped { .. } => StatusCode::BAD_REQUEST,
             Self::IllegalPipelineAction { .. } => StatusCode::BAD_REQUEST, // User trying to set a deployment desired status which cannot be performed currently
             Self::TlsConnection { .. } => StatusCode::INTERNAL_SERVER_ERROR,
@@ -802,10 +836,19 @@ impl ResponseError for DBError {
             Self::PreconditionViolation(..) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InitialImmutableUnlessStopped => StatusCode::BAD_REQUEST,
             Self::InitialStandbyNotAllowed => StatusCode::BAD_REQUEST,
+            Self::InvalidMonitorStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnknownClusterMonitorEvent { .. } => StatusCode::NOT_FOUND,
+            Self::NoClusterMonitorEventsAvailable => StatusCode::NOT_FOUND,
         }
     }
 
     fn error_response(&self) -> HttpResponse<BoxBody> {
         HttpResponseBuilder::new(self.status_code()).json(ErrorResponse::from_error(self))
+    }
+}
+
+impl From<DBError> for ErrorResponse {
+    fn from(val: DBError) -> Self {
+        ErrorResponse::from_error_nolog(&val)
     }
 }

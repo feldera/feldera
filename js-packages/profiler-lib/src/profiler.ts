@@ -1,159 +1,171 @@
 // Core profiler visualization library
 // This module provides the main API for rendering circuit profiles
 
-import { CircuitProfile } from "./profile.js";
+import { CircuitProfile, NodeAndMetric } from "./profile.js";
 import { Cytograph, CytographRendering } from "./cytograph.js";
 import { CircuitSelector } from "./selection.js";
 import { MetadataSelector } from './metadataSelection.js';
+import { Option, shadeOfRed } from "./util.js";
 
-export interface ProfilerConfig {
+export { NodeAndMetric, shadeOfRed };
+
+/** Represents a selectable metric option */
+export interface MetricOption {
+    id: string;
+    label: string;
+}
+
+/** Represents a worker checkbox option */
+export interface WorkerOption {
+    id: string;
+    label: string;
+    checked: boolean;
+}
+
+/** Represents a cell in the tooltip heatmap */
+export interface TooltipCell {
+    value: string;
+    percentile: number;
+}
+
+/** Represents a row in the tooltip heatmap */
+export interface TooltipRow {
+    metric: string;
+    isCurrentMetric: boolean;
+    cells: TooltipCell[];
+}
+
+/** Tooltip data structure */
+export interface NodeAttributes {
+    /** Column headers */
+    columns: string[];
+    /** Rows of metrics with values */
+    rows: TooltipRow[];
+    /** Source code information */
+    sources?: string;
+    /** Additional key-value attributes */
+    attributes: Map<string, string>;
+}
+
+/** Callbacks for profiler to communicate UI updates */
+export interface ProfilerCallbacks {
+    displayNodeAttributes: (data: Option<NodeAttributes>, isSticky: boolean) => void;
+
+    displayTopNodes: (data: Option<Array<NodeAndMetric>>, isSticky: boolean) => void;
+
+    /** Called when the available metrics change */
+    onMetricsChanged: (metrics: MetricOption[], selectedMetric: string) => void;
+
+    /** Called when the workers state changes */
+    onWorkersChanged: (workers: WorkerOption[]) => void;
+
+    /** Called when a status message should be displayed; if the message is None, the messages are cleared */
+    displayMessage: (message: Option<string>) => void;
+
+    /** Called when an error should be displayed */
+    onError: (error: string) => void;
+
+    /** Called when a node is double-clicked. */
+    onNodeDoubleClick?: (nodeId: string, type: 'group' | 'leaf') => void;
+}
+
+export interface VisualizerConfig {
     /** Container element for the graph visualization */
     graphContainer: HTMLElement;
-    /** Container element for the selector UI controls */
-    selectorContainer: HTMLElement;
     /** Container element for the navigator minimap */
     navigatorContainer: HTMLElement;
-    /** Optional container element for the tooltip (defaults to document.body if not provided) */
-    tooltipContainer?: HTMLElement | undefined;
-    /** Optional error message display element */
-    errorContainer?: HTMLElement | undefined;
-    /** Optional message display element for status messages */
-    messageContainer?: HTMLElement | undefined;
-    /** Optional search input element for node search */
-    searchInput?: HTMLInputElement | undefined;
+
+    /** Callbacks for UI updates */
+    callbacks: ProfilerCallbacks;
 }
 
 /**
- * Main profiler class that orchestrates the visualization of circuit profiles.
+ * Main class that orchestrates the visualization of circuit profiles.
  * This is the primary API for embedding the profiler in other applications.
  */
-export class Profiler {
-    private readonly tooltip: HTMLElement;
-    private readonly config: ProfilerConfig;
+export class Visualizer {
     private circuitSelector: CircuitSelector | null = null;
     private metadataSelector: MetadataSelector | null = null;
     private rendering: CytographRendering | null = null;
+    private profile: CircuitProfile | null = null;
+    private onRefreshTooltip: (() => void) | null = null;
 
-    constructor(config: ProfilerConfig) {
+    constructor(private readonly config: VisualizerConfig) {
         this.config = config;
-
-        // Create tooltip element
-        this.tooltip = document.createElement('div');
-        this.tooltip.style.position = 'absolute';
-        this.tooltip.style.padding = '6px 10px';
-        this.tooltip.style.background = 'rgba(0, 0, 0, 0.75)';
-        this.tooltip.style.color = 'white';
-        this.tooltip.style.borderRadius = '4px';
-        this.tooltip.style.fontSize = '14px';
-        this.tooltip.style.pointerEvents = 'none';
-        this.tooltip.style.zIndex = '999';
-        this.tooltip.style.display = 'none';
-
-        // Append tooltip to specified container or document.body
-        const tooltipContainer = config.tooltipContainer || document.body;
-        tooltipContainer.appendChild(this.tooltip);
-    }
-
-    /** Get the tooltip element for hover interactions */
-    getTooltip(): HTMLElement {
-        return this.tooltip;
     }
 
     /** Display an error message */
     reportError(message: string): void {
-        if (this.config.errorContainer) {
-            this.config.errorContainer.textContent = message;
-            this.config.errorContainer.style.display = 'block';
-        }
+        this.config.callbacks.onError(message);
         console.error(message);
     }
 
     /** Display a status message */
     message(message: string): void {
-        console.log(message);
-        if (this.config.messageContainer) {
-            this.config.messageContainer.style.display = 'block';
-            this.config.messageContainer.innerText = message;
-        }
+        this.config.callbacks.displayMessage(Option.some(message));
     }
 
     /** Clear the status message */
     clearMessage(): void {
-        if (this.config.messageContainer) {
-            this.config.messageContainer.textContent = '';
-            this.config.messageContainer.style.display = 'none';
-        }
+        this.config.callbacks.displayMessage(Option.none());
     }
 
     /**
-     * Render a circuit profile with interactive visualization.
-     * This is the main entry point for displaying a profile.
+     * Display a circuit profile using interactive visualization.
+     * This is the main entry point for displaying the profile data.
      *
      * @param profile The circuit profile to visualize
      */
-    render(profile: CircuitProfile): void {
+    render({ profile, rootNodeId }: { profile: CircuitProfile, rootNodeId: string }): void {
         try {
-            // Clear any previous error
-            if (this.config.errorContainer) {
-                this.config.errorContainer.style.display = 'none';
-            }
-
             // Create selectors
+            this.profile = profile;
             this.circuitSelector = new CircuitSelector(profile);
-            this.metadataSelector = new MetadataSelector(profile);
+            this.metadataSelector = new MetadataSelector(profile, this.config.callbacks);
 
-            // Display metadata selector UI
-            const table = this.config.selectorContainer.querySelector('table');
-            if (!table) {
-                const newTable = document.createElement('table');
-                newTable.id = 'selection-tools';
-                this.config.selectorContainer.appendChild(newTable);
-                this.metadataSelector.display(newTable);
-            } else {
-                this.metadataSelector.display(table as HTMLTableElement);
-            }
+            // Initialize metadata selector (will trigger callbacks for initial state)
+            this.metadataSelector.initialize();
 
             // Get initial selection and create graph
             const selection = this.circuitSelector.getSelection();
-            const cytograph = Cytograph.fromProfile(profile, selection);
+            const cytograph: Cytograph = Cytograph.fromProfile(profile, selection);
 
             // Create rendering with navigator
             this.rendering = new CytographRendering(
                 this.config.graphContainer,
                 this.config.navigatorContainer,
-                this.tooltip,
-                this.config.tooltipContainer,
-                cytograph.graph, selection,
+                this.config.callbacks,
+                cytograph.graph,
+                rootNodeId,
+                selection,
                 MetadataSelector.getFullSelection(),
                 this.message.bind(this),
-                this.clearMessage.bind(this)
+                this.clearMessage.bind(this),
+                () => this.onRefreshTooltip = null
             );
-            this.rendering.setEvents(n => this.circuitSelector!.toggleExpand(n));
+            this.rendering.setEvents({
+                onNodeDoubleClick: (node, type) => {
+                    if (type === 'group') {
+                        this.circuitSelector!.toggleExpand(node)
+                    }
+                    this.config.callbacks.onNodeDoubleClick?.(node, type)
+                }
+            });
 
             // Wire up event handlers
             this.circuitSelector.setOnChange(() => {
-                // Called when the circuit to display changes
+                // Called when the circuit has been modified to display changes
                 this.message("Recomputing profile graph")
                 const graph = Cytograph.fromProfile(profile, selection);
                 this.message("Computing graph changes")
                 this.rendering!.updateGraph(graph);
-                this.rendering!.center(selection.trigger);
                 this.rendering!.updateMetadata(profile, this.metadataSelector!.getSelection());
             });
 
             this.metadataSelector.setOnChange(() => {
                 this.rendering!.updateMetadata(profile, this.metadataSelector!.getSelection());
+                this.onRefreshTooltip?.()
             });
-
-            // Wire up search functionality if search input is provided
-            if (this.config.searchInput) {
-                this.config.searchInput.onkeydown = (e) => {
-                    if (e.key === "Enter") {
-                        const query = this.config.searchInput!.value;
-                        this.rendering!.search(query);
-                    }
-                };
-            }
 
             // Produce the graph visualization
             this.rendering.updateGraph(cytograph);
@@ -166,23 +178,118 @@ export class Profiler {
     }
 
     /**
+     * Internal method to display global metrics
+     */
+    private displayGlobalMetricsImpl(): void {
+        if (!this.rendering) return;
+        const rootNode = this.rendering.getRenderedNode(this.rendering.rootNodeId);
+        this.rendering.displayNodeAttributes(rootNode);
+    }
+
+    /**
+     * Internal method to display top nodes for a metric selected beforehand
+     */
+    private displayTopNodesImpl(isSticky: boolean): void {
+        if (!this.rendering || !this.profile || !this.metadataSelector) {
+            return;
+        }
+        const metric = this.metadataSelector.getSelection().metric;
+        const topNodes = this.rendering.topNodes(this.profile, metric);
+        this.config.callbacks.displayTopNodes(Option.some(topNodes), isSticky);
+    }
+
+    /**
+     * Show global metrics for the top-level graph
+     * @param isSticky If true, the metrics will remain visible after mouse out
+     */
+    public showGlobalMetrics(isSticky?: boolean): void {
+        if (!this.rendering || (this.rendering.stickyInformation && !isSticky)) {
+            return;
+        }
+
+        if (isSticky) {
+            // Hide previous tooltip if any
+            this.rendering.hideNodeInformation();
+        }
+
+        this.rendering.setStickyNodeInformation(Boolean(isSticky));
+        this.displayGlobalMetricsImpl();
+    }
+
+    public showTopNodes(isSticky?: boolean): void {
+        if (!this.rendering || !this.profile || (this.rendering.stickyInformation && !isSticky)) {
+            return;
+        }
+
+        if (isSticky) {
+            // Hide previous node information if any
+            this.rendering.hideNodeInformation();
+            // Set refresh callback to re-display top nodes with current metric when metadata changes
+            this.onRefreshTooltip = (() => this.displayTopNodesImpl(true));
+        }
+
+        this.rendering.setStickyNodeInformation(Boolean(isSticky));
+        this.displayTopNodesImpl(Boolean(isSticky));
+    }
+
+    /**
+     * Hide the currently displayed metrics
+     * @param hideSticky If true, hide metrics even if they're sticky. If false (default), only hide non-sticky metrics.
+     */
+    public hideNodeAttributes(hideSticky?: boolean): void {
+        if (!this.rendering) {
+            return;
+        }
+
+        if (hideSticky) {
+            this.rendering.setStickyNodeInformation(false);
+            this.rendering.hideNodeInformation();
+        } else if (!this.rendering.stickyInformation) {
+            // Only hide if not sticky
+            this.rendering.hideNodeInformation();
+        }
+    }
+
+    /**
+     * Select a metric by ID
+     */
+    selectMetric(metric: string): void {
+        this.metadataSelector?.selectMetric(metric);
+    }
+
+    /**
+     * Toggle a worker's visibility
+     */
+    toggleWorker(workerId: string): void {
+        this.metadataSelector?.toggleWorker(workerId);
+    }
+
+    /**
+     * Toggle all workers on/off
+     */
+    toggleAllWorkers(): void {
+        this.metadataSelector?.toggleAllWorkers();
+    }
+
+    /** Return the ids of the nodes that score highest according to the specified metric. */
+    public topNodes(metric: string): Array<NodeAndMetric> {
+        if (this.profile === null || this.rendering === null) {
+            return [];
+        }
+        return this.rendering.topNodes(this.profile, metric);
+    }
+
+    /**
+     * Search for a node by ID
+     */
+    search(query: string): void {
+        this.rendering?.search(query);
+    }
+
+    /**
      * Clean up resources when the profiler is no longer needed
      */
     dispose(): void {
-        // Remove tooltip from DOM
-        if (this.tooltip.parentNode) {
-            this.tooltip.parentNode.removeChild(this.tooltip);
-        }
-
-        // Clear selector UI from DOM
-        const table = this.config.selectorContainer.querySelector('table');
-        if (table) {
-            // Remove all rows
-            while (table.rows.length > 0) {
-                table.deleteRow(0);
-            }
-        }
-
         // Dispose rendering resources
         if (this.rendering) {
             this.rendering.dispose();
@@ -192,5 +299,6 @@ export class Profiler {
         this.circuitSelector = null;
         this.metadataSelector = null;
         this.rendering = null;
+        this.onRefreshTooltip = null;
     }
 }

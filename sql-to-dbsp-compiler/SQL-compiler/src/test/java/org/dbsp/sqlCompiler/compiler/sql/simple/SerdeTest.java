@@ -15,7 +15,20 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.io.IOException;
+import java.sql.SQLException;
+
 public class SerdeTest extends SqlIoTest {
+    @Test
+    public void testJsonString() {
+        String sql = """
+                CREATE TYPE T0 AS (n VARCHAR, u VARCHAR);
+                CREATE FUNCTION jsonstring_as_t0(line VARCHAR) RETURNS T0;
+                CREATE TABLE T(x VARCHAR);
+                CREATE VIEW V AS SELECT jsonstring_as_t0(x).n FROM T;""";
+        this.getCCS(sql);
+    }
+
     @Test
     public void jsonStructTest() {
         String ddl = """

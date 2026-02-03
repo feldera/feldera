@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
@@ -148,11 +149,6 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         throw new InternalCompilerError("Deref of " + this);
     }
 
-    /** The null value with this type. */
-    public DBSPExpression nullValue() {
-        return DBSPLiteral.none(this);
-    }
-
     /** True if this type has a Rust 'copy' method. */
     public boolean hasCopy() {
         return true;
@@ -186,7 +182,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
     }
 
     /** Returns a lambda which casts the current type to the specified type. */
-    public DBSPClosureExpression caster(DBSPType to, boolean safe) {
+    public DBSPClosureExpression caster(DBSPType to, DBSPCastExpression.CastType safe) {
             DBSPVariablePath var = this.ref().var();
             return var.deref()
                     .applyCloneIfNeeded()
@@ -205,7 +201,6 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
 
     public boolean sameTypeIgnoringNullability(DBSPType type) {
         if (this.mayBeNull == type.mayBeNull)
-            // This prevents us from trying to make something nullable that can't be
             return this.sameType(type);
         return this.withMayBeNull(true).sameType(type.withMayBeNull(true));
     }

@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
@@ -259,7 +260,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             else
                 throw new RuntimeException("Unexpected type " + colType);
             if (!colType.sameType(field.getType()))
-                field = field.cast(field.getNode(), colType, false);
+                field = field.cast(field.getNode(), colType, DBSPCastExpression.CastType.SqlUnsafe);
             fields.add(field);
             col++;
             if (col == outputElementType.size()) {
@@ -275,8 +276,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             throw new RuntimeException("Could not assign all query output values to rows. " +
                     "I have " + col + " leftover values in the last row");
         }
-        CreateRuntimeErrorWrappers cw = new CreateRuntimeErrorWrappers(compiler);
-        result = cw.apply(result).to(DBSPZSetExpression.class);
+        result = CreateRuntimeErrorWrappers.wrapCasts(compiler, result).to(DBSPZSetExpression.class);
         return result;
     }
 

@@ -1,5 +1,5 @@
 use crate::test::{
-    init_test_logger, mock_input_pipeline, test_circuit, wait, TestStruct, DEFAULT_TIMEOUT_MS,
+    DEFAULT_TIMEOUT_MS, TestStruct, init_test_logger, mock_input_pipeline, test_circuit, wait,
 };
 use crate::{Controller, PipelineConfig};
 use anyhow::Result as AnyResult;
@@ -137,7 +137,30 @@ impl NatsFtTestRound {
     }
 }
 
+struct NatsFtTestConfig<'a> {
+    rounds: &'a [NatsFtTestRound],
+    consumer_name: Option<&'a str>,
+}
+
+impl<'a> NatsFtTestConfig<'a> {
+    fn new(rounds: &'a [NatsFtTestRound]) -> Self {
+        Self {
+            rounds,
+            consumer_name: None,
+        }
+    }
+
+    fn with_consumer_name(mut self, name: Option<&'a str>) -> Self {
+        self.consumer_name = name;
+        self
+    }
+}
+
 fn test_nats_ft(rounds: &[NatsFtTestRound]) {
+    test_nats_ft_with_config(NatsFtTestConfig::new(rounds));
+}
+
+fn test_nats_ft_with_config(test_config: NatsFtTestConfig<'_>) {
     init_test_logger();
 
     let (_nats_process_guard, nats_url) = util::start_nats_and_get_address().unwrap();
@@ -169,6 +192,11 @@ fn test_nats_ft(rounds: &[NatsFtTestRound]) {
     create_dir(&storage_dir).unwrap();
     let output_path = tempdir_path.join("output.csv");
 
+    let consumer_name_line = test_config
+        .consumer_name
+        .map(|n| format!("name: {n}"))
+        .unwrap_or_default();
+
     let config_str = format!(
         r#"
 name: test
@@ -188,6 +216,7 @@ inputs:
                     server_url: {nats_url}
                 stream_name: {stream_name}
                 consumer_config:
+                    {consumer_name_line}
                     deliver_policy: All
                     subjects: [{subject_name}]
         format:
@@ -217,7 +246,7 @@ outputs:
             n_records,
             do_checkpoint,
         },
-    ) in rounds.iter().cloned().enumerate()
+    ) in test_config.rounds.iter().cloned().enumerate()
     {
         println!(
             "--- round {round}: add {n_records} records, {} ---",
@@ -311,7 +340,7 @@ outputs:
         if let Err(()) = result {
             println!(
                 "Controller status:\n{}",
-                serde_json::to_string_pretty(controller.status()).unwrap()
+                serde_json::to_string_pretty(&controller.status().to_api_type()).unwrap()
             );
             panic!("Failed to receive expected records within timeout");
         }
@@ -443,9 +472,193 @@ fn test_nats_ft_empty_step_checkpoint() {
     ]);
 }
 
+/// Tests rapid restart+replay with a named consumer.
+///
+/// This reproduces a bug where the previous ordered consumer hadn't expired yet,
+/// causing "consumer already exists" errors. The fix generates unique consumer names
+/// by appending a UUID suffix when a name is explicitly configured.
+#[test]
+fn test_nats_ft_with_named_consumer() {
+    test_nats_ft_with_config(
+        NatsFtTestConfig::new(&[
+            NatsFtTestRound::with_checkpoint(5),
+            NatsFtTestRound::with_checkpoint(5),
+            NatsFtTestRound::with_checkpoint(0),
+        ])
+        .with_consumer_name(Some("my_named_consumer")),
+    );
+}
+
+/// Helper to assert that a connection error contains expected context.
+fn assert_nats_connect_error(
+    result: AnyResult<(
+        Box<dyn crate::InputReader>,
+        crate::test::MockInputConsumer,
+        crate::test::MockInputParser,
+        crate::test::MockDeZSet<NatsTestRecord, NatsTestRecord>,
+    )>,
+    expected_url: &str,
+    expected_cause: &str,
+) {
+    match result {
+        Ok(_) => panic!("Expected connection to fail"),
+        Err(err) => {
+            let err_msg = format!("{err:#}"); // Full error chain
+            assert!(
+                err_msg.contains(expected_url),
+                "Error message should contain server URL, got: {err_msg}"
+            );
+            assert!(
+                err_msg.contains("Failed to connect"),
+                "Error message should indicate connection failure, got: {err_msg}"
+            );
+            assert!(
+                err_msg.contains(expected_cause),
+                "Error message should contain cause '{expected_cause}', got: {err_msg}"
+            );
+        }
+    }
+}
+
+/// Test that connecting to a non-existent server (connection refused) produces
+/// a clear error message with the server URL included.
+#[test]
+fn test_nats_connection_refused_error() {
+    let nonexistent_url = "nats://127.0.0.1:59999";
+
+    let config_str = format!(
+        r#"
+stream: test_input
+transport:
+    name: nats_input
+    config:
+        connection_config:
+            server_url: {nonexistent_url}
+        stream_name: my_stream
+        consumer_config:
+            deliver_policy: All
+format:
+    name: json
+    config:
+        update_format: raw
+"#
+    );
+
+    let result = mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
+        serde_yaml::from_str(&config_str).unwrap(),
+        Relation::empty(),
+    );
+
+    assert_nats_connect_error(result, nonexistent_url, "Connection refused");
+}
+
+/// Test that connecting to a valid server but requesting a non-existent stream
+/// produces a clear error message with the stream name.
+#[test]
+fn test_nats_stream_not_found_error() {
+    let (_nats_process_guard, nats_url) = util::start_nats_and_get_address().unwrap();
+
+    // Wait for NATS to be ready
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        util::wait_for_nats_ready(&nats_url, Duration::from_secs(5))
+            .await
+            .unwrap();
+    });
+
+    let nonexistent_stream = "this_stream_does_not_exist";
+
+    let config_str = format!(
+        r#"
+stream: test_input
+transport:
+    name: nats_input
+    config:
+        connection_config:
+            server_url: {nats_url}
+        stream_name: {nonexistent_stream}
+        consumer_config:
+            deliver_policy: All
+format:
+    name: json
+    config:
+        update_format: raw
+"#
+    );
+
+    let result = mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
+        serde_yaml::from_str(&config_str).unwrap(),
+        Relation::empty(),
+    );
+
+    match result {
+        Ok(_) => panic!("Expected stream lookup to fail"),
+        Err(err) => {
+            let err_msg = format!("{err:#}"); // Full error chain
+            // The error message should contain the stream name for easy debugging
+            assert!(
+                err_msg.contains(nonexistent_stream),
+                "Error message should contain stream name, got: {err_msg}"
+            );
+            assert!(
+                err_msg.contains("Failed to get stream"),
+                "Error message should indicate stream lookup failure, got: {err_msg}"
+            );
+        }
+    }
+}
+
+/// Test that connection timeout option is respected.
+#[test]
+fn test_nats_connection_timeout() {
+    // Use a non-routable IP address that will cause a connection timeout
+    // 10.255.255.1 is a reserved address that should not respond
+    let non_routable_url = "nats://10.255.255.1:4222";
+    let timeout_secs = 1;
+
+    let config_str = format!(
+        r#"
+stream: test_input
+transport:
+    name: nats_input
+    config:
+        connection_config:
+            server_url: {non_routable_url}
+            connection_timeout_secs: {timeout_secs}
+        stream_name: some_stream
+        consumer_config:
+            deliver_policy: All
+format:
+    name: json
+    config:
+        update_format: raw
+"#
+    );
+
+    let start = std::time::Instant::now();
+
+    let result = mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
+        serde_yaml::from_str(&config_str).unwrap(),
+        Relation::empty(),
+    );
+
+    let elapsed = start.elapsed();
+
+    // Should fail within a reasonable time relative to the timeout
+    // Allow some slack for test execution overhead
+    let max_expected = Duration::from_secs(timeout_secs + 3);
+    assert!(
+        elapsed < max_expected,
+        "Connection should timeout within ~{timeout_secs}s, took {:?}",
+        elapsed
+    );
+
+    assert_nats_connect_error(result, non_routable_url, "timed out");
+}
+
 mod util {
     use crate::test::wait;
-    use anyhow::{anyhow, Result as AnyResult};
+    use anyhow::{Result as AnyResult, anyhow};
     use async_nats::Client;
     use serde::Deserialize;
     use std::env;

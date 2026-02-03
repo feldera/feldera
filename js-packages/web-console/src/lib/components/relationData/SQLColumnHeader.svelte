@@ -3,7 +3,7 @@
   import { displaySQLColumnType } from '$lib/functions/sql'
   import type { Field } from '$lib/services/manager'
 
-  let {
+  const {
     column,
     style,
     isSticky,

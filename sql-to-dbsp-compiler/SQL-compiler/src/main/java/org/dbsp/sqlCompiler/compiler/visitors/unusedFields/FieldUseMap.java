@@ -306,6 +306,7 @@ public class FieldUseMap {
             if (depth == 0)
                 return from.applyCloneIfNeeded();
 
+            Utilities.enforce(!this.type.mayBeNull);
             boolean isRaw = this.getTupleType().isRaw();
             int size = isRaw ? this.size() : this.getCompressedSize();
             DBSPExpression[] fields = new DBSPExpression[size];

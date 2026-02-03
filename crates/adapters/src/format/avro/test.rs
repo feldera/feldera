@@ -1,22 +1,22 @@
 use super::{
     output::AvroEncoder,
     schema::schema_json,
-    serializer::{avro_ser_config, AvroSchemaSerializer},
+    serializer::{AvroSchemaSerializer, avro_ser_config},
 };
 use crate::{
-    format::{avro::from_avro_value, InputBuffer, Parser},
+    Encoder, FormatConfig, ParseError, SerBatch,
+    format::{InputBuffer, Parser, avro::from_avro_value},
     static_compile::seroutput::SerBatchImpl,
     test::{
-        generate_test_batches, generate_test_batches_with_weights, mock_parser_pipeline, KeyStruct,
-        MockOutputConsumer, MockUpdate, TestStruct, TestStruct2,
+        KeyStruct, MockOutputConsumer, MockUpdate, TestStruct, TestStruct2, generate_test_batches,
+        generate_test_batches_with_weights, mock_parser_pipeline,
     },
-    Encoder, FormatConfig, ParseError, SerBatch,
 };
 use apache_avro::{
-    from_avro_datum, schema::ResolvedSchema, to_avro_datum, types::Value, Schema as AvroSchema,
+    Schema as AvroSchema, from_avro_datum, schema::ResolvedSchema, to_avro_datum, types::Value,
 };
-use dbsp::{utils::Tup2, OrdIndexedZSet};
 use dbsp::{DBData, OrdZSet};
+use dbsp::{OrdIndexedZSet, utils::Tup2};
 use feldera_sqllib::{ByteArray, Uuid, Variant};
 use feldera_types::{
     deserialize_table_record,
@@ -350,7 +350,7 @@ where
             mock_parser_pipeline(&test.relation_schema, &format_config).unwrap();
         consumer.on_error(Some(Box::new(|_, _| {})));
         for (avro, expected_errors) in test.input_batches {
-            let (mut buffer, errors) = parser.parse(&avro, &None);
+            let (mut buffer, errors) = parser.parse(&avro, None);
             assert_eq!(&errors, &expected_errors);
             buffer.flush();
         }
@@ -878,6 +878,100 @@ fn test_enums() {
         config: AvroParserConfig {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(TestEnum::avro_schema().to_string()),
+            skip_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches,
+        expected_output,
+    };
+
+    run_parser_test(vec![test]);
+}
+
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+struct TestMetadata {
+    id: i64,
+    schema_id: Option<u32>,
+}
+
+impl TestMetadata {
+    pub fn avro_schema() -> &'static str {
+        r#"{
+            "type": "record",
+            "name": "TestMetadata",
+            "connect.name": "test_namespace.TestMetadata",
+            "fields": [
+                { "name": "id", "type": "long" }
+            ]
+        }"#
+    }
+
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("id".into(), ColumnType::bigint(false)),
+            Field::new("schema_id".into(), ColumnType::uint(true)),
+        ]
+    }
+
+    pub fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("TestMetadata", false),
+            fields: Self::schema(),
+            materialized: false,
+            properties: BTreeMap::new(),
+        }
+    }
+}
+
+serialize_table_record!(TestMetadata[2]{
+    r#id["id"]: i64,
+    r#schema_id["schema_id"]: Option<u32>
+});
+
+deserialize_table_record!(TestMetadata["TestMetadata", Variant, 2] {
+    (r#id, "id", false, i64, |_| None),
+    (r#schema_id, "schema_id", true, Option<u32>,  |metadata: &Option<Variant>| metadata.as_ref().map(|metadata| u32::try_from(metadata.index_string("avro_schema_id")).ok()))
+});
+
+#[test]
+fn test_metadata() {
+    let schema = AvroSchema::parse_str(TestMetadata::avro_schema()).unwrap();
+    let vals = [TestMetadata {
+        id: 5,
+        schema_id: Some(0),
+    }];
+
+    let input_batches = vec![(
+        serialize_value(
+            Value::Record(vec![("id".to_string(), Value::Long(5))]),
+            &schema,
+        ),
+        vec![],
+    )];
+    let expected_output = vals
+        .iter()
+        .map(|v| MockUpdate::Insert(v.clone()))
+        .collect::<Vec<_>>();
+
+    let test = TestCase {
+        relation_schema: TestMetadata::relation_schema(),
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Raw,
+            schema: Some(TestMetadata::avro_schema().to_string()),
             skip_schema_id: false,
             registry_config: Default::default(),
         },
@@ -1561,9 +1655,10 @@ fn test_non_unique_keys() {
     encoder.consumer().batch_start(0);
     let err = encoder.encode(zset.as_batch_reader()).unwrap_err();
     println!("{err}");
-    assert!(err
-        .to_string()
-        .contains(r#"Error description: Multiple new values for the same key."#));
+    assert!(
+        err.to_string()
+            .contains(r#"Error description: Multiple new values for the same key."#)
+    );
     encoder.consumer().batch_end();
 
     let zset = OrdIndexedZSet::from_tuples(
@@ -1578,9 +1673,10 @@ fn test_non_unique_keys() {
     encoder.consumer().batch_start(0);
     let err = encoder.encode(zset.as_batch_reader()).unwrap_err();
     println!("{err}");
-    assert!(err
-        .to_string()
-        .contains(r#"Error description: Multiple deleted values for the same key."#));
+    assert!(
+        err.to_string()
+            .contains(r#"Error description: Multiple deleted values for the same key."#)
+    );
     encoder.consumer().batch_end();
 }
 

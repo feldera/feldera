@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -12,7 +13,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneWithGraphsVisito
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.TriFunction;
 import org.dbsp.util.Utilities;
 
@@ -23,22 +24,22 @@ import org.dbsp.util.Utilities;
  * The algorithm looks for projections following filters with unused fields,
  * and replaces both of them in one shot. */
 public class TrimFilters extends CircuitCloneWithGraphsVisitor {
-    final AnalyzedSet<DBSPExpression> functionsAnalyzed;
+    // Map operators following the filters which were analyzed
+    final AnalyzedSet<DBSPOperator> mapAfterFilter;
 
     public TrimFilters(DBSPCompiler compiler, CircuitGraphs graphs,
-                       AnalyzedSet<DBSPExpression> functionsAnalyzed) {
+                       AnalyzedSet<DBSPOperator> mapAfterFilter) {
         super(compiler, graphs, false);
-        this.functionsAnalyzed = functionsAnalyzed;
+        this.mapAfterFilter = mapAfterFilter;
     }
 
     public boolean process(
             DBSPUnaryOperator operator,
-            int depth,
             TriFunction<CalciteRelNode, DBSPClosureExpression, OutputPort, DBSPUnaryOperator> constructor) {
-        OutputPort source = this.mapped(operator.input());
+        final OutputPort source = this.mapped(operator.input());
         int inputFanout = this.getGraph().getFanout(operator.input().node());
         if (!operator.getFunction().is(DBSPClosureExpression.class) ||
-                this.functionsAnalyzed.done(operator.getFunction()))
+                this.mapAfterFilter.done(operator))
             return false;
 
         DBSPClosureExpression mapFunction = operator.getClosureFunction();
@@ -51,6 +52,12 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
             DBSPParameter filterParam = filterFunction.parameters[0];
             FindUnusedFields mapFinder = new FindUnusedFields(this.compiler);
             mapFunction = mapFinder.findUnusedFields(mapFunction);
+            final int depth;
+            if (filter.input().outputType().is(DBSPTypeIndexedZSet.class))
+                depth = 2;
+            else
+                depth = 1;
+
             if (mapFinder.foundUnusedFields(depth)) {
                 FieldUseMap mapUsed = mapFinder.parameterFieldMap.get(mapParam);
 
@@ -95,7 +102,7 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
     @Override
     public void postorder(DBSPMapOperator operator) {
         @SuppressWarnings("DataFlowIssue")
-        boolean done = this.process(operator, 1, DBSPMapOperator::new);
+        boolean done = this.process(operator, DBSPMapOperator::new);
         if (!done)
             super.postorder(operator);
     }
@@ -103,7 +110,7 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
         @SuppressWarnings("DataFlowIssue")
-        boolean done = this.process(operator, 2, DBSPMapIndexOperator::new);
+        boolean done = this.process(operator, DBSPMapIndexOperator::new);
         if (!done)
             super.postorder(operator);
     }

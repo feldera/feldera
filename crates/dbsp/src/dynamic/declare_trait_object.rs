@@ -123,13 +123,13 @@ macro_rules! declare_typed_trait_object {
 
 #[cfg(test)]
 mod test {
+    use feldera_macros::IsNone;
     use rkyv::{Archive, Deserialize, Serialize};
     use size_of::SizeOf;
 
     use crate::{
-        declare_trait_object,
+        DBData, DBWeight, declare_trait_object,
         dynamic::{Data, DataTrait, DataTraitTyped, Erase, WeightTrait, WeightTraitTyped},
-        DBData, DBWeight,
     };
 
     #[derive(
@@ -145,6 +145,7 @@ mod test {
         Archive,
         Serialize,
         Deserialize,
+        IsNone,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     #[archive(compare(PartialEq, PartialOrd))]

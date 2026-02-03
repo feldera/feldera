@@ -27,7 +27,8 @@ import java.util.List;
 
 /** This operator only operates correctly on deltas.  To operate on collections it
  * must differentiate its input, and integrate its output. */
-public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregateOperatorBase {
+public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregateOperatorBase
+        implements INonLinearAggregate {
     public final DBSPClosureExpression partitioningFunction;
     public final DBSPWindowBoundExpression lower;
     public final DBSPWindowBoundExpression upper;
@@ -46,7 +47,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
             // the current IR, so this type is a lie.
             DBSPTypeIndexedZSet outputType,
             OutputPort input) {
-        super(node, "partitioned_rolling_aggregate", outputType, function, aggregate, true, input, true);
+        super(node, "partitioned_rolling_aggregate", outputType, function, aggregate, true, input);
         this.lower = lower;
         this.upper = upper;
         this.partitioningFunction = partitioningFunction;

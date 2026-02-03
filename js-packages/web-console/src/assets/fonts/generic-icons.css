@@ -1,33 +1,34 @@
 @font-face {
-	font-family: "generic-icons";
-	font-display: block;
-	src: url("generic-icons.woff2?c55d69884bd902b957af0ec6c71b299a") format("woff2"),
-url("generic-icons.woff?c55d69884bd902b957af0ec6c71b299a") format("woff");
+  font-family: "generic-icons";
+  font-display: block;
+  src:
+    url("generic-icons.woff2?07b60f2b9a5c990b87b022f9169944be") format("woff2"),
+    url("generic-icons.woff?07b60f2b9a5c990b87b022f9169944be") format("woff");
 }
 
 .gc {
-	line-height: 1;
+  line-height: 1;
 }
 
 .gc:before {
-	font-family: generic-icons !important;
-	font-style: normal;
-	font-weight: normal !important;
-	vertical-align: top;
+  font-family: generic-icons !important;
+  font-style: normal;
+  font-weight: normal !important;
+  vertical-align: top;
 }
 
-.gc-layout-panel-right:before {
-	content: "\f101";
-}
 .gc-circle-solid:before {
-	content: "\f102";
-}
-.gc-http-get:before {
-	content: "\f103";
-}
-.gc-boiling-flask:before {
-	content: "\f104";
+  content: "\f101";
 }
 .gc-loader-alt:before {
-	content: "\f105";
+  content: "\f102";
+}
+.gc-layout-panel-right:before {
+  content: "\f103";
+}
+.gc-http-get:before {
+  content: "\f104";
+}
+.gc-boiling-flask:before {
+  content: "\f105";
 }

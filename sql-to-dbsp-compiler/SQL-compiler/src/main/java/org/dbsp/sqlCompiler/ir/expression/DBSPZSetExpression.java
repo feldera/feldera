@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -24,6 +23,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.ToIndentableString;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.CheckReturnValue;
 import javax.annotation.Nullable;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -48,6 +48,11 @@ public final class DBSPZSetExpression extends DBSPExpression
 
     public boolean isConstant() {
         return Linq.all(this.data.keySet(), DBSPExpression::isCompileTimeConstant);
+    }
+
+    @Override
+    public boolean isNull() {
+        return false;
     }
 
     /**
@@ -158,7 +163,7 @@ public final class DBSPZSetExpression extends DBSPExpression
 
     public DBSPExpression castRecursive(DBSPExpression expression, DBSPType type) {
         if (type.is(DBSPTypeBaseType.class)) {
-            return expression.cast(expression.getNode(), type, false);
+            return expression.cast(expression.getNode(), type, DBSPCastExpression.CastType.SqlUnsafe);
         } else if (type.is(DBSPTypeArray.class)) {
             DBSPTypeArray array = type.to(DBSPTypeArray.class);
             DBSPArrayExpression vecLit = expression.to(DBSPArrayExpression.class);
@@ -172,7 +177,7 @@ public final class DBSPZSetExpression extends DBSPExpression
             DBSPExpression[] fields = new DBSPExpression[tuple.size()];
             if (expression.is(DBSPBaseTupleExpression.class)) {
                 DBSPBaseTupleExpression te = expression.to(DBSPBaseTupleExpression.class);
-                if (te.fields == null) {
+                if (te.isNull()) {
                     return tuple.none();
                 }
             }
@@ -202,6 +207,7 @@ public final class DBSPZSetExpression extends DBSPExpression
         this.append(toAdd, weight);
     }
 
+    @CheckReturnValue
     public DBSPZSetExpression negate() {
         DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(this.elementType);
         for (Map.Entry<DBSPExpression, Long> entry : data.entrySet()) {
@@ -214,13 +220,7 @@ public final class DBSPZSetExpression extends DBSPExpression
         return this.data.size();
     }
 
-    public long totalWeight() {
-        long result = 0;
-        for (var w: this.data.values())
-            result += w;
-        return result;
-    }
-
+    @CheckReturnValue
     public DBSPZSetExpression minus(DBSPZSetExpression sub) {
         DBSPZSetExpression result = this.clone();
         result.append(sub.negate());
@@ -300,6 +300,8 @@ public final class DBSPZSetExpression extends DBSPExpression
     @Override
     public IIndentStream toString(IIndentStream builder) {
         builder.append("zset!(");
+        if (this.data.size() > 1)
+            builder.increase();
         boolean first = true;
         // Do this for a deterministic result
         List<Map.Entry<DBSPExpression, Long>> entries = Linq.list(this.data.entrySet());
@@ -313,6 +315,8 @@ public final class DBSPZSetExpression extends DBSPExpression
                     .append(DBSPTypeWeight.makeWeight(e.getValue()))
                     .append(",");
         }
+        if (this.data.size() > 1)
+            builder.decrease().newline();
         return builder.append(")");
     }
 

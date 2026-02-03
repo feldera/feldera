@@ -139,7 +139,7 @@ pub use data::{Data, DataTrait, DataTraitTyped, DynBool, DynData, DynDataTyped, 
 pub use downcast::{AsAny, DowncastTrait};
 pub use erase::Erase;
 pub use factory::{Factory, WithFactory};
-pub use lean_vec::{LeanVec, RawIter};
+pub use lean_vec::{LeanVec, RawIter, RawVec};
 pub use option::{DynOpt, Opt};
 pub use pair::{DynPair, Pair};
 pub use pairs::{DynPairs, Pairs, PairsTrait};

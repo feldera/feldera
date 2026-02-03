@@ -3,7 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.circuit.operator.GCOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
@@ -48,7 +48,7 @@ public class MergeGC extends Passes {
                 return null;
             List<Port<DBSPOperator>> baseDests = Linq.where(
                     this.getGraph().getSuccessors(operator),
-                    p -> (p.node().is(GCOperator.class) && p.port() == 0));
+                    p -> (p.node().is(IGCOperator.class) && p.port() == 0));
             if (baseDests.size() != 1)
                 return null;
             Port<DBSPOperator> port = baseDests.get(0);

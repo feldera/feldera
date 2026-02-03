@@ -7,9 +7,8 @@ use super::{
     DataTrait, DowncastTrait, DynPair, DynPairs, Erase, LeanVec, Pairs, Vector, WeightTrait,
 };
 use crate::{
-    declare_trait_object,
-    utils::{consolidate_from, Tup2},
-    DBData, DBWeight,
+    DBData, DBWeight, declare_trait_object,
+    utils::{Tup2, consolidate_from},
 };
 
 /// A vector of (key, value) pairs, where the value implements `WeightTrait`,

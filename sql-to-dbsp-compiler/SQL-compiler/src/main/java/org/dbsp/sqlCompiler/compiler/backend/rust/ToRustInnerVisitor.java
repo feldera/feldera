@@ -59,8 +59,9 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPInternedStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLongIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
@@ -98,15 +99,19 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
@@ -137,7 +142,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
     int visitingChild;
     @Nullable
     final SourcePositionResource sourcePositionResource;
-    final CreateRuntimeErrorWrappers createErrorWrappers;
 
     public ToRustInnerVisitor(DBSPCompiler compiler, IIndentStream builder,
                               @Nullable SourcePositionResource sourcePositionResource, boolean compact) {
@@ -147,7 +151,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.options = compiler.options;
         this.sourcePositionResource = sourcePositionResource;
         this.visitingChild = 0;
-        this.createErrorWrappers = new CreateRuntimeErrorWrappers(compiler);
     }
 
     @SuppressWarnings("SameReturnValue")
@@ -341,12 +344,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 // we don't use sort_unstable_by because it is
                 // non-deterministic
                 .append("v.sort_by(comp);").newline();
-        if (expression.limit != null) {
-            this.builder.append("let mut v = (**array).clone();").newline();
-            this.builder.append("v.truncate(");
-            expression.limit.accept(this);
-            this.builder.append(");").newline();
-        }
         this.builder.append("v.into()");
         this.builder.newline()
                 .decrease()
@@ -440,7 +437,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("Timestamp::new(")
+        this.builder.append("Timestamp::from_microseconds(")
                 .append(Long.toString(Objects.requireNonNull(literal.value)))
                 .append("/*")
                 .append(Objects.requireNonNull(literal.getTimestampString()).toString())
@@ -487,7 +484,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("Date::new(")
+        this.builder.append("Date::from_days(")
                 .append(Integer.toString(Objects.requireNonNull(literal.value)))
                 .append("/*")
                 .append(Objects.requireNonNull(literal.getDateString()).toString())
@@ -507,7 +504,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (literal.mayBeNull())
             this.builder.append("Some(");
         TimeString ts = Objects.requireNonNull(literal.value);
-        this.builder.append("Time::new(")
+        this.builder.append("Time::from_nanoseconds(")
                 .append(Utilities.timeStringToNanoseconds(ts))
                 .append("/*")
                 .append(ts.toString())
@@ -520,13 +517,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPIntervalMonthsLiteral literal) {
+    public VisitDecision preorder(DBSPLongIntervalLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
         this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("LongInterval::new(")
+        this.builder.append("LongInterval::from_months(")
                 .append(Integer.toString(Objects.requireNonNull(literal.value)))
                 .append(")");
         if (literal.mayBeNull())
@@ -536,13 +533,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPIntervalMillisLiteral literal) {
+    public VisitDecision preorder(DBSPShortIntervalLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
         this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("ShortInterval::new(")
+        this.builder.append("ShortInterval::from_microseconds(")
                 .append(Long.toString(Objects.requireNonNull(literal.value)))
                 .append(")");
         if (literal.mayBeNull())
@@ -594,7 +591,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.increase();
         for (DBSPExpression exp: expression.data) {
             exp.accept(this);
-            this.builder.append(", ");
+            this.builder.append(",");
+            if (expression.data.size() > 1)
+                this.builder.newline();
         }
         if (expression.data.size() > 1)
             this.builder.decrease();
@@ -799,6 +798,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPInternedStringLiteral literal) {
+        this.builder.append("None");
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPMinMax aggregator) {
         if (aggregator.postProcessing != null)
             this.builder.append("Postprocess::new(");
@@ -893,7 +898,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Default, PartialOrd, Ord)]")
                 .newline();
         builder.append("pub struct ")
-                .append(Objects.requireNonNull(struct.sanitizedName))
+                .append(Objects.requireNonNull(struct.hashName))
                 .append(" {")
                 .increase();
         for (DBSPTypeStruct.Field field: struct.fields.values()) {
@@ -906,19 +911,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .newline();
     }
 
-    void generateStructHelpers(DBSPTypeStruct s, @Nullable TableMetadata metadata) {
-        s = s.withMayBeNull(false).to(DBSPTypeStruct.class);
-        this.generateStructDeclaration(s);
-        this.generateFromTrait(s);
-        this.generateRenameMacro(s, metadata);
-    }
-
     @Override
     public VisitDecision preorder(DBSPStructItem item) {
         // pretend we are not in an operator context for the generated helper code
         DBSPOperator save = this.operatorContext;
         this.operatorContext = null;
-        this.generateStructHelpers(item.type, item.metadata);
+        DBSPTypeStruct s = item.type.withMayBeNull(false).to(DBSPTypeStruct.class);
+        this.generateStructDeclaration(s);
+        this.generateFromTrait(s);
+        this.generateSerdeMacros(item);
         this.operatorContext = save;
         return VisitDecision.STOP;
     }
@@ -979,13 +980,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
         EliminateStructs es = new EliminateStructs(this.compiler());
         DBSPTypeTuple tuple = es.apply(type).to(DBSPTypeTuple.class);
         this.builder.append("impl From<")
-                .append(type.sanitizedName)
+                .append(type.hashName)
                 .append("> for ");
         tuple.accept(this);
         this.builder.append(" {")
                 .increase()
                 .append("fn from(t: ")
-                .append(type.sanitizedName)
+                .append(type.hashName)
                 .append(") -> Self");
         this.builder.append(" {")
                 .increase()
@@ -1008,7 +1009,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("impl From<");
         tuple.accept(this);
         this.builder.append("> for ")
-                .append(type.sanitizedName);
+                .append(type.hashName);
         this.builder.append(" {")
                 .increase()
                 .append("fn from(t: ");
@@ -1042,7 +1043,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     static class RewriteConnectorMetadata extends ExpressionTranslator {
         public static final DBSPVariablePath var =
                 new DBSPVariablePath(CustomFunctions.ConnectorMetadataFunction.NAME.toLowerCase(Locale.ENGLISH),
-                        DBSPTypeVariant.INSTANCE_NULLABLE);
+                        DBSPTypeVariant.INSTANCE_NULLABLE.ref());
 
         public static String variableName() {
             return var.variable;
@@ -1054,8 +1055,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
         @Override
         public void postorder(DBSPHandleErrorExpression expression) {
+            // Strip source positions from these initializers for now
             DBSPExpression source = this.getE(expression.source);
-            DBSPExpression result = new DBSPHandleErrorExpression(expression.getNode(), expression.index, source, false);
+            DBSPExpression result = new DBSPHandleErrorExpression(expression.getNode(), expression.index,
+                    expression.runtimeBehavior, source, false);
             this.map(expression, result);
         }
 
@@ -1063,7 +1066,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         public void postorder(DBSPApplyExpression expression) {
             String function = expression.getFunctionName();
             if (function != null && function.equalsIgnoreCase(CustomFunctions.ConnectorMetadataFunction.NAME)) {
-                this.map(expression, var);
+                this.map(expression, var.deref().applyClone());
                 return;
             }
             super.postorder(expression);
@@ -1072,16 +1075,17 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     /**
      * Generate calls to the Rust macros that generate serialization and deserialization code
-     * for the struct.
-     *
-     * @param type      Type of record in the table.
-     * @param metadata  Metadata for the input columns (null for an output view). */
-    protected void generateRenameMacro(DBSPTypeStruct type,
-                                       @Nullable TableMetadata metadata) {
+     * for the struct. */
+    protected void generateSerdeMacros(DBSPStructItem item) {
         this.builder.append("deserialize_table_record!(");
-        this.builder.append(type.sanitizedName)
+        DBSPTypeStruct type = item.type;
+        TableMetadata metadata = item.metadata;
+        String typeName = type.name.name();
+        if (typeName.isEmpty())
+            typeName = type.hashName;
+        this.builder.append(type.hashName)
                 .append("[")
-                .append(Utilities.doubleQuote(type.name.name(), true))
+                .append(Utilities.doubleQuote(typeName, true))
                 .append(", Variant, ")
                 .append(type.fields.size())
                 .append("] {")
@@ -1116,21 +1120,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 if (isOption)
                     this.builder.append("Some(");
                 this.builder.append(field.type.mayBeNull ? "Some(None)" : "None");
+                if (isOption)
+                    this.builder.append(")");
             } else {
                 RewriteConnectorMetadata rw = new RewriteConnectorMetadata(this.compiler);
                 this.builder.append("|")
                         .append(RewriteConnectorMetadata.variableName())
                         .append(": &Option<Variant>| Some(");
-                if (isOption)
-                    this.builder.append("Some(");
-                IDBSPInnerNode defaultValue = this.createErrorWrappers.apply(meta.defaultValue);
+                IDBSPInnerNode defaultValue = CreateRuntimeErrorWrappers.wrapCasts(this.compiler, meta.defaultValue);
                 defaultValue = rw.apply(defaultValue);
                 defaultValue.accept(this);
-                this.builder.append(")");
+                this.builder.append(".into())");
             }
-            if (isOption)
-                // closes for both branches of the if
-                this.builder.append(")");
 
             if (isOption && user.typeArgs[0].mayBeNull) {
                 // Option<Option<...>>
@@ -1144,7 +1145,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .newline();
 
         this.builder.append("serialize_table_record!(");
-        this.builder.append(type.sanitizedName)
+        this.builder.append(type.hashName)
                 .append("[")
                 .append(type.fields.size())
                 .append("]{")
@@ -1282,8 +1283,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     void unimplementedCast(DBSPCastExpression expression) {
-        if (this.compact)
+        if (this.compact) {
+            this.builder.append("((")
+                    .append(expression.type)
+                    .append(")")
+                    .append(expression.source)
+                    .append(")");
             return;
+        }
         throw new UnimplementedException(
                 "Cast from " + expression.source.getType() + " to " + expression.getType() +
                 " not implemented", expression.getNode());
@@ -1296,10 +1303,24 @@ public class ToRustInnerVisitor extends InnerVisitor {
          * the function called will be cast_to_b_i16N. */
         this.push(expression);
         DBSPType destType = expression.getType();
-        DBSPTypeCode code = destType.code;
-        DBSPType sourceType = expression.source.getType();
-        DBSPTypeArray sourceVecType = sourceType.as(DBSPTypeArray.class);
-        DBSPTypeArray destVecType = destType.as(DBSPTypeArray.class);
+        if (this.compact) {
+            this.builder.append("((")
+                    .append(expression.getType())
+                    .append(")");
+            expression.source.accept(this);
+            this.builder.append(")");
+            this.pop(expression);
+            return VisitDecision.STOP;
+        }
+        Utilities.enforce(!expression.safe.isSql(), () -> "SQL cast leftover " + expression);
+        Utilities.enforce(!expression.safe.isUnwrap(), () -> "unwrap cast leftover " + expression);
+        Utilities.enforce(destType.is(DBSPTypeSqlResult.class), () -> "cast type should be SqlResult " + expression);
+
+        destType = destType.to(DBSPTypeSqlResult.class).getWrappedType();
+        final DBSPTypeCode code = destType.code;
+        final DBSPType sourceType = expression.source.getType();
+        final DBSPTypeArray sourceVecType = sourceType.as(DBSPTypeArray.class);
+        final DBSPTypeArray destVecType = destType.as(DBSPTypeArray.class);
         String functionName;
 
         if (destVecType != null) {
@@ -1374,33 +1395,19 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
         if (sourceType.is(DBSPTypeTuple.class)) {
             // should have been eliminated
-            if (!this.compact)
-                this.unimplementedCast(expression);
-            // we are dumping DOT
-            this.builder.append("(");
-            expression.type.accept(this);
-            this.builder.append(")");
-            expression.source.accept(this);
-            this.pop(expression);
+            this.unimplementedCast(expression);
             return VisitDecision.STOP;
         }
         if (code == DBSPTypeCode.TUPLE) {
             // should have been eliminated
-            if (!this.compact)
-                this.unimplementedCast(expression);
-            // we are dumping DOT
-            this.builder.append("(");
-            expression.type.accept(this);
-            this.builder.append(")");
-            expression.source.accept(this);
-            this.pop(expression);
+            this.unimplementedCast(expression);
             return VisitDecision.STOP;
         }
         functionName = "cast_to_" + destType.baseTypeWithSuffix() +
                 "_" + sourceType.baseTypeWithSuffix();
 
-        if ((sourceType.is(DBSPTypeMonthsInterval.class) && code == DBSPTypeCode.INTERVAL_LONG) ||
-            (sourceType.is(DBSPTypeMillisInterval.class) && code == DBSPTypeCode.INTERVAL_SHORT)) {
+        if ((sourceType.is(DBSPTypeLongInterval.class) && code == DBSPTypeCode.INTERVAL_LONG) ||
+            (sourceType.is(DBSPTypeShortInterval.class) && code == DBSPTypeCode.INTERVAL_SHORT)) {
             DBSPTypeBaseType t = destType.to(DBSPTypeBaseType.class);
             functionName = "cast_to_" + t.shortName() + destType.nullableSuffix() +
                     "_" + t.shortName() + sourceType.nullableSuffix();
@@ -1485,7 +1492,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
                 expression.getNode(),
-                expression.opcode, expression.getType(), expression.left.getType(), expression.right.getType());
+                expression.opcode, expression.left.getType(), expression.right.getType());
         this.builder.append(function);
         if (expression.condition != null)
             this.builder.append("_conditional");
@@ -1497,6 +1504,41 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(", ");
             expression.condition.accept(this);
         }
+        this.builder.append(")");
+        this.pop(expression);
+        return VisitDecision.STOP;
+    }
+
+    /** Translate an opcode fragment to a function name fragment for time-related arithmetic */
+    static private String typeCode(DBSPType type) {
+        if (type.is(DBSPTypeTimestamp.class))
+            return "Timestamp";
+        else if (type.is(DBSPTypeTime.class))
+            return "Time";
+        else if (type.is(DBSPTypeDate.class))
+            return "Date";
+        else if (type.is(DBSPTypeLongInterval.class))
+            return "LongInterval";
+        else if (type.is(DBSPTypeShortInterval.class))
+            return "ShortInterval";
+        throw new InternalCompilerError("Unexpected fragment: " + type);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTimeAddSub expression) {
+        this.push(expression);
+        this.visitingChild = 0;
+        String functionName = expression.opcode == DBSPOpcode.ADD ? "plus" : "minus";
+        functionName += "_" + typeCode(expression.type) +
+                        "_" + typeCode(expression.left.getType()) +
+                        "_" + typeCode(expression.right.getType()) +
+                        expression.left.getType().nullableUnderlineSuffix() +
+                        expression.right.getType().nullableUnderlineSuffix();
+        builder.append(functionName).append("(");
+        expression.left.accept(this);
+        this.builder.append(", ");
+        this.visitingChild = 1;
+        expression.right.accept(this);
         this.builder.append(")");
         this.pop(expression);
         return VisitDecision.STOP;
@@ -1516,6 +1558,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 break;
             }
             case SQL_INDEX:
+                if (this.compact) {
+                    expression.left.accept(this);
+                    this.builder.append("[");
+                    expression.right.accept(this);
+                    this.builder.append("-1]");
+                    break;
+                }
                 throw new InternalCompilerError("Should have been eliminated");
             case RUST_INDEX:
             case SAFE_RUST_INDEX: {
@@ -1560,7 +1609,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                                     .append(field.fieldNo)
                                     .append(".clone())");
                         }
-                        this.builder.newline().append("}");
+                        this.builder.decrease().newline().append("}");
                     }
                 }
                 if (!leftDone) {
@@ -1640,17 +1689,17 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(")");
                 break;
             }
-            case ARRAY_CONVERT, MAP_CONVERT, DIV_NULL: {
+            case ARRAY_CONVERT_SAFE, ARRAY_CONVERT, MAP_CONVERT, MAP_CONVERT_SAFE, DIV_NULL: {
                 this.builder.append(expression.opcode.toString())
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
-                        .append("(");
+                        .append("(").increase();
                 this.visitingChild = 0;
                 expression.left.accept(this);
                 this.builder.append(", ");
                 this.visitingChild = 1;
                 expression.right.accept(this);
-                this.builder.append(")");
+                this.builder.newline().decrease().append(")");
                 break;
             }
             case OR:
@@ -1658,7 +1707,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
                         expression.getNode(),
                         expression.opcode,
-                        expression.getType(),
                         expression.left.getType(),
                         expression.right.getType());
                 this.builder.append(function).append("(").increase();
@@ -1685,7 +1733,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
                             expression.getNode(),
                             expression.opcode,
-                            expression.getType(),
                             expression.left.getType(),
                             expression.right.getType());
                     this.builder.append(function);
@@ -2084,13 +2131,29 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPFailExpression expression) {
+        this.push(expression);
+        this.builder.append("panic!(")
+                .append(Utilities.doubleQuote(expression.message, false))
+                .append(")");
+        this.pop(expression);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPUnwrapExpression expression) {
+        if (this.compact || expression.neverFails()) {
+            expression.expression.accept(this);
+            this.builder.append(".unwrap()");
+            return VisitDecision.STOP;
+        }
         this.push(expression);
         this.builder.append("(");
+        this.builder.append("unwrap_value(");
         expression.expression.accept(this);
-        if (expression.expression.getType().is(DBSPTypeTupleBase.class))
-            this.builder.append(".as_ref()");
-        this.builder.append(".unwrap()");
+        this.builder.append(", ")
+                .append(Utilities.doubleQuote(expression.message, false))
+                .append(")");
         this.builder.append(")");
         this.pop(expression);
         return VisitDecision.STOP;
@@ -2336,17 +2399,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (expression.getType().mayBeNull)
             this.builder.append("Some");
         this.builder.append("(");
-        boolean newlines = this.compact && expression.fields.length > 2;
-        if (newlines)
-            this.builder.increase();
+        this.builder.increase();
         for (DBSPExpression field : expression.fields) {
             field.accept(this);
             this.builder.append(", ");
-            if (newlines)
-                this.builder.newline();
+            this.builder.newline();
         }
-        if (newlines)
-            this.builder.decrease();
+        this.builder.decrease();
         this.builder.append(")");
         this.pop(expression);
         return VisitDecision.STOP;
@@ -2536,7 +2595,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         // A *reference* to a struct type is just the type name.
         this.push(type);
         this.optionPrefix(type);
-        this.builder.append(type.sanitizedName);
+        this.builder.append(type.hashName);
         this.optionSuffix(type);
         this.pop(type);
         return VisitDecision.STOP;

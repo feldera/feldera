@@ -21,25 +21,31 @@ import java.util.Set;
  * Calls a ICodeGenerator to generate the Rust code. */
 public final class CrateGenerator {
     public final File baseDirectory;
+    public final String directory;
     public final String crateName;
     public final boolean enterprise;
+    public final boolean lib;
 
     /** Cargo file name */
     public static final String CARGO = "Cargo.toml";
     /** Rust file name */
     public static final String LIB = "lib.rs";
+    public static final String MAIN = "main.rs";
 
     /** Crates that we depend on */
     private final Set<CrateGenerator> dependencies;
     /** Generates the actual Rust code */
     final ICodeGenerator codeGenerator;
 
-    public CrateGenerator(File baseDirectory, String crateName, ICodeGenerator codeGenerator, boolean enterprise) {
+    public CrateGenerator(File baseDirectory, String directory, String crateName, ICodeGenerator codeGenerator,
+                          boolean enterprise, boolean lib) {
         this.crateName = crateName;
+        this.directory = directory;
         this.baseDirectory = baseDirectory;
         this.dependencies = new HashSet<>();
         this.codeGenerator = codeGenerator;
         this.enterprise = enterprise;
+        this.lib = lib;
     }
 
     @Override
@@ -47,19 +53,26 @@ public final class CrateGenerator {
         if (o == null || getClass() != o.getClass()) return false;
 
         CrateGenerator that = (CrateGenerator) o;
-        return this.baseDirectory.equals(that.baseDirectory) && this.crateName.equals(that.crateName);
+        return this.baseDirectory.equals(that.baseDirectory) &&
+                this.crateName.equals(that.crateName) &&
+                this.directory.equals(that.directory);
     }
 
     @Override
     public int hashCode() {
         int result = this.baseDirectory.hashCode();
         result = 31 * result + this.crateName.hashCode();
+        result = 31 * result + this.directory.hashCode();
         return result;
     }
 
     public void addDependency(CrateGenerator generator) {
         this.dependencies.add(generator);
         this.codeGenerator.addDependency(generator.crateName);
+    }
+
+    boolean isMain() {
+        return this.crateName.contains("main");
     }
 
     void generateCargo(PrintStream stream) {
@@ -69,16 +82,23 @@ public final class CrateGenerator {
         stream.print(this.crateName);
         stream.println("\"");
 
-        String cargo = """
+        stream.println("""
                 version = "0.1.0"
                 edition = "2021"
                 publish = false
 
                 [dev-dependencies]
-                uuid = { version = "1.6.1" }
-
-                [lib]
-                path = "src/lib.rs"
+                uuid = { version = "1.6.1" }""");
+        stream.println();
+        if (this.lib) {
+            stream.println("[lib]");
+            stream.println("path = \"src/lib.rs\"");
+        } else {
+            stream.println("[[bin]]");
+            stream.println("name = \"" + this.crateName + "\"");
+            stream.println("path = \"src/main.rs\"");
+        }
+        stream.println("""
                 doctest = false
 
                 [dependencies]
@@ -87,24 +107,24 @@ public final class CrateGenerator {
                 derive_more = { workspace = true }
                 dbsp = { workspace = true }
                 dbsp_adapters = { workspace = true }
+                feldera-macros = { workspace = true }
                 feldera-types = { workspace = true }
                 feldera-sqllib = { workspace = true }
                 serde = { workspace = true }
                 compare = { workspace = true }
                 size-of = { workspace = true }
                 serde_json = { workspace = true }
-                rkyv = { workspace = true }""";
-        stream.println(cargo);
+                rkyv = { workspace = true }""");
         if (this.enterprise) {
             stream.println("dbsp-enterprise = { workspace = true }");
             stream.println("sync-checkpoint = { workspace = true }");
         }
-        String extraDep = """
-                [target.'cfg(not(target_env = "msvc"))'.dependencies]
-                tikv-jemallocator = { workspace = true }
-                """;
-        if (this.crateName.contains("main"))
-            stream.println(extraDep);
+        if (isMain()) {
+            stream.println("""
+                    [target.'cfg(not(target_env = "msvc"))'.dependencies]
+                    tikv-jemallocator = { workspace = true }
+                    """);
+        }
         List<CrateGenerator> deps = Linq.list(this.dependencies);
         deps.sort(Comparator.comparing(a -> a.crateName));
         for (CrateGenerator dep: deps) {
@@ -123,9 +143,9 @@ public final class CrateGenerator {
         if (!this.baseDirectory.isDirectory())
             throw new RuntimeException(
                     Utilities.singleQuote(this.baseDirectory.getPath()) + " is not a directory");
-        File crateRoot = new File(this.baseDirectory, this.crateName);
+        File crateRoot = new File(new File(this.baseDirectory, this.directory), this.crateName);
         if (!crateRoot.exists()) {
-            boolean success = crateRoot.mkdir();
+            boolean success = crateRoot.mkdirs();
             if (!success)
                 throw new RuntimeException("Could not create directory " + Utilities.singleQuote(crateRoot.getPath()));
         }
@@ -136,11 +156,15 @@ public final class CrateGenerator {
 
         File src = new File(crateRoot, "src");
         if (!src.exists()) {
-            boolean success = src.mkdir();
+            boolean success = src.mkdirs();
             if (!success)
                 throw new RuntimeException("Could not create directory " + Utilities.singleQuote(src.getPath()));
         }
-        File lib = new File(src, LIB);
+        File lib;
+        if (!this.isMain() || !compiler.options.generateMultiCrateMain())
+            lib = new File(src, LIB);
+        else
+            lib = new File(src, MAIN);
         PrintStream rustStream = new PrintStream(Files.newOutputStream(lib.toPath()));
         this.codeGenerator.setOutputBuilder(new IndentStream(rustStream));
         this.codeGenerator.write(compiler);

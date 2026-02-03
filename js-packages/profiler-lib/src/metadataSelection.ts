@@ -2,6 +2,7 @@
 
 import { SubList } from "./util.js";
 import { CircuitProfile } from "./profile.js";
+import type { ProfilerCallbacks, MetricOption, WorkerOption } from "./profiler.js";
 
 /** Describes which metadata from a circuit to display. */
 export class MetadataSelection {
@@ -19,8 +20,10 @@ export class MetadataSelector {
     private readonly allMetrics: Set<string>;
     private selectedMetric: string;
     private onChange: () => void = () => { };
+    private readonly callbacks: ProfilerCallbacks;
 
-    constructor(private readonly circuit: CircuitProfile) {
+    constructor(private readonly circuit: CircuitProfile, callbacks: ProfilerCallbacks) {
+        this.callbacks = callbacks;
         this.workersVisible = Array.from({ length: circuit.getWorkerNames().length }, () => true);
         this.allMetrics = new Set<string>();
         for (const node of circuit.simpleNodes.values()) {
@@ -40,65 +43,67 @@ export class MetadataSelector {
         this.onChange = onChange;
     }
 
-    // Display the html elements used to select circuit metadata
-    display(table: HTMLTableElement): void {
-        // Drop-down to select the metric to highlight
-        let row = table.insertRow();
-        let cell = row.insertCell(0);
-        cell.appendChild(document.createTextNode("Metric"));
-        cell = row.insertCell(1);
-        let select = document.createElement("select");
-        cell.appendChild(select);
-        for (const metric of Array.from(this.allMetrics).sort()) {
-            let option = document.createElement("option");
-            option.value = metric;
-            option.text = metric;
-            if (metric === this.selectedMetric) {
-                option.selected = true;
-            }
-            select.appendChild(option);
-        }
+    /**
+     * Initialize the metadata selector and trigger callbacks for initial state
+     */
+    initialize(): void {
+        // Notify about available metrics
+        this.notifyMetricsChanged();
+        // Notify about available workers
+        this.notifyWorkersChanged();
+    }
 
-        // Selection tool for workers; will work for a moderate number of workers (e.g. < 50)
-        row = table.insertRow();
-        cell = row.insertCell(0);
-        let button = document.createElement("button");
-        button.textContent = "Workers";
-        button.title = "Toggle worker visibility";
-        cell.appendChild(button);
+    notifyMetricsChanged() {
+        const metrics: MetricOption[] = Array.from(this.allMetrics).sort().map(metric => ({
+            id: metric,
+            label: metric
+        }));
+        this.callbacks.onMetricsChanged(metrics, this.selectedMetric);
+    }
 
-        let allCheckboxes = new Array<HTMLInputElement>();
-        cell = row.insertCell(1);
-        for (let i = 0; i < this.circuit.getWorkerNames().length; i++) {
-            let cb = document.createElement("input");
-            cb.type = "checkbox";
-            cb.checked = true;
-            cb.title = i.toString();
-            cb.style.margin = "0";
-            cb.style.padding = "0";
-            cell.appendChild(cb);
-            allCheckboxes.push(cb);
-            cb.onchange = (ev) => {
-                const target = ev.target as HTMLInputElement;
-                this.workersVisible[i] = target.checked;
-                this.onChange();
-            }
-        };
+    /**
+     * Notify callbacks about current worker state
+     */
+    private notifyWorkersChanged(): void {
+        const workers: WorkerOption[] = this.circuit.getWorkerNames().map((_name, index) => ({
+            id: String(index),
+            label: `Worker ${index}`,
+            checked: this.workersVisible[index] ?? true
+        }));
+        this.callbacks.onWorkersChanged(workers);
+    }
 
-        // When the "workers" button is clicked toggle the state of all workers.
-        button.onclick = (_) => {
-            for (const cb of allCheckboxes) {
-                cb.checked = !cb.checked;
-                this.workersVisible[Number(cb.title)] = cb.checked;
-            }
+    /**
+     * Select a metric by ID
+     */
+    selectMetric(metricId: string): void {
+        if (this.allMetrics.has(metricId)) {
+            this.selectedMetric = metricId;
             this.onChange();
         }
+    }
 
-        select.onchange = (ev) => {
-            const target = ev.target as HTMLSelectElement;
-            this.selectedMetric = target.value;
+    /**
+     * Toggle a worker's visibility
+     */
+    toggleWorker(workerId: string): void {
+        const index = Number(workerId);
+        if (index >= 0 && index < this.workersVisible.length) {
+            this.workersVisible[index] = !this.workersVisible[index];
+            this.notifyWorkersChanged();
             this.onChange();
-        };
+        }
+    }
+
+    /**
+     * Toggle the display state of all workers.
+     */
+    toggleAllWorkers(): void {
+        for (let i = 0; i < this.workersVisible.length; i++) {
+            this.workersVisible[i] = !this.workersVisible[i];
+        }
+        this.notifyWorkersChanged();
+        this.onChange();
     }
 
     public static getFullSelection(): MetadataSelection {

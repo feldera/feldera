@@ -61,6 +61,10 @@
 
 #![allow(clippy::type_complexity)]
 
+// allow referring to self as ::dbsp for macros to work universally (from this crate and from others)
+// see https://github.com/rust-lang/rust/issues/54647
+extern crate self as dbsp;
+
 pub mod dynamic;
 mod error;
 mod hash;
@@ -87,7 +91,7 @@ pub mod mono;
 
 pub use crate::{
     error::{DetailedError, Error},
-    hash::default_hash,
+    hash::{default_hash, default_hasher},
     num_entries::NumEntries,
 };
 // // pub use crate::ref_pair::RefPair;
@@ -102,14 +106,14 @@ pub use circuit::{
 #[cfg(not(feature = "backend-mode"))]
 pub use operator::FilterMap;
 pub use operator::{
-    input::{IndexedZSetHandle, InputHandle, MapHandle, SetHandle, ZSetHandle},
     CmpFunc, OrdPartitionedIndexedZSet, OutputHandle,
+    input::{IndexedZSetHandle, InputHandle, MapHandle, SetHandle, ZSetHandle},
 };
-pub use trace::{cursor::Position, DBData, DBWeight};
+pub use trace::{DBData, DBWeight, cursor::Position};
 pub use typed_batch::{
     Batch, BatchReader, FallbackKeyBatch, FallbackValBatch, FallbackWSet, FallbackZSet,
     FileIndexedWSet, FileIndexedZSet, FileKeyBatch, FileValBatch, FileWSet, FileZSet, IndexedZSet,
-    OrdIndexedWSet, OrdIndexedZSet, OrdWSet, OrdZSet, Trace, TypedBox, ZSet,
+    IndexedZSetReader, OrdIndexedWSet, OrdIndexedZSet, OrdWSet, OrdZSet, Trace, TypedBox, ZSet,
 };
 
 #[cfg(doc)]

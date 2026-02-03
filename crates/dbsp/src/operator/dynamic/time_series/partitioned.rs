@@ -14,7 +14,7 @@ use dyn_clone::clone_box;
 use crate::{
     algebra::{IndexedZSet, OrdIndexedZSet},
     dynamic::{DataTrait, DynPair, Factory, WeightTrait},
-    trace::{cursor::Position, Batch, BatchReader, Cursor},
+    trace::{Batch, BatchReader, Cursor, cursor::Position},
 };
 use std::marker::PhantomData;
 

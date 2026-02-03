@@ -103,7 +103,11 @@ pub async fn sql_compiler_task(
         if let Err(e) = &result {
             match e {
                 DBError::UnknownPipeline { pipeline_id } => {
-                    debug!("SQL worker {worker_id}: compilation canceled: pipeline {pipeline_id} no longer exists");
+                    debug!(
+                        pipeline_id = %pipeline_id,
+                        pipeline = "N/A",
+                        "SQL worker {worker_id}: compilation canceled: pipeline no longer exists"
+                    );
                 }
                 DBError::OutdatedProgramVersion {
                     outdated_version,
@@ -200,6 +204,7 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
         Some(db.clone()),
         tenant_id,
         pipeline.id,
+        Some(pipeline.name.clone()),
         &pipeline.platform_version,
         pipeline.program_version,
         &pipeline.program_config,
@@ -211,8 +216,9 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
     match compilation_result {
         Ok((program_info, duration, compilation_info)) => {
             info!(
-                "SQL compilation success: pipeline {} (program version: {}) (took {:.2}s)",
-                pipeline.id,
+                pipeline_id = %pipeline.id,
+                pipeline = %pipeline.name,
+                "SQL compilation success (program version: {}) (took {:.2}s)",
                 pipeline.program_version,
                 duration.as_secs_f64()
             );
@@ -230,20 +236,25 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
         Err(e) => match e {
             SqlCompilationError::NoLongerExists => {
                 debug!(
-                    "SQL compilation canceled: pipeline {} no longer exists",
-                    pipeline.id,
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "SQL compilation canceled: pipeline no longer exists"
                 );
             }
             SqlCompilationError::Outdated => {
                 debug!(
-                    "SQL compilation canceled: pipeline {} (program version: {}) is outdated",
-                    pipeline.id, pipeline.program_version,
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "SQL compilation canceled: program version {} is outdated",
+                    pipeline.program_version
                 );
             }
             SqlCompilationError::TerminatedBySignal => {
                 error!(
-                    "SQL compilation interrupted: pipeline {} (program version: {}) compilation process was terminated by a signal",
-                    pipeline.id, pipeline.program_version,
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "SQL compilation interrupted: compilation process was terminated by a signal (program version: {})",
+                    pipeline.program_version
                 );
             }
             SqlCompilationError::SqlError(compilation_info) => {
@@ -257,8 +268,10 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                     )
                     .await?;
                 info!(
-                    "SQL compilation failed: pipeline {} (program version: {}) due to SQL errors",
-                    pipeline.id, pipeline.program_version
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "SQL compilation failed due to SQL errors (program version: {})",
+                    pipeline.program_version
                 );
             }
             SqlCompilationError::SystemError(internal_system_error) => {
@@ -271,7 +284,12 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                         &internal_system_error,
                     )
                     .await?;
-                error!("SQL compilation failed: pipeline {} (program version: {}) due to system error:\n{}", pipeline.id, pipeline.program_version, internal_system_error);
+                error!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "SQL compilation failed due to system error (program version: {}): {internal_system_error}",
+                    pipeline.program_version
+                );
             }
         },
     }
@@ -368,12 +386,12 @@ async fn fetch_sql_compiler(
         base_url = config.sql_compiler_cache_url
     );
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
         .build()
         .map_err(|e| {
             SqlCompilationError::SystemError(format!(
-                "Unable to initiate download of SQL-to-DBSP compiler: {} for selected runtime version '{}'. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+                "Unable to initiate download of SQL-to-DBSP compiler: {}, source error: {}, for selected runtime version '{}'. If possible, fall-back to platform version or change `runtime_version` in the program config.",
                 e,
+                source_error(&e),
                 runtime_selector
             ))
         })?;
@@ -405,26 +423,43 @@ async fn fetch_sql_compiler(
 
     let response = response.error_for_status().map_err(|e| {
         SqlCompilationError::SystemError(format!(
-            "Unable to download SQL-to-DBSP compiler from: {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
-            e
+            "Unable to download SQL-to-DBSP compiler from: {}, source error: {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+            e,
+            source_error(&e)
         ))
     })?;
 
     let mut response_stream = response.bytes_stream();
-    while let Some(chunk) = response_stream.next().await {
-        let bytes = chunk.map_err(|e| SqlCompilationError::SystemError(format!(
-            "Unable to read JAR from HTTP stream '{}': {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
-            &jar_cache_url,
-            e
-        )))?;
-        async_tmp_jar_file.write_all(&bytes).await.map_err(|e| {
+
+    loop {
+        let chunk = tokio::time::timeout(Duration::from_secs(10), response_stream.next()).await.map_err(|_e| {
             SqlCompilationError::SystemError(format!(
-                "Unable to persist SQL-to-DBSP compiler at '{}': {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
-                path.display(),
-                e
+                "Timed out while waiting for the next HTTP response chunk when downloading the SQL-to-DBSP compiler from '{}'.
+                This might be due to slow network, please retry compilation; alternatively, fall back to the platform compiler by removing or changing `runtime_version` in the program config.",
+                &jar_cache_url,
             ))
         })?;
+
+        match chunk {
+            Some(chunk) => {
+                let bytes = chunk.map_err(|e| SqlCompilationError::SystemError(format!(
+                    "Unable to read JAR from HTTP stream '{}': {}, source error: {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+                    &jar_cache_url,
+                    e,
+                    source_error(&e)
+                )))?;
+                async_tmp_jar_file.write_all(&bytes).await.map_err(|e| {
+                    SqlCompilationError::SystemError(format!(
+                        "Unable to persist SQL-to-DBSP compiler at '{}': {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+                        path.display(),
+                        e
+                    ))
+                })?;
+            }
+            None => break,
+        }
     }
+
     let tmp_jar_file = NamedTempFile::from_parts(async_tmp_jar_file.into_std(), path);
 
     // Rename to the JAR file that we'll use for compilation
@@ -449,6 +484,7 @@ pub(crate) async fn perform_sql_compilation(
     db: Option<Arc<Mutex<StoragePostgres>>>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
+    pipeline_name: Option<String>,
     platform_version: &str,
     program_version: Version,
     program_config: &serde_json::Value,
@@ -481,9 +517,11 @@ pub(crate) async fn perform_sql_compilation(
 
     let runtime_selector = program_config.runtime_version();
     assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
+    let pipeline_name = pipeline_name.as_deref().unwrap_or("N/A");
     info!(
-        "SQL compilation started: pipeline {} (program version: {}{})",
-        pipeline_id,
+        pipeline_id = %pipeline_id,
+        pipeline = pipeline_name,
+        "SQL compilation started (program version: {}{})",
         program_version,
         if !runtime_selector.is_platform() {
             format!(", runtime version: {runtime_selector}")
@@ -517,11 +555,12 @@ pub(crate) async fn perform_sql_compilation(
     let output_json_schema_file_path = working_dir.join("schema.json");
     let output_dataflow_file_path = working_dir.join("dataflow.json");
     let output_rust_directory_path = working_dir.join("rust");
-    recreate_dir(&output_rust_directory_path)
+    recreate_dir(&output_rust_directory_path.join("crates"))
         .await
         .map_err(|e| SqlCompilationError::SystemError(e.to_string()))?;
     let output_rust_udf_stubs_file_path = working_dir
         .join("rust")
+        .join("crates")
         .join(crate_name_pipeline_globals(pipeline_id))
         .join("src")
         .join("stubs.rs");
@@ -534,6 +573,7 @@ pub(crate) async fn perform_sql_compilation(
         assert!(sql_compiler_executable_file_path.exists());
     }
 
+    let runtime_crates_path = config.dbsp_override_path.clone();
     // Call executable with arguments
     //
     // In the future, it might be that flags can be passed to the SQL compiler through
@@ -553,6 +593,8 @@ pub(crate) async fn perform_sql_compilation(
         .arg("-je")
         .arg("--alltables")
         .arg("--ignoreOrder")
+        .arg("--runtime")
+        .arg(runtime_crates_path)
         .arg("--crates") // Generate multiple crates instead of a single main.rs
         .arg(crate_name_pipeline_base(pipeline_id));
     #[cfg(feature = "feldera-enterprise")]
@@ -610,7 +652,11 @@ pub(crate) async fn perform_sql_compilation(
                                 return Err(SqlCompilationError::NoLongerExists);
                             }
                             Err(e) => {
-                                error!("SQL compilation outdated check failed due to database error: {e}")
+                                error!(
+                                    pipeline_id = %pipeline_id,
+                                    pipeline = pipeline_name,
+                                    "SQL compilation outdated check failed due to database error: {e}"
+                                )
                                 // As preemption check failing is not fatal, compilation will continue
                             }
                         }
@@ -667,6 +713,8 @@ pub(crate) async fn perform_sql_compilation(
                     ));
                 } else {
                     error!(
+                        pipeline_id = %pipeline_id,
+                        pipeline = pipeline_name,
                         "Unable to parse SQL compiler response after successful compilation, warnings were not passed to client: {}",
                         stderr_str
                     );

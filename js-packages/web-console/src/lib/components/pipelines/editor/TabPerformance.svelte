@@ -1,30 +1,30 @@
 <script lang="ts">
-  import PipelineMemoryGraph from '$lib/components/layout/pipelines/PipelineMemoryGraph.svelte'
-  import PipelineThroughputGraph from '$lib/components/layout/pipelines/PipelineThroughputGraph.svelte'
-  import { humanSize } from '$lib/functions/common/string'
-  import { type PipelineMetrics } from '$lib/functions/pipelineMetrics'
-  import type { ExtendedPipeline } from '$lib/services/pipelineManager'
+  import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
   import { format } from 'd3-format'
   import Dayjs from 'dayjs'
-  import { getDeploymentStatusLabel, isMetricsAvailable } from '$lib/functions/pipelines/status'
-  import { Segment } from '@skeletonlabs/skeleton-svelte'
-  import { useIsScreenXl } from '$lib/compositions/layout/useIsMobile.svelte'
+  import PipelineMemoryGraph from '$lib/components/layout/pipelines/PipelineMemoryGraph.svelte'
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
-  import { formatDateTime, useElapsedTime } from '$lib/functions/format'
+  import PipelineThroughputGraph from '$lib/components/layout/pipelines/PipelineThroughputGraph.svelte'
+  import { useIsScreenXl } from '$lib/compositions/layout/useIsMobile.svelte'
   import {
-    usePipelineManager,
-    type PipelineManagerApi
+    type PipelineManagerApi,
+    usePipelineManager
   } from '$lib/compositions/usePipelineManager.svelte'
+  import { humanSize } from '$lib/functions/common/string'
+  import { formatDateTime, useElapsedTime } from '$lib/functions/format'
+  import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import {
     CustomJSONParserTransformStream,
     parseCancellable,
     pushAsCircularBuffer
   } from '$lib/functions/pipelines/changeStream'
+  import { getDeploymentStatusLabel, isMetricsAvailable } from '$lib/functions/pipelines/status'
+  import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
 
   const formatQty = (v: number) => format(',.0f')(v)
 
-  let {
+  const {
     pipeline,
     metrics
   }: { pipeline: { current: ExtendedPipeline }; metrics: { current: PipelineMetrics } } = $props()
@@ -35,10 +35,10 @@
   let timeSeries: TimeSeriesEntry[] = $state([])
 
   let statusTab: 'age' | 'updated' = $state('age')
-  let isXl = useIsScreenXl()
-  let api = usePipelineManager()
+  const isXl = useIsScreenXl()
+  const api = usePipelineManager()
 
-  let cancelStream: (() => void) | undefined = undefined
+  let cancelStream: (() => void) | undefined
 
   const endMetricsStream = (id?: string) => {
     cancelStream?.()
@@ -92,8 +92,8 @@
     cancelStream = cancel
   }
 
-  let pipelineName = $derived(pipeline.current.name)
-  let metricsAvailable = $derived(isMetricsAvailable(pipeline.current.status) === 'yes')
+  const pipelineName = $derived(pipeline.current.name)
+  const metricsAvailable = $derived(isMetricsAvailable(pipeline.current.status) === 'yes')
 
   $effect(() => {
     pipelineName
@@ -141,27 +141,23 @@
   <div class="flex justify-between">
     <div>Pipeline is running, but has not reported usage telemetry yet</div>
   </div>
-{:else}<div class="flex h-full flex-col gap-4 overflow-y-auto overflow-x-clip scrollbar">
+{:else}<div class="scrollbar flex h-full flex-col gap-4 overflow-x-clip overflow-y-auto">
     <div class="flex w-full flex-col gap-4">
       <div class="flex flex-wrap gap-4 pt-2">
         <div class="flex flex-col">
-          <div class="text-nowrap text-start text-sm">Records Ingested</div>
+          <div class="text-start text-sm text-nowrap">Records Ingested</div>
           <div class="pt-2">
             {formatQty(global.total_input_records)}
           </div>
         </div>
         <div class="flex flex-col">
-          <div class="text-nowrap text-start text-sm">
-            <span class="hidden sm:inline">Records</span> Processed
-          </div>
+          <div class="text-start text-sm text-nowrap">Records Processed</div>
           <div class="pt-2">
             {formatQty(global.total_processed_records)}
           </div>
         </div>
         <div class="flex flex-col">
-          <div class="text-nowrap text-start text-sm">
-            <span class="hidden sm:inline">Records</span> Buffered
-          </div>
+          <div class="text-start text-sm text-nowrap">Records Buffered</div>
           <div class="pt-2">
             {formatQty(global.buffered_input_records)}
           </div>
@@ -176,7 +172,7 @@
           </div>
         {/snippet}
         {#snippet updated()}
-          <div class="w-64 text-nowrap pt-2">
+          <div class="w-64 pt-2 text-nowrap">
             {getDeploymentStatusLabel(pipeline.current.status)} since {Dayjs(
               pipeline.current.deploymentStatusSince
             ).format('MMM D, YYYY h:mm A')}
@@ -205,21 +201,29 @@
           </div>
         {:else}
           <div>
-            <Segment
-              bind:value={statusTab}
-              background="preset-filled-surface-50-950 w-fit flex-none -mt-3 overflow-visible"
-              indicatorBg="bg-white-dark shadow"
-              indicatorText=""
-              border="p-1"
-              rounded="rounded"
+            <SegmentedControl
+              value={statusTab}
+              onValueChange={(e) => (statusTab = e.value as typeof statusTab)}
             >
-              <Segment.Item value="age" base="btn cursor-pointer z-[1] px-5 py-4 h-6">
-                <div class="text-start text-sm">Age</div>
-              </Segment.Item>
-              <Segment.Item value="updated" base="btn cursor-pointer z-[1] px-5 py-4 h-6">
-                <div class="text-start text-sm">Last status update</div>
-              </Segment.Item>
-            </Segment>
+              <SegmentedControl.Label />
+              <SegmentedControl.Control
+                class="-mt-3 w-fit flex-none overflow-visible rounded preset-filled-surface-50-950 p-1"
+              >
+                <SegmentedControl.Indicator class="bg-white-dark shadow" />
+                <SegmentedControl.Item value="age" class="z-1 btn h-6 cursor-pointer px-5 py-4">
+                  <SegmentedControl.ItemText class="text-surface-950-50">
+                    <div class="text-start text-sm">Age</div>
+                  </SegmentedControl.ItemText>
+                  <SegmentedControl.ItemHiddenInput />
+                </SegmentedControl.Item>
+                <SegmentedControl.Item value="updated" class="z-1 btn h-6 cursor-pointer px-5 py-4">
+                  <SegmentedControl.ItemText class="text-surface-950-50">
+                    <div class="text-start text-sm">Last status update</div>
+                  </SegmentedControl.ItemText>
+                  <SegmentedControl.ItemHiddenInput />
+                </SegmentedControl.Item>
+              </SegmentedControl.Control>
+            </SegmentedControl>
             {#if statusTab === 'age'}
               {@render age()}
             {:else if statusTab === 'updated'}
@@ -279,14 +283,16 @@
           </table>
         {/if}
         {#if metrics.current.views.size}
-          <table class="bg-white-dark table h-min max-w-[1300px] rounded text-base">
+          <table class="bg-white-dark table h-min max-w-[1500px] rounded text-base">
             <thead>
               <tr>
                 <th class="font-normal text-surface-600-400">View</th>
                 <th class="!text-end font-normal text-surface-600-400">Transmitted records</th>
                 <th class="!text-end font-normal text-surface-600-400">Transmitted bytes</th>
                 <th class="!text-end font-normal text-surface-600-400">Buffered records</th>
+                <th class="!text-end font-normal text-surface-600-400">Queued records</th>
                 <th class="!text-end font-normal text-surface-600-400">Buffered batches</th>
+                <th class="!text-end font-normal text-surface-600-400">Queued batches</th>
                 <th class="!text-end font-normal text-surface-600-400">Encode errors</th>
                 <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
               </tr>
@@ -304,7 +310,9 @@
                     {humanSize(stats.transmitted_bytes)}
                   </td>
                   <td class="text-end">{formatQty(stats.buffered_records)} </td>
+                  <td class="text-end">{formatQty(stats.queued_records)} </td>
                   <td class="text-end">{formatQty(stats.buffered_batches)} </td>
+                  <td class="text-end">{formatQty(stats.queued_batches)} </td>
                   <td class="text-end">{formatQty(stats.num_encode_errors)} </td>
                   <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
                 </tr>

@@ -15,11 +15,34 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        The Delta Lake connector's `skip_unused_columns` property has been deprecated. Use
+        table-level [`skip_unused_colums`](https://docs.feldera.com/sql/grammar#skip-unused-columns)
+        instead.
+
+        ## 0.201.0
+
+        Cluster monitoring: Feldera now monitors the control plane components (api-server,
+        kubernetes-runner and compiler-server) health and stores these as events in the
+        database. They are exposed via `/v0/cluster/events` and further details of a specific
+        event can be retrieved via `/v0/cluster/events/[<id>|latest]`.
+        The `/v0/cluster_healthz` endpoint now returns the latest recorded event.
+        All API clients support these endpoints. The Web Console will soon expose these
+        events via a panel too.
+
+        It monitors both what the services report themselves, as well as the status of the
+        resources backing them. The resources monitoring feature is not yet stabilized,
+        but can already be activated by adding `cluster_monitor_resources` to the
+        Helm chart `unstableFeatures` array value. The kubernetes-runner, being responsible
+        for the monitoring, is configured with an additional RBAC permission needed for this
+        feature (see `kubernetes-runner-rbac.yaml` for changes).
+
+        ## 0.188.0
+
         Prometheus metrics output now also contains pipeline names with a
         "pipeline_name" label, in addition to the exist "pipeline" label,
         which still contains the pipeline UUID.
 
-        ## 0.186.00
+        ## 0.186.0
 
         The Kafka input connector will now start reading partitions added
         to a topic upon resuming from a checkpoint.  Previously, the

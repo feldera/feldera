@@ -94,7 +94,22 @@ export abstract class PropertyValue implements Comparable<PropertyValue> {
     toString(): string {
         let v = this.getNumericValue();
         if (v.isSome()) {
-            return v.unwrap().toLocaleString('en-US', { maximumFractionDigits: 2 });
+            let value = v.unwrap();
+            let unit = "";
+            if (value > 1_000_000_000_000) {
+                unit = "T";
+                value = value / 1_000_000_000_000;
+            } else if (value > 1_000_000_000) {
+                unit = "G";
+                value = value / 1_000_000_000;
+            } else if (value > 1_000_000) {
+                unit = "M";
+                value = value / 1_000_000;
+            } else if (value > 1_000) {
+                unit = "K";
+                value = value / 1000;
+            }
+            return value.toLocaleString('en-US', { maximumFractionDigits: 2 }) + unit;
         } else {
             return "N/A";
         }
@@ -118,7 +133,7 @@ class PercentValue extends PropertyValue {
         if (this.denominator === 0) {
             return Option.some(0);
         }
-        return Option.some(this.numerator / this.denominator);
+        return Option.some(100 * this.numerator / this.denominator);
     }
 
     override toString(): string {
@@ -169,6 +184,52 @@ class NumberValue extends PropertyValue {
     }
 }
 
+/** A property value that is a Boolean. */
+class BooleanValue extends PropertyValue {
+    readonly value: boolean;
+
+    constructor(id: any) {
+        super();
+        if (typeof id !== "boolean") {
+            throw new TypeError(`Expected a valid boolean, got, ${id}`);
+        }
+        this.value = id;
+    }
+
+    getNumericValue(): Option<number> {
+        return this.value ? Option.some(0) : Option.some(1);
+    }
+
+    override compareTo(other: PropertyValue): number {
+        let v1 = this.value;
+        if (other instanceof BooleanValue) {
+            let v2 = other.value;
+            if (v1 < v2) return -1;
+            if (v1 > v2) return 1;
+            return 0;
+        }
+        return super.compareTo(other);
+    }
+
+    override plus(other: PropertyValue): PropertyValue {
+        if (other instanceof MissingValue) {
+            return this;
+        }
+        if (other instanceof BooleanValue) {
+            return new BooleanValue(this.value || other.value);
+        }
+        throw new Error("Cannot add BooleanValue to " + other);
+    }
+
+    override getStringValue(): string {
+        return this.value.toString();
+    }
+
+    override toString(): string {
+        return this.value.toString();
+    }
+}
+
 /** A property value that is a string, with no numeric value. */
 class StringValue extends PropertyValue {
     readonly value: string;
@@ -176,7 +237,7 @@ class StringValue extends PropertyValue {
     constructor(id: any) {
         super();
         if (typeof id !== "string") {
-            throw new TypeError(`Expected a valid string, got: ${id}`);
+            throw new TypeError(`Expected a valid string, got, ${id}`);
         }
         this.value = id;
     }
@@ -216,7 +277,9 @@ class StringValue extends PropertyValue {
 }
 
 /** No value has been provided for a property. */
-class MissingValue extends PropertyValue {
+export class MissingValue extends PropertyValue {
+    public static readonly INSTANCE: MissingValue = new MissingValue();
+
     constructor() {
         super();
     }
@@ -232,16 +295,16 @@ class MissingValue extends PropertyValue {
 
 /** A property value that represents a time with seconds and nanoseconds. */
 class TimeValue extends PropertyValue {
-    constructor(readonly milliseconds: number) {
+    constructor(readonly seconds: number) {
         super();
     }
 
     static fromSecondsNanos(secs: any, nanos: any) {
-        return new TimeValue(enforceNumber(secs) * 1000 + enforceNumber(nanos) / 1000000);
+        return new TimeValue(enforceNumber(secs) + enforceNumber(nanos) / 1_000_000_000);
     }
 
     getNumericValue(): Option<number> {
-        return Option.some(this.milliseconds);
+        return Option.some(this.seconds);
     }
 
     plus(other: PropertyValue): PropertyValue {
@@ -249,10 +312,98 @@ class TimeValue extends PropertyValue {
             return this;
         }
         if (other instanceof TimeValue) {
-            return new TimeValue(this.milliseconds + other.milliseconds);
+            return new TimeValue(this.seconds + other.seconds);
         }
         throw new Error("Cannot add TimeValue to " + other);
     }
+}
+
+export type MeasurementCategory = "CPU" | "memory" | "cache" | "storage" | "";
+
+/** Which category does a measurement belong to */
+export function measurementCategory(prop: string): MeasurementCategory {
+    const map: Map<MeasurementCategory, Array<string>> = new Map();
+    map.set("CPU", [
+        "time%",
+        "invocations",
+        "steps",
+        "wait_time",
+        "exchange_wait_time",
+        "merge backpressure wait",
+        "time",
+        "total_idle_time",
+        "runtime_elapsed",
+        "total_runtime",
+        "total rebalancing time",
+        "in-progress rebalancing time",
+        "integral records to repartition",
+        "accumulator records to repartition",
+        "local shard size",
+        "rebalancings"]);
+    map.set("storage", [
+        "merge reduction",
+        "output redundancy",
+        "merging batches",
+        "merging size",
+        "input batches/batches",
+        "input batches/min size",
+        "input batches/max size",
+        "input batches/avg size",
+        "input batches/total records",
+        "output batches/batches",
+        "output batches/min size",
+        "output batches/max size",
+        "output batches/avg size",
+        "output batches/total records",
+        "slot 0 loose",
+        "slot 1 loose",
+        "slot 2 loose",
+        "slot 3 loose",
+        "slot 4 loose",
+        "slot 0 completed",
+        "slot 1 completed",
+        "slot 2 completed",
+        "slot 3 completed",
+        "slot 4 completed",
+        "slot 0 merging",
+        "slot 1 merging",
+        "slot 2 merging",
+        "slot 3 merging",
+        "slot 4 merging",
+        "storage size",
+        "batch sizes",
+        "bounds",
+        "Bloom filter size",
+        "Bloom filter bits/key",
+        "Bloom filter hits",
+        "Bloom filter misses",
+        "Bloom filter hit rate"]);
+    map.set("cache", [
+        "background cache hit",
+        "foreground cache hit",
+        "background cache miss",
+        "foreground cache miss",
+        "foreground cache occupancy",
+        "background cache occupancy"]);
+    map.set("memory", [
+        "left inputs",
+        "right inputs",
+        "computed outputs",
+        "inputs",
+        "total size",
+        "allocated bytes",
+        "used bytes",
+        "shared bytes",
+        "batches",
+        "allocations"]);
+    for (const [k, v] of map) {
+        for (const value of v) {
+            if (prop.startsWith(value)) {
+                return k;
+            }
+        }
+    }
+    return "";
 }
 
 // Decoded measurement value.
@@ -273,7 +424,7 @@ export class Measurement {
     }
 
     toString(): string {
-        return this.property + ": " + this.value.toString();
+        return this.property + ", " + this.value.toString();
     }
 
     /** Parse a JSON object with the specified label into zero or more measurements. */
@@ -326,6 +477,7 @@ export class Measurement {
             case "output redundancy":
             case "background cache hit rate":
             case "foreground cache hit rate":
+            case "Bloom filter hit rate":
                 if (Measurement.RANDOM_DATA) {
                     let v = Math.random() * 100;
                     return Option.some(new PercentValue(v, 1));
@@ -333,6 +485,8 @@ export class Measurement {
                 return Option.some(new PercentValue(value[0][0], value[0][1]));
             case "Bloom filter size":
             case "Bloom filter bits/key":
+            case "Bloom filter hits":
+            case "Bloom filter misses":
             case "total size":
             case "invocations":
             case "allocated bytes":
@@ -358,6 +512,10 @@ export class Measurement {
             case "output batches/max size":
             case "output batches/avg size":
             case "output batches/total records":
+            case "integral records to repartition":
+            case "rebalancings":
+            case "local shard size":
+            case "accumulator records to repartition":
                 if (Measurement.RANDOM_DATA) {
                     return Option.some(new NumberValue(Math.random() * 1000));
                 }
@@ -369,6 +527,8 @@ export class Measurement {
             case "total_idle_time":
             case "runtime_elapsed":
             case "total_runtime":
+            case "total rebalancing time":
+            case "in-progress rebalancing time":
                 if (Measurement.RANDOM_DATA) {
                     return Option.some(TimeValue.fromSecondsNanos(Math.floor(Math.random() * 100), 0));
                 }
@@ -380,15 +540,21 @@ export class Measurement {
             case "slot 1 loose":
             case "slot 2 loose":
             case "slot 3 loose":
+            case "slot 4 loose":
             case "slot 0 completed":
             case "slot 1 completed":
             case "slot 2 completed":
             case "slot 3 completed":
+            case "slot 4 completed":
             case "slot 0 merging":
             case "slot 1 merging":
             case "slot 2 merging":
             case "slot 3 merging":
+            case "slot 4 merging":
+            case "balancer policy":
                 return Option.some(new StringValue(value[0]));
+            case "rebalancing in progress":
+                return Option.some(new BooleanValue(value[0]));
             case "batch sizes":
             case "bounds":
             case "mir_node":
@@ -403,6 +569,17 @@ export class Measurement {
                 return Option.none();
         }
     }
+}
+
+/** A node, its operation, and the (maximum) value of a metric for that node.  The actual metric
+ * represented is not part of this data structure */
+export class NodeAndMetric {
+    constructor(
+        public readonly nodeId: string,
+        public readonly label: string,
+        public readonly operation: string,
+        /** Value between 0 and 100% */
+        public readonly normalizedValue: number) { }
 }
 
 /** A set of measurements for a single circuit graph node and many workers.
@@ -480,6 +657,10 @@ export class SimpleNode implements JsonSimpleCircuitNode {
         this.persistentId = Option.none();
     }
 
+    getChildren(): Array<NodeId> {
+        return [];
+    }
+
     setPersistentId(id: string) {
         this.persistentId = Option.some(id);
     }
@@ -505,6 +686,7 @@ export class SimpleNode implements JsonSimpleCircuitNode {
 /** A complex node has a list of children nodes.  Note that the class extends SimpleNode. */
 export class ComplexNode extends SimpleNode {
     children: Array<NodeId>;
+    depth: number = 0;
 
     constructor(id: NodeId, label: string, worker_count: number) {
         super(id, label, worker_count);
@@ -513,8 +695,18 @@ export class ComplexNode extends SimpleNode {
 
     addChild(node: SimpleNode) {
         this.children.push(node.id);
+    }
+
+    appendMeasurements(node: SimpleNode) {
         this.measurements.append(node.measurements);
-        // There are no source positions yet
+    }
+
+    setDepth(depth: number) {
+        this.depth = depth;
+    }
+
+    override getChildren(): Array<NodeId> {
+        return this.children;
     }
 }
 
@@ -588,9 +780,9 @@ export class CircuitProfile {
         // This can happen for some Z nodes in recursive components
         if (profileNode.isNone()) return;
         let n = profileNode.unwrap();
-        if (mir.table !== undefined) {
+        if (mir.table !== null) {
             n.operation += " " + mir.table;
-        } else if (mir.view !== undefined) {
+        } else if (mir.view !== null) {
             n.operation += " " + mir.view;
         }
 
@@ -606,18 +798,37 @@ export class CircuitProfile {
         return node;
     }
 
-    // Set the dataflow graph information of a profile graph.
-    setDataflow(dataflow: Dataflow, programCode?: string[]) {
-        // Add information from the program dataflow generated by the SQL compiler.
-        let mir = dataflow.mir;
-        const sources = dataflow.sources ?? programCode;
-        if (!sources) {
-            throw new Error('Could not derive program source code from dataflow nor pipeline config');
+    // TODO: memoize depths for faster computation
+    computeDepth(nodeId: NodeId): number {
+        let node = this.getNode(nodeId);
+        let depth = 0;
+        if (!node.isNone()) {
+            for (const child of node.unwrap().getChildren()) {
+                depth = Math.max(depth, this.computeDepth(child) + 1);
+            }
         }
-        this.sources = Option.some(new Sources(sources));
+        return depth;
+    }
+
+    // Set the dataflow graph information of a profile graph.
+    setDataflow(dataflow?: Dataflow, programCode?: string[]) {
+        // Add information from the program dataflow generated by the SQL compiler.
+        const sources = dataflow?.sources ?? programCode;
+        if (sources) {
+            this.sources = Option.some(new Sources(sources));
+        }
+
+        if (!dataflow) {
+            return;
+        }
+
+        let mir = dataflow.mir;
         for (const [_, info] of Object.entries(mir)) {
             if (info.operation === "nested") {
-                for (const [_, mir] of Object.entries(info)) {
+                for (const [key, mir] of Object.entries(info)) {
+                    if (["calcite", "table", "view", "inputs", "outputs", "persistent_id", "positions"].includes(key)) {
+                        continue;
+                    }
                     this.processMirNode(mir);
                 }
             } else {
@@ -627,23 +838,29 @@ export class CircuitProfile {
         }
 
         // Adjust source positions
-        // Assign to every complex node the "sum" of the children's measurements
         for (const node of this.simpleNodes.values()) {
             const parent = this.parents.get(node.id);
             if (parent.isSome()) {
-                // If parent is toplevel graph, it's not in the
+                // If parent is toplevel graph, it's not in the graph
                 const complex = this.complexNodes.get(parent.unwrap()).unwrap();
                 complex.sourcePositions.append(node.sourcePositions);
             }
         }
         // And adjust the parents of the parents, etc.
-        for (const node of this.complexNodes.values()) {
+        for (const node of this.getSortedComplexNodes()) {
             const parent = this.parents.get(node.id);
             if (parent.isSome()) {
                 const complex = this.complexNodes.get(parent.unwrap()).unwrap();
                 complex.sourcePositions.append(node.sourcePositions);
             }
         }
+    }
+
+    // Return the complex nodes in order of increasing depth
+    getSortedComplexNodes(): Array<ComplexNode> {
+        let result = [... this.complexNodes.values()];
+        result.sort((n1, n2) => n1.depth - n2.depth);
+        return result;
     }
 
     addEdge(e: JsonCircuitEdge) {
@@ -679,6 +896,46 @@ export class CircuitProfile {
         if (this.simpleNodes.has(id))
             return this.simpleNodes.get(id);
         return this.complexNodes.get(id);
+    }
+
+    /**
+     * Get all source code position ranges for a given node ID.
+     *
+     * A node can have multiple source position ranges when a single DBSP operator
+     * corresponds to multiple SQL fragments (e.g., a join referencing tables defined
+     * in different parts of the SQL).
+     *
+     * @param id - The node ID to look up
+     * @returns Array of SourcePositionRange objects, or empty array if,
+     *          - Node doesn't exist
+     *          - Node has no source position information
+     */
+    // This method is in CircuitProfile rather than Visualizer because CircuitProfile
+    // owns both the node data (simpleNodes/complexNodes) and the source data (sources).
+    getSourceRanges(id: NodeId): Array<SourcePositionRange> {
+        const node = this.getNode(id);
+        if (node.isNone()) {
+            return [];
+        }
+
+        return node.unwrap().sourcePositions.positions;
+    }
+
+    /**
+     * Get the first source code position range for a given node ID.
+     *
+     * Convenience method that returns the first (primary) range from getSourceRanges(),
+     * typically used for simple navigation purposes.
+     *
+     * @param id - The node ID to look up
+     * @returns Option containing the first SourcePositionRange, or none if no ranges exist
+     */
+    getFirstSourceRange(id: NodeId): Option<SourcePositionRange> {
+        const ranges = this.getSourceRanges(id);
+        if (ranges.length === 0) {
+            return Option.none();
+        }
+        return Option.some(ranges[0]!);
     }
 
     constructor(readonly worker_count: number) { }
@@ -719,13 +976,14 @@ export class CircuitProfile {
     }
 
     /** Create a CircuitProfile from the JSON serialization */
-    static fromJson(json: JsonProfiles): CircuitProfile {
+    static fromJson(json: JsonProfiles) {
         let worker_count = json.worker_profiles.length;
-        let result = new CircuitProfile(worker_count);
         // Decode the graph structure and create the nodes.
         // The graph itself is always a complex node.
-        result.complexNodes.set(json.graph.nodes.id,
-            new ComplexNode(json.graph.nodes.id, json.graph.nodes.label, worker_count));
+        let rootNodeId = json.graph.nodes.id;
+        let result = new CircuitProfile(worker_count);
+        result.complexNodes.set(rootNodeId,
+            new ComplexNode(rootNodeId, json.graph.nodes.label, worker_count));
         for (const nodeWrapper of json.graph.nodes.nodes) {
             // Ignore top-level graph region
             result.addNode(nodeWrapper, Option.none());
@@ -750,7 +1008,13 @@ export class CircuitProfile {
                         }
                     }
                 } else if (result.complexNodes.has(node)) {
-                    // Ignore measurements for complex nodes.
+                    // Ignore measurements for complex nodes, except the root node, which has some special attributes
+                    if (node === rootNodeId) {
+                        n = result.complexNodes.get(node).unwrap();
+                        for (const m of measurements) {
+                            n.addMeasurement(m, index);
+                        }
+                    }
                 } else {
                     fail("Node not found " + node);
                 }
@@ -761,25 +1025,35 @@ export class CircuitProfile {
         // Merge Z1 (trace) nodes; they are artificially split in the profile into two halves each.
         result.fixZ1Nodes();
 
-        // Assign to every complex node the "sum" of the children's measurements
-        for (const node of result.simpleNodes.values()) {
+        // Register children
+        for (const node of [...result.simpleNodes.values(), ...result.complexNodes.values()]) {
             const parent = result.parents.get(node.id);
             if (parent.isSome()) {
-                // If parent is toplevel graph, it's not in the
-                const complex = result.complexNodes.get(parent.unwrap()).unwrap();
-                complex.addChild(node);
-            }
-        }
-        for (const node of result.complexNodes.values()) {
-            const parent = result.parents.get(node.id);
-            if (parent.isSome()) {
+                // If parent is toplevel graph, it is None
                 const complex = result.complexNodes.get(parent.unwrap()).unwrap();
                 complex.addChild(node);
             }
         }
 
+        // Compute and save depths
+        for (const node of result.complexNodes.values()) {
+            node.setDepth(result.computeDepth(node.id));
+        }
+
+        // Assign to every complex node the "sum" of the children's measurements.
+        // Process in order of increasing depth.
+        for (const complex of result.getSortedComplexNodes()) {
+            for (const child of complex.children) {
+                let node = result.getNode(child);
+                complex.appendMeasurements(node.unwrap());
+            }
+        }
+
         result.computePropertyRanges();
-        return result;
+        return {
+            profile: result,
+            rootNodeId
+        };
     }
 
     fixZ1Nodes() {

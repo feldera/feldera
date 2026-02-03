@@ -1,13 +1,12 @@
 <script lang="ts">
-  import { type ExtendedPipeline, type Pipeline } from '$lib/services/pipelineManager'
-  import { deletePipeline as _deletePipeline } from '$lib/services/pipelineManager'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import JSONbig from 'true-json-bigint'
   import MultiJSONDialog from '$lib/components/dialogs/MultiJSONDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
+  import { deletePipeline as _deletePipeline, type Pipeline } from '$lib/services/pipelineManager'
 
-  let {
+  const {
     pipeline,
     pipelineBusy
   }: {
@@ -17,10 +16,22 @@
 
   const globalDialog = useGlobalDialog()
   const { toastError } = useToast()
+
+  const applyConfig = async (json: Record<string, string>) => {
+    let patch: Partial<Pipeline> = {}
+    try {
+      patch.runtimeConfig = JSONbig.parse(json.runtimeConfig)
+      patch.programConfig = JSONbig.parse(json.programConfig)
+      await pipeline.patch(patch)
+    } catch (e) {
+      toastError(e as any)
+      throw e
+    }
+  }
 </script>
 
 <button
-  class="fd fd-settings btn btn-icon text-[20px] preset-tonal-surface"
+  class="fd fd-settings btn-icon preset-tonal-surface text-[20px]"
   onclick={() => (globalDialog.dialog = pipelineConfigurationsDialog)}
   aria-label="Pipeline actions"
 ></button>
@@ -72,17 +83,7 @@
         readOnlyMessage: 'Cannot edit config while pipeline is running'
       }
     }}
-    onApply={async (json) => {
-      let patch: Partial<Pipeline> = {}
-      try {
-        patch.runtimeConfig = JSONbig.parse(json.runtimeConfig)
-        patch.programConfig = JSONbig.parse(json.programConfig)
-        await pipeline.patch(patch)
-      } catch (e) {
-        toastError(e as any)
-        throw e
-      }
-    }}
+    onApply={applyConfig}
     onClose={() => (globalDialog.dialog = null)}
   >
     {#snippet title()}

@@ -8,9 +8,9 @@ use crate::{
     dynamic::{DynDataTyped, DynWeightedPairs, WeightTrait},
     time::Timestamp,
     trace::{
+        Batch, BatchFactories, BatchReaderFactories, Builder, Filter, GroupFilter, Weight,
         cursor::{Pending, PushCursor},
         spine_async::index_set::IndexSet,
-        Batch, BatchFactories, BatchReaderFactories, Builder, Filter, Weight,
     },
 };
 
@@ -37,7 +37,7 @@ where
         factories: &B::Factories,
         batches: Vec<Arc<B>>,
         key_filter: &Option<Filter<B::Key>>,
-        value_filter: &Option<Filter<B::Val>>,
+        value_filter: &Option<GroupFilter<B::Val>>,
     ) -> Self {
         Self(
             ArcPushMergerInnerBuilder {
@@ -92,7 +92,7 @@ where
 {
     cursors: Vec<C>,
     key_filter: Option<Filter<B::Key>>,
-    value_filter: Option<Filter<B::Val>>,
+    value_filter: Option<GroupFilter<B::Val>>,
     any_values: bool,
     tmp_weight: Box<B::R>,
     time_diffs: Option<Box<DynWeightedPairs<DynDataTyped<B::Time>, B::R>>>,
@@ -108,7 +108,7 @@ where
         factories: &B::Factories,
         cursors: Vec<C>,
         key_filter: Option<Filter<B::Key>>,
-        value_filter: Option<Filter<B::Val>>,
+        value_filter: Option<GroupFilter<B::Val>>,
     ) -> Self {
         assert!(cursors.len() <= 64);
         Self {
@@ -273,7 +273,10 @@ where
                         return Ok(());
                     }
                 }
-                debug_assert!(time_map_func.is_some() || self.any_values, "This assertion should fail only if B::Cursor is a spine or a CursorList, but we shouldn't be merging those");
+                debug_assert!(
+                    time_map_func.is_some() || self.any_values,
+                    "This assertion should fail only if B::Cursor is a spine or a CursorList, but we shouldn't be merging those"
+                );
                 if self.any_values {
                     self.any_values = false;
                     builder.push_key(self.cursors[index].key().unwrap().unwrap());
@@ -325,10 +328,12 @@ where
     ) -> bool {
         // All of the cursors must have a valid value (hence the `unwrap()`),
         // and they must be equal.
-        debug_assert!(indexes
-            .into_iter()
-            .map(|index| self.cursors[index].val().unwrap())
-            .all_equal());
+        debug_assert!(
+            indexes
+                .into_iter()
+                .map(|index| self.cursors[index].val().unwrap())
+                .all_equal()
+        );
 
         // If this is a timed batch, we must consolidate the (time, weight) array; otherwise we
         // simply compute the total weight of the current value.
@@ -443,7 +448,7 @@ where
 fn skip_filtered_keys<C, K, V, T, R>(
     cursor: &mut C,
     key_filter: &Option<Filter<K>>,
-    value_filter: &Option<Filter<V>>,
+    value_filter: &Option<GroupFilter<V>>,
     fuel: &mut isize,
 ) -> Result<(), Pending>
 where
@@ -469,7 +474,7 @@ where
 
 fn skip_filtered_values<C, K, V, T, R>(
     cursor: &mut C,
-    value_filter: &Option<Filter<V>>,
+    value_filter: &Option<GroupFilter<V>>,
     fuel: &mut isize,
 ) -> Result<bool, Pending>
 where
@@ -480,7 +485,15 @@ where
 {
     if value_filter.is_some() {
         while let Some(value) = cursor.val()? {
-            if Filter::include(value_filter, value) {
+            if let Some(GroupFilter::Simple(filter)) = value_filter {
+                if filter.filter_func()(value) {
+                    return Ok(true);
+                }
+            } else {
+                // TODO: We currently don't handle the case when value_filter is a LastN filter.
+                // Since PushCursor can only move forward, the implementation involves a bounded
+                // FIFO buffer for N values.
+                // Since we currently only use push mergers via dev tweaks, this can probably wait.
                 return Ok(true);
             }
             cursor.step_val();
@@ -503,11 +516,11 @@ mod test {
     use crate::{
         dynamic::{DynData, DynWeight, Erase},
         trace::{
+            Batch, BatchReader, BatchReaderFactories, Builder, TupleBuilder, VecIndexedWSet,
+            VecIndexedWSetFactories,
             cursor::{Pending, PushCursor},
             ord::vec::indexed_wset_batch::VecIndexedWSetBuilder,
             spine_async::{index_set::IndexSet, push_merger::PushMerger},
-            Batch, BatchReader, BatchReaderFactories, Builder, TupleBuilder, VecIndexedWSet,
-            VecIndexedWSetFactories,
         },
     };
 

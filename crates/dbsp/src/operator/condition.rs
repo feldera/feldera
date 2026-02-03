@@ -2,12 +2,12 @@
 //! defined over the contents of a stream is satisfied.
 
 use crate::{
+    Timestamp,
     circuit::{
+        ChildCircuit, Circuit, Stream,
         circuit_builder::IterativeCircuit,
         schedule::{Error as SchedulerError, Scheduler},
-        ChildCircuit, Circuit, Stream,
     },
-    Timestamp,
 };
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
@@ -152,6 +152,7 @@ impl<C> Condition<C> {
 #[cfg(test)]
 mod test {
     use crate::{
+        Circuit, RootCircuit, Stream,
         circuit::{
             circuit_builder::IterativeCircuit,
             schedule::{DynamicScheduler, Scheduler},
@@ -160,7 +161,7 @@ mod test {
         operator::{DelayedFeedback, Generator},
         typed_batch::{OrdIndexedZSet, OrdZSet},
         utils::Tup2,
-        zset, Circuit, RootCircuit, Stream,
+        zset,
     };
 
     #[test]

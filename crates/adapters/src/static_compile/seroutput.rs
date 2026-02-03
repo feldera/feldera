@@ -1,27 +1,27 @@
 use crate::catalog::{SerBatchReader, SerBatchReaderHandle, SerTrace, SyncSerBatchReader};
 #[cfg(feature = "with-avro")]
-use crate::format::avro::serializer::{avro_ser_config, AvroSchemaSerializer, AvroSerializerError};
+use crate::format::avro::serializer::{AvroSchemaSerializer, AvroSerializerError, avro_ser_config};
 use crate::{
-    catalog::{RecordFormat, SerBatch, SerCursor},
     ControllerError,
+    catalog::{RecordFormat, SerBatch, SerCursor},
 };
-use anyhow::{anyhow, Result as AnyResult};
+use anyhow::{Result as AnyResult, anyhow};
+#[cfg(feature = "with-avro")]
+use apache_avro::Schema as AvroSchema;
 #[cfg(feature = "with-avro")]
 use apache_avro::schema::NamesRef;
 #[cfg(feature = "with-avro")]
 use apache_avro::types::Value as AvroValue;
-#[cfg(feature = "with-avro")]
-use apache_avro::Schema as AvroSchema;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
-use dbsp::{dynamic::DowncastTrait, DBWeight};
+use dbsp::{Batch, BatchReader, OutputHandle, Trace, trace::Cursor};
+use dbsp::{
+    DBData,
+    trace::{WithSnapshot, merge_batches},
+};
+use dbsp::{DBWeight, dynamic::DowncastTrait};
 use dbsp::{
     dynamic::Erase,
     typed_batch::{DynBatchReader, DynSpine, DynTrace, Spine, TypedBatch},
-};
-use dbsp::{trace::Cursor, Batch, BatchReader, OutputHandle, Trace};
-use dbsp::{
-    trace::{merge_batches, WithSnapshot},
-    DBData,
 };
 use erased_serde::{Serialize as ErasedSerialize, Serializer as ErasedSerializer};
 use feldera_types::serde_with_context::serialize::{
@@ -435,7 +435,7 @@ where
                 avro_ser_config(),
                 AvroSerializer::create(),
             )),
-            RecordFormat::Raw => todo!(),
+            RecordFormat::Raw(_) => todo!(),
         })
     }
 

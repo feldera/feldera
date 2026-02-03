@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
@@ -29,6 +30,9 @@ public final class DBSPStructItem extends DBSPItem implements IHasType {
         super(type.getNode());
         this.type = type;
         this.metadata = metadata;
+        if (metadata != null) {
+            Utilities.enforce(metadata.getColumnCount() == type.fields.size());
+        }
     }
 
     @Override
@@ -82,6 +86,6 @@ public final class DBSPStructItem extends DBSPItem implements IHasType {
 
     @Override
     public String getName() {
-        return this.type.name.name();
+        return this.type.hashName;
     }
 }

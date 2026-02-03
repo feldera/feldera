@@ -3,7 +3,7 @@
 use crate::{test::TestStruct, transport::http::Chunk};
 use actix_web::web::Bytes;
 use async_stream::stream;
-use awc::{error::PayloadError, ClientRequest};
+use awc::{ClientRequest, error::PayloadError};
 use csv::ReaderBuilder as CsvReaderBuilder;
 use csv::WriterBuilder as CsvWriterBuilder;
 use futures::{Stream, StreamExt};

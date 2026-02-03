@@ -13,15 +13,16 @@ import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
-import org.dbsp.util.NameGen;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Ignore;
@@ -43,7 +44,9 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /** Tests about table and view metadata */
 public class MetadataTests extends BaseSQLTests {
@@ -103,7 +106,7 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
     }
 
     @Test
@@ -151,7 +154,7 @@ public class MetadataTests extends BaseSQLTests {
     @Test
     public void lineageTest() throws SQLException, IOException {
         // Check that the calcite property in the dataflow graph is never "null" for this program
-        final String file = "../../demo/packaged/sql/08-fine-grained-authorization.sql";
+        final String file = "../../crates/pipeline-manager/demos/sql/08-fine-grained-authorization.sql";
         File json = this.createTempJsonFile();
         CompilerMain.execute("--dataflow", json.getPath(), "--noRust", file);
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
@@ -256,7 +259,6 @@ public class MetadataTests extends BaseSQLTests {
 
     @Test
     public void stripProperties1() throws IOException, SQLException {
-        NameGen.reset();
         String sql = """
                 CREATE TABLE CUSTOMER (
                     cc_num BIGINT NOT NULL PRIMARY KEY, -- Credit card number
@@ -340,7 +342,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
-        Assert.assertFalse(rust.contains("connectors"));
+        Assert.assertFalse(rust.contains(CreateTableStatement.CONNECTORS));
     }
 
     @Test
@@ -406,7 +408,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         String rust = Utilities.readFile(BaseSQLTests.TEST_FILE_PATH);
-        Assert.assertFalse(rust.contains("connectors"));
+        Assert.assertFalse(rust.contains(CreateTableStatement.CONNECTORS));
 
         sql = """
                CREATE TABLE T (COL1 INT);
@@ -415,6 +417,22 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         String rust0 = Utilities.readFile(getTestFilePath());
         Assert.assertEquals(rust, rust0);
+    }
+
+    @Test
+    public void issue5229() throws IOException, SQLException {
+        String sql = """
+               CREATE TABLE T (COL1 INT);
+               CREATE VIEW V AS SELECT col1 + col1 FROM T WHERE col1 > 10;""";
+        File file = createInputScript(sql);
+        File json = this.createTempJsonFile();
+        CompilerMain.execute("--jit", "-o", json.getPath(), file.getPath());
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
+        JsonNode parsed = mapper.readTree(json);
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        JsonDecoder decoder = new JsonDecoder(compiler.sqlToRelCompiler.typeFactory);
+        DBSPCircuit result = decoder.decodeOuter(parsed, DBSPCircuit.class);
+        Assert.assertNotNull(result);
     }
 
     @Test
@@ -505,6 +523,54 @@ public class MetadataTests extends BaseSQLTests {
                     "materialized" : false,
                     "foreign_keys" : [ ]
                   } ]"""));
+    }
+
+    @Test
+    public void testValidateSkip() {
+        this.statementsFailingInCompilation("CREATE TABLE T(x INT) with ('skip_unused_columns' = '{}')",
+                "Expected a boolean value for property 'skip_unused_columns'");
+    }
+
+    @Test
+    public void issue5436() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE T(used INTEGER, unused INTEGER) with ('skip_unused_columns' = 'true');
+                CREATE TABLE T1(used INTEGER, unused INTEGER) with (
+                   'connectors' = '[
+                    {
+                      "name": "unnamed",
+                      "transport": {
+                        "name": "delta_table_input",
+                        "config": {
+                          "uri": "s3://feldera-qa-data/deltalake-ingest/partitioned",
+                          "mode": "snapshot",
+                          "aws_access_key_id": "$AWS_ACCESS_KEY_ID",
+                          "aws_secret_access_key": "$AWS_SECRET_ACCESS_KEY",
+                          "aws_region": "us-west-1",
+                          "snapshot_filter": "ts >= timestamp ''2022-01-01T00:00:00''",
+                          "timestamp_column": "ts",
+                          "skip_unused_columns": true
+                        }
+                      }
+                    }]'
+                );
+                CREATE VIEW V AS SELECT used FROM ((SELECT * FROM T) UNION ALL (SELECT * FROM T1));""");
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        Assert.assertNotNull(circuit);
+        IInputOperator t = circuit.getInput(new ProgramIdentifier("t", false));
+        Assert.assertNotNull(t);
+        Boolean skip = t.getMetadata().skipUnusedColumns;
+        Assert.assertNotNull(skip);
+        Assert.assertTrue(skip);
+        IInputOperator t1 = circuit.getInput(new ProgramIdentifier("t1", false));
+        Assert.assertNotNull(t1);
+        skip = t1.getMetadata().skipUnusedColumns;
+        Assert.assertNotNull(skip);
+        Assert.assertTrue(skip);
+        Assert.assertTrue(compiler.messages.toString().contains(
+                "The per-connector property 'skip_unused_columns' is deprecated;"));
     }
 
     @Test
@@ -607,7 +673,7 @@ public class MetadataTests extends BaseSQLTests {
                 "-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, true);
+        BaseSQLTests.compileAndTestRust(true);
     }
 
     // Test that schema for a table can be retrieved from a JDBC data source
@@ -682,12 +748,59 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
 
         // Truncate file to 0 bytes
         FileWriter writer = new FileWriter(udf);
         writer.close();
     }
+
+    @Test
+    public void issue5300() throws IOException, SQLException, InterruptedException {
+        File file = createInputScript("""
+                CREATE LINEAR AGGREGATE u64_sum(value INT) RETURNS INT;
+                
+                CREATE TABLE A (
+                    id VARCHAR(20) NOT NULL PRIMARY KEY,
+                    a VARCHAR(64),
+                    b VARCHAR(64),
+                    sno INT,
+                    small BIGINT,
+                    num1 INT,
+                    num2 INT
+                ) WITH ('append_only' = 'true');
+                
+                CREATE VIEW b AS
+                SELECT id, a, b, u64_sum(num1), u64_sum(num2), SUM(small), MAX(sno)
+                FROM A
+                GROUP BY id, a, b""");
+
+        File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+        PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
+        script.println("""
+                use feldera_sqllib::*;
+                
+                pub type u64_sum_accumulator_type = i64;
+                
+                pub fn u64_sum_map(val: i32) -> u64_sum_accumulator_type {
+                    val.into()
+                }
+                
+                pub fn u64_sum_post(val: u64_sum_accumulator_type) -> i32 {
+                    val.try_into().unwrap()
+                }
+                """);
+        script.close();
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        if (messages.errorCount() > 0)
+            throw new RuntimeException(messages.toString());
+        BaseSQLTests.compileAndTestRust(false);
+
+        // Truncate file to 0 bytes
+        FileWriter writer = new FileWriter(udf);
+        writer.close();
+    }
+
 
     @Test
     public void testUDA2() throws IOException, InterruptedException, SQLException {
@@ -838,7 +951,7 @@ public class MetadataTests extends BaseSQLTests {
             CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
             if (messages.errorCount() > 0)
                 throw new RuntimeException(messages.toString());
-            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+            BaseSQLTests.compileAndTestRust(false);
             // Truncate udf file to 0 bytes
             FileWriter writer = new FileWriter(udf);
             writer.close();
@@ -874,7 +987,7 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
 
         Path protos = Paths.get(BaseSQLTests.RUST_DIRECTORY, DBSPCompiler.STUBS_FILE_NAME);
         Assert.assertTrue(protos.toFile().exists());
@@ -917,7 +1030,7 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
     }
 
     @Test
@@ -929,7 +1042,7 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+        BaseSQLTests.compileAndTestRust(false);
     }
 
     @Test
@@ -947,6 +1060,10 @@ public class MetadataTests extends BaseSQLTests {
                     --alltables
                       Generate an input for each CREATE TABLE, even if the table is not used\s
                       by any view
+                      Default: false
+                    --correlatedColumns
+                      Dump information about the columns that are used in join equality\s
+                      comparisons\s
                       Default: false
                     --crates
                       Followed by a program name. Generates code using multiple crates;\s
@@ -974,6 +1091,9 @@ public class MetadataTests extends BaseSQLTests {
                     --je, -je
                       Emit error messages as a JSON array to the error output
                       Default: false
+                    --jit
+                      Emit a JSON representation suitable for an interpreter
+                      Default: false
                     --jpg, -jpg
                       Emit a jpg image of the circuit instead of Rust
                       Default: false
@@ -998,6 +1118,10 @@ public class MetadataTests extends BaseSQLTests {
                     --png, -png
                       Emit a png image of the circuit instead of Rust
                       Default: false
+                    --runtime
+                      Followed by a path.  Path to the runtime to use.  Used in conjunction\s
+                      with '--crates'.
+                      Default: <empty string>
                     --streaming
                       Compiling a streaming program, where only inserts are allowed
                       Default: false
@@ -1242,7 +1366,7 @@ public class MetadataTests extends BaseSQLTests {
                       "case_sensitive" : false,
                       "columntype" : {
                         "nullable" : true,
-                        "precision" : 3,
+                        "precision" : 6,
                         "type" : "TIMESTAMP"
                       },
                       "lateness" : "INTERVAL '5 10:10' DAY TO MINUTE",
@@ -1714,5 +1838,59 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMain.execute("--plan", json.getPath(), "--noRust", file.getPath());
         String jsonContents = Utilities.readFile(json.toPath());
         Assert.assertNotNull(jsonContents);
+    }
+
+    @Test
+    public void testSkipUnused() throws IOException, SQLException {
+        String sql = """
+                CREATE TABLE transaction(
+                    trans_date_trans_time TIMESTAMP NOT NULL,
+                    cc_num BIGINT,
+                    merchant STRING,
+                    category STRING,
+                    amt DECIMAL(38, 2),
+                    trans_num STRING,
+                    unix_time BIGINT,
+                    merch_lat DOUBLE,
+                    merch_long DOUBLE,
+                    is_fraud BIGINT
+                ) WITH (
+                  'materialized' = 'true',
+                  'connectors' = '[{
+                    "name": "zero",
+                    "transport": {
+                      "name": "delta_table_input",
+                      "config": {
+                        "uri": "s3://feldera-fraud-detection-data/transaction_train",
+                        "mode": "follow",
+                        "aws_skip_signature": "true",
+                        "timestamp_column": "trans_date_trans_time",
+                        "aws_region": "us-east-1",
+                        "skip_unused_columns": true,
+                        "version": 0
+                      }
+                    }
+                  }
+                ]');
+                
+                create view v as select trans_date_trans_time, cc_num, amt, is_fraud from transaction;""";
+        File json = this.createTempJsonFile();
+        File file = createInputScript(sql);
+        var messages = CompilerMain.execute("--dataflow", json.getPath(), "--noRust", file.getPath());
+        Assert.assertEquals(0, messages.exitCode);
+        String jsonContents1 = Utilities.readFile(json.toPath());
+        Assert.assertNotNull(jsonContents1);
+        Utilities.deleteFile(json, true);
+
+        sql = Arrays.stream(sql.split("\n"))
+                .map(s -> s.contains("skip_unused_columns") ? "" : s)
+                .collect(Collectors.joining("\n"));
+        file = createInputScript(sql);
+        messages = CompilerMain.execute("--dataflow", json.getPath(), "--noRust", file.getPath());
+        Assert.assertEquals(0, messages.exitCode);
+        var jsonContents2 = Utilities.readFile(json.toPath());
+        Utilities.deleteFile(json, false);
+        Assert.assertNotNull(jsonContents2);
+        Assert.assertNotEquals(jsonContents1, jsonContents2);
     }
 }

@@ -1,15 +1,19 @@
 package org.dbsp.sqlCompiler.compiler.frontend.parser;
 
+import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlCreate;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlSpecialOperator;
 import org.apache.calcite.sql.SqlWriter;
 import org.apache.calcite.sql.parser.SqlParserPos;
+import org.checkerframework.checker.nullness.qual.Nullable;
+import org.dbsp.util.Utilities;
 
 import java.util.Arrays;
 import java.util.List;
@@ -23,7 +27,18 @@ public class SqlCreateAggregate extends SqlCreate {
     private final boolean linear;
 
     private static final SqlSpecialOperator OPERATOR =
-            new SqlSpecialOperator("CREATE AGGREGATE", SqlKind.OTHER);
+            new SqlSpecialOperator("CREATE AGGREGATE", SqlKind.OTHER) {
+                @Override
+                public SqlCall createCall(@Nullable SqlLiteral functionQualifier, SqlParserPos pos,
+                                          @Nullable SqlNode... operands) {
+                    Utilities.enforce(operands.length == 4);
+                    return new SqlCreateAggregate(pos, false, false,
+                            ((SqlLiteral) Objects.requireNonNull(operands[0])).booleanValue(),
+                            (SqlIdentifier) Objects.requireNonNull(operands[1]),
+                            (SqlNodeList) Objects.requireNonNull(operands[2]),
+                            (SqlDataTypeSpec) Objects.requireNonNull(operands[3]));
+                }
+            };
 
     public SqlCreateAggregate(SqlParserPos pos, boolean replace,
                               boolean ifNotExists, boolean linear, SqlIdentifier name,
@@ -76,6 +91,8 @@ public class SqlCreateAggregate extends SqlCreate {
     }
 
     @Override public List<SqlNode> getOperandList() {
-        return Arrays.asList(this.name, this.parameters);
+        return Arrays.asList(
+                SqlLiteral.createBoolean(this.linear, SqlParserPos.ZERO),
+                this.name, this.parameters, this.returnType);
     }
 }

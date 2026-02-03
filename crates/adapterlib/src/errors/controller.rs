@@ -12,17 +12,19 @@ use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, HttpResponseBuilder, ResponseError};
 use anyhow::Error as AnyError;
 use dbsp::{
-    circuit::circuit_builder::BootstrapInfo, storage::backend::StorageError, Error as DbspError,
+    Error as DbspError,
+    circuit::{LayoutError, circuit_builder::BootstrapInfo},
+    storage::backend::StorageError,
 };
 use feldera_types::{
     error::{DetailedError, ErrorResponse},
     runtime_status::RuntimeDesiredStatus,
     suspend::SuspendError,
 };
-use serde::{ser::SerializeStruct, Serialize, Serializer};
+use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 use super::journal::StepError;
-use crate::{format::ParseError, transport::Step, DbspDetailedError};
+use crate::{DbspDetailedError, format::ParseError, transport::Step};
 
 /// Controller configuration error.
 #[derive(Debug, Serialize)]
@@ -165,6 +167,8 @@ pub enum ConfigError {
 
     FtRequiresStorage,
     FtRequiresFtInput,
+
+    InvalidLayout(LayoutError),
 }
 
 impl StdError for ConfigError {}
@@ -199,6 +203,7 @@ impl DbspDetailedError for ConfigError {
             Self::FtRequiresFtInput => Cow::from("FtWithNonFtInput"),
             Self::CyclicDependency { .. } => Cow::from("CyclicDependency"),
             Self::EmptyStartAfter { .. } => Cow::from("EmptyStartAfter"),
+            Self::InvalidLayout(_) => Cow::from("LayoutError"),
         }
     }
 }
@@ -239,13 +244,19 @@ impl Display for ConfigError {
                 endpoint_name,
                 format_name,
             } => {
-                write!(f, "Input endpoint '{endpoint_name}' specifies unknown input format '{format_name}'")
+                write!(
+                    f,
+                    "Input endpoint '{endpoint_name}' specifies unknown input format '{format_name}'"
+                )
             }
             Self::UnknownInputTransport {
                 endpoint_name,
                 transport_name,
             } => {
-                write!(f, "Input endpoint '{endpoint_name}' specifies unknown input transport '{transport_name}'")
+                write!(
+                    f,
+                    "Input endpoint '{endpoint_name}' specifies unknown input transport '{transport_name}'"
+                )
             }
             Self::DuplicateOutputEndpoint { endpoint_name } => {
                 write!(f, "Output endpoint '{endpoint_name}' already exists")
@@ -257,13 +268,19 @@ impl Display for ConfigError {
                 endpoint_name,
                 format_name,
             } => {
-                write!(f, "Output endpoint '{endpoint_name}' specifies unknown output format '{format_name}'")
+                write!(
+                    f,
+                    "Output endpoint '{endpoint_name}' specifies unknown output format '{format_name}'"
+                )
             }
             Self::UnknownOutputTransport {
                 endpoint_name,
                 transport_name,
             } => {
-                write!(f, "Output endpoint '{endpoint_name}' specifies unknown output transport '{transport_name}'")
+                write!(
+                    f,
+                    "Output endpoint '{endpoint_name}' specifies unknown output transport '{transport_name}'"
+                )
             }
             Self::UnknownInputStream {
                 endpoint_name,
@@ -278,20 +295,29 @@ impl Display for ConfigError {
                 endpoint_name,
                 stream_name,
             } => {
-                write!(f, "Output endpoint '{endpoint_name}' specifies unknown output table or view '{stream_name}'")
+                write!(
+                    f,
+                    "Output endpoint '{endpoint_name}' specifies unknown output table or view '{stream_name}'"
+                )
             }
             Self::UnknownIndex {
                 endpoint_name,
                 index_name,
             } => {
-                write!(f, "Output endpoint '{endpoint_name}' specifies index name '{index_name}'; however, the '{index_name}' relation is not an index")
+                write!(
+                    f,
+                    "Output endpoint '{endpoint_name}' specifies index name '{index_name}'; however, the '{index_name}' relation is not an index"
+                )
             }
 
             Self::NotAnIndex {
                 endpoint_name,
                 index_name,
             } => {
-                write!(f, "Output endpoint '{endpoint_name}' specifies unknown index '{index_name}'")
+                write!(
+                    f,
+                    "Output endpoint '{endpoint_name}' specifies unknown index '{index_name}'"
+                )
             }
 
             Self::InputFormatNotSupported {
@@ -363,14 +389,35 @@ impl Display for ConfigError {
             Self::CyclicDependency { cycle } => {
                 let mut cycle = cycle.clone();
                 cycle.push(cycle[0].clone());
-                let tail = cycle[1..].iter().map(|(endpoint, label)| format!("waits for endpoint '{endpoint}' with label '{label}'")).collect::<Vec<_>>().join(", which ");
-                write!(f, "cyclic 'start_after' dependency detected: endpoint '{}' with label '{}' {}", cycle[0].0, cycle[0].1, tail)
+                let tail = cycle[1..]
+                    .iter()
+                    .map(|(endpoint, label)| {
+                        format!("waits for endpoint '{endpoint}' with label '{label}'")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", which ");
+                write!(
+                    f,
+                    "cyclic 'start_after' dependency detected: endpoint '{}' with label '{}' {}",
+                    cycle[0].0, cycle[0].1, tail
+                )
             }
             Self::EmptyStartAfter { endpoint_name } => {
-                write!(f, "empty 'start_after' field for input endpoint '{}'", endpoint_name)
+                write!(
+                    f,
+                    "empty 'start_after' field for input endpoint '{}'",
+                    endpoint_name
+                )
             }
-            Self::FtRequiresStorage => write!(f, "Fault tolerance is configured, which requires storage, but storage is not enabled"),
-            Self::FtRequiresFtInput => write!(f, "Fault tolerance is configured, but it cannot be enabled because the pipeline has at least one non-fault-tolerant input adapter"),
+            Self::FtRequiresStorage => write!(
+                f,
+                "Fault tolerance is configured, which requires storage, but storage is not enabled"
+            ),
+            Self::FtRequiresFtInput => write!(
+                f,
+                "Fault tolerance is configured, but it cannot be enabled because the pipeline has at least one non-fault-tolerant input adapter"
+            ),
+            Self::InvalidLayout(e) => write!(f, "Multihost layout error: {e}"),
         }
     }
 }
@@ -963,10 +1010,16 @@ impl Display for ControllerError {
                 write!(f, "Error parsing checkpoint file: {error}")
             }
             Self::CheckpointDoesNotMatchPipeline => {
-                write!(f, "Recovery failed: the pipeline has been recovered from a checkpoint, but the checkpoint does not match the current pipeline definition. This can be caused by a corrupted checkpoint or an internal error.")
+                write!(
+                    f,
+                    "Recovery failed: the pipeline has been recovered from a checkpoint, but the checkpoint does not match the current pipeline definition. This can be caused by a corrupted checkpoint or an internal error."
+                )
             }
             Self::RestoreInProgress => {
-                write!(f, "Operation cannot be initiated now because the pipeline is restoring from a checkpoint.")
+                write!(
+                    f,
+                    "Operation cannot be initiated now because the pipeline is restoring from a checkpoint."
+                )
             }
             Self::BootstrapInProgress => {
                 write!(
@@ -1070,7 +1123,10 @@ impl Display for ControllerError {
                 write!(f, "{error}")
             }
             Self::UnknownEndpointInCompletionToken { endpoint_id } => {
-                write!(f, "completion token specifies input endpoint id {endpoint_id}, which doesn't exist; this indicates that the input connector was deleted after the completion token was generated")
+                write!(
+                    f,
+                    "completion token specifies input endpoint id {endpoint_id}, which doesn't exist; this indicates that the input connector was deleted after the completion token was generated"
+                )
             }
             Self::CheckpointFetchError { error } => {
                 write!(f, "Error fetching checkpoint from object store: {error}")
@@ -1091,7 +1147,10 @@ impl Display for ControllerError {
                 )
             }
             Self::InvalidInitialStatus(status) => {
-                write!(f, "Invalid initial status {status:?} provided on command line or read from storage (only running, paused, and standby are valid)")
+                write!(
+                    f,
+                    "Invalid initial status {status:?} provided on command line or read from storage (only coordination, running, paused, and standby are valid)"
+                )
             }
             Self::InvalidStandby(standby) => {
                 write!(f, "Cannot enter standby mode: {standby}")
@@ -1115,16 +1174,19 @@ impl Display for ControllerError {
                 )
             }
             Self::UnexpectedBootstrap { bootstrap_info } => {
-                write!(f, "The pipeline's query plan was modified since the last checkpoint and requires bootstrapping; however we were not able to detect the changes in the pipeline metadata. This is a bug; please report to the developers. Bootstrap info: {bootstrap_info:?}")
+                write!(
+                    f,
+                    "The pipeline's query plan was modified since the last checkpoint and requires bootstrapping; however we were not able to detect the changes in the pipeline metadata. This is a bug; please report to the developers. Bootstrap info: {bootstrap_info:?}"
+                )
             }
         }
     }
 }
 
 impl ControllerError {
-    pub fn io_error(context: String, io_error: IoError) -> Self {
+    pub fn io_error(context: impl Display, io_error: IoError) -> Self {
         Self::IoError {
-            context,
+            context: context.to_string(),
             io_error,
             backtrace: Backtrace::capture(),
         }
@@ -1429,9 +1491,9 @@ impl ControllerError {
         Self::ControllerPanic
     }
 
-    pub fn storage_error(context: impl Into<String>, error: StorageError) -> Self {
+    pub fn storage_error(context: impl Display, error: StorageError) -> Self {
         Self::StorageError {
-            context: context.into(),
+            context: context.to_string(),
             error,
             backtrace: Box::new(Backtrace::capture()),
         }

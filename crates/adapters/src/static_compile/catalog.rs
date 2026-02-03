@@ -1,18 +1,19 @@
 use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
 use crate::catalog::{InputCollectionHandle, SerBatchReaderHandle};
-use crate::{catalog::OutputCollectionHandles, Catalog, ControllerError};
+use crate::{Catalog, ControllerError, catalog::OutputCollectionHandles};
+use dbsp::circuit::Layout;
 use dbsp::circuit::circuit_builder::CircuitBase;
 use dbsp::trace::spine_async::WithSnapshot;
 use dbsp::typed_batch::TypedBatch;
 use dbsp::utils::Tup1;
-use dbsp::OrdZSet;
+use dbsp::{Batch, Circuit as _, OrdZSet, Runtime};
 use dbsp::{
+    DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
     operator::{MapHandle, SetHandle, ZSetHandle},
     typed_batch::BatchReader,
-    DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
 };
 use feldera_adapterlib::catalog::CircuitCatalog;
-use feldera_sqllib::{build_string_interner, SqlString, Variant};
+use feldera_sqllib::{SqlString, Variant, build_string_interner};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -21,9 +22,19 @@ use std::any::TypeId;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::mem::transmute;
-use std::sync::Arc;
+use std::ops::Range;
+use std::sync::{Arc, Mutex};
 
 const INTERNED_STRING_RELATION_NAME: &str = "feldera_interned_strings";
+
+pub type OutputMapping = BTreeMap<String, usize>;
+
+/// Global mapping from the name of a stream to the ordinal of the host for its
+/// output connectors.
+///
+/// It would be better if we could pass this in to the circuit instead of having
+/// a global.
+pub static OUTPUT_MAPPING: Mutex<OutputMapping> = Mutex::new(BTreeMap::new());
 
 impl Catalog {
     fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {
@@ -40,6 +51,35 @@ impl Catalog {
         stream
             .get_persistent_id()
             .map(|pid| format!("{pid}.output"))
+    }
+
+    fn gather_output_to_host<Z>(
+        &self,
+        name: &SqlIdentifier,
+        stream: &Stream<RootCircuit, Z>,
+        shard: bool,
+    ) -> (Stream<RootCircuit, Z>, Option<Range<usize>>)
+    where
+        Z: Batch<Time = ()>,
+        Z::InnerBatch: Send,
+    {
+        if let Some(runtime) = Runtime::runtime()
+            && let layout = runtime.layout()
+            && let Layout::Multihost { hosts, .. } = layout
+        {
+            let ordinal = OUTPUT_MAPPING
+                .lock()
+                .unwrap()
+                .get(&name.name())
+                .copied()
+                .unwrap_or_default();
+            let workers = &hosts[ordinal].workers;
+            (stream.shard_workers(workers.clone()), Some(workers.clone()))
+        } else if shard {
+            (stream.shard(), None)
+        } else {
+            (stream.clone(), None)
+        }
     }
 
     /// Add an input stream of Z-sets to the catalog.
@@ -368,7 +408,10 @@ impl Catalog {
 
         if name == SqlIdentifier::new(INTERNED_STRING_RELATION_NAME, false) {
             if TypeId::of::<Z>() != TypeId::of::<OrdZSet<Tup1<SqlString>>>() {
-                panic!("Reserved relation {INTERNED_STRING_RELATION_NAME} must have type OrdZSet<Tup1<SqlString>>, but it was declared with type {}", std::any::type_name::<Z>());
+                panic!(
+                    "Reserved relation {INTERNED_STRING_RELATION_NAME} must have type OrdZSet<Tup1<SqlString>>, but it was declared with type {}",
+                    std::any::type_name::<Z>()
+                );
             } else {
                 let stream = unsafe {
                     transmute::<Stream<RootCircuit, Z>, Stream<RootCircuit, OrdZSet<Tup1<SqlString>>>>(
@@ -378,6 +421,8 @@ impl Catalog {
                 build_string_interner(stream, None)
             }
         }
+
+        let (stream, workers) = self.gather_output_to_host(&name, &stream, false);
 
         // Create handle for the stream itself.
         let (delta_handle, enable_count, delta_gid) =
@@ -393,6 +438,7 @@ impl Catalog {
             enable_count,
             integrate_handle_is_indexed: false,
             integrate_handle: None,
+            workers,
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -439,27 +485,40 @@ impl Catalog {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
-        // The integral of this stream is used by the ad hoc query engine. The engine treats the integral
-        // computed by each worker as a separate partition.  This means that integrals should not contain
-        // negative weights, since datafusion cannot handle those.  Negative weights can arise from operators
-        // like antijoin that can produce the same record with +1 and -1 weights in different workers.
-        // To avoid this, we shard the stream, so that such records get canceled out.
-        let stream = stream.shard();
+        let (integrate_handle, delta_handle, enable_count, workers) =
+            stream
+                .circuit()
+                .region(&format!("materialized output ({})", name.name()), || {
+                    // The integral of this stream is used by the ad hoc query
+                    // engine. The engine treats the integral computed by each
+                    // worker as a separate partition.  This means that
+                    // integrals should not contain negative weights, since
+                    // datafusion cannot handle those.  Negative weights can
+                    // arise from operators like antijoin that can produce the
+                    // same record with +1 and -1 weights in different workers.
+                    // To avoid this, we shard the stream, so that such records
+                    // get canceled out.
+                    let (stream, workers) = self.gather_output_to_host(&name, &stream, true);
 
-        // Create handle for the stream itself.
-        let (delta_handle, enable_count, delta_gid) =
-            stream.accumulate_output_persistent_with_gid(persistent_id);
-        stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
+                    // Create handle for the stream itself.
+                    let (delta_handle, enable_count, delta_gid) =
+                        stream.accumulate_output_persistent_with_gid(persistent_id);
+                    stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
-        let (integrate_handle, integrate_gid) = stream
-            .accumulate_integrate_trace()
-            .apply(|t| TypedBatch::<Z::Key, (), ZWeight, _>::new(t.inner().ro_snapshot()))
-            .output_persistent_with_gid(
-                persistent_id.map(|id| format!("{id}.integral")).as_deref(),
-            );
-        stream
-            .circuit()
-            .set_mir_node_id(&integrate_gid, persistent_id);
+                    let (integrate_handle, integrate_gid) = stream
+                        .accumulate_integrate_trace()
+                        .apply(|t| {
+                            TypedBatch::<Z::Key, (), ZWeight, _>::new(t.inner().ro_snapshot())
+                        })
+                        .output_persistent_with_gid(
+                            persistent_id.map(|id| format!("{id}.integral")).as_deref(),
+                        );
+                    stream
+                        .circuit()
+                        .set_mir_node_id(&integrate_gid, persistent_id);
+
+                    (integrate_handle, delta_handle, enable_count, workers)
+                });
 
         let handles = OutputCollectionHandles {
             key_schema: None,
@@ -472,6 +531,7 @@ impl Catalog {
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
             enable_count,
+            workers,
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -592,40 +652,52 @@ impl Catalog {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
         let name = schema.name.clone();
 
-        let stream = stream.try_sharded_version();
+        let (delta_handle, enable_count, integrate_handle, workers) = stream.circuit().region(
+            &format!(
+                "{}indexed output ({})",
+                if materialized { "materialized " } else { "" },
+                name.name()
+            ),
+            || {
+                let stream = stream.try_sharded_version();
+                let (stream, workers) = self.gather_output_to_host(&name, &stream, false);
 
-        // Create handle for the stream itself.
-        let delta = stream.map(|(_k, v)| v.clone()).set_persistent_id(
-            stream
-                .get_persistent_id()
-                .map(|name| format!("{name}.values"))
-                .as_deref(),
-        );
-
-        let (delta_handle, enable_count, delta_gid) =
-            delta.accumulate_output_persistent_with_gid(persistent_id);
-        stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
-
-        let integrate_handle = if materialized {
-            // `integrate_trace` below should return the existing integral created by the InputUpsert operator.
-            let (integrate_handle, integral_gid) = stream
-                .integrate_trace()
-                .apply(|s| TypedBatch::<K, V, ZWeight, _>::new(s.inner().ro_snapshot()))
-                .output_persistent_with_gid(
-                    persistent_id
-                        .map(|id| format!("{id}.output_integral"))
+                // Create handle for the stream itself.
+                let delta = stream.map(|(_k, v)| v.clone()).set_persistent_id(
+                    stream
+                        .get_persistent_id()
+                        .map(|name| format!("{name}.values"))
                         .as_deref(),
                 );
-            stream
-                .circuit()
-                .set_mir_node_id(&integral_gid, persistent_id);
-            Some(
-                Arc::new(<SerCollectionHandleImpl<_, KD, VD>>::new(integrate_handle))
-                    as Arc<dyn SerBatchReaderHandle>,
-            )
-        } else {
-            None
-        };
+
+                let (delta_handle, enable_count, delta_gid) =
+                    delta.accumulate_output_persistent_with_gid(persistent_id);
+                stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
+
+                let integrate_handle = if materialized {
+                    // `integrate_trace` below should return the existing integral created by the InputUpsert operator.
+                    let (integrate_handle, integral_gid) = stream
+                        .integrate_trace()
+                        .apply(|s| TypedBatch::<K, V, ZWeight, _>::new(s.inner().ro_snapshot()))
+                        .output_persistent_with_gid(
+                            persistent_id
+                                .map(|id| format!("{id}.output_integral"))
+                                .as_deref(),
+                        );
+                    stream
+                        .circuit()
+                        .set_mir_node_id(&integral_gid, persistent_id);
+                    Some(
+                        Arc::new(<SerCollectionHandleImpl<_, KD, VD>>::new(integrate_handle))
+                            as Arc<dyn SerBatchReaderHandle>,
+                    )
+                } else {
+                    None
+                };
+
+                (delta_handle, enable_count, integrate_handle, workers)
+            },
+        );
 
         let handles = OutputCollectionHandles {
             key_schema: None,
@@ -636,6 +708,7 @@ impl Catalog {
             enable_count,
             integrate_handle_is_indexed: true,
             integrate_handle,
+            workers,
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -700,6 +773,7 @@ impl Catalog {
             return None;
         }
 
+        let (stream, workers) = self.gather_output_to_host(index_name, &stream, false);
         let view_handles = self.output_handles(view_name)?;
 
         let (stream_handle, enable_count, stream_gid) =
@@ -719,6 +793,7 @@ impl Catalog {
             enable_count,
             integrate_handle_is_indexed: false,
             integrate_handle: None,
+            workers,
         };
 
         self.register_output_batch_handles(index_name, handles)
@@ -751,7 +826,7 @@ fn index_schema(
 mod test {
     use std::{io::Write, ops::Deref, sync::atomic::Ordering};
 
-    use crate::{catalog::RecordFormat, test::TestStruct, Catalog, CircuitCatalog};
+    use crate::{Catalog, CircuitCatalog, catalog::RecordFormat, test::TestStruct};
     use dbsp::Runtime;
     use feldera_adapterlib::catalog::SerBatchReader;
     use feldera_types::format::json::JsonFlavor;

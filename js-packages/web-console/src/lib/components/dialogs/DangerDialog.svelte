@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { GlobalDialogContent } from '$lib/compositions/layout/useGlobalDialog.svelte'
 
-  let { content, onClose }: { content: GlobalDialogContent; onClose?: () => void } = $props()
+  const { content, onClose }: { content: GlobalDialogContent; onClose?: () => void } = $props()
 </script>
 
 <div class="p-4 sm:p-8">
@@ -9,7 +9,7 @@
     <div class="flex flex-nowrap justify-between">
       <div class="h5">{content.title}</div>
       <button
-        class="fd fd-x btn btn-icon -m-4 text-[20px]"
+        class="fd fd-x -m-4 btn-icon text-[24px]"
         onclick={onClose}
         aria-label="Confirm dangerous action"
       ></button>
@@ -19,16 +19,16 @@
     </span>
     {#if content.scrollableContent}
       <div
-        class="bg-surface-100-800-token max-h-[60vh] overflow-y-auto whitespace-pre-wrap rounded border p-2 scrollbar"
+        class="bg-surface-100-800 scrollbar max-h-[60vh] overflow-y-auto rounded border p-2 whitespace-pre-wrap"
       >
         {content.scrollableContent}
       </div>
     {/if}
   </div>
   <div class="flex flex-col-reverse gap-4 pt-4 sm:flex-row sm:justify-end">
-    <button class="btn px-4 preset-filled-surface-50-950" onclick={onClose}> Cancel </button>
+    <button class="btn preset-filled-surface-50-950 px-4" onclick={onClose}> Cancel </button>
     <button
-      class="btn px-4 font-semibold preset-filled-error-500"
+      class="btn preset-filled-error-500 px-4 font-semibold"
       onclick={async () => {
         await content!.onSuccess.callback()
         onClose?.()

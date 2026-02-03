@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFailExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
@@ -38,6 +39,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTimeAddSub;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
@@ -172,6 +174,11 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     }
 
     @Override
+    public void postorder(DBSPFailExpression expression) {
+        this.used(expression);
+    }
+
+    @Override
     public void postorder(DBSPExpression expression) {
         // Catch-all
         throw new UnimplementedException("Finding unused fields for " + expression);
@@ -230,6 +237,12 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
 
     @Override
     public void postorder(DBSPBinaryExpression expression) {
+        this.used(expression.left);
+        this.used(expression.right);
+    }
+
+    @Override
+    public void postorder(DBSPTimeAddSub expression) {
         this.used(expression.left);
         this.used(expression.right);
     }

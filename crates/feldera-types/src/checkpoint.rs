@@ -58,6 +58,9 @@ pub struct CheckpointSyncStatus {
 
     /// Most recently failed checkpoint sync, and the associated error.
     pub failure: Option<CheckpointSyncFailure>,
+
+    /// Most recently successful automated periodic checkpoint sync.
+    pub periodic: Option<Uuid>,
 }
 
 /// Information about a failed checkpoint sync.
@@ -72,7 +75,7 @@ pub struct CheckpointSyncFailure {
 
 /// Holds meta-data about a checkpoint that was taken for persistent storage
 /// and recovery of a circuit's state.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct CheckpointMetadata {
     /// A unique identifier for the given checkpoint.
     ///

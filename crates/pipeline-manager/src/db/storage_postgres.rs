@@ -7,6 +7,9 @@ use crate::db::operations;
 use crate::db::pg_setup;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
+use crate::db::types::monitor::{
+    ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent, NewClusterMonitorEvent,
+};
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
 };
@@ -397,8 +400,11 @@ impl Storage for StoragePostgres {
         assert_eq!(rows_affected, 1);
 
         info!(
-            "Updated pipeline {} from platform version {} to {}",
-            current.id, current.platform_version, platform_version
+            pipeline_id = %current.id,
+            pipeline = %current.name,
+            "Updated pipeline platform version from {} to {}",
+            current.platform_version,
+            platform_version
         );
 
         txn.commit().await?;
@@ -464,7 +470,6 @@ impl Storage for StoragePostgres {
         Ok(pipeline_id)
     }
 
-    #[cfg(test)]
     async fn transit_program_status_to_pending(
         &self,
         tenant_id: TenantId,
@@ -479,6 +484,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             program_version_guard,
             &ProgramStatus::Pending,
+            &None,
             &None,
             &None,
             &None,
@@ -505,6 +511,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             program_version_guard,
             &ProgramStatus::CompilingSql,
+            &None,
             &None,
             &None,
             &None,
@@ -539,6 +546,7 @@ impl Storage for StoragePostgres {
             &Some(program_info.clone()),
             &None,
             &None,
+            &None,
         )
         .await?;
         txn.commit().await?;
@@ -565,6 +573,7 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            &None,
         )
         .await?;
         txn.commit().await?;
@@ -579,6 +588,7 @@ impl Storage for StoragePostgres {
         rust_compilation: &RustCompilationInfo,
         program_binary_source_checksum: &str,
         program_binary_integrity_checksum: &str,
+        program_info_integrity_checksum: &str,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -594,6 +604,7 @@ impl Storage for StoragePostgres {
             &None,
             &Some(program_binary_source_checksum.to_string()),
             &Some(program_binary_integrity_checksum.to_string()),
+            &Some(program_info_integrity_checksum.to_string()),
         )
         .await?;
         txn.commit().await?;
@@ -616,6 +627,7 @@ impl Storage for StoragePostgres {
             program_version_guard,
             &ProgramStatus::SqlError,
             &Some(sql_compilation.clone()),
+            &None,
             &None,
             &None,
             &None,
@@ -648,6 +660,7 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            &None,
         )
         .await?;
         txn.commit().await?;
@@ -672,6 +685,7 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &Some(system_error.to_string()),
+            &None,
             &None,
             &None,
             &None,
@@ -768,20 +782,34 @@ impl Storage for StoragePostgres {
             StorageStatus::InUse,
         )
         .await?;
-        operations::pipeline::set_deployment_resources_status(
+        operations::pipeline::set_deployment_resources_status_provisioning(
             &txn,
             tenant_id,
             pipeline_id,
             version_guard,
-            ResourcesStatus::Provisioning,
-            None,
-            None,
-            None,
-            None,
-            Some(deployment_id),
-            Some(deployment_config),
-            None,
-            None,
+            deployment_id,
+            deployment_config,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn remain_deployment_resources_status_provisioning(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_resources_status_details: serde_json::Value,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::pipeline::remain_deployment_resources_status_provisioning(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            version_guard,
+            deployment_resources_status_details,
         )
         .await?;
         txn.commit().await?;
@@ -794,24 +822,46 @@ impl Storage for StoragePostgres {
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_location: &str,
+        deployment_resources_status_details: serde_json::Value,
         extended_runtime_status: ExtendedRuntimeStatus,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        operations::pipeline::set_deployment_resources_status(
+        operations::pipeline::set_deployment_resources_status_provisioned(
             &txn,
             tenant_id,
             pipeline_id,
             version_guard,
-            ResourcesStatus::Provisioned,
-            Some(extended_runtime_status.runtime_status),
-            Some(extended_runtime_status.runtime_status_details),
-            Some(extended_runtime_status.runtime_desired_status),
-            None,
-            None,
-            None,
-            Some(deployment_location.to_string()),
-            None,
+            deployment_location.to_string(),
+            deployment_resources_status_details,
+            extended_runtime_status.runtime_status,
+            extended_runtime_status.runtime_status_details,
+            extended_runtime_status.runtime_desired_status,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn remain_deployment_resources_status_provisioned(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_resources_status_details: serde_json::Value,
+        extended_runtime_status: ExtendedRuntimeStatus,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::pipeline::remain_deployment_resources_status_provisioned(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            version_guard,
+            deployment_resources_status_details,
+            extended_runtime_status.runtime_status,
+            extended_runtime_status.runtime_status_details,
+            extended_runtime_status.runtime_desired_status,
         )
         .await?;
         txn.commit().await?;
@@ -840,20 +890,35 @@ impl Storage for StoragePostgres {
             None,
         )
         .await?;
-        operations::pipeline::set_deployment_resources_status(
+        operations::pipeline::set_deployment_resources_status_stopping(
             &txn,
             tenant_id,
             pipeline_id,
             version_guard,
-            ResourcesStatus::Stopping,
-            None,
-            None,
-            None,
             deployment_error,
-            None,
-            None,
-            None,
             suspend_info,
+        )
+        .await?;
+
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn remain_deployment_resources_status_stopping(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_resources_status_details: serde_json::Value,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::pipeline::remain_deployment_resources_status_stopping(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            version_guard,
+            deployment_resources_status_details,
         )
         .await?;
 
@@ -869,20 +934,11 @@ impl Storage for StoragePostgres {
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        operations::pipeline::set_deployment_resources_status(
+        operations::pipeline::set_deployment_resources_status_stopped(
             &txn,
             tenant_id,
             pipeline_id,
             version_guard,
-            ResourcesStatus::Stopped,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
         )
         .await?;
         txn.commit().await?;
@@ -997,6 +1053,7 @@ impl Storage for StoragePostgres {
                             &None,
                             &None,
                             &None,
+                            &None,
                         )
                         .await?;
                     }
@@ -1085,6 +1142,7 @@ impl Storage for StoragePostgres {
                             )),
                             &None,
                             &None,
+                            &None,
                         )
                         .await?;
                     }
@@ -1135,7 +1193,16 @@ impl Storage for StoragePostgres {
 
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError> {
+    ) -> Result<
+        Vec<(
+            PipelineId,
+            Version,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        )>,
+        DBError,
+    > {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let pipeline_programs =
@@ -1159,6 +1226,88 @@ impl Storage for StoragePostgres {
             operations::pipeline::get_support_bundle_data(&txn, pipeline.id, how_many).await?;
         txn.commit().await?;
         Ok((pipeline, bundle_data))
+    }
+
+    async fn list_cluster_monitor_events(&self) -> Result<Vec<ClusterMonitorEvent>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let events = operations::cluster_monitor::list_cluster_monitor_events_short(&txn).await?;
+        txn.commit().await?;
+        Ok(events)
+    }
+
+    async fn get_cluster_monitor_event_short(
+        &self,
+        event_id: ClusterMonitorEventId,
+    ) -> Result<ClusterMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event =
+            operations::cluster_monitor::get_cluster_monitor_event_short(&txn, event_id).await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn get_cluster_monitor_event_extended(
+        &self,
+        event_id: ClusterMonitorEventId,
+    ) -> Result<ExtendedClusterMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event =
+            operations::cluster_monitor::get_cluster_monitor_event_extended(&txn, event_id).await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn get_latest_cluster_monitor_event_short(&self) -> Result<ClusterMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event =
+            operations::cluster_monitor::get_latest_cluster_monitor_event_short(&txn).await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn get_latest_cluster_monitor_event_extended(
+        &self,
+    ) -> Result<ExtendedClusterMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event =
+            operations::cluster_monitor::get_latest_cluster_monitor_event_extended(&txn).await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn new_cluster_monitor_event(
+        &self,
+        new_id: Uuid,
+        event_descr: NewClusterMonitorEvent,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::cluster_monitor::new_cluster_monitor_event(&txn, new_id, event_descr).await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn delete_cluster_monitor_events_beyond_retention(
+        &self,
+        retention_hours: u16,
+        retention_num: u16,
+    ) -> Result<(u64, u64), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let (num_deleted_due_to_timestamp, num_deleted_due_to_limit) =
+            operations::cluster_monitor::delete_cluster_monitor_events_beyond_retention(
+                &txn,
+                retention_hours,
+                retention_num,
+            )
+            .await?;
+        txn.commit().await?;
+        Ok((num_deleted_due_to_timestamp, num_deleted_due_to_limit))
     }
 }
 
@@ -1337,7 +1486,7 @@ impl StoragePostgres {
             .get_migrations()
             .iter()
             .map(|m| m.version())
-            .fold(u32::MIN, |a, b| a.max(b));
+            .fold(0i32, |a, b| a.max(b));
         let migration = runner.get_last_applied_migration_async(&mut **client).await;
         if let Ok(Some(m)) = migration {
             let v = m.version();

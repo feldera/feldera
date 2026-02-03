@@ -1,8 +1,8 @@
 use std::{collections::HashMap, fmt::Debug, io, net::TcpStream, thread::sleep, time::Duration};
 
 use crate::test::{
-    init_test_logger, mock_input_pipeline, wait_for_output_ordered, wait_for_output_unordered,
-    TestStruct,
+    TestStruct, init_test_logger, mock_input_pipeline, wait_for_output_ordered,
+    wait_for_output_unordered,
 };
 use csv::WriterBuilder;
 use dbsp::circuit::tokio::TOKIO;
@@ -17,7 +17,7 @@ use google_cloud_pubsub::{
 };
 use proptest::prelude::*;
 use serde::Serialize;
-use serde_json::{json, Map};
+use serde_json::{Map, json};
 use tracing::info;
 
 static EMULATOR_PROJECT_ID: &str = "feldera-test";
@@ -213,7 +213,9 @@ fn test_pubsub_input(
 
     let publisher = if let Some(emulator) = emulator {
         if !probe_port(&emulator) {
-            panic!("Pub/Sub emulator not found on port '{emulator}', start the emulator before running the tests: 'gcloud beta emulators pubsub start --project=feldera-test --host-port={emulator}'")
+            panic!(
+                "Pub/Sub emulator not found on port '{emulator}', start the emulator before running the tests: 'gcloud beta emulators pubsub start --project=feldera-test --host-port={emulator}'"
+            )
         }
 
         TestPublisher::with_emulator(topic, &emulator)
@@ -378,7 +380,9 @@ fn test_pubsub_input_errors() {
     //let emulator = Emulator::new();
 
     if !probe_port(&emulator) {
-        panic!("Pub/Sub emulator not found on port {emulator}', start the emulator before running the tests: 'gcloud beta emulators pubsub start --project=feldera-test --host-port={emulator}'")
+        panic!(
+            "Pub/Sub emulator not found on port {emulator}', start the emulator before running the tests: 'gcloud beta emulators pubsub start --project=feldera-test --host-port={emulator}'"
+        )
     }
 
     info!("test_pubsub_input: Test: Specify invalid service address");

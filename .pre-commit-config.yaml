@@ -1,7 +1,7 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 default_language_version:
-  rust: 1.87.0
+  rust: 1.91.1
 repos:
   - repo: local
     hooks:
@@ -31,6 +31,13 @@ repos:
         entry: bash -c 'cd crates && cargo machete --fix'
         language: rust
         files: \.rs$
+        pass_filenames: false
+      - id: javascript-check
+        name: JavaScript Check
+        description: Run type checking on all JavaScript packages
+        entry: bash -c 'bun ci && bun run check'
+        language: system
+        files: '^js-packages/.*\.(ts|tsx|js|jsx|svelte|css|json|html)$'
         pass_filenames: false
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

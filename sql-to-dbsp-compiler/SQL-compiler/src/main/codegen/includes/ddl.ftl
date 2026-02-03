@@ -63,7 +63,7 @@ void ExtendedTableElement(List<SqlNode> list) :
     (
         <PRIMARY>  { s.add(this); } <KEY>
         columnList = ParenthesizedSimpleIdentifierList() {
-            list.add(SqlDdlNodes.primary(s.end(columnList), name, columnList));
+            list.add(new SqlPrimaryKey(s.end(columnList), name, columnList));
         }
     |   <FOREIGN> <KEY> columnList = ParenthesizedSimpleIdentifierList() <REFERENCES>
                  id = SimpleIdentifier() otherColumnList = ParenthesizedSimpleIdentifierList() {
@@ -91,7 +91,7 @@ SqlExtendedColumnDeclaration ColumnAttribute(SqlExtendedColumnDeclaration column
             }
         |
             <LATENESS> lateness = Expression(ExprContext.ACCEPT_NON_QUERY) {
-               return column.setLatenes(lateness);
+               return column.setLateness(lateness);
             }
         |
             <WATERMARK> watermark = Expression(ExprContext.ACCEPT_NON_QUERY) {
@@ -174,8 +174,7 @@ void AttributeDef(List<SqlNode> list) :
     )
     [ <DEFAULT_> e = Expression(ExprContext.ACCEPT_SUB_QUERY) ]
     {
-        list.add(SqlDdlNodes.attribute(s.add(id).end(this), id,
-            type.withNullable(nullable), e, null));
+        list.add(new SqlAttributeDefinition(s.add(id).end(this), id, type.withNullable(nullable), e));
     }
 }
 
@@ -302,7 +301,7 @@ SqlCreate SqlCreateType(Span s, boolean replace) :
         type = DataType()
     )
     {
-        return SqlDdlNodes.createType(s.end(this), replace, id, attributeDefList, type);
+        return new SqlCreateType(s.end(this), replace, id, attributeDefList, type);
     }
 }
 
@@ -407,7 +406,7 @@ SqlDrop SqlDropTable(Span s, boolean replace) :
 }
 {
     <TABLE> ifExists = IfExistsOpt() id = CompoundIdentifier() {
-        return SqlDdlNodes.dropTable(s.end(this), ifExists, id);
+        return new SqlDropTable(s.end(this), ifExists, id);
     }
 }
 
@@ -418,6 +417,6 @@ SqlDrop SqlDropView(Span s, boolean replace) :
 }
 {
     <VIEW> ifExists = IfExistsOpt() id = CompoundIdentifier() {
-        return SqlDdlNodes.dropView(s.end(this), ifExists, id);
+        return new SqlDropView(s.end(this), ifExists, id);
     }
 }

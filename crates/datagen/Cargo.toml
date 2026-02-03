@@ -1,6 +1,6 @@
 [package]
 name = "feldera-datagen"
-edition = { workspace = true }
+edition = "2024"
 version = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }

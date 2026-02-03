@@ -129,7 +129,7 @@ impl LockedDirectory {
                         error.kind(),
                         "stat",
                         pid_file.display(),
-                    ))
+                    ));
                 }
             }
 
@@ -153,8 +153,11 @@ impl LockedDirectory {
                     let pid = get_lock(&file).unwrap_or(None).unwrap_or(0);
                     if start.elapsed() >= patience {
                         if blocked {
-                            error!("{}: gave up waiting for process {pid} to release lock after {:.1} seconds",
-                                   pid_file.display(), start.elapsed().as_secs_f64());
+                            error!(
+                                "{}: gave up waiting for process {pid} to release lock after {:.1} seconds",
+                                pid_file.display(),
+                                start.elapsed().as_secs_f64()
+                            );
                         }
                         return Err(StorageError::StorageLocked(pid, base));
                     }
@@ -173,7 +176,7 @@ impl LockedDirectory {
                         error.kind(),
                         "exclusive lock",
                         pid_file.display(),
-                    ))
+                    ));
                 }
                 Ok(()) => {
                     if blocked {

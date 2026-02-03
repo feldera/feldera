@@ -1,16 +1,16 @@
 <script lang="ts">
-  import type { ProgramStatus } from '$lib/services/pipelineManager'
   import { match, P } from 'ts-pattern'
   import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
+  import type { ProgramStatus } from '$lib/services/pipelineManager'
 
-  let {
+  const {
     programStatus
   }: {
     programStatus: ProgramStatus | undefined
   } = $props()
 
   const spinnerClass = 'animate-spin h-5 fill-surface-950-50'
-  let sqlClass = $derived(
+  const sqlClass = $derived(
     match(programStatus)
       .with(
         'Success',
@@ -27,7 +27,7 @@
       )
       .exhaustive()
   )
-  let rustClass = $derived(
+  const rustClass = $derived(
     match(programStatus)
       .with('CompilingRust', () => spinnerClass)
       .with('RustError', () => 'fd fd-circle-x text-[20px] text-error-500')

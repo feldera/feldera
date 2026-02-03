@@ -1,14 +1,14 @@
 //! Built-in profiling capabilities.
 
 use crate::{
+    RootCircuit, Runtime,
     circuit::{
+        GlobalNodeId,
         circuit_builder::{CircuitBase, Node},
         metadata::{MetaItem, OperatorMeta},
         runtime::ThreadType,
-        GlobalNodeId,
     },
-    monitor::{visual_graph::Graph, TraceMonitor},
-    RootCircuit, Runtime,
+    monitor::{TraceMonitor, visual_graph::Graph},
 };
 use serde::Serialize;
 use size_of::HumanBytes;
@@ -21,7 +21,7 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
-use zip::{write::FileOptions, ZipWriter};
+use zip::{ZipWriter, write::SimpleFileOptions};
 
 mod cpu;
 use crate::circuit::metadata::{
@@ -184,12 +184,21 @@ impl WorkerProfile {
             }
         }
     }
+
+    pub fn get_node_profile(&self, global_node_id: &GlobalNodeId) -> Option<&OperatorMeta> {
+        self.metadata.get(global_node_id)
+    }
 }
 
 /// Profile in graphviz format collected from all DBSP worker threads.
 #[derive(Debug)]
 pub struct GraphProfile {
     pub elapsed_time: Duration,
+
+    /// Worker number of the first worker in `worker_graphs`.
+    ///
+    /// This will be 0 in single-host profiles.
+    pub worker_offset: usize,
     pub worker_graphs: Vec<Graph>,
 }
 
@@ -221,7 +230,7 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
             .as_ref()
             .join(self.elapsed_time.as_micros().to_string());
         create_dir_all(&dir_path)?;
-        for (worker, graph) in self.worker_graphs.iter().enumerate() {
+        for (graph, worker) in self.worker_graphs.iter().zip(self.worker_offset..) {
             fs::write(dir_path.join(format!("{worker}.dot")), graph.to_dot())?;
             fs::write(dir_path.join(format!("{worker}.txt")), graph.to_string())?;
         }
@@ -232,16 +241,17 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
     /// Returns a Zip archive containing all the profile `.dot` files.
     pub fn as_zip(&self) -> Vec<u8> {
         let mut zip = ZipWriter::new(IoCursor::new(Vec::with_capacity(65536)));
-        for (worker, graph) in self.worker_graphs.iter().enumerate() {
-            zip.start_file(format!("{worker}.dot"), FileOptions::default())
+        for (graph, worker) in self.worker_graphs.iter().zip(self.worker_offset..) {
+            zip.start_file(format!("{worker}.dot"), SimpleFileOptions::default())
                 .unwrap();
             zip.write_all(graph.to_dot().as_bytes()).unwrap();
 
-            zip.start_file(format!("{worker}.txt"), FileOptions::default())
+            zip.start_file(format!("{worker}.txt"), SimpleFileOptions::default())
                 .unwrap();
             zip.write_all(graph.to_string().as_bytes()).unwrap();
         }
-        zip.start_file("Makefile", FileOptions::default()).unwrap();
+        zip.start_file("Makefile", SimpleFileOptions::default())
+            .unwrap();
         zip.write_all(Self::MAKEFILE.as_bytes()).unwrap();
         zip.finish().unwrap().into_inner()
     }
@@ -274,7 +284,7 @@ impl DbspProfile {
         let json = json.as_bytes();
 
         let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::with_capacity(65536)));
-        zip.start_file("profile.json", FileOptions::default())
+        zip.start_file("profile.json", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(json).unwrap();
         zip.finish().unwrap().into_inner()
@@ -572,17 +582,15 @@ impl Profiler {
             for (label, item) in meta.iter() {
                 write!(output, "{label}: ").unwrap();
                 item.format(&mut output).unwrap();
-                if label == "time%" {
-                    if let MetaItem::Percent {
+                if label == "time%"
+                    && let MetaItem::Percent {
                         numerator,
                         denominator,
                     } = item
-                    {
-                        if *denominator != 0 {
-                            importance = *numerator as f64 / *denominator as f64;
-                        }
-                    };
-                }
+                    && *denominator != 0
+                {
+                    importance = *numerator as f64 / *denominator as f64;
+                };
                 output.push_str("\\l");
             }
 

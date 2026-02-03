@@ -1,6 +1,6 @@
 use crate::{
-    dynamic::{erase::Erase, ArchiveTrait},
     DBData,
+    dynamic::{ArchiveTrait, erase::Erase},
 };
 use rkyv::archived_value;
 use std::{marker::PhantomData, mem};
@@ -60,8 +60,10 @@ where
     }
 
     unsafe fn archived_value<'a>(&self, bytes: &'a [u8], pos: usize) -> &'a Trait::Archived {
-        let archived: &T::Archived = archived_value::<T>(bytes, pos);
-        <T as Erase<Trait>>::erase_archived(archived)
+        unsafe {
+            let archived: &T::Archived = archived_value::<T>(bytes, pos);
+            <T as Erase<Trait>>::erase_archived(archived)
+        }
     }
 }
 

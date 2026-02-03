@@ -1,26 +1,28 @@
 <script lang="ts">
   import { Datatable, TableHandler } from '@vincjo/datatables'
-  import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
-  import {
-    type PipelineStatus as PipelineStatusType,
-    type PipelineThumb
-  } from '$lib/services/pipelineManager'
-  import { type Snippet } from 'svelte'
-  import ThSort from '$lib/components/pipelines/table/ThSort.svelte'
-  import { formatDateTime, useElapsedTime } from '$lib/functions/format'
-  import { dateMax } from '$lib/functions/common/date'
+  import type { Snippet } from 'svelte'
   import { match } from 'ts-pattern'
-  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
-  import { unionName, type NamesInUnion } from '$lib/functions/common/union'
-  import PipelineVersion from './table/PipelineVersion.svelte'
-  import { page } from '$app/state'
   import { pipe } from 'valibot'
+  import { page } from '$app/state'
+  import { Popover } from '$lib/components/common/Popover.svelte'
+  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
+  import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
+  import ThSort from '$lib/components/pipelines/table/ThSort.svelte'
+  import { dateMax } from '$lib/functions/common/date'
+  import { type NamesInUnion, unionName } from '$lib/functions/common/union'
+  import { formatDateTime, useElapsedTime } from '$lib/functions/format'
+  import type {
+    PipelineStatus as PipelineStatusType,
+    PipelineThumb
+  } from '$lib/services/pipelineManager'
+  import PipelineVersion from './table/PipelineVersion.svelte'
+
   let {
     pipelines,
     preHeaderEnd,
     selectedPipelines = $bindable()
   }: { pipelines: PipelineThumb[]; preHeaderEnd?: Snippet; selectedPipelines: string[] } = $props()
-  let pipelinesWithLastChange = $derived(
+  const pipelinesWithLastChange = $derived(
     pipelines.map((pipeline) => ({
       ...pipeline,
       lastStatusSince: dateMax(
@@ -66,11 +68,12 @@
     ['Failed', ['SystemError', 'SqlError', 'RustError']]
   ]
   const { formatElapsedTime } = useElapsedTime()
+  const td = 'py-1 text-base border-t-[0.5px]'
 </script>
 
 <div class="relative -mt-7 mb-6 flex flex-col items-center justify-end gap-4 md:mb-0 md:flex-row">
   <select
-    class="select ml-auto w-40 md:ml-0"
+    class="h_-9 select ml-auto w-40 md:ml-0"
     onchange={(e) => {
       statusFilter.value = filterStatuses.find((v) => e.currentTarget.value === v[0])![0]
       statusFilter.set()
@@ -134,7 +137,7 @@
     <tbody>
       {#each table.rows as pipeline}
         <tr class="group"
-          ><td class="px-2 border-surface-100-900 group-hover:bg-surface-50-950">
+          ><td class="{td} border-surface-100-900 px-2 group-hover:bg-surface-50-950">
             <input
               class="checkbox"
               type="checkbox"
@@ -142,19 +145,19 @@
               onclick={() => table.select(pipeline.name)}
             />
           </td>
-          <td class="relative w-3/12 border-surface-100-900 group-hover:bg-surface-50-950"
+          <td class="{td} relative w-3/12 border-surface-100-900 group-hover:bg-surface-50-950"
             ><a
               class=" absolute top-2 w-full overflow-hidden overflow-ellipsis whitespace-nowrap"
               href="/pipelines/{pipeline.name}/">{pipeline.name}</a
             ></td
           >
-          <td class="relative w-12 border-surface-100-900 group-hover:bg-surface-50-950">
+          <td class="{td} relative w-12 border-surface-100-900 group-hover:bg-surface-50-950">
             <div
               class="fd {pipeline.storageStatus === 'Cleared'
                 ? 'fd-database-off text-surface-500'
                 : 'fd-database'} text-center text-[20px]"
             ></div>
-            <Tooltip class="bg-white-dark z-10 rounded text-surface-950-50"
+            <Tooltip
               >{match(pipeline.storageStatus)
                 .with('InUse', () => 'Storage in use')
                 .with('Clearing', () => 'Clearing storage')
@@ -162,37 +165,35 @@
                 .exhaustive()}</Tooltip
             >
           </td>
-          <td class="w-36 border-surface-100-900 group-hover:bg-surface-50-950"
+          <td class="pr-2 {td} w-36 border-surface-100-900 group-hover:bg-surface-50-950"
             ><PipelineStatus status={pipeline.status}></PipelineStatus></td
           >
           <td
-            class="relative whitespace-pre-wrap border-surface-100-900 group-hover:bg-surface-50-950"
+            class="{td} relative border-surface-100-900 whitespace-pre-wrap group-hover:bg-surface-50-950"
           >
             <span
-              class="absolute top-1.5 w-full overflow-hidden overflow-ellipsis whitespace-nowrap align-middle"
+              class="absolute top-1.5 w-full overflow-hidden align-middle overflow-ellipsis whitespace-nowrap"
             >
               {#if pipeline.deploymentError}
                 {@const message = pipeline.deploymentError.message}
                 <span class="fd fd-circle-alert pr-2 text-[20px] text-error-500"></span>
-                <Tooltip
-                  class="bg-white-dark z-10 whitespace-pre-wrap rounded text-base text-surface-950-50"
-                  strategy="fixed"
-                  activeContent
-                >
-                  <div class="flex max-h-[50vh] max-w-[80vw] overflow-auto whitespace-pre-wrap">
+                <Popover class="z-10" strategy="fixed">
+                  <div
+                    class="scrollbar flex max-h-[50vh] max-w-[80vw] overflow-auto whitespace-pre-wrap"
+                  >
                     {message}
                   </div>
-                </Tooltip>
+                </Popover>
                 {message.slice(0, ((idx) => (idx > 0 ? idx : undefined))(message.indexOf('\n')))}
               {/if}
             </span>
           </td>
-          <td class="pr-4 border-surface-100-900 group-hover:bg-surface-50-950">
-            <div class="text-nowrap text-right">
+          <td class="{td} border-surface-100-900 pr-4 group-hover:bg-surface-50-950">
+            <div class="text-right text-nowrap">
               {pipeline.connectors?.numErrors ?? '-'}
             </div>
           </td>
-          <td class="relative border-surface-100-900 group-hover:bg-surface-50-950">
+          <td class="{td} relative border-surface-100-900 group-hover:bg-surface-50-950">
             <div class="flex w-full flex-nowrap items-center gap-2 text-nowrap">
               <PipelineVersion
                 pipelineName={pipeline.name}
@@ -202,13 +203,13 @@
               ></PipelineVersion>
             </div>
           </td>
-          <td class="relative w-28 border-surface-100-900 group-hover:bg-surface-50-950">
-            <div class="w-32 text-nowrap text-right">
+          <td class="{td} relative w-28 border-surface-100-900 group-hover:bg-surface-50-950">
+            <div class="w-32 text-right text-nowrap">
               {formatElapsedTime(pipeline.lastStatusSince, 'dhm')} ago
             </div>
           </td>
-          <td class="relative w-40 border-surface-100-900 group-hover:bg-surface-50-950">
-            <div class="text-nowrap pr-1 text-right">
+          <td class="{td} relative w-40 border-surface-100-900 group-hover:bg-surface-50-950">
+            <div class="pr-1 text-right text-nowrap">
               {pipeline.deploymentResourcesStatus === 'Provisioned'
                 ? formatDateTime(pipeline.deploymentResourcesStatusSince)
                 : ''}
@@ -217,16 +218,10 @@
         </tr>
       {:else}
         <tr>
-          <td></td>
-          <td colspan={99} class="py-1">No pipelines with the specified status</td>
+          <td class={td}></td>
+          <td class={td} colspan={99}>No pipelines with the specified status</td>
         </tr>
       {/each}
     </tbody>
   </table>
 </Datatable>
-
-<style lang="sass">
-
-  td
-    @apply py-1 text-base border-t-[0.5px]
-</style>

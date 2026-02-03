@@ -1,8 +1,10 @@
 use anyhow::Result;
+use dbsp::typed_batch::IndexedZSetReader;
 use dbsp::{
+    Circuit, OrdZSet, Runtime, Stream,
     operator::Generator,
     utils::{Tup3, Tup4},
-    zset, zset_set, Circuit, OrdZSet, Runtime, Stream,
+    zset, zset_set,
 };
 
 fn main() -> Result<()> {

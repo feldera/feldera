@@ -21,6 +21,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
@@ -102,7 +103,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                     DBSPTypeUSize.INSTANCE, DBSPOpcode.ADD,
                     e.field(0),
                     new DBSPUSizeLiteral(1))
-                    .cast(flatmap.getNode(), flatmap.ordinalityIndexType, false);
+                    .cast(flatmap.getNode(), flatmap.ordinalityIndexType, DBSPCastExpression.CastType.SqlUnsafe);
         }
 
         if (flatmap.rightProjections != null) {
@@ -185,7 +186,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 throw new InternalCompilerError("Unexpected collection type in flatmap " + flatmap.collectionKind);
             }
 
-            DBSPExpression contents = statement.getVarReference().unwrap().deref().applyClone();
+            DBSPExpression contents = statement.getVarReference().unwrap("Collection UNNESTed should not be NULL")
+                    .deref().applyClone();
             collectionExpression = new DBSPIfExpression(flatmap.getNode(), condition, empty, contents);
         } else {
             collectionExpression = statement.getVarReference().deref().applyClone();
@@ -349,7 +351,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 node.getClosureFunction(), node.filter, node.map);
         DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
                 newFunction, null, null, node.isMultiset,
-                this.mapped(node.left()), this.mapped(node.right()))
+                this.mapped(node.left()), this.mapped(node.right()), node.balanced)
                 .copyAnnotations(node);
         this.map(node, result);
     }
@@ -365,7 +367,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 node.filter, node.map);
         DBSPSimpleOperator result = new DBSPLeftJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
                 newFunction, null, null, node.isMultiset,
-                this.mapped(node.left()), this.mapped(node.right()))
+                this.mapped(node.left()), this.mapped(node.right()), node.balanced)
                 .copyAnnotations(node);
         this.map(node, result);
     }

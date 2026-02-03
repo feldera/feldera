@@ -1,0 +1,20 @@
+{
+  "name": "feldera-theme",
+  "version": "0.0.1",
+  "description": "Feldera modern theme CSS for reuse across projects",
+  "type": "module",
+  "exports": {
+    "./feldera-modern.css": "./feldera-modern.css"
+  },
+  "files": [
+    "feldera-modern.css"
+  ],
+  "sideEffects": [
+    "*.css"
+  ],
+  "keywords": [
+    "feldera",
+    "theme",
+    "css"
+  ]
+}

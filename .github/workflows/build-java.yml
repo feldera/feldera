@@ -11,7 +11,7 @@ jobs:
       id-token: write
       contents: read
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
+      image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
     steps:
       - name: Show Kubernetes node
         if: always()

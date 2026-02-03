@@ -1,6 +1,6 @@
 use std::ops::{Add, Div, Mul, Sub};
 
-use dbsp::algebra::{HasZero, F32, F64};
+use dbsp::algebra::{F32, F64, HasZero};
 use num::{PrimInt, Zero};
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
 use std::cmp::Ordering;
@@ -160,11 +160,7 @@ where
     T: PartialOrd<T>,
 {
     let result = left.partial_cmp(right).unwrap();
-    if ascending {
-        result
-    } else {
-        result.reverse()
-    }
+    if ascending { result } else { result.reverse() }
 }
 
 #[doc(hidden)]
@@ -546,6 +542,46 @@ where
             None => Some(left),
             Some(right) => Some(left.min(right)),
         },
+    }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn max_null_wins__<T>(left: T, right: T) -> T
+where
+    T: Ord,
+{
+    left.max(right)
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn max_null_wins_N_<T>(left: Option<T>, right: T) -> Option<T>
+where
+    T: Ord,
+{
+    left.map(|left| left.max(right))
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn max_null_wins__N<T>(left: T, right: Option<T>) -> Option<T>
+where
+    T: Ord,
+{
+    right.map(|right| left.max(right))
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn max_null_wins_N_N<T>(left: Option<T>, right: Option<T>) -> Option<T>
+where
+    T: Ord,
+{
+    match (&left, &right) {
+        (&None, _) => None,
+        (_, &None) => None,
+        (_, _) => left.max(right),
     }
 }
 

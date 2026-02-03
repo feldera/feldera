@@ -7,6 +7,7 @@
 //! so it is beneficial to reduce the number by merging batches.
 
 use crate::{
+    Error, NumEntries, Runtime,
     circuit::{
         metadata::{MetaItem, OperatorMeta},
         metrics::COMPACTION_STALL_TIME_NANOSECONDS,
@@ -15,28 +16,25 @@ use crate::{
     storage::buffer_cache::CacheStats,
     time::Timestamp,
     trace::{
+        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, GroupFilter, Trace,
         cursor::{CursorList, Position},
         merge_batches,
         ord::fallback::pick_merge_destination,
         spine_async::{
             list_merger::ArcListMerger, push_merger::ArcPushMerger, snapshot::FetchList,
         },
-        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Trace,
     },
-    Error, NumEntries, Runtime,
 };
 
-use crate::storage::file::to_bytes;
+use crate::storage::file::{Deserializer, to_bytes};
 use crate::trace::CommittedSpine;
+use dbsp::storage::tracking_bloom_filter::BloomFilterStats;
 use enum_map::EnumMap;
 use feldera_storage::{FileCommitter, StoragePath};
 use feldera_types::checkpoint::PSpineBatches;
 use ouroboros::self_referencing;
 use rand::Rng;
-use rkyv::{
-    de::deserializers::SharedDeserializeMap, ser::Serializer, Archive, Archived, Deserialize,
-    Fallible, Serialize,
-};
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::{Context, SizeOf};
 use std::sync::{Arc, MutexGuard};
 use std::time::{Duration, Instant};
@@ -56,7 +54,7 @@ mod snapshot;
 use self::thread::{BackgroundThread, WorkerStatus};
 pub use snapshot::{BatchReaderWithSnapshot, SpineSnapshot, WithSnapshot};
 
-use super::{cursor::CursorFactory, BatchLocation};
+use super::{BatchLocation, cursor::CursorFactory};
 
 mod thread;
 
@@ -185,9 +183,11 @@ where
     B: Batch,
 {
     #[size_of(skip)]
+    factories: B::Factories,
+    #[size_of(skip)]
     key_filter: Option<Filter<B::Key>>,
     #[size_of(skip)]
-    value_filter: Option<Filter<B::Val>>,
+    value_filter: Option<GroupFilter<B::Val>>,
     #[size_of(skip)]
     frontier: B::Time,
     slots: [Slot<B>; MAX_LEVELS],
@@ -201,8 +201,9 @@ impl<B> SharedState<B>
 where
     B: Batch,
 {
-    pub fn new() -> Self {
+    pub fn new(factories: &B::Factories) -> Self {
         Self {
+            factories: factories.clone(),
             key_filter: None,
             value_filter: None,
             frontier: B::Time::minimum(),
@@ -248,7 +249,7 @@ where
             <= LOWER_THRESHOLD
     }
 
-    fn get_filters(&self) -> (Option<Filter<B::Key>>, Option<Filter<B::Val>>) {
+    fn get_filters(&self) -> (Option<Filter<B::Key>>, Option<GroupFilter<B::Val>>) {
         (self.key_filter.clone(), self.value_filter.clone())
     }
 
@@ -259,6 +260,10 @@ where
             batches.extend(slot.all_batches().cloned());
         }
         batches
+    }
+
+    fn get_snapshot(&self) -> SpineSnapshot<B> {
+        SpineSnapshot::with_batches(&self.factories, self.get_batches())
     }
 
     /// Removes the loose batches and returns them.  This ensures that the
@@ -390,10 +395,10 @@ impl<B> AsyncMerger<B>
 where
     B: Batch,
 {
-    fn new() -> Self {
+    fn new(factories: &B::Factories) -> Self {
         let idle = Arc::new(Condvar::new());
         let no_backpressure = Arc::new(Condvar::new());
-        let state = Arc::new(Mutex::new(SharedState::new()));
+        let state = Arc::new(Mutex::new(SharedState::new(factories)));
         BackgroundThread::add_worker({
             let state = Arc::clone(&state);
             let idle = Arc::clone(&idle);
@@ -422,7 +427,7 @@ where
     fn set_key_filter(&self, key_filter: &Filter<B::Key>) {
         self.state.lock().unwrap().key_filter = Some(key_filter.clone());
     }
-    fn set_value_filter(&self, value_filter: &Filter<B::Val>) {
+    fn set_value_filter(&self, value_filter: &GroupFilter<B::Val>) {
         self.state.lock().unwrap().value_filter = Some(value_filter.clone());
     }
 
@@ -554,11 +559,11 @@ where
         let mut cache_stats = spine_stats.cache_stats;
         let mut storage_size = 0;
         let mut merging_size = 0;
-        let mut filter_size = 0;
+        let mut filter_stats = BloomFilterStats::default();
         let mut storage_records = 0;
         for (batch, merging) in batches {
             cache_stats += batch.cache_stats();
-            filter_size += batch.filter_size();
+            filter_stats += batch.filter_stats();
             let on_storage = batch.location() == BatchLocation::Storage;
             if on_storage || merging {
                 let size = batch.approximate_byte_size();
@@ -573,7 +578,7 @@ where
         }
 
         if storage_records > 0 {
-            let bits_per_key = filter_size as f64 * 8.0 / storage_records as f64;
+            let bits_per_key = filter_stats.size_byte as f64 * 8.0 / storage_records as f64;
             let bits_per_key = bits_per_key as usize;
             meta.extend(metadata! {
                 "Bloom filter bits/key" => MetaItem::Int(bits_per_key)
@@ -589,7 +594,28 @@ where
             "storage size" => MetaItem::bytes(storage_size),
 
             // The amount of memory used for Bloom filters.
-            "Bloom filter size" => MetaItem::bytes(filter_size),
+            "Bloom filter size" => MetaItem::bytes(filter_stats.size_byte),
+
+            // The number of hits across all Bloom filters.
+            // Note that the hits are summed across the Bloom filters for all batches in the
+            // spine. As such, this does not provide information about hits distribution
+            // of the batches in the spine.
+            "Bloom filter hits" => MetaItem::Int(filter_stats.hits),
+
+            // The number of misses across all Bloom filters.
+            // Note that the misses are summed across the Bloom filters for all batches in the
+            // spine. As such, this does not provide information about misses distribution
+            // of the batches in the spine.
+            "Bloom filter misses" => MetaItem::Int(filter_stats.misses),
+
+            // The hit rate across all Bloom filters.
+            // Note that the hits and misses are summed across the Bloom filters for all batches in
+            // the spine is used to calculate this rate. As such, this does not provide
+            // information about hit rate distribution of the batches in the spine.
+            "Bloom filter hit rate" => MetaItem::Percent {
+                numerator: filter_stats.hits as u64,
+                denominator: filter_stats.hits as u64 + filter_stats.misses as u64,
+            },
 
             // The number of batches currently being merged.
             "merging batches" => MetaItem::Count(n_merging),
@@ -679,8 +705,24 @@ where
             .enumerate()
             .filter_map(|(level, slot)| slot.try_start_merge(level).map(|batches| (level, batches)))
             .collect::<Vec<_>>();
+
+        let snapshot = if value_filter
+            .as_ref()
+            .map(|f| f.requires_snapshot())
+            .unwrap_or(false)
+        {
+            Some(Arc::new(state.lock().unwrap().get_snapshot()))
+        } else {
+            None
+        };
         for (level, batches) in start_merges {
-            mergers[level] = Some(Merge::new(merger_type, batches, &key_filter, &value_filter));
+            mergers[level] = Some(Merge::new(
+                merger_type,
+                batches,
+                &key_filter,
+                &value_filter,
+                snapshot.clone(),
+            ));
         }
 
         let state = state.lock().unwrap();
@@ -786,7 +828,8 @@ where
         merger_type: MergerType,
         batches: Vec<Arc<B>>,
         key_filter: &Option<Filter<B::Key>>,
-        value_filter: &Option<Filter<B::Val>>,
+        value_filter: &Option<GroupFilter<B::Val>>,
+        snapshot: Option<Arc<SpineSnapshot<B>>>,
     ) -> Self {
         let factories = batches[0].factories();
         let builder = B::Builder::for_merge(&factories, &batches, None);
@@ -802,6 +845,7 @@ where
                     batches,
                     key_filter,
                     value_filter,
+                    snapshot,
                 )),
                 MergerType::PushMerger => {
                     let mut inner =
@@ -891,10 +935,19 @@ where
 
     dirty: bool,
     key_filter: Option<Filter<B::Key>>,
-    value_filter: Option<Filter<B::Val>>,
+    value_filter: Option<GroupFilter<B::Val>>,
 
     /// The asynchronous merger.
     merger: AsyncMerger<B>,
+}
+
+impl<B> Spine<B>
+where
+    B: Batch,
+{
+    pub fn get_batches(&self) -> Vec<Arc<B>> {
+        self.merger.get_batches()
+    }
 }
 
 impl<B> SizeOf for Spine<B>
@@ -1036,11 +1089,11 @@ where
             .sum()
     }
 
-    fn filter_size(&self) -> usize {
+    fn filter_stats(&self) -> BloomFilterStats {
         self.merger
             .get_batches()
             .iter()
-            .map(|batch| batch.filter_size())
+            .map(|batch| batch.filter_stats())
             .sum()
     }
 
@@ -1083,11 +1136,11 @@ where
         let mut cursor = SpineCursor::new_cursor(&self.factories, batches);
         for key in intermediate.dyn_iter_mut() {
             cursor.seek_key(key);
-            if let Some(current_key) = cursor.get_key() {
-                if current_key == key {
-                    debug_assert!(cursor.val_valid() && !cursor.weight().is_zero());
-                    sample.push_ref(key);
-                }
+            if let Some(current_key) = cursor.get_key()
+                && current_key == key
+            {
+                debug_assert!(cursor.val_valid() && !cursor.weight().is_zero());
+                sample.push_ref(key);
             }
         }
     }
@@ -1156,7 +1209,7 @@ impl<B: Batch> Clone for SpineCursor<B> {
 }
 
 impl<B: Batch> SpineCursor<B> {
-    fn new_cursor(factories: &B::Factories, batches: Vec<Arc<B>>) -> Self {
+    pub fn new_cursor(factories: &B::Factories, batches: Vec<Arc<B>>) -> Self {
         SpineCursorBuilder {
             batches,
             cursor_builder: |batches| {
@@ -1416,7 +1469,7 @@ where
         self.key_filter = Some(filter);
     }
 
-    fn retain_values(&mut self, filter: Filter<Self::Val>) {
+    fn retain_values(&mut self, filter: GroupFilter<Self::Val>) {
         self.merger.set_value_filter(&filter);
         self.value_filter = Some(filter);
     }
@@ -1425,7 +1478,7 @@ where
         &self.key_filter
     }
 
-    fn value_filter(&self) -> &Option<Filter<Self::Val>> {
+    fn value_filter(&self) -> &Option<GroupFilter<Self::Val>> {
         &self.value_filter
     }
 
@@ -1498,9 +1551,7 @@ where
         let content = Runtime::storage_backend().unwrap().read(&pspine_path)?;
         let archived = unsafe { rkyv::archived_root::<CommittedSpine>(&content) };
 
-        let committed: CommittedSpine = archived
-            .deserialize(&mut SharedDeserializeMap::new())
-            .unwrap();
+        let committed: CommittedSpine = archived.deserialize(&mut Deserializer::default()).unwrap();
         self.dirty = committed.dirty;
         self.key_filter = None;
         self.value_filter = None;
@@ -1552,7 +1603,7 @@ where
             dirty: false,
             key_filter: None,
             value_filter: None,
-            merger: AsyncMerger::new(),
+            merger: AsyncMerger::new(factories),
         }
     }
 

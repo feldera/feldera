@@ -4,13 +4,11 @@ use size_of::SizeOf;
 use crate::circuit::checkpointer::Checkpoint;
 use crate::dynamic::{DynData, DynUnit};
 use crate::operator::dynamic::{MonoIndexedZSet, MonoZSet};
-use crate::storage::file::to_bytes;
-use crate::trace::unaligned_deserialize;
 use crate::{
+    Circuit, NumEntries, RootCircuit, Runtime, Stream,
     dynamic::DataTrait,
     operator::communication::new_exchange_operators,
     trace::{BatchReader, Cursor, Rkyv},
-    Circuit, NumEntries, RootCircuit, Runtime, Stream,
 };
 use std::{cmp::max, panic::Location};
 
@@ -84,6 +82,7 @@ where
                 }
             });
 
+            let example = init();
             let exchange = new_exchange_operators(
                 Some(Location::caller()),
                 init,
@@ -92,8 +91,12 @@ where
                         waterlines.push(clone_box(waterline.as_ref()));
                     }
                 },
-                |waterline| to_bytes(&waterline).unwrap().into_vec(),
-                |data| unaligned_deserialize(&data[..]),
+                |waterline| waterline.checkpoint().unwrap(),
+                move |data| {
+                    let mut waterline = example.clone();
+                    waterline.restore(&data).unwrap();
+                    waterline
+                },
                 |result, waterline| {
                     if &waterline > result {
                         *result = waterline;
@@ -154,6 +157,7 @@ where
                 },
             );
 
+            let example = init();
             let exchange = new_exchange_operators(
                 Some(Location::caller()),
                 init,
@@ -162,8 +166,12 @@ where
                         waterlines.push(waterline.clone());
                     }
                 },
-                |waterline| to_bytes(&waterline).unwrap().into_vec(),
-                |data| unaligned_deserialize(&data[..]),
+                |waterline| waterline.checkpoint().unwrap(),
+                move |data| {
+                    let mut waterline = example.clone();
+                    waterline.restore(&data).unwrap();
+                    waterline
+                },
                 move |result, waterline| {
                     let old_result = clone_box(result);
                     least_upper_bound(&old_result, &waterline, result.as_mut());
@@ -184,10 +192,10 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
+        Runtime,
         dynamic::{DowncastTrait, DynData},
         typed_batch::TypedBox,
         utils::Tup2,
-        Runtime,
     };
     use std::cmp::max;
 

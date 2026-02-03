@@ -1,33 +1,76 @@
 <script lang="ts">
-  import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
-  import type { Snippet } from '$lib/types/svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import type { LayoutData } from './$types'
-  import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import SvelteKitTopLoader from '$lib/components/common/SvelteKitTopLoader.svelte'
-  import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
-  import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
-  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
-  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
-  import BookADemo from '$lib/components/other/BookADemo.svelte'
-  import LineBanner, { BannerButton } from '$lib/components/layout/LineBanner.svelte'
-  import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
-  import { useInterval } from '$lib/compositions/common/useInterval.svelte'
   import Dayjs from 'dayjs'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { useToast } from '$lib/compositions/useToastNotification'
+  import { invalidateAll } from '$app/navigation'
+  import { page } from '$app/state'
+  import SvelteKitTopLoader from '$lib/components/common/SvelteKitTopLoader.svelte'
+  import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
+  import LineBanner, { BannerButton } from '$lib/components/layout/LineBanner.svelte'
+  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
+  import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
+  import BookADemo from '$lib/components/other/BookADemo.svelte'
+  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
+  import { useInterval } from '$lib/compositions/common/useInterval.svelte'
+  import { useClusterHealth } from '$lib/compositions/health/useClusterHealth.svelte'
+  import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+  import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
+  import { useToast } from '$lib/compositions/useToastNotification'
+  import { getConfig } from '$lib/services/pipelineManager'
+  import type { Snippet } from '$lib/types/svelte'
+  import type { LayoutData } from './$types'
 
   const dialog = useGlobalDialog()
 
-  let { children, data }: { children: Snippet; data: LayoutData } = $props()
+  const { children, data }: { children: Snippet; data: LayoutData } = $props()
 
   useRefreshPipelineList()
+  usePipelineAction()
+
   const rightDrawer = useAdaptiveDrawer('right')
   const contextDrawer = useContextDrawer()
 
   const systemMessages = useSystemMessages()
+  const clusterHealth = useClusterHealth()
   const now = useInterval(() => new Date(), 3600000, 3600000 - (Date.now() % 3600000))
+
+  // Check for backend version changes every 30 seconds
+  useInterval(
+    async () => {
+      try {
+        const config = await getConfig()
+        const currentVersion = data.feldera?.version
+        const currentRevision = data.feldera?.revision
+        if (
+          currentVersion &&
+          currentRevision &&
+          (config.version !== currentVersion || config.revision !== currentRevision)
+        ) {
+          // Automatically refresh the page data to get the new backend version
+          await invalidateAll()
+
+          // Show a notification that the backend was updated
+          const msgId = `backend_version_changed`
+
+          const dismissTimeout = setTimeout(() => systemMessages.dismiss(msgId), 30000) // Auto-dismiss after 30 seconds
+          systemMessages.upsert(msgId, {
+            id: msgId,
+            text: `Feldera was updated from version ${currentVersion} to ${config.version}.`,
+            dismissable: { forMs: 0 },
+            onDismiss: () => clearTimeout(dismissTimeout)
+          })
+        }
+      } catch (e) {
+        // Silently ignore errors when checking for version changes
+        console.error('Failed to check backend version:', e)
+      }
+    },
+    10000 // Check every 10 seconds
+  )
+
   const displayedMessages = $derived(
     systemMessages.displayedMessages.map((message) => {
       const text = message.text.replace(/\{toDaysHoursFromNow (\d+)\}/, (_match, milliseconds) => {
@@ -46,9 +89,18 @@
       return { ...message, text }
     })
   )
+  const healthMessage = $derived(
+    clusterHealth.current.api !== 'healthy'
+      ? 'There is an issue with the API server.'
+      : clusterHealth.current.compiler !== 'healthy'
+        ? 'There is an issue with the compiler server.'
+        : clusterHealth.current.runner !== 'healthy'
+          ? 'There is an issue with the runner.'
+          : null
+  )
 
-  let api = usePipelineManager()
-  let { toastMain, dismissMain } = useToast()
+  const api = usePipelineManager()
+  const { toastMain, dismissMain } = useToast()
   $effect(() => {
     if (api.isNetworkHealthy) {
       dismissMain()
@@ -62,7 +114,7 @@
 
 <SvelteKitTopLoader
   height={2}
-  color={'rgb(var(--color-primary-500))'}
+  color={'var(--color-primary-500)'}
   showSpinner={false}
   ignoreBeforeNavigate={() => false}
   ignoreAfterNavigate={() => false}
@@ -73,6 +125,17 @@
     : 'disabled pointer-events-auto select-text [&_.monaco-editor-background]:pointer-events-none [&_[role="button"]]:pointer-events-none [&_[role="separator"]]:pointer-events-none [&_a]:pointer-events-none [&_button]:pointer-events-none'}"
   style={api.isNetworkHealthy ? '' : ''}
 >
+  {#if healthMessage && !page.url.pathname.startsWith('/health')}
+    <LineBanner variant="error">
+      {#snippet start()}
+        <span>{healthMessage}</span>
+        {@render BannerButton({
+          text: 'See details',
+          href: '/health/'
+        })}
+      {/snippet}
+    </LineBanner>
+  {/if}
   {#each displayedMessages as message}
     {#if message.id.startsWith('expiring_license_')}
       <LineBanner
@@ -130,9 +193,7 @@
       <PipelinesList bind:pipelines={pipelines.pipelines}></PipelinesList>
     </div>
   </Drawer> -->
-  <div class="flex h-full w-full flex-col">
-    {@render children()}
-  </div>
+  {@render children()}
 
   <OverlayDrawer
     width="w-72"
@@ -149,7 +210,7 @@
         }}
       ></CreatePipelineButton>
     </div>
-    <BookADemo class="self-center preset-filled-primary-500">Book a demo</BookADemo>
+    <BookADemo class="btn self-center preset-filled-primary-500">Book a demo</BookADemo>
     <NavigationExtras inline></NavigationExtras>
   </OverlayDrawer>
   <OverlayDrawer
@@ -157,7 +218,7 @@
     side="right"
     bind:open={() => !!contextDrawer.content, () => (contextDrawer.content = null)}
     modal={false}
-    class="bg-white-dark overflow-auto p-4 pb-0 scrollbar md:p-6 md:pb-0"
+    class="bg-white-dark scrollbar overflow-auto p-4 pb-0 md:p-6 md:pb-0"
   >
     {@render contextDrawer.content?.()}
   </OverlayDrawer>

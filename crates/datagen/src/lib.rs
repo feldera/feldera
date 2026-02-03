@@ -10,33 +10,33 @@ use std::sync::{Arc, LazyLock};
 use std::thread;
 use std::time::Duration as StdDuration;
 
-use anyhow::{anyhow, bail, Result as AnyResult};
+use anyhow::{Result as AnyResult, anyhow, bail};
 use async_channel::Receiver as AsyncReceiver;
 use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime, Timelike, Utc};
 use crossbeam::sync::{Parker, Unparker};
-use feldera_fxp::{pow10, DynamicDecimal, UniformDecimal};
+use feldera_fxp::{DynamicDecimal, UniformDecimal, pow10};
 use feldera_types::config::FtModel;
 use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
 use governor::state::{InMemoryState, NotKeyed};
 use governor::{Jitter, Quota, RateLimiter};
-use num_traits::{clamp, Bounded, ToPrimitive};
+use num_traits::{Bounded, ToPrimitive, clamp};
 use rand::distributions::{Alphanumeric, Uniform};
 use rand::rngs::SmallRng;
-use rand::{thread_rng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, thread_rng};
 use rand_distr::{Distribution, Zipf};
 use range_set::RangeSet;
 use serde::{Deserialize, Serialize};
-use serde_json::{to_writer, Map, Value};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+use serde_json::{Map, Value, to_writer};
+use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 use tokio::{sync::mpsc::UnboundedSender, time::Instant as TokioInstant};
 
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::{BufferSize, InputBuffer, Parser};
 use feldera_adapterlib::transport::{
-    parse_resume_info, InputCommandReceiver, InputConsumer, InputEndpoint, InputReader,
-    InputReaderCommand, Resume, TransportInputEndpoint, Watermark,
+    InputCommandReceiver, InputConsumer, InputEndpoint, InputReader, InputReaderCommand, Resume,
+    TransportInputEndpoint, Watermark, parse_resume_info,
 };
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
 use feldera_types::transport::datagen::{
@@ -492,7 +492,7 @@ impl InputGenerator {
 
         // Generate initial seed.  If we start from a checkpoint, we'll change
         // it to use the seed from that checkpoint.
-        let mut seed = config.seed.unwrap_or(thread_rng().gen());
+        let mut seed = config.seed.unwrap_or(thread_rng().r#gen());
 
         // Long-running tasks with high CPU usage don't work well on cooperative runtimes,
         // so we use a separate blocking task if we think this will happen for our workload.
@@ -764,7 +764,7 @@ impl InputGenerator {
                             buffer.extend(END_ARR);
 
                             let timestamp = Utc::now();
-                            let (buffer, errors) = parser.parse(&buffer, &None);
+                            let (buffer, errors) = parser.parse(&buffer, None);
                             consumer.parse_errors(errors);
                             let _ = completion_sender.send(Completion {
                                 batch: Batch {
@@ -795,7 +795,7 @@ impl InputGenerator {
                 buffer.extend(END_ARR);
                 let timestamp = Utc::now();
 
-                let (buffer, errors) = parser.parse(&buffer, &None);
+                let (buffer, errors) = parser.parse(&buffer, None);
                 consumer.parse_errors(errors);
                 let _ = completion_sender.send(Completion {
                     batch: Batch {
@@ -1512,6 +1512,7 @@ impl<'a> RecordGenerator<'a> {
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
+        use fake::Dummy;
         use fake::faker::address::raw::*;
         use fake::faker::barcode::raw::*;
         use fake::faker::company::raw::*;
@@ -1525,7 +1526,6 @@ impl<'a> RecordGenerator<'a> {
         use fake::faker::name::raw::*;
         use fake::faker::phone_number::raw::*;
         use fake::locales::*;
-        use fake::Dummy;
 
         if let Value::String(str) = obj {
             str.clear();
@@ -1749,7 +1749,11 @@ impl<'a> RecordGenerator<'a> {
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
-        let min = N::min_value().to_i64().unwrap_or(i64::MIN);
+        let min = if field.columntype.scale.is_none() {
+            N::min_value().to_i64().unwrap_or(i64::MIN)
+        } else {
+            u8::MIN as i64
+        };
         let max = if field.columntype.scale.is_none() {
             N::max_value().to_i64().unwrap_or(i64::MAX)
         } else {
@@ -1759,13 +1763,13 @@ impl<'a> RecordGenerator<'a> {
             u8::MAX as i64
         };
         let range = range_as_i64(&field.name, &settings.range)?;
-        if let Some((a, b)) = range {
-            if a > b {
-                return Err(anyhow!(
-                    "Invalid range, min > max for field {:?}",
-                    field.name
-                ));
-            }
+        if let Some((a, b)) = range
+            && a > b
+        {
+            return Err(anyhow!(
+                "Invalid range, min > max for field {:?}",
+                field.name
+            ));
         }
         let scale = settings.scale;
 
@@ -1847,13 +1851,13 @@ impl<'a> RecordGenerator<'a> {
         let max = N::max_value().to_f64().unwrap_or(f64::MAX);
         let range = range_as_f64(&field.name, &settings.range)?;
 
-        if let Some((a, b)) = range {
-            if a > b {
-                return Err(anyhow!(
-                    "Invalid range, min > max for field {:?}",
-                    field.name
-                ));
-            }
+        if let Some((a, b)) = range
+            && a > b
+        {
+            return Err(anyhow!(
+                "Invalid range, min > max for field {:?}",
+                field.name
+            ));
         }
         if let Some(nl) = Self::maybe_null(field, settings, rng) {
             *obj = nl;
@@ -1939,13 +1943,13 @@ impl<'a> RecordGenerator<'a> {
     ) -> AnyResult<()> {
         let (min, max) = decimal_max_range(field)?;
         let range = range_as_decimal(&field.name, &settings.range)?;
-        if let Some((a, b)) = range {
-            if a > b {
-                return Err(anyhow!(
-                    "Invalid range, min > max for field {:?}",
-                    field.name
-                ));
-            }
+        if let Some((a, b)) = range
+            && a > b
+        {
+            return Err(anyhow!(
+                "Invalid range, min > max for field {:?}",
+                field.name
+            ));
         }
         if let Some(nl) = Self::maybe_null(field, settings, rng) {
             *obj = nl;
@@ -2101,13 +2105,13 @@ impl<'a> RecordGenerator<'a> {
         obj: &mut Value,
     ) -> AnyResult<()> {
         let range = parse_range_for_uuid(&field.name, &settings.range)?;
-        if let Some((a, b)) = range {
-            if a > b {
-                return Err(anyhow!(
-                    "Invalid range, min > max for field {:?}",
-                    field.name
-                ));
-            }
+        if let Some((a, b)) = range
+            && a > b
+        {
+            return Err(anyhow!(
+                "Invalid range, min > max for field {:?}",
+                field.name
+            ));
         }
         let scale = settings.scale;
 
@@ -2196,11 +2200,11 @@ impl<'a> RecordGenerator<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        decimal_max, decimal_min, FELDERA_MAX_DECIMAL_PRECISION, FELDERA_MAX_DECIMAL_SCALE,
+        FELDERA_MAX_DECIMAL_PRECISION, FELDERA_MAX_DECIMAL_SCALE, decimal_max, decimal_min,
     };
     use feldera_fxp::{DynamicDecimal, UniformDecimal};
-    use rand::rngs::SmallRng;
     use rand::SeedableRng;
+    use rand::rngs::SmallRng;
 
     /// Verify we can generate all feldera min/max decimals without panicking.
     #[test]

@@ -1,16 +1,18 @@
-use std::{borrow::Cow, cmp::Ordering, marker::PhantomData};
+use std::{borrow::Cow, cmp::Ordering, marker::PhantomData, rc::Rc};
 
+use async_stream::stream;
 use dyn_clone::clone_box;
 
 use crate::{
+    Circuit, Position, RootCircuit, Scope, Stream, ZWeight,
     algebra::{IndexedZSet, ZBatchReader},
-    circuit::operator_traits::{BinaryOperator, Operator},
+    circuit::{operator_traits::Operator, splitter_output_chunk_size},
     dynamic::{ClonableTrait, DynData, Erase},
-    operator::dynamic::{
-        accumulate_trace::AccumulateTraceFeedback, trace::TraceBounds, MonoIndexedZSet,
+    operator::{
+        async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper},
+        dynamic::{MonoIndexedZSet, accumulate_trace::AccumulateTraceFeedback, trace::TraceBounds},
     },
-    trace::{BatchReader, BatchReaderFactories, Builder, Cursor, Spine},
-    Circuit, RootCircuit, Scope, Stream, ZWeight,
+    trace::{BatchReader, BatchReaderFactories, Builder, Cursor, Spine, WithSnapshot},
 };
 
 impl Stream<RootCircuit, MonoIndexedZSet> {
@@ -59,27 +61,35 @@ where
         // ```
 
         let circuit = self.circuit();
-        let stream = self.dyn_shard(input_factories);
 
-        let bounds = TraceBounds::unbounded();
+        circuit
+            .region("chain_aggregate", || {
+                let stream = self.dyn_shard(input_factories);
 
-        let feedback = circuit.add_accumulate_integrate_trace_feedback::<Spine<OZ>>(
-            persistent_id,
-            output_factories,
-            bounds,
-        );
+                let bounds = TraceBounds::unbounded();
 
-        let output = circuit
-            .add_binary_operator(
-                ChainAggregate::new(output_factories, finit, fupdate),
-                &stream.dyn_accumulate(input_factories),
-                &feedback.delayed_trace,
-            )
-            .mark_sharded();
+                let feedback = circuit.add_accumulate_integrate_trace_feedback::<Spine<OZ>>(
+                    persistent_id,
+                    output_factories,
+                    bounds,
+                );
+                let output = circuit
+                    .add_binary_operator(
+                        StreamingBinaryWrapper::new(ChainAggregate::new(
+                            output_factories,
+                            finit,
+                            fupdate,
+                        )),
+                        &stream.dyn_accumulate(input_factories),
+                        &feedback.delayed_trace,
+                    )
+                    .mark_sharded();
 
-        feedback.connect(&output, output_factories);
+                feedback.connect(&output, output_factories);
 
-        output
+                output
+            })
+            .clone()
     }
 }
 
@@ -126,82 +136,109 @@ where
     }
 }
 
-impl<Z, OZ> BinaryOperator<Option<Z>, Spine<OZ>, OZ> for ChainAggregate<Z, OZ>
+impl<Z, OZ> StreamingBinaryOperator<Option<Z>, Spine<OZ>, OZ> for ChainAggregate<Z, OZ>
 where
-    Z: ZBatchReader<Time = ()>,
+    Z: ZBatchReader<Time = ()> + WithSnapshot,
+    <Z as WithSnapshot>::Batch: ZBatchReader<Key = Z::Key, Val = Z::Val, Time = ()>,
     OZ: IndexedZSet<Key = Z::Key>,
 {
-    async fn eval(&mut self, delta: &Option<Z>, output_trace: &Spine<OZ>) -> OZ {
-        let Some(delta) = delta else {
-            return OZ::dyn_empty(&self.output_factories);
+    fn eval(
+        self: Rc<Self>,
+        delta: &Option<Z>,
+        output_trace: &Spine<OZ>,
+    ) -> impl futures::Stream<Item = (OZ, bool, Option<Position>)> + 'static {
+        let chunk_size = splitter_output_chunk_size();
+
+        let delta = delta.as_ref().map(|b| b.ro_snapshot());
+
+        let output_trace = if delta.is_some() {
+            Some(output_trace.ro_snapshot())
+        } else {
+            None
         };
 
-        let mut delta_cursor = delta.cursor();
-        let mut output_trace_cursor = output_trace.cursor();
-
-        let mut builder = OZ::Builder::with_capacity(
-            &self.output_factories,
-            delta.key_count(),
-            2 * delta.key_count(),
-        );
-
-        let mut old = self.output_factories.val_factory().default_box();
-        let mut new = self.output_factories.val_factory().default_box();
-
-        while delta_cursor.key_valid() {
-            let mut key = clone_box(delta_cursor.key());
-            let mut retract = false;
-
-            // Read the current value of the aggregate, be careful to skip entries with weight 0.
-            if output_trace_cursor.seek_key_exact(&key, None) {
-                debug_assert!(
-                    output_trace_cursor.val_valid() && **output_trace_cursor.weight() != 0
-                );
-
-                output_trace_cursor.val().clone_to(&mut old);
-                retract = true;
+        stream! {
+            let Some(delta) = delta else {
+                yield (OZ::dyn_empty(&self.output_factories), true, None);
+                return;
             };
 
-            // If there is an existing value, start from it, otherwise start from finit().
-            if retract {
-                old.clone_to(&mut new);
-            } else {
-                let w = **delta_cursor.weight();
-                (self.finit)(&mut new, delta_cursor.val(), w);
-                delta_cursor.step_val();
-            }
+            let output_trace = output_trace.unwrap();
 
-            // Iterate over new values.
-            while delta_cursor.val_valid() {
-                let w = **delta_cursor.weight();
-                (self.fupdate)(&mut new, delta_cursor.val(), w);
-                delta_cursor.step_val();
-            }
+            let mut delta_cursor = delta.cursor();
+            let mut output_trace_cursor = output_trace.cursor();
 
-            // Apply retraction and insertion in correct order.
-            if retract {
-                match new.cmp(&old) {
-                    Ordering::Less => {
-                        builder.push_val_diff_mut(&mut new, (1 as ZWeight).erase_mut());
-                        builder.push_val_diff_mut(&mut old, (-1 as ZWeight).erase_mut());
-                        builder.push_key_mut(&mut key);
-                    }
-                    Ordering::Greater => {
-                        builder.push_val_diff_mut(&mut old, (-1 as ZWeight).erase_mut());
-                        builder.push_val_diff_mut(&mut new, (1 as ZWeight).erase_mut());
-                        builder.push_key_mut(&mut key);
-                    }
-                    _ => (),
+            let mut builder = OZ::Builder::with_capacity(
+                &self.output_factories,
+                chunk_size,
+                chunk_size + 1,
+            );
+
+            let mut old = self.output_factories.val_factory().default_box();
+            let mut new = self.output_factories.val_factory().default_box();
+
+            while delta_cursor.key_valid() {
+                let mut key = clone_box(delta_cursor.key());
+                let mut retract = false;
+
+                // Read the current value of the aggregate, be careful to skip entries with weight 0.
+                if output_trace_cursor.seek_key_exact(&key, None) {
+                    debug_assert!(
+                        output_trace_cursor.val_valid() && **output_trace_cursor.weight() != 0
+                    );
+
+                    output_trace_cursor.val().clone_to(&mut old);
+                    retract = true;
+                };
+
+                // If there is an existing value, start from it, otherwise start from finit().
+                if retract {
+                    old.clone_to(&mut new);
+                } else {
+                    let w = **delta_cursor.weight();
+                    (self.finit)(&mut new, delta_cursor.val(), w);
+                    delta_cursor.step_val();
                 }
-                // do nothing if new == old.
-            } else {
-                builder.push_val_diff_mut(&mut new, 1.erase_mut());
-                builder.push_key_mut(&mut key);
-            }
 
-            delta_cursor.step_key();
+                // Iterate over new values.
+                while delta_cursor.val_valid() {
+                    let w = **delta_cursor.weight();
+                    (self.fupdate)(&mut new, delta_cursor.val(), w);
+                    delta_cursor.step_val();
+                }
+
+                // Apply retraction and insertion in correct order.
+                if retract {
+                    match new.cmp(&old) {
+                        Ordering::Less => {
+                            builder.push_val_diff_mut(&mut new, (1 as ZWeight).erase_mut());
+                            builder.push_val_diff_mut(&mut old, (-1 as ZWeight).erase_mut());
+                            builder.push_key_mut(&mut key);
+                        }
+                        Ordering::Greater => {
+                            builder.push_val_diff_mut(&mut old, (-1 as ZWeight).erase_mut());
+                            builder.push_val_diff_mut(&mut new, (1 as ZWeight).erase_mut());
+                            builder.push_key_mut(&mut key);
+                        }
+                        _ => (),
+                    }
+                    // do nothing if new == old.
+                } else {
+                    builder.push_val_diff_mut(&mut new, 1.erase_mut());
+                    builder.push_key_mut(&mut key);
+                }
+
+                delta_cursor.step_key();
+
+                if builder.num_tuples() >= chunk_size {
+                    let result = builder.done();
+                    yield (result, false, delta_cursor.position());
+                    builder = OZ::Builder::with_capacity(&self.output_factories, chunk_size, chunk_size + 1);
+                }
+            }
+            let result = builder.done();
+            yield (result, true, delta_cursor.position());
         }
-        builder.done()
     }
 }
 
@@ -210,8 +247,9 @@ mod test {
     use std::cmp::{max, min};
 
     use crate::{
-        circuit::CircuitConfig, operator::Min, typed_batch::SpineSnapshot, utils::Tup2, zset,
         OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
+        circuit::CircuitConfig, operator::Min, typed_batch::IndexedZSetReader,
+        typed_batch::SpineSnapshot, utils::Tup2, zset,
     };
     use proptest::{collection, prelude::*};
 
@@ -260,7 +298,7 @@ mod test {
         #[test]
         fn chain_aggregate_min_test(inputs in test_inputs()) {
             let (mut dbsp, (input, aggregate, delta_aggregate)) =
-                Runtime::init_circuit(CircuitConfig::with_workers(4), |circuit| {
+                Runtime::init_circuit(CircuitConfig::with_workers(4).with_splitter_chunk_size_records(2), |circuit| {
                     Ok(min_test_circuit(circuit))
                 })
                 .unwrap();

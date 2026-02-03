@@ -1,10 +1,10 @@
 use crate::{
+    Circuit, DBData, Stream, ZWeight,
     algebra::{GroupValue, MulByRef},
     dynamic::{ClonableTrait, DowncastTrait, DynData, DynWeight},
     operator::dynamic::aggregate::AvgFactories,
     storage::file::Deserializable,
     typed_batch::{IndexedZSet, OrdIndexedZSet},
-    Circuit, DBData, Stream, ZWeight,
 };
 use std::ops::Div;
 

@@ -1,14 +1,10 @@
-import {
-  type ExtendedPipeline,
-  type Pipeline,
-  type PipelineThumb
-} from '$lib/services/pipelineManager'
 import { untrack } from 'svelte'
 import invariant from 'tiny-invariant'
 import {
-  usePipelineManager,
-  type PipelineManagerApi
+  type PipelineManagerApi,
+  usePipelineManager
 } from '$lib/compositions/usePipelineManager.svelte'
+import type { ExtendedPipeline, Pipeline, PipelineThumb } from '$lib/services/pipelineManager'
 
 export const writablePipeline = ({
   api,
@@ -22,7 +18,7 @@ export const writablePipeline = ({
   update: (p: Partial<ExtendedPipeline>) => void
 }) => {
   invariant(pipeline, 'useWritablePipeline: pipeline was not preloaded')
-  let pipelineName = pipeline.current.name
+  const pipelineName = pipeline.current.name
 
   if (!pipelineName) {
     throw new Error('Cannot use pipeline without specifying its name')
@@ -69,7 +65,7 @@ export const useRefreshPipeline = ({
   const api = usePipelineManager()
   const reload = async () => {
     const requestedPipelineName = pipelineName
-    let loaded = await api.getExtendedPipeline(requestedPipelineName, {
+    const loaded = await api.getExtendedPipeline(requestedPipelineName, {
       onNotFound: () => {
         if (requestedPipelineName !== pipelineName) {
           return

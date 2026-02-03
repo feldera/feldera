@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
@@ -175,9 +176,11 @@ public class ExternalFunction extends SqlFunction {
             DBSPType functionType = functionBody.getType();
             if (!returnType.sameType(functionType)) {
                 if (returnType.is(DBSPTypeString.class)) {
-                    functionBody = functionBody.cast(functionBody.getNode(), returnType, false);
+                    functionBody = functionBody.cast(
+                            functionBody.getNode(), returnType, DBSPCastExpression.CastType.SqlUnsafe);
                 } else if (returnType.sameType(functionType.withMayBeNull(true))) {
-                    functionBody = functionBody.cast(functionBody.getNode(), returnType, false);
+                    functionBody = functionBody.cast(
+                            functionBody.getNode(), returnType, DBSPCastExpression.CastType.SqlUnsafe);
                 } else {
                     throw new CompilationError("Function " + Utilities.singleQuote(this.getName()) +
                             " should return " + Utilities.singleQuote(this.returnType.getFullTypeString()) +

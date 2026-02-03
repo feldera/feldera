@@ -41,7 +41,7 @@ public class Change implements IHasId {
         }
     }
 
-    /** Return a change that has the sets in this one shuffled */
+    /** Return a change that has the sets in this one shuffled as specified */
     public Change shuffle(Shuffle shuffle) {
         if (shuffle.isIdentityPermutation())
             return this;

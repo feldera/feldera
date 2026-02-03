@@ -124,7 +124,7 @@ public final class DBSPU16Literal extends DBSPIntLiteral implements IsNumericLit
                     .append(this.type)
                     .append(")null");
         else
-            return builder.append(this.value.toString());
+            return builder.append(this.wrapSome(this.value.toString()));
     }
 
     @Override

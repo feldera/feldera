@@ -62,6 +62,7 @@ pub use string_interner::{build_string_interner, intern_string, unintern_string}
 // Perhaps they should be defined in sqllib in the first place?
 pub use dbsp::algebra::{F32, F64};
 use dbsp::{
+    DBData, MapHandle, OrdIndexedZSet, OrdZSet, OutputHandle, ZSetHandle, ZWeight,
     algebra::{
         AddByRef, HasOne, HasZero, NegByRef, OrdIndexedZSetFactories, OrdZSetFactories, Semigroup,
         SemigroupValue, ZRingValue,
@@ -70,12 +71,11 @@ use dbsp::{
     dynamic::{DowncastTrait, DynData, Erase},
     operator::Update,
     trace::{
-        ord::{OrdIndexedWSetBuilder, OrdWSetBuilder},
         BatchReader, BatchReaderFactories, Builder, Cursor,
+        ord::{OrdIndexedWSetBuilder, OrdWSetBuilder},
     },
     typed_batch::{SpineSnapshot, TypedBatch},
     utils::*,
-    DBData, MapHandle, OrdIndexedZSet, OrdZSet, OutputHandle, ZSetHandle, ZWeight,
 };
 use num::PrimInt;
 use num_traits::Pow;
@@ -171,29 +171,6 @@ macro_rules! some_polymorphic_function1 {
 
 pub(crate) use some_polymorphic_function1;
 
-// Macro to create variants of a polymorphic function with 1 argument that is
-// also polymorphic in the return type.
-// If there exists a function is f_type_result(x: T) -> S, this creates a
-// function
-// f_typeN_resultN(x: Option<T>) -> Option<S>
-// { let x = x?; Some(f_type(x)) }.
-#[allow(unused_macros)]
-macro_rules! polymorphic_return_function1 {
-    ($func_name:ident, $type_name: ident, $arg_type:ty, $ret_name: ident, $ret_type:ty) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name N _ $ret_name N>]( arg: Option<$arg_type> ) -> Option<$ret_type> {
-                let arg = arg?;
-                Some([<$func_name _ $type_name >](arg))
-            }
-        }
-    };
-}
-
-// Maybe we will need this someday
-#[allow(unused_imports)]
-pub(crate) use polymorphic_return_function1;
-
 // Macro to create variants of a function with 2 arguments
 // If there exists a function is f__(x: T, y: S) -> U, this creates
 // three functions:
@@ -227,41 +204,6 @@ macro_rules! some_function2 {
 }
 
 pub(crate) use some_function2;
-
-// Macro to create variants of a polymorphic function with 2 arguments
-// that is also polymorphic in the return type
-// If there exists a function is f_type1_type2_result(x: T, y: S) -> U, this
-// creates three functions:
-// - f_type1_type2N_resultN(x: T, y: Option<S>) -> Option<U>
-// - f_type1N_type2_resultN(x: Option<T>, y: S) -> Option<U>
-// - f_type1N_type2N_resultN(x: Option<T>, y: Option<S>) -> Option<U>
-// The resulting functions return Some only if all arguments are 'Some'.
-macro_rules! polymorphic_return_function2 {
-    ($func_name:ident, $type_name0: ident, $arg_type0:ty, $type_name1: ident, $arg_type1:ty, $ret_name: ident, $ret_type:ty) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            pub fn [<$func_name _$type_name0 _ $type_name1 N _ $ret_name N>]( arg0: $arg_type0, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                Some([<$func_name _ $type_name0 _ $type_name1 _ $ret_name>](arg0, arg1))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1 _ $ret_name N>]( arg0: Option<$arg_type0>, arg1: $arg_type1 ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                Some([<$func_name _ $type_name0 _ $type_name1 _ $ret_name>](arg0, arg1))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1 N _ $ret_name N>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                Some([<$func_name _ $type_name0 _ $type_name1 _ $ret_name>](arg0, arg1))
-            }
-        }
-    }
-}
-
-pub(crate) use polymorphic_return_function2;
 
 // Macro to create variants of a polymorphic function with 2 arguments
 // If there exists a function is f_type1_type2(x: T, y: S) -> U, this
@@ -845,6 +787,36 @@ pub fn abs_d(left: F64) -> F64 {
     left.abs()
 }
 
+#[doc(hidden)]
+#[inline(always)]
+pub fn abs_u8(left: u8) -> u8 {
+    left
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn abs_u16(left: u16) -> u16 {
+    left
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn abs_u32(left: u32) -> u32 {
+    left
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn abs_u64(left: u64) -> u64 {
+    left
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn abs_u128(left: u128) -> u128 {
+    left
+}
+
 some_polymorphic_function1!(abs, i8, i8, i8);
 some_polymorphic_function1!(abs, i16, i16, i16);
 some_polymorphic_function1!(abs, i32, i32, i32);
@@ -852,6 +824,82 @@ some_polymorphic_function1!(abs, i64, i64, i64);
 some_polymorphic_function1!(abs, i128, i128, i128);
 some_polymorphic_function1!(abs, f, F32, F32);
 some_polymorphic_function1!(abs, d, F64, F64);
+some_polymorphic_function1!(abs, u8, u8, u8);
+some_polymorphic_function1!(abs, u16, u16, u16);
+some_polymorphic_function1!(abs, u32, u32, u32);
+some_polymorphic_function1!(abs, u64, u64, u64);
+some_polymorphic_function1!(abs, u128, u128, u128);
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_i8(x: i8) -> i8 {
+    if x == 0 { x } else { x.signum() }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_i16(x: i16) -> i16 {
+    if x == 0 { x } else { x.signum() }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_i32(x: i32) -> i32 {
+    if x == 0 { x } else { x.signum() }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_i64(x: i64) -> i64 {
+    if x == 0 { x } else { x.signum() }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_i128(x: i128) -> i128 {
+    if x == 0 { x } else { x.signum() }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_u8(x: u8) -> u8 {
+    if x == 0 { x } else { 1 }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_u16(x: u16) -> u16 {
+    if x == 0 { x } else { 1 }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_u32(x: u32) -> u32 {
+    if x == 0 { x } else { 1 }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_u64(x: u64) -> u64 {
+    if x == 0 { x } else { 1 }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn sign_u128(x: u128) -> u128 {
+    if x == 0 { x } else { 1 }
+}
+
+some_polymorphic_function1!(sign, i8, i8, i8);
+some_polymorphic_function1!(sign, i16, i16, i16);
+some_polymorphic_function1!(sign, i32, i32, i32);
+some_polymorphic_function1!(sign, i64, i64, i64);
+some_polymorphic_function1!(sign, i128, i128, i128);
+some_polymorphic_function1!(sign, u8, u8, u8);
+some_polymorphic_function1!(sign, u16, u16, u16);
+some_polymorphic_function1!(sign, u32, u32, u32);
+some_polymorphic_function1!(sign, u64, u64, u64);
+some_polymorphic_function1!(sign, u128, u128, u128);
 
 #[doc(hidden)]
 #[inline(always)]
@@ -1376,4 +1424,19 @@ impl<T> Deref for StaticLazy<T> {
     fn deref(&self) -> &Self::Target {
         self.get()
     }
+}
+
+#[doc(hidden)]
+// If the data is Ok(None), convert it to Err, other leave it unchanged
+pub fn unwrap_sql_result<T>(data: SqlResult<Option<T>>) -> SqlResult<T> {
+    match data {
+        Err(e) => Err(e),
+        Ok(None) => Err(SqlRuntimeError::from_strng("NULL result produced")),
+        Ok(Some(data)) => Ok(data),
+    }
+}
+
+#[doc(hidden)]
+pub fn wrap_sql_result<T>(data: T) -> SqlResult<T> {
+    Ok(data)
 }

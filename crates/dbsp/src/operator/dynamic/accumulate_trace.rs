@@ -1,25 +1,25 @@
-use crate::circuit::circuit_builder::{register_replay_stream, StreamId};
-use crate::circuit::metadata::NUM_INPUTS_LABEL;
-use crate::dynamic::{Weight, WeightTrait};
-use crate::operator::dynamic::trace::{DelayedTraceId, TraceBounds};
-use crate::operator::{require_persistent_id, TraceBound};
-use crate::trace::spine_async::WithSnapshot;
-use crate::trace::{BatchReaderFactories, Builder, MergeCursor};
 use crate::Runtime;
+use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
+use crate::circuit::metadata::{NUM_ALLOCATIONS_LABEL, NUM_INPUTS_LABEL};
+use crate::dynamic::{Factory, Weight, WeightTrait};
+use crate::operator::dynamic::trace::{DelayedTraceId, TraceBounds};
+use crate::operator::{TraceBound, require_persistent_id};
+use crate::trace::spine_async::WithSnapshot;
+use crate::trace::{BatchReaderFactories, Builder, GroupFilter, MergeCursor};
 use crate::{
+    Error, Timestamp,
     circuit::{
+        Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
+        Scope, Stream, WithClock,
         metadata::{
-            MetaItem, OperatorMeta, ALLOCATED_BYTES_LABEL, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL,
+            ALLOCATED_BYTES_LABEL, MetaItem, NUM_ENTRIES_LABEL, OperatorMeta, SHARED_BYTES_LABEL,
             USED_BYTES_LABEL,
         },
         operator_traits::{BinaryOperator, Operator, StrictOperator, StrictUnaryOperator},
-        Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
-        Scope, Stream, WithClock,
     },
     circuit_cache_key,
     dynamic::DataTrait,
     trace::{Batch, BatchReader, Filter, Spine, SpineSnapshot, Trace},
-    Error, Timestamp,
 };
 use feldera_storage::{FileCommitter, StoragePath};
 use ouroboros::self_referencing;
@@ -157,7 +157,72 @@ where
         bounds.set_unique_val_bound_name(bounds_stream.get_persistent_id().as_deref());
 
         bounds_stream.inspect(move |ts| {
-            let filter = retain_val_func(ts.as_ref());
+            let filter = GroupFilter::Simple(retain_val_func(ts.as_ref()));
+            bounds.set_val_filter(filter);
+        });
+    }
+
+    /// See [`Stream::accumulate_integrate_trace_retain_values_last_n`].
+    #[track_caller]
+    pub fn dyn_accumulate_integrate_trace_retain_values_last_n<TS>(
+        &self,
+        bounds_stream: &Stream<C, Box<TS>>,
+        retain_val_func: Box<dyn Fn(&TS) -> Filter<B::Val>>,
+        n: usize,
+    ) where
+        B: Batch<Time = ()>,
+        TS: DataTrait + ?Sized,
+        Box<TS>: Clone,
+    {
+        let bounds = self.accumulate_trace_bounds();
+        bounds.set_unique_val_bound_name(bounds_stream.get_persistent_id().as_deref());
+
+        bounds_stream.inspect(move |ts| {
+            let filter = GroupFilter::LastN(n, retain_val_func(ts.as_ref()));
+            bounds.set_val_filter(filter);
+        });
+    }
+
+    /// See [`Stream::accumulate_integrate_trace_retain_values_top_n`].
+    #[track_caller]
+    pub fn dyn_accumulate_integrate_trace_retain_values_top_n<TS>(
+        &self,
+        val_factory: &'static dyn Factory<B::Val>,
+        bounds_stream: &Stream<C, Box<TS>>,
+        retain_val_func: Box<dyn Fn(&TS) -> Filter<B::Val>>,
+        n: usize,
+    ) where
+        B: Batch<Time = ()>,
+        TS: DataTrait + ?Sized,
+        Box<TS>: Clone,
+    {
+        let bounds = self.accumulate_trace_bounds();
+        bounds.set_unique_val_bound_name(bounds_stream.get_persistent_id().as_deref());
+
+        bounds_stream.inspect(move |ts| {
+            let filter = GroupFilter::TopN(n, retain_val_func(ts.as_ref()), val_factory);
+            bounds.set_val_filter(filter);
+        });
+    }
+
+    /// See [`Stream::accumulate_integrate_trace_retain_values_bottom_n`].
+    #[track_caller]
+    pub fn dyn_accumulate_integrate_trace_retain_values_bottom_n<TS>(
+        &self,
+        val_factory: &'static dyn Factory<B::Val>,
+        bounds_stream: &Stream<C, Box<TS>>,
+        retain_val_func: Box<dyn Fn(&TS) -> Filter<B::Val>>,
+        n: usize,
+    ) where
+        B: Batch<Time = ()>,
+        TS: DataTrait + ?Sized,
+        Box<TS>: Clone,
+    {
+        let bounds = self.accumulate_trace_bounds();
+        bounds.set_unique_val_bound_name(bounds_stream.get_persistent_id().as_deref());
+
+        bounds_stream.inspect(move |ts| {
+            let filter = GroupFilter::BottomN(n, retain_val_func(ts.as_ref()), val_factory);
             bounds.set_val_filter(filter);
         });
     }
@@ -750,10 +815,11 @@ where
     }
 
     fn clock_end(&mut self, scope: Scope) {
-        if scope + 1 == self.root_scope && !self.reset_on_clock_start {
-            if let Some(tr) = self.trace.as_mut() {
-                tr.set_frontier(&self.time.epoch_start(scope));
-            }
+        if scope + 1 == self.root_scope
+            && !self.reset_on_clock_start
+            && let Some(tr) = self.trace.as_mut()
+        {
+            tr.set_frontier(&self.time.epoch_start(scope));
         }
         self.time = self.time.advance(scope + 1);
     }
@@ -779,7 +845,7 @@ where
             NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
             ALLOCATED_BYTES_LABEL => MetaItem::bytes(bytes.total_bytes()),
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => MetaItem::Count(bytes.distinct_allocations()),
+            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
             "bounds" => self.bounds.metadata()
         });

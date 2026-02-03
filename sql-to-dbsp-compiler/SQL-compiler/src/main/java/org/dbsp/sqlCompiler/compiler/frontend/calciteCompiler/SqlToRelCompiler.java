@@ -95,11 +95,6 @@ import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlTypeNameSpec;
 import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
 import org.apache.calcite.sql.SqlWriter;
-import org.apache.calcite.sql.ddl.SqlAttributeDefinition;
-import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
-import org.apache.calcite.sql.ddl.SqlCreateType;
-import org.apache.calcite.sql.ddl.SqlDropTable;
-import org.apache.calcite.sql.ddl.SqlKeyConstraint;
 import org.apache.calcite.sql.dialect.OracleSqlDialect;
 import org.apache.calcite.sql.fun.SqlDatetimeSubtractionOperator;
 import org.apache.calcite.sql.parser.SqlParseException;
@@ -135,22 +130,27 @@ import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.ExtendedSqlParserPos;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlAttributeDefinition;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateAggregate;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateIndex;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateType;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlDeclareView;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlDropTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentCharacterString;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlPrimaryKey;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlViewColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateAggregateStatement;
@@ -164,6 +164,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.FreshName;
@@ -204,7 +205,7 @@ import java.util.stream.Collectors;
  * The front-end offers several APIs, invoked in this order:
  * - parse SQL (using {@link SqlToRelCompiler#parse})
  * - compile SqlNode to RelNode (using {@link SqlToRelCompiler#compile})
- * - optimize RelNode (using {@link SqlToRelCompiler#optimize(RelNode, boolean)})
+ * - optimize RelNode (using {@link SqlToRelCompiler#optimize(RelNode, boolean, RelBuilder)})
  *   Optimize is called automatically from compile().
  */
 public class SqlToRelCompiler implements IWritesLogs {
@@ -224,10 +225,12 @@ public class SqlToRelCompiler implements IWritesLogs {
     private final SchemaPlus rootSchema;
     private final CustomFunctions customFunctions;
     /** User-defined types */
-    private final HashMap<ProgramIdentifier, RelStruct> udt;
+    private final HashMap<ProgramIdentifier, RelDataType> udt;
     private final HashMap<ProgramIdentifier, DeclareViewStatement> declaredViews;
     /** Recursive views which have been referred */
     private final Set<ProgramIdentifier> usedViewDeclarations;
+    private final RelBuilder relBuilder;
+
     /** Views which have been defined */
     private final Set<ProgramIdentifier> definedViews;
     // Changing this may break all sorts of things.  Calcite is very brittle to this kind of stuff.
@@ -298,6 +301,9 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.converter = null;
         this.usedViewDeclarations = new HashSet<>();
         this.declaredViews = new HashMap<>();
+        this.relBuilder = this.converterConfig.getRelBuilderFactory()
+                .create(cluster, null)
+                .transform(this.converterConfig.getRelBuilderConfigTransform());
 
         SqlOperatorTable operatorTable = this.createOperatorTable();
         this.addOperatorTable(operatorTable);
@@ -322,6 +328,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.usedViewDeclarations = new HashSet<>(source.usedViewDeclarations);
         this.definedViews = new HashSet<>(source.definedViews);
         this.extraValidator = source.extraValidator;
+        this.relBuilder = source.relBuilder;
         this.addOperatorTable(Objects.requireNonNull(source.validator).getOperatorTable());
     }
 
@@ -345,31 +352,30 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     public static final RelDataTypeSystem TYPE_SYSTEM = new RelDataTypeSystemImpl() {
         @Override
-        public int getMaxNumericPrecision() {
-            return DBSPTypeDecimal.MAX_PRECISION;
-        }
-
-        @Override
-        public int getMaxNumericScale() {
-            return DBSPTypeDecimal.MAX_SCALE;
-        }
-
-        @Override
         public int getMaxPrecision(SqlTypeName typeName) {
-            if (typeName == SqlTypeName.TIME)
+            if (typeName == SqlTypeName.DECIMAL)
+                return DBSPTypeDecimal.MAX_PRECISION;
+            else if (typeName == SqlTypeName.TIME)
                 return DBSPTypeTime.PRECISION;
-            if (typeName == SqlTypeName.TIMESTAMP)
+            else if (typeName == SqlTypeName.TIMESTAMP)
                 return DBSPTypeTimestamp.PRECISION;
-            return super.getMaxPrecision(typeName);
+            else return super.getMaxPrecision(typeName);
         }
 
         @Override
         public int getDefaultPrecision(SqlTypeName typeName) {
             if (typeName == SqlTypeName.TIMESTAMP)
                 return DBSPTypeTimestamp.PRECISION;
-            if (typeName == SqlTypeName.TIME)
+            else if (typeName == SqlTypeName.TIME)
                 return DBSPTypeTime.PRECISION;
             return super.getDefaultPrecision(typeName);
+        }
+
+        @Override
+        public int getMaxScale(SqlTypeName typeName) {
+            if (typeName == SqlTypeName.DECIMAL)
+                return DBSPTypeDecimal.MAX_SCALE;
+            return super.getMaxScale(typeName);
         }
 
         @Override
@@ -380,7 +386,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.newlines.append("\n");
     }
 
-    /** A TypeFactory that knows about RelStruct, our representation of user-defined types */
+    /** A TypeFactory which has a custom id, which is used to generate some unique type names */
     public static class CustomTypeFactory extends SqlTypeFactoryImpl {
         static int currentId = 0;
         public final int id;
@@ -395,23 +401,12 @@ public class SqlToRelCompiler implements IWritesLogs {
             return Charsets.UTF_8;
         }
 
-        private RelDataType copyRelStruct(RelDataType type, boolean nullable) {
-            RelStruct strct = (RelStruct) type;
-            return new RelStruct(strct.id, strct.typeName, type.getFieldList(), nullable);
-        }
-
-        public RelStruct createRelStruct(SqlIdentifier name, List<RelDataTypeField> fields, boolean nullable) {
-            return new RelStruct(this.id, name, fields, nullable);
-        }
-
         @Override
         public RelDataType enforceTypeWithNullability(RelDataType type, boolean nullable) {
             if (type.isNullable() == nullable)
                 return type;
             RelDataType newType;
-            if (type instanceof RelStruct) {
-                newType = this.copyRelStruct(type, nullable);
-            } else if (type instanceof BasicSqlType) {
+            if (type instanceof BasicSqlType) {
                 newType = ((BasicSqlType)type).createWithNullability(nullable);
             } else if (type instanceof MapSqlType) {
                 newType = new MapSqlType(Objects.requireNonNull(type.getKeyType()),
@@ -702,13 +697,15 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     /** Given a SQL statement returns a SqlNode - a calcite AST
      * representation of the query.
-     * @param sql  SQL query to compile */
+     * @param sql  SQL query to compile
+     * @param saveLines  True if the lines "take space": are accounted as part of the input program */
     public SqlNode parse(String sql, boolean saveLines) throws SqlParseException {
         SqlParser sqlParser = this.createSqlParser(sql, saveLines);
         SqlNode result = sqlParser.parseStmt();
-        return this.postParsingProcess(result);
+        return this.postParsingProcess(result, saveLines);
     }
 
+    /** Remove calls to unary plus */
     static class RemoveUnaryNoop extends SqlShuttle {
         @Override
         public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlCall call) {
@@ -717,38 +714,52 @@ public class SqlToRelCompiler implements IWritesLogs {
                 Utilities.enforce(newCall.getOperandList().size() == 1,
                         () -> "Expected unary plus to have exactly 1 operand");
                 return newCall.getOperandList().get(0);
-            } else if (newCall.getOperator().kind == SqlKind.CREATE_VIEW) {
-                // The shuttle does not correctly create a view by replacing operands.
-                SqlCreateView view = (SqlCreateView) call;
-                List<SqlNode> operands = newCall.getOperandList();
-                newCall = new SqlCreateView(call.getParserPosition(), false, view.viewKind,
-                        view.name, view.columnList, view.viewProperties, operands.get(3));
             }
             return newCall;
         }
     }
 
-    SqlNode postParsingProcess(SqlNode node) {
+    static class ReplacePositions extends SqlShuttle {
+        final boolean internal;
+
+        ReplacePositions(boolean internal) {
+            this.internal = internal;
+        }
+
+        @Override
+        public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlCall call) {
+            SqlCall newCall = Objects.requireNonNull((SqlCall) super.visit(call));
+            SqlParserPos pos = new ExtendedSqlParserPos(call.getParserPosition(), this.internal);
+            newCall = (SqlCall) newCall.clone(pos);
+            return newCall;
+        }
+    }
+
+    SqlNode postParsingProcess(SqlNode node, boolean saveLines) {
         node.accept(this.getExtraValidator());
         if (this.options.languageOptions.unaryPlusNoop) {
             RemoveUnaryNoop remove = new RemoveUnaryNoop();
             node = Objects.requireNonNull(remove.visitNode(node));
         }
+        ReplacePositions replace = new ReplacePositions(!saveLines);
+        node = Objects.requireNonNull(replace.visitNode(node));
         return node;
     }
 
     public SqlNode parse(String sql) throws SqlParseException {
         SqlNode result = this.parse(sql, true);
-        return this.postParsingProcess(result);
+        return this.postParsingProcess(result, true);
     }
 
-    /** Given a list of statements separated by semicolons, parse all of them. */
+    /** Given a list of statements separated by semicolons, parse all of them.
+     * @param saveLines True if the lines are from the user program; false if they are internally generated. */
     public List<ParsedStatement> parseStatements(String statements, boolean saveLines) throws SqlParseException {
         SqlParser sqlParser = this.createSqlParser(statements, saveLines);
         List<ParsedStatement> result = new ArrayList<>();
         SqlNodeList sqlNodes = sqlParser.parseStmtList();
         for (SqlNode node: sqlNodes) {
-            ParsedStatement stat = new ParsedStatement(this.postParsingProcess(node), saveLines);
+            SqlNode sqlNode = this.postParsingProcess(node, saveLines);
+            ParsedStatement stat = new ParsedStatement(sqlNode, saveLines);
             result.add(stat);
         }
         return result;
@@ -758,7 +769,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         return this.parseStatements(statements, true);
     }
 
-    RelNode optimize(RelNode rel, boolean visible) {
+    RelNode optimize(RelNode rel, boolean visible, RelBuilder relBuilder) {
         int level = 2;
         if (rel instanceof LogicalValues)
             // Less verbose for LogicalValues
@@ -773,8 +784,6 @@ public class SqlToRelCompiler implements IWritesLogs {
                 .decrease()
                 .newline();
 
-        RelBuilder relBuilder = this.converterConfig.getRelBuilderFactory().create(
-                cluster, null);
         CalciteOptimizer optimizer = new CalciteOptimizer(
                 this.options.languageOptions.optimizationLevel, relBuilder, this.errorReporter);
         rel = optimizer.apply(rel, this.options);
@@ -784,7 +793,6 @@ public class SqlToRelCompiler implements IWritesLogs {
                 .append("After optimizer ")
                 .increase()
                 .appendSupplier(() -> getPlan(finalRel1))
-                .appendSupplier(() -> CalciteRelNode.toSqlString(finalRel1))
                 .decrease()
                 .newline();
         return rel;
@@ -883,16 +891,12 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
         if (typeSpec instanceof SqlUserDefinedTypeNameSpec udtObject) {
             if (result.isStruct()) {
-                RelStruct retval;
-                if (result instanceof RelStruct)
-                    retval = (RelStruct) result;
-                else
-                    retval = this.typeFactory.createRelStruct(
-                            udtObject.getTypeName(), result.getFieldList(), result.isNullable());
-                ProgramIdentifier name = new ProgramIdentifier(retval.getFullTypeString());
-                if (!this.udt.containsKey(name))
-                    Utilities.putNew(this.udt, name, retval);
-                return retval;
+                // This enables us to run multiple tests at the same time which declare the same user-defined type.
+                ProgramIdentifier name = new ProgramIdentifier(udtObject.toString() + this.typeFactory.id);
+                if (!this.udt.containsKey(name)) {
+                    Utilities.putNew(this.udt, name, result);
+                }
+                return result;
             }
         }
         return result;
@@ -1134,12 +1138,12 @@ public class SqlToRelCompiler implements IWritesLogs {
         List<RelColumnMetadata> result = new ArrayList<>();
         int index = 0;
         Map<String, SqlNode> columnDefinition = new HashMap<>();
-        SqlKeyConstraint key = null;
+        SqlPrimaryKey key = null;
         Map<String, SqlIdentifier> primaryKeys = new HashMap<>();
 
         // First scan for standard style PRIMARY KEY constraints.
         for (SqlNode col: Objects.requireNonNull(list)) {
-            if (col instanceof SqlKeyConstraint) {
+            if (col instanceof SqlPrimaryKey) {
                 if (key != null) {
                     this.errorReporter.reportError(new SourcePositionRange(col.getParserPosition()),
                             "Duplicate key", "PRIMARY KEY already declared");
@@ -1147,7 +1151,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                             "Duplicate key", "Previous declaration", true);
                     break;
                 }
-                key = (SqlKeyConstraint) col;
+                key = (SqlPrimaryKey) col;
                 if (key.operandCount() != 2) {
                     throw new InternalCompilerError("Expected 2 operands", CalciteObject.create(key));
                 }
@@ -1177,16 +1181,13 @@ public class SqlToRelCompiler implements IWritesLogs {
         for (SqlNode col: Objects.requireNonNull(list)) {
             SqlIdentifier name;
             SqlDataTypeSpec typeSpec;
-            boolean isPrimaryKey = false;
+            boolean isPrimaryKey;
             RexNode lateness = null;
             RexNode watermark = null;
             RexNode defaultValue = null;
             SourcePositionRange defaultValueRange = null;
-            boolean interned = false;
-            if (col instanceof SqlColumnDeclaration cd) {
-                name = cd.name;
-                typeSpec = cd.dataType;
-            } else if (col instanceof SqlExtendedColumnDeclaration cd) {
+            boolean interned;
+            if (col instanceof SqlExtendedColumnDeclaration cd) {
                 name = cd.name;
                 typeSpec = cd.dataType;
                 if (cd.primaryKey && key != null) {
@@ -1212,7 +1213,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     defaultValue = this.validateConstantExpression(cd, cd.defaultValue, sources);
                 }
                 interned = cd.interned;
-            } else if (col instanceof SqlKeyConstraint ||
+            } else if (col instanceof SqlPrimaryKey ||
                        col instanceof SqlForeignKey) {
                 continue;
             } else {
@@ -1463,7 +1464,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             builder.append("CREATE VIEW TMP0 AS SELECT\n");
             newLineNumber = builder.toString().split("\n").length + 1;
 
-            SourcePositionRange range = new SourcePositionRange(body.getParserPosition());
+            SourcePositionRange range = new SourcePositionRange(body.getParserPosition(), false);
             String bodyExpression = sources.getFragment(range, false);
             builder.append(bodyExpression);
             builder.append("\nFROM TMP;");
@@ -1896,7 +1897,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
-    void validateConnectorsProperty(CalciteObject node, boolean isTable, ProgramIdentifier tableView, SqlFragment key, SqlFragment value) {
+    void validateConnectorsProperty(CalciteObject ignored, boolean isTable, ProgramIdentifier tableView,
+                                    SqlFragment keyIgnored, SqlFragment value) {
         try {
             JsonNode jsonNode = Utilities.deterministicObjectMapper().readTree(value.getString());
             if (!jsonNode.isArray()) {
@@ -1933,14 +1935,15 @@ public class SqlToRelCompiler implements IWritesLogs {
         CalciteObject node = CalciteObject.create(key.getParserPosition());
         String keyString = key.getString();
         switch (key.getString()) {
-            case "materialized":
-            case "append_only":
+            case CreateTableStatement.MATERIALIZED:
+            case CreateTableStatement.APPEND_ONLY:
+            case CreateTableStatement.SKIP_UNUSED_COLUMNS:
                 this.validateBooleanProperty(node, key, value);
                 break;
-            case "connectors":
+            case CreateTableStatement.CONNECTORS:
                 this.validateConnectorsProperty(node, true, table, key, value);
                 break;
-            case "expected_size":
+            case CreateTableStatement.EXPECTED_SIZE:
                 this.validateNumericProperty(node, key, value);
                 break;
             default:
@@ -1974,7 +1977,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         Properties props = null;
         if (viewProperties != null) {
             viewProperties.checkDuplicates(this.errorReporter);
-            SqlFragment materialized = viewProperties.getPropertyValue("materialized");
+            SqlFragment materialized = viewProperties.getPropertyValue(CreateViewStatement.MATERIALIZED);
             if (materialized != null) {
                 this.errorReporter.reportWarning(materialized.getSourcePosition(),
                         "Materialized property not used",
@@ -2024,7 +2027,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         RelNode checked = checkedConverter.visit(relRoot.rel);
         relRoot = relRoot.withRel(checked);
 
-        RelNode optimized = this.optimize(relRoot.rel, node.visible());
+        RelNode optimized = this.optimize(relRoot.rel, node.visible(), this.getRelBuilder());
         relRoot = relRoot.withRel(optimized);
         CreateViewStatement view = new CreateViewStatement(node,
                 viewName, columns, cv, relRoot, emitFinal, props);
@@ -2051,6 +2054,10 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         this.definedViews.add(view.relationName);
         return view;
+    }
+
+    RelBuilder getRelBuilder() {
+        return this.relBuilder;
     }
 
     /** Convert a type to a SQL signature that resembles a TABLE declaration */
@@ -2137,7 +2144,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         TableModifyStatement stat = new TableModifyStatement(
                 node, false, Utilities.toIdentifier(id), remove.getSource());
         RelRoot values = this.sqlToRel(stat.data);
-        values = values.withRel(this.optimize(values.rel, true));
+        values = values.withRel(this.optimize(values.rel, true, this.getRelBuilder()));
         stat.setTranslation(values.rel);
         return stat;
     }
@@ -2149,7 +2156,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             throw new UnimplementedException("INSERT NOT SUPPORTED FOR " + table, CalciteObject.create(table));
         TableModifyStatement stat = new TableModifyStatement(node, true, Utilities.toIdentifier(id), insert.getSource());
         RelRoot values = this.sqlToRel(stat.data);
-        values = values.withRel(this.optimize(values.rel, true));
+        values = values.withRel(this.optimize(values.rel, true, this.getRelBuilder()));
         stat.setTranslation(values.rel);
         return stat;
     }
@@ -2179,9 +2186,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                     builder.add(attributeDef.name.getSimple(), type);
                 }
                 RelDataType result = builder.build();
-                RelStruct retval = this.typeFactory.createRelStruct(ct.name, result.getFieldList(), result.isNullable());
-                Utilities.putNew(SqlToRelCompiler.this.udt, name, retval);
-                return retval;
+                Utilities.putNew(SqlToRelCompiler.this.udt, name, result);
+                return result;
             }
         };
         ProgramIdentifier typeName = Utilities.toIdentifier(ct.name);

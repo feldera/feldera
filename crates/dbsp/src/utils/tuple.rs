@@ -7,24 +7,85 @@
 
 use feldera_types::deserialize_without_context;
 
-pub mod gen;
+#[repr(transparent)]
+#[derive(Copy, Clone)]
+pub struct TupleBitmap<const N: usize> {
+    bytes: [u8; N],
+}
+
+impl<const N: usize> Default for TupleBitmap<N> {
+    fn default() -> Self {
+        Self { bytes: [0u8; N] }
+    }
+}
+
+impl<const N: usize> TupleBitmap<N> {
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[inline]
+    pub fn set_none(&mut self, idx: usize) {
+        debug_assert!(idx < N * 8);
+        let byte = idx / 8;
+        let bit = idx % 8;
+        self.bytes[byte] |= 1u8 << bit;
+    }
+
+    #[inline]
+    pub fn is_none(&self, idx: usize) -> bool {
+        debug_assert!(idx < N * 8);
+        let byte = idx / 8;
+        let bit = idx % 8;
+        (self.bytes[byte] & (1u8 << bit)) != 0
+    }
+
+    #[inline]
+    pub fn count_none(&self, fields: usize) -> usize {
+        debug_assert!(fields <= N * 8);
+        let full_bytes = fields / 8;
+        let rem_bits = fields % 8;
+        let mut count = 0usize;
+        let mut i = 0usize;
+        while i < full_bytes {
+            count += self.bytes[i].count_ones() as usize;
+            i += 1;
+        }
+        if rem_bits != 0 {
+            let mask = (1u8 << rem_bits) - 1;
+            count += (self.bytes[full_bytes] & mask).count_ones() as usize;
+        }
+        count
+    }
+
+    #[inline]
+    pub fn count_none_before(&self, field_idx: usize) -> usize {
+        self.count_none(field_idx)
+    }
+}
+
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum TupleFormat {
+    Sparse = 0,
+    Dense = 1,
+}
 
 // Make sure to also call `dbsp_adapters::deserialize_without_context!`
 // and `sltsqlvalue::to_sql_row_impl!` for each new tuple type.
 // Also the compiler currently generates Tup11..Tup* if necessary,
 // so if e.g., we add Tup11 here the compiler needs to be adjusted too.
-crate::declare_tuples! {
-    Tup1<T1>,
-    Tup2<T1, T2>,
-    Tup3<T1, T2, T3>,
-    Tup4<T1, T2, T3, T4>,
-    Tup5<T1, T2, T3, T4, T5>,
-    Tup6<T1, T2, T3, T4, T5, T6>,
-    Tup7<T1, T2, T3, T4, T5, T6, T7>,
-    Tup8<T1, T2, T3, T4, T5, T6, T7, T8>,
-    Tup9<T1, T2, T3, T4, T5, T6, T7, T8, T9>,
-    Tup10<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>,
-}
+feldera_macros::declare_tuple! { Tup1<T1> }
+feldera_macros::declare_tuple! { Tup2<T1, T2> }
+feldera_macros::declare_tuple! { Tup3<T1, T2, T3> }
+feldera_macros::declare_tuple! { Tup4<T1, T2, T3, T4> }
+feldera_macros::declare_tuple! { Tup5<T1, T2, T3, T4, T5> }
+feldera_macros::declare_tuple! { Tup6<T1, T2, T3, T4, T5, T6> }
+feldera_macros::declare_tuple! { Tup7<T1, T2, T3, T4, T5, T6, T7> }
+feldera_macros::declare_tuple! { Tup8<T1, T2, T3, T4, T5, T6, T7, T8> }
+feldera_macros::declare_tuple! { Tup9<T1, T2, T3, T4, T5, T6, T7, T8, T9> }
+feldera_macros::declare_tuple! { Tup10<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> }
 
 deserialize_without_context!(Tup1, T1);
 deserialize_without_context!(Tup2, T1, T2);
@@ -52,6 +113,7 @@ deserialize_without_context!(Tup10, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    feldera_macros::IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(bound())]

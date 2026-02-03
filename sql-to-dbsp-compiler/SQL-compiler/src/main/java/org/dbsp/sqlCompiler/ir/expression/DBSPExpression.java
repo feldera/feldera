@@ -43,7 +43,9 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.Linq;
@@ -120,26 +122,21 @@ public abstract class DBSPExpression
     }
 
     /** Unwrap an expression with a nullable type */
-    public DBSPExpression unwrap() {
+    public DBSPExpression unwrap(String message) {
         Utilities.enforce(this.type.mayBeNull, () -> "Unwrapping non-nullable type");
-        return new DBSPUnwrapExpression(this);
+        return new DBSPUnwrapExpression(message, this).simplify();
     }
 
-    /** Unwrap an expression if the type is nullable */
-    public DBSPExpression unwrapIfNullable() {
+    public DBSPExpression neverFailsUnwrap() {
+        return this.unwrap("");
+    }
+
+    /** Unwrap an expression if the type is nullable
+     * @param message Message to report if the unwrap fails. */
+    public DBSPExpression unwrapIfNullable(String message) {
         if (!this.type.mayBeNull)
             return this;
-        DBSPBaseTupleExpression tuple = this.as(DBSPBaseTupleExpression.class);
-        if (tuple != null && tuple.fields != null) {
-            // Convert to non-nullable tuple constructor
-            switch (tuple.getType().code) {
-                case RAW_TUPLE: return new DBSPRawTupleExpression(tuple.fields);
-                case TUPLE: return new DBSPTupleExpression(tuple.fields);
-                // Otherwise this compiles into an None.unwrap().
-                default: break;
-            }
-        }
-        return this.unwrap();
+        return this.unwrap(message);
     }
 
     public DBSPExpressionStatement toStatement() {
@@ -161,6 +158,7 @@ public abstract class DBSPExpression
     public DBSPExpression question() { return new DBSPQuestionExpression(this); }
 
     /** Addition between two expressions with the same type. */
+    @CheckReturnValue
     public DBSPExpression add(DBSPExpression with) {
         return new DBSPBinaryExpression(this.getNode(), this.getType(), DBSPOpcode.ADD, this, with);
     }
@@ -233,10 +231,10 @@ public abstract class DBSPExpression
     public DBSPExpression castToNullable() {
         if (this.getType().mayBeNull)
             return this;
-        return this.cast(this.getNode(), this.getType().withMayBeNull(true), false);
+        return this.cast(this.getNode(), this.getType().withMayBeNull(true), DBSPCastExpression.CastType.SqlUnsafe);
     }
 
-    public DBSPExpression cast(CalciteObject node, DBSPType to, boolean safe) {
+    public DBSPExpression cast(CalciteObject node, DBSPType to, DBSPCastExpression.CastType safe) {
         DBSPType fromType = this.getType();
         if (fromType.sameType(to)) {
             return this;
@@ -245,9 +243,13 @@ public abstract class DBSPExpression
     }
 
     /** Insert a cast which may only change nullability */
-    public DBSPExpression nullabilityCast(DBSPType to, boolean safe) {
+    public DBSPExpression nullabilityCast(DBSPType to, DBSPCastExpression.CastType safe) {
         DBSPType sourceType = this.getType();
-        Utilities.enforce(sourceType.sameTypeIgnoringNullability(to),
+        // We also accept casts of the form CHAR(4) TO VARCHAR
+        boolean stringToString = sourceType.is(DBSPTypeString.class) && to.is(DBSPTypeString.class);
+        boolean binaryToBinary = sourceType.is(DBSPTypeBinary.class) && to.is(DBSPTypeBinary.class);
+        Utilities.enforce(sourceType.sameTypeIgnoringNullability(to) ||
+                stringToString || binaryToBinary,
                 () -> "Cast from " + sourceType + " to " + to + " is not a nullability cast.");
         return this.cast(this.getNode(), to, safe);
     }
@@ -281,7 +283,14 @@ public abstract class DBSPExpression
         BetaReduction beta = new BetaReduction(compiler);
         DBSPExpression reduced = beta.apply(this).to(DBSPExpression.class);
         Simplify simplify = new Simplify(compiler);
-        return simplify.apply(reduced).to(DBSPExpression.class);
+        for (int i = 0; i < 10; i++) {
+            // normally this should be unbounded, but we bound it just to be safe
+            DBSPExpression simplified = simplify.apply(reduced).to(DBSPExpression.class);
+            if (simplified == reduced)
+                break;
+            reduced = simplified;
+        }
+        return reduced;
     }
 
     /** 'this' must be an expression with a tuple type.
@@ -293,6 +302,13 @@ public abstract class DBSPExpression
             result.add(this.deepCopy().field(i).applyCloneIfNeeded());
         }
         return result;
+    }
+
+    /** True if this expression is a constant None for its type. */
+    public boolean isNone() {
+        if (this.is(IConstructor.class))
+            return this.to(IConstructor.class).isNull();
+        return false;
     }
 
     /** Check expressions for equivalence in a specified context.

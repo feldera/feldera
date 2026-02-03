@@ -1,8 +1,9 @@
 use crate::{
+    Circuit, DBData, DynZWeight, RootCircuit, Runtime, Stream, TypedBox, ZWeight,
     circuit::{
+        LocalStoreMarker, Scope,
         metadata::OperatorLocation,
         operator_traits::{Operator, SourceOperator},
-        LocalStoreMarker, Scope,
     },
     dynamic::{DowncastTrait, DynBool, DynData, DynPair, DynPairs, DynUnit, Erase, LeanVec},
     operator::dynamic::{
@@ -14,7 +15,6 @@ use crate::{
     },
     typed_batch::{OrdIndexedZSet, OrdZSet},
     utils::Tup2,
-    Circuit, DBData, DynZWeight, RootCircuit, Runtime, Stream, TypedBox, ZWeight,
 };
 use itertools::Itertools;
 use std::{
@@ -58,7 +58,7 @@ pub type ZSetStream<K> = Stream<RootCircuit, OrdZSet<K>>;
 /// than in [StagedBuffers::flush].  This means that, if the code driving the
 /// circuit can buffer data ahead of the circuit's demand for it, the cost can
 /// be hidden and data processing as a whole runs faster.
-pub trait StagedBuffers {
+pub trait StagedBuffers: Send + Sync {
     /// Flushes the data gathered into this buffer to the circuit.
     fn flush(&mut self);
 }
@@ -70,11 +70,7 @@ pub struct ZSetStagedBuffers {
 
 impl StagedBuffers for ZSetStagedBuffers {
     fn flush(&mut self) {
-        for (vals, worker) in self
-            .vals
-            .drain(..)
-            .zip_eq(0..self.input_handle.0.mailbox.len())
-        {
+        for (vals, worker) in self.vals.drain(..).zip_eq(self.input_handle.workers()) {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
@@ -162,11 +158,7 @@ pub struct IndexedZSetStagedBuffers {
 
 impl StagedBuffers for IndexedZSetStagedBuffers {
     fn flush(&mut self) {
-        for (vals, worker) in self
-            .vals
-            .drain(..)
-            .zip_eq(0..self.input_handle.0.mailbox.len())
-        {
+        for (vals, worker) in self.vals.drain(..).zip_eq(self.input_handle.workers()) {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
@@ -210,11 +202,7 @@ pub struct SetStagedBuffers {
 
 impl StagedBuffers for SetStagedBuffers {
     fn flush(&mut self) {
-        for (vals, worker) in self
-            .vals
-            .drain(..)
-            .zip_eq(0..self.input_handle.0.mailbox.len())
-        {
+        for (vals, worker) in self.vals.drain(..).zip_eq(self.input_handle.workers()) {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
@@ -283,11 +271,7 @@ pub struct MapStagedBuffers {
 
 impl StagedBuffers for MapStagedBuffers {
     fn flush(&mut self) {
-        for (vals, worker) in self
-            .vals
-            .drain(..)
-            .zip_eq(0..self.input_handle.0.mailbox.len())
-        {
+        for (vals, worker) in self.vals.drain(..).zip_eq(self.input_handle.workers()) {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });

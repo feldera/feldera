@@ -1,12 +1,13 @@
+use crate::Controller;
+use crate::adhoc::execute_sql;
 use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::parquet::test::load_parquet_file;
 use crate::integrated::delta_table::delta_input_serde_config;
 use crate::test::data::DeltaTestKey;
 use crate::test::{
-    file_to_zset, list_files_recursive, test_circuit, test_circuit_with_index, wait,
-    DeltaTestStruct,
+    DeltaTestStruct, file_to_zset, list_files_recursive, test_circuit, test_circuit_with_index,
+    wait,
 };
-use crate::Controller;
 use arrow::datatypes::Schema as ArrowSchema;
 use chrono::NaiveDate;
 #[cfg(feature = "delta-s3-test")]
@@ -18,7 +19,6 @@ use deltalake::kernel::{DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaOps, DeltaTable, DeltaTableBuilder};
-use feldera_adapterlib::utils::datafusion::execute_query_collect;
 use feldera_sqllib::Variant;
 use feldera_types::config::PipelineConfig;
 use feldera_types::format::json::JsonFlavor;
@@ -34,7 +34,7 @@ use proptest::prelude::{Arbitrary, ProptestConfig, Strategy};
 use proptest::proptest;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 #[cfg(feature = "delta-s3-test")]
 use serial_test::{parallel, serial};
 use std::cmp::min;
@@ -51,9 +51,9 @@ use tempfile::{NamedTempFile, TempDir};
 use tokio::sync::mpsc;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, info};
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 fn delta_output_serde_config() -> SqlSerdeConfig {
     SqlSerdeConfig::default()
@@ -173,12 +173,12 @@ async fn wait_for_records_materialized<T>(
 {
     let start = Instant::now();
     loop {
-        let data = execute_query_collect(
-            &pipeline.session_context().unwrap(),
-            &format!("select * from {table}"),
-        )
-        .await
-        .unwrap();
+        let data = execute_sql(pipeline, &format!("select * from {table}"))
+            .await
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
 
         let mut result = Vec::new();
 
@@ -887,6 +887,32 @@ async fn test_follow(
 
     println!("initial snapshot processed");
 
+    // The connector should report the initial version as the completed version (issue 5447).
+    wait(
+        || {
+            if let Some(version) = completed_version(&pipeline) {
+                let expected = input_table.version();
+                debug!(
+                    "pipeline completed version {version}, expected (initial version) {expected}, waterlines: {:?}",
+                    pipeline
+                        .status()
+                        .input_status()
+                        .values()
+                        .next()
+                        .unwrap()
+                        .completed_frontier
+                        .debug()
+                );
+                version == expected
+            } else {
+                debug!("pipeline completed version: None");
+                false
+            }
+        },
+        20_000,
+    )
+    .unwrap();
+
     // Write remaining data in 10 chunks, wait for it to show up in the output table.
     for chunk in data[split_at..].chunks(std::cmp::max(data[split_at..].len() / 10, 1)) {
         total_count += chunk.len();
@@ -923,8 +949,7 @@ async fn test_follow(
         }
 
         // Test the waterline tracking mechanism.
-        if !suspend {
-            wait(
+        wait(
                 || {
                     if let Some(version) = completed_version(&pipeline) {
                         let expected = if test_end_version {
@@ -942,7 +967,6 @@ async fn test_follow(
                 20_000,
             )
             .unwrap();
-        }
 
         // Wait a bit to make sure the pipeline doesn't process data beyond end_version.
         if test_end_version && input_table.version() > end_version {
@@ -975,18 +999,7 @@ async fn test_follow(
         .await;
 
         let status = pipeline.input_endpoint_status("test_input1").unwrap();
-
-        assert!(status
-            .as_object()
-            .unwrap()
-            .get("metrics")
-            .unwrap()
-            .as_object()
-            .unwrap()
-            .get("end_of_input")
-            .unwrap()
-            .as_bool()
-            .unwrap());
+        assert!(status.metrics.end_of_input);
     }
 
     // TODO: this does not currently work because our output delta connector doesn't support
@@ -1459,6 +1472,11 @@ async fn delta_table_transactional_always_snapshot_and_follow_file_test() {
 #[tokio::test]
 async fn delta_table_follow_file_test() {
     delta_table_follow_file_test_common(false, DeltaTableTransactionMode::None, false, false).await
+}
+
+#[tokio::test]
+async fn delta_table_follow_file_test_suspend() {
+    delta_table_follow_file_test_common(false, DeltaTableTransactionMode::None, true, false).await
 }
 
 #[tokio::test]

@@ -1,9 +1,14 @@
+use super::utils::{copy_to_builder, pick_merge_destination};
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::{
+    DBWeight, NumEntries,
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
     circuit::checkpointer::Checkpoint,
     dynamic::{DataTrait, DynUnit, DynVec, Erase, WeightTrait, WeightTraitTyped},
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
+        Batch, BatchLocation, BatchReader, Builder, FallbackKeyBatch, FileWSet, FileWSetFactories,
+        Filter, GroupFilter, MergeCursor,
         cursor::{CursorFactory, DelegatingCursor, PushCursor},
         deserialize_wset, merge_batches_by_reference,
         ord::{
@@ -12,22 +17,18 @@ use crate::{
             merge_batcher::MergeBatcher,
             vec::wset_batch::{VecWSet, VecWSetBuilder},
         },
-        serialize_wset, Batch, BatchLocation, BatchReader, Builder, FallbackKeyBatch, FileWSet,
-        FileWSetFactories, Filter, MergeCursor,
+        serialize_wset,
     },
-    DBWeight, NumEntries,
 };
 use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
-use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
 use std::ops::Neg;
 use std::{
     fmt::{self, Debug},
     sync::Arc,
 };
-
-use super::utils::{copy_to_builder, pick_merge_destination};
 
 pub type FallbackWSetFactories<K, R> = FileWSetFactories<K, R>;
 
@@ -229,7 +230,7 @@ where
     fn merge_cursor(
         &self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         match &self.inner {
             Inner::Vec(vec) => vec.merge_cursor(key_filter, value_filter),
@@ -240,7 +241,7 @@ where
     fn consuming_cursor(
         &mut self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         match &mut self.inner {
             Inner::Vec(vec) => vec.consuming_cursor(key_filter, value_filter),
@@ -273,10 +274,10 @@ where
     }
 
     #[inline]
-    fn filter_size(&self) -> usize {
+    fn filter_stats(&self) -> BloomFilterStats {
         match &self.inner {
-            Inner::File(file) => file.filter_size(),
-            Inner::Vec(vec) => vec.filter_size(),
+            Inner::File(file) => file.filter_stats(),
+            Inner::Vec(vec) => vec.filter_stats(),
         }
     }
 

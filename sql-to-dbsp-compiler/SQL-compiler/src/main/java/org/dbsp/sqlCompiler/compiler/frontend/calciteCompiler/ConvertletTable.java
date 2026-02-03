@@ -205,10 +205,11 @@ public class ConvertletTable extends ReflectiveConvertletTable {
         registerOp(SqlLibraryOperators.RTRIM,
                 new ConvertletTable.TrimConvertlet(SqlTrimFunction.Flag.TRAILING));
 
-        registerOp(SqlLibraryOperators.GREATEST, new ConvertletTable.GreatestConvertlet());
-        registerOp(SqlLibraryOperators.GREATEST_PG, new ConvertletTable.GreatestPgConvertlet());
-        registerOp(SqlLibraryOperators.LEAST, new ConvertletTable.GreatestConvertlet());
-        registerOp(SqlLibraryOperators.LEAST_PG, new ConvertletTable.GreatestPgConvertlet());
+        // Removed GREATEST and LEAST - they are inefficient for many arguments
+        // registerOp(SqlLibraryOperators.GREATEST, new ConvertletTable.GreatestConvertlet());
+        // registerOp(SqlLibraryOperators.GREATEST_PG, new ConvertletTable.GreatestPgConvertlet());
+        // registerOp(SqlLibraryOperators.LEAST, new ConvertletTable.GreatestConvertlet());
+        // registerOp(SqlLibraryOperators.LEAST_PG, new ConvertletTable.GreatestPgConvertlet());
         registerOp(SqlLibraryOperators.SUBSTR_BIG_QUERY,
                 new ConvertletTable.SubstrConvertlet(SqlLibrary.BIG_QUERY));
         registerOp(SqlLibraryOperators.SUBSTR_MYSQL,
@@ -595,6 +596,11 @@ public class ConvertletTable extends ReflectiveConvertletTable {
         return rexBuilder.makeCall(pos, SqlStdOperatorTable.DIVIDE_INTEGER, a0, a1);
     }
 
+    private static RexNode divide(SqlParserPos pos, RexBuilder rexBuilder, RexNode a0,
+                                  RexNode a1) {
+        return rexBuilder.makeCall(pos, SqlStdOperatorTable.DIVIDE, a0, a1);
+    }
+
     private static RexNode plus(SqlParserPos pos, RexBuilder rexBuilder, RexNode a0, RexNode a1) {
         return rexBuilder.makeCall(pos, SqlStdOperatorTable.PLUS, a0, a1);
     }
@@ -797,14 +803,14 @@ public class ConvertletTable extends ReflectiveConvertletTable {
                     call.getParserPosition(), call, value, validator, rexBuilder, safe);
         }
 
+        if (SqlUtil.isNullLiteral(left, false)) {
+            validator.setValidatedNodeType(left, arg.getType());
+            return arg;
+        }
         final SqlDataTypeSpec dataType = (SqlDataTypeSpec) right;
         RelDataType type =
                 SqlCastFunction.deriveType(cx.getTypeFactory(), arg.getType(),
                         dataType.deriveType(validator), safe);
-        if (SqlUtil.isNullLiteral(left, false)) {
-            validator.setValidatedNodeType(left, type);
-            return cx.convertExpression(left);
-        }
         if (null != dataType.getCollectionsTypeName()) {
             RelDataType argComponentType = arg.getType().getComponentType();
 
@@ -964,7 +970,7 @@ public class ConvertletTable extends ReflectiveConvertletTable {
                 // ignore - reciprocal is not an integer
             }
         }
-        return divideInt(pos, rexBuilder, res, rexBuilder.makeExactLiteral(val));
+        return divide(pos, rexBuilder, res, rexBuilder.makeExactLiteral(val));
     }
 
     public RexNode convertDatetimeMinus(

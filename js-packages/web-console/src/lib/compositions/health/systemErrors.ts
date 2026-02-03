@@ -1,15 +1,14 @@
-import { resolve } from '$lib/functions/svelte'
-import { groupBy } from '$lib/functions/common/array'
-import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
-import {
-  type CompilerOutput,
-  type ExtendedPipeline,
-  type Pipeline,
-  type SqlCompilerMessage
-} from '$lib/services/pipelineManager'
-import type { ControllerStatus } from '$lib/types/pipelineManager'
-
 import JSONbig from 'true-json-bigint'
+import { groupBy } from '$lib/functions/common/array'
+import { resolve } from '$lib/functions/svelte'
+import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
+import type { ControllerStatus } from '$lib/services/manager'
+import type {
+  CompilerOutput,
+  ExtendedPipeline,
+  Pipeline,
+  SqlCompilerMessage
+} from '$lib/services/pipelineManager'
 
 export type SystemError<T = any, Report = ReportDetails> = Error & {
   message: string
@@ -68,7 +67,7 @@ export const extractPipelineStderr = (pipeline: ExtendedPipeline): string[] => {
   return [
     `Pipeline process returned an error code ${pipeline.deploymentError.error_code}:\n
 ${pipeline.deploymentError.message}
-${Object.entries(pipeline.deploymentError.details).map((k, v) => `${k}: ${v}\n`)}`
+${Object.entries(pipeline.deploymentError.details as Record<string, string>).map((k, v) => `${k}: ${v}\n`)}`
   ]
 }
 

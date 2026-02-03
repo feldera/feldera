@@ -1,10 +1,13 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -12,6 +15,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitDispatcher;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
@@ -23,6 +27,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -45,9 +52,9 @@ public class IncrementalRegressionTests extends SqlIoTest {
         CompilerOptions options = super.testOptions();
         options.languageOptions.incrementalize = true;
         options.languageOptions.optimizationLevel = 2;
-        // This causes the use of SourceSet operators
+        // This will make the generated code use SourceSet operators:
         // options.ioOptions.emitHandles = false;
-        // Without the following ORDER BY causes failures
+        // Without the following flag ORDER BY causes failures
         options.languageOptions.ignoreOrderBy = true;
         return options;
     }
@@ -298,6 +305,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrateTraceKeys = 0;
             int integrateTraceValues = 0;
+            int integrateTraceValuesLastN = 0;
 
             @Override
             public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
@@ -310,9 +318,15 @@ public class IncrementalRegressionTests extends SqlIoTest {
             }
 
             @Override
+            public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
+                this.integrateTraceValuesLastN++;
+            }
+
+            @Override
             public void endVisit() {
                 Assert.assertEquals(2, this.integrateTraceKeys);
                 Assert.assertEquals(1, this.integrateTraceValues);
+                Assert.assertEquals(1, this.integrateTraceValuesLastN);
             }
         };
         ccs.visit(visitor);
@@ -804,6 +818,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
     // Tests that are not in the repository; run manually
     @Test @Ignore
     public void extraTests() throws IOException {
+        // Logger.INSTANCE.setLoggingLevel(CalciteOptimizer.class, 2);
+        // this.showFinal();
         String dir = "../extra";
         File file = new File(dir);
         if (file.exists()) {
@@ -820,6 +836,28 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 }
             }
         }
+    }
+
+    @Test
+    public void issue5491() {
+        this.getCCS("""
+                CREATE TABLE T(
+                   id INT,
+                   i INT NOT NULL LATENESS 1,
+                   d DATE NOT NULL LATENESS INTERVAL 1 DAY,
+                   ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 DAY
+                );
+                CREATE TABLE S(
+                   id INT,
+                   ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 DAY,
+                   d DATE NOT NULL LATENESS INTERVAL 1 DAY,
+                   i INT NOT NULL LATENESS 1
+                );
+                CREATE VIEW V AS SELECT
+                   S.*, T.*
+                FROM T JOIN S
+                ON T.id = S.id
+                WHERE T.ts < S.ts AND S.TS - INTERVAL 1 HOUR < T.ts;""");
     }
 
     @Test
@@ -1719,5 +1757,243 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 SELECT COUNT(*)
                 FROM V0
                 GROUP BY p;""");
+    }
+
+    // Check that the maximum width in a circuit (except inputs) is less than the specified one.
+    void checkNarrow(CompilerCircuit cc, int maxWidth) {
+        var inner = new InnerVisitor(cc.compiler) {
+            @Override
+            public void postorder(DBSPType type) {
+                if (type.is(DBSPTypeAny.class) || type.is(DBSPTypeFunction.class))
+                    return;
+                Assert.assertTrue(type.getToplevelFieldCount() < maxWidth);
+            }
+        };
+        var outer = new CircuitDispatcher(cc.compiler, inner, false) {
+            @Override
+            public void postorder(DBSPSourceTableOperator operator) {
+                // skip
+            }
+
+            @Override
+            public void postorder(DBSPUnaryOperator operator) {
+                // Do not analyze operators whose input is the source
+                if (operator.input().node().is(DBSPSourceTableOperator.class))
+                    return;
+                super.postorder(operator);
+            }
+        };
+        cc.visit(outer);
+    }
+
+    @Test
+    public void deindexOptimize() {
+        String sql = """
+                create table U (
+                  bsin uuid not null,
+                  uid varchar,
+                  em varchar,
+                  site_id varchar,
+                  repl varchar,
+                  email varchar,
+                  ts TIMESTAMP,
+                  sts TIMESTAMP
+                );
+                
+                create view seg2c_2
+                as select
+                    bsin
+                from
+                    U
+                where
+                     site_id = 'x'
+                    AND (
+                       (ts >= NOW() AND
+                        ts <= NOW() + INTERVAL 1 months)
+                        OR
+                        sts >= NOW() - INTERVAL 30 DAYS)
+                    ;""";
+        var ccs = this.getCCS(sql);
+        this.checkNarrow(ccs, 8);
+    }
+
+    static final String WIDE_DATA = """
+                CREATE TYPE Properties AS (
+                   flagA BOOLEAN NULL,
+                   flagB BOOLEAN NULL,
+                   flagC BOOLEAN NULL,
+                   ts1 VARCHAR NULL,
+                   ts2 VARCHAR NULL,
+                   ts3 VARCHAR NULL,
+                   ts4 VARCHAR NULL,
+                   ts5 VARCHAR NULL,
+                   ts6 VARCHAR NULL,
+                   value INT NULL
+                );
+
+                CREATE TABLE input_table (
+                  key UUID NOT NULL PRIMARY KEY,
+                  colA VARCHAR,
+                  colB VARCHAR,
+                  colC MAP<VARCHAR, VARCHAR>,
+                  colD Properties,
+                  colE VARCHAR,
+                  colF VARCHAR,
+                  colG VARCHAR
+                );
+            
+                CREATE FUNCTION CONVERT_TS(d VARCHAR)
+                RETURNS TIMESTAMP
+                AS PARSE_TIMESTAMP('%m/%e/%Y %H:%M:%S', d);
+            
+                CREATE LOCAL VIEW V AS
+                SELECT
+                  key,
+                  colA,
+                  colB,
+                  colC,
+                  input_table.colD.flagA,
+                  input_table.colD.flagB,
+                  input_table.colD.flagC,
+                  CONVERT_TS(input_table.colD.ts1) ts1,
+                  CONVERT_TS(input_table.colD.ts2) ts2,
+                  CONVERT_TS(input_table.colD.ts3) ts3,
+                  input_table.colD.ts4,
+                  CONVERT_TS(input_table.colD.ts5) ts5,
+                  CONVERT_TS(input_table.colD.ts6) ts6,
+                  input_table.colD.value,
+                  colE,
+                  colF,
+                  colG
+                FROM input_table;
+            """;
+
+    @Test
+    public void unusedRemoval() {
+        String sql = WIDE_DATA + """
+                CREATE VIEW V1 AS
+                SELECT key
+                FROM V
+                WHERE
+                    colE = 'x'
+                    AND V.flagA = TRUE
+                    AND V.flagB = TRUE
+                    AND V.flagC = TRUE
+                    AND (
+                        V.ts1 >= NOW() - INTERVAL 180 DAYS
+                        OR V.ts2 >= NOW() - INTERVAL 180 DAYS
+                        OR V.ts3 >= NOW() - INTERVAL 180 DAYS
+                    )
+                    AND V.ts4 IS NULL
+                    AND (
+                        V.ts1 >= NOW() - INTERVAL 180 DAYS
+                        OR V.ts3 IS NOT NULL
+                    );
+                """;
+        var cc = this.getCC(sql);
+        this.checkNarrow(cc, 10);
+    }
+
+    @Test
+    public void issue5182() {
+        var cc = this.getCC("""
+                create table T(
+                m map<varchar, varchar>,
+                -- three unused fields
+                a INT,
+                b INT,
+                c INT,
+                id UUID,
+                -- two more unused fields
+                d INT,
+                e INT);
+                
+                create view V
+                as SELECT
+                    S.v,
+                    u.id
+                FROM
+                    T u, unnest(u.m) as S(k, v)
+                WHERE S.k = 'x';
+                """);
+        this.checkNarrow(cc, 4);
+    }
+
+    @Test
+    public void issue5182a() {
+        var cc = this.getCC(WIDE_DATA + """
+                create view CE
+                as SELECT
+                    T.val,
+                    V.key
+                FROM
+                    V, unnest(V.colC) as t(k, val)
+                WHERE T.val = 'a';
+                """);
+        this.checkNarrow(cc, 10);
+    }
+
+    @Test
+    public void issue5182b() {
+        var cc = this.getCC("""
+                    CREATE TYPE Properties AS (
+                       flagA BOOLEAN NULL,
+                       flagB BOOLEAN NULL,
+                       flagC BOOLEAN NULL,
+                       ts1 VARCHAR NULL,
+                       ts2 VARCHAR NULL,
+                       ts3 VARCHAR NULL,
+                       ts4 VARCHAR NULL,
+                       ts5 VARCHAR NULL,
+                       ts6 VARCHAR NULL,
+                       value INT NULL
+                    );
+                
+                    create type C as (
+                       type VARCHAR,
+                       value VARCHAR
+                    );
+    
+                    CREATE TABLE input_table (
+                      key UUID NOT NULL PRIMARY KEY,
+                      colA VARCHAR,
+                      colB VARCHAR,
+                      colC MAP<VARCHAR, C>,
+                      colD Properties,
+                      colE VARCHAR,
+                      colF VARCHAR,
+                      colG VARCHAR
+                    );
+                
+                    CREATE FUNCTION CONVERT_TS(d VARCHAR)
+                    RETURNS TIMESTAMP
+                    AS PARSE_TIMESTAMP('%m/%e/%Y %H:%M:%S', d);
+                
+                    CREATE LOCAL VIEW V AS
+                    SELECT
+                      key,
+                      colA,
+                      colB,
+                      colC,
+                      input_table.colD.flagA,
+                      input_table.colD.flagB,
+                      input_table.colD.flagC,
+                      CONVERT_TS(input_table.colD.ts1) ts1,
+                      CONVERT_TS(input_table.colD.ts2) ts2,
+                      CONVERT_TS(input_table.colD.ts3) ts3,
+                      input_table.colD.ts4,
+                      CONVERT_TS(input_table.colD.ts5) ts5,
+                      CONVERT_TS(input_table.colD.ts6) ts6,
+                      input_table.colD.value,
+                      colE,
+                      colF,
+                      colG
+                    FROM input_table;
+                CREATE VIEW CE AS SELECT
+                    t.val.type,
+                    V.key
+                FROM V, UNNEST(V.colC) AS t(k, val)
+                WHERE t.val.type not like '%.com%';""");
+        this.checkNarrow(cc, 10);
     }
 }

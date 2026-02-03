@@ -1,10 +1,10 @@
 use crate::{
+    Circuit, DBData, DBWeight, Stream,
     circuit::metadata::MetaItem,
-    dynamic::{DowncastTrait, DynData, Erase},
+    dynamic::{DowncastTrait, DynData, Erase, WithFactory},
     operator::TraceBound,
     trace::{BatchReaderFactories, Filter},
     typed_batch::{Batch, DynBatch, DynBatchReader, Spine, TypedBatch, TypedBox},
-    Circuit, DBData, DBWeight, Stream,
 };
 use dyn_clone::clone_box;
 use size_of::SizeOf;
@@ -72,8 +72,7 @@ where
     C: Circuit,
     B: Batch<Time = ()>,
 {
-    /// Like `accumulate_integrate_trace`, but additionally applies a retainment policy to
-    /// keys in the trace.
+    /// Applies a retainment policy to keys in the integral of `self`.
     ///
     /// ## Background
     ///
@@ -222,6 +221,149 @@ where
         );
     }
 
+    /// Applies a retainment policy that keeps all values above the threshold
+    /// in `bounds_stream` and up to `n` latest values before the threshold.
+    ///
+    /// Notifies the garbage collector that it should preserve all values that
+    /// satisfy the predicate and the last `n` values before the first value that
+    /// satisfies the predicate for each key. If no value associated with a key
+    /// satisfies the predicate, the last `n` values are preserved.
+    ///
+    /// Used to garbage collect streams that need to preserve a fixed number of
+    /// values below a waterline, regardless of how far in the past they are.
+    /// Examples include the right-hand side of an asof join and inputs to top-k
+    /// operators.
+    ///
+    /// IMPORTANT: this method assumes that for each key in `self`, values are
+    /// sorted in such a way that once the `retain_value_func` predicate is
+    /// satisfied for a value, it is also satisfied for all subsequent values.
+    ///
+    /// # Arguments
+    ///
+    /// * `bounds_stream` - This stream carries scalar values (i.e., single
+    ///   records, not Z-sets).  The key retainment condition is defined
+    ///   relative to the last value received from this stream. Typically, this
+    ///   value represents the lowest upper bound of all partially ordered
+    ///   timestamps in `self` or some other stream, computed with the help of
+    ///   the [`waterline`](`Stream::waterline`) operator and adjusted by some
+    ///   constant offsets, dictated, e.g., by window sizes used in the queries
+    ///   and the maximal out-of-ordedness of data in the input streams.
+    ///
+    /// * `retain_value_func` - given the value received from the `bounds_stream`
+    ///   at the last clock cycle and a value, returns `true` if the value should be
+    ///   retained in the trace and `false` if it should be discarded.
+    ///
+    /// * `n` - the number of values to preserve.
+    #[track_caller]
+    pub fn accumulate_integrate_trace_retain_values_last_n<TS, RV>(
+        &self,
+        bounds_stream: &Stream<C, TypedBox<TS, DynData>>,
+        retain_value_func: RV,
+        n: usize,
+    ) where
+        TS: DBData + Erase<DynData>,
+        RV: Fn(&B::Val, &TS) -> bool + Clone + Send + Sync + 'static,
+    {
+        self.inner()
+            .dyn_accumulate_integrate_trace_retain_values_last_n(
+                &bounds_stream.inner_data(),
+                Box::new(move |ts: &DynData| {
+                    let metadata = MetaItem::String(format!("{ts:?}"));
+                    let ts = clone_box(ts);
+                    let retain_val_func = retain_value_func.clone();
+                    Filter::new(Box::new(move |v: &B::DynV| {
+                        retain_val_func(unsafe { v.downcast::<B::Val>() }, unsafe {
+                            ts.as_ref().downcast::<TS>()
+                        })
+                    }))
+                    .with_metadata(metadata)
+                }),
+                n,
+            );
+    }
+
+    /// Applies a retainment policy that keeps all values above the threshold
+    /// in `bounds_stream` and up to `n` largest values below the threshold.
+    ///
+    /// This is similar to `accumulate_integrate_trace_retain_values_last_n`, but
+    /// it does not assume that values in the group are sorted according to a timestamp.
+    ///
+    /// Can be used to GC the MAX aggregate or top-k group transformers.
+    ///
+    /// # Arguments
+    ///
+    /// * `bounds_stream` - This stream carries scalar values (i.e., single
+    ///   records, not Z-sets).  The key retainment condition is defined
+    ///   relative to the last value received from this stream. Typically, this
+    ///   value represents the lowest upper bound of all partially ordered
+    ///   timestamps in `self` or some other stream, computed with the help of
+    ///   the [`waterline`](`Stream::waterline`) operator and adjusted by some
+    ///   constant offsets, dictated, e.g., by window sizes used in the queries
+    ///   and the maximal out-of-ordedness of data in the input streams.
+    ///
+    /// * `retain_value_func` - given the value received from the `bounds_stream`
+    ///   at the last clock cycle and a value, returns `true` if the value should be
+    ///   retained in the trace and `false` if it should be discarded.
+    ///
+    /// * `n` - the number of values to preserve.
+    #[track_caller]
+    pub fn accumulate_integrate_trace_retain_values_top_n<TS, RV>(
+        &self,
+        bounds_stream: &Stream<C, TypedBox<TS, DynData>>,
+        retain_value_func: RV,
+        n: usize,
+    ) where
+        TS: DBData + Erase<DynData>,
+        RV: Fn(&B::Val, &TS) -> bool + Clone + Send + Sync + 'static,
+    {
+        self.inner()
+            .dyn_accumulate_integrate_trace_retain_values_top_n(
+                WithFactory::<B::Val>::FACTORY,
+                &bounds_stream.inner_data(),
+                Box::new(move |ts: &DynData| {
+                    let metadata = MetaItem::String(format!("{ts:?}"));
+                    let ts = clone_box(ts);
+                    let retain_val_func = retain_value_func.clone();
+                    Filter::new(Box::new(move |v: &B::DynV| {
+                        retain_val_func(unsafe { v.downcast::<B::Val>() }, unsafe {
+                            ts.as_ref().downcast::<TS>()
+                        })
+                    }))
+                    .with_metadata(metadata)
+                }),
+                n,
+            );
+    }
+
+    /// Similar to `accumulate_integrate_trace_retain_values_top_n`, but keeps the bottom `n` values.
+    #[track_caller]
+    pub fn accumulate_integrate_trace_retain_values_bottom_n<TS, RV>(
+        &self,
+        bounds_stream: &Stream<C, TypedBox<TS, DynData>>,
+        retain_value_func: RV,
+        n: usize,
+    ) where
+        TS: DBData + Erase<DynData>,
+        RV: Fn(&B::Val, &TS) -> bool + Clone + Send + Sync + 'static,
+    {
+        self.inner()
+            .dyn_accumulate_integrate_trace_retain_values_bottom_n(
+                WithFactory::<B::Val>::FACTORY,
+                &bounds_stream.inner_data(),
+                Box::new(move |ts: &DynData| {
+                    let metadata = MetaItem::String(format!("{ts:?}"));
+                    let ts = clone_box(ts);
+                    let retain_val_func = retain_value_func.clone();
+                    Filter::new(Box::new(move |v: &B::DynV| {
+                        retain_val_func(unsafe { v.downcast::<B::Val>() }, unsafe {
+                            ts.as_ref().downcast::<TS>()
+                        })
+                    }))
+                    .with_metadata(metadata)
+                }),
+                n,
+            );
+    }
     /// Constructs and returns a untimed trace of this stream.
     ///
     /// The trace is unbounded, meaning that data will not be discarded because

@@ -23,7 +23,7 @@ public class PartiallyMonotoneTuple
     public final boolean raw;
     final DBSPTypeTupleBase type;
     final boolean anyMonotone;
-    final boolean mayBeNull;
+    public final boolean mayBeNull;
 
     public PartiallyMonotoneTuple(List<IMaybeMonotoneType> fields, boolean raw, boolean mayBeNull) {
         this.fields = fields;

@@ -7,6 +7,16 @@ import org.junit.Test;
 // https://github.com/apache/calcite/blob/main/core/src/test/resources/sql/agg.iq
 public class AggScottTests extends ScottBaseTests {
     @Test
+    public void testCalcite6403() {
+        this.qs("""
+                SELECT COUNT(*), COUNT(DISTINCT deptno) FROM emp WHERE false;
+                 c0 | c1
+                ---------
+                  0 | 0
+                (1 row)""");
+    }
+
+    @Test
     public void testPairs() {
         this.qs("""
                 select comm, (comm, comm) in ((500, 500), (300, 300), (0, 0)) from emp;
@@ -854,14 +864,14 @@ public class AggScottTests extends ScottBaseTests {
                 select count(distinct deptno) as cd, count(*) as c
                 from emp
                 group by cube(deptno);
-                +----+---+
-                | CD | C |
-                +----+---+
-                |  1 | 3 |
-                |  1 | 5 |
-                |  1 | 6 |
-                |  3 | 3 |
-                +----+---+
+                +----+----+
+                | CD |  C |
+                +----+----+
+                |  1 |  3 |
+                |  1 |  5 |
+                |  1 |  6 |
+                |  3 | 14 |
+                +----+----+
                 (4 rows)""");
     }
 
@@ -1745,5 +1755,106 @@ public class AggScottTests extends ScottBaseTests {
                 |     30 |   7168 |   8191 |    934 |
                 +--------+--------+--------+--------+
                 (3 rows)""");
+    }
+
+    @Test
+    public void rollupTests() {
+        this.qs("""
+                WITH t1 (id, c1) AS (
+                    VALUES
+                        ('1', 'A1'),
+                        ('2', 'A2'),
+                        ('3', 'A3'),
+                        ('3', 'A3'),
+                        ('3', 'A2'),
+                        (NULL, 'A4')
+                )
+                SELECT id, COUNT(DISTINCT c1)
+                FROM t1
+                GROUP BY ROLLUP(id);
+                +----+--------+
+                | ID | EXPR$1 |
+                +----+--------+
+                | 1|        1 |
+                | 2|        1 |
+                | 3|        2 |
+                |NULL|      1 |
+                |NULL|      4 |
+                +----+--------+
+                (5 rows)
+                
+                SELECT deptno, job, COUNT(DISTINCT ename)
+                FROM emp
+                GROUP BY ROLLUP(deptno, job);
+                +--------+-----------+--------+
+                | DEPTNO | JOB       | EXPR$2 |
+                +--------+-----------+--------+
+                |     10 | CLERK|           1 |
+                |     10 | MANAGER|         1 |
+                |     10 | PRESIDENT|       1 |
+                |     10 |NULL       |      3 |
+                |     20 | ANALYST|         2 |
+                |     20 | CLERK|           2 |
+                |     20 | MANAGER|         1 |
+                |     20 |NULL       |      5 |
+                |     30 | CLERK|           1 |
+                |     30 | MANAGER|         1 |
+                |     30 | SALESMAN|        4 |
+                |     30 |NULL       |      6 |
+                |        |NULL       |     14 |
+                +--------+-----------+--------+
+                (13 rows)
+                
+                SELECT deptno, COUNT(DISTINCT sal)
+                FROM emp
+                GROUP BY GROUPING SETS ((deptno), ());
+                +--------+--------+
+                | DEPTNO | EXPR$1 |
+                +--------+--------+
+                |     10 |      3 |
+                |     20 |      4 |
+                |     30 |      5 |
+                |        |     12 |
+                +--------+--------+
+                (4 rows)
+                
+                SELECT deptno, COUNT(DISTINCT sal), SUM(sal)
+                FROM emp
+                GROUP BY GROUPING SETS ((deptno), ());
+                +--------+--------+----------+
+                | DEPTNO | EXPR$1 | EXPR$2   |
+                +--------+--------+----------+
+                |     10 |      3 |  8750.00 |
+                |     20 |      4 | 10875.00 |
+                |     30 |      5 |  9400.00 |
+                |        |     12 | 29025.00 |
+                +--------+--------+----------+
+                (4 rows)
+                
+                SELECT deptno, COUNT(DISTINCT sal), COUNT(sal)
+                FROM emp
+                GROUP BY GROUPING SETS ((deptno), ());
+                +--------+--------+--------+
+                | DEPTNO | EXPR$1 | EXPR$2 |
+                +--------+--------+--------+
+                |     10 |      3 |      3 |
+                |     20 |      4 |      5 |
+                |     30 |      5 |      6 |
+                |        |     12 |     14 |
+                +--------+--------+--------+
+                (4 rows)
+                
+                SELECT deptno, COUNT(DISTINCT sal), SUM(DISTINCT sal), COUNT(*)
+                FROM emp
+                GROUP BY GROUPING SETS ((deptno), ());
+                +--------+--------+----------+--------+
+                | DEPTNO | EXPR$1 | EXPR$2   | EXPR$3 |
+                +--------+--------+----------+--------+
+                |     10 |      3 |  8750.00 |      3 |
+                |     20 |      4 |  7875.00 |      5 |
+                |     30 |      5 |  8150.00 |      6 |
+                |        |     12 | 24775.00 |     14 |
+                +--------+--------+----------+--------+
+                (4 rows)""");
     }
 }

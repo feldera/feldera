@@ -1,7 +1,7 @@
 use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_types::{
     config::PipelineConfig,
-    pipeline_diff::{program_diff, PipelineDiff, ProgramDiff},
+    pipeline_diff::{PipelineDiff, ProgramDiff, program_diff},
 };
 use std::collections::BTreeMap;
 use std::fmt::Display;
@@ -80,12 +80,13 @@ pub fn compute_pipeline_diff(
 ) -> Result<PipelineDiff, ControllerError> {
     let diff = compute_program_diff(old_config, new_config);
 
-    if let Ok((diff, blockers)) = &diff {
-        if !blockers.is_empty() && !diff.is_empty() {
-            return Err(ControllerError::BootstrapNotAllowed {
-                error: blockers.to_string(),
-            });
-        }
+    if let Ok((diff, blockers)) = &diff
+        && !blockers.is_empty()
+        && !diff.is_empty()
+    {
+        return Err(ControllerError::BootstrapNotAllowed {
+            error: blockers.to_string(),
+        });
     };
 
     let mir_diff = diff.map(|(diff, _)| diff.clone());

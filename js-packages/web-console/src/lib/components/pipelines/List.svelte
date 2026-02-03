@@ -33,16 +33,13 @@
 </script>
 
 <div
-  class="relative flex flex-col gap-2 pr-2 scrollbar"
+  class="relative scrollbar flex flex-col gap-2 pr-2"
   style="overflow-y: overlay;"
   use:bindScrollY={{ scrollY }}
 >
-  <div class="bg-white-dark sticky top-0 flex justify-between pb-2 pl-4">
-    <span class="font-semibold">Pipelines</span>
-    <button
-      onclick={onclose}
-      class="fd fd-x btn btn-icon btn-icon-lg"
-      aria-label="Close pipelines list"
+  <div class="bg-white-dark sticky top-0 -mr-1 flex justify-between pb-2 pl-4">
+    <span class="content-center font-semibold">Pipelines</span>
+    <button onclick={onclose} class="fd fd-x btn-icon text-[24px]" aria-label="Close pipelines list"
     ></button>
   </div>
   {#each pipelines as pipeline}
@@ -54,7 +51,7 @@
       onclick={onaction}
       href={resolve(`/pipelines/${encodeURI(pipeline.name)}/`)}
     >
-      <div class="min-w-0 overflow-hidden overflow-ellipsis whitespace-nowrap py-1">
+      <div class="min-w-0 overflow-hidden py-1 overflow-ellipsis whitespace-nowrap">
         {pipeline.name}
       </div>
       <!-- Wrap pipeline name -->

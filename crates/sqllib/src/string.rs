@@ -6,36 +6,38 @@
 
 #![allow(non_snake_case)]
 use crate::{
-    array::Array, some_function1, some_function2, some_function3, some_function4,
-    some_polymorphic_function1, some_polymorphic_function2, string_interner::*, Variant,
+    Variant, array::Array, some_function1, some_function2, some_function3, some_function4,
+    some_polymorphic_function1, some_polymorphic_function2, string_interner::*,
 };
 
+use arcstr::ArcStr;
 use core::fmt::Error;
+use feldera_macros::IsNone;
 use feldera_types::{deserialize_without_context, serialize_without_context};
 use itertools::Itertools;
 use like::{Escape, Like};
 use md5::{Digest, Md5};
 use regex::Regex;
 use rkyv::{
-    string::{ArchivedString, StringResolver},
     DeserializeUnsized, Fallible, SerializeUnsized,
+    string::{ArchivedString, StringResolver},
 };
 use serde::{Deserialize, Serialize};
 use size_of::{Context, SizeOf};
 use std::{
     cmp::max,
     fmt::{Display, Formatter},
-    mem::{transmute, MaybeUninit},
+    mem::{MaybeUninit, transmute},
     sync::Arc,
 };
-
-use arcstr::ArcStr;
 
 type StringRef = ArcStr;
 pub type InternedString = InternedStringId;
 
 /// An immutable reference counted string.
-#[derive(Clone, Default, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Clone, Default, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize, IsNone,
+)]
 #[serde(transparent)]
 pub struct SqlString(StringRef);
 
@@ -172,7 +174,9 @@ impl rkyv::Archive for SqlString {
 
     #[inline]
     unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-        ArchivedString::resolve_from_str(self.str(), pos, resolver, out);
+        unsafe {
+            ArchivedString::resolve_from_str(self.str(), pos, resolver, out);
+        }
     }
 }
 
@@ -863,8 +867,8 @@ mod tests {
     use std::sync::Arc;
 
     use crate::{
-        array_to_string2Nvec__, array_to_string2_vec__, array_to_string3Nvec___, byte_index,
-        byte_index_rev, left_s_i32, right_s_i32, substring2__, substring3___, SqlString,
+        SqlString, array_to_string2_vec__, array_to_string2Nvec__, array_to_string3Nvec___,
+        byte_index, byte_index_rev, left_s_i32, right_s_i32, substring2__, substring3___,
     };
 
     use dbsp::storage::file::to_bytes;
@@ -1005,13 +1009,39 @@ pub fn md5_s(source: SqlString) -> SqlString {
 
 some_polymorphic_function1!(md5, s, SqlString, SqlString);
 
+#[doc(hidden)]
 pub fn intern(s: Option<SqlString>) -> Option<InternedString> {
     s.map(|s| intern_string(&s))
 }
 
+#[doc(hidden)]
 pub fn unintern(id: Option<InternedString>) -> Option<SqlString> {
     match id {
         None => None,
-        Some(id) => unintern_string(&id),
+        Some(id) => match unintern_string(&id) {
+            Some(s) => Some(s),
+            None => panic!("Interning library has not returned a string for id='{id}'"),
+        },
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::SqlString;
+    use rkyv::{option::ArchivedOption, string::ArchivedString};
+
+    #[test]
+    fn sql_string_size() {
+        // This is the same, the None is optimized away
+        assert_eq!(
+            std::mem::size_of::<SqlString>(),
+            std::mem::size_of::<Option<SqlString>>()
+        );
+
+        // This None isn't optimized away here, ideally it would be
+        assert!(
+            std::mem::size_of::<ArchivedString>()
+                < std::mem::size_of::<ArchivedOption<ArchivedString>>()
+        )
     }
 }

@@ -45,9 +45,9 @@ mod antichain;
 mod product;
 
 use crate::{
+    DBData, Scope,
     algebra::{Lattice, PartialOrder},
     trace::Batch,
-    DBData, Scope,
 };
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;

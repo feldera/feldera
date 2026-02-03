@@ -1,21 +1,22 @@
-from tests.shared_test_pipeline import SharedTestPipeline
-from tests import enterprise_only
-from feldera.runtime_config import RuntimeConfig, Storage
-from feldera.enums import PipelineStatus, FaultToleranceModel
-from typing import Optional
 import os
+import random
 import sys
 import time
-from uuid import uuid4
-import random
+from typing import Optional
+from uuid import uuid4, UUID
 
+from feldera.enums import FaultToleranceModel, PipelineStatus
+from feldera.runtime_config import RuntimeConfig, Storage
+from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
+from tests import enterprise_only
+from tests.shared_test_pipeline import SharedTestPipeline
 
 DEFAULT_ENDPOINT = os.environ.get(
     "DEFAULT_MINIO_ENDPOINT", "http://minio.extra.svc.cluster.local:9000"
 )
-DEFAULT_BUCKET = "default"
-ACCESS_KEY = "minio"
-SECRET_KEY = "miniopasswd"
+DEFAULT_BUCKET = os.environ.get("DEFAULT_MINIO_BUCKET", "default")
+ACCESS_KEY = os.environ.get("MINIO_ACCESS_KEY", "minio")
+SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "miniopasswd")
 
 
 def storage_cfg(
@@ -26,6 +27,9 @@ def storage_cfg(
     auth_err: bool = False,
     standby: bool = False,
     pull_interval: int = 2,
+    push_interval: Optional[int] = None,
+    retention_min_count: int = 1,
+    retention_min_age: int = 0,
 ) -> dict:
     return {
         "backend": {
@@ -41,6 +45,9 @@ def storage_cfg(
                     "fail_if_no_checkpoint": strict,
                     "standby": standby,
                     "pull_interval": pull_interval,
+                    "push_interval": push_interval,
+                    "retention_min_count": retention_min_age,
+                    "retention_min_age": retention_min_count,
                 }
             },
         }
@@ -58,18 +65,30 @@ class TestCheckpointSync(SharedTestPipeline):
         strict: bool = False,
         expect_empty: bool = False,
         standby: bool = False,
+        ft_interval: int = 60,
+        automated_checkpoint: bool = False,
+        automated_sync_interval: Optional[int] = None,
     ):
         """
         CREATE TABLE t0 (c0 INT, c1 VARCHAR);
         CREATE MATERIALIZED VIEW v0 AS SELECT * FROM t0;
         """
 
-        storage_config = storage_cfg(self.pipeline.name)
+        storage_config = storage_cfg(
+            self.pipeline.name,
+            push_interval=automated_sync_interval,
+            retention_min_count=1,
+            retention_min_age=5 if from_uuid else 0,
+        )
         ft = FaultToleranceModel.AtLeastOnce
 
         self.pipeline.set_runtime_config(
             RuntimeConfig(
-                fault_tolerance_model=ft, storage=Storage(config=storage_config)
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+                checkpoint_interval_secs=ft_interval,
             )
         )
         self.pipeline.start()
@@ -103,8 +122,56 @@ class TestCheckpointSync(SharedTestPipeline):
                 f"adhoc query returned {len(got_before)} but {processed} records were processed: {got_before}"
             )
 
-        self.pipeline.checkpoint(wait=True)
-        uuid = self.pipeline.sync_checkpoint(wait=True)
+        chk_timeout = time.monotonic() + 30
+        chk_uuid = None
+
+        if not automated_checkpoint:
+            self.pipeline.checkpoint(wait=True)
+        else:
+            # wait for at least one automated checkpoint to be created with current data
+            while True:
+                chks = self.pipeline.checkpoints()
+                chk = next((x for x in chks if x.processed_records == processed), None)
+
+                if chk is not None:
+                    chk_uuid = chk.uuid
+                    break
+
+                if time.monotonic() > chk_timeout:
+                    raise TimeoutError(
+                        "timed out waiting for automated checkpoint to be created"
+                    )
+                time.sleep(0.5)
+
+        print("Checkpoint UUID:", chk_uuid, file=sys.stderr)
+        time.sleep(1)
+
+        if automated_sync_interval is not None:
+            timeout = time.monotonic() + 30
+            success = None
+            while time.monotonic() < timeout and success is None:
+                try:
+                    synced = self.pipeline.last_successful_checkpoint_sync()
+                    print(
+                        "Automatically synced checkpoint UUID:", synced, file=sys.stderr
+                    )
+                    if synced is not None and chk_uuid is not None:
+                        if synced >= UUID(chk_uuid):
+                            success = synced
+                    else:
+                        success = synced
+                except RuntimeError:
+                    time.sleep(0.5)
+                    continue
+            if success is None:
+                raise TimeoutError(
+                    "timed out waiting for automated checkpoint sync to complete"
+                )
+        else:
+            uuid = self.pipeline.sync_checkpoint(wait=True)
+            print("Synced Checkpoint UUID:", uuid, file=sys.stderr)
+            if chk_uuid is not None:
+                assert UUID(uuid) >= UUID(chk_uuid)
 
         self.pipeline.stop(force=True)
 
@@ -124,7 +191,11 @@ class TestCheckpointSync(SharedTestPipeline):
         )
         self.pipeline.set_runtime_config(
             RuntimeConfig(
-                fault_tolerance_model=ft, storage=Storage(config=storage_config)
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
+                checkpoint_interval_secs=ft_interval,
             )
         )
 
@@ -178,8 +249,22 @@ class TestCheckpointSync(SharedTestPipeline):
         self.test_checkpoint_sync(clear_storage=False)
 
     @enterprise_only
+    def test_automated_checkpoint(self):
+        self.test_checkpoint_sync(ft_interval=5, automated_checkpoint=True)
+
+    @enterprise_only
+    def test_automated_checkpoint_sync(self):
+        self.test_checkpoint_sync(
+            ft_interval=5, automated_checkpoint=True, automated_sync_interval=10
+        )
+
+    @enterprise_only
+    def test_automated_checkpoint_sync1(self):
+        self.test_checkpoint_sync(ft_interval=5, automated_sync_interval=10)
+
+    @enterprise_only
     def test_autherr_fail(self):
-        with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch"):
+        with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch|Forbidden"):
             self.test_checkpoint_sync(auth_err=True, strict=True)
 
     @enterprise_only
@@ -210,7 +295,10 @@ class TestCheckpointSync(SharedTestPipeline):
         ft = FaultToleranceModel.AtLeastOnce
         self.pipeline.set_runtime_config(
             RuntimeConfig(
-                fault_tolerance_model=ft, storage=Storage(config=storage_config)
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=Storage(config=storage_config),
             )
         )
         self.pipeline.start()
@@ -234,6 +322,8 @@ class TestCheckpointSync(SharedTestPipeline):
         pull_interval = 1
         standby.set_runtime_config(
             RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
                 storage=Storage(
                     config=storage_cfg(

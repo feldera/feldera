@@ -69,6 +69,12 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
+    public void mapMapTest() {
+        this.statementsFailingInCompilation("CREATE TABLE TBL(x MAP<MAP<INT, INT>, INT>)",
+                "MAP key type cannot be MAP");
+    }
+
+    @Test
     public void issue3952() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(t0 TIMESTAMP, t1 TIMESTAMP NOT NULL);
@@ -134,8 +140,8 @@ public class Regression1Tests extends SqlIoTest {
                                     -------------------------------------------""");
         for (var c : Linq.list("NULL", "0")) {
             for (var ad : Linq.list("NULL", "0")) {
-                for (var av: Linq.list("NULL", "'a'")) {
-                    for (var bg: Linq.list("NULL", "0", "1")) {
+                for (var av : Linq.list("NULL", "'a'")) {
+                    for (var bg : Linq.list("NULL", "0", "1")) {
                         for (var bk : Linq.list("NULL", "0")) {
                             String result = "";
                             if (nn(ad) && nn(av) && nn(bg) && nn(bk) && !bg.equals("0")) {
@@ -542,7 +548,7 @@ public class Regression1Tests extends SqlIoTest {
         ccs.step("INSERT INTO T VALUES(10.20, 10)", """
                  x                   | decimal             | int                 | y                  | weight
                 -----------------------------------------------------------------------------------------------
-                 1970-01-01 00:00:00 | 1970-01-01 00:00:00 | 1970-01-01 00:00:00.010 | 1970-01-01 00:00:00 |1""");
+                 1970-01-01 00:00:00 | 1970-01-01 00:00:00 | 1970-01-01 00:00:00 | 1970-01-01 00:00:00 |1""");
     }
 
     @Test
@@ -1290,6 +1296,7 @@ public class Regression1Tests extends SqlIoTest {
                 """);
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             int lagCount = 0;
+
             @Override
             public void postorder(DBSPLagOperator node) {
                 this.lagCount++;
@@ -1447,5 +1454,508 @@ public class Regression1Tests extends SqlIoTest {
                  👋
                 (1 row)""");
     }
+
+    @Test
+    public void issue5260() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(roww ROW(i1 INT, i2 INT) NULL);
+                CREATE VIEW V AS SELECT roww <=> NULL FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(ROW(ROW(1, 2)))", """
+                 r | weight
+                ------------
+                 false | 1""");
+        ccs.step("INSERT INTO tbl VALUES(NULL)", """
+                 r | weight
+                ------------
+                 true | 1""");
+    }
+
+    @Test
+    public void issue5276() {
+        this.getCCS("""
+            CREATE TYPE LEVEL_1 AS (
+              col VARCHAR
+            );
+            
+            CREATE TYPE LEVEL_0 AS (
+              col LEVEL_1
+            );
+            
+            CREATE TABLE T(l LEVEL_0, X INT);
+            CREATE TABLE S(X INT);
+            
+            CREATE VIEW V AS
+            (SELECT * FROM T) UNION (SELECT NULL, X FROM S)""");
+    }
+
+    @Test
+    public void issue5275() {
+        this.getCC("""
+                CREATE TYPE LEVEL_1 AS (
+                  col VARCHAR
+                );
+                
+                CREATE TYPE LEVEL_0 AS (
+                  col LEVEL_1
+                );
+                
+                CREATE LOCAL VIEW V AS
+                SELECT CAST(NULL AS LEVEL_0)""");
+    }
+
+    @Test
+    public void issue5285() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(
+                id INT,
+                intt INT,
+                roww ROW(i1 INT, v1 VARCHAR NULL) NULL);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                AVG(roww[1]) AS roww FROM tbl
+                WHERE id = 0;""");
+        ccs.step("INSERT INTO tbl VALUES(0, -12, ROW(4, 'cat'))", """
+                 avg | weight
+                --------------
+                 4   | 1""");
+    }
+
+    @Test
+    public void issue5293() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x VARCHAR);
+                CREATE VIEW V AS
+                WITH FT as (select 'a' as e union all select 'bc')
+                SELECT x, x in (SELECT e from FT)
+                FROM T;""");
+        ccs.step("INSERT INTO T VALUES('a'), ('b'), ('ab');", """
+                 x | in | weight
+                -------------
+                 a| true | 1
+                 b|false | 1
+                 ab|false | 1""");
+    }
+
+    @Test
+    public void issue5299() {
+        this.getCC("""
+                CREATE LINEAR AGGREGATE u256_sum(value BINARY(32)) RETURNS BINARY(32);
+                
+                CREATE TABLE A (
+                    id VARCHAR(20) NOT NULL PRIMARY KEY,
+                    a VARCHAR(64),
+                    b VARCHAR(64),
+                    sno BIGINT NOT NULL PRIMARY KEY LATENESS 100::BIGINT,
+                    small DECIMAL(38, 18),
+                    num1 BINARY(32),
+                    num2 BINARY(32)
+                ) WITH ('append_only' = 'true');
+                
+                CREATE VIEW b AS
+                SELECT u256_sum(num1), u256_sum(num2), SUM(small), MAX(sno)
+                FROM A""");
+    }
+
+    @Test
+    public void issue5307() {
+        this.getCCS("""
+                CREATE TYPE LEVEL_1 AS (
+                  col VARCHAR NOT NULL
+                );
+                
+                CREATE TYPE LEVEL_0 AS (
+                  col LEVEL_1
+                );
+                
+                CREATE LOCAL VIEW V AS
+                SELECT NULL::LEVEL_0 AS null_col""");
+    }
+
+    @Test
+    public void issue5311() {
+        this.getCCS("""
+                CREATE TABLE tbl(intt INT);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                LAG(intt) OVER ()
+                FROM tbl;""");
+    }
+
+    @Test
+    public void limitDuplicate() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT);
+                CREATE VIEW V AS SELECT * FROM T ORDER BY x LIMIT 1;""");
+        ccs.step("""
+                INSERT INTO T VALUES(1);
+                INSERT INTO T VALUES(1);
+                """, """
+                 x | weight
+                ------------
+                 1 | 1""");
+    }
+
+    @Test
+    public void issue5345() {
+        var ccs = this.getCCS("""
+                CREATE MATERIALIZED VIEW t1 AS
+                    SELECT DISTINCT
+                        t.f1,
+                        t.f2,
+                        CAST(t.f3 AS TEXT ARRAY) AS f3,
+                        t.f4
+                    FROM (
+                        VALUES
+                            ('a', 1, ARRAY['by'], true),
+                            ('b', 1, ARRAY(), false)
+                    ) AS t (f1, f2, f3, f4);""");
+        ccs.step("", """
+                 f1 | f2 | f3 | f4    | weight
+                -------------------------------
+                 a| 1 | { by} | true  | 1
+                 b| 1 | {}    | false | 1""");
+    }
+
+    @Test
+    public void issue5352() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(str VARCHAR);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                str::BOOLEAN IS FALSE AS arr,
+                str::BOOLEAN IS TRUE AS arr1
+                FROM tbl;""");
+        ccs.step("INSERT INTO TBL values('TRUE')", """
+                 arr | arr1 | weight
+                ---------------------
+                 false | true | 1""");
+    }
+
+    @Test
+    public void issue5352_a() {
+        this.qs("""
+             SELECT 'TRUE'::BOOLEAN;
+              r
+             ---
+              true
+             (1 row)
+             
+             SELECT 'true'::BOOLEAN;
+              r
+             ---
+              true
+             (1 row)
+             
+             SELECT 'TrUe'::BOOLEAN;
+              r
+             ---
+              true
+             (1 row)
+             
+             SELECT 't'::BOOLEAN;
+              r
+             ---
+              false
+             (1 row)
+             
+             SELECT '1'::BOOLEAN;
+              r
+             ---
+              false
+             (1 row)
+             
+             SELECT '0'::BOOLEAN;
+              r
+             ---
+              false
+             (1 row)
+             
+             SELECT 'yes'::BOOLEAN;
+              r
+             ---
+              false
+             (1 row)
+             
+             SELECT ''::BOOLEAN;
+              r
+             ---
+              false
+             (1 row)
+             
+             SELECT 'NULL'::BOOLEAN;
+              r
+             ---
+              false
+             (1 row)
+             
+             SELECT NULL::BOOLEAN;
+              r
+             ---
+             NULL
+             (1 row)""");
+    }
+
+    @Test
+    public void issue5215() {
+        var ccs = this.getCCS("""
+                  CREATE TABLE T(x INT, y INT);
+                  CREATE LOCAL VIEW V AS SELECT ROW(*) as R FROM T;
+                  CREATE VIEW W AS SELECT R[1], R[2] FROM V;""");
+        ccs.step("INSERT INTO T VALUES(10, 20);", """
+                 r1 | r2 | weight
+                ------------------
+                 10 | 20 | 1""");
+    }
+
+    @Test
+    public void issue5331() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE asof_tbl1(intt INT, arr VARCHAR ARRAY);
+                CREATE TABLE asof_tbl2(intt INT, arr VARCHAR ARRAY);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT *
+                FROM asof_tbl1 t1
+                LEFT ASOF JOIN asof_tbl2 t2
+                MATCH_CONDITION (t1.intt >= t2.intt)
+                ON t1.arr[2] = t2.arr[2] ;""",
+                "ASOF JOIN condition must be a conjunction of equality comparisons of columns from both sides");
+    }
+
+    @Test
+    public void issue5384() {
+        this.statementsFailingInCompilation("""
+                CREATE TYPE user_def AS(i1 INT, v1 VARCHAR NULL);
+                CREATE TABLE tbl(mapp1 MAP<user_def, ROW(v VARCHAR NULL)>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                CAST(mapp1 AS MAP<VARCHAR, INT>) AS to_map
+                FROM tbl;""", "Cast function cannot convert value of type ");
+    }
+
+    @Test
+    public void issue5359() {
+        this.getCCS("""
+                CREATE TABLE source (
+                    id VARCHAR NOT NULL,
+                    key VARCHAR NOT NULL INTERNED,
+                    version BIGINT
+                ) WITH ('append_only' = 'true');
+                
+                CREATE TABLE lookup (
+                    key VARCHAR NOT NULL INTERNED PRIMARY KEY,
+                    metadata VARCHAR
+                );
+                
+                CREATE LOCAL VIEW v
+                AS
+                SELECT
+                    id,
+                    MAX(key) as key
+                FROM source
+                GROUP BY id;
+                
+                CREATE VIEW result
+                AS
+                SELECT
+                    a.key,
+                    l.metadata
+                FROM v a
+                LEFT JOIN lookup l ON a.key = l.key;""");
+    }
+
+    @Test
+    public void issue5386() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT UNSIGNED);
+                CREATE VIEW V AS SELECT -x FROM T;""",
+                "Unary minus cannot be applied");
+        this.statementsFailingInCompilation(
+                "CREATE VIEW V AS SELECT - CAST(1 AS INT UNSIGNED)",
+                "Unary minus cannot be applied");
+    }
+
+    @Test
+    public void incorrectAsofNullabilityTest() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(X INT NOT NULL, Y INT);
+                CREATE TABLE S(X INT, Y INT);
+                CREATE VIEW V AS SELECT T.*, S.x as sx, S.y as sy FROM T LEFT ASOF JOIN S
+                MATCH_CONDITION(T.X >= S.X) ON T.Y = S.Y;""");
+        ccs.step("""
+                INSERT INTO T VALUES(1, NULL);
+                INSERT INTO S VALUES(1, 1);""", """
+                 X | Y | sx | sy | weight
+                --------------------------
+                 1 |   |    |    | 1""");
+    }
+
+    @Test
+    public void issue5375() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(str VARCHAR );
+                CREATE MATERIALIZED VIEW v AS SELECT
+                SAFE_CAST(str AS UUID) AS str_uuid
+                FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES('h');", """
+                 str_uuid | weight
+                -------------------
+                NULL      | 1""");
+    }
+
+    @Test
+    public void issue5378() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                MAP_KEYS(SAFE_CAST(mapp AS MAP<INT, INT>)),
+                MAP_VALUES(SAFE_CAST(mapp AS MAP<INT, INT>))
+                FROM tbl;""");
+        ccs.step("INSERT INTO TBL VALUES(MAP['1', 1])", """
+                 keys | values | weight
+                ------------------------
+                 { 1 } | { 1 } | 1""");
+        ccs.step("INSERT INTO TBL VALUES(MAP['a', 2])", """
+                 keys | values | weight
+                ------------------------
+                      |        | 1""");
+    }
+
+    @Test
+    public void issue5379() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                CAST(mapp AS MAP<VARCHAR, ROW(v VARCHAR)>) AS to_map,
+                SAFE_CAST(mapp AS MAP<VARCHAR, ROW(v VARCHAR)>) AS to_map1
+                FROM tbl;""",
+                "Cast function cannot convert value of type (VARCHAR CHARACTER SET \"UTF-8\" NOT NULL, INTEGER) MAP");
+    }
+
+    @Test
+    public void issue5380() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                CAST(mapp AS MAP<VARCHAR, INT ARRAY>) AS to_map
+                FROM tbl;""", "Cast function cannot convert value of type (VARCHAR CHARACTER SET \"UTF-8\" NOT NULL, INTEGER) MAP");
+    }
+
+    @Test
+    public void safeArrayCast() {
+        this.qs("""
+                SELECT SAFE_CAST(ARRAY['a'] AS INT ARRAY);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT SAFE_CAST(ARRAY['1'] AS INT ARRAY);
+                 r
+                ---
+                 { 1 }
+                (1 row)""");
+    }
+
+    @Test
+    public void safeNestedArrayCast() {
+        this.qs("""
+                SELECT SAFE_CAST(ARRAY[ARRAY['a']] AS INT ARRAY ARRAY);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT ELEMENT(SAFE_CAST(ARRAY[ARRAY['1']] AS INT ARRAY ARRAY));
+                 r
+                ---
+                { 1 }
+                (1 row)""");
+    }
+
+    @Test
+    public void issue5389() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(roww ROW(v1 VARCHAR NULL) NULL);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                SAFE_CAST(roww AS ROW(i1 INT)) AS to_row
+                FROM tbl;""", "SAFE_CAST cannot be used to convert ROW(VARCHAR) to ROW(INT)");
+    }
+
+    @Test
+    public void issue5390() {
+        this.getCCS("""
+                CREATE TYPE user_def AS(i1 INT, v1 VARCHAR NULL);
+                CREATE TYPE user_def_array AS (val VARCHAR ARRAY);
+                CREATE TYPE user_def_row AS (val ROW(i1 INT, v1 VARCHAR NULL));
+                CREATE TYPE user_def_udt AS (val user_def);
+                
+                CREATE TABLE tbl(arr VARCHAR ARRAY, mapp MAP<VARCHAR, INT>,
+                                 roww ROW(i1 INT, v1 VARCHAR NULL) NULL, udt user_def);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                    SAFE_CAST(NULL AS user_def_row) AS to_row,
+                    SAFE_CAST(NULL AS user_def_udt) AS to_udt
+                FROM tbl;""");
+    }
+
+    @Test
+    public void issue5391() {
+        this.getCCS("""
+                CREATE TYPE user_def_row AS (val ROW(i1 INT, v1 VARCHAR NULL));
+                CREATE MATERIALIZED VIEW v AS SELECT
+                SAFE_CAST(NULL AS user_def_row) AS to_roww;""");
+    }
+
+    @Test
+    public void mapCast() {
+        this.getCCS("""
+                CREATE TABLE varnt_cmpx_tbl(
+                roww ROW(int INT, var VARCHAR));
+                
+                CREATE MATERIALIZED VIEW cmpx_to_variant AS SELECT
+                CAST(roww AS VARIANT) AS roww_varnt
+                FROM varnt_cmpx_tbl;
+                
+                CREATE MATERIALIZED VIEW variant_to_cmpx AS SELECT
+                CAST(roww_varnt AS ROW(int INT, var VARCHAR)) AS roww
+                FROM cmpx_to_variant;""");
+    }
+
+    @Test
+    public void issue5448() {
+        // Also test for issue 5449
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(intt INTEGER UNSIGNED, x INT);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                ABS(intt) AS a, SIGN(x) as s, SIGN(intt) as i FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(0, 0), (1, 1), (2, -1)", """
+                 a | s | i | weight
+                --------------------
+                 0 | 0 | 0 | 1
+                 1 | 1 | 1 | 1
+                 2 | -1 | 1 | 1""");
+    }
+
+    @Test
+    public void castRow() {
+        this.getCCS("""
+                CREATE TABLE T (
+                  str   VARCHAR,
+                  data  INT NOT NULL
+                );
+                
+                CREATE LOCAL VIEW V AS SELECT
+                    T.str AS str,
+                    ARRAY_AGG(ROW(T.data)) AS e
+                  FROM T
+                  GROUP BY T.str;
+                
+                CREATE VIEW W AS SELECT
+                    CASE WHEN V.str IS NOT NULL THEN V.e
+                    ELSE NULL
+                    END
+                FROM V;""");
+    }
 }
- 

@@ -1,7 +1,7 @@
 use super::super::Factories;
 use crate::dynamic::{DataTrait, DynVec, WeightTrait};
 use crate::storage::file::reader::{
-    decompress, DataBlock, Error, FilteredKeys, Reader, TreeBlock, TreeNode,
+    DataBlock, Error, FilteredKeys, Reader, TreeBlock, TreeNode, decompress,
 };
 use crate::storage::{
     backend::StorageError,
@@ -76,15 +76,15 @@ where
             output_blocks: BTreeMap::new(),
             pending: 0,
         };
-        if !this.keys.is_empty() {
-            if let Some(node) = &reader.columns[0].root {
-                let mut reads = Vec::new();
-                this.try_read(
-                    FetchZSetRead::new(0..this.keys.len(), node.clone()),
-                    &mut reads,
-                )?;
-                this.start_reads(reads);
-            }
+        if !this.keys.is_empty()
+            && let Some(node) = &reader.columns[0].root
+        {
+            let mut reads = Vec::new();
+            this.try_read(
+                FetchZSetRead::new(0..this.keys.len(), node.clone()),
+                &mut reads,
+            )?;
+            this.start_reads(reads);
         }
         Ok(this)
     }
@@ -193,6 +193,7 @@ where
                 &read.node,
                 &self.cache,
                 self.reader.file_handle().file_id(),
+                self.reader.file.version,
             )
             .unwrap();
             self.process_read(&read.keys, tree_block, reads)?;

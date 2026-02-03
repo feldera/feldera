@@ -1,4 +1,6 @@
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::{
+    DBData, DBWeight, NumEntries,
     algebra::{NegByRef, ZRingValue},
     circuit::checkpointer::Checkpoint,
     dynamic::{
@@ -6,15 +8,15 @@ use crate::{
         LeanVec, WeightTrait, WeightTraitTyped, WithFactory,
     },
     trace::{
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
+        Filter, GroupFilter, MergeCursor, Serializer, VecKeyBatch, WeightedItem,
         cursor::Position,
         deserialize_wset,
         layers::{Cursor as _, Leaf, LeafCursor, LeafFactories, Trie},
         ord::merge_batcher::MergeBatcher,
-        serialize_wset, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Deserializer, Filter, MergeCursor, Serializer, VecKeyBatch, WeightedItem,
+        serialize_wset,
     },
     utils::Tup2,
-    DBData, DBWeight, NumEntries,
 };
 use itertools::{EitherOrBoth, Itertools};
 use rand::Rng;
@@ -324,7 +326,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
     fn consuming_cursor(
         &mut self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn crate::trace::MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_>
     {
         if key_filter.is_none() && value_filter.is_none() {
@@ -357,8 +359,8 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
         self.layer.approximate_byte_size()
     }
 
-    fn filter_size(&self) -> usize {
-        0
+    fn filter_stats(&self) -> BloomFilterStats {
+        BloomFilterStats::default()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)

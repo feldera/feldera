@@ -113,7 +113,7 @@ backgroundBrightYellow {
 
 brightBlue {
   --tw-text-opacity: inherit !important;
-  @apply!text- [#1192cf] dark:!text-[#34b3ed];
+  @apply !text-[#1192cf] dark:!text-[#34b3ed];
 }
 
 backgroundBrightBlue {

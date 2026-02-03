@@ -1,8 +1,8 @@
 use crate::{
-    transport::{InputQueue, InputReaderCommand, NonFtInputReaderCommand},
     InputConsumer, InputEndpoint, InputReader, Parser, PipelineState, TransportInputEndpoint,
+    transport::{InputQueue, InputReaderCommand, NonFtInputReaderCommand},
 };
-use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use chrono::{DateTime, Utc};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_types::{
@@ -11,7 +11,7 @@ use feldera_types::{
 use futures::StreamExt;
 use google_cloud_gax::conn::Environment;
 use google_cloud_pubsub::{
-    client::{google_cloud_auth::credentials::CredentialsFile, Client, ClientConfig},
+    client::{Client, ClientConfig, google_cloud_auth::credentials::CredentialsFile},
     subscription::{SeekTo, Subscription},
 };
 use std::{
@@ -20,11 +20,11 @@ use std::{
     time::{Duration, SystemTime},
 };
 use tokio::{
-    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info_span, Instrument};
+use tracing::{Instrument, debug, info_span};
 
 pub struct PubSubInputEndpoint {
     config: Arc<PubSubInputConfig>,
@@ -168,7 +168,7 @@ impl PubSubReader {
                                             // Use the time when we start processing the message as the ingestion timestamp,
                                             // since we don't have a way to get the time we _start_ reading the message.
                                             let timestamp = Utc::now();
-                                            queue.push(parser.parse(data, &None), timestamp);
+                                            queue.push(parser.parse(data, None), timestamp);
                                             message.ack().await.unwrap_or_else(|e| {
                                                 consumer.error(false, anyhow!("gRPC error acknowledging Pub/Sub message: {e}"), Some("pubsub"))
                                             });

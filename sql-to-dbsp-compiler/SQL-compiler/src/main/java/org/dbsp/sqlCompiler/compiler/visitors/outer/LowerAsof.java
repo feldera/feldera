@@ -4,13 +4,16 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
@@ -38,7 +41,7 @@ import java.util.Map;
 /** Lower {@link org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator} into
  * {@link org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator}.
  * Also moves their corresponding {@link DBSPIntegrateTraceRetainValuesOperator}
- * if they exist. */
+ * and {@link DBSPIntegrateTraceRetainNValuesOperator}, if they exist. */
 public class LowerAsof implements CircuitTransform {
     final DBSPCompiler compiler;
 
@@ -49,17 +52,18 @@ public class LowerAsof implements CircuitTransform {
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
         // Maps an integrate trace node in the original graph to the asof join operator that it should be moved to
-        Map<DBSPIntegrateTraceRetainValuesOperator, DBSPConcreteAsofJoinOperator> gces = new HashMap<>();
+        Map<IGCOperator, DBSPConcreteAsofJoinOperator> leftGces = new HashMap<>();
+        Map<IGCOperator, DBSPConcreteAsofJoinOperator> rightGces = new HashMap<>();
         // Maps an integrate trace operator in the new graph to the original one
-        Map<DBSPIntegrateTraceRetainValuesOperator, DBSPIntegrateTraceRetainValuesOperator> original = new HashMap<>();
+        Map<IGCOperator, IGCOperator> original = new HashMap<>();
 
         Graph graph = new Graph(this.compiler);
         graph.apply(circuit);
 
         // First scan the circuit, populate the maps, and replace asof operators
-        var lower = new LowerAsofInner(compiler, graph.graphs, gces, original);
+        var lower = new LowerAsofInner(compiler, graph.graphs, leftGces, rightGces, original);
         circuit = lower.apply(circuit);
-        if (gces.isEmpty()) {
+        if (leftGces.isEmpty()) {
             return circuit;
         }
 
@@ -71,14 +75,17 @@ public class LowerAsof implements CircuitTransform {
         for (var entry: original.entrySet()) {
             var newIntegrate = entry.getKey();
             var originalIntegrate = entry.getValue();
-            var newJoin = gces.get(originalIntegrate);
+            var newJoin = leftGces.get(originalIntegrate);
             if (newJoin != null)
-                cg.addEdge(newJoin, newIntegrate, 0);
+                cg.addEdge(newJoin, newIntegrate.asOperator(), 0);
+            newJoin = rightGces.get(originalIntegrate);
+            if (newJoin != null)
+                cg.addEdge(newJoin, newIntegrate.asOperator(), 0);
         }
         circuit.resort(cg);
 
         // Scan the circuit a second time and fix the integrate nodes.
-        var moveGc = new MoveGC(compiler, gces, original);
+        var moveGc = new MoveGC(compiler, leftGces, rightGces, original);
         circuit = moveGc.apply(circuit);
         return circuit;
     }
@@ -95,15 +102,18 @@ public class LowerAsof implements CircuitTransform {
 
     /** Move the integrate trace operator to the new join */
     static class MoveGC extends CircuitCloneVisitor {
-        final Map<DBSPIntegrateTraceRetainValuesOperator, DBSPConcreteAsofJoinOperator> gces;
-        final Map<DBSPIntegrateTraceRetainValuesOperator, DBSPIntegrateTraceRetainValuesOperator> original;
+        final Map<IGCOperator, DBSPConcreteAsofJoinOperator> leftGces;
+        final Map<IGCOperator, DBSPConcreteAsofJoinOperator> rightGces;
+        final Map<IGCOperator, IGCOperator> original;
 
         public MoveGC(
                 DBSPCompiler compiler,
-                Map<DBSPIntegrateTraceRetainValuesOperator, DBSPConcreteAsofJoinOperator> gces,
-                Map<DBSPIntegrateTraceRetainValuesOperator, DBSPIntegrateTraceRetainValuesOperator> original) {
+                Map<IGCOperator, DBSPConcreteAsofJoinOperator> leftGces,
+                Map<IGCOperator, DBSPConcreteAsofJoinOperator> rightGces,
+                Map<IGCOperator, IGCOperator> original) {
             super(compiler, false);
-            this.gces = gces;
+            this.leftGces = leftGces;
+            this.rightGces = rightGces;
             this.original = original;
             this.preservesTypes = false;
         }
@@ -113,17 +123,17 @@ public class LowerAsof implements CircuitTransform {
             // Because we only replace such operators in this visitor, and such
             // operators have no successors, we know that the graph will not change
             // anywhere else, including the ConcreteAsofJoinOperator
-            DBSPIntegrateTraceRetainValuesOperator original = this.original.get(operator);
-            if (original == null || !this.gces.containsKey(original)) {
+            IGCOperator original = this.original.get(operator);
+            if (original == null || !this.leftGces.containsKey(original)) {
                 super.postorder(operator);
                 return;
             }
-            DBSPConcreteAsofJoinOperator join = Utilities.getExists(this.gces, original);
+            DBSPConcreteAsofJoinOperator join = Utilities.getExists(this.leftGces, original);
             // This will be the same in the original and new circuit
             // Have to rewrite the function of the operator; the original one had signature
             // (key, value), the new one has signature (key, WithCustomOrd(value))
             // If the original function of operator was |x, y| f(x, y),
-            // the new one is |z, y| f( (unwrap(z), y)
+            // the new one is |z, y| f( (unwrapCustomOrd(z), y)
             DBSPClosureExpression originalRetain = operator.getClosureFunction();
             Utilities.enforce(originalRetain.parameters.length == 2);
 
@@ -138,18 +148,53 @@ public class LowerAsof implements CircuitTransform {
                     Linq.list(left, operator.right()), true);
             this.map(operator, replacement);
         }
+
+        @Override
+        public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
+            // Because we only replace such operators in this visitor, and such
+            // operators have no successors, we know that the graph will not change
+            // anywhere else, including the ConcreteAsofJoinOperator
+            IGCOperator original = this.original.get(operator);
+            if (original == null || !this.rightGces.containsKey(original)) {
+                super.postorder(operator);
+                return;
+            }
+            DBSPConcreteAsofJoinOperator join = Utilities.getExists(this.rightGces, original);
+            // This will be the same in the original and new circuit
+            // Have to rewrite the function of the operator; the original one had signature
+            // (key, value), the new one has signature (key, WithCustomOrd(value))
+            // If the original function of operator was |x, y| f(x, y),
+            // the new one is |z, y| f( (unwrapCustomOrd(z), y)
+            DBSPClosureExpression originalRetain = operator.getClosureFunction();
+            Utilities.enforce(originalRetain.parameters.length == 2);
+
+            OutputPort right = join.right();
+            DBSPTypeIndexedZSet ix = right.getOutputIndexedZSetType();
+            DBSPVariablePath z = ix.elementType.ref().var();
+            DBSPVariablePath y = originalRetain.parameters[1].getType().var();
+            DBSPExpression arg = new DBSPUnwrapCustomOrdExpression(z.deref()).borrow();
+            DBSPClosureExpression newRetain = originalRetain.call(arg, y).reduce(this.compiler).closure(z, y);
+            DBSPSimpleOperator replacement = operator.with(
+                    newRetain, right.outputType(),
+                    // Yes, we replace the left input of this operator with the right join input source
+                    Linq.list(right, operator.right()), true);
+            this.map(operator, replacement);
+        }
     }
 
     static class LowerAsofInner extends CircuitCloneWithGraphsVisitor {
-        final Map<DBSPIntegrateTraceRetainValuesOperator, DBSPConcreteAsofJoinOperator> gces;
-        final Map<DBSPIntegrateTraceRetainValuesOperator, DBSPIntegrateTraceRetainValuesOperator> original;
+        final Map<IGCOperator, DBSPConcreteAsofJoinOperator> leftGces;
+        final Map<IGCOperator, DBSPConcreteAsofJoinOperator> rightGces;
+        final Map<IGCOperator, IGCOperator> original;
 
         public LowerAsofInner(
                 DBSPCompiler compiler, CircuitGraphs graphs,
-                Map<DBSPIntegrateTraceRetainValuesOperator, DBSPConcreteAsofJoinOperator> gces,
-                Map<DBSPIntegrateTraceRetainValuesOperator, DBSPIntegrateTraceRetainValuesOperator> original) {
+                Map<IGCOperator, DBSPConcreteAsofJoinOperator> leftGces,
+                Map<IGCOperator, DBSPConcreteAsofJoinOperator> rightGces,
+                Map<IGCOperator, IGCOperator> original) {
             super(compiler, graphs, false);
-            this.gces = gces;
+            this.leftGces = leftGces;
+            this.rightGces = rightGces;
             this.original = original;
         }
 
@@ -218,10 +263,12 @@ public class LowerAsof implements CircuitTransform {
             DBSPType commonTSType = leftTSType.withMayBeNull(nullable);
             Utilities.enforce(commonTSType.sameType(rightTSType.withMayBeNull(nullable)));
 
-            DBSPClosureExpression leftTimestamp = leftTS.cast(leftTS.getNode(), commonTSType, false)
+            DBSPClosureExpression leftTimestamp = leftTS.cast(
+                    leftTS.getNode(), commonTSType, DBSPCastExpression.CastType.SqlUnsafe)
                     .applyCloneIfNeeded()
                     .closure(leftVar);
-            DBSPClosureExpression rightTimestamp = rightTS.cast(rightTS.getNode(), commonTSType, false)
+            DBSPClosureExpression rightTimestamp = rightTS.cast(
+                    rightTS.getNode(), commonTSType, DBSPCastExpression.CastType.SqlUnsafe)
                     .applyCloneIfNeeded()
                     .closure(rightVar);
 
@@ -250,10 +297,16 @@ public class LowerAsof implements CircuitTransform {
             // If there is an IntegrateTraceRetainValues operator on the left input, it needs to be moved.
             CircuitGraph graph = this.getGraph();
             for (Port<DBSPOperator> port : graph.getSuccessors(join.left().operator)) {
-                DBSPIntegrateTraceRetainValuesOperator op =
-                        port.node().as(DBSPIntegrateTraceRetainValuesOperator.class);
+                IGCOperator op = port.node().as(DBSPIntegrateTraceRetainValuesOperator.class);
                 if (op != null)
-                    Utilities.putNew(this.gces, op, result);
+                    Utilities.putNew(this.leftGces, op, result);
+            }
+
+            // Similar procedure for the right input
+            for (Port<DBSPOperator> port : graph.getSuccessors(join.right().operator)) {
+                IGCOperator op = port.node().as(DBSPIntegrateTraceRetainNValuesOperator.class);
+                if (op != null)
+                    Utilities.putNew(this.rightGces, op, result);
             }
         }
 
@@ -262,6 +315,14 @@ public class LowerAsof implements CircuitTransform {
             super.postorder(operator);
             DBSPIntegrateTraceRetainValuesOperator repl = this.mapped(operator.getOutput(0))
                     .operator.to(DBSPIntegrateTraceRetainValuesOperator.class);
+            Utilities.putNew(this.original, operator, repl);
+        }
+
+        @Override
+        public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
+            super.postorder(operator);
+            DBSPIntegrateTraceRetainNValuesOperator repl = this.mapped(operator.getOutput(0))
+                    .operator.to(DBSPIntegrateTraceRetainNValuesOperator.class);
             Utilities.putNew(this.original, operator, repl);
         }
     }

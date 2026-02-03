@@ -1,5 +1,6 @@
 //! Functions for manipulating maps
 
+use crate::error::{SqlResult, SqlRuntimeError};
 use crate::{Array, ConcatSemigroup, Semigroup, Weight};
 use dbsp::utils::Tup2;
 use std::collections::BTreeMap;
@@ -78,6 +79,7 @@ where
     }
 }
 
+// Convert a map to another map
 #[doc(hidden)]
 pub fn map_map__<K0, K1, V0, V1, F, G>(map: Map<K0, V0>, f: (F, G)) -> Map<K1, V1>
 where
@@ -102,6 +104,43 @@ where
     G: Fn(&V0) -> V1,
 {
     map.map(|map| map_map__(map, f))
+}
+
+#[doc(hidden)]
+pub fn map_map_safe__<K0, K1, V0, V1, F, G>(
+    map: Map<K0, V0>,
+    f: (F, G),
+) -> SqlResult<Option<Map<K1, V1>>>
+where
+    K0: Ord + Clone,
+    K1: Ord + Clone,
+    F: Fn(&K0) -> SqlResult<K1>,
+    G: Fn(&V0) -> SqlResult<V1>,
+{
+    (*map)
+        .iter()
+        .map(move |(key, value)| (f.0(key), f.1(value)))
+        .map(move |(a, b)| Ok((a?, b?)))
+        .collect::<SqlResult<BTreeMap<K1, V1>>>()
+        .map(|x| Some(x.into()))
+}
+
+#[doc(hidden)]
+pub fn map_map_safeN_<K0, K1, V0, V1, F, G>(
+    map: Option<Map<K0, V0>>,
+    f: (F, G),
+) -> SqlResult<Option<Map<K1, V1>>>
+where
+    K0: Ord + Clone,
+    K1: Ord + Clone,
+    F: Fn(&K0) -> SqlResult<K1>,
+    G: Fn(&V0) -> SqlResult<V1>,
+{
+    match map {
+        // Treat like an error; the result will be unwrapped to None anyway
+        None => Err(SqlRuntimeError::from_strng("")),
+        Some(map) => map_map_safe__(map.clone(), f),
+    }
 }
 
 #[doc(hidden)]

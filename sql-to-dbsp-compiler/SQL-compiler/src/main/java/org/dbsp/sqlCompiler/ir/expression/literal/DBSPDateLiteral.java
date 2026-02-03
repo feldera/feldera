@@ -108,7 +108,7 @@ public final class DBSPDateLiteral extends DBSPLiteral {
                     .append(this.type)
                     .append(")null");
         else
-            return builder.append(DateString.fromDaysSinceEpoch(this.value).toString());
+            return builder.append(this.wrapSome(DateString.fromDaysSinceEpoch(this.value).toString()));
     }
 
     @Override

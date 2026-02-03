@@ -4,8 +4,9 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
+use feldera_macros::IsNone;
 use feldera_sqllib::{
-    ByteArray, Date, SqlDecimal, SqlString, Time, Timestamp, Uuid, Variant, F32, F64,
+    ByteArray, Date, F32, F64, SqlDecimal, SqlString, Time, Timestamp, Uuid, Variant,
 };
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::{
@@ -37,6 +38,7 @@ use std::sync::Arc;
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct TestStruct {
@@ -99,9 +101,9 @@ impl Distribution<TestStruct> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> TestStruct {
         TestStruct {
             id: rng.gen_range(0..(i32::MAX as u32)),
-            b: rng.gen(),
-            i: rng.gen(),
-            s: rng.gen::<u32>().to_string(),
+            b: rng.r#gen(),
+            i: rng.r#gen(),
+            s: rng.r#gen::<u32>().to_string(),
         }
     }
 }
@@ -131,6 +133,7 @@ serialize_struct!(TestStruct()[4]{
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct KeyStruct {
@@ -256,14 +259,32 @@ pub fn generate_test_batches_with_weights(
     })
 }
 
-#[derive(PartialEq, Debug, Eq, Hash, Clone)]
+/// Used to test passing of record metadata from Kafka connector to deserializer.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct TestStructMetadata {
-    i: i32,
-    kafka_headers: Variant,
-    kafka_topic: SqlString,
-    kafka_timestamp: Timestamp,
-    kafka_partition: i32,
-    kafka_offset: i64,
+    pub i: i32,
+    pub kafka_headers: Variant,
+    pub kafka_topic: SqlString,
+    pub kafka_timestamp: Timestamp,
+    pub kafka_partition: i32,
+    pub kafka_offset: i64,
 }
 
 deserialize_table_record!(TestStructMetadata["TestStructMetadata", Variant, 6] {
@@ -312,6 +333,7 @@ impl TestStructMetadata {
     rkyv::Serialize,
     rkyv::Deserialize,
     Arbitrary,
+    IsNone,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -344,6 +366,7 @@ deserialize_table_record!(EmbeddedStruct["EmbeddedStruct", Variant, 1] {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct TestStruct2 {
@@ -397,9 +420,9 @@ impl Arbitrary for TestStruct2 {
                     field: f,
                     field_0: if f1 { Some(f0) } else { None },
                     field_1: f1,
-                    field_2: Timestamp::new(f2 as i64 * 1_000),
-                    field_3: Date::new(f3 as i32),
-                    // field_4: Time::new(f4 * 1000),
+                    field_2: Timestamp::from_milliseconds(f2 as i64 * 1_000),
+                    field_3: Date::from_days(f3 as i32),
+                    // field_4: Time::from_nanoseconds(f4 * 1000),
                     field_5: Some(f5),
                     field_6: Some(f6),
                     field_7: SqlDecimal::<10, 3>::new(f7_num, f7_scale as i32).unwrap(),
@@ -416,9 +439,9 @@ impl TestStruct2 {
                 field: 1,
                 field_0: Some("test".to_string()),
                 field_1: false,
-                field_2: Timestamp::new(1000),
-                field_3: Date::new(1),
-                // field_4: Time::new(1),
+                field_2: Timestamp::from_milliseconds(1000),
+                field_3: Date::from_days(1),
+                // field_4: Time::from_nanoseconds(1),
                 field_5: Some(EmbeddedStruct { field: false }),
                 field_6: Some(BTreeMap::from([
                     ("foo".to_string(), 100),
@@ -430,9 +453,9 @@ impl TestStruct2 {
                 field: 2,
                 field_0: None,
                 field_1: true,
-                field_2: Timestamp::new(2000),
-                field_3: Date::new(12),
-                // field_4: Time::new(1_000_000_000),
+                field_2: Timestamp::from_milliseconds(2000),
+                field_3: Date::from_days(12),
+                // field_4: Time::from_nanoseconds(1_000_000_000),
                 field_5: Some(EmbeddedStruct { field: true }),
                 field_6: Some(BTreeMap::new()),
                 field_7: SqlDecimal::new(1, 3).unwrap(),
@@ -675,6 +698,7 @@ deserialize_table_record!(TestStruct2["TestStruct2", Variant, 8] {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct DatabricksPeople {
@@ -740,6 +764,7 @@ deserialize_table_record!(DatabricksPeople["DatabricksPeople", Variant, 8] {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct IcebergTestStruct {
@@ -807,9 +832,9 @@ impl Arbitrary for IcebergTestStruct {
                         r: F32::new(r),
                         d: F64::new(d),
                         dec: SqlDecimal::<10, 3>::new(dec_num, dec_scale as i32).unwrap(),
-                        dt: Date::new(dt),
-                        tm: Time::new(tm),
-                        ts: Timestamp::new(ts),
+                        dt: Date::from_days(dt),
+                        tm: Time::from_nanoseconds(tm),
+                        ts: Timestamp::from_milliseconds(ts),
                         s: s.to_string(),
                         // uuid: ByteArray::from_vec(uuid),
                         fixed: ByteArray::from_vec(fixed),
@@ -939,6 +964,7 @@ deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", Variant, 12] {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct DeltaTestStruct {
@@ -1027,7 +1053,7 @@ impl Arbitrary for DeltaTestStruct {
                         bigint,
                         binary: ByteArray::from_vec(binary),
                         boolean,
-                        date: Date::new(date),
+                        date: Date::from_days(date),
                         decimal_10_3: SqlDecimal::<10, 3>::new(decimal_digits, 3).unwrap(),
                         double: F64::new(double.trunc()), // truncate to avoid rounding errors when serializing floats to/from JSON
                         float: F32::new(float.trunc()),
@@ -1035,7 +1061,7 @@ impl Arbitrary for DeltaTestStruct {
                         smallint,
                         string: string.to_string(),
                         unused: Some(unused.to_string()),
-                        timestamp_ntz: Timestamp::new(timestamp_ntz * 1000),
+                        timestamp_ntz: Timestamp::from_milliseconds(timestamp_ntz * 1000),
                         tinyint,
                         string_array,
                         struct1,
@@ -1290,6 +1316,7 @@ deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", Variant, 20] {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct DeltaTestKey {

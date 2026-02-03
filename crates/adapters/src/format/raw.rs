@@ -1,18 +1,23 @@
 use crate::{
+    ControllerError,
     catalog::{DeCollectionStream, RecordFormat},
     format::{InputFormat, ParseError, Parser},
-    ControllerError,
 };
 use actix_web::HttpRequest;
 use core::str;
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_adapterlib::ConnectorMetadata;
 use feldera_sqllib::Variant;
 use feldera_types::{
     format::raw::{RawParserConfig, RawParserMode},
-    serde_with_context::{serde_config::BinaryFormat, SqlSerdeConfig},
+    serde_with_context::{SqlSerdeConfig, serde_config::BinaryFormat},
 };
-use serde::{de::Error as _, de::SeqAccess, forward_to_deserialize_any, Deserialize, Deserializer};
+use serde::{
+    Deserialize, Deserializer,
+    de::{Error as _, MapAccess, value::StrDeserializer},
+    forward_to_deserialize_any,
+};
 use serde_json::json;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::{borrow::Cow, fmt::Display};
@@ -67,25 +72,49 @@ impl InputFormat for RawInputFormat {
 
         let num_columns = input_stream.schema.fields.len();
 
-        if num_columns != 1 {
-            return Err(ControllerError::invalid_parser_configuration(
-                endpoint_name,
-                &format!("'raw' input format can only be used with tables that have a single column of type 'VARCHAR' or 'VARBINARY', but table '{}' has {num_columns} columns", input_stream.schema.name),
-            ));
-        }
+        let field = if let Some(column_name) = &config.column_name {
+            input_stream
+                .schema
+                .field(column_name)
+                .ok_or_else(|| {
+                    ControllerError::invalid_parser_configuration(
+                        endpoint_name,
+                        &format!(
+                            "column '{}' not found in table '{}'",
+                            column_name, input_stream.schema.name
+                        ),
+                    )
+                })?
+                .clone()
+        } else {
+            if num_columns != 1 {
+                return Err(ControllerError::invalid_parser_configuration(
+                    endpoint_name,
+                    &format!(
+                        "The 'raw' input format is used with table '{}', which has {num_columns} columns. Use the 'column_name' configuration option to specify which column should store the raw input data.",
+                        input_stream.schema.name
+                    ),
+                ));
+            }
 
-        let typ = input_stream.schema.fields[0].columntype.typ;
+            input_stream.schema.fields[0].clone()
+        };
+
+        let typ = field.columntype.typ;
 
         if !typ.is_varchar() && !typ.is_varbinary() {
             return Err(ControllerError::invalid_parser_configuration(
                 endpoint_name,
-                &format!("'raw' input format can only be used with tables that have a single column of type 'VARCHAR' or 'VARBINARY', but table '{}' has a column of type {typ}", input_stream.schema.name),
+                &format!(
+                    "'raw' input format can only be used with a column of type 'VARCHAR' or 'VARBINARY', but column {} has type {typ}",
+                    field.name
+                ),
             ));
         }
 
         let input_stream = input_stream
             .handle
-            .configure_deserializer(RecordFormat::Raw)?;
+            .configure_deserializer(RecordFormat::Raw(field.name.to_string()))?;
         Ok(Box::new(RawParser::new(input_stream, config)) as Box<dyn Parser>)
     }
 }
@@ -140,19 +169,20 @@ impl Parser for RawParser {
     fn parse(
         &mut self,
         data: &[u8],
-        metadata: &Option<Variant>,
+        metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let mut errors = Vec::new();
+        let metadata = metadata.map(Variant::from);
 
         match self.config.mode {
             RawParserMode::Blob => {
-                self.parse_record(data, metadata, &mut errors);
+                self.parse_record(data, &metadata, &mut errors);
                 self.last_event_number += 1;
             }
             RawParserMode::Lines => {
                 for line in data.split(|b| b == &b'\n') {
                     if !line.is_empty() {
-                        self.parse_record(line, metadata, &mut errors);
+                        self.parse_record(line, &metadata, &mut errors);
                         self.last_event_number += 1;
                     }
                 }
@@ -170,24 +200,30 @@ impl Parser for RawParser {
 /// Deserializer implementation that deserializes a byte slice as a struct with one column that contains
 /// these bytes.
 pub(crate) struct RawDeserializer<'de> {
+    column_name: &'de str,
     bytes: &'de [u8],
 }
 
 impl<'de> RawDeserializer<'de> {
-    pub(crate) fn new(bytes: &'de [u8]) -> Self {
-        Self { bytes }
+    pub(crate) fn new(column_name: &'de str, bytes: &'de [u8]) -> Self {
+        Self { column_name, bytes }
     }
 }
 
 #[derive(Clone)]
-struct RawSeqDeserializer<'de> {
+struct RawMapDeserializer<'de> {
+    column_name: &'de str,
     bytes: &'de [u8],
     done: bool,
 }
 
-impl<'de> RawSeqDeserializer<'de> {
-    fn new(bytes: &'de [u8]) -> Self {
-        Self { bytes, done: false }
+impl<'de> RawMapDeserializer<'de> {
+    fn new(column_name: &'de str, bytes: &'de [u8]) -> Self {
+        Self {
+            column_name,
+            bytes,
+            done: false,
+        }
     }
 }
 
@@ -215,23 +251,31 @@ impl serde::de::Error for RawDeserializeError {
     }
 }
 
-impl<'de> SeqAccess<'de> for RawSeqDeserializer<'de> {
+impl<'de> MapAccess<'de> for RawMapDeserializer<'de> {
     type Error = RawDeserializeError;
 
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
-        T: serde::de::DeserializeSeed<'de>,
+        K: serde::de::DeserializeSeed<'de>,
     {
         if self.done {
             Ok(None)
         } else {
             self.done = true;
-            Ok(Some(seed.deserialize(self.clone())?))
+            seed.deserialize(StrDeserializer::new(self.column_name))
+                .map(Some)
         }
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
+    where
+        V: serde::de::DeserializeSeed<'de>,
+    {
+        seed.deserialize(self.clone())
     }
 }
 
-impl<'de> Deserializer<'de> for RawSeqDeserializer<'de> {
+impl<'de> Deserializer<'de> for RawMapDeserializer<'de> {
     type Error = RawDeserializeError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -286,7 +330,7 @@ impl<'de> Deserializer<'de> for RawDeserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        visitor.visit_seq(RawSeqDeserializer::new(self.bytes))
+        visitor.visit_map(RawMapDeserializer::new(self.column_name, self.bytes))
     }
     forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
@@ -297,8 +341,9 @@ impl<'de> Deserializer<'de> for RawDeserializer<'de> {
 
 #[cfg(test)]
 mod test {
-    use crate::test::{mock_parser_pipeline, MockUpdate};
     use crate::FormatConfig;
+    use crate::test::{MockUpdate, mock_parser_pipeline};
+    use feldera_adapterlib::ConnectorMetadata;
     use feldera_adapterlib::{
         format::{InputBuffer, ParseError, Parser},
         transport::InputConsumer,
@@ -355,6 +400,64 @@ mod test {
     });
 
     #[derive(Eq, PartialEq, Debug, Hash, Clone)]
+    struct OptBinaryWithMetadata {
+        data: Option<ByteArray>,
+        kafka_topic: Option<SqlString>,
+    }
+
+    fn opt_binary_with_metadata_schema() -> Relation {
+        Relation::new(
+            SqlIdentifier::new("opt_binary", false),
+            vec![
+                Field::new(
+                    SqlIdentifier::new("data", false),
+                    ColumnType::varbinary(true),
+                ),
+                Field::new(
+                    SqlIdentifier::new("kafka_topic", false),
+                    ColumnType::varchar(true),
+                ),
+            ],
+            false,
+            BTreeMap::new(),
+        )
+    }
+
+    deserialize_table_record!(OptBinaryWithMetadata["OptBinaryWithMetadata", Variant, 2] {
+        (data, "data", false, Option<ByteArray>, |_| Some(None)),
+        (kafka_topic, "kafka_topic", false, Option<SqlString>, |metadata: &Option<Variant>| metadata.as_ref().map(|m| SqlString::try_from(m.index_string("kafka_topic")).ok()))
+    });
+
+    #[derive(Eq, PartialEq, Debug, Hash, Clone)]
+    struct OptBinaryWithNulls {
+        data: Option<ByteArray>,
+        kafka_topic: Option<SqlString>,
+    }
+
+    fn opt_binary_with_nulls_schema() -> Relation {
+        Relation::new(
+            SqlIdentifier::new("opt_binary_with_nulls", false),
+            vec![
+                Field::new(
+                    SqlIdentifier::new("data", false),
+                    ColumnType::varbinary(true),
+                ),
+                Field::new(
+                    SqlIdentifier::new("kafka_topic", false),
+                    ColumnType::varchar(true),
+                ),
+            ],
+            false,
+            BTreeMap::new(),
+        )
+    }
+
+    deserialize_table_record!(OptBinaryWithNulls["OptBinaryWithNulls", Variant, 2] {
+        (data, "data", false, Option<ByteArray>, |_| Some(None)),
+        (kafka_topic, "kafka_topic", false, Option<SqlString>, |_| Some(None))
+    });
+
+    #[derive(Eq, PartialEq, Debug, Hash, Clone)]
     struct Varchar {
         data: SqlString,
     }
@@ -370,6 +473,35 @@ mod test {
                 SqlIdentifier::new("data", false),
                 ColumnType::varchar(false),
             )],
+            false,
+            BTreeMap::new(),
+        )
+    }
+
+    #[derive(Eq, PartialEq, Debug, Hash, Clone)]
+    struct VarcharWithMetadata {
+        data: SqlString,
+        kafka_topic: Option<SqlString>,
+    }
+
+    deserialize_table_record!(VarcharWithMetadata["VarcharWithMetadata", Variant, 2] {
+        (data, "data", false, SqlString, |_| None),
+        (kafka_topic, "kafka_topic", false, Option<SqlString>, |metadata: &Option<Variant>| metadata.as_ref().map(|m| SqlString::try_from(m.index_string("kafka_topic")).ok()))
+    });
+
+    fn varchar_with_metadata_schema() -> Relation {
+        Relation::new(
+            SqlIdentifier::new("string_table", false),
+            vec![
+                Field::new(
+                    SqlIdentifier::new("data", false),
+                    ColumnType::varchar(false),
+                ),
+                Field::new(
+                    SqlIdentifier::new("kafka_topic", false),
+                    ColumnType::varchar(true),
+                ),
+            ],
             false,
             BTreeMap::new(),
         )
@@ -404,6 +536,7 @@ mod test {
         /// Expected contents at the end of the test.
         expected_output: Vec<MockUpdate<T, ()>>,
         schema: Relation,
+        metadata: Option<ConnectorMetadata>,
     }
 
     impl<T> TestCase<T> {
@@ -413,12 +546,14 @@ mod test {
             input_batches: Vec<(Vec<u8>, Vec<ParseError>)>,
             expected_output: Vec<MockUpdate<T, ()>>,
             schema: Relation,
+            metadata: Option<ConnectorMetadata>,
         ) -> Self {
             Self {
                 config,
                 input_batches,
                 expected_output,
                 schema,
+                metadata,
             }
         }
     }
@@ -447,7 +582,7 @@ mod test {
             consumer.on_error(Some(Box::new(|_, _| {})));
             parser.on_error(Some(Box::new(|_, _| {})));
             for (data, expected_errors) in test.input_batches {
-                let (mut buffer, errors) = parser.parse(&data, &None);
+                let (mut buffer, errors) = parser.parse(&data, test.metadata.clone());
                 assert_eq!(&errors, &expected_errors);
                 buffer.flush();
             }
@@ -461,6 +596,7 @@ mod test {
         let test1 = TestCase::new(
             RawParserConfig {
                 mode: RawParserMode::Lines,
+                column_name: None,
             },
             vec![(b"foo\nbar".to_vec(), vec![])],
             vec![
@@ -468,6 +604,42 @@ mod test {
                 MockUpdate::with_polarity(Varchar { data: "bar".into() }, true),
             ],
             varchar_schema(),
+            None,
+        );
+
+        let test_cases = vec![test1];
+        run_test_cases(test_cases);
+    }
+
+    #[test]
+    fn test_raw_varchar_with_metadata() {
+        let test1 = TestCase::new(
+            RawParserConfig {
+                mode: RawParserMode::Lines,
+                column_name: Some("data".to_string()),
+            },
+            vec![(b"foo\nbar".to_vec(), vec![])],
+            vec![
+                MockUpdate::with_polarity(
+                    VarcharWithMetadata {
+                        data: "foo".into(),
+                        kafka_topic: Some("my_topic".into()),
+                    },
+                    true,
+                ),
+                MockUpdate::with_polarity(
+                    VarcharWithMetadata {
+                        data: "bar".into(),
+                        kafka_topic: Some("my_topic".into()),
+                    },
+                    true,
+                ),
+            ],
+            varchar_with_metadata_schema(),
+            Some(ConnectorMetadata::from(BTreeMap::from([(
+                Variant::String(SqlString::from("kafka_topic")),
+                Variant::String(SqlString::from("my_topic")),
+            )]))),
         );
 
         let test_cases = vec![test1];
@@ -479,6 +651,7 @@ mod test {
         let test1 = TestCase::new(
             RawParserConfig {
                 mode: RawParserMode::Blob,
+                column_name: None,
             },
             vec![(b"foo\nbar".to_vec(), vec![])],
             vec![MockUpdate::with_polarity(
@@ -488,6 +661,7 @@ mod test {
                 true,
             )],
             opt_varchar_schema(),
+            None,
         );
 
         let test_cases = vec![test1];
@@ -499,6 +673,7 @@ mod test {
         let test1 = TestCase::new(
             RawParserConfig {
                 mode: RawParserMode::Lines,
+                column_name: None,
             },
             vec![(b"foo\nbar".to_vec(), vec![])],
             vec![
@@ -516,6 +691,7 @@ mod test {
                 ),
             ],
             binary_schema(),
+            None,
         );
 
         let test_cases = vec![test1];
@@ -527,6 +703,7 @@ mod test {
         let test1 = TestCase::new(
             RawParserConfig {
                 mode: RawParserMode::Blob,
+                column_name: None,
             },
             vec![(b"foo\nbar".to_vec(), vec![])],
             vec![MockUpdate::with_polarity(
@@ -536,6 +713,56 @@ mod test {
                 true,
             )],
             opt_binary_schema(),
+            None,
+        );
+
+        let test_cases = vec![test1];
+        run_test_cases(test_cases);
+    }
+
+    #[test]
+    fn test_raw_opt_varbinary_with_metadata() {
+        let test1 = TestCase::new(
+            RawParserConfig {
+                mode: RawParserMode::Blob,
+                column_name: Some("data".to_string()),
+            },
+            vec![(b"foo\nbar".to_vec(), vec![])],
+            vec![MockUpdate::with_polarity(
+                OptBinaryWithMetadata {
+                    data: Some(b"foo\nbar".as_slice().into()),
+                    kafka_topic: Some("my_topic".into()),
+                },
+                true,
+            )],
+            opt_binary_with_metadata_schema(),
+            Some(ConnectorMetadata::from(BTreeMap::from([(
+                Variant::String(SqlString::from("kafka_topic")),
+                Variant::String(SqlString::from("my_topic")),
+            )]))),
+        );
+
+        let test_cases = vec![test1];
+        run_test_cases(test_cases);
+    }
+
+    #[test]
+    fn test_raw_opt_varbinary_with_nulls() {
+        let test1 = TestCase::new(
+            RawParserConfig {
+                mode: RawParserMode::Blob,
+                column_name: Some("data".to_string()),
+            },
+            vec![(b"foo\nbar".to_vec(), vec![])],
+            vec![MockUpdate::with_polarity(
+                OptBinaryWithNulls {
+                    data: Some(b"foo\nbar".as_slice().into()),
+                    kafka_topic: None,
+                },
+                true,
+            )],
+            opt_binary_with_nulls_schema(),
+            None,
         );
 
         let test_cases = vec![test1];

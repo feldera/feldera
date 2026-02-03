@@ -44,6 +44,7 @@ public enum DBSPOpcode {
     MIN("min", false),
     MAX_IGNORE_NULLS("max_ignore_nulls", false),
     MIN_IGNORE_NULLS("min_ignore_nulls", false),
+    MAX_NULL_WINS("max_null_wins", false),
     CONCAT("||", false),
     IS_DISTINCT("is_distinct", false),
     SQL_INDEX("index", false),
@@ -55,9 +56,6 @@ public enum DBSPOpcode {
     DECIMAL_TO_INTEGER("decimal_to_integer", false),
     INTEGER_TO_DECIMAL("integer_to_decimal", false),
 
-    // Timestamp-based operations
-    TS_ADD("+", false),
-    TS_SUB("-", false),
     // Interval-based operations
     INTERVAL_MUL("*", false),
     INTERVAL_DIV("/", false),
@@ -88,9 +86,17 @@ public enum DBSPOpcode {
     // Otherwise, this returns left >= right.
     CONTROLLED_FILTER_GTE("cf_compare_gte", true),
     // Higher order operation: apply a function to every element of an array
+    // Only used to implement casts on arrays, which recursively cast elements
     ARRAY_CONVERT("array_map", false),
+    // Same as ARRAY_CONVERT, except the function applied returns SqlResult, and
+    // the map function returns None in case any partial result is Error.
+    ARRAY_CONVERT_SAFE("array_map_safe", false),
     // Apply a function to every key-value element of a map
+    // Only used to implement casts on maps, which recursively cast keys and values
     MAP_CONVERT("map_map", false),
+    // Same as MAP_CONVERT, except the function applied returns SqlResult, and
+    // the map function returns None in case any partial result is Error.
+    MAP_CONVERT_SAFE("map_map_safe", false),
     ;
 
     private final String text;
@@ -120,7 +126,7 @@ public enum DBSPOpcode {
             case WRAP_BOOL, MAP_CONVERT, ARRAY_CONVERT, CONTROLLED_FILTER_GTE, AGG_LTE, AGG_GTE, AGG_ADD, AGG_MIN,
                  AGG_MAX, AGG_XOR, AGG_OR, AGG_AND, IS_DISTINCT, CONCAT, MIN, MAX, OR, AND, IS_NOT_FALSE, IS_NOT_TRUE,
                  AGG_MAX1, AGG_MIN1, INDICATOR -> false;
-            case NEG, INTERVAL_DIV, INTERVAL_MUL, TS_SUB, TS_ADD, DECIMAL_TO_INTEGER, INTEGER_TO_DECIMAL,
+            case NEG, INTERVAL_DIV, INTERVAL_MUL, DECIMAL_TO_INTEGER, INTEGER_TO_DECIMAL,
                  RUST_INDEX, VARIANT_INDEX, MAP_INDEX,
                  SQL_INDEX, XOR, BW_OR, MUL_WEIGHT, BW_AND, GTE, LTE, GT, LT, NEQ, EQ, MOD, DIV_NULL, DIV, MUL, SUB,
                  ADD, TYPEDBOX, IS_TRUE, IS_FALSE, NOT, UNARY_PLUS -> true;

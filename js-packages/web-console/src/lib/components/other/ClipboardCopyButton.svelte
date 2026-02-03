@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { clipboard } from '@svelte-bin/clipboard'
+  import { clipboard, type Parameter } from '@svelte-bin/clipboard'
   import { clickedClass } from '$lib/compositions/actions/clickedClass'
   import type { Snippet } from '$lib/types/svelte'
 
-  let {
+  const {
     value,
     class: _class,
     children
-  }: { value: string; class?: string; children?: Snippet } = $props()
+  }: { value: Parameter; class?: string; children?: Snippet } = $props()
 </script>
 
 <button

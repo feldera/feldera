@@ -224,23 +224,24 @@ public class PostgresIntervalTests extends SqlIoTest {
 
     @Test
     public void testLimitsPositive() {
+        // Our limits are smaller than postgres, so this has been adapted
         this.qs("""
-                SELECT -(INTERVAL -2147483647 months);
+                SELECT -(INTERVAL -2147483 months);
                         ?column?
                 ------------------------
-                 178956970 years 7 months
+                 178956 years 11 months
                 (1 row)
 
-                SELECT -(INTERVAL -2147483647 days);
+                SELECT -(INTERVAL -2147483 days);
                     ?column?
                 -----------------
-                 2147483647 days
+                 2147483 days
                 (1 row)
 
-                SELECT -(INTERVAL -9223372036854.775807 SECONDS);
+                SELECT -(INTERVAL -92233720368.775807 SECONDS);
                         ?column?
                 -------------------------
-                 2562047788 hours 00 mins 54.775 secs
+                 25620477 hours 52 mins 48.775807 secs
                 (1 row)""");
     }
 

@@ -471,23 +471,31 @@ impl<'a, T> Payload<'a> for &'a mut Vec<T> {
     }
 
     unsafe fn set_len(&mut self, len: usize) {
-        Vec::set_len(self, len);
+        unsafe {
+            Vec::set_len(self, len);
+        }
     }
 
     unsafe fn copy_payload(src: Self::Ptr, dest: Self::Ptr, count: usize) {
-        ptr::copy(src, dest, count);
+        unsafe {
+            ptr::copy(src, dest, count);
+        }
     }
 
     unsafe fn copy_payload_nonoverlapping(src: Self::Ptr, dest: Self::Ptr, count: usize) {
-        ptr::copy_nonoverlapping(src, dest, count);
+        unsafe {
+            ptr::copy_nonoverlapping(src, dest, count);
+        }
     }
 
     unsafe fn drop_payload_in_place(payload: Self::Ptr) {
-        ptr::drop_in_place(payload);
+        unsafe {
+            ptr::drop_in_place(payload);
+        }
     }
 
     unsafe fn deref_mut(payload: Self::Ptr) -> Self::ItemRefMut {
-        &mut *payload
+        unsafe { &mut *payload }
     }
 }
 
@@ -513,27 +521,35 @@ where
     }
 
     unsafe fn set_len(&mut self, len: usize) {
-        self.0.set_len(len);
-        self.1.set_len(len);
+        unsafe {
+            self.0.set_len(len);
+            self.1.set_len(len);
+        }
     }
 
     unsafe fn copy_payload(src: Self::Ptr, dest: Self::Ptr, count: usize) {
-        P1::copy_payload(src.0, dest.0, count);
-        P2::copy_payload(src.1, dest.1, count);
+        unsafe {
+            P1::copy_payload(src.0, dest.0, count);
+            P2::copy_payload(src.1, dest.1, count);
+        }
     }
 
     unsafe fn copy_payload_nonoverlapping(src: Self::Ptr, dest: Self::Ptr, count: usize) {
-        P1::copy_payload_nonoverlapping(src.0, dest.0, count);
-        P2::copy_payload_nonoverlapping(src.1, dest.1, count);
+        unsafe {
+            P1::copy_payload_nonoverlapping(src.0, dest.0, count);
+            P2::copy_payload_nonoverlapping(src.1, dest.1, count);
+        }
     }
 
     unsafe fn drop_payload_in_place(payload: Self::Ptr) {
-        P1::drop_payload_in_place(payload.0);
-        P2::drop_payload_in_place(payload.1);
+        unsafe {
+            P1::drop_payload_in_place(payload.0);
+            P2::drop_payload_in_place(payload.1);
+        }
     }
 
     unsafe fn deref_mut(payload: Self::Ptr) -> Self::ItemRefMut {
-        (P1::deref_mut(payload.0), P2::deref_mut(payload.1))
+        unsafe { (P1::deref_mut(payload.0), P2::deref_mut(payload.1)) }
     }
 }
 
@@ -601,15 +617,15 @@ impl PayloadPtr for () {
 
 impl<T> PayloadPtr for *mut T {
     unsafe fn offset(self, count: isize) -> Self {
-        self.offset(count)
+        unsafe { self.offset(count) }
     }
 
     unsafe fn add(self, count: usize) -> Self {
-        self.add(count)
+        unsafe { self.add(count) }
     }
 
     unsafe fn sub(self, count: usize) -> Self {
-        self.sub(count)
+        unsafe { self.sub(count) }
     }
 }
 
@@ -619,14 +635,14 @@ where
     P2: PayloadPtr,
 {
     unsafe fn offset(self, count: isize) -> Self {
-        (self.0.offset(count), self.1.offset(count))
+        unsafe { (self.0.offset(count), self.1.offset(count)) }
     }
 
     unsafe fn add(self, count: usize) -> Self {
-        (self.0.add(count), self.1.add(count))
+        unsafe { (self.0.add(count), self.1.add(count)) }
     }
 
     unsafe fn sub(self, count: usize) -> Self {
-        (self.0.sub(count), self.1.sub(count))
+        unsafe { (self.0.sub(count), self.1.sub(count)) }
     }
 }

@@ -3,13 +3,13 @@
 use crate::{
     dynamic::LeanVec,
     utils::{
+        Tup2, VecExt,
         consolidation::{
             consolidate, consolidate_from, consolidate_paired_slices, consolidate_payload_from,
             consolidate_slice,
             quicksort::quicksort,
             utils::{dedup_payload_starting_at, retain_starting_at},
         },
-        Tup2, VecExt,
     },
 };
 use proptest::{collection::vec, prelude::*};

@@ -1,16 +1,16 @@
 //! Test various implementations of `trait Trie`.
 
 use crate::{
+    DBData, DBWeight,
     algebra::{HasZero, ZRingValue},
     dynamic::{DowncastTrait, DynData, DynWeight, Erase, LeanVec},
     utils::consolidate_pairs,
-    DBData, DBWeight,
 };
 use proptest::{collection::vec, prelude::*};
 use std::collections::BTreeMap;
 
 use super::{
-    layer::LayerFactories, leaf::LeafFactories, Builder, Cursor, Layer, Leaf, Trie, TupleBuilder,
+    Builder, Cursor, Layer, Leaf, Trie, TupleBuilder, layer::LayerFactories, leaf::LeafFactories,
 };
 
 // Unordered vectors of tuples used as test inputs.

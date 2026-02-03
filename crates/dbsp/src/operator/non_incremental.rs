@@ -1,17 +1,17 @@
 use crate::{
+    Batch, ChildCircuit, Circuit, SchedulerError, Scope, Stream, Timestamp,
     circuit::{
+        OwnershipPreference,
         circuit_builder::{CircuitBase, NonIterativeCircuit},
         operator_traits::{ImportOperator, Operator},
         runtime::Consensus,
         schedule::{CommitProgress, DynamicScheduler, Executor, Scheduler},
-        OwnershipPreference,
     },
     operator::Generator,
     trace::{
         Batch as DynBatch, BatchReader as _, BatchReaderFactories, Spine as DynSpine, Trace as _,
     },
     typed_batch::{Spine, TypedBatch},
-    Batch, ChildCircuit, Circuit, SchedulerError, Scope, Stream, Timestamp,
 };
 use impl_trait_for_tuples::impl_for_tuples;
 use std::{borrow::Cow, cell::RefCell, collections::BTreeSet, future::Future, pin::Pin, rc::Rc};
@@ -63,7 +63,7 @@ where
 }
 
 #[allow(clippy::unused_unit)]
-#[impl_for_tuples(12)]
+#[impl_for_tuples(14)]
 #[tuple_types_custom_trait_bound(NonIncrementalInputStreams<C>)]
 impl<C> NonIncrementalInputStreams<C> for Tuple
 where
@@ -106,11 +106,27 @@ where
         self.scheduler.prepare(circuit, nodes)
     }
 
+    /// Only called on the executor in the top-level circuit.
     fn start_transaction<'a>(
         &'a self,
-        circuit: &'a C,
+        _circuit: &'a C,
     ) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
-        Box::pin(async { self.scheduler.start_transaction(circuit).await })
+        unimplemented!()
+    }
+
+    /// Only called on the executor in the top-level circuit.
+    fn start_commit_transaction(&self) -> Result<(), SchedulerError> {
+        unimplemented!()
+    }
+
+    /// Only called on the executor in the top-level circuit.
+    fn is_commit_complete(&self) -> bool {
+        unimplemented!()
+    }
+
+    /// Only called on the executor in the top-level circuit.
+    fn commit_progress(&self) -> CommitProgress {
+        unimplemented!()
     }
 
     fn step<'a>(
@@ -135,17 +151,12 @@ where
         })
     }
 
-    fn start_commit_transaction(&self) -> Result<(), SchedulerError> {
+    fn flush(&self) {
         *self.flush.borrow_mut() = true;
-        Ok(())
     }
 
-    fn is_commit_complete(&self) -> bool {
+    fn is_flush_complete(&self) -> bool {
         !*self.flush.borrow()
-    }
-
-    fn commit_progress(&self) -> CommitProgress {
-        CommitProgress::new()
     }
 }
 
@@ -381,7 +392,10 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{typed_batch::SpineSnapshot, OrdZSet, Runtime};
+    use crate::{
+        OrdZSet, Runtime,
+        typed_batch::{IndexedZSetReader, SpineSnapshot},
+    };
 
     #[test]
     fn test_non_incremental() {

@@ -3,16 +3,16 @@ use std::{
     mem::take,
 };
 
+use feldera_macros::IsNone;
 use num::PrimInt;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 
 use super::{Prefix, RADIX};
 use crate::{
-    declare_trait_object,
+    DBData, declare_trait_object,
     dynamic::{Data, DataTrait, DowncastTrait, DynOpt, Erase},
     operator::dynamic::aggregate::AggCombineFunc,
-    DBData,
 };
 
 /// Pointer to a child node.
@@ -29,6 +29,7 @@ use crate::{
     Archive,
     Serialize,
     Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -132,6 +133,7 @@ where
     Archive,
     Serialize,
     Deserialize,
+    IsNone,
 )]
 //#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //#[archive(compare(PartialEq, PartialOrd))]
@@ -330,6 +332,7 @@ where
     Archive,
     Serialize,
     Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(bound(archive = "Option<TreeNode<TS,A>>: DBData, Prefix<TS>: DBData"))]
@@ -416,14 +419,14 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
+        DBData,
         dynamic::{DowncastTrait, DynData, Erase},
         operator::dynamic::time_series::radix_tree::{
-            treenode::{ChildPtr, TreeNode, TreeNodeTrait},
             DynChildPtr, DynTreeNode, Prefix,
+            treenode::{ChildPtr, TreeNode, TreeNodeTrait},
         },
-        DBData,
     };
-    use rkyv::{archived_root, to_bytes, Deserialize, Infallible};
+    use rkyv::{Deserialize, Infallible, archived_root, to_bytes};
 
     fn aggregate_default(node: &mut DynTreeNode<u64, DynData /* <u64> */>) -> Option<u64> {
         let mut result: Option<u64> = None;

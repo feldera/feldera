@@ -3,8 +3,8 @@
 use crate::{
     algebra::HasZero,
     circuit::{
-        operator_traits::{Data, ImportOperator, Operator},
         Circuit, OwnershipPreference, Scope, Stream,
+        operator_traits::{Data, ImportOperator, Operator},
     },
 };
 use std::borrow::Cow;

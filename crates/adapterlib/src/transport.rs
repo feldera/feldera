@@ -3,22 +3,22 @@ use chrono::{DateTime, Utc};
 use dyn_clone::DynClone;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
-use rmpv::{ext::Error as RmpDecodeError, Value as RmpValue};
-use serde::de::DeserializeOwned;
+use rmpv::{Value as RmpValue, ext::Error as RmpDecodeError};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tokio::sync::mpsc::error::TryRecvError;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::error::TryRecvError;
 use xxhash_rust::xxh3::Xxh3Default;
 
+use crate::PipelineState;
 use crate::catalog::InputCollectionHandle;
 use crate::format::{BufferSize, InputBuffer, ParseError, Parser};
-use crate::PipelineState;
 
 /// Step number for fault-tolerant circuits.
 ///
@@ -270,9 +270,9 @@ pub enum NonFtInputReaderCommand {
     Transition(PipelineState),
 }
 
-pub struct InputQueueEntry<A> {
+pub struct InputQueueEntry<A, B> {
     /// Data buffer to push to the circuit.
-    buffer: Option<Box<dyn InputBuffer>>,
+    buffer: Option<B>,
 
     /// Time when data in this buffer was received from the transport endpoint.
     /// It is used to track the processing latency in different stages of the pipeline.
@@ -289,7 +289,7 @@ pub struct InputQueueEntry<A> {
     aux: A,
 }
 
-impl<A> InputQueueEntry<A> {
+impl<A, B> InputQueueEntry<A, B> {
     pub fn new_with_aux(timestamp: DateTime<Utc>, aux: A) -> Self {
         Self {
             buffer: None,
@@ -300,7 +300,7 @@ impl<A> InputQueueEntry<A> {
         }
     }
 
-    pub fn with_buffer(self, buffer: Option<Box<dyn InputBuffer>>) -> Self {
+    pub fn with_buffer(self, buffer: Option<B>) -> Self {
         Self { buffer, ..self }
     }
 
@@ -326,14 +326,14 @@ impl<A> InputQueueEntry<A> {
 ///
 /// Commonly used by `InputReader` implementations for staging buffers from
 /// worker threads.
-pub struct InputQueue<A = ()> {
+pub struct InputQueue<A = (), B = Box<dyn InputBuffer>> {
     #[allow(clippy::type_complexity)]
-    pub queue: Mutex<VecDeque<InputQueueEntry<A>>>,
+    pub queue: Mutex<VecDeque<InputQueueEntry<A, B>>>,
     pub consumer: Box<dyn InputConsumer>,
     pub transaction_in_progress: AtomicBool,
 }
 
-impl<A> InputQueue<A> {
+impl<A, B: InputBuffer> InputQueue<A, B> {
     pub fn new(consumer: Box<dyn InputConsumer>) -> Self {
         Self {
             queue: Mutex::new(VecDeque::new()),
@@ -342,9 +342,12 @@ impl<A> InputQueue<A> {
         }
     }
 
-    pub fn push_entry(&self, entry: InputQueueEntry<A>, errors: Vec<ParseError>) {
+    pub fn push_entry(&self, entry: InputQueueEntry<A, B>, errors: Vec<ParseError>) {
         self.consumer.parse_errors(errors);
-        let len = entry.buffer.len();
+        let len = entry
+            .buffer
+            .as_ref()
+            .map_or(BufferSize::empty(), |buffer| buffer.len());
 
         let mut queue = self.queue.lock().unwrap();
         queue.push_back(entry);
@@ -363,7 +366,7 @@ impl<A> InputQueue<A> {
     /// to the controller that `errors` have occurred during parsing.
     pub fn push_with_aux(
         &self,
-        (buffer, errors): (Option<Box<dyn InputBuffer>>, Vec<ParseError>),
+        (buffer, errors): (Option<B>, Vec<ParseError>),
         timestamp: DateTime<Utc>,
         aux: A,
     ) {
@@ -507,7 +510,7 @@ impl<A> InputQueue<A> {
     }
 }
 
-impl InputQueue<()> {
+impl InputQueue<(), Box<dyn InputBuffer>> {
     /// Appends `buffer`, if nonempty,` to the queue.  Reports to the controller
     /// that `errors` occurred during parsing.
     pub fn push(
@@ -539,14 +542,13 @@ impl InputQueue<()> {
                 break;
             };
 
-            if let Some(label) = start_transaction {
-                if self
+            if let Some(label) = start_transaction
+                && self
                     .transaction_in_progress
                     .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                     .is_ok()
-                {
-                    self.consumer.start_transaction(label.as_deref());
-                }
+            {
+                self.consumer.start_transaction(label.as_deref());
             }
 
             if let Some(mut buffer) = buffer {

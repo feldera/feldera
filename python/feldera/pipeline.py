@@ -1,40 +1,40 @@
 import logging
-import time
-from datetime import datetime
 import pathlib
-
-import pandas
+import time
+from collections import deque
+from datetime import datetime
+from threading import Event
+from typing import Any, Callable, Dict, Generator, List, Mapping, Optional
 from uuid import UUID
 
-from typing import List, Dict, Callable, Optional, Generator, Mapping, Any
-from threading import Event
-from collections import deque
+import pandas
 
-from feldera.rest.errors import FelderaAPIError
+from feldera._callback_runner import CallbackRunner
+from feldera._helpers import chunk_dataframe, ensure_dataframe_has_columns
 from feldera.enums import (
     BootstrapPolicy,
-    CompletionTokenStatus,
-    PipelineFieldSelector,
-    PipelineStatus,
-    ProgramStatus,
     CheckpointStatus,
-    TransactionStatus,
-    StorageStatus,
+    CompletionTokenStatus,
     DeploymentDesiredStatus,
     DeploymentResourcesDesiredStatus,
     DeploymentResourcesStatus,
     DeploymentRuntimeDesiredStatus,
     DeploymentRuntimeStatus,
+    PipelineFieldSelector,
+    PipelineStatus,
+    ProgramStatus,
+    StorageStatus,
+    TransactionStatus,
 )
-from feldera.rest.pipeline import Pipeline as InnerPipeline
-from feldera.rest.feldera_client import FelderaClient
-from feldera._callback_runner import CallbackRunner
 from feldera.output_handler import OutputHandler
-from feldera._helpers import ensure_dataframe_has_columns, chunk_dataframe
+from feldera.rest.errors import FelderaAPIError
+from feldera.rest.feldera_client import FelderaClient
+from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.sql_table import SQLTable
 from feldera.rest.sql_view import SQLView
 from feldera.runtime_config import RuntimeConfig
 from feldera.stats import PipelineStatistics
+from feldera.types import CheckpointMetadata
 
 
 class Pipeline:
@@ -826,10 +826,11 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         resp = self.client.sync_checkpoint_status(self.name)
         success = resp.get("success")
+        periodic = resp.get("periodic")
 
         fail = resp.get("failure") or {}
 
-        if uuid == success:
+        if uuid == success or uuid == periodic:
             return CheckpointStatus.Success
 
         fail = resp.get("failure") or {}
@@ -843,6 +844,26 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             return CheckpointStatus.InProgress
 
         return CheckpointStatus.Unknown
+
+    def last_successful_checkpoint_sync(self) -> UUID:
+        """
+        Returns the UUID of the last successfully synced checkpoint.
+
+        :return: The UUID of the last successfully synced checkpoint.
+        """
+
+        resp = self.client.sync_checkpoint_status(self.name)
+        success = resp.get("success")
+        periodic = resp.get("periodic")
+
+        if success is None and periodic is None:
+            raise RuntimeError("no checkpoints have been synced yet")
+        elif success is None:
+            return UUID(periodic)
+        elif periodic is None:
+            return UUID(success)
+        else:
+            return max(UUID(success), UUID(periodic))
 
     def query(self, query: str) -> Generator[Mapping[str, Any], None, None]:
         """
@@ -1397,6 +1418,55 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         return support_bundle_bytes
 
+    def start_samply_profile(self, duration: int = 30):
+        """
+        Starts profiling this pipeline using samply.
+
+        :param duration: The duration of the profile in seconds (default: 30)
+        :raises FelderaAPIError: If the pipeline does not exist or if there's an error
+        """
+
+        self.client.start_samply_profile(self.name, duration)
+
+    def get_samply_profile(self, output_path: Optional[str] = None) -> bytes:
+        """
+        Returns the gzip file of the samply profile as bytes.
+
+        The gzip file contains the samply profile that can be inspected by the samply tool.
+
+        :param output_path: Optional path to save the samply profile file. If None,
+            the samply profile is only returned as bytes.
+        :return: The samply profile as bytes (GZIP file)
+        :raises FelderaAPIError: If the pipeline does not exist or if there's an error
+        """
+
+        samply_profile_bytes = self.client.get_samply_profile(self.name)
+
+        if output_path is not None:
+            path = pathlib.Path(output_path)
+
+            if path.suffix != ".gz":
+                path = path.with_suffix(".gz")
+            with open(path, "wb") as f:
+                f.write(samply_profile_bytes)
+
+            print(f"Samply profile written to {path}")
+
+        return samply_profile_bytes
+
+    def rebalance(self):
+        """
+        Initiate rebalancing.
+
+        Initiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically
+        when the drift in the size of joined relations exceeds a threshold. This method forces the balancer
+        to reevaluate and apply an optimal partitioning policy regardless of the threshold.
+
+        This operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.
+        """
+
+        self.client.rebalance_pipeline(self.name)
+
     def generate_completion_token(self, table_name: str, connector_name: str) -> str:
         """
         Returns a completion token that can be passed to :meth:`.Pipeline.completion_token_status` to
@@ -1424,3 +1494,13 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         """
 
         self.client.wait_for_token(self.name, token)
+
+    def checkpoints(self) -> List[CheckpointMetadata]:
+        """
+        Returns the list of checkpoints for this pipeline.
+        """
+
+        return [
+            CheckpointMetadata.from_dict(chk)
+            for chk in self.client.get_checkpoints(self.name)
+        ]

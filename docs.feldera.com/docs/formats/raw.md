@@ -30,16 +30,18 @@ This limitation exists because the raw data stream lacks the metadata to differe
 
 In order to ingest raw data:
 
-1. Declare a table with a single column of type `VARBINARY [NOT NUL]` or `VARCHAR [NOT NULL]`.  In the latter case, the connector
+1. Declare a table with a column of type `VARBINARY [NOT NUL]` or `VARCHAR [NOT NULL]`.  In the latter case, the connector
    will parse input data as a UTF-8 string and will fail to parse chunks that are not valid UTF-8.
+   The table can contain additional columns, but all other columns in the table must be either nullable or
+   have default values.
 
-2. Configure an input connector with the format name `raw`.  The connector currently supports a single configuration
-   option, `mode`, which can be set to:
-   * `blob` (default) - ingest the entire data chunk received from the transport connector as a single SQL row.
-     For message-oriented transports, such as Kafka or Pub/Sub, an input chunk corresponds to a message.
-     For file-based transports, e.g., the [URL](/connectors/sources/http-get) connector or
-     the [S3](/connectors/sources/s3) connector, a chunk represents an entire file or object.
-   * `lines` - split the input byte stream on the new line character (`\n`) and ingest each line as a separate SQL row.
+2. Configure an input connector with the format name `raw`.  The connector currently supports the following configuration
+   options:
+
+| Property                      | Type                        |Default  | Description                                              |
+|-------------------------------|-----------------------------|---------|----------------------------------------------------------|
+| `mode`                        | `"blob"` or `"lines"`       |`"blob"` | Ingestion mode:<ul><li>`blob` (default) - ingest the entire data chunk received from the transport connector as a single SQL row. For message-oriented transports, such as Kafka or Pub/Sub, an input chunk corresponds to a message. For file-based transports, e.g., the [URL](/connectors/sources/http-get) connector or the [S3](/connectors/sources/s3) connector, a chunk represents an entire file or object.</li><li>`lines` - split the input byte stream on the new line character (`\n`) and ingest each line as a separate SQL row.</li></ul>|
+| `column_name`                 | string                      |         | Table column that will store the raw value. This setting is required if the table has more than 1 column.|
 
 :::note
 
@@ -48,7 +50,7 @@ as a single record.  This can require a lot of memory when reading large files.
 
 :::
 
-### Example
+### Example 1: Ingest raw data from URL
 
 The following example shows a table with an input connector configured to ingest raw data from a URL line-by-line.
 
@@ -73,6 +75,46 @@ create table raw_table(
 );
 ```
 
+### Example 2: Ingest Kafka payload and metadata.
+
+This example ingests Kafka message values as raw strings into the `data` column, and Kafka
+message metadata into other columns (see [Accessing Kafka metadata](/connectors/sources/kafka#metadata)).
+
+```sql
+CREATE TABLE raw_table (
+    data VARCHAR,
+    kafka_headers MAP<STRING, VARBINARY> DEFAULT CAST(CONNECTOR_METADATA()['kafka_headers'] as MAP<STRING, VARBINARY>),
+    kafka_timestamp TIMESTAMP DEFAULT CAST(CONNECTOR_METADATA()['kafka_timestamp'] as TIMESTAMP),
+    kafka_topic VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR),
+    kafka_offset BIGINT DEFAULT CAST(CONNECTOR_METADATA()['kafka_offset'] AS BIGINT),
+    kafka_partition INT DEFAULT CAST(CONNECTOR_METADATA()['kafka_partition'] AS INT)
+) WITH (
+  'materialized' = 'true',
+  'connectors' = '[
+    {
+      "name": "raw_data",
+      "transport": {
+          "name": "kafka_input",
+          "config": {
+              "topic": "my_topic",
+              "start_from": "earliest",
+              "bootstrap.servers": "localhost:19092",
+              "include_headers": true,
+              "include_topic": true,
+              "include_offset": true,
+              "include_partition": true,
+              "include_timestamp": true
+          }
+      },
+      "format": {
+          "name": "raw",
+          "config": {
+              "column_name": "data"
+          }
+      }
+  }]'
+)
+```
 
 ## Ingesting raw data via HTTP
 

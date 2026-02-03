@@ -5,7 +5,8 @@ class illarg_tbl(TstTable):
     """Define the table used by illegal argument tests"""
 
     def __init__(self):
-        self.sql = """CREATE TABLE illegal_tbl(
+        self.sql = """CREATE TYPE user_def AS(i1 INT, v1 VARCHAR NULL);
+        CREATE TABLE illegal_tbl(
                       id INT,
                       intt INT,
                       decimall DECIMAL(6, 2),
@@ -20,7 +21,8 @@ class illarg_tbl(TstTable):
                       uuidd UUID,
                       arr VARCHAR ARRAY,
                       mapp MAP<VARCHAR, INT>,
-                      roww ROW(i1 INT, v1 VARCHAR NULL)
+                      roww ROW(i1 INT, v1 VARCHAR NULL) NULL,
+                      udt user_def
                       )"""
         self.data = [
             {
@@ -33,12 +35,13 @@ class illarg_tbl(TstTable):
                 "str": "hello ",
                 "bin": [11, 22, 32],
                 "tme": "14:23:44.456",
-                "tmestmp": "2020-06-21 14:23:44.123",
+                "tmestmp": "2020-06-21 14:23:44.123654",
                 "datee": "2020-06-21",
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
-                "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello "],
+                "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello ", "TRUE"],
                 "mapp": {"a": 12, "b": 17},
                 "roww": {"i1": 4, "v1": "cat"},
+                "udt": {"i1": 4, "v1": "cat"},
             },
             {
                 "id": 1,
@@ -91,6 +94,7 @@ class illarg_tbl(TstTable):
                 ],
                 "mapp": {"a": 15, "b": None},
                 "roww": {"i1": 5, "v1": None},
+                "udt": {"i1": 5, "v1": None},
             },
             {
                 "id": 2,
@@ -108,5 +112,6 @@ class illarg_tbl(TstTable):
                 "arr": None,
                 "mapp": None,
                 "roww": None,
+                "udt": None,
             },
         ]

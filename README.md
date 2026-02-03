@@ -113,12 +113,14 @@ To run Feldera from sources, ensure at least 6 GB of free space in the sources d
 - cmake
 - libssl-dev
 - libsasl2-dev
+- golang-go (required to build aws-lc-fips-sys when using rustls FIPS)
 - pkg-config
 - libzstd-dev
 - clang
 - Java Development Kit (JDK), version 19 or newer (21 is recommended)
 - maven
 - [Bun](https://bun.sh/docs/installation)
+- [nodejs v20](https://github.com/nodesource/distributions/blob/master/DEV_README.md)
 
 After that, the first step is to build the SQL compiler:
 

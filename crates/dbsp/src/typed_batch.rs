@@ -3,7 +3,14 @@
 //! These wrappers are used to implement type-safe wrappers around DBSP
 //! operators.
 
+use crate::{
+    Circuit, Error,
+    circuit::checkpointer::Checkpoint,
+    dynamic::{DataTrait, DynData, DynUnit, Erase, LeanVec, WeightTrait},
+    trace::{BatchReaderFactories, Deserializer, Serializer, spine_async::WithSnapshot},
+};
 pub use crate::{
+    DBData, DBWeight, DynZWeight, Stream, Timestamp, ZWeight,
     algebra::{
         IndexedZSet as DynIndexedZSet, IndexedZSetReader as DynIndexedZSetReader,
         OrdIndexedZSet as DynOrdIndexedZSet, OrdZSet as DynOrdZSet,
@@ -11,8 +18,8 @@ pub use crate::{
         ZSetReader as DynZSetReader,
     },
     trace::{
-        merge_batches as dyn_merge_batches, merge_batches_by_reference, Batch as DynBatch,
-        BatchReader as DynBatchReader, BatchReaderWithSnapshot as DynBatchReaderWithSnapshot,
+        Batch as DynBatch, BatchReader as DynBatchReader,
+        BatchReaderWithSnapshot as DynBatchReaderWithSnapshot,
         FallbackIndexedWSet as DynFallbackIndexedWSet, FallbackKeyBatch as DynFallbackKeyBatch,
         FallbackValBatch as DynFallbackValBatch, FallbackWSet as DynFallbackWSet,
         FileIndexedWSet as DynFileIndexedWSet, FileKeyBatch as DynFileKeyBatch,
@@ -21,14 +28,8 @@ pub use crate::{
         OrdValBatch as DynOrdValBatch, OrdWSet as DynOrdWSet, Spine as DynSpine,
         SpineSnapshot as DynSpineSnapshot, Trace as DynTrace, VecIndexedWSet as DynVecIndexedWSet,
         VecKeyBatch as DynVecKeyBatch, VecValBatch as DynVecValBatch, VecWSet as DynVecWSet,
+        merge_batches as dyn_merge_batches, merge_batches_by_reference,
     },
-    DBData, DBWeight, DynZWeight, Stream, Timestamp, ZWeight,
-};
-use crate::{
-    circuit::checkpointer::Checkpoint,
-    dynamic::{DataTrait, DynData, DynUnit, Erase, LeanVec, WeightTrait},
-    trace::{spine_async::WithSnapshot, BatchReaderFactories, Deserializer, Serializer},
-    Circuit, Error,
 };
 use dyn_clone::clone_box;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize};
@@ -40,20 +41,15 @@ use std::{
 };
 
 use crate::{
+    NumEntries,
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
     dynamic::DowncastTrait,
     utils::Tup2,
-    NumEntries,
 };
 
 /// A strongly typed wrapper around [`DynBatchReader`].
 pub trait BatchReader: 'static {
-    type Inner: DynBatchReader<
-        Time = Self::Time,
-        Key = Self::DynK,
-        Val = Self::DynV,
-        R = Self::DynR,
-    >;
+    type Inner: DynBatchReader<Time = Self::Time, Key = Self::DynK, Val = Self::DynV, R = Self::DynR>;
 
     /// Any batch reader can be decomposed into a list of batches.  This type represents the
     /// type of the batches:
@@ -170,7 +166,17 @@ where
 }
 
 /// A statically typed wrapper around [`DynIndexedZSetReader`].
-pub trait IndexedZSetReader: BatchReader<R = ZWeight, DynR = DynZWeight, Time = ()> {}
+pub trait IndexedZSetReader: BatchReader<R = ZWeight, DynR = DynZWeight, Time = ()> {
+    fn iter(&self) -> impl Iterator<Item = (Self::Key, Self::Val, ZWeight)> + '_ {
+        self.inner().iter().map(|(boxk, boxv, w)| unsafe {
+            (
+                boxk.as_ref().downcast::<Self::Key>().clone(),
+                boxv.as_ref().downcast::<Self::Val>().clone(),
+                w,
+            )
+        })
+    }
+}
 
 impl<Z> IndexedZSetReader for Z where Z: BatchReader<R = ZWeight, DynR = DynZWeight, Time = ()> {}
 
@@ -178,12 +184,7 @@ impl<Z> IndexedZSetReader for Z where Z: BatchReader<R = ZWeight, DynR = DynZWei
 pub trait IndexedZSet:
     Batch<R = ZWeight, DynR = DynZWeight, Time = (), InnerBatch = Self::InnerIndexedZSet>
 {
-    type InnerIndexedZSet: DynIndexedZSet<
-        Time = Self::Time,
-        Key = Self::DynK,
-        Val = Self::DynV,
-        R = Self::DynR,
-    >;
+    type InnerIndexedZSet: DynIndexedZSet<Time = Self::Time, Key = Self::DynK, Val = Self::DynV, R = Self::DynR>;
 }
 
 impl<Z> IndexedZSet for Z
@@ -417,22 +418,6 @@ where
                 .map(|Tup2(k, r)| Tup2(Tup2(k, ()), r))
                 .collect::<Vec<_>>(),
         )
-    }
-}
-
-impl<K, V, B: DynIndexedZSetReader> TypedBatch<K, V, ZWeight, B>
-where
-    K: DBData + Erase<B::Key>,
-    V: DBData + Erase<B::Val>,
-{
-    pub fn iter(&self) -> impl Iterator<Item = (K, V, ZWeight)> + '_ {
-        self.inner.iter().map(|(boxk, boxv, w)| unsafe {
-            (
-                boxk.as_ref().downcast::<K>().clone(),
-                boxv.as_ref().downcast::<V>().clone(),
-                w,
-            )
-        })
     }
 }
 
@@ -680,8 +665,10 @@ where
     type Resolver = <T as Archive>::Resolver;
 
     unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-        let val: &T = self.deref();
-        val.resolve(pos, resolver, &mut (*out).0 as *mut T::Archived);
+        unsafe {
+            let val: &T = self.deref();
+            val.resolve(pos, resolver, &mut (*out).0 as *mut T::Archived);
+        }
     }
 }
 
@@ -716,7 +703,7 @@ where
 #[cfg(test)]
 #[test]
 fn test_typedbox_rkyv() {
-    use rkyv::{archived_value, de::deserializers::SharedDeserializeMap};
+    use rkyv::archived_value;
 
     let tbox = TypedBox::<u64, DynData>::new(12345u64);
 
@@ -728,9 +715,7 @@ fn test_typedbox_rkyv() {
     let archived: &<TypedBox<u64, DynData> as Archive>::Archived =
         unsafe { archived_value::<TypedBox<u64, DynData>>(bytes.as_slice(), 0) };
 
-    let tbox2 = archived
-        .deserialize(&mut SharedDeserializeMap::new())
-        .unwrap();
+    let tbox2 = archived.deserialize(&mut Deserializer::default()).unwrap();
 
     assert_eq!(tbox, tbox2);
 }
@@ -812,7 +797,7 @@ impl<C: Clone, D: DataTrait + ?Sized> Stream<C, Box<D>> {
     where
         T: DBData + Erase<D>,
     {
-        self.transmute_payload()
+        unsafe { self.transmute_payload() }
     }
 }
 

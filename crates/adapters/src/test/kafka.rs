@@ -1,99 +1,40 @@
 #![allow(clippy::type_complexity)]
 
+use crate::InputBuffer;
 use crate::catalog::InputCollectionHandle;
 use crate::format::get_input_format;
-use crate::test::{wait, MockDeZSet, MockUpdate, TestStruct, DEFAULT_TIMEOUT_MS};
-use crate::InputBuffer;
-use anyhow::{anyhow, bail, Result as AnyResult};
+use crate::test::{DEFAULT_TIMEOUT_MS, MockDeZSet, MockUpdate, TestStruct, wait};
+use anyhow::{Result as AnyResult, anyhow, bail};
 use csv::WriterBuilder as CsvWriterBuilder;
 use dbsp::circuit::NodeId;
-use feldera_sqllib::{SqlString, Timestamp, Variant};
-use feldera_types::deserialize_table_record;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::default_redpanda_server;
 use futures::executor::block_on;
 use rdkafka::message::{BorrowedMessage, Header, OwnedHeaders};
 use rdkafka::{
+    ClientConfig, ClientContext, Message,
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
     client::{Client, DefaultClientContext},
     config::{FromClientConfig, RDKafkaLogLevel},
     consumer::{BaseConsumer, Consumer},
     producer::{BaseRecord, DefaultProducerContext, Producer, ThreadedProducer},
     util::Timeout,
-    ClientConfig, ClientContext, Message,
 };
 use serde_json::Value;
-use size_of::SizeOf;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
     },
     thread,
-    thread::{sleep, JoinHandle},
+    thread::{JoinHandle, sleep},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tracing::{error, info};
 
 static MAX_TOPIC_PROBE_TIMEOUT: Duration = Duration::from_millis(20_000);
-
-/// Used to test passing of record metadata from Kafka connector to deserializer.
-#[derive(
-    Debug,
-    Default,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    serde::Serialize,
-    serde::Deserialize,
-    Clone,
-    Hash,
-    SizeOf,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
-#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-pub struct TestStructMetadata {
-    pub i: i32,
-    pub kafka_headers: Variant,
-    pub kafka_topic: SqlString,
-    pub kafka_timestamp: Timestamp,
-    pub kafka_partition: i32,
-    pub kafka_offset: i64,
-}
-
-deserialize_table_record!(TestStructMetadata["TestStructMetadata", Variant, 6] {
-    (i, "i", false, i32, |_| None),
-    (kafka_headers, "kafka_headers", false, Variant, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().map(|metadata| metadata.index_string("kafka_headers"))),
-    (kafka_topic, "kafka_topic", false, SqlString, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| SqlString::try_from(metadata.index_string("kafka_topic")).ok())),
-    (kafka_timestamp, "kafka_timestamp", false, Timestamp, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| Timestamp::try_from(metadata.index_string("kafka_timestamp")).ok())),
-    (kafka_partition, "kafka_partition", false, i32, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| i32::try_from(metadata.index_string("kafka_partition")).ok())),
-    (kafka_offset, "kafka_offset", false, i64, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| i64::try_from(metadata.index_string("kafka_offset")).ok()))
-});
-
-impl TestStructMetadata {
-    pub fn new(
-        i: i32,
-        kafka_headers: Variant,
-        kafka_topic: SqlString,
-        kafka_timestamp: Timestamp,
-        kafka_partition: i32,
-        kafka_offset: i64,
-    ) -> Self {
-        Self {
-            i,
-            kafka_headers,
-            kafka_topic,
-            kafka_timestamp,
-            kafka_partition,
-            kafka_offset,
-        }
-    }
-}
 
 pub struct KafkaResources {
     admin_client: AdminClient<DefaultClientContext>,
@@ -140,9 +81,14 @@ fn wait_for_completion<C: ClientContext>(admin_client: &AdminClient<C>, topics: 
     let mut backoff = 100;
     let mut n_retries = 0;
     while let Err(err) = check_topics(admin_client.inner(), topics) {
-        info!("KafkaResources::create_topics {topic_names:?}: unable to connect to newly created topics, retrying: {err}");
+        info!(
+            "KafkaResources::create_topics {topic_names:?}: unable to connect to newly created topics, retrying: {err}"
+        );
         if start.elapsed() > MAX_TOPIC_PROBE_TIMEOUT {
-            panic!("KafkaResources::create_topics {topic_names:?}: unable to connect to newly created topics, giving up after {}ms: {err}", MAX_TOPIC_PROBE_TIMEOUT.as_millis());
+            panic!(
+                "KafkaResources::create_topics {topic_names:?}: unable to connect to newly created topics, giving up after {}ms: {err}",
+                MAX_TOPIC_PROBE_TIMEOUT.as_millis()
+            );
         }
         sleep(Duration::from_millis(backoff));
         backoff = 1000.min(backoff * 2);
@@ -414,7 +360,7 @@ impl BufferConsumer {
                             };
 
                             if let Some(payload) = message.payload() {
-                                parser.parse(payload, &None).0.flush();
+                                parser.parse(payload, None).0.flush();
                             }
                         }
                     }

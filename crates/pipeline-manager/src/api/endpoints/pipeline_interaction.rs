@@ -15,7 +15,7 @@ use actix_web::{
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
-use feldera_types::query_params::MetricsParameters;
+use feldera_types::query_params::{MetricsParameters, SamplyProfileGetParams, SamplyProfileParams};
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
 use std::time::Duration;
 use tracing::{debug, info};
@@ -302,8 +302,10 @@ pub(crate) async fn post_pipeline_input_connector_action(
     // Log only if the response indicates success
     if response.status() == StatusCode::OK {
         info!(
-            "Connector action: {verb} pipeline '{pipeline_name}' on table '{table_name}' on connector '{connector_name}' (tenant: {})",
-            *tenant_id
+            pipeline = %pipeline_name,
+            pipeline_id = "N/A",
+            tenant = %tenant_id.0,
+            "Connector action: {verb} on table '{table_name}' on connector '{connector_name}'"
         );
     }
     Ok(response)
@@ -465,11 +467,9 @@ pub(crate) async fn get_pipeline_output_connector_status(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     responses(
-        // TODO: implement `ToSchema` for `ControllerStatus`, which is the
-        //       actual type returned by this endpoint and move it to feldera-types.
         (status = OK
             , description = "Pipeline statistics retrieved successfully"
-            , body = Object),
+            , body = ControllerStatus),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
@@ -870,6 +870,52 @@ pub(crate) async fn get_pipeline_dataflow_graph(
     Ok(HttpResponse::Ok().json(dataflow))
 }
 
+/// Initiate rebalancing.
+///
+/// Initiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically
+/// when the drift in the size of joined relations exceeds a threshold. This endpoint forces the balancer
+/// to reevaluate and apply an optimal partitioning policy regardless of the threshold.
+///
+/// This operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Rebalancing started successfully"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline Lifecycle"
+)]
+#[post("/pipelines/{pipeline_name}/rebalance")]
+pub(crate) async fn post_pipeline_rebalance(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::POST,
+            "rebalance",
+            "",
+            Some(Duration::from_secs(120)),
+        )
+        .await
+}
+
 /// Sync Checkpoints To S3
 ///
 /// Syncs latest checkpoints to the object store configured in pipeline config.
@@ -1111,6 +1157,179 @@ pub(crate) async fn get_checkpoint_sync_status(
         .await
 }
 
+/// Get the checkpoints for a pipeline
+///
+/// Retrieve the current checkpoints made by a pipeline.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+         , description = "Checkpoints retrieved successfully"
+         , content_type = "application/json"
+         , body = CheckpointMetadata),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline Lifecycle"
+)]
+#[get("/pipelines/{pipeline_name}/checkpoints")]
+pub(crate) async fn get_checkpoints(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            "checkpoints",
+            request.query_string(),
+            None,
+        )
+        .await
+}
+
+/// Start a Samply profile
+///
+/// Profile the pipeline using the Samply profiler for the next `duration_secs` seconds.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        SamplyProfileParams,
+    ),
+    responses(
+        (status = ACCEPTED, description = "Started profiling the pipeline with the Samply tool"),
+        (status = CONFLICT
+            , description = "Samply profile collection is already in progress"
+            , body = ErrorResponse),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Metrics & Debugging"
+)]
+#[post("/pipelines/{pipeline_name}/samply_profile")]
+pub(crate) async fn start_samply_profile(
+    state: WebData<ServerState>,
+    _client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    _query: web::Query<SamplyProfileParams>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            _client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::POST,
+            "samply_profile",
+            request.query_string(),
+            None,
+        )
+        .await
+}
+
+/// Get Samply Profile
+///
+/// Retrieve the last samply profile of a pipeline, regardless of whether profiling is currently in progress.
+/// If ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 307 with Retry-After header.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        SamplyProfileGetParams,
+    ),
+    responses(
+        // Note: This endpoint may also return 204 No Content with Retry-After header
+        // when latest=true and profiling is in progress, but progenitor can only handle
+        // one success response type, so it's not documented here.
+        (status = OK
+            , description = "Samply profile as a gzip containing the profile that can be inspected by the samply tool. Note: may return 204 No Content with Retry-After header if latest=true and profiling is in progress."
+            , content_type = "application/gzip"
+            , body = Vec<u8>),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "No samply profile exists for the pipeline, create one by calling `POST /pipelines/{pipeline_name}/samply_profile?duration_secs=30`"
+            , body = ErrorResponse),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Metrics & Debugging"
+)]
+#[get("/pipelines/{pipeline_name}/samply_profile")]
+pub(crate) async fn get_pipeline_samply_profile(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    body: web::Payload,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_streaming_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            "samply_profile",
+            request,
+            body,
+            Some(Duration::MAX),
+        )
+        .await
+}
+
 /// Get Heap Profile
 ///
 /// Retrieve the heap profile of a running or paused pipeline.
@@ -1223,8 +1442,10 @@ pub(crate) async fn post_pipeline_pause(
 
     if response.status() == StatusCode::ACCEPTED {
         info!(
-            "Accepted action: pausing pipeline {pipeline_name:?} (tenant: {})", // {pipeline_id}
-            *tenant_id
+            pipeline = %pipeline_name,
+            pipeline_id = "N/A",
+            tenant = %tenant_id.0,
+            "Accepted action: pausing pipeline"
         );
     }
     Ok(response)
@@ -1285,8 +1506,10 @@ pub(crate) async fn post_pipeline_resume(
 
     if response.status() == StatusCode::ACCEPTED {
         info!(
-            "Accepted action: resuming pipeline {pipeline_name:?} (tenant: {})", // {pipeline_id}
-            *tenant_id
+            pipeline = %pipeline_name,
+            pipeline_id = "N/A",
+            tenant = %tenant_id.0,
+            "Accepted action: resuming pipeline"
         );
     }
     Ok(response)
@@ -1371,8 +1594,10 @@ pub(crate) async fn post_pipeline_activate(
 
         if response.status() == StatusCode::ACCEPTED {
             info!(
-                "Accepted action: activating pipeline {pipeline_name:?} (tenant: {})", // {pipeline_id}
-                *tenant_id
+                pipeline = %pipeline_name,
+                pipeline_id = "N/A",
+                tenant = %tenant_id.0,
+                "Accepted action: activating pipeline"
             );
         }
         Ok(response)
@@ -1446,8 +1671,10 @@ pub(crate) async fn post_pipeline_approve(
 
         if response.status() == StatusCode::ACCEPTED {
             info!(
-                "Accepted action: approved pipeline bootstrapping (tenant: {})", // {pipeline_id}
-                *tenant_id
+                pipeline = %pipeline_name,
+                pipeline_id = "N/A",
+                tenant = %tenant_id.0,
+                "Accepted action: approved pipeline bootstrapping"
             );
         }
         Ok(response)

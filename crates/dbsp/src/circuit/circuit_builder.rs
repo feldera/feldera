@@ -22,14 +22,8 @@
 //! The API that this directly exposes runs the circuit in the context of the
 //! current thread.  To instead run the circuit in a collection of worker
 //! threads, use [`Runtime::init_circuit`].
-#[cfg(doc)]
 use crate::{
-    algebra::{IndexedZSet, ZSet},
-    operator::{time_series::RelRange, Aggregator, Fold, Generator, Max, Min},
-    trace::Batch,
-    InputHandle, OutputHandle,
-};
-use crate::{
+    Error as DbspError, Position, Runtime,
     circuit::{
         cache::{CircuitCache, CircuitStoreMarker},
         fingerprinter::Fingerprinter,
@@ -38,7 +32,7 @@ use crate::{
         operator_traits::{
             BinaryOperator, BinarySinkOperator, Data, ImportOperator, NaryOperator,
             QuaternaryOperator, SinkOperator, SourceOperator, StrictUnaryOperator, TernaryOperator,
-            UnaryOperator,
+            TernarySinkOperator, UnaryOperator,
         },
         runtime::Consensus,
         schedule::{
@@ -49,16 +43,23 @@ use crate::{
     },
     circuit_cache_key,
     ir::LABEL_MIR_NODE_ID,
+    operator::dynamic::balance::{Balancer, BalancerError, BalancerHint, PartitioningPolicy},
     time::{Timestamp, UnitTimestamp},
-    Error as DbspError, Position, Runtime,
+};
+#[cfg(doc)]
+use crate::{
+    InputHandle, OutputHandle,
+    algebra::{IndexedZSet, ZSet},
+    operator::{Aggregator, Fold, Generator, Max, Min, time_series::RelRange},
+    trace::Batch,
 };
 use anyhow::Error as AnyError;
-use dyn_clone::{clone_box, DynClone};
+use dyn_clone::{DynClone, clone_box};
 use feldera_ir::{LirCircuit, LirNodeId};
 use feldera_storage::{FileCommitter, StoragePath};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer, de::DeserializeOwned};
 use std::{
-    any::{type_name_of_val, Any, TypeId},
+    any::{Any, TypeId, type_name_of_val},
     borrow::Cow,
     cell::{Ref, RefCell, RefMut},
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -204,10 +205,12 @@ impl<D> RefStreamValue<D> {
     }
 
     unsafe fn transmute<D2>(&self) -> RefStreamValue<D2> {
-        RefStreamValue(std::mem::transmute::<
-            Rc<RefCell<StreamValue<D>>>,
-            Rc<RefCell<StreamValue<D2>>>,
-        >(self.0.clone()))
+        unsafe {
+            RefStreamValue(std::mem::transmute::<
+                Rc<RefCell<StreamValue<D>>>,
+                Rc<RefCell<StreamValue<D2>>>,
+            >(self.0.clone()))
+        }
     }
 }
 
@@ -227,6 +230,16 @@ pub trait StreamMetadata: DynClone + 'static {
     /// Invoked by the scheduler exactly once for each consumer operator attached
     /// to the stream.
     fn register_consumer(&self);
+
+    /// Invoked at each step once by each consumer of the stream.
+    /// When the token count drops to 1, the last consumer can retrieve the value using
+    /// `StreamValue::take`.
+    ///
+    /// Panics if called more times than there are tokens.
+    ///
+    /// All tokens must be consumed at each step; otherwise the circuit will panic
+    /// during the next step.
+    fn consume_token(&self);
 }
 
 dyn_clone::clone_trait_object!(StreamMetadata);
@@ -716,6 +729,9 @@ where
     fn register_consumer(&self) {
         self.val.get_mut().consumers += 1;
     }
+    fn consume_token(&self) {
+        StreamValue::consume_token(self.val());
+    }
 }
 
 impl<C, D> Clone for Stream<C, D>
@@ -746,12 +762,14 @@ where
     ///
     /// Transmuting `D` into `D2` should be safe.
     pub(crate) unsafe fn transmute_payload<D2>(&self) -> Stream<C, D2> {
-        Stream {
-            stream_id: self.stream_id,
-            local_node_id: self.local_node_id,
-            origin_node_id: self.origin_node_id.clone(),
-            circuit: self.circuit.clone(),
-            val: self.val.transmute::<D2>(),
+        unsafe {
+            Stream {
+                stream_id: self.stream_id,
+                local_node_id: self.local_node_id,
+                origin_node_id: self.origin_node_id.clone(),
+                circuit: self.circuit.clone(),
+                val: self.val.transmute::<D2>(),
+            }
         }
     }
 }
@@ -796,7 +814,7 @@ where
 {
     /// Create a new stream within the given circuit, connected to the specified
     /// node id.
-    fn new(circuit: C, node_id: NodeId) -> Self {
+    pub(crate) fn new(circuit: C, node_id: NodeId) -> Self {
         Self {
             stream_id: circuit.allocate_stream_id(),
             local_node_id: node_id,
@@ -882,10 +900,11 @@ impl<C, D> Stream<C, D> {
     }
 }
 
-impl<C, D> Stream<C, D>
-where
-    D: Clone,
-{
+impl<C, D> Stream<C, D> {
+    pub(crate) fn map_value<T>(&self, f: impl Fn(&D) -> T) -> T {
+        f(StreamValue::peek(&self.get()))
+    }
+
     fn get(&self) -> Ref<'_, StreamValue<D>> {
         self.val.get()
     }
@@ -900,7 +919,7 @@ where
     ///
     /// The caller must have exclusive access to the current stream;
     /// otherwise the method will panic.
-    fn put(&self, d: D) {
+    pub(crate) fn put(&self, d: D) {
         self.val.put(d);
     }
 }
@@ -997,6 +1016,10 @@ pub trait Node: Any {
 
     fn import(&mut self) {}
 
+    /// Notify the operator that the circuit is starting a transaction.
+    fn start_transaction(&mut self);
+
+    /// Notify the node about start of a transaction.
     /// Call `Operator::flush` on the operator.
     fn flush(&mut self);
 
@@ -1149,7 +1172,7 @@ impl Display for StreamId {
 }
 
 /// Id of an operator, guaranteed to be unique within a circuit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct NodeId(usize);
 
@@ -1506,6 +1529,134 @@ where
     }
 }
 
+// TODO: use a better type than serde_json::Value.
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct CircuitMetadata {
+    metadata: HashMap<NodeId, serde_json::Value>,
+}
+
+#[derive(Default, Debug)]
+pub struct MetadataExchangeInner {
+    /// Metadata registered by operators running in the current worker.
+    local_metadata: RefCell<CircuitMetadata>,
+
+    /// Metadata received from peers. All workers have identical metadata snapshots during a step.
+    /// This is a vector of metadata snapshots from all workers, one for each worker.
+    global_metadata: RefCell<Vec<CircuitMetadata>>,
+}
+
+/// Metadata exchange.
+///
+/// Allows the worker to exchange arbitrary semi-structured data with its peers.
+///
+/// Every operator in the circuit can update its local metadata.
+/// Before every step, the circuit broadcasts its metadata to all other workers
+/// and receives their metadata. As a result all workers have identical metadata
+/// snapshots during the step and can make deterministic decisions based on it, such
+/// as choosing a balancing policy for a stream.
+#[derive(Default, Debug, Clone)]
+pub struct MetadataExchange {
+    inner: Rc<MetadataExchangeInner>,
+}
+
+impl MetadataExchange {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    /// Get the current snapshot of the local metadata registered by operators running in the current worker.
+    pub fn local_metadata(&self) -> CircuitMetadata {
+        self.inner.local_metadata.borrow().clone()
+    }
+
+    /// Update the local metadata for the operator with the given id.
+    pub fn set_local_operator_metadata(&self, id: NodeId, metadata: serde_json::Value) {
+        self.inner
+            .local_metadata
+            .borrow_mut()
+            .metadata
+            .insert(id, metadata.clone());
+    }
+
+    /// Clear the local metadata for the operator with the given id.
+    pub fn clear_local_operator_metadata(&self, id: NodeId) {
+        self.inner.local_metadata.borrow_mut().metadata.remove(&id);
+    }
+
+    /// Update the local metadata for the operator with the given id by serializing `metadata` to a JSON value.
+    pub fn set_local_operator_metadata_typed<T>(&self, id: NodeId, metadata: T)
+    where
+        T: Serialize,
+    {
+        self.inner
+            .local_metadata
+            .borrow_mut()
+            .metadata
+            .insert(id, serde_json::to_value(metadata).unwrap());
+    }
+
+    /// Get the current snapshot of the local metadata for the operator with the given id.
+    pub fn get_local_operator_metadata(&self, id: NodeId) -> Option<serde_json::Value> {
+        self.inner
+            .local_metadata
+            .borrow()
+            .metadata
+            .get(&id)
+            .cloned()
+    }
+
+    pub fn get_local_operator_metadata_typed<T>(&self, id: NodeId) -> Option<T>
+    where
+        T: DeserializeOwned,
+    {
+        self.get_local_operator_metadata(id)
+            .map(|val| serde_json::from_value::<T>(val).unwrap())
+    }
+
+    /// Set the global metadata received from peers (invoked by the scheduler).
+    pub fn set_global_metadata(&self, global_metadata: Vec<CircuitMetadata>) {
+        *self.inner.global_metadata.borrow_mut() = global_metadata;
+    }
+
+    pub fn get_global_metadata(&self) -> Vec<CircuitMetadata> {
+        self.inner.global_metadata.borrow().clone()
+    }
+
+    /// Get metadata for the operator with the given id received from all workers before the current step.
+    pub fn get_global_operator_metadata(&self, id: NodeId) -> Vec<Option<serde_json::Value>> {
+        self.inner
+            .global_metadata
+            .borrow()
+            .iter()
+            .map(|global_metadata| global_metadata.metadata.get(&id).cloned())
+            .collect()
+    }
+
+    /// Get metadata for the operator with the given id received from all workers before the current step.
+    /// Deserialize it from a JSON value to a strongly typed representation `T`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the JSON value cannot be deserialized to a strongly typed representation `T`.
+    pub fn get_global_operator_metadata_typed<T>(&self, id: NodeId) -> Vec<Option<T>>
+    where
+        T: DeserializeOwned,
+    {
+        self.inner
+            .global_metadata
+            .borrow()
+            .iter()
+            .map(|global_metadata| {
+                global_metadata
+                    .metadata
+                    .get(&id)
+                    .cloned()
+                    .map(|val| serde_json::from_value::<T>(val).unwrap())
+            })
+            .collect()
+    }
+}
+
 /// An object-safe subset of the circuit API.
 pub trait CircuitBase: 'static {
     fn edges(&self) -> Ref<'_, Edges>;
@@ -1532,6 +1683,10 @@ pub trait CircuitBase: 'static {
     /// clock cycle even though there may not be an edge or a path
     /// connecting them.
     fn add_dependency(&self, from: NodeId, to: NodeId);
+
+    /// The set of transitive ancestors for each node in the circuit,
+    /// i.e., the set of all nodes that precede it (transitively) in the `Edges` relationship.
+    fn transitive_ancestors(&self) -> BTreeMap<NodeId, BTreeSet<NodeId>>;
 
     /// Allocate a new globally unique stream id.  This method can be invoked on any circuit in the pipeline,
     /// since all of them maintain a shared global counter.
@@ -1582,9 +1737,9 @@ pub trait CircuitBase: 'static {
         f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
     ) -> Result<(), DbspError>;
 
-    /// Apply `f` to all immedite children of `self`.
+    /// Apply `f` to all immediate children of `self`.
     fn map_local_nodes_mut(
-        &mut self,
+        &self,
         f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
     ) -> Result<(), DbspError>;
 
@@ -1595,7 +1750,7 @@ pub trait CircuitBase: 'static {
     /// Panics if `id` is not a valid Id of a node in `self`.
     fn apply_local_node_mut(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node));
 
-    /// Apply `f` to all immediate subcricuits of `self`.
+    /// Apply `f` to all immediate subcircuits of `self`.
     ///
     /// Stop at the first error.
     fn map_subcircuits(
@@ -1637,6 +1792,36 @@ pub trait CircuitBase: 'static {
     }
 
     fn check_fixedpoint(&self, scope: Scope) -> bool;
+
+    fn notify_start_transaction(&self) {
+        let _ = self.map_local_nodes_mut(&mut |node| {
+            node.start_transaction();
+            Ok(())
+        });
+    }
+
+    /// Return the metadata exchange object associated with the circuit.
+    fn metadata_exchange(&self) -> &MetadataExchange;
+
+    /// Return the balancer object associated with the circuit.
+    fn balancer(&self) -> &Balancer;
+
+    /// Set the balancer hint for the operator with the given global node id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operator with the given global node id is not found
+    /// or if the hint contradicts the current balancer policy.
+    fn set_balancer_hint(
+        &self,
+        global_node_id: &GlobalNodeId,
+        hint: BalancerHint,
+    ) -> Result<(), DbspError>;
+
+    /// Get the current balancer policy for all streams managed by the balancer.
+    fn get_current_balancer_policy(&self) -> BTreeMap<NodeId, PartitioningPolicy>;
+
+    fn rebalance(&self);
 }
 
 /// The circuit interface.  All DBSP computation takes place within a circuit.
@@ -1789,7 +1974,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         F: FnOnce() -> T;
 
     /// Add a dependency from `preprocessor_node_id` to all input operators in the
-    /// circuit, making sure that the circuit that this node and all its predecessors
+    /// circuit, making sure that this node and all its predecessors
     /// are evaluated before the rest of the circuit.
     fn add_preprocessor(&self, preprocessor_node_id: NodeId);
 
@@ -1894,6 +2079,35 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         I1: Data,
         I2: Data,
         Op: BinarySinkOperator<I1, I2>;
+
+    /// Add a ternary sink operator (see [`TernarySinkOperator`]).
+    fn add_ternary_sink<I1, I2, I3, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+        input_stream3: &Stream<Self, I3>,
+    ) -> GlobalNodeId
+    where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        Op: TernarySinkOperator<I1, I2, I3>;
+
+    /// Like [`Self::add_ternary_sink`], but overrides the ownership preferences
+    /// on input streams.
+    fn add_ternary_sink_with_preference<I1, I2, I3, Op>(
+        &self,
+        operator: Op,
+        input_stream1: (&Stream<Self, I1>, OwnershipPreference),
+        input_stream2: (&Stream<Self, I2>, OwnershipPreference),
+        input_stream3: (&Stream<Self, I3>, OwnershipPreference),
+    ) -> GlobalNodeId
+    where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        Op: TernarySinkOperator<I1, I2, I3>;
 
     /// Add a unary operator (see [`UnaryOperator`]).
     fn add_unary_operator<I, O, Op>(
@@ -2040,6 +2254,17 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         O: Data,
         Op: NaryOperator<I, O>,
         Iter: IntoIterator<Item = &'a Stream<Self, I>>;
+
+    /// Use a constructor function to create a node.
+    ///
+    /// Used to add operators that do not implement any of the operator traits.
+    /// The `constructor` closure is responsible for creating the node, its output stream,
+    /// and connecting any input streams to the node.
+    fn add_custom_node<N: Node, R>(
+        &self,
+        name: Cow<'static, str>,
+        constructor: impl FnOnce(NodeId) -> (N, R),
+    ) -> R;
 
     /// Add a feedback loop to the circuit.
     ///
@@ -2492,6 +2717,8 @@ where
     scheduler_event_handlers: SchedulerEventHandlers,
     store: RefCell<CircuitCache>,
     last_stream_id: RefCell<StreamId>,
+    metadata_exchange: MetadataExchange,
+    balancer: Rc<Balancer>,
 }
 
 impl<P> CircuitInner<P>
@@ -2509,6 +2736,8 @@ where
         scheduler_event_handlers: SchedulerEventHandlers,
         last_stream_id: RefCell<StreamId>,
     ) -> Self {
+        let metadata_exchange = MetadataExchange::new();
+
         Self {
             parent,
             root,
@@ -2522,6 +2751,8 @@ where
             scheduler_event_handlers,
             store: RefCell::new(TypedMap::new()),
             last_stream_id,
+            metadata_exchange: metadata_exchange.clone(),
+            balancer: Rc::new(Balancer::new(&metadata_exchange)),
         }
     }
 
@@ -2601,7 +2832,6 @@ where
 
     fn check_fixedpoint(&self, scope: Scope) -> bool {
         self.nodes.borrow().iter().all(|node| {
-            let res = node.borrow().fixedpoint(scope);
             /*
             if !res {
                 let n = node.borrow();
@@ -2609,7 +2839,7 @@ where
                 eprintln!("not fixed {:?} {}", n1.global_id(), n1.name());
             };
             */
-            res
+            node.borrow().fixedpoint(scope)
         })
     }
 }
@@ -2992,6 +3222,31 @@ where
         self.inner().edges.borrow()
     }
 
+    fn transitive_ancestors(&self) -> BTreeMap<NodeId, BTreeSet<NodeId>> {
+        let edges = self.edges();
+        let mut result = BTreeMap::new();
+
+        // For each node, compute its transitive ancestors using BFS
+        for node_id in self.node_ids() {
+            let mut ancestors = BTreeSet::new();
+            let mut queue = vec![node_id];
+
+            // BFS to find all transitive ancestors
+            while let Some(current) = queue.pop() {
+                for edge in edges.inputs_of(current) {
+                    let ancestor_node = edge.from;
+                    if ancestors.insert(ancestor_node) {
+                        queue.push(ancestor_node);
+                    }
+                }
+            }
+
+            result.insert(node_id, ancestors);
+        }
+
+        result
+    }
+
     fn edges_mut(&self) -> RefMut<'_, Edges> {
         self.inner().edges.borrow_mut()
     }
@@ -3076,7 +3331,7 @@ where
     }
 
     fn map_local_nodes_mut(
-        &mut self,
+        &self,
         f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
     ) -> Result<(), DbspError> {
         for node in self.inner().nodes.borrow_mut().iter_mut() {
@@ -3154,6 +3409,38 @@ where
 
     fn check_fixedpoint(&self, scope: Scope) -> bool {
         self.inner().check_fixedpoint(scope)
+    }
+
+    fn metadata_exchange(&self) -> &MetadataExchange {
+        &self.inner().metadata_exchange
+    }
+
+    fn balancer(&self) -> &Balancer {
+        &self.inner().balancer
+    }
+
+    fn set_balancer_hint(
+        &self,
+        global_node_id: &GlobalNodeId,
+        hint: BalancerHint,
+    ) -> Result<(), DbspError> {
+        if global_node_id.parent_id() != Some(GlobalNodeId::root()) {
+            return Err(DbspError::Balancer(BalancerError::NonTopLevelNode(
+                global_node_id.clone(),
+            )));
+        }
+
+        self.inner()
+            .balancer
+            .set_hint(global_node_id.local_node_id().unwrap(), hint)
+    }
+
+    fn get_current_balancer_policy(&self) -> BTreeMap<NodeId, PartitioningPolicy> {
+        self.inner().balancer.get_policy()
+    }
+
+    fn rebalance(&self) {
+        self.inner().balancer.rebalance()
     }
 }
 
@@ -3559,6 +3846,70 @@ where
         });
     }
 
+    /// Add a ternary sink operator (see [`TernarySinkOperator`]).
+    fn add_ternary_sink<I1, I2, I3, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+        input_stream3: &Stream<Self, I3>,
+    ) -> GlobalNodeId
+    where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        Op: TernarySinkOperator<I1, I2, I3>,
+    {
+        let (preference1, preference2, preference3) = operator.input_preference();
+        self.add_ternary_sink_with_preference(
+            operator,
+            (input_stream1, preference1),
+            (input_stream2, preference2),
+            (input_stream3, preference3),
+        )
+    }
+
+    fn add_ternary_sink_with_preference<I1, I2, I3, Op>(
+        &self,
+        operator: Op,
+        input_stream1: (&Stream<Self, I1>, OwnershipPreference),
+        input_stream2: (&Stream<Self, I2>, OwnershipPreference),
+        input_stream3: (&Stream<Self, I3>, OwnershipPreference),
+    ) -> GlobalNodeId
+    where
+        I1: Data,
+        I2: Data,
+        I3: Data,
+        Op: TernarySinkOperator<I1, I2, I3>,
+    {
+        let (input_stream1, input_preference1) = input_stream1;
+        let (input_stream2, input_preference2) = input_stream2;
+        let (input_stream3, input_preference3) = input_stream3;
+
+        self.add_node(|id| {
+            let global_node_id = GlobalNodeId::child_of(self, id);
+
+            self.log_circuit_event(&CircuitEvent::operator(
+                GlobalNodeId::child_of(self, id),
+                operator.name(),
+                operator.location(),
+            ));
+
+            let node = TernarySinkNode::new(
+                operator,
+                input_stream1.clone(),
+                input_stream2.clone(),
+                input_stream3.clone(),
+                self.clone(),
+                id,
+            );
+            self.connect_stream(input_stream1, id, input_preference1);
+            self.connect_stream(input_stream2, id, input_preference2);
+            self.connect_stream(input_stream3, id, input_preference3);
+            (node, global_node_id)
+        })
+    }
+
     fn add_unary_operator<I, O, Op>(
         &self,
         operator: Op,
@@ -3833,6 +4184,25 @@ where
                 self.connect_stream(stream, id, input_preference);
             }
             (node, output_stream)
+        })
+    }
+
+    #[track_caller]
+    fn add_custom_node<N: Node, R>(
+        &self,
+        name: Cow<'static, str>,
+        constructor: impl FnOnce(NodeId) -> (N, R),
+    ) -> R {
+        self.add_node(|id| {
+            // This must be called before the node is created, so that the node can connect input streams to
+            // itself without causing a panic.
+            self.log_circuit_event(&CircuitEvent::operator(
+                GlobalNodeId::child_of(self, id),
+                name,
+                Some(Location::caller()),
+            ));
+            let (node, res) = constructor(id);
+            (node, res)
         })
     }
 
@@ -4170,6 +4540,10 @@ where
         StreamValue::consume_token(self.parent_stream.val());
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.flush();
     }
@@ -4311,6 +4685,10 @@ where
             self.output_stream.put(self.operator.eval().await);
             Ok(self.operator.flush_progress())
         })
+    }
+
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
     }
 
     fn flush(&mut self) {
@@ -4470,6 +4848,10 @@ where
         })
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.flush();
     }
@@ -4618,6 +5000,10 @@ where
 
             Ok(self.operator.flush_progress())
         })
+    }
+
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
     }
 
     fn flush(&mut self) {
@@ -4827,6 +5213,197 @@ where
         })
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
+    }
+
+    fn flush(&mut self) {
+        self.operator.flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.operator.is_flush_complete()
+    }
+
+    fn clock_start(&mut self, scope: Scope) {
+        self.operator.clock_start(scope);
+    }
+
+    fn clock_end(&mut self, scope: Scope) {
+        self.operator.clock_end(scope);
+    }
+
+    fn init(&mut self) {
+        self.operator.init(&self.id);
+    }
+
+    fn metadata(&self, output: &mut OperatorMeta) {
+        self.operator.metadata(output);
+    }
+
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.operator.fixedpoint(scope)
+    }
+
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref(), files)
+    }
+
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator.restore(base, self.persistent_id().as_deref())
+    }
+
+    fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.operator.clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), DbspError> {
+        self.operator.end_replay()
+    }
+
+    fn set_label(&mut self, key: &str, value: &str) {
+        self.labels.insert(key.to_string(), value.to_string());
+    }
+
+    fn get_label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(|s| s.as_str())
+    }
+
+    fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+struct TernarySinkNode<C, I1, I2, I3, Op> {
+    id: GlobalNodeId,
+    operator: Op,
+    input_stream1: Stream<C, I1>,
+    input_stream2: Stream<C, I2>,
+    input_stream3: Stream<C, I3>,
+    labels: BTreeMap<String, String>,
+}
+
+impl<C, I1, I2, I3, Op> TernarySinkNode<C, I1, I2, I3, Op>
+where
+    I1: Clone,
+    I2: Clone,
+    I3: Clone,
+    Op: TernarySinkOperator<I1, I2, I3>,
+    C: Circuit,
+{
+    fn new(
+        operator: Op,
+        input_stream1: Stream<C, I1>,
+        input_stream2: Stream<C, I2>,
+        input_stream3: Stream<C, I3>,
+        circuit: C,
+        id: NodeId,
+    ) -> Self {
+        assert!(!input_stream1.ptr_eq(&input_stream2));
+        assert!(!input_stream1.ptr_eq(&input_stream3));
+        assert!(!input_stream2.ptr_eq(&input_stream3));
+
+        Self {
+            id: circuit.global_node_id().child(id),
+            operator,
+            input_stream1,
+            input_stream2,
+            input_stream3,
+            labels: BTreeMap::new(),
+        }
+    }
+}
+
+impl<C, I1, I2, I3, Op> Node for TernarySinkNode<C, I1, I2, I3, Op>
+where
+    C: Circuit,
+    I1: Clone + 'static,
+    I2: Clone + 'static,
+    I3: Clone + 'static,
+    Op: TernarySinkOperator<I1, I2, I3>,
+{
+    fn name(&self) -> Cow<'static, str> {
+        self.operator.name()
+    }
+
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
+    }
+
+    fn is_async(&self) -> bool {
+        self.operator.is_async()
+    }
+
+    fn is_input(&self) -> bool {
+        self.operator.is_input()
+    }
+
+    fn ready(&self) -> bool {
+        self.operator.ready()
+    }
+
+    fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
+        self.operator.register_ready_callback(cb);
+    }
+
+    // Justification: see StreamValue::take() comment.
+    #[allow(clippy::await_holding_refcell_ref)]
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
+        Box::pin(async {
+            let val1 = StreamValue::take(self.input_stream1.val()).map(|val| Cow::Owned(val));
+            let r1 = self.input_stream1.get();
+            let val2 = StreamValue::take(self.input_stream2.val()).map(|val| Cow::Owned(val));
+            let r2 = self.input_stream2.get();
+            let val3 = StreamValue::take(self.input_stream3.val()).map(|val| Cow::Owned(val));
+            let r3 = self.input_stream3.get();
+
+            self.operator
+                .eval(
+                    val1.unwrap_or_else(|| Cow::Borrowed(StreamValue::peek(&r1))),
+                    val2.unwrap_or_else(|| Cow::Borrowed(StreamValue::peek(&r2))),
+                    val3.unwrap_or_else(|| Cow::Borrowed(StreamValue::peek(&r3))),
+                )
+                .await;
+
+            drop(r1);
+            drop(r2);
+            drop(r3);
+
+            StreamValue::consume_token(self.input_stream1.val());
+            StreamValue::consume_token(self.input_stream2.val());
+            StreamValue::consume_token(self.input_stream3.val());
+
+            Ok(self.operator.flush_progress())
+        })
+    }
+
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.flush();
     }
@@ -5034,6 +5611,10 @@ where
         })
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.flush();
     }
@@ -5213,6 +5794,10 @@ where
 
             Ok(self.operator.flush_progress())
         })
+    }
+
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
     }
 
     fn flush(&mut self) {
@@ -5417,6 +6002,10 @@ where
         })
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.flush();
     }
@@ -5604,6 +6193,10 @@ where
         })
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.flush();
     }
@@ -5772,6 +6365,10 @@ where
         })
     }
 
+    fn start_transaction(&mut self) {
+        self.operator.borrow_mut().start_transaction();
+    }
+
     fn flush(&mut self) {
         self.operator.borrow_mut().flush();
     }
@@ -5785,10 +6382,10 @@ where
     }
 
     fn clock_end(&mut self, scope: Scope) {
-        if scope == 0 {
-            if let Some(export_stream) = &mut self.export_stream {
-                export_stream.put(self.operator.borrow_mut().get_final_output());
-            }
+        if scope == 0
+            && let Some(export_stream) = &mut self.export_stream
+        {
+            export_stream.put(self.operator.borrow_mut().get_final_output());
         }
         self.operator.borrow_mut().clock_end(scope);
     }
@@ -5936,6 +6533,10 @@ where
 
             Ok(None)
         })
+    }
+
+    fn start_transaction(&mut self) {
+        self.operator.borrow_mut().start_transaction();
     }
 
     fn flush(&mut self) {
@@ -6166,12 +6767,16 @@ where
         })
     }
 
+    fn start_transaction(&mut self) {
+        // Nested circuit has its own transactions.
+    }
+
     fn flush(&mut self) {
-        self.executor.start_commit_transaction().unwrap();
+        self.executor.flush();
     }
 
     fn is_flush_complete(&self) -> bool {
-        self.executor.is_commit_complete()
+        self.executor.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -6449,12 +7054,23 @@ impl CircuitHandle {
             },
         )?;
 
-        // debug!(
-        //     "worker {}: CircuitHandle::restore: found {} operators that require backfill: {:?}",
-        //     Runtime::worker_index(),
-        //     need_backfill.len(),
-        //     need_backfill.iter().cloned().collect::<Vec<GlobalNodeId>>()
-        // );
+        // Additional nodes that must be backfilled to keep the balancer state consistent.
+        let additional_need_backfill: BTreeSet<GlobalNodeId> =
+            self.invalidate_balancer_clusters(&need_backfill);
+        if Runtime::worker_index() == 0 {
+            debug!(
+                "CircuitHandle::restore: additional need backfill: {:?}",
+                additional_need_backfill
+            );
+        }
+        need_backfill.extend(additional_need_backfill);
+
+        debug!(
+            "worker {}: CircuitHandle::restore: found {} operators that require backfill: {:?}",
+            Runtime::worker_index(),
+            need_backfill.len(),
+            need_backfill.iter().cloned().collect::<Vec<GlobalNodeId>>()
+        );
 
         // We can only backfill a nested circuit as a whole, so if we encounter at least
         // one node in a nested circuit that needs backfill, we backfill the
@@ -6491,16 +7107,21 @@ impl CircuitHandle {
             need_backfill.len(),
             need_backfill.iter().cloned().collect::<Vec<NodeId>>(),
             participate_in_backfill.len(),
-            participate_in_backfill.iter().cloned().collect::<Vec<NodeId>>()
+            participate_in_backfill
+                .iter()
+                .cloned()
+                .collect::<Vec<NodeId>>()
         );
 
-        assert!(replay_sources
-            .keys()
-            .cloned()
-            .collect::<BTreeSet<_>>()
-            .intersection(&need_backfill)
-            .collect::<Vec<_>>()
-            .is_empty());
+        assert!(
+            replay_sources
+                .keys()
+                .cloned()
+                .collect::<BTreeSet<_>>()
+                .intersection(&need_backfill)
+                .collect::<Vec<_>>()
+                .is_empty()
+        );
 
         // Nodes that will be backfilled from upstream nodes, including need_backfill nodes
         // and their transitive ancestors.
@@ -6528,40 +7149,42 @@ impl CircuitHandle {
 
             // info!("CircuitHandle::restore: replay circuit is ready");
 
-            // self.circuit.to_dot_file(
-            //     |node| {
-            //         if !node.global_id().is_child_of(self.circuit.global_id()) {
-            //             return None;
-            //         }
-            //         let color = if replay_sources.contains_key(&node.local_id()) {
-            //             Some(0xff5555)
-            //         } else if participate_in_backfill.contains(&node.local_id()) {
-            //             Some(0x5555ff)
-            //         } else {
-            //             None
-            //         };
-            //         Some(DotNodeAttributes::new().with_color(color))
-            //     },
-            //     |edge| {
-            //         let style = if edge.is_dependency() {
-            //             Some("dotted".to_string())
-            //         } else {
-            //             None
-            //         };
-            //         let label = if let Some(stream) = &edge.stream {
-            //             Some(format!("consumers: {}", stream.num_consumers()))
-            //         } else {
-            //             None
-            //         };
-            //         Some(
-            //             DotEdgeAttributes::new(edge.stream_id())
-            //                 .with_style(style)
-            //                 .with_label(label),
-            //         )
-            //     },
-            //     "replay.dot",
-            // );
-            // info!("CircuitHandle::restore: replay circuit is written to replay.dot");
+            // if Runtime::worker_index() == 0 {
+            //     self.circuit.to_dot_file(
+            //         |node| {
+            //             if !node.global_id().is_child_of(self.circuit.global_id()) {
+            //                 return None;
+            //             }
+            //             let color = if replay_sources.contains_key(&node.local_id()) {
+            //                 Some(0xff5555)
+            //             } else if participate_in_backfill.contains(&node.local_id()) {
+            //                 Some(0x5555ff)
+            //             } else {
+            //                 None
+            //             };
+            //             Some(crate::utils::DotNodeAttributes::new().with_color(color))
+            //         },
+            //         |edge| {
+            //             let style = if edge.is_dependency() {
+            //                 Some("dotted".to_string())
+            //             } else {
+            //                 None
+            //             };
+            //             let label = if let Some(stream) = &edge.stream {
+            //                 Some(format!("consumers: {}", stream.num_consumers()))
+            //             } else {
+            //                 None
+            //             };
+            //             Some(
+            //                 crate::utils::DotEdgeAttributes::new(edge.stream_id())
+            //                     .with_style(style)
+            //                     .with_label(label),
+            //             )
+            //         },
+            //         "replay.dot",
+            //     );
+            //     println!("CircuitHandle::restore: replay circuit is written to replay.dot");
+            // }
 
             // Add persistent IDs to the need_backfill set.
             let need_backfill = nodes_to_backfill
@@ -6587,6 +7210,122 @@ impl CircuitHandle {
         } else {
             Ok(None)
         }
+    }
+
+    /// Compute additional nodes whose state must be discarded and backfilled in order
+    /// to ensure that the balancer state is consistent.
+    ///
+    /// The new version of the circuit may have a different join graph in which the partitioning
+    /// policy used to create the checkpoint may no longer be valid.
+    ///
+    /// Example:
+    ///
+    /// Consider the following checkpointed circuit:
+    ///
+    /// s1 = join(a, b)
+    /// s2 = join(c, d)
+    ///
+    /// where streams a and c are partitioned using PartitioningPolicy::Broadcast, and
+    /// b and d are partitioned using PartitioningPolicy::Shard.
+    ///
+    /// The new circuit adds
+    ///
+    /// s3 = join(a, c)
+    ///
+    /// This new circuit is in an inconsistent state since we can't join two broadcast streams.
+    ///
+    /// This function computes a conservative approximation of the set of nodes whose state must
+    /// be discarded and backfilled to avoid such inconsistencies:
+    ///
+    /// 1. For each join cluster, check if there exists a solution that extends the partitioning
+    ///    policies of the nodes restores from the checkpoint.
+    /// 2. If no solution exists, mark all nodes in the cluster and their transitive successors
+    ///    as needing backfill.
+    fn invalidate_balancer_clusters(
+        &self,
+        need_backfill: &BTreeSet<GlobalNodeId>,
+    ) -> BTreeSet<GlobalNodeId> {
+        // Convert GlobalNodeId to top-level NodeId for comparison with balancer data.
+        let need_backfill_node_ids: BTreeSet<NodeId> = need_backfill
+            .iter()
+            .map(|gid| gid.top_level_ancestor())
+            .collect();
+
+        // Compute exchange sender nodes that need to be discarded and backfilled.
+        let additional_need_backfill = self
+            .circuit
+            .balancer()
+            .invalidate_clusters_for_bootstrapping(&need_backfill_node_ids);
+
+        // Invalidate all successors as well; otherwise we can end up with nodes that are not
+        // marked for backfill but their ancestors are.
+        let nodes_to_add = self.propagate_need_backfill_forward(
+            additional_need_backfill
+                .difference(&need_backfill_node_ids)
+                .cloned()
+                .collect(),
+        );
+
+        // Convert NodeIds back to GlobalNodeIds and add to additional_need_backfill
+        nodes_to_add
+            .into_iter()
+            .map(|node_id| GlobalNodeId::root().child(node_id))
+            .collect()
+    }
+
+    /// Compute all transitive successors of need_backfill nodes.
+    fn propagate_need_backfill_forward(
+        &self,
+        mut need_backfill: BTreeSet<NodeId>,
+    ) -> BTreeSet<NodeId> {
+        // Recursively add all successors of these exchange sender nodes
+        let mut worklist: Vec<NodeId> = need_backfill.iter().cloned().collect();
+        let mut visited = BTreeSet::new();
+
+        while let Some(node_id) = worklist.pop() {
+            if visited.contains(&node_id) {
+                continue;
+            }
+            visited.insert(node_id);
+
+            // Get all successors of this node
+            let successors: Vec<NodeId> = self
+                .circuit
+                .edges()
+                .by_source
+                .get(&node_id)
+                .into_iter()
+                .flat_map(|edges| edges.iter().map(|edge| edge.to))
+                .collect();
+
+            for successor in successors {
+                if !visited.contains(&successor) {
+                    worklist.push(successor);
+                    need_backfill.insert(successor);
+                }
+            }
+
+            // Add all dependencies of this node. Makes sure that the output half of Z-1 is marked for backfill.
+            let dependencies: Vec<NodeId> = self
+                .circuit
+                .edges()
+                .by_destination
+                .get(&node_id)
+                .into_iter()
+                .flat_map(|edges| edges.iter())
+                .filter(|edge| edge.is_dependency())
+                .map(|edge| edge.from)
+                .collect();
+
+            for dependency in dependencies {
+                if !visited.contains(&dependency) {
+                    worklist.push(dependency);
+                    need_backfill.insert(dependency);
+                }
+            }
+        }
+
+        need_backfill
     }
 
     /// Iterative step of computing the set of nodes that participate in the replay phase.
@@ -6657,21 +7396,21 @@ impl CircuitHandle {
 
             // Add all ancestors of `participate_in_backfill_new` to the `participate_in_backfill` set, except streams
             // that can be replayed from a different node.
-            if let Some(stream_id) = stream_id {
-                if let Some(replay_source) = self.circuit.get_replay_source(stream_id) {
-                    // If the replay source is itself in the need_backfill set (i.e., it's an integral without
-                    // a checkpoint), it cannot be used for replay.
-                    if !need_backfill.contains(&replay_source.local_node_id()) {
-                        replay_streams.insert(stream_id, replay_source.clone());
-                        // trace!(
-                        //     "worker {}: Replacing node_id {node_id} with replay source {}",
-                        //     Runtime::worker_index(),
-                        //     replay_source.origin_node_id()
-                        // );
+            if let Some(stream_id) = stream_id
+                && let Some(replay_source) = self.circuit.get_replay_source(stream_id)
+            {
+                // If the replay source is itself in the need_backfill set (i.e., it's an integral without
+                // a checkpoint), it cannot be used for replay.
+                if !need_backfill.contains(&replay_source.local_node_id()) {
+                    replay_streams.insert(stream_id, replay_source.clone());
+                    // trace!(
+                    //     "worker {}: Replacing node_id {node_id} with replay source {}",
+                    //     Runtime::worker_index(),
+                    //     replay_source.origin_node_id()
+                    // );
 
-                        // Replace the node_id with the replay source.
-                        node_id = replay_source.local_node_id();
-                    }
+                    // Replace the node_id with the replay source.
+                    node_id = replay_source.local_node_id();
                 }
             }
 
@@ -6796,15 +7535,35 @@ impl CircuitHandle {
     pub fn lir(&self) -> LirCircuit {
         (&self.circuit as &dyn CircuitBase).to_lir()
     }
+
+    pub fn set_balancer_hint(
+        &self,
+        global_node_id: &GlobalNodeId,
+        hint: BalancerHint,
+    ) -> Result<(), DbspError> {
+        self.circuit.set_balancer_hint(global_node_id, hint)
+    }
+
+    pub fn get_current_balancer_policy(&self) -> BTreeMap<GlobalNodeId, PartitioningPolicy> {
+        self.circuit
+            .get_current_balancer_policy()
+            .into_iter()
+            .map(|(node_id, policy)| (GlobalNodeId::root().child(node_id), policy))
+            .collect()
+    }
+
+    pub fn rebalance(&self) {
+        self.circuit.rebalance()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
+        Circuit, Error as DbspError, RootCircuit,
         circuit::schedule::{DynamicScheduler, Scheduler},
         monitor::TraceMonitor,
         operator::{Generator, Z1},
-        Circuit, Error as DbspError, RootCircuit,
     };
     use anyhow::anyhow;
     use std::{cell::RefCell, ops::Deref, rc::Rc, vec::Vec};
@@ -6953,11 +7712,7 @@ mod tests {
     }
 
     fn my_factorial(n: usize) -> usize {
-        if n == 1 {
-            1
-        } else {
-            n * my_factorial(n - 1)
-        }
+        if n == 1 { 1 } else { n * my_factorial(n - 1) }
     }
 
     #[test]

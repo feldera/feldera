@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.collect.ImmutableList;
 import org.apache.calcite.adapter.jdbc.JdbcTableScan;
 import org.apache.calcite.plan.RelOptTable;
@@ -69,8 +71,6 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
-import org.apache.calcite.sql.ddl.SqlAttributeDefinition;
-import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
@@ -96,6 +96,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
@@ -131,6 +132,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.LastRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.IntermediateRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelAnd;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlAttributeDefinition;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateType;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CalciteTableDescription;
@@ -143,7 +146,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.HasSchema;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
@@ -161,6 +163,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
@@ -176,7 +179,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
@@ -196,8 +199,8 @@ import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
@@ -213,6 +216,7 @@ import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IdShuffle;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Properties;
 import org.dbsp.util.Shuffle;
 import org.dbsp.util.Utilities;
 
@@ -222,6 +226,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -281,6 +286,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     public DBSPType convertType(SourcePositionRange context, RelDataType dt, boolean asStruct) {
+        dt = TypeCompiler.removeDuplicateFields(dt);
         return this.compiler.getTypeCompiler().convertType(context, dt, asStruct);
     }
 
@@ -455,37 +461,42 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
         }
 
-        DBSPType indexType = null;
+        DBSPType ordinalityIndexType = null;
         if (uncollect.withOrdinality) {
             // Index field is always last.
-            indexType = uncollectElementType.getFieldType(uncollectElementType.size() - 1);
+            ordinalityIndexType = uncollectElementType.getFieldType(uncollectElementType.size() - 1);
+            // This should really be a BIGINT
+            Utilities.enforce(ordinalityIndexType.is(DBSPTypeBaseType.class));
         }
 
         // Right projections are applied after uncollect
         List<DBSPClosureExpression> rightProjections = null;
         if (rightProject != null) {
-            DBSPVariablePath eVar = new DBSPVariablePath(uncollectElementType.ref());
-            final ExpressionCompiler eComp0 = new ExpressionCompiler(correlate, eVar, this.compiler);
-            rightProjections = Linq.map(rightProject.getProjects(), e -> eComp0.compile(e).closure(eVar));
+            rightProjections = new ArrayList<>(rightProject.getProjects().size());
+            for (RexNode proj: rightProject.getProjects()) {
+                DBSPVariablePath eVar = new DBSPVariablePath(uncollectElementType.ref());
+                final ExpressionCompiler eComp0 = new ExpressionCompiler(correlate, eVar, this.compiler);
+                DBSPClosureExpression closure = eComp0.compile(proj).closure(eVar);
+                rightProjections.add(closure);
+            }
         }
 
         int shuffleSize = leftElementType.size();
-        if (rightProjections != null)
+        if (rightProjections != null) {
             shuffleSize += rightProjections.size();
-        if (indexType != null) {
-            if (indexType.is(DBSPTypeTupleBase.class))
-                shuffleSize += indexType.to(DBSPTypeTupleBase.class).size();
+        } else {
+            if (collectionElementType.is(DBSPTypeTupleBase.class))
+                shuffleSize += collectionElementType.to(DBSPTypeTupleBase.class).size();
             else
                 shuffleSize += 1;
+            if (ordinalityIndexType != null) {
+                shuffleSize += 1;
+            }
         }
-        if (collectionElementType.is(DBSPTypeTupleBase.class))
-            shuffleSize += collectionElementType.to(DBSPTypeTupleBase.class).size();
-        else
-            shuffleSize += 1;
         DBSPFlatmap flatmap = new DBSPFlatmap(node,
                 leftElementType, arrayExpression,
                 Linq.range(0, leftElementType.size()),
-                rightProjections, indexType, new IdShuffle(shuffleSize));
+                rightProjections, ordinalityIndexType, new IdShuffle(shuffleSize));
 
         DBSPTypeFunction functionType = new DBSPTypeFunction(type, leftElementType.ref());
         Utilities.enforce(flatmap.getType().sameType(functionType),
@@ -555,17 +566,17 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression interval = expressionCompiler.compile(operands.get(1));
         Simplify simplify = new Simplify(this.compiler.compiler());
         interval = simplify.apply(interval).to(DBSPExpression.class);
-        if (interval.getType().is(DBSPTypeMonthsInterval.class)) {
+        if (interval.getType().is(DBSPTypeLongInterval.class)) {
             throw new UnsupportedException(
                     "Tumbling window intervals must be 'short' SQL intervals (days and lower)",
                     interval.getNode());
         }
-        if (!interval.is(DBSPIntervalMillisLiteral.class)) {
+        if (!interval.is(DBSPShortIntervalLiteral.class)) {
             throw new UnsupportedException(
                     "Tumbling window interval must be a constant",
                     interval.getNode());
         }
-        DBSPIntervalMillisLiteral intValue = interval.to(DBSPIntervalMillisLiteral.class);
+        DBSPShortIntervalLiteral intValue = interval.to(DBSPShortIntervalLiteral.class);
         if (!intValue.gt0()) {
             throw new UnsupportedException(
                     "Tumbling window interval must be positive",
@@ -588,7 +599,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     "TIMESTAMP used for TUMBLE function is nullable; this can cause runtime crashes.\n" +
                             "We recommend filtering out null values before applying the TUMBLE function");
         }
-        args[0] = row.deref().field(timestampIndex).unwrapIfNullable();
+        args[0] = row.deref().field(timestampIndex).unwrapIfNullable("TUMBLE timestamp should never be NULL");
         args[1] = interval;
         if (start != null)
             args[2] = start;
@@ -622,20 +633,20 @@ public class CalciteToDBSPCompiler extends RelVisitor
         int timestampIndex = this.getDescriptor(operands.get(0));
         // Need to do a few more checks, Calcite should be doing these really.
         DBSPExpression interval = expressionCompiler.compile(operands.get(1));
-        if (!interval.getType().is(DBSPTypeMillisInterval.class)) {
+        if (!interval.getType().is(DBSPTypeShortInterval.class)) {
             throw new UnsupportedException("Hopping window intervals must be 'short' SQL intervals (days and lower)",
                     interval.getNode());
         }
         DBSPExpression start;
         DBSPExpression size = expressionCompiler.compile(operands.get(2));
-        if (!size.getType().is(DBSPTypeMillisInterval.class)) {
+        if (!size.getType().is(DBSPTypeShortInterval.class)) {
             throw new UnsupportedException("Hopping window intervals must be 'short' SQL intervals (days and lower)",
                     size.getNode());
         }
         if (call.operandCount() == 4)
             start = expressionCompiler.compile(operands.get(3));
         else
-            start = new DBSPIntervalMillisLiteral(DBSPTypeMillisInterval.Units.SECONDS, 0, false);
+            start = DBSPShortIntervalLiteral.fromMicroseconds(DBSPTypeShortInterval.Units.SECONDS, 0, false);
 
         DBSPHopOperator hop = new DBSPHopOperator(
                 node.getFinal(), timestampIndex, interval, start, size, TypeCompiler.makeZSet(type), opInput.outputPort());
@@ -737,7 +748,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         .deref()
                         .field(index)
                         .applyCloneIfNeeded()
-                        .cast(node, slice.getFieldType(groupSetIndex), false);
+                        .cast(node, slice.getFieldType(groupSetIndex), DBSPCastExpression.CastType.SqlUnsafe);
                 keyFieldIndex++;
             }
             groupSetIndex++;
@@ -766,7 +777,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPClosureExpression appendFields = body.closure(key, leftVar, rightVar);
 
         DBSPStreamJoinIndexOperator result = new DBSPStreamJoinIndexOperator(
-                node, joinOutputType, appendFields, false, left.outputPort(), right.outputPort());
+                node, joinOutputType, appendFields, false, left.outputPort(), right.outputPort(), false);
         addOperator.accept(result);
         return result;
     }
@@ -893,14 +904,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression[] flattenFields = new DBSPExpression[aggregate.getGroupCount() + aggType.size()];
         for (int i = 0; i < aggregate.getGroupCount(); i++) {
             DBSPExpression cast = kv.field(0).deref().field(i).applyCloneIfNeeded()
-                    .cast(node, tuple.getFieldType(i), false);
+                    .cast(node, tuple.getFieldType(i), DBSPCastExpression.CastType.SqlUnsafe);
             flattenFields[i] = cast;
         }
         for (int i = 0; i < aggType.size(); i++) {
             DBSPExpression flattenField = kv.field(1).deref().field(i).applyCloneIfNeeded();
             // Here we correct from the type produced by the Folder (typeFromAggregate) to the
             // actual expected type aggType (which is the tuple of aggTypes).
-            DBSPExpression cast = flattenField.cast(node, aggTypes[i], false);
+            DBSPExpression cast = flattenField.cast(node, aggTypes[i], DBSPCastExpression.CastType.SqlUnsafe);
             flattenFields[aggregate.getGroupCount() + i] = cast;
         }
 
@@ -992,7 +1003,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 if (!create)
                     throw new InternalCompilerError("Could not find operator for table " + tableName, node);
 
-                // Create external tables table
+                /*
+                // Create external table
                 JdbcTableScan jscan = (JdbcTableScan) scan;
                 RelDataType tableRowType = jscan.jdbcTable.getRowType(this.compiler.sqlToRelCompiler.typeFactory);
                 DBSPTypeStruct originalRowType = this.convertType(node.getPositionRange(), tableRowType, true)
@@ -1003,13 +1015,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.metadata.addTable(withSchema);
                 TableMetadata tableMeta = new TableMetadata(
                         tableName, Linq.map(withSchema.getColumns(), this::convertMetadata), Linq.list(),
-                        false, false);
+                        false, false, false);
                 DBSPSourceMultisetOperator sourceMulti = new DBSPSourceMultisetOperator(
                         node, CalciteObject.EMPTY,
                         TypeCompiler.makeZSet(rowType), originalRowType,
                         tableMeta, tableName, null);
                 this.addOperator(sourceMulti);
                 Utilities.putNew(this.nodeOperator, scan, sourceMulti);
+                 */
             }
         }
     }
@@ -1048,7 +1061,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     // Calcite's optimizations do not preserve types!
                     exp = ExpressionCompiler.expandTupleCast(exp.getNode(), exp, expectedType);
                 } else {
-                    exp = exp.applyCloneIfNeeded();
+                    if (!exp.is(DBSPApplyExpression.class))
+                        exp = exp.applyCloneIfNeeded();
                 }
                 resultColumns[index] = exp;
                 index++;
@@ -1066,7 +1080,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType inputElementType = operator.getOutputZSetElementType();
         if (inputElementType.sameType(outputElementType))
             return operator;
-        DBSPExpression function = inputElementType.caster(outputElementType, false).reduce(this.compiler);
+        DBSPExpression function = inputElementType.caster(outputElementType, DBSPCastExpression.CastType.SqlUnsafe)
+                .reduce(this.compiler);
         DBSPSimpleOperator map = new DBSPMapOperator(
                 node, function, TypeCompiler.makeZSet(outputElementType), operator.outputPort());
         this.addOperator(map);
@@ -1168,8 +1183,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPSimpleOperator opInput = this.getInputAs(input, false);
             if (!first) {
                 DBSPSimpleOperator neg = new DBSPNegateOperator(node, opInput.outputPort());
-                neg = this.castOutput(node, neg, outputType);
                 this.addOperator(neg);
+                neg = this.castOutput(node, neg, outputType);
                 inputs.add(neg.outputPort());
             } else {
                 opInput = this.castOutput(node, opInput, outputType);
@@ -1179,8 +1194,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         if (minus.all) {
-            DBSPSumOperator sum = new DBSPSumOperator(node.getFinal(), inputs);
-            this.assignOperator(minus, sum);
+            throw new UnimplementedException("EXCEPT/MINUS ALL", 5483, node);
         } else {
             DBSPSumOperator sum = new DBSPSumOperator(node, inputs);
             this.addOperator(sum);
@@ -1339,7 +1353,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     continue;
                 fields.add(e.field(i)
                         .applyCloneIfNeeded()
-                        .nullabilityCast(desiredType.getFieldType(i), false));
+                        .nullabilityCast(desiredType.getFieldType(i), DBSPCastExpression.CastType.SqlUnsafe));
             }
             return new DBSPTupleExpression(fields, false);
         }
@@ -1358,7 +1372,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             for (int kf: this.keyFields) {
                 fields.add(e.field(kf)
                         .applyCloneIfNeeded()
-                        .nullabilityCast(keyType.getFieldType(index), false));
+                        .nullabilityCast(keyType.getFieldType(index), DBSPCastExpression.CastType.SqlUnsafe));
                 index++;
             }
             return new DBSPTupleExpression(fields, false);
@@ -1506,7 +1520,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression[] casts = new DBSPExpression[lrType.size()];
         for (int index = 0; index < lrType.size(); index++) {
             casts[index] = t.deref().field(index).applyCloneIfNeeded()
-                    .cast(node, resultType.getFieldType(index), false);
+                    .cast(node, resultType.getFieldType(index), DBSPCastExpression.CastType.SqlUnsafe);
         }
         DBSPTupleExpression allFields = new DBSPTupleExpression(casts);
         this.addOperator(operator);
@@ -1605,12 +1619,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     decomposition.comparisons,
                     c -> l.deref().field(c.node(), c.leftColumn())
                             .applyCloneIfNeeded()
-                            .cast(c.node(), c.commonType(), false));
+                            .cast(c.node(), c.commonType(), DBSPCastExpression.CastType.SqlUnsafe));
             final List<DBSPExpression> rightKeyFields = Linq.map(
                     decomposition.comparisons,
                     c -> r.deref().field(c.node(), c.rightColumn())
                             .applyCloneIfNeeded()
-                            .cast(c.node(), c.commonType(), false));
+                            .cast(c.node(), c.commonType(), DBSPCastExpression.CastType.SqlUnsafe));
             final DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
             keyType = leftKey.getType().to(DBSPTypeTupleBase.class);
 
@@ -1673,7 +1687,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             final DBSPClosureExpression makeTuple = lr.closure(k, l0, r0);
             joinResult = new DBSPStreamJoinOperator(node, TypeCompiler.makeZSet(lr.getType()),
                     makeTuple, left.isMultiset || right.isMultiset,
-                    leftNonNullIndex.outputPort(), rightNonNullIndex.outputPort());
+                    leftNonNullIndex.outputPort(), rightNonNullIndex.outputPort(), false);
             inner = joinResult;
 
             if (joinType == JoinRelType.LEFT && leftPulled == left && !hasFilter) {
@@ -1717,7 +1731,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 final DBSPLeftJoinOperator lj = new DBSPLeftJoinOperator(
                         node, TypeCompiler.makeZSet(makeLeftTuple.getResultType()),
                         makeLeftTuple, left.isMultiset || right.isMultiset,
-                        leftDiff.outputPort(), rightDiff.outputPort());
+                        leftDiff.outputPort(), rightDiff.outputPort(), false);
                 this.addOperator(lj);
                 final DBSPIntegrateOperator integrate = new DBSPIntegrateOperator(node, lj.outputPort());
                 // Additional casts may be needed to fix key field types on the left side
@@ -1950,7 +1964,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     int index = extendedRight.keyFields.get(i);
                     rightKeyFields.add(joinRightVar.deref().field(leftColumns + index)
                             .applyCloneIfNeeded()
-                            .cast(node, rightResultType.getFieldType(index), false));
+                            .cast(node, rightResultType.getFieldType(index), DBSPCastExpression.CastType.SqlUnsafe));
                 }
 
                 final DBSPRawTupleExpression projectJoinRight = new DBSPRawTupleExpression(
@@ -2000,6 +2014,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // This shares a lot of code with the LogicalJoin
         CalciteObject conditionNode = CalciteObject.create(join, join.getCondition());
         IntermediateRel node = CalciteObject.create(join, conditionNode.getPositionRange());
+
         JoinRelType joinType = join.getJoinType();
         boolean isLeft = joinType == JoinRelType.LEFT_ASOF;
         if (!isLeft)
@@ -2109,10 +2124,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         // We don't filter nulls in the left column, because this may be a left join,
         // and thus the resulting types may be nullable.
-        // The 'commonType' in 'comparisons' are never null.
+        // The 'commonType' in 'comparisons' are never null, so we adjust it if needed.
         for (int i = 0; i < comparisons.size(); i++) {
             JoinConditionAnalyzer.EqualityTest test = comparisons.get(i);
-            DBSPType leftType = leftElementType.tupFields[i];
+            DBSPType leftType = leftElementType.tupFields[test.leftColumn()];
             DBSPType useType = test.commonType().withMayBeNull(leftType.mayBeNull);
             comparisons.set(i, test.withType(useType));
         }
@@ -2126,11 +2141,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
             List<DBSPExpression> leftKeyFields = Linq.map(
                     comparisons,
                     c -> l.deref().field(c.leftColumn()).applyCloneIfNeeded()
-                            .cast(c.node(), c.commonType(), false));
+                            .cast(c.node(), c.commonType(), DBSPCastExpression.CastType.SqlUnsafe));
             List<DBSPExpression> rightKeyFields = Linq.map(
                     comparisons,
                     c -> r.deref().field(c.rightColumn()).applyCloneIfNeeded()
-                            .cast(c.node(), c.commonType(), false));
+                            .cast(c.node(), c.commonType(), DBSPCastExpression.CastType.SqlUnsafe));
             DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
             keyType = leftKey.getType().to(DBSPTypeTuple.class);
             DBSPExpression rightKey = new DBSPTupleExpression(node, rightKeyFields);
@@ -2175,7 +2190,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (comparison != SqlKind.GREATER_THAN_OR_EQUAL) {
             // Not yet supported by DBSP
             throw new UnimplementedException(
-                    "Currently the only MATCH_CONDITION comparison supported by ASOF joins is '>='", 2212, node);
+                    "Currently the only MATCH_CONDITION comparison supported by ASOF joins is 'leftCol >= rightCol'",
+                    2212, matchNode);
         }
         comparator = new DBSPDirectComparatorExpression(matchNode, comparator, ascending);
 
@@ -2348,7 +2364,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         expr = DBSPLiteral.none(resultFieldType);
                 }
                 if (!expr.getType().sameType(resultFieldType)) {
-                    DBSPExpression cast = expr.cast(expr.getNode(), resultFieldType, false);
+                    DBSPExpression cast = expr.cast(expr.getNode(), resultFieldType, DBSPCastExpression.CastType.SqlUnsafe);
                     expressions.add(cast);
                 } else {
                     expressions.add(expr);
@@ -2369,6 +2385,24 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
     }
 
+    /** Given an operator with output type ZSet[T], index is using
+     * (ZSet[S], Tup0). */
+    DBSPMapIndexOperator indexEntireTuple(CalciteRelNode node, OutputPort port, DBSPTypeTuple resultType) {
+        DBSPType inputRowType = port.getOutputZSetElementType();
+        DBSPVariablePath t = inputRowType.ref().var();
+        DBSPClosureExpression entireKey =
+                new DBSPRawTupleExpression(
+                        DBSPTupleExpression.flatten(t.deref()).cast(
+                                CalciteObject.EMPTY, resultType, DBSPCastExpression.CastType.SqlUnsafe),
+                        new DBSPTupleExpression()).closure(t);
+        DBSPMapIndexOperator result = new DBSPMapIndexOperator(
+                node, entireKey,
+                makeIndexedZSet(resultType, DBSPTypeTuple.EMPTY),
+                port);
+        this.addOperator(result);
+        return result;
+    }
+
     void visitIntersect(LogicalIntersect intersect) {
         var node = CalciteObject.create(intersect);
         // Intersect is a special case of join.
@@ -2379,40 +2413,29 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         if (inputs.isEmpty())
             throw new UnsupportedException(node);
+        if (intersect.all)
+            throw new UnimplementedException("INTERSECT ALL", node);
         if (inputs.size() == 1) {
             Utilities.putNew(this.nodeOperator, intersect, previous);
             return;
         }
 
-        DBSPType inputRowType = this.convertType(node.getPositionRange(), input.getRowType(), false);
-        DBSPTypeTuple resultType = this.convertType(node.getPositionRange(), intersect.getRowType(), false).to(DBSPTypeTuple.class);
-        DBSPVariablePath t = inputRowType.ref().var();
-        DBSPClosureExpression entireKey =
-                new DBSPRawTupleExpression(
-                        DBSPTupleExpression.flatten(t.deref()),
-                        new DBSPTupleExpression()).closure(t);
-        DBSPVariablePath l = DBSPTypeTuple.EMPTY.ref().var();
-        DBSPVariablePath r = DBSPTypeTuple.EMPTY.ref().var();
-        DBSPVariablePath k = inputRowType.ref().var();
+        DBSPTypeTuple resultType = this.convertType(node.getPositionRange(), intersect.getRowType(), false)
+                .to(DBSPTypeTuple.class);
+        DBSPMapIndexOperator previousIndex = this.indexEntireTuple(node, previous.outputPort(), resultType);
 
-        DBSPClosureExpression closure = DBSPTupleExpression.flatten(k.deref()).closure(k, l, r);
         for (int i = 1; i < inputs.size(); i++) {
-            DBSPSimpleOperator previousIndex = new DBSPMapIndexOperator(
-                    node, entireKey,
-                    makeIndexedZSet(inputRowType, DBSPTypeTuple.EMPTY),
-                    previous.outputPort());
-            this.addOperator(previousIndex);
             DBSPSimpleOperator inputI = this.getInputAs(intersect.getInput(i), false);
-            DBSPSimpleOperator index = new DBSPMapIndexOperator(
-                    node, entireKey.to(DBSPClosureExpression.class),
-                    makeIndexedZSet(inputRowType, DBSPTypeTuple.EMPTY),
-                    inputI.outputPort());
-            this.addOperator(index);
+            DBSPMapIndexOperator index = this.indexEntireTuple(node, inputI.outputPort(), resultType);
+            // Join with the current result
+            DBSPVariablePath l = DBSPTypeTuple.EMPTY.ref().var();
+            DBSPVariablePath r = DBSPTypeTuple.EMPTY.ref().var();
+            DBSPVariablePath k = resultType.ref().var();
+            DBSPClosureExpression closure = DBSPTupleExpression.flatten(k.deref()).closure(k, l, r);
             previous = new DBSPStreamJoinOperator(node, TypeCompiler.makeZSet(resultType),
-                    closure, false, previousIndex.outputPort(), index.outputPort());
+                    closure, false, previousIndex.outputPort(), index.outputPort(), false);
             this.addOperator(previous);
         }
-        Utilities.enforce(resultType.sameType(previous.getOutputZSetElementType()));
         Utilities.putNew(this.nodeOperator, intersect, previous);
     }
 
@@ -2707,7 +2730,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPVariablePath var = lastOperator.getOutputZSetElementType().ref().var();
             List<DBSPExpression> fields = new ArrayList<>();
             for (int i = 0; i < tuple.size(); i++) {
-                fields.add(var.deref().field(i).applyCloneIfNeeded().nullabilityCast(tuple.tupFields[i], false));
+                fields.add(var.deref().field(i).applyCloneIfNeeded()
+                        .nullabilityCast(tuple.tupFields[i], DBSPCastExpression.CastType.SqlUnsafe));
             }
             DBSPClosureExpression convert = new DBSPTupleExpression(fields, false).closure(var);
             this.addOperator(lastOperator);
@@ -2740,19 +2764,25 @@ public class CalciteToDBSPCompiler extends RelVisitor
         IntermediateRel node = CalciteObject.create(sort);
         RelNode input = sort.getInput();
         DBSPSimpleOperator opInput = this.getOperator(input);
-        if (this.options.languageOptions.ignoreOrderBy && sort.fetch == null) {
+        if (this.options.languageOptions.ignoreOrderBy && sort.fetch == null && sort.offset == null) {
             this.warnNoSort(node);
             Utilities.putNew(this.nodeOperator, sort, opInput);
             return;
         }
-        if (sort.offset != null)
-            throw new UnimplementedException("OFFSET in SORT not yet implemented", 172, node);
 
         DBSPExpression limit = null;
         if (sort.fetch != null) {
             ExpressionCompiler expressionCompiler = new ExpressionCompiler(sort, null, this.compiler);
-            // We expect the limit to be a constant
             limit = expressionCompiler.compile(sort.fetch);
+            limit = limit.cast(limit.getNode(), DBSPTypeUSize.create(limit.getType().mayBeNull),
+                    DBSPCastExpression.CastType.SqlUnsafe);
+        }
+        DBSPExpression offset = null;
+        if (sort.offset != null) {
+            ExpressionCompiler expressionCompiler = new ExpressionCompiler(sort, null, this.compiler);
+            offset = expressionCompiler.compile(sort.offset);
+            offset = offset.cast(offset.getNode(), DBSPTypeUSize.create(offset.getType().mayBeNull),
+                    DBSPCastExpression.CastType.SqlUnsafe);
         }
 
         DBSPType inputRowType = this.convertType(node.getPositionRange(), input.getRowType(), false);
@@ -2770,12 +2800,19 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // Generate comparison function for sorting the vector
         DBSPComparatorExpression comparator = generateComparator(
                 node, sort.getCollation().getFieldCollations(), inputRowType, false);
-        if (sort.fetch != null) {
-            // TopK operator.
+        DBSPEqualityComparatorExpression eq = new DBSPEqualityComparatorExpression(node, comparator);
+
+        DBSPExpression total = null;
+        if (offset != null && limit != null) {
+            total = ExpressionCompiler.makeBinaryExpression(
+                    node, limit.getType(), DBSPOpcode.ADD, limit, offset);
+        }
+
+        if (limit != null || offset != null) {
+            // We build one or two TopK operators: one for total and one for offset
             // Since TopK is always incremental we have to wrap it into a D-I pair
             DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, index.outputPort());
             this.addOperator(diff);
-            DBSPEqualityComparatorExpression eq = new DBSPEqualityComparatorExpression(node, comparator);
 
             // Output producer is (index, row) -> row
             DBSPVariablePath left = DBSPTypeInteger.getType(node, INT64, false).var();
@@ -2784,21 +2821,49 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPTupleExpression tuple = new DBSPTupleExpression(flattened, false);
             DBSPClosureExpression outputProducer = tuple.closure(left, right);
 
-            limit = limit.cast(limit.getNode(), DBSPTypeUSize.create(limit.getType().mayBeNull), false);
-            DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(
-                    node, DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER,
-                    comparator, limit, eq, outputProducer, diff.outputPort());
-            this.addOperator(topK);
-            DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, topK.outputPort());
-            this.addOperator(integral);
+            // TopK operator to compute the first offset rows, which will be dropped
+            DBSPSimpleOperator offsetOperator = null;
+            if (offset != null) {
+                offsetOperator = new DBSPIndexedTopKOperator(
+                        node, DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER,
+                        comparator, offset, eq, outputProducer, diff.outputPort());
+                this.addOperator(offsetOperator);
+                offsetOperator = new DBSPIntegrateOperator(node, offsetOperator.outputPort());
+                this.addOperator(offsetOperator);
+
+                if (limit != null)
+                    limit = total;
+            }
+
+            DBSPSimpleOperator limitOperator = null;
+            if (limit != null) {
+                limitOperator = new DBSPIndexedTopKOperator(
+                        node, DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER,
+                        comparator, limit, eq, outputProducer, diff.outputPort());
+                this.addOperator(limitOperator);
+                limitOperator = new DBSPIntegrateOperator(node, limitOperator.outputPort());
+                this.addOperator(limitOperator);
+            }
+
+            if (offsetOperator != null) {
+                if (limitOperator != null) {
+                    limitOperator = new DBSPSubtractOperator(node, limitOperator.outputPort(), offsetOperator.outputPort());
+                } else {
+                    limitOperator = new DBSPSubtractOperator(node, index.outputPort(), offsetOperator.outputPort());
+                }
+                this.addOperator(limitOperator);
+            }
+
             // If we ignore ORDER BY this is the result.
             boolean done = this.options.languageOptions.ignoreOrderBy;
-            // We can also ignore the order by for some ancestors
+            // We can also ignore the order by for ancestor nodes that do not care about it.
+            // Perhaps the optimizer should have handled this case.
             if (!this.ancestors.isEmpty()) {
                 RelNode last = Utilities.last(this.ancestors);
                 if (last instanceof LogicalAggregate ||
                         last instanceof LogicalProject ||
-                        last instanceof LogicalJoin) {
+                        last instanceof LogicalJoin ||
+                        last instanceof LogicalAsofJoin) {
                     done = true;
                 }
             }
@@ -2809,14 +2874,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.warnNoSort(node);
             if (done) {
                 // We must drop the index we built.
-                DBSPDeindexOperator deindex = new DBSPDeindexOperator(node.getFinal(), node, integral.outputPort());
+                DBSPDeindexOperator deindex = new DBSPDeindexOperator(node.getFinal(), node, limitOperator.outputPort());
                 this.assignOperator(sort, deindex);
                 return;
             }
             // Otherwise we have to sort again in a vector!
             // Fall through, continuing from the integral.
-            index = integral;
+            index = limitOperator;
         }
+
         // Global sort.  Implemented by aggregate in a single Vec<> which is then sorted.
         // Apply an aggregation function that just creates a vector.
         DBSPTypeArray arrayType = new DBSPTypeArray(inputRowType, false);
@@ -2840,9 +2906,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 folder, null, index.outputPort());
         this.addOperator(agg);
 
-        if (limit != null)
-            limit = limit.cast(limit.getNode(), DBSPTypeUSize.INSTANCE, false);
-        DBSPSortExpression sorter = new DBSPSortExpression(node, inputRowType, comparator, limit);
+        DBSPSortExpression sorter = new DBSPSortExpression(node, inputRowType, comparator);
         DBSPSimpleOperator result = new DBSPMapOperator(
                 node.getFinal(), sorter, TypeCompiler.makeZSet(arrayType), agg.outputPort());
         this.assignOperator(sort, result);
@@ -2921,7 +2985,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.compiler.reportError(defaultValue.getSourcePosition(), "Illegal value",
                         "Nullable default value assigned to non-null column " +
                                 metadata.getName().singleQuote());
-            defaultValue = defaultValue.cast(defaultValue.getNode(), type, false);
+            defaultValue = defaultValue.cast(defaultValue.getNode(), type, DBSPCastExpression.CastType.SqlUnsafe);
         }
         if (metadata.interned) {
             if (!type.is(DBSPTypeString.class))
@@ -3148,9 +3212,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             */
         }
 
-        String saneName = this.compiler.generateStructName(stat.typeName, fields);
-        DBSPTypeStruct struct = new DBSPTypeStruct(object, stat.typeName, saneName, fields, false);
-        this.compiler.registerStruct(struct);
+        DBSPTypeStruct struct = new DBSPTypeStruct(object, stat.typeName, fields, false);
+        this.compiler.registerUDT(stat.typeName, struct);
         DBSPItem item = new DBSPStructItem(struct, null);
         this.getCircuit().addDeclaration(new DBSPDeclaration(item));
         return null;
@@ -3170,9 +3233,49 @@ public class CalciteToDBSPCompiler extends RelVisitor
         boolean materialized = create.isMaterialized();
         boolean appendOnly = create.isAppendOnly() ||
                 options.languageOptions.streaming;
+        Boolean skipUnusedColumns = create.skipUnusedColumns();
+
+        // Skip unused columns is also set to TRUE if any connector sets it as true
+        Properties properties = create.getProperties();
+        if (properties != null) {
+            String connectors = properties.getPropertyValue(CreateTableStatement.CONNECTORS);
+            if (connectors != null) {
+                try {
+                    JsonNode jsonNode = Utilities.deterministicObjectMapper().readTree(connectors);
+                    if (jsonNode.isArray()) {
+                        for (Iterator<JsonNode> it = jsonNode.elements(); it.hasNext(); ) {
+                            JsonNode connector = it.next();
+                            if (connector.has("transport")) {
+                                JsonNode transport = connector.get("transport");
+                                if (transport.has("config")) {
+                                    JsonNode config = transport.get("config");
+                                    if (config.has(CreateTableStatement.SKIP_UNUSED_COLUMNS)) {
+                                        JsonNode skip = config.get(CreateTableStatement.SKIP_UNUSED_COLUMNS);
+                                        if (skip.isBoolean()) {
+                                            if (skipUnusedColumns == null)
+                                                skipUnusedColumns = skip.asBoolean();
+                                            else
+                                                skipUnusedColumns = skipUnusedColumns || skip.asBoolean();
+                                            this.compiler.reportWarning(
+                                                    properties.getPropertyKeyPosition(CreateTableStatement.CONNECTORS),
+                                                    "Deprecated connector property",
+                                                    "The per-connector property " + Utilities.singleQuote(
+                                                            CreateTableStatement.SKIP_UNUSED_COLUMNS) + " is deprecated;"
+                                                            + " the property can be specified for an entire table");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (JsonProcessingException ex) {
+                    // This should not happen, since connectors were validated by an earlier stage
+                }
+            }
+        }
 
         TableMetadata tableMeta = new TableMetadata(
-                tableName, metadata, create.foreignKeys, materialized, appendOnly);
+                tableName, metadata, create.foreignKeys, materialized, appendOnly, skipUnusedColumns);
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                 new RelAnd(), identifier, TypeCompiler.makeZSet(rowType), originalRowType,
                 tableMeta, tableName, def.getStatement());
@@ -3190,7 +3293,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CalciteObject identifier = CalciteObject.EMPTY;
         List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
         TableMetadata tableMeta = new TableMetadata(
-                tableName, metadata, new ArrayList<>(), false, false);
+                tableName, metadata, new ArrayList<>(), false, false, null);
         DBSPViewDeclarationOperator result = new DBSPViewDeclarationOperator(
                 create.getCalciteObject(), identifier, TypeCompiler.makeZSet(rowType), originalRowType,
                 tableMeta, tableName);
@@ -3238,8 +3341,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             i++;
         }
 
-        DBSPTypeStruct keyStruct = TypeCompiler.asStruct(this.compiler,
-                ci.getCalciteObject(), ci.indexName, keyColumns, false);
+        DBSPTypeStruct keyStruct = TypeCompiler.asStruct(ci.getCalciteObject(), ci.indexName, keyColumns, false);
 
         DBSPExpression index = new DBSPRawTupleExpression(
                 new DBSPTupleExpression(Linq.map(
@@ -3340,7 +3442,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPType expectedType = tuple.getFieldType(index);
             if (!exp.getType().sameType(expectedType)) {
                 // Calcite's optimizations do not preserve types!
-                exp = exp.applyCloneIfNeeded().cast(exp.getNode(), expectedType, false);
+                exp = exp.applyCloneIfNeeded().cast(exp.getNode(), expectedType, DBSPCastExpression.CastType.SqlUnsafe);
             }
             resultColumns.add(exp);
             index++;

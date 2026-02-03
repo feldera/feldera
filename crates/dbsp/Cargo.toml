@@ -5,7 +5,7 @@ categories = ["algorithms", "data-structures"]
 readme = "README.md"
 publish = true
 keywords = { workspace = true }
-edition = { workspace = true }
+edition = "2024"
 version = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
@@ -56,6 +56,7 @@ tarpc = { workspace = true, features = ["full"] }
 futures = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 paste = { workspace = true }
+seq-macro = { workspace = true }
 derive_more = { version = "1.0", features = ["add", "not", "from", "debug"] }
 dyn-clone = { workspace = true }
 rand_chacha = { workspace = true }
@@ -74,6 +75,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 ptr_meta = { workspace = true }
 feldera-types = { workspace = true }
+feldera-macros = { workspace = true }
 libc = { workspace = true }
 static_assertions = { workspace = true }
 zip = { workspace = true }
@@ -96,6 +98,7 @@ feldera-ir = { workspace = true }
 smallvec = { workspace = true }
 async-stream = { workspace = true }
 futures-util = { workspace = true }
+rmp-serde = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
@@ -113,7 +116,6 @@ rand_xoshiro = { workspace = true }
 indicatif = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 chrono = { workspace = true, features = ["rkyv-64", "serde"] }
-ijson = { version = "0.1.4", package = "feldera-ijson" }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 
 [[bench]]
@@ -132,18 +134,11 @@ harness = false
 name = "column_layer"
 harness = false
 
-[[bench]]
-name = "gdelt"
-harness = false
-
 [[example]]
 name = "orgchart"
 
 [[example]]
 name = "degrees"
-
-[[example]]
-name = "json"
 
 [[example]]
 name = "tutorial1"

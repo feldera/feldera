@@ -67,6 +67,9 @@ pub fn actix_middleware() -> sentry::integrations::actix::Sentry {
         .finish()
 }
 
+pub mod fips;
+pub mod json_logging;
+
 fn trace_header_value() -> Option<String> {
     if !sentry_enabled() {
         return None;
@@ -94,10 +97,10 @@ pub trait AwcRequestTracingExt {
 
 impl AwcRequestTracingExt for ClientRequest {
     fn with_sentry_tracing(mut self) -> Self {
-        if let Some(value) = trace_header_value() {
-            if let Ok(header_value) = HeaderValue::from_str(&value) {
-                self = self.insert_header((HeaderName::from_static("sentry-trace"), header_value));
-            }
+        if let Some(value) = trace_header_value()
+            && let Ok(header_value) = HeaderValue::from_str(&value)
+        {
+            self = self.insert_header((HeaderName::from_static("sentry-trace"), header_value));
         }
         self
     }
@@ -110,13 +113,13 @@ pub trait ReqwestTracingExt {
 
 impl ReqwestTracingExt for RequestBuilder {
     fn with_sentry_tracing(self) -> Self {
-        if let Some(value) = trace_header_value() {
-            if let Ok(header_value) = reqwest::header::HeaderValue::from_str(&value) {
-                return self.header(
-                    reqwest::header::HeaderName::from_static("sentry-trace"),
-                    header_value,
-                );
-            }
+        if let Some(value) = trace_header_value()
+            && let Ok(header_value) = reqwest::header::HeaderValue::from_str(&value)
+        {
+            return self.header(
+                reqwest::header::HeaderName::from_static("sentry-trace"),
+                header_value,
+            );
         }
         self
     }

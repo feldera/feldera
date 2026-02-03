@@ -21,7 +21,7 @@ import java.util.List;
  * operators: map (computing the hop start window) followed by flat_map
  * (which generates all the windows).  It does not correspond to any DBSP
  * Rust operator. */
-public final class DBSPHopOperator extends DBSPUnaryOperator {
+public final class DBSPHopOperator extends DBSPUnaryOperator implements ILinear {
     public final int timestampIndex;
     public final DBSPExpression interval;
     public final DBSPExpression start;

@@ -1,6 +1,9 @@
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
+use crate::db::types::monitor::{
+    ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent, NewClusterMonitorEvent,
+};
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
 };
@@ -225,7 +228,6 @@ pub(crate) trait Storage {
     ) -> Result<PipelineId, DBError>;
 
     /// Transitions program status to `Pending`.
-    #[cfg(test)]
     async fn transit_program_status_to_pending(
         &self,
         tenant_id: TenantId,
@@ -269,6 +271,7 @@ pub(crate) trait Storage {
         rust_compilation: &RustCompilationInfo,
         program_binary_source_checksum: &str,
         program_binary_integrity_checksum: &str,
+        program_info_integrity_checksum: &str,
     ) -> Result<(), DBError>;
 
     /// Transitions program status to `SqlError`.
@@ -323,7 +326,7 @@ pub(crate) trait Storage {
         pipeline_name: &str,
     ) -> Result<PipelineId, DBError>;
 
-    /// Transitions deployment status to `Provisioning`.
+    /// Transitions resources status to `Provisioning`.
     async fn transit_deployment_resources_status_to_provisioning(
         &self,
         tenant_id: TenantId,
@@ -333,17 +336,37 @@ pub(crate) trait Storage {
         deployment_config: serde_json::Value,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to one of the provisioned runtime statuses.
+    /// Remains resources status `Provisioning`.
+    async fn remain_deployment_resources_status_provisioning(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_resources_status_details: serde_json::Value,
+    ) -> Result<(), DBError>;
+
+    /// Transitions resources status to `Provisioned`.
     async fn transit_deployment_resources_status_to_provisioned(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_location: &str,
+        deployment_resources_status_details: serde_json::Value,
         extended_runtime_status: ExtendedRuntimeStatus,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to `Stopping`.
+    /// Remains resources status `Provisioned`.
+    async fn remain_deployment_resources_status_provisioned(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_resources_status_details: serde_json::Value,
+        extended_runtime_status: ExtendedRuntimeStatus,
+    ) -> Result<(), DBError>;
+
+    /// Transitions resources status to `Stopping`.
     async fn transit_deployment_resources_status_to_stopping(
         &self,
         tenant_id: TenantId,
@@ -353,7 +376,16 @@ pub(crate) trait Storage {
         suspend_info: Option<serde_json::Value>,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to `Stopped`.
+    /// Remains resources status `Stopping`.
+    async fn remain_deployment_resources_status_stopping(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_resources_status_details: serde_json::Value,
+    ) -> Result<(), DBError>;
+
+    /// Transitions resources status to `Stopped`.
     async fn transit_deployment_resources_status_to_stopped(
         &self,
         tenant_id: TenantId,
@@ -451,7 +483,16 @@ pub(crate) trait Storage {
     /// are currently being compiled (pipeline identifier, program version) across all tenants.
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<Vec<(PipelineId, Version, Option<String>, Option<String>)>, DBError>;
+    ) -> Result<
+        Vec<(
+            PipelineId,
+            Version,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        )>,
+        DBError,
+    >;
 
     async fn get_support_bundle_data(
         &self,
@@ -459,4 +500,34 @@ pub(crate) trait Storage {
         pipeline_name: &str,
         how_many: u64,
     ) -> Result<(ExtendedPipelineDescrMonitoring, Vec<SupportBundleData>), DBError>;
+
+    async fn list_cluster_monitor_events(&self) -> Result<Vec<ClusterMonitorEvent>, DBError>;
+
+    async fn get_cluster_monitor_event_short(
+        &self,
+        event_id: ClusterMonitorEventId,
+    ) -> Result<ClusterMonitorEvent, DBError>;
+
+    async fn get_cluster_monitor_event_extended(
+        &self,
+        event_id: ClusterMonitorEventId,
+    ) -> Result<ExtendedClusterMonitorEvent, DBError>;
+
+    async fn get_latest_cluster_monitor_event_short(&self) -> Result<ClusterMonitorEvent, DBError>;
+
+    async fn get_latest_cluster_monitor_event_extended(
+        &self,
+    ) -> Result<ExtendedClusterMonitorEvent, DBError>;
+
+    async fn new_cluster_monitor_event(
+        &self,
+        new_id: Uuid,
+        event_descr: NewClusterMonitorEvent,
+    ) -> Result<(), DBError>;
+
+    async fn delete_cluster_monitor_events_beyond_retention(
+        &self,
+        retention_hours: u16,
+        retention_num: u16,
+    ) -> Result<(u64, u64), DBError>;
 }

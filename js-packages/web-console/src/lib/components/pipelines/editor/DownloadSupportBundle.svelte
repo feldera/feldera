@@ -1,35 +1,40 @@
 <script lang="ts">
+  import { Progress, Switch } from '@skeletonlabs/skeleton-svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { useToast } from '$lib/compositions/useToastNotification'
-  import type { SupportBundleOptions } from '$lib/services/pipelineManager'
-  import { Progress, Switch } from '@skeletonlabs/skeleton-svelte'
-  import { humanSize } from '$lib/functions/common/string'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import { humanSize } from '$lib/functions/common/string'
+  import type { SupportBundleOptions } from '$lib/services/pipelineManager'
 
-  let { pipelineName }: { pipelineName: string } = $props()
+  const { pipelineName }: { pipelineName: string } = $props()
 
-  let api = usePipelineManager()
+  const api = usePipelineManager()
   const globalDialog = useGlobalDialog()
-  const toast = useToast()
   let isDownloading = $state(false)
+  let cancelDownload: (() => void) | null = null
 
   const submitHandler = async () => {
-    try {
-      isDownloading = true
-      progress.reset()
-      await api.downloadPipelineSupportBundle(pipelineName, data, progress.onProgress)
-      globalDialog.dialog = null
-    } catch (error) {
-      toast.toastError(new Error(`Failed to download support bundle: ${error}`))
-    } finally {
-      isDownloading = false
+    isDownloading = true
+    progress.reset()
+    cancelDownload = null
+
+    {
+      const result = api.downloadPipelineSupportBundle(pipelineName, data, progress.onProgress)
+      cancelDownload = () => {
+        result.cancel()
+        isDownloading = false
+      }
+
+      await result.dataPromise
     }
+    isDownloading = false
+    cancelDownload = null
+    globalDialog.dialog = null
   }
 
-  let defaultData: SupportBundleOptions = {
+  const defaultData: SupportBundleOptions = {
     circuit_profile: true,
     heap_profile: true,
     logs: true,
@@ -42,7 +47,7 @@
   }
   let data: SupportBundleOptions = $state(defaultData)
 
-  let fields = {
+  const fields = {
     circuit_profile: {
       label: 'Circuit profile',
       description: 'Include circuit profiling data'
@@ -81,7 +86,7 @@
     }
   }
 
-  let progress = useDownloadProgress()
+  const progress = useDownloadProgress()
 </script>
 
 <button
@@ -94,17 +99,15 @@
   <span class="fd fd-file-down text-[20px] text-primary-500"></span>
   Support bundle
 </button>
-<Tooltip
-  placement="top"
-  class="z-10 w-[204px] text-wrap rounded-container bg-white text-base text-surface-950-50 dark:bg-black"
->
-  Generate a bundle with logs, metrics, and configs to help troubleshoot issues
+<Tooltip placement="top" class="w-[204px] text-wrap">
+  Generate a bundle with logs, metrics and configs to help troubleshoot issues
 </Tooltip>
 
 {#snippet supportBundleDialog()}
   <GenericDialog
     onApply={submitHandler}
     onClose={() => {
+      cancelDownload?.()
       globalDialog.dialog = null
     }}
     confirmLabel="Download"
@@ -116,14 +119,17 @@
     <div class="-mt-2 pb-2 font-semibold">{pipelineName}</div>
     {#if isDownloading}
       <div class="flex flex-col items-center gap-3 py-4">
-        <Progress value={progress.percent} meterBg="bg-primary-500" base="h-2"></Progress>
+        <Progress class="h-1" value={progress.percent} max={100}>
+          <Progress.Track>
+            <Progress.Range class="bg-primary-500" />
+          </Progress.Track>
+        </Progress>
         <div class="flex w-full justify-between gap-2">
           <span>Downloading support bundle...</span>
           {#if progress.percent}
             <span>{humanSize(progress.bytes.downloaded)} / {humanSize(progress.bytes.total)}</span>
           {/if}
         </div>
-        Close the popup to continue the download in the background.
       </div>
     {:else}
       Select the details you want to include in the bundle

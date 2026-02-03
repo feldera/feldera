@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
-use feldera_rest_api::types::{CompilationProfile, Configuration, ProgramConfig};
 use feldera_rest_api::Client;
+use feldera_rest_api::types::{CompilationProfile, Configuration, ProgramConfig};
 use feldera_types::error::ErrorResponse;
 use log::{error, info, warn};
 use progenitor_client::Error as ProgenitorError;
@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 use std::{cmp, collections::HashMap, error::Error};
 use tabled::builder::Builder;
 use tabled::settings::Style;
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{Duration, Instant, sleep};
 
 mod api;
 use crate::bench::api::types::JsonUpdateStartPoint;
@@ -90,48 +90,30 @@ struct PipelineStats {
     suspend_error: Option<Value>,
 }
 
-impl From<&Map<String, Value>> for RawMetrics {
-    fn from(stats: &Map<String, Value>) -> Self {
-        let pipeline_stats: PipelineStats =
-            serde_json::from_value(Value::Object(stats.clone())).unwrap();
-        let global_metrics = &pipeline_stats.global_metrics;
+impl From<&feldera_rest_api::types::ControllerStatus> for RawMetrics {
+    fn from(stats: &feldera_rest_api::types::ControllerStatus) -> Self {
+        let global_metrics = &stats.global_metrics;
 
         // Check for input errors
-        let input_errors = pipeline_stats.inputs.iter().any(|input| {
+        let input_errors = stats.inputs.iter().any(|input| {
             input.fatal_error.is_some()
                 || input.metrics.num_parse_errors > 0
                 || input.metrics.num_transport_errors > 0
         });
 
         // Calculate total input bytes
-        let input_bytes = pipeline_stats
+        let input_bytes = stats
             .inputs
             .iter()
             .map(|input| input.metrics.total_bytes)
             .sum();
 
         Self {
-            rss_bytes: global_metrics
-                .get("rss_bytes")
-                .and_then(|v| v.as_i64())
-                .unwrap(),
-            uptime_msecs: global_metrics
-                .get("uptime_msecs")
-                .and_then(|v| v.as_i64())
-                .unwrap(),
-            incarnation_uuid: global_metrics
-                .get("incarnation_uuid")
-                .and_then(|v| v.as_str())
-                .unwrap()
-                .to_string(),
-            storage_bytes: global_metrics
-                .get("storage_bytes")
-                .and_then(|v| v.as_i64())
-                .unwrap(),
-            total_processed_records: global_metrics
-                .get("total_processed_records")
-                .and_then(|v| v.as_i64())
-                .unwrap(),
+            rss_bytes: global_metrics.rss_bytes,
+            uptime_msecs: global_metrics.uptime_msecs,
+            incarnation_uuid: global_metrics.incarnation_uuid.to_string(),
+            storage_bytes: global_metrics.storage_bytes,
+            total_processed_records: global_metrics.total_processed_records,
             input_bytes,
             input_errors,
         }
@@ -328,7 +310,10 @@ impl Benchmark {
             | OutputFormat::Parquet
             | OutputFormat::Prometheus
             | OutputFormat::Hash => {
-                warn!("Format '{}' is not supported for benchmark results, falling back to text format", format);
+                warn!(
+                    "Format '{}' is not supported for benchmark results, falling back to text format",
+                    format
+                );
                 self.format_as_text()
             }
         }
@@ -343,7 +328,7 @@ async fn collect_metrics(
     pipeline_name: &str,
     duration: Option<u64>,
     needs_commit: bool,
-) -> Vec<Map<String, Value>> {
+) -> Vec<feldera_rest_api::types::ControllerStatus> {
     enum PipelineStatus<T> {
         Ingesting,
         Committing(T),
@@ -368,38 +353,34 @@ async fn collect_metrics(
 
                 match status {
                     PipelineStatus::Ingesting => {
-                        if let Some(global_metrics) = stats.get("global_metrics") {
-                            if let Some(complete) = global_metrics.get("pipeline_complete") {
-                                if complete.as_bool().unwrap_or(false) {
-                                    println!("Pipeline completed, stopping benchmark");
-                                    if needs_commit {
-                                        status = PipelineStatus::Committing(Box::pin(
-                                            client
-                                                .commit_transaction()
-                                                .pipeline_name(pipeline_name)
-                                                .send(),
-                                        ));
-                                    } else {
-                                        break;
-                                    }
-                                }
+                        if stats.global_metrics.pipeline_complete {
+                            println!("Pipeline completed, stopping benchmark");
+                            if needs_commit {
+                                status = PipelineStatus::Committing(Box::pin(
+                                    client
+                                        .commit_transaction()
+                                        .pipeline_name(pipeline_name)
+                                        .send(),
+                                ));
+                            } else {
+                                break;
                             }
                         }
 
                         // Check if we've reached the duration limit
-                        if let Some(duration) = duration {
-                            if start_time.elapsed() >= duration {
-                                println!("Reached duration limit of {}s", duration.as_secs());
-                                if needs_commit {
-                                    status = PipelineStatus::Committing(Box::pin(
-                                        client
-                                            .commit_transaction()
-                                            .pipeline_name(pipeline_name)
-                                            .send(),
-                                    ));
-                                } else {
-                                    break;
-                                }
+                        if let Some(duration) = duration
+                            && start_time.elapsed() >= duration
+                        {
+                            println!("Reached duration limit of {}s", duration.as_secs());
+                            if needs_commit {
+                                status = PipelineStatus::Committing(Box::pin(
+                                    client
+                                        .commit_transaction()
+                                        .pipeline_name(pipeline_name)
+                                        .send(),
+                                ));
+                            } else {
+                                break;
                             }
                         }
                         sleep(Duration::from_secs(1)).await;
@@ -436,7 +417,7 @@ async fn transform_to_bmf(
     client: &Client,
     name: String,
     format: OutputFormat,
-    metrics: Vec<Map<String, Value>>,
+    metrics: Vec<feldera_rest_api::types::ControllerStatus>,
 ) -> Benchmark {
     // Convert raw JSON metrics to structured data
     let raw_metrics: Vec<RawMetrics> = metrics.iter().map(RawMetrics::from).collect();
@@ -445,7 +426,9 @@ async fn transform_to_bmf(
     if let Some(first) = raw_metrics.first() {
         for metric in &raw_metrics {
             if metric.incarnation_uuid != first.incarnation_uuid {
-                error!("Inconsistent incarnation_uuid detected during benchmark, did the program restart while measuring?");
+                error!(
+                    "Inconsistent incarnation_uuid detected during benchmark, did the program restart while measuring?"
+                );
                 std::process::exit(1);
             }
         }
@@ -493,20 +476,19 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
         .as_ref()
         .and_then(|cp| cp.profile)
         .unwrap_or(CompilationProfile::Optimized);
-    if compilation_profile != CompilationProfile::Optimized {
+    if compilation_profile != CompilationProfile::Optimized
+        && compilation_profile != CompilationProfile::OptimizedSymbols
+    {
         warn!(
-                "Compilation profile was set to `{:?}`. This is most likely not what you want to benchmark with. Set it to `optimized` for best performance.",
-                compilation_profile
-            );
+            "Compilation profile was set to `{compilation_profile:?}`. This is most likely not what you want to benchmark with. Set it to `optimized` or `optimized_symbols` for best performance.",
+        );
     }
 
     // Check storage configuration
-    if let Some(runtime_config) = &pipeline.runtime_config {
-        if runtime_config.storage.is_none() {
-            warn!(
-                "Storage is not enabled for this pipeline. This may affect benchmark performance."
-            );
-        }
+    if let Some(runtime_config) = &pipeline.runtime_config
+        && runtime_config.storage.is_none()
+    {
+        warn!("Storage is not enabled for this pipeline. This may affect benchmark performance.");
     }
 
     // Stop pipeline if running and restart with recompile
@@ -547,7 +529,10 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
                 true
             }
             Err(e) => {
-                warn!("Failed to start transaction for pipeline '{}' due to {e}. This may affect benchmark results.", pipeline_name);
+                warn!(
+                    "Failed to start transaction for pipeline '{}' due to {e}. This may affect benchmark results.",
+                    pipeline_name
+                );
                 false
             }
         }

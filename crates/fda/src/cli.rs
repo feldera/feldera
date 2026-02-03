@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::path::PathBuf;
 
 use crate::make_client;
-use feldera_rest_api::types::CompilationProfile;
+use feldera_rest_api::types::{ClusterMonitorEventFieldSelector, CompilationProfile};
 
 /// Autocompletion for pipeline names by trying to fetch them from the server.
 fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
@@ -39,6 +39,7 @@ fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
 #[command(
     name = "fda",
     about = "A CLI to interact with the Feldera REST API.",
+    after_help = "Commands marked EXPERIMENTAL may change or be removed at any time.",
     version
 )]
 pub struct Cli {
@@ -162,7 +163,12 @@ pub enum Commands {
         #[command(subcommand)]
         action: ApiKeyActions,
     },
-    /// Debugging tools.
+    /// Cluster information and status.
+    Cluster {
+        #[command(subcommand)]
+        action: ClusterAction,
+    },
+    /// EXPERIMENTAL: Debugging tools.
     Debug {
         #[command(subcommand)]
         action: DebugActions,
@@ -187,8 +193,23 @@ pub enum ApiKeyActions {
 }
 
 #[derive(Subcommand)]
+pub enum ClusterAction {
+    /// Retrieves all cluster events (status only) and prints them.
+    Events,
+
+    /// Retrieve specific cluster event.
+    Event {
+        /// Identifier (UUID) of the event or `latest`.
+        id: String,
+        /// Either `all` or `status` (default).
+        #[arg(default_value = "status")]
+        selector: ClusterMonitorEventFieldSelector,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum DebugActions {
-    /// Print a MessagePack file, such as `steps.bin` in a checkpoint directory,
+    /// EXPERIMENTAL: Print a MessagePack file, such as `steps.bin` in a checkpoint directory,
     /// to stdout.
     MsgpCat {
         /// The MessagePack file to read.
@@ -196,11 +217,24 @@ pub enum DebugActions {
         path: PathBuf,
     },
 
-    /// Reads metrics from a file and prints them in an easier-to-read form.
+    /// EXPERIMENTAL: Reads metrics from a file and prints them in an easier-to-read form.
     Metrics {
         /// The Prometheus metrics file to read.
         #[arg(value_hint = ValueHint::FilePath)]
         path: PathBuf,
+    },
+
+    /// EXPERIMENTAL: Re-creates the pipeline(s) found in a support bundle.
+    Unbundle {
+        /// Support Bundle Zip File.
+        #[arg(value_hint = ValueHint::FilePath)]
+        path: PathBuf,
+        /// Only extract and show pipeline information without trying to create the pipelines.
+        #[arg(long)]
+        dry_run: bool,
+        /// Overwrite pipelines if they already exist.
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -634,6 +668,12 @@ pub enum PipelineAction {
         /// Don't wait for the transaction to commit before returning.
         #[arg(long, short = 'n', default_value_t = false)]
         no_wait: bool,
+    },
+    /// Initiate rebalancing.
+    Rebalance {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
     },
     /// Clear the storage resources of a pipeline.
     ///

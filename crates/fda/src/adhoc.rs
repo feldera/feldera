@@ -12,9 +12,9 @@ use futures_util::StreamExt;
 use log::{debug, error, trace, warn};
 use reqwest_websocket::{CloseCode, Message, RequestBuilderExt};
 
+use crate::UPGRADE_NOTICE;
 use crate::cli::OutputFormat;
 use crate::unique_file;
-use crate::UPGRADE_NOTICE;
 
 fn handle_ws_errors_fatal(
     server: String,
@@ -52,7 +52,9 @@ async fn handle_websocket_message_generic(
 ) {
     match msg {
         Ok(Message::Binary(chunk)) => {
-            eprintln!("ERROR: Received unexpected message type `binary` as part of query execution: {chunk:?}");
+            eprintln!(
+                "ERROR: Received unexpected message type `binary` as part of query execution: {chunk:?}"
+            );
             error!("{}", UPGRADE_NOTICE);
             std::process::exit(1);
         }
@@ -148,7 +150,9 @@ pub(crate) async fn handle_adhoc_query(
     let format = match format {
         OutputFormat::Text => AdHocResultFormat::Text,
         OutputFormat::Json => {
-            warn!("The JSON format is deprecated for ad-hoc queries, see https://github.com/feldera/feldera/issues/4219 for the tracking issue.");
+            warn!(
+                "The JSON format is deprecated for ad-hoc queries, see https://github.com/feldera/feldera/issues/4219 for the tracking issue."
+            );
             AdHocResultFormat::Json
         }
         OutputFormat::ArrowIpc => AdHocResultFormat::ArrowIpc,

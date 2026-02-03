@@ -1,9 +1,10 @@
 use crate::compiler::util::{
-    checksum_file, cleanup_specific_directories, cleanup_specific_files, copy_file,
-    copy_file_if_checksum_differs, crate_name_pipeline_globals, crate_name_pipeline_main,
-    create_dir_if_not_exists, create_new_file, create_new_file_with_content, decode_string_as_dir,
-    pipeline_binary_filename, read_file_content, recreate_dir, recreate_file_with_content,
-    truncate_sha256_checksum, CleanupDecision, DirectoryContent, ProcessGroupTerminator, UtilError,
+    checksum_buffer, checksum_file, cleanup_specific_directories, cleanup_specific_files,
+    copy_file, copy_file_if_checksum_differs, crate_name_pipeline_globals,
+    crate_name_pipeline_main, create_dir_if_not_exists, create_new_file, decode_string_as_dir,
+    pipeline_binary_filename, program_info_filename, read_file_content, recreate_dir,
+    recreate_file_with_content, truncate_sha256_checksum, write_file, CleanupDecision,
+    DirectoryContent, ProcessGroupTerminator, UtilError,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -17,6 +18,7 @@ use crate::db::types::version::Version;
 use crate::error::source_error;
 use crate::has_unstable_feature;
 use chrono::{DateTime, Utc};
+use feldera_types::config::PipelineConfigProgramInfo;
 use futures_util::stream;
 use indoc::formatdoc;
 use openssl::sha;
@@ -108,7 +110,11 @@ pub async fn rust_compiler_task(
         if let Err(e) = &result {
             match e {
                 DBError::UnknownPipeline { pipeline_id } => {
-                    debug!("Rust worker {worker_id}: compilation canceled: pipeline {pipeline_id} no longer exists");
+                    debug!(
+                        pipeline_id = %pipeline_id,
+                        pipeline = "N/A",
+                        "Rust worker {worker_id}: compilation canceled: pipeline no longer exists"
+                    );
                 }
                 DBError::OutdatedProgramVersion {
                     outdated_version,
@@ -207,6 +213,7 @@ async fn attempt_end_to_end_rust_compilation(
         Some(db.clone()),
         tenant_id,
         pipeline.id,
+        Some(pipeline.name.clone()),
         &pipeline.platform_version,
         pipeline.program_version,
         &pipeline.program_config,
@@ -220,20 +227,23 @@ async fn attempt_end_to_end_rust_compilation(
     match compilation_result {
         Ok(RustCompilationResult {
             source_checksum,
-            integrity_checksum,
+            binary_integrity_checksum,
             binary_size,
+            program_info_integrity_checksum,
             profile,
             duration,
             rustc_result,
         }) => {
             info!(
-                "Rust compilation success: pipeline {} (program version: {}) (took {:.2}s; source checksum: {}; integrity checksum: {}, size: {} bytes, profile: {})",
-                pipeline.id,
+                pipeline_id = %pipeline.id,
+                pipeline = %pipeline.name,
+                "Rust compilation success (program version: {}) (took {:.2}s; source checksum: {}; binary integrity checksum: {}, size: {} bytes, program info integrity checksum: {}, profile: {})",
                 pipeline.program_version,
                 duration.as_secs_f64(),
                 truncate_sha256_checksum(&source_checksum),
-                truncate_sha256_checksum(&integrity_checksum),
+                truncate_sha256_checksum(&binary_integrity_checksum),
                 binary_size,
+                truncate_sha256_checksum(&program_info_integrity_checksum),
                 profile
             );
             db.lock()
@@ -244,27 +254,33 @@ async fn attempt_end_to_end_rust_compilation(
                     pipeline.program_version,
                     &rustc_result,
                     &source_checksum,
-                    &integrity_checksum,
+                    &binary_integrity_checksum,
+                    &program_info_integrity_checksum,
                 )
                 .await?;
         }
         Err(e) => match e {
             RustCompilationError::NoLongerExists => {
                 info!(
-                    "Rust compilation canceled: pipeline {} no longer exists",
-                    pipeline.id,
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "Rust compilation canceled: pipeline no longer exists"
                 );
             }
             RustCompilationError::Outdated => {
                 info!(
-                    "Rust compilation canceled: pipeline {} (program version: {}) is outdated",
-                    pipeline.id, pipeline.program_version,
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "Rust compilation canceled: program version {} is outdated",
+                    pipeline.program_version
                 );
             }
             RustCompilationError::TerminatedBySignal => {
                 error!(
-                    "Rust compilation interrupted: pipeline {} (program version: {}) compilation process was terminated by a signal",
-                    pipeline.id, pipeline.program_version,
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "Rust compilation interrupted: compilation process was terminated by a signal (program version: {})",
+                    pipeline.program_version
                 );
             }
             RustCompilationError::RustError(compilation_info) => {
@@ -278,8 +294,10 @@ async fn attempt_end_to_end_rust_compilation(
                     )
                     .await?;
                 info!(
-                    "Rust compilation failed: pipeline {} (program version: {}) due to Rust error",
-                    pipeline.id, pipeline.program_version
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "Rust compilation failed due to Rust error (program version: {})",
+                    pipeline.program_version
                 );
             }
             RustCompilationError::SystemError(internal_system_error) => {
@@ -292,9 +310,14 @@ async fn attempt_end_to_end_rust_compilation(
                         &internal_system_error,
                     )
                     .await?;
-                error!("Rust compilation failed: pipeline {} (program version: {}) due to system error:\n{}", pipeline.id, pipeline.program_version, internal_system_error);
+                error!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "Rust compilation failed due to system error (program version: {}): {internal_system_error}",
+                    pipeline.program_version
+                );
             }
-            RustCompilationError::BinaryUploadError(upload_error) => {
+            RustCompilationError::FileUploadError(upload_error) => {
                 db.lock()
                     .await
                     .transit_program_status_to_system_error(
@@ -304,7 +327,12 @@ async fn attempt_end_to_end_rust_compilation(
                         &upload_error,
                     )
                     .await?;
-                error!("Rust compilation failed: pipeline {} (program version: {}) due to binary upload error:\n{}", pipeline.id, pipeline.program_version, upload_error);
+                error!(
+                    pipeline_id = %pipeline.id,
+                    pipeline = %pipeline.name,
+                    "Rust compilation failed due to binary upload error (program version: {}): {upload_error}",
+                    pipeline.program_version
+                );
             }
         },
     }
@@ -348,19 +376,29 @@ fn calculate_source_checksum(
     hex::encode(hasher.finish())
 }
 
-/// Metadata for a compiled binary
+/// Metadata for a compiler output file (binary or program info)
 #[derive(Debug, Clone)]
-struct BinaryMetadata {
+struct FileUploadMetadata {
     pipeline_id: PipelineId,
     program_version: Version,
     source_checksum: String,
     integrity_checksum: String,
 }
 
-impl BinaryMetadata {
+impl FileUploadMetadata {
     /// Generate filename for the binary
-    fn filename(&self) -> String {
+    fn binary_filename(&self) -> String {
         pipeline_binary_filename(
+            &self.pipeline_id,
+            self.program_version,
+            &self.source_checksum,
+            &self.integrity_checksum,
+        )
+    }
+
+    /// Generate filename for the program info file
+    fn program_info_filename(&self) -> String {
+        program_info_filename(
             &self.pipeline_id,
             self.program_version,
             &self.source_checksum,
@@ -371,7 +409,7 @@ impl BinaryMetadata {
 
 /// Binary delivery mode for compiled pipeline binaries.
 #[derive(Debug, Clone)]
-pub enum BinaryDeliveryMode {
+pub enum FileDeliveryMode {
     /// Copy binary to local filesystem destination
     LocalCopy,
     /// Upload binary to HTTP endpoint
@@ -383,7 +421,7 @@ pub enum BinaryDeliveryMode {
     },
 }
 
-impl BinaryDeliveryMode {
+impl FileDeliveryMode {
     /// Create binary delivery mode from configuration
     pub fn from_config(config: &CompilerConfig) -> Self {
         match &config.binary_upload_endpoint {
@@ -424,8 +462,8 @@ pub enum RustCompilationError {
     RustError(RustCompilationInfo),
     /// General system problem occurred (e.g., I/O error)
     SystemError(String),
-    /// Binary upload to HTTP endpoint failed
-    BinaryUploadError(String),
+    /// File upload (binary or program info) to HTTP endpoint failed
+    FileUploadError(String),
 }
 
 /// Utility errors are system errors during Rust compilation.
@@ -443,22 +481,22 @@ impl From<UtilError> for RustCompilationError {
 /// Returns the final binary location/identifier.
 async fn deliver_binary(
     common_config: &CommonConfig,
-    delivery_mode: &BinaryDeliveryMode,
+    delivery_mode: &FileDeliveryMode,
     source_file_path: &Path,
-    metadata: &BinaryMetadata,
+    metadata: &FileUploadMetadata,
     pipeline_binaries_dir: &Path,
 ) -> Result<String, RustCompilationError> {
     match delivery_mode {
-        BinaryDeliveryMode::LocalCopy => {
+        FileDeliveryMode::LocalCopy => {
             // Original behavior: copy to local directory
-            let target_file_path = pipeline_binaries_dir.join(metadata.filename());
+            let target_file_path = pipeline_binaries_dir.join(metadata.binary_filename());
 
             // Copy binary from Cargo target profile directory to the pipeline-binaries directory
             copy_file(source_file_path, &target_file_path).await?;
 
             Ok(target_file_path.to_string_lossy().to_string())
         }
-        BinaryDeliveryMode::HttpUpload { .. } => {
+        FileDeliveryMode::HttpUpload { .. } => {
             // New behavior: upload to HTTP endpoint with retries
             upload_binary_to_endpoint_with_retries(
                 common_config,
@@ -471,17 +509,47 @@ async fn deliver_binary(
     }
 }
 
+async fn deliver_program_info(
+    common_config: &CommonConfig,
+    delivery_mode: &FileDeliveryMode,
+    program_info: &str,
+    metadata: &FileUploadMetadata,
+    pipeline_binaries_dir: &Path,
+) -> Result<(), RustCompilationError> {
+    match delivery_mode {
+        FileDeliveryMode::LocalCopy => {
+            // Original behavior: copy to local directory
+            let target_file_path = pipeline_binaries_dir.join(metadata.program_info_filename());
+
+            write_file(program_info.as_bytes(), &target_file_path).await?;
+
+            Ok(())
+        }
+        FileDeliveryMode::HttpUpload { .. } => {
+            // New behavior: upload to HTTP endpoint with retries
+            upload_program_info_to_endpoint_with_retries(
+                common_config,
+                delivery_mode,
+                program_info,
+                metadata,
+            )
+            .await?;
+            Ok(())
+        }
+    }
+}
+
 /// Uploads the compiled binary to an HTTP endpoint with retry logic.
 async fn upload_binary_to_endpoint_with_retries(
     common_config: &CommonConfig,
-    delivery_mode: &BinaryDeliveryMode,
+    delivery_mode: &FileDeliveryMode,
     binary_path: &Path,
-    metadata: &BinaryMetadata,
+    metadata: &FileUploadMetadata,
 ) -> Result<String, RustCompilationError> {
     let mut attempts = 0;
 
     let (endpoint, timeout_secs, max_retries, mut retry_delay_ms) = match delivery_mode {
-        BinaryDeliveryMode::HttpUpload {
+        FileDeliveryMode::HttpUpload {
             endpoint,
             timeout_secs,
             max_retries,
@@ -509,8 +577,11 @@ async fn upload_binary_to_endpoint_with_retries(
             Ok(result) => {
                 if attempts >= 1 {
                     info!(
-                        "Binary upload succeeded on attempt {} for pipeline {} (program version: {})",
-                        attempts, metadata.pipeline_id, metadata.program_version
+                        pipeline_id = %metadata.pipeline_id,
+                        pipeline = "N/A",
+                        "Binary upload succeeded on attempt {} (program version: {})",
+                        attempts,
+                        metadata.program_version
                     );
                 }
                 return Ok(result);
@@ -518,15 +589,102 @@ async fn upload_binary_to_endpoint_with_retries(
             Err(e) => {
                 if attempts > max_retries {
                     error!(
-                        "Binary upload failed after {} attempts for pipeline {} (program version: {}): {:?}",
-                        attempts, metadata.pipeline_id, metadata.program_version, e
+                        pipeline_id = %metadata.pipeline_id,
+                        pipeline = "N/A",
+                        "Binary upload failed after {} attempts (program version: {}): {:?}",
+                        attempts,
+                        metadata.program_version,
+                        e
                     );
                     return Err(e);
                 }
 
                 warn!(
-                    "Binary upload attempt {} failed for pipeline {} (program version: {}): {:?}. Retrying in {}ms...",
-                    attempts, metadata.pipeline_id, metadata.program_version, e, retry_delay_ms
+                    pipeline_id = %metadata.pipeline_id,
+                    pipeline = "N/A",
+                    "Binary upload attempt {} failed (program version: {}): {:?}. Retrying in {}ms...",
+                    attempts,
+                    metadata.program_version,
+                    e,
+                    retry_delay_ms
+                );
+
+                // Wait before retrying with exponential backoff
+                sleep(Duration::from_millis(retry_delay_ms)).await;
+                retry_delay_ms *= 2; // Double the delay for next attempt
+            }
+        }
+    }
+}
+
+/// Uploads program info to an HTTP endpoint with retry logic.
+async fn upload_program_info_to_endpoint_with_retries(
+    common_config: &CommonConfig,
+    delivery_mode: &FileDeliveryMode,
+    program_info: &str,
+    metadata: &FileUploadMetadata,
+) -> Result<String, RustCompilationError> {
+    let mut attempts = 0;
+
+    let (endpoint, timeout_secs, max_retries, mut retry_delay_ms) = match delivery_mode {
+        FileDeliveryMode::HttpUpload {
+            endpoint,
+            timeout_secs,
+            max_retries,
+            retry_delay_ms,
+        } => (endpoint, *timeout_secs, *max_retries, *retry_delay_ms),
+        _ => {
+            return Err(RustCompilationError::SystemError(
+                "Invalid delivery mode for HTTP upload".to_string(),
+            ))
+        }
+    };
+
+    loop {
+        attempts += 1;
+
+        match upload_program_info_to_endpoint(
+            common_config,
+            endpoint,
+            timeout_secs,
+            program_info,
+            metadata,
+        )
+        .await
+        {
+            Ok(result) => {
+                if attempts >= 1 {
+                    info!(
+                        pipeline_id = %metadata.pipeline_id,
+                        pipeline = "N/A",
+                        "Program info upload succeeded on attempt {} (program version: {})",
+                        attempts,
+                        metadata.program_version
+                    );
+                }
+                return Ok(result);
+            }
+            Err(e) => {
+                if attempts > max_retries {
+                    error!(
+                        pipeline_id = %metadata.pipeline_id,
+                        pipeline = "N/A",
+                        "Program info upload failed after {} attempts (program version: {}): {:?}",
+                        attempts,
+                        metadata.program_version,
+                        e
+                    );
+                    return Err(e);
+                }
+
+                warn!(
+                    pipeline_id = %metadata.pipeline_id,
+                    pipeline = "N/A",
+                    "Program info upload attempt {} failed (program version: {}): {:?}. Retrying in {}ms...",
+                    attempts,
+                    metadata.program_version,
+                    e,
+                    retry_delay_ms
                 );
 
                 // Wait before retrying with exponential backoff
@@ -543,11 +701,11 @@ async fn upload_binary_to_endpoint(
     endpoint: &str,
     timeout_secs: u64,
     binary_path: &Path,
-    metadata: &BinaryMetadata,
+    metadata: &FileUploadMetadata,
 ) -> Result<String, RustCompilationError> {
     // Open binary file for streaming
     let file = fs::File::open(binary_path).await.map_err(|e| {
-        RustCompilationError::BinaryUploadError(format!(
+        RustCompilationError::FileUploadError(format!(
             "Failed to open binary file '{}': {}",
             binary_path.display(),
             e
@@ -556,7 +714,7 @@ async fn upload_binary_to_endpoint(
 
     // Get file size for Content-Length header
     let file_metadata = file.metadata().await.map_err(|e| {
-        RustCompilationError::BinaryUploadError(format!(
+        RustCompilationError::FileUploadError(format!(
             "Failed to get file metadata '{}': {}",
             binary_path.display(),
             e
@@ -601,7 +759,7 @@ async fn upload_binary_to_endpoint(
         .send()
         .await
         .map_err(|e| {
-            RustCompilationError::BinaryUploadError(format!(
+            RustCompilationError::FileUploadError(format!(
                 "Failed to upload binary to '{}': {} ({})",
                 url,
                 &e,
@@ -616,7 +774,7 @@ async fn upload_binary_to_endpoint(
             .text()
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(RustCompilationError::BinaryUploadError(format!(
+        return Err(RustCompilationError::FileUploadError(format!(
             "Binary upload failed with status {}: {}",
             status, error_text
         )));
@@ -629,8 +787,79 @@ async fn upload_binary_to_endpoint(
         .unwrap_or_else(|_| endpoint.to_string());
 
     debug!(
-        "Successfully uploaded binary for pipeline {} (program version: {}) to {}",
-        metadata.pipeline_id, metadata.program_version, endpoint
+        pipeline_id = %metadata.pipeline_id,
+        pipeline = "N/A",
+        "Successfully uploaded binary (program version: {}) to {}",
+        metadata.program_version,
+        endpoint
+    );
+
+    Ok(response_text)
+}
+
+/// Uploads program info JSON file to an HTTP endpoint (single attempt) using streaming.
+async fn upload_program_info_to_endpoint(
+    common_config: &CommonConfig,
+    endpoint: &str,
+    timeout_secs: u64,
+    program_info: &str,
+    metadata: &FileUploadMetadata,
+) -> Result<String, RustCompilationError> {
+    let url = format!(
+        "{}/program_info/{}/{}/{}/{}",
+        endpoint.trim_end_matches('/'),
+        metadata.pipeline_id,
+        metadata.program_version,
+        metadata.source_checksum,
+        metadata.integrity_checksum
+    );
+
+    // Use the properly configured HTTP client from common_config
+    let client = common_config.reqwest_client().await;
+
+    // Send request with timeout
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("Content-Length", program_info.len().to_string())
+        .body(program_info.to_string())
+        .timeout(Duration::from_secs(timeout_secs))
+        .send()
+        .await
+        .map_err(|e| {
+            RustCompilationError::FileUploadError(format!(
+                "Failed to upload program info to '{}': {} ({})",
+                url,
+                &e,
+                source_error(&e)
+            ))
+        })?;
+
+    // Check response status
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(RustCompilationError::FileUploadError(format!(
+            "Program info upload failed with status {}: {}",
+            status, error_text
+        )));
+    }
+
+    // Get response body for any location information
+    let response_text = response
+        .text()
+        .await
+        .unwrap_or_else(|_| endpoint.to_string());
+
+    debug!(
+        pipeline_id = %metadata.pipeline_id,
+        pipeline = "N/A",
+        "Successfully uploaded program info (program version: {}) to {}",
+        metadata.program_version,
+        endpoint
     );
 
     Ok(response_text)
@@ -638,8 +867,9 @@ async fn upload_binary_to_endpoint(
 
 pub(super) struct RustCompilationResult {
     pub(super) source_checksum: String,
-    pub(super) integrity_checksum: String,
+    pub(super) binary_integrity_checksum: String,
     pub(super) binary_size: usize,
+    pub(super) program_info_integrity_checksum: String,
     pub(super) profile: CompilationProfile,
     pub(super) duration: Duration,
     pub(super) rustc_result: RustCompilationInfo,
@@ -656,10 +886,11 @@ pub async fn perform_rust_compilation(
     db: Option<Arc<Mutex<StoragePostgres>>>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
+    pipeline_name: Option<String>,
     platform_version: &str,
     program_version: Version,
     program_config: &serde_json::Value,
-    program_info: &Option<serde_json::Value>,
+    program_info_value: &Option<serde_json::Value>,
     udf_rust: &str,
     udf_toml: &str,
 ) -> Result<RustCompilationResult, RustCompilationError> {
@@ -688,9 +919,11 @@ pub async fn perform_rust_compilation(
     })?;
     let runtime_selector = program_config.runtime_version();
     assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
+    let pipeline_name_for_log = pipeline_name.clone().unwrap_or_else(|| "N/A".to_string());
     info!(
-        "Rust compilation started: pipeline {} (program version: {}{})",
-        pipeline_id,
+        pipeline_id = %pipeline_id,
+        pipeline = pipeline_name_for_log.as_str(),
+        "Rust compilation started (program version: {}{})",
         program_version,
         if !runtime_selector.is_platform() {
             format!(", runtime version: {runtime_selector}")
@@ -700,18 +933,18 @@ pub async fn perform_rust_compilation(
     );
 
     // Program info
-    let program_info = match program_info {
+    let program_info_value = match program_info_value {
         None => {
             return Err(RustCompilationError::SystemError(
                 "Unable to Rust compile pipeline program because its program information is missing".to_string()
             ));
         }
-        Some(program_info) => program_info.clone(),
+        Some(program_info_value) => program_info_value.clone(),
     };
-    let program_info = validate_program_info(&program_info).map_err(|error| {
+    let program_info = validate_program_info(&program_info_value).map_err(|error| {
         RustCompilationError::SystemError(formatdoc! {"
                 The program information:
-                {program_info:#}
+                {program_info_value:#}
 
                 ... is not valid due to: {error}.
 
@@ -753,50 +986,32 @@ pub async fn perform_rust_compilation(
     .await?;
 
     // Perform the compilation in the workspace
-    let (compilation_info, integrity_checksum, binary_size) = call_compiler(
-        common_config,
-        db,
-        tenant_id,
-        pipeline_id,
-        program_version,
-        config,
-        &source_checksum,
-        &profile,
-        &runtime_selector,
-    )
-    .await?;
+    let (compilation_info, binary_integrity_checksum, binary_size, program_info_integrity_checksum) =
+        call_compiler(
+            common_config,
+            db,
+            tenant_id,
+            pipeline_id,
+            pipeline_name.clone(),
+            program_version,
+            config,
+            &source_checksum,
+            &profile,
+            &runtime_selector,
+            &program_info.to_pipeline_config_program_info(),
+        )
+        .await?;
 
     Ok(RustCompilationResult {
         source_checksum,
-        integrity_checksum: integrity_checksum.clone(),
+        binary_integrity_checksum: binary_integrity_checksum.clone(),
         binary_size,
+        program_info_integrity_checksum,
         profile,
         duration: start.elapsed(),
         rustc_result: compilation_info,
     })
 }
-
-/// The `main` function which is injected in each generated pipeline crate
-/// by appending it to `main.rs`. This main function calls the `circuit()`
-/// function that is already generated by the SQL compiler in `main.rs`.
-const MAIN_FUNCTION: &str = r#"
-fn main() {
-    dbsp_adapters::server::server_main(|cconfig| {
-        circuit(cconfig)
-            .map(|(dbsp, catalog)| {
-                (
-                    dbsp,
-                    Box::new(catalog) as Box<dyn dbsp_adapters::CircuitCatalog>,
-                )
-            })
-            .map_err(|e| dbsp_adapters::ControllerError::dbsp_error(e))
-    })
-    .unwrap_or_else(|e| {
-        eprintln!("{e}");
-        std::process::exit(1);
-    });
-}
-"#;
 
 /// Checkout the requested runtime version.
 async fn checkout_runtime_version(
@@ -998,10 +1213,10 @@ async fn prepare_workspace(
     // PHASE 1: EXTRACT AND MODIFY
     //
     // Extract the result from the SQL compilation, and make modifications:
-    // (1) Set it to generate a binary instead of a library
-    // (2) Set the user-provided UDF code and dependencies
+    // (1) Save list of crates generated for later cleanup
+    // (2) Set the user-provided UDF code and integrate the UDF dependencies in Cargo.toml
     //
-    // The modifications such that they are accounted for in the copy logic
+    // The modifications are made such that they are accounted for in the copy logic
     // in the second phase (in particular, checksums which determine whether
     // a copy needs to occur).
 
@@ -1010,9 +1225,11 @@ async fn prepare_workspace(
     recreate_dir(&extract_dir).await?;
     decode_string_as_dir(main_rust, &extract_dir)?;
 
+    let crates_dir = extract_dir.join("crates");
+
     // List all crates in extracted
     let mut list_crates = vec![];
-    for (path, name, is_file) in DirectoryContent::new(&extract_dir).await?.content {
+    for (path, name, is_file) in DirectoryContent::new(&crates_dir).await?.content {
         if !is_file {
             list_crates.push((path, name));
         } else if name != "Cargo.toml" {
@@ -1050,44 +1267,10 @@ async fn prepare_workspace(
         }
     }
 
-    // Pipeline main crate: src/lib.rs -> src/main.rs
-    // ----------------------------------------------
-    // Converted into a Rust file which specifies a main instead, the file is renamed.
-    let lib_rs_path = extract_dir
-        .join(&pipeline_main_crate)
-        .join("src")
-        .join("lib.rs");
-    let main_rs_path = extract_dir
-        .join(&pipeline_main_crate)
-        .join("src")
-        .join("main.rs");
-    let mut main_rs_content = read_file_content(&lib_rs_path).await?;
-    main_rs_content.push_str(MAIN_FUNCTION);
-    #[cfg(feature = "feldera-enterprise")]
-    main_rs_content.push_str(
-        r#"extern crate dbsp_enterprise;
-extern crate sync_checkpoint;"#,
-    );
-    create_new_file_with_content(&main_rs_path, &main_rs_content).await?;
-    fs::remove_file(&lib_rs_path)
-        .await
-        .map_err(|e| UtilError::IoError(format!("removing file '{}'", lib_rs_path.display()), e))?;
-
-    // Pipeline main crate: Cargo.toml
-    // -------------------------------
-    // By default, the main crate produces a library instead of a binary.
-    // Rename the [lib] section to [[bin]], and changes the path therein.
-    let cargo_toml_path = extract_dir.join(&pipeline_main_crate).join("Cargo.toml");
-    let cargo_toml_content = read_file_content(&cargo_toml_path).await?.replace(
-        "[lib]\npath = \"src/lib.rs\"",
-        &format!("[[bin]]\nname = \"{pipeline_main_crate}\"\npath = \"src/main.rs\""),
-    );
-    recreate_file_with_content(&cargo_toml_path, &cargo_toml_content).await?;
-
     // Pipeline main crate: crates.json
     // --------------------------------
     // List all crates used for cleanup later.
-    let crates_json_path = extract_dir.join(&pipeline_main_crate).join("crates.json");
+    let crates_json_path = crates_dir.join(&pipeline_main_crate).join("crates.json");
     recreate_file_with_content(
         &crates_json_path,
         &serde_json::to_string_pretty(&list_crate_names).map_err(|e| {
@@ -1099,7 +1282,7 @@ extern crate sync_checkpoint;"#,
     // Pipeline globals crate: src/udf.rs
     // ----------------------------------
     // Copy over the user-defined UDF code, overriding the pre-existing content.
-    let udf_rs_path = extract_dir
+    let udf_rs_path = crates_dir
         .join(&pipeline_globals_crate)
         .join("src")
         .join("udf.rs");
@@ -1108,7 +1291,7 @@ extern crate sync_checkpoint;"#,
     // Pipeline globals crate: Cargo.toml
     // ----------------------------------
     // Copy over the user-defined UDF TOML dependencies.
-    let udf_cargo_toml_path = extract_dir.join(&pipeline_globals_crate).join("Cargo.toml");
+    let udf_cargo_toml_path = crates_dir.join(&pipeline_globals_crate).join("Cargo.toml");
     let udf_cargo_toml_content = read_file_content(&udf_cargo_toml_path).await?.replace(
         "[dependencies]",
         &formatdoc! {"
@@ -1211,70 +1394,9 @@ extern crate sync_checkpoint;"#,
     };
 
     // Workspace: Cargo.toml
-    // ---------------------
-    // Specifies the following:
-    // - The pipeline crate to compile (changed per compilation)
-    // - The possible profiles (same for all compilations)
-    // - The dependencies used the other crates (same for all compilations)
-    let cargo_toml = formatdoc! {r#"
-        [workspace]
-        members = [ "crates/{pipeline_main_crate}" ]
-        resolver = "2"
-
-        [profile.unoptimized]
-        inherits = "release"
-        opt-level = 0
-        lto = "off"
-        codegen-units = 256
-
-        [profile.optimized]
-        inherits = "release"
-
-        [profile.optimized_symbols]
-        inherits = "release"
-        debug = "line-tables-only"
-
-        [workspace.dependencies]
-        arcstr = {{ version = "1.2.0" }}
-        paste = {{ version = "1.0.12" }}
-        derive_more = {{ version = "0.99.17", features = ["add", "not", "from"] }}
-        dbsp = {{ path = "{}/crates/dbsp", features = ["backend-mode"] }}
-        dbsp_adapters = {{ path = "{}/crates/adapters" {}}}
-        feldera-types = {{ path = "{}/crates/feldera-types" }}
-        feldera-sqllib = {{ path = "{}/crates/sqllib" }}{}
-        serde = {{ version = "1.0", features = ["derive"] }}
-        compare = {{ version = "0.1.0" }}
-        size-of = {{ version = "0.1.5", package = "feldera-size-of" }}
-        serde_json = {{ version = "1.0.127", features = ["arbitrary_precision"] }}
-        rkyv = {{ version = "0.7.45", default-features = false, features = ["std", "size_64"] }}
-        tikv-jemallocator = {{ version = "0.6.0", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }}
-    "#,
-        runtime_sources, // Path: dbsp
-        runtime_sources, // Path: dbsp_adapters
-        if cfg!(feature = "feldera-enterprise") {
-             // Enterprise features for: dbsp_adapters
-             ", features = [\"feldera-enterprise\"] ".to_string()
-        } else {
-            "".to_string()
-        },
-        runtime_sources, // Path: feldera-types
-        runtime_sources, // Path: feldera-sqllib
-        if cfg!(feature = "feldera-enterprise") {
-            // Enterprise crate: dbsp-enterprise, sync-checkpoint
-            formatdoc! { r#"
-
-                dbsp-enterprise = {{ path = "{}/crates/dbsp-enterprise" }}
-                sync-checkpoint = {{ path = "{}/crates/sync-checkpoint" }}
-            "#,
-                runtime_sources,
-                runtime_sources
-            }
-        } else {
-            "".to_string()
-        }
-    };
-    let cargo_toml_file_path = workspace_dir.join("Cargo.toml");
-    recreate_file_with_content(&cargo_toml_file_path, &cargo_toml).await?;
+    let cargo_toml_source_path = extract_dir.join("Cargo.toml");
+    let cargo_toml_target_path = workspace_dir.join("Cargo.toml");
+    copy_file(&cargo_toml_source_path, &cargo_toml_target_path).await?;
 
     // Workspace: Cargo.lock
     // ---------------------
@@ -1305,12 +1427,14 @@ async fn call_compiler(
     db: Option<Arc<Mutex<StoragePostgres>>>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
+    pipeline_name: Option<String>,
     program_version: Version,
     config: &CompilerConfig,
     source_checksum: &str,
     profile: &CompilationProfile,
     runtime_selector: &RuntimeSelector,
-) -> Result<(RustCompilationInfo, String, usize), RustCompilationError> {
+    program_info: &PipelineConfigProgramInfo,
+) -> Result<(RustCompilationInfo, String, usize, String), RustCompilationError> {
     // Workspace directory
     let workspace_dir = config.working_dir().join("rust-compilation");
     if !workspace_dir.is_dir() {
@@ -1334,6 +1458,7 @@ async fn call_compiler(
     // Create pipeline-binaries directory if it does not yet exist
     let pipeline_binaries_dir = workspace_dir.join("pipeline-binaries");
     create_dir_if_not_exists(&pipeline_binaries_dir).await?;
+    let pipeline_name_for_log = pipeline_name.unwrap_or_else(|| "N/A".to_string());
 
     // Create file where stdout will be written to
     let stdout_file_path = pipeline_main_crate_dir.join("stdout.log");
@@ -1453,7 +1578,11 @@ async fn call_compiler(
                                 return Err(RustCompilationError::NoLongerExists);
                             }
                             Err(e) => {
-                                error!("Rust compilation outdated check failed due to database error: {e}")
+                                error!(
+                                    pipeline_id = %pipeline_id,
+                                    pipeline = pipeline_name_for_log.as_str(),
+                                    "Rust compilation outdated check failed due to database error: {e}"
+                                )
                                 // As preemption check failing is not fatal, compilation will continue
                             }
                         }
@@ -1503,31 +1632,59 @@ async fn call_compiler(
         }
 
         // Integrity checksum of the source file
-        let (file_size, integrity_checksum) = checksum_file(&source_file_path).await?;
+        let (file_size, binary_integrity_checksum) = checksum_file(&source_file_path).await?;
 
         // Create binary metadata
-        let metadata = BinaryMetadata {
+        let binary_metadata = FileUploadMetadata {
             pipeline_id,
             program_version,
             source_checksum: source_checksum.to_string(),
-            integrity_checksum: integrity_checksum.clone(),
+            integrity_checksum: binary_integrity_checksum.clone(),
         };
 
         // Determine binary delivery mode from configuration
-        let delivery_mode = BinaryDeliveryMode::from_config(config);
+        let delivery_mode = FileDeliveryMode::from_config(config);
 
         // Deliver binary according to the configured mode
         let _binary_location = deliver_binary(
             common_config,
             &delivery_mode,
             &source_file_path,
-            &metadata,
+            &binary_metadata,
+            &pipeline_binaries_dir,
+        )
+        .await?;
+
+        let program_info_str = serde_json::to_string(&program_info).map_err(|e| {
+            RustCompilationError::SystemError(format!("failed to serialize program info: {e}"))
+        })?;
+        // Integrity checksum of the source file
+        let program_info_integrity_checksum = checksum_buffer(program_info_str.as_bytes()).await?;
+
+        // Create binary metadata
+        let program_info_metadata = FileUploadMetadata {
+            pipeline_id,
+            program_version,
+            source_checksum: source_checksum.to_string(),
+            integrity_checksum: program_info_integrity_checksum.clone(),
+        };
+
+        deliver_program_info(
+            common_config,
+            &delivery_mode,
+            &program_info_str,
+            &program_info_metadata,
             &pipeline_binaries_dir,
         )
         .await?;
 
         // Success
-        Ok((compilation_info, integrity_checksum, file_size))
+        Ok((
+            compilation_info,
+            binary_integrity_checksum,
+            file_size,
+            program_info_integrity_checksum,
+        ))
     } else {
         Err(RustCompilationError::RustError(compilation_info))
     }
@@ -1614,7 +1771,7 @@ async fn cleanup_rust_compilation(
     // programs are retained. Older version binaries are deleted.
 
     // Retrieve existing pipeline programs
-    // (pipeline_id, program_version, program_binary_source_checksum, program_binary_integrity_checksum)
+    // (pipeline_id, program_version, program_binary_source_checksum, program_binary_integrity_checksum, program_info_integrity_checksum)
     let existing_pipeline_programs = db
         .lock()
         .await
@@ -1627,15 +1784,21 @@ async fn cleanup_rust_compilation(
     let valid_pipeline_binary_filenames: Vec<String> = existing_pipeline_programs
         .iter()
         .map(
-            |(pipeline_id, program_version, source_checksum, integrity_checksum)| {
-                if let (Some(source_checksum), Some(integrity_checksum)) =
-                    (source_checksum, integrity_checksum)
+            |(
+                pipeline_id,
+                program_version,
+                source_checksum,
+                binary_integrity_checksum,
+                _program_info_integrity_checksum,
+            )| {
+                if let (Some(source_checksum), Some(binary_integrity_checksum)) =
+                    (source_checksum, binary_integrity_checksum)
                 {
                     pipeline_binary_filename(
                         pipeline_id,
                         *program_version,
                         source_checksum,
-                        integrity_checksum,
+                        binary_integrity_checksum,
                     )
                 } else {
                     // this is when program status is 'CompilingRust'
@@ -1643,6 +1806,32 @@ async fn cleanup_rust_compilation(
                     // we don't want to delete such binaries, hence we keep a more relaxed matching pattern
                     // if either of the checksums is missing
                     format!("pipeline_{pipeline_id}_v{program_version}_")
+                }
+            },
+        )
+        .collect();
+
+    let valid_program_info_filenames: Vec<String> = existing_pipeline_programs
+        .iter()
+        .map(
+            |(
+                pipeline_id,
+                program_version,
+                source_checksum,
+                _binary_integrity_checksum,
+                program_info_integrity_checksum,
+            )| {
+                if let (Some(source_checksum), Some(program_info_integrity_checksum)) =
+                    (source_checksum, program_info_integrity_checksum)
+                {
+                    program_info_filename(
+                        pipeline_id,
+                        *program_version,
+                        source_checksum,
+                        program_info_integrity_checksum,
+                    )
+                } else {
+                    format!("program_info_{pipeline_id}_v{program_version}_")
                 }
             },
         )
@@ -1656,6 +1845,17 @@ async fn cleanup_rust_compilation(
                 move |filename: &str, _metadata: Option<std::fs::Metadata>| {
                     if filename.starts_with("pipeline_") {
                         if valid_pipeline_binary_filenames
+                            .iter()
+                            .any(|f| filename.starts_with(f))
+                        {
+                            CleanupDecision::Keep {
+                                motivation: filename.to_string(),
+                            }
+                        } else {
+                            CleanupDecision::Remove
+                        }
+                    } else if filename.starts_with("program_info_") {
+                        if valid_program_info_filenames
                             .iter()
                             .any(|f| filename.starts_with(f))
                         {
@@ -1937,8 +2137,8 @@ async fn cleanup_rust_compilation(
 #[cfg(test)]
 mod test {
     use crate::auth::TenantRecord;
+    use crate::compiler::rust_compiler::prepare_workspace;
     use crate::compiler::rust_compiler::{calculate_source_checksum, decide_cleanup};
-    use crate::compiler::rust_compiler::{prepare_workspace, MAIN_FUNCTION};
     use crate::compiler::test::{list_content_as_sorted_names, CompilerTest};
     use crate::compiler::util::{
         crate_name_pipeline_globals, crate_name_pipeline_main, read_file_content, CleanupDecision,
@@ -2059,7 +2259,7 @@ mod test {
             read_file_content(&main_crate_path.join("src").join("main.rs"))
                 .await
                 .unwrap()
-                .contains(MAIN_FUNCTION)
+                .contains("fn main")
         );
 
         // Globals crate
@@ -2099,13 +2299,13 @@ mod test {
         assert!(read_file_content(&workspace_toml_file)
             .await
             .unwrap()
-            .contains(&format!("members = [ \"crates/{main_crate_name}\" ]")));
+            .contains(&format!("members = [\n  \"crates/{main_crate_name}\"\n]")));
     }
 
     /// Tests the binary delivery mode configuration.
     #[tokio::test]
     async fn binary_delivery_mode_from_config() {
-        use crate::compiler::rust_compiler::BinaryDeliveryMode;
+        use crate::compiler::rust_compiler::FileDeliveryMode;
         use crate::config::CompilerConfig;
         use crate::db::types::program::CompilationProfile;
 
@@ -2124,8 +2324,8 @@ mod test {
             precompile: false,
         };
 
-        let delivery_mode = BinaryDeliveryMode::from_config(&config);
-        assert!(matches!(delivery_mode, BinaryDeliveryMode::LocalCopy));
+        let delivery_mode = FileDeliveryMode::from_config(&config);
+        assert!(matches!(delivery_mode, FileDeliveryMode::LocalCopy));
 
         // Test HTTP upload mode
         let config = CompilerConfig {
@@ -2136,9 +2336,9 @@ mod test {
             ..config
         };
 
-        let delivery_mode = BinaryDeliveryMode::from_config(&config);
+        let delivery_mode = FileDeliveryMode::from_config(&config);
         match delivery_mode {
-            BinaryDeliveryMode::HttpUpload {
+            FileDeliveryMode::HttpUpload {
                 endpoint,
                 timeout_secs,
                 max_retries,

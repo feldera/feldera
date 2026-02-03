@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use feldera_adapterlib::format::BufferSize;
-use feldera_adapterlib::transport::{parse_resume_info, InputReaderCommand, Resume, Watermark};
+use feldera_adapterlib::transport::{InputReaderCommand, Resume, Watermark, parse_resume_info};
 use feldera_types::config::FtModel;
 use std::cmp::min;
 use std::collections::VecDeque;
@@ -13,13 +13,13 @@ use std::ops::Range;
 use std::sync::{Arc, Mutex};
 use std::sync::{Barrier, Weak};
 use std::thread::{self};
-use tokio::sync::broadcast::{channel as broadcast_channel, Receiver as BroadcastReceiver};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::broadcast::{Receiver as BroadcastReceiver, channel as broadcast_channel};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use xxhash_rust::xxh3::Xxh3Default;
 
 use crate::format::InputBuffer;
 use crate::{InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint};
-use anyhow::{anyhow, Result as AnyResult};
+use anyhow::{Result as AnyResult, anyhow};
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
 use dbsp_nexmark::generator::RandomGenerator;
 use dbsp_nexmark::model::Event;
@@ -460,7 +460,7 @@ fn generate_thread(
             .map(|(table, writer)| {
                 let data = writer.into_inner().unwrap().into_inner();
                 let parser = &mut parsers[table];
-                let (buffer, _errors) = parser.parse(data.as_slice(), &None);
+                let (buffer, _errors) = parser.parse(data.as_slice(), None);
                 consumer.buffered(buffer.len());
                 buffer
             })

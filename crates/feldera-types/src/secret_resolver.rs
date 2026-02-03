@@ -1,7 +1,7 @@
 use crate::config::ConnectorConfig;
 use crate::secret_ref::{MaybeSecretRef, MaybeSecretRefParseError, SecretRef};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 use std::fmt::Debug;
@@ -22,18 +22,16 @@ pub enum SecretRefDiscoveryError {
 
 /// Discovers the secret references of the connector configuration.
 pub fn discover_secret_references_in_connector_config(
-    connector_config: &ConnectorConfig,
+    connector_config: &serde_json::Value,
 ) -> Result<BTreeSet<SecretRef>, SecretRefDiscoveryError> {
-    let json_value = serde_json::to_value(connector_config).map_err(|e| {
-        SecretRefDiscoveryError::SerializationFailed {
-            error: e.to_string(),
-        }
-    })?;
     let mut result = BTreeSet::new();
-    if let Some(transport_config_json) = json_value.get("transport").and_then(|v| v.get("config")) {
+    if let Some(transport_config_json) = connector_config
+        .get("transport")
+        .and_then(|v| v.get("config"))
+    {
         result.extend(discover_secret_references_in_json(transport_config_json)?);
     }
-    if let Some(format_config_json) = json_value.get("format").and_then(|v| v.get("config")) {
+    if let Some(format_config_json) = connector_config.get("format").and_then(|v| v.get("config")) {
         result.extend(discover_secret_references_in_json(format_config_json)?);
     }
     Ok(result)
@@ -82,7 +80,9 @@ pub fn default_secrets_directory() -> &'static Path {
 pub enum SecretRefResolutionError {
     #[error("{e}")]
     MaybeSecretRefParseFailed { e: MaybeSecretRefParseError },
-    #[error("secret reference '{secret_ref}' resolution failed: file '{path}' does exist but unable to read it due to: {error_kind}")]
+    #[error(
+        "secret reference '{secret_ref}' resolution failed: file '{path}' does exist but unable to read it due to: {error_kind}"
+    )]
     CannotReadSecretFile {
         secret_ref: SecretRef,
         path: String,
@@ -94,7 +94,9 @@ pub enum SecretRefResolutionError {
         "secret reference '{secret_ref}' resolution failed: path '{path}' is not a regular file"
     )]
     SecretPathIsNotRegularFile { secret_ref: SecretRef, path: String },
-    #[error("secret reference '{secret_ref}' resolution failed: cannot determine if '{path}' is an existing file due to: {error_kind}")]
+    #[error(
+        "secret reference '{secret_ref}' resolution failed: cannot determine if '{path}' is an existing file due to: {error_kind}"
+    )]
     SecretFileExistenceUnknown {
         secret_ref: SecretRef,
         path: String,
@@ -233,13 +235,13 @@ mod tests {
     use crate::config::{ConnectorConfig, TransportConfig};
     use crate::secret_ref::{MaybeSecretRef, SecretRef};
     use crate::secret_resolver::{
-        discover_secret_references_in_connector_config, discover_secret_references_in_json,
-        resolve_potential_secret_reference_string, resolve_secret_references_in_connector_config,
-        resolve_secret_references_in_json, SecretRefResolutionError,
+        SecretRefResolutionError, discover_secret_references_in_connector_config,
+        discover_secret_references_in_json, resolve_potential_secret_reference_string,
+        resolve_secret_references_in_connector_config, resolve_secret_references_in_json,
     };
     use serde_json::json;
     use std::collections::BTreeSet;
-    use std::fs::{create_dir_all, File};
+    use std::fs::{File, create_dir_all};
     use std::io::Write;
 
     #[test]
@@ -517,10 +519,8 @@ mod tests {
             },
             "index": "${secret:kubernetes:e/f}"
         });
-        let connector_config: ConnectorConfig =
-            serde_json::from_value(connector_config_json).unwrap();
         assert_eq!(
-            discover_secret_references_in_connector_config(&connector_config).unwrap(),
+            discover_secret_references_in_connector_config(&connector_config_json).unwrap(),
             BTreeSet::from([
                 SecretRef::Kubernetes {
                     name: "a".to_string(),
@@ -532,6 +532,10 @@ mod tests {
                 },
             ])
         );
+
+        let connector_config: ConnectorConfig =
+            serde_json::from_value(connector_config_json).unwrap();
+
         let connector_config_secrets_resolved =
             resolve_secret_references_in_connector_config(dir_path, &connector_config).unwrap();
 

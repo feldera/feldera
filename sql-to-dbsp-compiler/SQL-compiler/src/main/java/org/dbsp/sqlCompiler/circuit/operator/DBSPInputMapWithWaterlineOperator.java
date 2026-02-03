@@ -1,8 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.dbsp.sqlCompiler.circuit.IInputMapOperator;
-import org.dbsp.sqlCompiler.circuit.IMultiOutput;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
@@ -210,5 +208,11 @@ public class DBSPInputMapWithWaterlineOperator
                 node, "error", decoder, DBSPClosureExpression.class);
         return new DBSPInputMapWithWaterlineOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, keyFields,
                 outputType, originalRowType, metadata, name, initializer, timestamp, lub, filter, error);
+    }
+
+    public DBSPInputMapWithWaterlineOperator withMetadata(TableMetadata metadata) {
+        return new DBSPInputMapWithWaterlineOperator(this.getRelNode(), this.sourceName, this.keyFields,
+                this.getOutputIndexedZSetType(), this.originalRowType, metadata, this.tableName,
+                this.initializer, this.timestamp, this.lub, this.filter, this.error);
     }
 }

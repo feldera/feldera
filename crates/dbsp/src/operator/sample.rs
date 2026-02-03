@@ -1,12 +1,12 @@
 use crate::{
+    RootCircuit, Stream, ZWeight,
     dynamic::DynPair,
     operator::dynamic::sample::StreamSampleUniqueKeyValsFactories,
     trace::BatchReaderFactories,
     typed_batch::{DynVecZSet, IndexedZSetReader, TypedBatch},
-    RootCircuit, Stream, ZWeight,
 };
 
-pub use crate::operator::dynamic::sample::{default_quantiles, MAX_QUANTILES, MAX_SAMPLE_SIZE};
+pub use crate::operator::dynamic::sample::{MAX_QUANTILES, MAX_SAMPLE_SIZE, default_quantiles};
 use crate::utils::Tup2;
 
 impl<B> Stream<RootCircuit, B>

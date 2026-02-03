@@ -1,12 +1,12 @@
-use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use aws_msk_iam_sasl_signer::generate_auth_token;
 use dbsp::circuit::tokio::TOKIO;
 use feldera_types::transport::kafka::{KafkaHeader, KafkaLogLevel};
 use parquet::data_type::AsBytes;
+use rdkafka::Statistics;
 use rdkafka::client::OAuthToken;
 use rdkafka::message::{Header, OwnedHeaders, ToBytes};
 use rdkafka::producer::{BaseRecord, ProducerContext, ThreadedProducer};
-use rdkafka::Statistics;
 use rdkafka::{
     client::{Client as KafkaClient, ClientContext},
     config::RDKafkaLogLevel,
@@ -274,9 +274,10 @@ where
                     // Start warning after hitting max polling interval
                     if polling_interval >= MAX_POLLING_INTERVAL {
                         warn!(
-                                "Attempts to send a message to Kafka topic '{}' have failed for {:?}, will keep retrying (error: {e})",
-                                &topic, start.unwrap().elapsed()
-                            );
+                            "Attempts to send a message to Kafka topic '{}' have failed for {:?}, will keep retrying (error: {e})",
+                            &topic,
+                            start.unwrap().elapsed()
+                        );
                     }
 
                     sleep(polling_interval);

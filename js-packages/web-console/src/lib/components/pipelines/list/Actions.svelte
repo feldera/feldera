@@ -39,33 +39,30 @@ groups related actions into multi-action dropdowns when multiple options are ava
 -->
 
 <script lang="ts">
-  import {
-    type ExtendedPipeline,
-    type Pipeline,
-    type PipelineAction
-  } from '$lib/services/pipelineManager'
-  import { match, P } from 'ts-pattern'
-  import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
-  import JSONbig from 'true-json-bigint'
-  import { goto } from '$app/navigation'
-  import { resolve } from '$lib/functions/svelte'
-  import Tooltip from '$lib/components/common/Tooltip.svelte'
-  import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
-  import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
-  import { useToast } from '$lib/compositions/useToastNotification'
-  import { getDeploymentStatusLabel, isPipelineShutdown } from '$lib/functions/pipelines/status'
-  import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import Popup from '$lib/components/common/Popup.svelte'
   import { slide } from 'svelte/transition'
+  import JSONbig from 'true-json-bigint'
+  import { match, P } from 'ts-pattern'
+  import { goto } from '$app/navigation'
+  import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
+  import { Popover } from '$lib/components/common/Popover.svelte'
+  import Popup from '$lib/components/common/Popup.svelte'
+  import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
+  import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
+  import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
-  import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
+  import { useToast } from '$lib/compositions/useToastNotification'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
+  import { getDeploymentStatusLabel, isPipelineShutdown } from '$lib/functions/pipelines/status'
+  import { resolve } from '$lib/functions/svelte'
+  import type { ExtendedPipeline, Pipeline, PipelineAction } from '$lib/services/pipelineManager'
 
-  let {
+  const {
     pipeline,
     onDeletePipeline,
     editConfigDisabled,
@@ -119,7 +116,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     _storage_indicator
   }
 
-  let isPremium = usePremiumFeatures()
+  const isPremium = usePremiumFeatures()
 
   const stopButtons = isPremium.value
     ? (['_stop', '_kill'] as const)
@@ -324,12 +321,12 @@ groups related actions into multi-action dropdowns when multiple options are ava
   const buttonClass = 'btn'
   const iconClass = 'text-[20px]'
   const shortClass = 'w-9'
-  const longClass = 'w-[104px] sm:w-[136px] justify-between pl-2 gap-2 text-sm sm:text-base'
+  const longClass = 'w-[104px] sm:w-[136px] justify-between pl-2! gap-2 text-sm sm:text-base'
   const shortColor = 'preset-tonal-surface'
   const basicBtnColor = 'preset-filled-surface-100-900'
   const importantBtnColor = 'preset-filled-primary-500'
 
-  const { postPipelineAction } = usePipelineAction()
+  const { postPipelineAction } = getPipelineAction()
   const pipelineActionCallbacks = usePipelineActionCallbacks()
 
   const performStartAction = async (
@@ -517,7 +514,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       <span>Suspend</span>
     </button>
     <div class="-mx-2 h-full border-l-[2px] border-surface-50-950"></div>
-    <button class="fd fd-chevron-down btn btn-icon text-[20px]"> </button>
+    <button class="fd fd-chevron-down btn-icon text-[20px]"> </button>
   </div> -->
 
   {#each active as name}
@@ -538,12 +535,12 @@ groups related actions into multi-action dropdowns when multiple options are ava
     {#snippet trigger(toggle)}
       <div class="flex flex-nowrap p-0">
         <div class="w-[58px] sm:w-[140px]">
-          {@render primeButtonConfig.standaloneButton()}
+          {@render primeButtonConfig?.standaloneButton()}
         </div>
         <div class="z-10 -ml-6 h-9 border-l-[2px] border-surface-50-950"></div>
         <button
           onclick={toggle}
-          class="fd fd-chevron-down btn btn-icon z-10 w-8 !rounded-l-none text-[24px] {config.buttonClass}"
+          class="fd fd-chevron-down z-10 btn-icon h-5 w-5 !rounded-l-none text-[24px] {config.buttonClass}"
           aria-label={config.ariaLabel}
         >
         </button>
@@ -563,7 +560,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       })}
       <div
         transition:slide={{ duration: 100 }}
-        class="bg-white-dark absolute z-30 mt-2 flex max-h-[400px] w-[calc(100vw-36px)] max-w-[340px] -translate-x-4 flex-col justify-stretch rounded shadow-md scrollbar sm:max-w-[380px] sm:translate-x-0"
+        class="bg-white-dark absolute z-30 mt-2 scrollbar flex max-h-[400px] w-[calc(100vw-36px)] max-w-[300px] -translate-x-4 flex-col justify-stretch rounded shadow-md sm:max-w-[380px] sm:translate-x-0"
       >
         {#each buttons as button}
           <button
@@ -632,12 +629,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     </button>
   </div>
   {#if editConfigDisabled}
-    <Tooltip
-      class="bg-white-dark z-20 whitespace-nowrap rounded text-surface-950-50"
-      placement="top"
-    >
-      Stop the pipeline to delete it
-    </Tooltip>
+    <Tooltip class="whitespace-nowrap" placement="top">Stop the pipeline to delete it</Tooltip>
   {/if}
 {/snippet}
 {#snippet start({
@@ -680,9 +672,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     disabled: unsavedChanges
   })}
   {#if unsavedChanges}
-    <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
-      Save the program before running
-    </Tooltip>
+    <Tooltip placement="top">Save the program before running</Tooltip>
   {/if}
 {/snippet}
 {#snippet _start_paused()}
@@ -692,9 +682,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     disabled: unsavedChanges
   })}
   {#if unsavedChanges}
-    <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
-      Save the program before running
-    </Tooltip>
+    <Tooltip placement="top">Save the program before running</Tooltip>
   {/if}
 {/snippet}
 {#snippet _resume()}
@@ -704,9 +692,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     disabled: unsavedChanges
   })}
   {#if unsavedChanges}
-    <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
-      Save the program before running
-    </Tooltip>
+    <Tooltip placement="top">Save the program before running</Tooltip>
   {/if}
 {/snippet}
 {#snippet _standby()}
@@ -715,9 +701,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     getAction: () => 'standby',
     disabled: unsavedChanges
   })}
-  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
-    Put the pipeline in standby mode
-  </Tooltip>
+  <Tooltip placement="top">Put the pipeline in standby mode</Tooltip>
 {/snippet}
 {#snippet _activate()}
   {@render start({
@@ -725,24 +709,18 @@ groups related actions into multi-action dropdowns when multiple options are ava
     getAction: () => 'activate',
     disabled: unsavedChanges
   })}
-  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
-    Activate the pipeline to start data ingress and processing
-  </Tooltip>
+  <Tooltip placement="top">Activate the pipeline to start data ingress and processing</Tooltip>
 {/snippet}
 {#snippet _start_disabled()}
   {@render start({ text: 'Start', disabled: true })}
 {/snippet}
 {#snippet _start_error()}
   {@render _start_disabled()}
-  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
-    Resolve errors before running
-  </Tooltip>
+  <Tooltip placement="top">Resolve errors before running</Tooltip>
 {/snippet}
 {#snippet _start_pending()}
   {@render _start_disabled()}
-  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
-    Wait for compilation to complete
-  </Tooltip>
+  <Tooltip placement="top">Wait for compilation to complete</Tooltip>
 {/snippet}
 {#snippet _pause()}
   <button
@@ -788,11 +766,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     </button>
   </div>
   {#if !isPremium.value}
-    <Tooltip
-      activeContent
-      class="bg-white-dark z-20 w-max max-w-[90vw] rounded text-base text-surface-950-50"
-      placement="bottom"
-    >
+    <Popover class="w-max max-w-[90vw]" placement="bottom">
       Stopping pipelines gracefully is only available in the Enterprise edition.<br />
       <a
         class="block pt-2 underline"
@@ -800,7 +774,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         target="_blank"
         rel="noreferrer">Upgrade</a
       >
-    </Tooltip>
+    </Popover>
   {/if}
 {/snippet}
 {#snippet _kill_short()}
@@ -811,9 +785,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     >
     </button>
   </div>
-  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top"
-    >Force Stop</Tooltip
-  >
+  <Tooltip placement="top">Force Stop</Tooltip>
 {/snippet}
 {#snippet _kill()}
   <button
@@ -840,7 +812,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     >
     </button>
   </div>
-  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
+  <Tooltip placement="top">
     {#if unsavedChanges}
       Save file: Ctrl + S
     {:else}
@@ -861,7 +833,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     Cancel start
     <div></div>
   </button>
-  <Tooltip class="bg-white-dark z-20 whitespace-nowrap rounded text-surface-950-50" placement="top">
+  <Tooltip class="whitespace-nowrap" placement="top">
     The pipeline is scheduled to start automatically after compilation
   </Tooltip>
 {/snippet}
@@ -902,9 +874,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   >
   </button>
   {#if editConfigDisabled}
-    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
-      Stop the pipeline to edit settings
-    </Tooltip>
+    <Tooltip placement="top">Stop the pipeline to edit settings</Tooltip>
   {/if}
 {/snippet}
 {#snippet _configureProgram()}
@@ -914,22 +884,16 @@ groups related actions into multi-action dropdowns when multiple options are ava
   >
   </button>
   {#if editConfigDisabled}
-    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
-      Stop the pipeline to edit settings
-    </Tooltip>
+    <Tooltip placement="top">Stop the pipeline to edit settings</Tooltip>
   {/if}
 {/snippet}
 {#snippet _configurations()}
   <PipelineConfigurationsPopup {pipeline} pipelineBusy={editConfigDisabled}
   ></PipelineConfigurationsPopup>
   {#if editConfigDisabled}
-    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
-      Stop the pipeline to edit settings
-    </Tooltip>
+    <Tooltip placement="top">Stop the pipeline to edit settings</Tooltip>
   {:else}
-    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
-      Compilation and runtime configuration
-    </Tooltip>
+    <Tooltip placement="top">Compilation and runtime configuration</Tooltip>
   {/if}
 {/snippet}
 {#snippet _spacer_short()}
@@ -963,7 +927,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   {@const isShutdown = isPipelineShutdown(pipeline.current.status)}
   {#if storageStatus === 'Clearing'}
     <div
-      class="flex h-9 w-[120px] items-center gap-2 rounded pl-2 !ring-2 preset-outlined-primary-500"
+      class="flex h-9 w-[120px] items-center gap-2 rounded preset-outlined-primary-500 pl-2 !ring-2"
     >
       <div class="fd fd-database text-[20px]"></div>
       <div class="w-10"></div>
@@ -971,14 +935,12 @@ groups related actions into multi-action dropdowns when multiple options are ava
         <IconLoader class="h-5 flex-none animate-spin fill-surface-50-950"></IconLoader>
       </div>
     </div>
-    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
-      Clearing pipeline storage, including any checkpoints.
-    </Tooltip>
+    <Tooltip placement="top">Clearing pipeline storage, including any checkpoints.</Tooltip>
   {:else}
     <div
-      class="rounded !ring-2 {isShutdown && storageStatus === 'InUse'
+      class=" rounded-base border-2! {isShutdown && storageStatus === 'InUse'
         ? 'preset-outlined-primary-500'
-        : 'preset-outlined-surface-200-800'} flex h-9 w-[120px] items-center gap-2 pl-2"
+        : 'preset-outlined-surface-200-800'} flex h-9 w-[120px] items-center gap-2 pl-1.5! text-nowrap"
     >
       <div
         class="fd {storageStatus === 'InUse' ? 'fd-database' : 'fd-database-off'}  text-[20px]"
@@ -992,7 +954,8 @@ groups related actions into multi-action dropdowns when multiple options are ava
       </div>
       {#if storageStatus === 'InUse'}
         <button
-          class="fd fd-eraser btn rounded p-2 text-[20px] {isShutdown && storageStatus === 'InUse'
+          class="fd fd-eraser btn-icon rounded p-2 text-[20px] {isShutdown &&
+          storageStatus === 'InUse'
             ? ' preset-filled-primary-500'
             : ' disabled preset-filled-surface-200-800'}"
           onclick={() => (globalDialog.dialog = clearDialog)}
@@ -1023,7 +986,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     <div class="pointer-events-none {buttonClass} {shortClass} {shortColor}">
       <IconLoader class="h-5 flex-none  animate-spin fill-surface-950-50"></IconLoader>
     </div>
-    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+    <Tooltip placement="top">
       The pipeline storage is being deleted, and provisioned resources deallocated.
     </Tooltip>
   {:else}
@@ -1039,7 +1002,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       >
       </button>
     </div>
-    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+    <Tooltip placement="top">
       {#if storageStatus === 'Cleared'}
         Pipeline is not using any storage.
       {:else if isShutdown}

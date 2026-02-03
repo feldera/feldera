@@ -1,30 +1,30 @@
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
+use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::buffer_cache::CacheStats;
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::trace::cursor::{DelegatingCursor, PushCursor};
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
-use crate::trace::{BatchLocation, MergeCursor};
+use crate::trace::{BatchLocation, GroupFilter, MergeCursor};
 use crate::{
+    DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
         DataTrait, DynDataTyped, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait,
     },
     storage::file::reader::Error as ReaderError,
     trace::{
-        ord::merge_batcher::MergeBatcher, Batch, BatchFactories, BatchReader, BatchReaderFactories,
-        Builder, FileValBatch, FileValBatchFactories, Filter, VecValBatch, VecValBatchFactories,
-        WeightedItem,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, FileValBatch,
+        FileValBatchFactories, Filter, VecValBatch, VecValBatchFactories, WeightedItem,
+        ord::merge_batcher::MergeBatcher,
     },
-    DBData, DBWeight, NumEntries, Timestamp,
 };
 use derive_more::Debug;
 use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
-use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
-
-use super::utils::{copy_to_builder, pick_merge_destination};
 
 pub struct FallbackValBatchFactories<K, V, T, R>
 where
@@ -243,7 +243,7 @@ where
     fn merge_cursor(
         &self,
         key_filter: Option<Filter<Self::Key>>,
-        value_filter: Option<Filter<Self::Val>>,
+        value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         match &self.inner {
             Inner::Vec(vec) => vec.merge_cursor(key_filter, value_filter),
@@ -274,10 +274,10 @@ where
     }
 
     #[inline]
-    fn filter_size(&self) -> usize {
+    fn filter_stats(&self) -> BloomFilterStats {
         match &self.inner {
-            Inner::File(file) => file.filter_size(),
-            Inner::Vec(vec) => vec.filter_size(),
+            Inner::File(file) => file.filter_stats(),
+            Inner::Vec(vec) => vec.filter_stats(),
         }
     }
 

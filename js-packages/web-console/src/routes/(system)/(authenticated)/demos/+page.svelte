@@ -1,18 +1,18 @@
 <script lang="ts">
-  import { resolve } from '$lib/functions/svelte'
-  import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
-  import DemoTile from '$lib/components/other/DemoTile.svelte'
-  import { Segment } from '@skeletonlabs/skeleton-svelte'
-  import type { PageData } from './$types'
+  import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
-  import BookADemo from '$lib/components/other/BookADemo.svelte'
-  import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
-  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
-  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import Footer from '$lib/components/layout/Footer.svelte'
+  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
+  import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
+  import BookADemo from '$lib/components/other/BookADemo.svelte'
+  import DemoTile from '$lib/components/other/DemoTile.svelte'
+  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
+  import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import { nubLast } from '$lib/functions/common/array'
+  import { resolve } from '$lib/functions/svelte'
+  import type { PageData } from './$types'
 
-  let { data }: { data: PageData } = $props()
+  const { data }: { data: PageData } = $props()
   let demosType = $state('All')
   const drawer = useAdaptiveDrawer('right')
   const breadcrumbs = $derived([
@@ -45,8 +45,8 @@
     {#if drawer.isMobileDrawer}
       <button
         onclick={() => (drawer.value = !drawer.value)}
-        class="fd fd-book-open btn-icon flex text-[20px] preset-tonal-surface"
-        aria-label="Open extras drawer"
+        class="fd fd-book-open btn-icon flex preset-tonal-surface text-[20px]"
+        aria-label="Open the right navigation drawer"
       >
       </button>
     {:else}
@@ -55,28 +55,27 @@
         <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
         ></CreatePipelineButton>
       </div>
-      <BookADemo class="preset-filled-primary-500">Book a demo</BookADemo>
+      <BookADemo class="btn preset-filled-primary-500">Book a demo</BookADemo>
     {/if}
   {/snippet}
 </AppHeader>
 <div class="px-2 pb-5 md:px-8">
-  <Segment
-    bind:value={demosType}
-    background="preset-filled-surface-50-950"
-    indicatorBg="bg-white-dark shadow"
-    indicatorText=""
-    border="p-1"
-    rounded="rounded"
-    gap="sm:gap-2"
-  >
-    {#each types as type}
-      <Segment.Item value={type} base="btn cursor-pointer z-[1] px-5 sm:px-8 h-6 text-sm">
-        {plurals[type] ?? type}
-      </Segment.Item>
-    {/each}
-  </Segment>
+  <SegmentedControl value={demosType} onValueChange={(e) => e.value && (demosType = e.value)}>
+    <SegmentedControl.Label />
+    <SegmentedControl.Control class="rounded preset-filled-surface-50-950 p-1 sm:gap-2">
+      <SegmentedControl.Indicator class="bg-white-dark shadow" />
+      {#each types as type}
+        <SegmentedControl.Item value={type} class="z-1 btn h-6 cursor-pointer px-5 text-sm sm:px-8">
+          <SegmentedControl.ItemText class="text-surface-950-50">
+            {plurals[type] ?? type}
+          </SegmentedControl.ItemText>
+          <SegmentedControl.ItemHiddenInput />
+        </SegmentedControl.Item>
+      {/each}
+    </SegmentedControl.Control>
+  </SegmentedControl>
 </div>
-<div class="flex h-full flex-col justify-between overflow-y-auto scrollbar">
+<div class="scrollbar flex h-full flex-col justify-between overflow-y-auto">
   <div
     class="grid grid-cols-1 gap-x-6 gap-y-5 px-2 sm:grid-cols-2 md:px-8 lg:grid-cols-3 2xl:grid-cols-5"
   >

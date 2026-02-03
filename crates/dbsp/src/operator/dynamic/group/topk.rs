@@ -2,6 +2,7 @@ use dyn_clone::clone_box;
 
 use super::{DiffGroupTransformer, Monotonicity, NonIncrementalGroupTransformer};
 use crate::{
+    DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
     algebra::{
         AddAssignByRef, HasOne, HasZero, IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories,
         ZCursor, ZRingValue,
@@ -9,7 +10,6 @@ use crate::{
     dynamic::{DataTrait, DynData, DynUnit, Erase, Factory, WeightTrait},
     operator::dynamic::MonoIndexedZSet,
     trace::{BatchReaderFactories, OrdIndexedWSetFactories},
-    DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
 };
 use std::{marker::PhantomData, ops::Neg};
 
@@ -533,19 +533,19 @@ where
             if w > 0 {
                 count += w;
                 let key = cursor.key();
-                if let Some(prev_key) = &prev_key {
-                    if !(self.rank_eq_func)(key, prev_key.as_ref()) {
-                        // Rank stays the same while iterating over equal-ranked elements,
-                        // and then increases by one when computing dense ranking or skips
-                        // to `count` otherwise.
-                        if self.dense {
-                            rank += 1;
-                        } else {
-                            rank = count;
-                        }
-                        if rank as usize > self.k {
-                            break;
-                        }
+                if let Some(prev_key) = &prev_key
+                    && !(self.rank_eq_func)(key, prev_key.as_ref())
+                {
+                    // Rank stays the same while iterating over equal-ranked elements,
+                    // and then increases by one when computing dense ranking or skips
+                    // to `count` otherwise.
+                    if self.dense {
+                        rank += 1;
+                    } else {
+                        rank = count;
+                    }
+                    if rank as usize > self.k {
+                        break;
                     }
                 };
 

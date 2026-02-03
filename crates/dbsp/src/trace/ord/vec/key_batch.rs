@@ -1,19 +1,21 @@
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
+    DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
         DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
         LeanVec, WeightTrait, WithFactory,
     },
     trace::{
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
+        Serializer, WeightedItem,
         cursor::Position,
         layers::{
             Cursor as TrieCursor, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
             OrdOffset, Trie,
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Serializer, WeightedItem,
     },
     utils::{ConsolidatePairedSlices, Tup2},
-    DBData, DBWeight, NumEntries, Timestamp,
 };
 use feldera_storage::FileReader;
 use rand::Rng;
@@ -23,8 +25,6 @@ use std::{
     fmt::{self, Debug, Display},
     sync::Arc,
 };
-
-use crate::trace::ord::merge_batcher::MergeBatcher;
 
 pub struct VecKeyBatchFactories<K, T, R>
 where
@@ -315,8 +315,8 @@ where
         self.layer.approximate_byte_size()
     }
 
-    fn filter_size(&self) -> usize {
-        0
+    fn filter_stats(&self) -> BloomFilterStats {
+        BloomFilterStats::default()
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)

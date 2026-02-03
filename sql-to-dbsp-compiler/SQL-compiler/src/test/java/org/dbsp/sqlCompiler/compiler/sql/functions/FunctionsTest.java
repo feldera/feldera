@@ -2309,13 +2309,13 @@ public class FunctionsTest extends SqlIoTest {
                Cannot apply indexing to arguments of type <BINARY(1)>[<INTEGER>]. Supported form(s): <ARRAY>[<INTEGER>]
                <MAP>[<ANY>]
                <ROW>[<CHARACTER>|<INTEGER>]
-               <VARIANT>[<ANY>]""");
+               <VARIANT>[<CHARACTER>|<INTEGER>]""");
         this.statementsFailingInCompilation(
                 "CREATE VIEW map_item_illegal AS SELECT x''['a'];", """
                Cannot apply indexing to arguments of type <BINARY(0)>[<CHAR(1)>]. Supported form(s): <ARRAY>[<INTEGER>]
                <MAP>[<ANY>]
                <ROW>[<CHARACTER>|<INTEGER>]
-               <VARIANT>[<ANY>]""");
+               <VARIANT>[<CHARACTER>|<INTEGER>]""");
     }
 }
 

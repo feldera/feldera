@@ -1,11 +1,11 @@
 use anyhow::Result;
 
-use rand::rngs::{mock::StepRng, SmallRng};
+use rand::rngs::{SmallRng, mock::StepRng};
 
 use dbsp::mimalloc::MiMalloc;
 use dbsp_nexmark::{
     config::GeneratorOptions,
-    generator::{config::Config, NexmarkGenerator},
+    generator::{NexmarkGenerator, config::Config},
 };
 
 #[global_allocator]
@@ -14,7 +14,7 @@ static ALLOC: MiMalloc = MiMalloc;
 use rand::SeedableRng;
 
 macro_rules! with_rng {
-    ($num_event_generators:expr, $rng_name:expr, $rng:expr, $reps:expr, $show_intermediate:expr) => {{
+    ($num_event_generators:expr_2021, $rng_name:expr_2021, $rng:expr_2021, $reps:expr_2021, $show_intermediate:expr_2021) => {{
         let count = 1_000_000;
         let reps = $reps;
         let num_event_generators = $num_event_generators;
@@ -62,7 +62,7 @@ macro_rules! with_rng {
 }
 
 macro_rules! just_rng {
-    ($rng_name:expr, $rng:expr) => {{
+    ($rng_name:expr_2021, $rng:expr_2021) => {{
         use rand::Rng;
 
         let count = 10_000_000;

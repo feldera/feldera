@@ -25,13 +25,18 @@ import java.util.List;
 import java.util.Objects;
 
 public final class DBSPIntegrateTraceRetainKeysOperator
-        extends DBSPBinaryOperator implements GCOperator
+        extends DBSPBinaryOperator implements IGCOperator
 {
     public DBSPIntegrateTraceRetainKeysOperator(
             CalciteRelNode node, DBSPExpression expression,
             OutputPort data, OutputPort control) {
         super(node, "accumulate_integrate_trace_retain_keys", expression,
-                data.outputType(), data.isMultiset(), data, control, false);
+                data.outputType(), data.isMultiset(), data, control);
+    }
+
+    @Override
+    public DBSPSimpleOperator asOperator() {
+        return this;
     }
 
     /** Create an operator to retain keys and returns it.  May return null if the keys contain no fields. */

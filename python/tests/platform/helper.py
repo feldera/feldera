@@ -18,12 +18,13 @@ import logging
 import pytest
 import requests
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional, Callable
 from http import HTTPStatus
 from urllib.parse import quote, quote_plus
 
 from feldera.testutils_oidc import get_oidc_test_helper
 from tests import FELDERA_REQUESTS_VERIFY, API_KEY, BASE_URL, unique_pipeline_name
+from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 API_PREFIX = "/v0"
 
@@ -115,8 +116,20 @@ def delete(path: str, **kw) -> requests.Response:
     return http_request("DELETE", path, **kw)
 
 
-def wait_for_deployment_status(name: str, desired: str, timeout_s: float = 60.0):
-    deadline = time.time() + timeout_s
+def wait_for_deployment_status(
+    name: str, desired: str | Callable[[str], bool], timeout_s: float = 60.0
+):
+    """
+    Wait until pipeline 'name' has 'desired' deployment status:
+
+    - If 'desired' is a string, until that is the status.
+
+    - If 'desired' is a function, until it returns true when passed
+      the deployment status.
+    """
+    print(f"Waiting up to {timeout_s} seconds for {name} to transition to {desired}")
+    start = time.time()
+    deadline = start + timeout_s
     last = None
     while time.time() < deadline:
         r = get_pipeline(name, "status")
@@ -124,8 +137,11 @@ def wait_for_deployment_status(name: str, desired: str, timeout_s: float = 60.0)
             time.sleep(0.25)
             continue
         obj = r.json()
-        last = obj.get("deployment_status")
-        if last == desired:
+        status = obj.get("deployment_status")
+        if status != last:
+            print(f"After {time.time() - start:.1f} seconds: status is {status}")
+        last = status
+        if last == desired if isinstance(desired, str) else desired(last):
             return obj
         time.sleep(0.25)
     raise TimeoutError(
@@ -136,7 +152,15 @@ def wait_for_deployment_status(name: str, desired: str, timeout_s: float = 60.0)
 def create_pipeline(name: str, sql: str):
     r = post_json(
         api_url("/pipelines"),
-        {"name": name, "program_code": sql, "runtime_config": {"logging": "debug"}},
+        {
+            "name": name,
+            "program_code": sql,
+            "runtime_config": {
+                "workers": FELDERA_TEST_NUM_WORKERS,
+                "hosts": FELDERA_TEST_NUM_HOSTS,
+                "logging": "debug",
+            },
+        },
     )
     assert r.status_code == HTTPStatus.CREATED, r.text
     wait_for_program_success(name, 1)

@@ -2,7 +2,7 @@
   import type { Field, TableHandlerInterface } from '@vincjo/datatables'
   import type { Snippet } from '$lib/types/svelte'
 
-  let {
+  const {
     table,
     field,
     children,
@@ -14,7 +14,6 @@
     class?: string
   } = $props()
   const sort = table.createSort(field)
-  export {}
 </script>
 
 <th onclick={() => sort.set()} class={_class} class:active={sort.isActive}>

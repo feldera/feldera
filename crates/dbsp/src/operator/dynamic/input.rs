@@ -1,15 +1,17 @@
 use itertools::Itertools;
 
 use crate::{
+    Circuit, DBData, DynZWeight, NumEntries, Stream, ZWeight,
     algebra::{
         IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories, ZSet,
     },
-    circuit::{checkpointer::Checkpoint, RootCircuit},
+    circuit::{RootCircuit, checkpointer::Checkpoint},
     dynamic::{
         ClonableTrait, DataTrait, DynBool, DynData, DynOpt, DynPair, DynPairs, DynUnit,
         DynWeightedPairs, Erase, Factory, LeanVec, WithFactory,
     },
     operator::{
+        Input, InputHandle, Update,
         dynamic::{
             input_upsert::{
                 DynUpdate, InputUpsertFactories, InputUpsertWithWaterlineFactories, PatchFunc,
@@ -17,19 +19,17 @@ use crate::{
             time_series::LeastUpperBoundFunc,
             upsert::UpdateSetFactories,
         },
-        Input, InputHandle, Update,
     },
     trace::{Batch, BatchFactories, BatchReaderFactories, Batcher, FallbackWSet, Rkyv},
     utils::Tup2,
-    Circuit, DBData, DynZWeight, NumEntries, Stream, ZWeight,
 };
 use std::{
     mem::{replace, swap},
     ops::Not,
     panic::Location,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
@@ -1085,14 +1085,13 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
         // rest will receive `quotient`.
         let quotient = vals.len() / num_partitions;
         let remainder = vals.len() % num_partitions;
-        let worker_ofs = self.input_handle.workers().start;
         for i in 0..num_partitions {
             let mut partition_size = quotient;
             if i < remainder {
                 partition_size += 1;
             }
 
-            let worker = (*next_worker + i) % num_partitions + worker_ofs;
+            let worker = (*next_worker + i) % num_partitions;
             let len = vals.len();
             if partition_size == len && partitions[worker].is_empty() {
                 swap(&mut partitions[worker], vals);
@@ -1377,10 +1376,11 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> UpsertHandle<K, V> {
 #[cfg(test)]
 mod test {
     use crate::{
+        OutputHandle, RootCircuit, Runtime, Stream, ZWeight,
         dynamic::{DowncastTrait, DynData, Erase},
         indexed_zset,
         operator::{
-            input::InputHandle, IndexedZSetHandle, MapHandle, SetHandle, Update, ZSetHandle,
+            IndexedZSetHandle, MapHandle, SetHandle, Update, ZSetHandle, input::InputHandle,
         },
         trace::{BatchReaderFactories, Builder, Cursor},
         typed_batch::{
@@ -1388,7 +1388,7 @@ mod test {
             TypedBox,
         },
         utils::Tup2,
-        zset, OutputHandle, RootCircuit, Runtime, Stream, ZWeight,
+        zset,
     };
     use anyhow::Result as AnyResult;
     use std::{cmp::max, iter::once, ops::Mul};
@@ -2254,8 +2254,8 @@ mod test {
         ]
     }
 
-    fn output_map_with_waterline_gc_updates1(
-    ) -> Vec<(OrdIndexedZSet<u64, u64>, OrdZSet<String>, u64)> {
+    fn output_map_with_waterline_gc_updates1()
+    -> Vec<(OrdIndexedZSet<u64, u64>, OrdZSet<String>, u64)> {
         vec![
             (
                 indexed_zset! { 1u64 => {1u64 => 1}, 3 => {1 => 1} },

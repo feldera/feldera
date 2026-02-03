@@ -74,8 +74,9 @@ public class ProfilingTests extends StreamingTestBase {
                     append_to_collection_handle,
                     append_to_map_handle,
                     read_output_spine,
-                    casts::{cast_to_Timestamp_s,handle_error},
+                    casts::{cast_to_Timestamp_s,handle_error,unwrap_value},
                     string::SqlString,
+                    Timestamp,
                 };
 
                 use std::time::SystemTime;
@@ -186,14 +187,16 @@ public class ProfilingTests extends StreamingTestBase {
         }
 
         try {
-            Utilities.compileAndTestRust(RUST_DIRECTORY, true);
-            String outFile = "profile.zip";
-            Path outFilePath = Paths.get(RUST_DIRECTORY, "..", outFile);
-            byte[] data = Utilities.extractFileFromZip(outFilePath.toString(), "profile.json");
-            String str = new String(data, StandardCharsets.UTF_8);
-            JsonNode jsonNode = Utilities.deterministicObjectMapper().readTree(str);
-            Assert.assertNotNull(jsonNode);
-            Utilities.deleteFile(outFilePath.toFile(), true);
+            BaseSQLTests.compileAndTestRust(true);
+            if (!BaseSQLTests.skipRust) {
+                String outFile = "profile.zip";
+                Path outFilePath = Paths.get(RUST_DIRECTORY, "..", outFile);
+                byte[] data = Utilities.extractFileFromZip(outFilePath.toString(), "profile.json");
+                String str = new String(data, StandardCharsets.UTF_8);
+                JsonNode jsonNode = Utilities.deterministicObjectMapper().readTree(str);
+                Assert.assertNotNull(jsonNode);
+                Utilities.deleteFile(outFilePath.toFile(), true);
+            }
         } finally {
             File mainFile = new File(mainFilePath);
             Utilities.deleteFile(mainFile, true);
@@ -234,7 +237,7 @@ public class ProfilingTests extends StreamingTestBase {
         }
 
         try {
-            Utilities.compileAndTestRust(RUST_DIRECTORY, true);
+            BaseSQLTests.compileAndTestRust(true);
             String outFile = "profile.zip";
             Path outFilePath = Paths.get(RUST_DIRECTORY, "..", outFile);
             byte[] data = Utilities.extractFileFromZip(outFilePath.toString(), "profile.json");
@@ -280,7 +283,7 @@ public class ProfilingTests extends StreamingTestBase {
                     let mut timestamp = handle_error(cast_to_Timestamp_s(SqlString::from_ref("2024-01-10 10:10:10")));
                     for i in 0..1000000 {
                         let value = Some(F64::new(i.into()));
-                        timestamp = timestamp.add(20000);
+                        timestamp = Timestamp::from_milliseconds(timestamp.milliseconds() + 20000);
                         let input = zset!(Tup2::new(value, timestamp) => 1);
                         append_to_collection_handle(&input, &streams.0);
                         if i % 1000 == 0 {
@@ -335,11 +338,11 @@ public class ProfilingTests extends StreamingTestBase {
                     // Initial data value for timestamp
                     let mut timestamp = handle_error(cast_to_Timestamp_s(SqlString::from_ref("2024-01-10 10:10:10")));
                     for i in 0..1000000 {
-                        let expire = timestamp.add(1000000);
-                        timestamp = timestamp.add(20000);
+                        let expire = Timestamp::from_milliseconds(timestamp.milliseconds() + 1000000);
+                        timestamp = Timestamp::from_milliseconds(timestamp.milliseconds() + 20000);
                         let auction = zset!(Tup3::new(timestamp, expire, Some(i)) => 1);
                         append_to_collection_handle(&auction, &streams.0);
-                        let bid = zset!(Tup3::new(timestamp.add(100), Some(i), Some(i)) => 1);
+                        let bid = zset!(Tup3::new(Timestamp::from_milliseconds(timestamp.milliseconds() + 100), Some(i), Some(i)) => 1);
                         append_to_collection_handle(&bid, &streams.1);
                         if i % 100 == 0 {
                             let _ = circuit.transaction().expect("could not run circuit");
@@ -367,8 +370,8 @@ public class ProfilingTests extends StreamingTestBase {
                     // Initial data value for timestamp
                     let mut timestamp = handle_error(cast_to_Timestamp_s(SqlString::from_ref("2024-01-10 10:10:10")));
                     for i in 0..1000000 {
-                        let expire = timestamp.add(1000000);
-                        timestamp = timestamp.add(20000);
+                        let expire = Timestamp::from_milliseconds(timestamp.milliseconds() + 1000000);
+                        timestamp = Timestamp::from_milliseconds(timestamp.milliseconds() + 20000);
                         let auction = zset!(Tup3::new(timestamp, expire, i) => 1);
                         append_to_map_handle(&auction, &streams.0, |x| Tup1::new(x.2));
                         if i % 100 == 0 {

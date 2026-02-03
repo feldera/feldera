@@ -1,17 +1,15 @@
-import { nonNull } from '$lib/functions/common/function'
+import invariant from 'tiny-invariant'
+import { groupBy } from '$lib/functions/common/array'
 import { tuple } from '$lib/functions/common/tuple'
 import { normalizeCaseIndependentName } from '$lib/functions/felderaRelation'
-import { groupBy } from '$lib/functions/common/array'
 import type {
   ControllerStatus,
-  GlobalMetricsTimestamp,
   InputEndpointMetrics,
   InputEndpointStatus,
   OutputEndpointMetrics,
-  OutputEndpointStatus,
-  TimeSeriesEntry
-} from '$lib/types/pipelineManager'
-import invariant from 'tiny-invariant'
+  OutputEndpointStatus
+} from '$lib/services/manager'
+import type { GlobalMetricsTimestamp, TimeSeriesEntry } from '$lib/types/pipelineManager'
 import { discreteDerivative } from './common/math'
 
 export const emptyPipelineMetrics = {
@@ -60,12 +58,14 @@ export const accumulatePipelineMetrics =
                     buffered_records: acc.buffered_records + metrics.buffered_records,
                     num_transport_errors: acc.num_transport_errors + metrics.num_transport_errors,
                     num_parse_errors: acc.num_parse_errors + metrics.num_parse_errors,
-                    end_of_input: acc.end_of_input || metrics.end_of_input
+                    end_of_input: acc.end_of_input || metrics.end_of_input,
+                    buffered_bytes: acc.buffered_bytes + metrics.buffered_bytes
                   }
                 },
                 {
                   total_bytes: 0,
                   total_records: 0,
+                  buffered_bytes: 0,
                   buffered_records: 0,
                   num_transport_errors: 0,
                   num_parse_errors: 0,
@@ -92,7 +92,10 @@ export const accumulatePipelineMetrics =
                   total_processed_input_records:
                     acc.total_processed_input_records + metrics.total_processed_input_records,
                   transmitted_bytes: acc.transmitted_bytes + metrics.transmitted_bytes,
-                  transmitted_records: acc.transmitted_records + metrics.transmitted_records
+                  transmitted_records: acc.transmitted_records + metrics.transmitted_records,
+                  queued_batches: acc.queued_batches + metrics.queued_batches,
+                  queued_records: acc.queued_records + metrics.queued_records,
+                  memory: acc.memory + metrics.memory
                 }
               },
               {
@@ -102,7 +105,10 @@ export const accumulatePipelineMetrics =
                 num_transport_errors: 0,
                 total_processed_input_records: 0,
                 transmitted_bytes: 0,
-                transmitted_records: 0
+                transmitted_records: 0,
+                queued_batches: 0,
+                queued_records: 0,
+                memory: 0
               }
             )
           )
@@ -116,9 +122,7 @@ export const accumulatePipelineMetrics =
  * @returns Time series of throughput with smoothing window over 3 data intervals
  */
 export const calcPipelineThroughput = (metrics: TimeSeriesEntry[]) => {
-  const series = discreteDerivative(metrics, ({}, {}, i, arr) => {
-    const n1 = arr[i]
-    const n0 = arr[i - 1]
+  const series = discreteDerivative(metrics, (n1, n0) => {
     return {
       name: n1.t.toFixed(),
       value: tuple(n1.t.toNumber(), n1.r.minus(n0.r).toNumber())
@@ -133,7 +137,7 @@ export const calcPipelineThroughput = (metrics: TimeSeriesEntry[]) => {
         .slice(-avgN)
         .reduce((acc, cur) => acc + cur.value[1], 0) / avgN
     : 0
-  const yMaxStep = Math.pow(10, Math.ceil(Math.log10(valueMax))) / 5
+  const yMaxStep = 10 ** Math.ceil(Math.log10(valueMax)) / 5
   const yMax = valueMax !== 0 ? Math.ceil((valueMax * 1.25) / yMaxStep) * yMaxStep : 100
   const yMin = 0
   const current = series.at(-1)?.value?.[1] ?? 0

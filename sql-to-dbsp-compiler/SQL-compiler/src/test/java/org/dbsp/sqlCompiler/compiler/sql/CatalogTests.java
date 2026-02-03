@@ -38,6 +38,37 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue5350() {
+        this.getCCS("""
+                CREATE TABLE test_data (
+                    username VARCHAR NOT NULL,
+                    kafka_timestamp VARIANT DEFAULT CONNECTOR_METADATA()
+                ) WITH ('connectors' = '[
+                    {
+                        "format":{
+                            "name":"avro",
+                            "config": {
+                                "update_format":"raw",
+                                "registry_urls": ["http://localhost:18081/"]
+                            }
+                        },
+                        "transport":{
+                            "name":"kafka_input",
+                            "config": {
+                                "topic":"test_topic",
+                                "start_from":"latest",
+                                "bootstrap.servers":"localhost:19092",
+                                "include_timestamp": true
+                            }
+                        }
+                    }
+                    ]',
+                    'append_only'='false',
+                    'materialized' = 'true'
+                );""");
+    }
+
+    @Test
     public void issue4019a() {
         this.getCCS("""
                 CREATE TABLE row_tbl(
@@ -224,7 +255,7 @@ public class CatalogTests extends BaseSQLTests {
         this.statementsFailingInCompilation("""
                 CREATE TABLE example (
                     inserted_xid BIGINT not null,
-                    deleted_xid BIGINT not null default null -- '9223372036854775807'
+                    deleted_xid BIGINT not null default null
                 );""", "Nullable default value assigned to non-null column 'deleted_xid'");
     }
 
@@ -753,6 +784,37 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue5351() {
+        this.getCCS("""
+                CREATE TABLE test_data (
+                    username VARCHAR NOT NULL PRIMARY KEY,
+                    kafka_timestamp VARIANT DEFAULT CONNECTOR_METADATA()
+                ) WITH ('connectors' = '[
+                    {
+                        "format":{
+                            "name":"avro",
+                            "config": {
+                                "update_format":"raw",
+                                "registry_urls": ["http://localhost:18081"]
+                            }
+                        },
+                        "transport":{
+                            "name":"kafka_input",
+                            "config": {
+                                "topic":"test_topic",
+                                "start_from":"latest",
+                                "bootstrap.servers":"localhost:19092",
+                                "include_timestamp": true
+                            }
+                        }
+                    }
+                    ]',
+                    'append_only'='false',
+                    'materialized' = 'true'
+                );""");
+    }
+
+    @Test
     public void primaryKeyTest2() {
         String sql = """
                 create table t1(
@@ -815,5 +877,31 @@ public class CatalogTests extends BaseSQLTests {
                 create table t0 (id int, s MAP<ty0, int>);
                 create materialized view v1 as select id, s from t0;""";
         this.getCCS(sql);
+    }
+
+    @Test
+    public void defaultValueRow() {
+        this.getCCS("""
+                CREATE TABLE example (
+                    inserted_xid BIGINT not null,
+                    deleted_xid BIGINT not null default '9223372036854775807',
+                    y BIGINT default 0,
+                    w BIGINT default NULL,
+                    z ROW(x INT, y INT) NOT NULL default ROW(1, 2)
+                );""");
+    }
+
+
+    @Test
+    public void issue5390() {
+        this.getCCS("""
+                CREATE TYPE user_def AS(i1 INT);
+                CREATE TYPE user_def_row AS (val ROW(i1 INT));
+                CREATE TYPE user_def_udt AS (val user_def);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                SAFE_CAST(NULL AS user_def_row) AS to_row,
+                SAFE_CAST(NULL AS user_def_udt) AS to_udt
+                ;""");
     }
 }

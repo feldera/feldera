@@ -1,16 +1,21 @@
+import io
 import os
 import pathlib
-import pandas as pd
+import tempfile
 import time
 import unittest
-import io
-import tempfile
 import zipfile
+import gzip
+
+import pandas as pd
 
 from feldera import Pipeline
-from tests.shared_test_pipeline import SharedTestPipeline
+from feldera.enums import CompletionTokenStatus, PipelineFieldSelector, PipelineStatus
+from feldera.rest.errors import FelderaAPIError
+from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT, enterprise_only
-from feldera.enums import PipelineFieldSelector, PipelineStatus, CompletionTokenStatus
+from tests.shared_test_pipeline import SharedTestPipeline
+from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 
 class TestPipeline(SharedTestPipeline):
@@ -181,9 +186,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         df = out.to_pandas()
         assert df.shape[0] == 100
+        self.pipeline.stop(force=True)
 
     def test_pipeline_get(self):
         df_students = pd.read_csv("tests/assets/students.csv")
@@ -194,9 +199,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         df = out.to_pandas()
         assert df.shape[0] == 100
+        self.pipeline.stop(force=True)
 
     def test_local_listen_after_start(self):
         df_students = pd.read_csv("tests/assets/students.csv")
@@ -207,8 +212,8 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.input_pandas("grades", df_grades)
         self.pipeline.wait_for_idle()
         df = out.to_pandas()
-        self.pipeline.stop(force=True)
         assert df.shape[0] == 100
+        self.pipeline.stop(force=True)
 
     def test_foreach_chunk(self):
         def callback(df: pd.DataFrame, seq_no: int):
@@ -317,7 +322,6 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data=data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         out_data = out.to_dict()
         expected = []
         for d in data:
@@ -325,6 +329,7 @@ class TestPipeline(SharedTestPipeline):
             row["insert_delete"] = 1
             expected.append(row)
         assert out_data == expected
+        self.pipeline.stop(force=True)
 
     def test_failed_pipeline_stop(self):
         """
@@ -359,10 +364,10 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data, update_format="insert_delete")
         self.pipeline.wait_for_idle(True)
-        self.pipeline.stop(force=True)
         out_data = out.to_dict()
         expected = [dict(data["insert"], insert_delete=1)]
         assert out_data == expected
+        self.pipeline.stop(force=True)
 
     def test_input_json1(self):
         data = [{"id": 1}, {"id": 2}]
@@ -371,10 +376,10 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         out_data = out.to_dict()
         expected = [dict(row, insert_delete=1) for row in data]
         assert out_data == expected
+        self.pipeline.stop(force=True)
 
     @enterprise_only
     def test_suspend(self):
@@ -384,10 +389,10 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data, update_format="insert_delete")
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=False)
         out_data = out.to_dict()
         expected = [dict(data["insert"], insert_delete=1)]
         assert out_data == expected
+        self.pipeline.stop(force=False)
 
     def test_timestamp_pandas(self):
         """
@@ -414,9 +419,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_pandas("tbl_timestamp", df)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         df_out = out.to_pandas()
         assert df_out.shape[0] == 3
+        self.pipeline.stop(force=True)
 
     def test_pandas_binary(self):
         """
@@ -430,9 +435,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_binary", data=data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         assert expected_data == got
+        self.pipeline.stop(force=True)
 
     def test_pandas_decimal(self):
         """
@@ -448,9 +453,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_decimal", data=data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         assert expected == got
+        self.pipeline.stop(force=True)
 
     def test_pandas_array(self):
         """
@@ -463,10 +468,10 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_array", data=data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         expected = [{"c1": [1, 2, 3], "insert_delete": 1}]
         assert got == expected
+        self.pipeline.stop(force=True)
 
     def test_pandas_struct(self):
         """
@@ -483,17 +488,17 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_struct", data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         expected = [{"c1": {"f1": 1, "f2": "a"}, "insert_delete": 1}]
         assert got == expected
+        self.pipeline.stop(force=True)
 
     def test_pandas_date_time_timestamp(self):
         """
         CREATE TABLE tbl_datetime (c1 DATE, c2 TIME, c3 TIMESTAMP);
         CREATE VIEW v_datetime AS SELECT c1, c2, c3 FROM tbl_datetime;
         """
-        from pandas import Timestamp, Timedelta
+        from pandas import Timedelta, Timestamp
 
         data = [{"c1": "2022-01-01", "c2": "12:00:00", "c3": "2022-01-01 12:00:00"}]
         expected = [
@@ -509,9 +514,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_datetime", data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         assert expected == got
+        self.pipeline.stop(force=True)
 
     def test_pandas_simple(self):
         """
@@ -538,7 +543,6 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_simple", data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         expected = []
         for d in data:
@@ -546,6 +550,7 @@ class TestPipeline(SharedTestPipeline):
             row["insert_delete"] = 1
             expected.append(row)
         assert got == expected
+        self.pipeline.stop(force=True)
 
     def test_pandas_map(self):
         """
@@ -559,18 +564,19 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_map", data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         assert expected == got
+        self.pipeline.stop(force=True)
+
         # Second round: single dict
         self.pipeline.start_paused()
         out = self.pipeline.listen("v_map")
         self.pipeline.resume()
         self.pipeline.input_json("tbl_map", {"c1": {"a": 1, "b": 2}})
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         assert expected == got
+        self.pipeline.stop(force=True)
 
     def test_uuid(self):
         """
@@ -585,12 +591,12 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_json("tbl_uuid", data)
         self.pipeline.wait_for_idle()
-        self.pipeline.stop(force=True)
         got = out.to_dict()
         # Compare only the UUID values
         got_uuids = sorted([row["c0"] for row in got])
         expected_uuids = sorted([row["c0"] for row in data])
         assert got_uuids == expected_uuids
+        self.pipeline.stop(force=True)
 
     def test_issue3754(self):
         """
@@ -633,7 +639,13 @@ class TestPipeline(SharedTestPipeline):
         }
 
         resources = Resources(config)
-        self.pipeline.set_runtime_config(RuntimeConfig(resources=resources))
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                resources=resources,
+            )
+        )
         self.pipeline.start()
         got = TEST_CLIENT.get_pipeline(
             self.pipeline.name, PipelineFieldSelector.ALL
@@ -790,6 +802,43 @@ class TestPipeline(SharedTestPipeline):
             self.pipeline.completion_token_status(token)
             == CompletionTokenStatus.COMPLETE
         )
+
+    @enterprise_only
+    def test_samply_profile(self):
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(dev_tweaks={"profiling": "samply"})
+        )
+        self.pipeline.start()
+
+        duration = 5
+        self.pipeline.start_samply_profile(duration)
+        time.sleep(duration)
+
+        timeout = time.monotonic() + 5
+
+        samply_profile_bytes = None
+
+        while time.monotonic() < timeout:
+            try:
+                samply_profile_bytes = self.pipeline.get_samply_profile()
+                if samply_profile_bytes:
+                    break
+                time.sleep(0.1)
+            except FelderaAPIError as e:
+                if e.status_code == 500:
+                    raise
+
+        assert isinstance(samply_profile_bytes, bytes)
+        assert len(samply_profile_bytes) > 0
+
+        # Verify it's a valid GZIP file
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(samply_profile_bytes)) as gz:
+                # Try reading a small chunk to verify it's a valid gzip
+                chunk = gz.read(10)
+                assert len(chunk) > 0
+        except OSError:
+            self.fail("Samply profile is not a valid GZIP file")
 
 
 if __name__ == "__main__":

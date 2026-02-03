@@ -247,13 +247,17 @@ impl RunnerInteraction {
             _ => RunnerError::PipelineInteractionUnreachable {
                 pipeline_name: pipeline_name.to_string(),
                 request: request_str.clone(),
-                error: format!("unable to send request due to: {e}"),
+                error: format!("{e}"),
             },
         })?;
         let status = original_response.status();
 
         if !status.is_success() {
-            info!("HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}");
+            info!(
+                pipeline = pipeline_name,
+                pipeline_id = "N/A",
+                "HTTP request to pipeline returned status code {status}. Failed request: {request_str}"
+            );
         }
 
         // Build the HTTP response with the original status
@@ -525,14 +529,18 @@ impl RunnerInteraction {
             _ => RunnerError::PipelineInteractionUnreachable {
                 pipeline_name: pipeline_name.to_string(),
                 request: request_str.to_string(),
-                error: format!("unable to send request due to: {e}"),
+                error: format!("{e}"),
             },
         })?;
 
         let status = response.status();
 
         if !status.is_success() {
-            info!("HTTP request to pipeline '{pipeline_name}' returned status code {status}. Failed request: {request_str}");
+            info!(
+                pipeline = pipeline_name,
+                pipeline_id = "N/A",
+                "HTTP request to pipeline returned status code {status}. Failed request: {request_str}"
+            );
         }
 
         // Build the new HTTP response with the same status, headers and streaming body
@@ -587,7 +595,7 @@ impl RunnerInteraction {
                     ),
                 },
                 _ => RunnerError::RunnerInteractionUnreachable {
-                    error: format!("unable to send request due to: {e}"),
+                    error: format!("{e}"),
                 },
             })?;
 

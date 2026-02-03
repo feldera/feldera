@@ -226,7 +226,7 @@ public class AsofTests extends StreamingTestBase {
                 LEFT ASOF JOIN (VALUES (1, NULL), (1, 2), (1, 3), (2, 10), (2, 0)) AS t2(k, t)
                 MATCH_CONDITION t2.t < t1.t
                 ON t1.k = t2.k;""",
-                "Not yet implemented: Currently the only MATCH_CONDITION comparison supported by ASOF joins is '>='");
+                "Not yet implemented: Currently the only MATCH_CONDITION comparison supported by ASOF joins is 'leftCol >= rightCol'");
     }
 
     @Test
@@ -242,5 +242,57 @@ public class AsofTests extends StreamingTestBase {
                     T LEFT ASOF JOIN S
                     MATCH_CONDITION ( CAST(T.x AS TIMESTAMP) >= S.x )
                     ON T.y = S.y;""");
+    }
+
+    @Test
+    public void issue5180() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE asof_tbl1(
+                id INT, intt INT NULL);
+                
+                CREATE TABLE asof_tbl2(
+                id INT, intt INT);
+                
+                CREATE MATERIALIZED VIEW v AS
+                SELECT
+                    t1.id,
+                    t2.intt AS t2_int
+                FROM asof_tbl1 AS t1
+                LEFT ASOF JOIN asof_tbl2 AS t2
+                    MATCH_CONDITION (t2.intt = (SELECT t2.intt))
+                    ON t1.id = t2.id;""",
+                "ASOF JOIN MATCH_CONDITION must be a comparison between columns from the two inputs");
+    }
+
+    @Test
+    public void asofWithTest() {
+        this.statementsFailingInCompilation("""
+                CREATE VIEW V AS WITH
+                   T2(id, intt) AS (VALUES(1, 0)),
+                   T1(id, intt) as (VALUES(1, 0)),
+                   T3(id) AS (VALUES(1))
+                SELECT t1.id, t2.intt
+                FROM T1 LEFT ASOF JOIN T2
+                    MATCH_CONDITION t2.intt < t1.intt
+                    ON t1.id = t2.id""", "7|    MATCH_CONDITION t2.intt < t1.intt");
+    }
+
+    @Test
+    public void issue5259() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE asof_tbl1(id INT, intt INT NULL);
+                CREATE TABLE asof_tbl2(id INT, intt INT);
+                
+                CREATE MATERIALIZED VIEW v AS
+                WITH combined AS (SELECT
+                t1.id AS t1_id, t1.intt AS t1_intt
+                FROM asof_tbl1 t1)
+                SELECT
+                    c.t1_id, c.t1_intt
+                FROM combined c
+                LEFT ASOF JOIN asof_tbl2 t2
+                    MATCH_CONDITION (t2.intt >= c.t1_intt)
+                    ON c.t1_id = t2.id;""",
+                "Not yet implemented: Currently the only MATCH_CONDITION comparison supported by ASOF joins is 'leftCol >= rightCol'");
     }
 }

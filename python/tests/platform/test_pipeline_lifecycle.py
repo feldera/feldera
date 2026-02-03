@@ -187,7 +187,13 @@ def test_pipeline_stop_force_after_start(pipeline_name):
     create_pipeline(pipeline_name, "CREATE TABLE t1(c1 INTEGER);")
 
     for delay_sec in [0, 0.1, 0.5, 1, 3, 10]:
+        print(f"Testing with {delay_sec} second delay")
         start_pipeline(pipeline_name)
+        # Wait for the pipeline to transition away from "Stopped"
+        #
+        # See big comment in test_pipeline_stop_with_force for
+        # reasoning.
+        wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
         # Shortly wait for the pipeline to transition to next state(s)
         time.sleep(delay_sec)
         # Stop force and clear the pipeline
@@ -206,7 +212,25 @@ def test_pipeline_stop_with_force(pipeline_name):
     stop_pipeline(pipeline_name, force=True)
 
     # Start then immediate stop (force)
-    start_pipeline(pipeline_name, False)
+    #
+    # We do not wait for the pipeline to start, but we do wait for it
+    # to transition away from "Stopped".  Otherwise, there is a race:
+    #
+    # - Request start.
+    #
+    # - Request force stop.
+    #
+    # - Check for "stopped" status succeeds because starting up is
+    #   taking a little while, so we move along to
+    #   start_pipeline_as_paused().
+    #
+    # - Pipeline transitions to "stopping".
+    #
+    # - start_pipeline_as_paused() fails with "Cannot restart the
+    #   pipeline while it is stopping. Wait until it is stopped before
+    #   starting the pipeline again."
+    start_pipeline(pipeline_name, wait=False)
+    wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
     stop_pipeline(pipeline_name, force=True)
 
     # Start paused then stop (simulate by pausing immediately)
@@ -232,7 +256,10 @@ def test_pipeline_stop_without_force(pipeline_name):
     stop_pipeline(pipeline_name, force=False)
 
     # Start then stop (non-force)
+    #
+    # See test_pipeline_stop_with_force() for notes.
     start_pipeline(pipeline_name, wait=False)
+    wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
     stop_pipeline(pipeline_name, force=False)
 
     # Start, wait for running, stop

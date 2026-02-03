@@ -238,6 +238,10 @@ impl Relation {
     pub fn has_lateness(&self) -> bool {
         self.fields.iter().any(|f| f.lateness.is_some())
     }
+
+    pub fn get_property(&self, name: &str) -> Option<&str> {
+        self.properties.get(name).map(|p| p.value.as_str())
+    }
 }
 
 /// A SQL field.

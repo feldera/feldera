@@ -114,7 +114,7 @@ public final class DBSPI128Literal extends DBSPIntLiteral implements IsNumericLi
                     .append(this.type)
                     .append(")null");
         else
-            return builder.append(this.value.toString());
+            return builder.append(this.wrapSome(this.value.toString()));
     }
 
     @Override

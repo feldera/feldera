@@ -114,7 +114,7 @@ public final class DBSPRealLiteral extends DBSPFPLiteral implements IsNumericLit
                     .append(this.type)
                     .append(")null");
         else
-            return builder.append(this.value.toString());
+            return builder.append(this.wrapSome(this.value.toString()));
     }
 
     @Override

@@ -3,15 +3,16 @@
 //! [`Reader`] is the top-level interface for reading layer files.
 
 use super::format::{Compression, FileTrailer};
-use super::{AnyFactories, Factories};
+use super::{AnyFactories, Deserializer, Factories};
 use crate::dynamic::{DynVec, WeightTrait};
 use crate::storage::buffer_cache::{CacheAccess, CacheEntry};
 use crate::storage::file::format::FilterBlock;
+use crate::storage::tracking_bloom_filter::{BloomFilterStats, TrackingBloomFilter};
 use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
     file::format::{
-        DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType, Varint, VERSION_NUMBER,
+        DataBlockHeader, FileTrailerColumn, IndexBlockHeader, NodeType, VERSION_NUMBER, Varint,
     },
     file::item::ArchivedItem,
 };
@@ -23,24 +24,23 @@ use crate::{
     },
 };
 use binrw::{
-    io::{self},
     BinRead,
+    io::{self},
 };
 use crc32c::crc32c;
 use dyn_clone::clone_box;
-use fastbloom::BloomFilter;
-use feldera_storage::file::FileId;
 use feldera_storage::StoragePath;
+use feldera_storage::file::FileId;
 use size_of::SizeOf;
 use smallvec::SmallVec;
-use snap::raw::{decompress_len, Decoder};
+use snap::raw::{Decoder, decompress_len};
 use std::mem::replace;
 use std::ops::Index;
 use std::time::Instant;
 use std::{
     cmp::{
-        max, min,
         Ordering::{self, *},
+        max, min,
     },
     fmt::{Debug, Formatter, Result as FmtResult},
     marker::PhantomData,
@@ -59,6 +59,7 @@ pub use fetch_zset::FetchZSet;
 
 mod fetch_indexed_zset;
 pub use fetch_indexed_zset::FetchIndexedZSet;
+
 /// Any kind of error encountered reading a layer file.
 #[derive(ThisError, Debug)]
 pub enum Error {
@@ -139,7 +140,9 @@ pub enum CorruptionError {
     },
 
     /// Array overflows block bounds.
-    #[error("{count}-element array of {each}-byte elements starting at offset {offset} within block overflows {block_size}-byte block")]
+    #[error(
+        "{count}-element array of {each}-byte elements starting at offset {offset} within block overflows {block_size}-byte block"
+    )]
     InvalidArray {
         /// Block size.
         block_size: usize,
@@ -152,7 +155,9 @@ pub enum CorruptionError {
     },
 
     /// Strides overflow block bounds.
-    #[error("{count} strides of {stride} bytes each starting at offset {start} overflows {block_size}-byte block")]
+    #[error(
+        "{count} strides of {stride} bytes each starting at offset {start} overflows {block_size}-byte block"
+    )]
     InvalidStride {
         /// Block size.
         block_size: usize,
@@ -237,7 +242,9 @@ pub enum CorruptionError {
 
     /// Invalid child in index block.  At least one of `child_offset` or
     /// `child_size` is invalid.
-    #[error("Index block ({location}) has child {index} with invalid offset {child_offset} or size {child_size}.")]
+    #[error(
+        "Index block ({location}) has child {index} with invalid offset {child_offset} or size {child_size}."
+    )]
     InvalidChild {
         /// Block location.
         location: BlockLocation,
@@ -250,7 +257,9 @@ pub enum CorruptionError {
     },
 
     /// Invalid node pointer in file trailer block.
-    #[error("File trailer column specification has invalid node offset {node_offset} or size {node_size}.")]
+    #[error(
+        "File trailer column specification has invalid node offset {node_offset} or size {node_size}."
+    )]
     InvalidColumnRoot {
         /// Block offset in bytes.
         node_offset: u64,
@@ -276,7 +285,9 @@ pub enum CorruptionError {
     BadBlockType(BlockLocation),
 
     /// Bad compressed length.
-    #[error("Compressed block ({location}) claims compressed length {compressed_len} but at most {max_compressed_len} would fit.")]
+    #[error(
+        "Compressed block ({location}) claims compressed length {compressed_len} but at most {max_compressed_len} would fit."
+    )]
     BadCompressedLen {
         /// Block location.
         location: BlockLocation,
@@ -287,7 +298,9 @@ pub enum CorruptionError {
     },
 
     /// Unexpected decompressed length.
-    #[error("Compressed block ({location}) decompressed to {length} bytes instead of the expected {expected_length} bytes")]
+    #[error(
+        "Compressed block ({location}) decompressed to {length} bytes instead of the expected {expected_length} bytes"
+    )]
     UnexpectedDecompressionLength {
         /// Block location.
         location: BlockLocation,
@@ -374,19 +387,17 @@ struct StrideReader {
 impl StrideReader {
     fn new(raw: &FBuf, start: usize, stride: usize, count: usize) -> Result<Self, Error> {
         let block_size = raw.len();
-        if count > 0 {
-            if let Some(last) = stride
+        if count > 0
+            && let Some(last) = stride
                 .checked_mul(count - 1)
                 .and_then(|len| len.checked_add(start))
-            {
-                if last < block_size {
-                    return Ok(Self {
-                        start,
-                        stride,
-                        count,
-                    });
-                }
-            }
+            && last < block_size
+        {
+            return Ok(Self {
+                start,
+                stride,
+                count,
+            });
         }
         Err(CorruptionError::InvalidStride {
             block_size,
@@ -430,14 +441,14 @@ impl ValueMapReader {
     }
     fn len(&self) -> usize {
         match self {
-            ValueMapReader::VarintMap(ref varint_reader) => varint_reader.count,
-            ValueMapReader::StrideMap(ref stride_reader) => stride_reader.count,
+            ValueMapReader::VarintMap(varint_reader) => varint_reader.count,
+            ValueMapReader::StrideMap(stride_reader) => stride_reader.count,
         }
     }
     fn get(&self, raw: &FBuf, index: usize) -> usize {
         match self {
-            ValueMapReader::VarintMap(ref varint_reader) => varint_reader.get(raw, index) as usize,
-            ValueMapReader::StrideMap(ref stride_reader) => stride_reader.get(index),
+            ValueMapReader::VarintMap(varint_reader) => varint_reader.get(raw, index) as usize,
+            ValueMapReader::StrideMap(stride_reader) => stride_reader.get(index),
         }
     }
 }
@@ -453,6 +464,7 @@ where
     value_map: ValueMapReader,
     row_groups: Option<VarintReader>,
     first_row: u64,
+    version: u32,
     _phantom: PhantomData<fn(&K, &A)>,
 }
 
@@ -475,6 +487,7 @@ where
         raw: Arc<FBuf>,
         location: BlockLocation,
         first_row: u64,
+        version: u32,
     ) -> Result<Self, Error> {
         let header =
             DataBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice())).map_err(|e| {
@@ -500,6 +513,7 @@ where
             )?,
             raw,
             first_row,
+            version,
             _phantom: PhantomData,
         })
     }
@@ -509,8 +523,14 @@ where
         node: &TreeNode,
         cache: &BufferCache,
         file_id: FileId,
+        version: u32,
     ) -> Result<Arc<Self>, Error> {
-        let block = Arc::new(Self::from_raw(raw, node.location, node.rows.start)?);
+        let block = Arc::new(Self::from_raw(
+            raw,
+            node.location,
+            node.rows.start,
+            version,
+        )?);
         cache.insert(file_id, node.location.offset, block.clone());
         Ok(block)
     }
@@ -535,8 +555,13 @@ where
             ),
             None => {
                 let block = file.read_block(node.location)?;
-                let entry =
-                    Self::from_raw_with_cache(block, node, &cache, file.file_handle.file_id())?;
+                let entry = Self::from_raw_with_cache(
+                    block,
+                    node,
+                    &cache,
+                    file.file_handle.file_id(),
+                    file.version,
+                )?;
                 (CacheAccess::Miss, entry)
             }
         };
@@ -589,44 +614,64 @@ where
         factories: &Factories<K, A>,
         index: usize,
     ) -> &dyn ArchivedItem<'_, K, A> {
-        factories
-            .item_factory
-            .archived_value(&self.raw, self.value_map.get(&self.raw, index))
+        unsafe {
+            factories
+                .item_factory
+                .archived_value(&self.raw, self.value_map.get(&self.raw, index))
+        }
     }
     unsafe fn archived_item_for_row(
         &self,
         factories: &Factories<K, A>,
         row: u64,
     ) -> &dyn ArchivedItem<'_, K, A> {
-        let index = (row - self.first_row) as usize;
+        unsafe {
+            let index = (row - self.first_row) as usize;
 
-        self.archived_item(factories, index)
+            self.archived_item(factories, index)
+        }
     }
 
     unsafe fn item(&self, factories: &Factories<K, A>, index: usize, item: (&mut K, &mut A)) {
-        let archived_item = self.archived_item(factories, index);
-        DeserializeDyn::deserialize(archived_item.fst(), item.0);
-        DeserializeDyn::deserialize(archived_item.snd(), item.1);
+        unsafe {
+            let archived_item = self.archived_item(factories, index);
+            let mut deserializer = Deserializer::new(self.version);
+            DeserializeDyn::deserialize_with(archived_item.fst(), item.0, &mut deserializer);
+            let mut deserializer = Deserializer::new(self.version);
+            DeserializeDyn::deserialize_with(archived_item.snd(), item.1, &mut deserializer);
+        }
     }
     unsafe fn item_for_row(&self, factories: &Factories<K, A>, row: u64, item: (&mut K, &mut A)) {
-        let index = (row - self.first_row) as usize;
-        self.item(factories, index, item)
+        unsafe {
+            let index = (row - self.first_row) as usize;
+            self.item(factories, index, item)
+        }
     }
     unsafe fn key(&self, factories: &Factories<K, A>, index: usize, key: &mut K) {
-        let item = self.archived_item(factories, index);
-        DeserializeDyn::deserialize(item.fst(), key)
+        unsafe {
+            let item = self.archived_item(factories, index);
+            let mut deserializer = Deserializer::new(self.version);
+            DeserializeDyn::deserialize_with(item.fst(), key, &mut deserializer)
+        }
     }
     unsafe fn aux(&self, factories: &Factories<K, A>, index: usize, aux: &mut A) {
-        let item = self.archived_item(factories, index);
-        DeserializeDyn::deserialize(item.snd(), aux)
+        unsafe {
+            let item = self.archived_item(factories, index);
+            let mut deserializer = Deserializer::new(self.version);
+            DeserializeDyn::deserialize_with(item.snd(), aux, &mut deserializer)
+        }
     }
     unsafe fn key_for_row(&self, factories: &Factories<K, A>, row: u64, key: &mut K) {
-        let index = (row - self.first_row) as usize;
-        self.key(factories, index, key)
+        unsafe {
+            let index = (row - self.first_row) as usize;
+            self.key(factories, index, key)
+        }
     }
     unsafe fn aux_for_row(&self, factories: &Factories<K, A>, row: u64, aux: &mut A) {
-        let index = (row - self.first_row) as usize;
-        self.aux(factories, index, aux)
+        unsafe {
+            let index = (row - self.first_row) as usize;
+            self.aux(factories, index, aux)
+        }
     }
 
     /// Returns the index of the child of this data block that contains a row in
@@ -649,30 +694,32 @@ where
     where
         C: Fn(&K) -> Ordering,
     {
-        let block_rows = self.rows();
-        if block_rows.start >= target_rows.end || block_rows.end <= target_rows.start {
-            return None;
-        }
-        let mut best = None;
-        let mut start = (max(block_rows.start, target_rows.start) - self.first_row) as usize;
-        let mut end = (min(block_rows.end, target_rows.end) - self.first_row) as usize;
-        let mut mid = 0;
-        while start < end {
-            mid = start.midpoint(end);
-            self.key(factories, mid, key);
-            let cmp = compare(key);
-
-            match cmp {
-                Less => end = mid,
-                Equal => return Some(mid),
-                Greater => start = mid + 1,
-            };
-            if cmp == bias {
-                best = Some(mid);
+        unsafe {
+            let block_rows = self.rows();
+            if block_rows.start >= target_rows.end || block_rows.end <= target_rows.start {
+                return None;
             }
-        }
-        if let Some(best) = best {
-            if best != mid {
+            let mut best = None;
+            let mut start = (max(block_rows.start, target_rows.start) - self.first_row) as usize;
+            let mut end = (min(block_rows.end, target_rows.end) - self.first_row) as usize;
+            let mut mid = 0;
+            while start < end {
+                mid = start.midpoint(end);
+                self.key(factories, mid, key);
+                let cmp = compare(key);
+
+                match cmp {
+                    Less => end = mid,
+                    Equal => return Some(mid),
+                    Greater => start = mid + 1,
+                };
+                if cmp == bias {
+                    best = Some(mid);
+                }
+            }
+            if let Some(best) = best
+                && best != mid
+            {
                 // We kept searching beyond the key that was ultimately best, so
                 // we have to re-deserialize the best one.  With some additional
                 // complication, we could avoid this if we had two different
@@ -680,8 +727,8 @@ where
                 // which one was the right one.
                 self.key(factories, best, key);
             }
+            best
         }
-        best
     }
 
     /// Searches this data block for `target` and returns whether it was
@@ -698,29 +745,31 @@ where
         index_stack: &mut SmallVec<[usize; N]>,
         target: &K,
     ) -> bool {
-        let mut start = 0;
-        let mut end = self.n_values();
-        let mut i = 0;
-        while start < end {
-            let mid = start.midpoint(end);
-            if index_stack.get(i) != Some(&mid) {
-                index_stack.truncate(i);
-                index_stack.push(mid);
-                key_stack.truncate(i);
-                key_stack.push_with(&mut |key| self.key(factories, mid, key));
-            };
-            match target.cmp(&key_stack[i]) {
-                Less => end = mid,
-                Equal => {
-                    index_stack.truncate(i + 1);
-                    key_stack.truncate(i + 1);
-                    return true;
-                }
-                Greater => start = mid + 1,
-            };
-            i += 1;
+        unsafe {
+            let mut start = 0;
+            let mut end = self.n_values();
+            let mut i = 0;
+            while start < end {
+                let mid = start.midpoint(end);
+                if index_stack.get(i) != Some(&mid) {
+                    index_stack.truncate(i);
+                    index_stack.push(mid);
+                    key_stack.truncate(i);
+                    key_stack.push_with(&mut |key| self.key(factories, mid, key));
+                };
+                match target.cmp(&key_stack[i]) {
+                    Less => end = mid,
+                    Equal => {
+                        index_stack.truncate(i + 1);
+                        key_stack.truncate(i + 1);
+                        return true;
+                    }
+                    Greater => start = mid + 1,
+                };
+                i += 1;
+            }
+            false
         }
-        false
     }
 }
 
@@ -794,13 +843,14 @@ where
         node: &TreeNode,
         cache: &BufferCache,
         file_id: FileId,
+        version: u32,
     ) -> Result<Self, Error> {
         match node.node_type {
             NodeType::Data => Ok(Self::Data(DataBlock::from_raw_with_cache(
-                raw, node, cache, file_id,
+                raw, node, cache, file_id, version,
             )?)),
             NodeType::Index => Ok(Self::Index(IndexBlock::from_raw_with_cache(
-                raw, node, cache, file_id,
+                raw, node, cache, file_id, version,
             )?)),
         }
     }
@@ -835,6 +885,7 @@ where
     child_offsets: VarintReader,
     child_sizes: VarintReader,
     first_row: u64,
+    version: u32,
     _phantom: PhantomData<K>,
 }
 
@@ -855,6 +906,7 @@ where
         raw: Arc<FBuf>,
         location: BlockLocation,
         first_row: u64,
+        version: u32,
     ) -> Result<Self, Error> {
         let header =
             IndexBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice())).map_err(|e| {
@@ -911,6 +963,7 @@ where
             )?,
             raw,
             first_row,
+            version,
             _phantom: PhantomData,
         })
     }
@@ -920,8 +973,14 @@ where
         node: &TreeNode,
         cache: &BufferCache,
         file_id: FileId,
+        version: u32,
     ) -> Result<Arc<Self>, Error> {
-        let block = Arc::new(Self::from_raw(raw, node.location, node.rows.start)?);
+        let block = Arc::new(Self::from_raw(
+            raw,
+            node.location,
+            node.rows.start,
+            version,
+        )?);
         cache.insert(file_id, node.location.offset, block.clone());
         Ok(block)
     }
@@ -952,8 +1011,13 @@ where
             }
             None => {
                 let block = file.read_block(node.location)?;
-                let entry =
-                    Self::from_raw_with_cache(block, node, &cache, file.file_handle.file_id())?;
+                let entry = Self::from_raw_with_cache(
+                    block,
+                    node,
+                    &cache,
+                    file.file_handle.file_id(),
+                    file.version,
+                )?;
                 (CacheAccess::Miss, entry)
             }
         };
@@ -1040,8 +1104,11 @@ where
     }
 
     unsafe fn get_bound(&self, index: usize, bound: &mut K) {
-        let offset = self.bounds.get(&self.raw, index) as usize;
-        bound.deserialize_from_bytes(&self.raw, offset)
+        unsafe {
+            let offset = self.bounds.get(&self.raw, index) as usize;
+            let mut deserializer = Deserializer::new(self.version);
+            bound.deserialize_from_bytes_with(&self.raw, offset, &mut deserializer)
+        }
     }
 
     /// Returns the index of the child of this index block that contains a row
@@ -1061,34 +1128,36 @@ where
     where
         C: Fn(&K) -> Ordering,
     {
-        let mut start = 0;
-        let mut end = self.n_children() * 2;
-        let mut result = None;
-        while start < end {
-            let mid = start.midpoint(end);
-            let row = self.get_row_bound(mid) + self.first_row;
-            let cmp = match range_compare(target_rows, row) {
-                Equal => {
-                    self.get_bound(mid, bound);
-                    let cmp = compare(bound);
-                    if cmp == Equal {
-                        return Some(mid / 2);
+        unsafe {
+            let mut start = 0;
+            let mut end = self.n_children() * 2;
+            let mut result = None;
+            while start < end {
+                let mid = start.midpoint(end);
+                let row = self.get_row_bound(mid) + self.first_row;
+                let cmp = match range_compare(target_rows, row) {
+                    Equal => {
+                        self.get_bound(mid, bound);
+                        let cmp = compare(bound);
+                        if cmp == Equal {
+                            return Some(mid / 2);
+                        }
+                        cmp
                     }
-                    cmp
+                    cmp => cmp,
+                };
+                if cmp == Less {
+                    end = mid
+                } else {
+                    start = mid + 1
+                };
+                if bias == cmp {
+                    result = Some(mid / 2);
                 }
-                cmp => cmp,
-            };
-            if cmp == Less {
-                end = mid
-            } else {
-                start = mid + 1
-            };
-            if bias == cmp {
-                result = Some(mid / 2);
             }
-        }
 
-        result
+            result
+        }
     }
 
     /// Finds the child `child_index` that contains
@@ -1108,25 +1177,27 @@ where
     where
         I: Index<usize, Output = K> + ?Sized,
     {
-        let start_index = target_indexes.next().unwrap();
-        let mut end = self.n_children();
-        while *start < end {
-            let mid = start.midpoint(end);
-            self.get_bound(mid * 2, tmp_key);
-            if &targets[start_index] < tmp_key {
-                end = mid;
-            } else {
-                *start = mid + 1;
-                self.get_bound(mid * 2 + 1, tmp_key);
-                if &targets[start_index] <= tmp_key {
-                    let n = 1 + target_indexes
-                        .take_while(|i| &targets[*i] <= tmp_key)
-                        .count();
-                    return Some((mid, n));
+        unsafe {
+            let start_index = target_indexes.next().unwrap();
+            let mut end = self.n_children();
+            while *start < end {
+                let mid = start.midpoint(end);
+                self.get_bound(mid * 2, tmp_key);
+                if &targets[start_index] < tmp_key {
+                    end = mid;
+                } else {
+                    *start = mid + 1;
+                    self.get_bound(mid * 2 + 1, tmp_key);
+                    if &targets[start_index] <= tmp_key {
+                        let n = 1 + target_indexes
+                            .take_while(|i| &targets[*i] <= tmp_key)
+                            .count();
+                        return Some((mid, n));
+                    }
                 }
             }
+            None
         }
-        None
     }
 
     fn n_children(&self) -> usize {
@@ -1138,12 +1209,14 @@ where
     where
         C: Fn(&K) -> Ordering,
     {
-        let mut ordering = Equal;
-        key_factory.with(&mut |key| {
-            self.get_bound(self.n_children() * 2 - 1, key);
-            ordering = compare(key);
-        });
-        ordering
+        unsafe {
+            let mut ordering = Equal;
+            key_factory.with(&mut |key| {
+                self.get_bound(self.n_children() * 2 - 1, key);
+                ordering = compare(key);
+            });
+            ordering
+        }
     }
 }
 
@@ -1280,6 +1353,7 @@ struct ImmutableFileRef {
     file_handle: Arc<dyn FileReader>,
     compression: Option<Compression>,
     stats: AtomicCacheStats,
+    version: u32,
 }
 
 impl Debug for ImmutableFileRef {
@@ -1301,12 +1375,14 @@ impl ImmutableFileRef {
         file_handle: Arc<dyn FileReader>,
         compression: Option<Compression>,
         stats: AtomicCacheStats,
+        version: u32,
     ) -> Self {
         Self {
             cache,
             file_handle,
             compression,
             stats,
+            version,
         }
     }
 
@@ -1353,7 +1429,7 @@ fn decompress(
                             length: n,
                             expected_length: decompressed_len,
                         }
-                        .into())
+                        .into());
                     }
                     Err(error) => return Err(CorruptionError::Snappy { location, error }.into()),
                 }
@@ -1421,7 +1497,7 @@ where
 #[derive(Debug)]
 pub struct Reader<T> {
     file: ImmutableFileRef,
-    bloom_filter: Option<BloomFilter>,
+    bloom_filter: Option<TrackingBloomFilter>,
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -1435,7 +1511,7 @@ where
 {
     fn size_of_children(&self, context: &mut size_of::Context) {
         self.file.size_of_with_context(context);
-        context.add(self.filter_size());
+        context.add(self.filter_stats().size_byte);
         self.columns.size_of_with_context(context);
     }
 }
@@ -1449,7 +1525,7 @@ where
         factories: &[&AnyFactories],
         cache: fn() -> Arc<BufferCache>,
         file: Arc<dyn FileReader>,
-        bloom_filter: Option<BloomFilter>,
+        bloom_filter: Option<TrackingBloomFilter>,
     ) -> Result<Self, Error> {
         let file_size = file.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
@@ -1473,7 +1549,7 @@ where
                 warn!("{}: reading old format storage file, performance may be reduced due to incompatible Bloom filters", file.path());
                 Some(false)
             }
-            VERSION_NUMBER => Some(true),
+            3..=VERSION_NUMBER => Some(true),
             _ => None,
         }
         .ok_or_else(|| CorruptionError::InvalidVersion {
@@ -1545,7 +1621,13 @@ where
         };
 
         Ok(Self {
-            file: ImmutableFileRef::new(cache, file, file_trailer.compression, stats),
+            file: ImmutableFileRef::new(
+                cache,
+                file,
+                file_trailer.compression,
+                stats,
+                file_trailer.version,
+            ),
             columns,
             bloom_filter,
             _phantom: PhantomData,
@@ -1594,14 +1676,14 @@ where
         Ok(self.file.file_handle.get_size()?)
     }
 
-    /// Returns the size of the Bloom filter, in bytes.
+    /// Returns statistics of the Bloom filter, including its size in bytes.
     ///
-    /// If the file doesn't have a Bloom filter, returns 0.
-    pub fn filter_size(&self) -> usize {
+    /// If the file doesn't have a Bloom filter, returns a default of zeros.
+    pub fn filter_stats(&self) -> BloomFilterStats {
         if let Some(bloom_filter) = &self.bloom_filter {
-            size_of_val(bloom_filter) + bloom_filter.num_bits() / 8
+            bloom_filter.stats()
         } else {
-            0
+            BloomFilterStats::default()
         }
     }
 
@@ -1787,7 +1869,7 @@ where
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn after(&self) -> Cursor<'a, K, A, N, T> {
-        self.cursor(Position::After { hint: None })
+        unsafe { self.cursor(Position::After { hint: None }) }
     }
 
     /// Return a cursor for the first row in the row group, or just after the
@@ -2089,7 +2171,7 @@ where
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn aux<'b>(&self, aux: &'b mut A) -> Option<&'b mut A> {
-        self.position.aux(&self.row_group.factories, aux)
+        unsafe { self.position.aux(&self.row_group.factories, aux) }
     }
 
     /// Returns the key and auxiliary data in the current row, or `None` if the
@@ -2099,7 +2181,7 @@ where
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn item<'b>(&self, item: (&'b mut K, &'b mut A)) -> Option<(&'b mut K, &'b mut A)> {
-        self.position.item(&self.row_group.factories, item)
+        unsafe { self.position.item(&self.row_group.factories, item) }
     }
 
     /// Returns archived representation of the key and auxiliary data in the
@@ -2110,7 +2192,7 @@ where
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn archived_item(&self) -> Option<&dyn ArchivedItem<'_, K, A>> {
-        self.position.archived_item(&self.row_group.factories)
+        unsafe { self.position.archived_item(&self.row_group.factories) }
     }
 
     /// Returns `true` if the cursor is on a row.
@@ -2157,13 +2239,11 @@ where
     where
         P: Fn(&K) -> bool + Clone,
     {
-        self.advance_to_first_ge(&|key| {
-            if predicate(key) {
-                Less
-            } else {
-                Greater
-            }
-        })
+        unsafe {
+            self.advance_to_first_ge(&|key| {
+                if predicate(key) { Less } else { Greater }
+            })
+        }
     }
 
     /// Moves the cursor forward past rows whose keys are less than `target`.
@@ -2174,7 +2254,7 @@ where
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn advance_to_value_or_larger(&mut self, target: &K) -> Result<(), Error> {
-        self.advance_to_first_ge(&|key| target.cmp(key))
+        unsafe { self.advance_to_first_ge(&|key| target.cmp(key)) }
     }
 
     /// Moves the cursor forward past rows for which `compare` returns [`Less`],
@@ -2196,8 +2276,10 @@ where
     where
         C: Fn(&K) -> Ordering,
     {
-        self.position
-            .advance_to_first_ge(&self.row_group, compare, &mut *self.key)
+        unsafe {
+            self.position
+                .advance_to_first_ge(&self.row_group, compare, &mut *self.key)
+        }
     }
 
     /// Moves the cursor backward past rows for which `predicate` returns false,
@@ -2214,13 +2296,11 @@ where
     where
         P: Fn(&K) -> bool + Clone,
     {
-        self.rewind_to_last_le(&|key| {
-            if !predicate(key) {
-                Less
-            } else {
-                Greater
-            }
-        })
+        unsafe {
+            self.rewind_to_last_le(&|key| {
+                if !predicate(key) { Less } else { Greater }
+            })
+        }
     }
 
     /// Moves the cursor backward past rows whose keys are greater than
@@ -2234,7 +2314,7 @@ where
     where
         K: Ord,
     {
-        self.rewind_to_last_le(&|key| target.cmp(key))
+        unsafe { self.rewind_to_last_le(&|key| target.cmp(key)) }
     }
 
     /// Moves the cursor backward past rows for which `compare` returns
@@ -2252,8 +2332,9 @@ where
     where
         C: Fn(&K) -> Ordering,
     {
-        let position =
-            Position::best_match::<N, T, _>(&self.row_group, compare, Greater, &mut *self.key)?;
+        let position = unsafe {
+            Position::best_match::<N, T, _>(&self.row_group, compare, Greater, &mut *self.key)
+        }?;
         if position < self.position {
             self.position = position;
         }
@@ -2418,16 +2499,16 @@ where
         Err(CorruptionError::MissingRow(row).into())
     }
     unsafe fn key(&self, factories: &Factories<K, A>, key: &mut K) {
-        self.data.key_for_row(factories, self.row, key)
+        unsafe { self.data.key_for_row(factories, self.row, key) }
     }
     unsafe fn aux(&self, factories: &Factories<K, A>, aux: &mut A) {
-        self.data.aux_for_row(factories, self.row, aux)
+        unsafe { self.data.aux_for_row(factories, self.row, aux) }
     }
     unsafe fn item(&self, factories: &Factories<K, A>, item: (&mut K, &mut A)) {
-        self.data.item_for_row(factories, self.row, item)
+        unsafe { self.data.item_for_row(factories, self.row, item) }
     }
     unsafe fn archived_item(&self, factories: &Factories<K, A>) -> &dyn ArchivedItem<'_, K, A> {
-        self.data.archived_item_for_row(factories, self.row)
+        unsafe { self.data.archived_item_for_row(factories, self.row) }
     }
 
     fn row_group(&self) -> Result<Range<u64>, Error> {
@@ -2468,29 +2549,37 @@ where
         T: ColumnSpec,
         C: Fn(&K) -> Ordering,
     {
-        let mut indexes = Vec::new();
-        let Some(mut node) = row_group.reader.columns[row_group.column].root.clone() else {
-            return Ok(None);
-        };
-        loop {
-            match node.read(&row_group.reader.file)? {
-                TreeBlock::Index(index_block) => {
-                    let Some(child_idx) =
-                        index_block.find_best_match(&row_group.rows, compare, bias, key)
-                    else {
-                        return Ok(None);
-                    };
-                    node = index_block.get_child(child_idx)?;
-                    push_index_block(&mut indexes, index_block)?;
-                }
-                TreeBlock::Data(data_block) => {
-                    return Ok(data_block
-                        .find_best_match(&row_group.factories, &row_group.rows, compare, bias, key)
-                        .map(|child_idx| Self {
-                            row: data_block.first_row + child_idx as u64,
-                            indexes,
-                            data: data_block,
-                        }));
+        unsafe {
+            let mut indexes = Vec::new();
+            let Some(mut node) = row_group.reader.columns[row_group.column].root.clone() else {
+                return Ok(None);
+            };
+            loop {
+                match node.read(&row_group.reader.file)? {
+                    TreeBlock::Index(index_block) => {
+                        let Some(child_idx) =
+                            index_block.find_best_match(&row_group.rows, compare, bias, key)
+                        else {
+                            return Ok(None);
+                        };
+                        node = index_block.get_child(child_idx)?;
+                        push_index_block(&mut indexes, index_block)?;
+                    }
+                    TreeBlock::Data(data_block) => {
+                        return Ok(data_block
+                            .find_best_match(
+                                &row_group.factories,
+                                &row_group.rows,
+                                compare,
+                                bias,
+                                key,
+                            )
+                            .map(|child_idx| Self {
+                                row: data_block.first_row + child_idx as u64,
+                                indexes,
+                                data: data_block,
+                            }));
+                    }
                 }
             }
         }
@@ -2533,81 +2622,83 @@ where
         T: ColumnSpec,
         C: Fn(&K) -> Ordering,
     {
-        // Check the current position first. We might already be done.
-        if compare(key) != Greater {
-            return Ok(true);
-        }
-
-        // If the last item in `rows` in the current data block is greater than
-        // or equal to the target, then the position must be in the current data
-        // block.
-        self.data.key_for_row(
-            &row_group.factories,
-            min(self.data.rows().end, row_group.rows.end) - 1,
-            key,
-        );
-        let mut rows = self.row + 1..row_group.rows.end;
-        if compare(key) != Greater {
-            let child_idx = self
-                .data
-                .find_best_match(&row_group.factories, &rows, compare, Less, key)
-                .unwrap();
-            self.row = self.data.first_row + child_idx as u64;
-            return Ok(true);
-        }
-
-        rows.start = self.data.rows().end;
-        while let Some(index_block) = self.indexes.pop() {
-            // We need to go up another level if `rows.end` is beyond the end of
-            // `index_block` and the greatest value under `index_block` is less
-            // than the target.
-            if rows.end > index_block.rows().end
-                && index_block.compare_max(row_group.factories.key_factory, compare) == Greater
-            {
-                rows.start = index_block.rows().end;
-                continue;
+        unsafe {
+            // Check the current position first. We might already be done.
+            if compare(key) != Greater {
+                return Ok(true);
             }
 
-            // Otherwise, our target (if any) must be below `index_block`.
-            let Some(child_idx) = index_block.find_best_match(&rows, compare, Less, key) else {
-                // `rows.end` is inside `index_block` but the largest key is
-                // less than the target.
-                return Ok(false);
-            };
-            let mut node = index_block.get_child(child_idx)?;
-            push_index_block(&mut self.indexes, index_block)?;
+            // If the last item in `rows` in the current data block is greater than
+            // or equal to the target, then the position must be in the current data
+            // block.
+            self.data.key_for_row(
+                &row_group.factories,
+                min(self.data.rows().end, row_group.rows.end) - 1,
+                key,
+            );
+            let mut rows = self.row + 1..row_group.rows.end;
+            if compare(key) != Greater {
+                let child_idx = self
+                    .data
+                    .find_best_match(&row_group.factories, &rows, compare, Less, key)
+                    .unwrap();
+                self.row = self.data.first_row + child_idx as u64;
+                return Ok(true);
+            }
 
-            loop {
-                match node.read::<K, A>(&row_group.reader.file)? {
-                    TreeBlock::Index(index_block) => {
-                        let Some(child_idx) =
-                            index_block.find_best_match(&rows, compare, Less, key)
-                        else {
-                            return Ok(false);
-                        };
-                        node = index_block.get_child(child_idx)?;
-                        push_index_block(&mut self.indexes, index_block)?;
-                    }
-                    TreeBlock::Data(data_block) => {
-                        let Some(child_idx) = data_block.find_best_match(
-                            &row_group.factories,
-                            &rows,
-                            compare,
-                            Less,
-                            key,
-                        ) else {
-                            return Ok(false);
-                        };
-                        self.row = child_idx as u64 + data_block.first_row;
-                        self.data = data_block;
-                        return Ok(true);
+            rows.start = self.data.rows().end;
+            while let Some(index_block) = self.indexes.pop() {
+                // We need to go up another level if `rows.end` is beyond the end of
+                // `index_block` and the greatest value under `index_block` is less
+                // than the target.
+                if rows.end > index_block.rows().end
+                    && index_block.compare_max(row_group.factories.key_factory, compare) == Greater
+                {
+                    rows.start = index_block.rows().end;
+                    continue;
+                }
+
+                // Otherwise, our target (if any) must be below `index_block`.
+                let Some(child_idx) = index_block.find_best_match(&rows, compare, Less, key) else {
+                    // `rows.end` is inside `index_block` but the largest key is
+                    // less than the target.
+                    return Ok(false);
+                };
+                let mut node = index_block.get_child(child_idx)?;
+                push_index_block(&mut self.indexes, index_block)?;
+
+                loop {
+                    match node.read::<K, A>(&row_group.reader.file)? {
+                        TreeBlock::Index(index_block) => {
+                            let Some(child_idx) =
+                                index_block.find_best_match(&rows, compare, Less, key)
+                            else {
+                                return Ok(false);
+                            };
+                            node = index_block.get_child(child_idx)?;
+                            push_index_block(&mut self.indexes, index_block)?;
+                        }
+                        TreeBlock::Data(data_block) => {
+                            let Some(child_idx) = data_block.find_best_match(
+                                &row_group.factories,
+                                &rows,
+                                compare,
+                                Less,
+                                key,
+                            ) else {
+                                return Ok(false);
+                            };
+                            self.row = child_idx as u64 + data_block.first_row;
+                            self.data = data_block;
+                            return Ok(true);
+                        }
                     }
                 }
             }
-        }
 
-        // Every value in `rows` is less than the target.
-        Ok(false)
+            // Every value in `rows` is less than the target.
+            Ok(false)
+        }
     }
 }
 
@@ -2804,19 +2895,23 @@ where
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn key<'k>(&self, factories: &Factories<K, A>, key: &'k mut K) -> Option<&'k mut K> {
-        self.path().map(|path| {
-            path.key(factories, key);
-            key
-        })
+        unsafe {
+            self.path().map(|path| {
+                path.key(factories, key);
+                key
+            })
+        }
     }
     /// # Safety
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn aux<'a>(&self, factories: &Factories<K, A>, aux: &'a mut A) -> Option<&'a mut A> {
-        self.path().map(|path| {
-            path.aux(factories, aux);
-            aux
-        })
+        unsafe {
+            self.path().map(|path| {
+                path.aux(factories, aux);
+                aux
+            })
+        }
     }
     /// # Safety
     ///
@@ -2826,10 +2921,12 @@ where
         factories: &Factories<K, A>,
         item: (&'a mut K, &'a mut A),
     ) -> Option<(&'a mut K, &'a mut A)> {
-        self.path().map(|path| {
-            path.item(factories, (item.0, item.1));
-            item
-        })
+        unsafe {
+            self.path().map(|path| {
+                path.item(factories, (item.0, item.1));
+                item
+            })
+        }
     }
     /// # Safety
     ///
@@ -2838,7 +2935,7 @@ where
         &self,
         factories: &Factories<K, A>,
     ) -> Option<&dyn ArchivedItem<'_, K, A>> {
-        self.path().map(|path| path.archived_item(factories))
+        unsafe { self.path().map(|path| path.archived_item(factories)) }
     }
 
     pub fn row_group(&self) -> Result<Range<u64>, Error> {
@@ -2860,13 +2957,15 @@ where
         T: ColumnSpec,
         C: Fn(&K) -> Ordering,
     {
-        match Path::best_match(row_group, compare, bias, key)? {
-            Some(path) => Ok(Position::Row(path)),
-            None => Ok(if bias == Less {
-                Position::After { hint: None }
-            } else {
-                Position::Before
-            }),
+        unsafe {
+            match Path::best_match(row_group, compare, bias, key)? {
+                Some(path) => Ok(Position::Row(path)),
+                None => Ok(if bias == Less {
+                    Position::After { hint: None }
+                } else {
+                    Position::Before
+                }),
+            }
         }
     }
     fn absolute_position<N, T>(&self, row_group: &RowGroup<K, A, N, T>) -> u64
@@ -2913,29 +3012,31 @@ where
         T: ColumnSpec,
         C: Fn(&K) -> Ordering,
     {
-        match self {
-            Position::Before => {
-                *self = Self::best_match::<N, T, _>(row_group, compare, Less, key)?;
-            }
-            Position::After { .. } => (),
-            Position::Row(path) => {
-                match path.advance_to_first_ge(row_group, compare, key) {
-                    Ok(false) => {
-                        // Discard `path`, which might now violate its internal
-                        // invariants (so don't even try to use it as a hint).
-                        *self = Position::After { hint: None };
-                    }
-                    Ok(true) => (),
-                    Err(error) => {
-                        // Discard `path`, which might now violate its internal
-                        // invariants (so don't even try to use it as a hint).
-                        *self = Position::After { hint: None };
-                        return Err(error);
+        unsafe {
+            match self {
+                Position::Before => {
+                    *self = Self::best_match::<N, T, _>(row_group, compare, Less, key)?;
+                }
+                Position::After { .. } => (),
+                Position::Row(path) => {
+                    match path.advance_to_first_ge(row_group, compare, key) {
+                        Ok(false) => {
+                            // Discard `path`, which might now violate its internal
+                            // invariants (so don't even try to use it as a hint).
+                            *self = Position::After { hint: None };
+                        }
+                        Ok(true) => (),
+                        Err(error) => {
+                            // Discard `path`, which might now violate its internal
+                            // invariants (so don't even try to use it as a hint).
+                            *self = Position::After { hint: None };
+                            return Err(error);
+                        }
                     }
                 }
             }
+            Ok(())
         }
-        Ok(())
     }
 }
 

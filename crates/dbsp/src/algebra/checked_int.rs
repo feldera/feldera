@@ -1,5 +1,5 @@
 use crate::algebra::{AddAssignByRef, AddByRef, HasOne, HasZero, MulByRef, NegByRef};
-use num::{traits::CheckedNeg, CheckedAdd, CheckedMul};
+use num::{CheckedAdd, CheckedMul, traits::CheckedNeg};
 use size_of::SizeOf;
 use std::{
     cmp::Ordering,

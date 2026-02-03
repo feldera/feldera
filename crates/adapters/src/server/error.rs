@@ -39,24 +39,25 @@
 //! [`PipelineError`], which allows [`PipelineError`] to be returned as an error
 //! type by HTTP endpoints.
 
-use crate::{dyn_event, ControllerError, ParseError};
+use crate::{ControllerError, ParseError, dyn_event};
 use actix_web::{
-    body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
+    HttpResponse, HttpResponseBuilder, ResponseError, body::BoxBody, http::StatusCode,
 };
 use anyhow::Error as AnyError;
+use arrow::error::ArrowError;
 use datafusion::error::DataFusionError;
 use dbsp::DetailedError;
 use feldera_types::runtime_status::RuntimeDesiredStatus;
 use parquet::errors::ParquetError;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use std::{
     borrow::Cow,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
     sync::Arc,
 };
-use tracing::{error, warn, Level};
+use tracing::{Level, error, warn};
 use utoipa::ToSchema;
 
 pub const MAX_REPORTED_PARSE_ERRORS: usize = 1_000;
@@ -72,7 +73,7 @@ pub struct ErrorResponse {
     pub error_code: Cow<'static, str>,
     /// Detailed error metadata.
     /// The contents of this field is determined by `error_code`.
-    #[schema(value_type=Object)]
+    #[schema(value_type=Value)]
     pub details: JsonValue,
 }
 
@@ -180,7 +181,6 @@ pub enum PipelineError {
     },
     Suspended,
     InvalidActivateStatus(RuntimeDesiredStatus),
-    InvalidActivateStatusString(String),
     InvalidTransition(&'static str, RuntimeDesiredStatus),
 }
 
@@ -207,6 +207,15 @@ impl From<DataFusionError> for PipelineError {
             // Tracking issue: https://github.com/feldera/feldera/issues/3215
             error: error.to_string().replace("External error: ", ""),
             df: Some(Box::new(error)),
+        }
+    }
+}
+
+impl From<ArrowError> for PipelineError {
+    fn from(error: ArrowError) -> Self {
+        Self::AdHocQueryError {
+            error: error.to_string(),
+            df: None,
         }
     }
 }
@@ -282,12 +291,6 @@ impl Display for PipelineError {
                     "Invalid activation status {status:?} (only running and paused are valid)"
                 )
             }
-            Self::InvalidActivateStatusString(status) => {
-                write!(
-                    f,
-                    "Invalid activation status ?initial={status} (only running and paused are valid)"
-                )
-            }
             Self::InvalidTransition(transition, status) => {
                 write!(f, "Cannot execute {transition} transition starting from {status:?}")
             }
@@ -312,7 +315,6 @@ impl DetailedError for PipelineError {
             Self::AdHocQueryError { .. } => Cow::from("AdHocQueryError"),
             Self::Suspended => Cow::from("Suspended"),
             Self::InvalidActivateStatus(_) => Cow::from("InvalidActivateStatus"),
-            Self::InvalidActivateStatusString(_) => Cow::from("InvalidActivateStatusString"),
             Self::InvalidTransition(_, _) => Cow::from("InvalidTransition"),
         }
     }
@@ -346,7 +348,6 @@ impl ResponseError for PipelineError {
             Self::AdHocQueryError { .. } => StatusCode::BAD_REQUEST,
             Self::Suspended => StatusCode::SERVICE_UNAVAILABLE,
             Self::InvalidActivateStatus(_) => StatusCode::BAD_REQUEST,
-            Self::InvalidActivateStatusString(_) => StatusCode::BAD_REQUEST,
             Self::InvalidTransition(_, _) => StatusCode::BAD_REQUEST,
         }
     }

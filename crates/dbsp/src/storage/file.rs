@@ -73,14 +73,15 @@ use crate::{
     storage::buffer_cache::{FBuf, FBufSerializer},
 };
 use rkyv::de::deserializers::SharedDeserializeMap;
+use rkyv::de::{SharedDeserializeRegistry, SharedPointer};
 use rkyv::{
+    Archive, Archived, Deserialize, Fallible, Serialize,
     ser::{
+        Serializer as _,
         serializers::{
             AllocScratch, CompositeSerializer, FallbackScratch, HeapScratch, SharedSerializeMap,
         },
-        Serializer as _,
     },
-    Archive, Archived, Deserialize, Fallible, Serialize,
 };
 use std::cell::RefCell;
 use std::fmt::Debug;
@@ -92,9 +93,9 @@ pub mod reader;
 pub mod writer;
 
 use crate::{
+    DBData,
     dynamic::{DataTrait, Erase, Factory, WithFactory},
     storage::file::item::RefTup2Factory,
-    DBData,
 };
 pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
 
@@ -164,7 +165,7 @@ where
     /// are unknown.
     ///
     /// See documentation of [`AnyFactories`].
-    pub(crate) fn any_factories(&self) -> AnyFactories {
+    pub fn any_factories(&self) -> AnyFactories {
         AnyFactories {
             key_factory: Arc::new(self.key_factory),
             item_factory: Arc::new(self.item_factory),
@@ -279,7 +280,58 @@ pub type Serializer = CompositeSerializer<FBufSerializer<FBuf>, DbspScratch, Sha
 pub type DbspScratch = FallbackScratch<HeapScratch<65536>, AllocScratch>;
 
 /// The particular [`rkyv`] deserializer that we use.
-pub type Deserializer = SharedDeserializeMap;
+#[derive(Debug)]
+pub struct Deserializer {
+    version: u32,
+    inner: SharedDeserializeMap,
+}
+
+impl Deserializer {
+    /// Create a deserializer configured for the given file format version.
+    pub fn new(version: u32) -> Self {
+        Self {
+            version,
+            inner: SharedDeserializeMap::new(),
+        }
+    }
+
+    /// Create a deserializer with a preallocated shared pointer map.
+    pub fn with_capacity(version: u32, capacity: usize) -> Self {
+        Self {
+            version,
+            inner: SharedDeserializeMap::with_capacity(capacity),
+        }
+    }
+
+    /// Return the file format version this deserializer targets.
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+}
+
+impl Default for Deserializer {
+    fn default() -> Self {
+        Self::new(format::VERSION_NUMBER)
+    }
+}
+
+impl Fallible for Deserializer {
+    type Error = <SharedDeserializeMap as Fallible>::Error;
+}
+
+impl SharedDeserializeRegistry for Deserializer {
+    fn get_shared_ptr(&mut self, ptr: *const u8) -> Option<&dyn SharedPointer> {
+        self.inner.get_shared_ptr(ptr)
+    }
+
+    fn add_shared_ptr(
+        &mut self,
+        ptr: *const u8,
+        shared: Box<dyn SharedPointer>,
+    ) -> Result<(), Self::Error> {
+        self.inner.add_shared_ptr(ptr, shared)
+    }
+}
 
 /// Creates an instance of [Serializer] that will serialize to `serializer` and
 /// passes it to `f`. Returns a tuple of the `FBuf` from the [Serializer] and

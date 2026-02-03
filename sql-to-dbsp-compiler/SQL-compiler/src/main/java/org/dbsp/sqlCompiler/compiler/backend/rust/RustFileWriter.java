@@ -2,13 +2,12 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
 
@@ -114,7 +113,7 @@ public class RustFileWriter extends RustWriter {
         }
         this.generatePreamble();
         if (!this.used.tupleSizesUsed.isEmpty()) {
-            this.builder().append("use dbsp::declare_tuples;").newline();
+            this.builder().append("use feldera_macros::declare_tuple;").newline();
         }
         if (this.generateMalloc)
             this.outputBuilder.append(BaseRustCodeGenerator.ALLOC_PREAMBLE);
@@ -132,17 +131,17 @@ public class RustFileWriter extends RustWriter {
             SourcePositionResource.generateDeclaration(this.outputBuilder);
         }
 
+        ToRustInnerVisitor innerVisitor = new ToRustInnerVisitor(compiler, this.builder(), null, false);
         ProjectDeclarations declarationsDone = new ProjectDeclarations();
         for (IDBSPNode node : this.toWrite) {
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
             if (inner != null) {
-                if (inner.is(DBSPStructItem.class)) {
-                    var list = this.generateStructHelpers(compiler, inner.to(DBSPStructItem.class).type, declarationsDone);
-                    for (var e: list)
-                        ToRustInnerVisitor.toRustString(compiler, this.builder(), e, null, false);
-                } else {
-                    ToRustInnerVisitor.toRustString(compiler, this.builder(), inner, null, false);
-                }
+                var list = this.findStructs(inner, compiler, declarationsDone);
+                for (var e: list)
+                    e.accept(innerVisitor);
+                if (!inner.is(DBSPStructItem.class))
+                    // If it's a struct item, it is part of the list above
+                    inner.accept(innerVisitor);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
                 ToRustVisitor visitor = new ToRustVisitor(
@@ -153,15 +152,28 @@ public class RustFileWriter extends RustWriter {
         }
     }
 
-    List<DBSPStructItem> generateStructHelpers(DBSPCompiler compiler, DBSPType struct, ProjectDeclarations done) {
-        List<DBSPTypeStruct> nested = new ArrayList<>();
+    List<DBSPStructItem> findStructs(IDBSPInnerNode node, DBSPCompiler compiler, ProjectDeclarations done) {
+        List<DBSPStructItem> structs = new ArrayList<>();
+        ToRustVisitor.FindNestedStructs fn = new ToRustVisitor.FindNestedStructs(compiler, structs);
+        fn.apply(node);
+        DBSPStructItem it = node.as(DBSPStructItem.class);
+        if (it != null && it.metadata != null) {
+            // Discover structs used in the metadata
+            for (int i = 0; i < it.metadata.getColumnCount(); i++) {
+                InputColumnMetadata meta = it.metadata.getColumnMetadata(i);
+                if (meta.defaultValue != null)
+                    fn.apply(meta.defaultValue);
+                if (meta.lateness != null)
+                    fn.apply(meta.lateness);
+                if (meta.watermark != null)
+                    fn.apply(meta.watermark);
+            }
+        }
+
         List<DBSPStructItem> result = new ArrayList<>();
-        ToRustVisitor.FindNestedStructs fn = new ToRustVisitor.FindNestedStructs(compiler, nested);
-        fn.apply(struct);
-        for (DBSPTypeStruct s: nested) {
-            if (done.contains(s.name.name()))
+        for (DBSPStructItem item: fn.structs) {
+            if (done.contains(item.getName()))
                 continue;
-            DBSPStructItem item = new DBSPStructItem(s, null);
             result.add(item);
             done.declare(item.getName());
         }

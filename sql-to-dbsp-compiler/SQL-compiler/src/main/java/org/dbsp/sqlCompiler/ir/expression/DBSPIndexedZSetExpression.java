@@ -33,6 +33,11 @@ public final class DBSPIndexedZSetExpression extends DBSPExpression
     }
 
     @Override
+    public boolean isNull() {
+        return false;
+    }
+
+    @Override
     public DBSPExpression deepCopy() {
         return new DBSPIndexedZSetExpression(this.getNode(), this.type);
     }

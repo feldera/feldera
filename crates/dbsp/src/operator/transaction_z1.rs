@@ -4,14 +4,14 @@ use feldera_storage::{FileCommitter, StoragePath};
 use size_of::SizeOf;
 
 use crate::{
+    Circuit, Error, NumEntries, Runtime, Scope, Stream,
     circuit::{
+        GlobalNodeId, OwnershipPreference,
         checkpointer::Checkpoint,
         operator_traits::{Operator, UnaryOperator},
-        GlobalNodeId, OwnershipPreference,
     },
     operator::require_persistent_id,
     storage::file::to_bytes,
-    Circuit, Error, NumEntries, Runtime, Scope, Stream,
 };
 
 impl<C, D> Stream<C, D>

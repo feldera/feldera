@@ -4,11 +4,12 @@ use std::{
     mem::size_of,
 };
 
+use feldera_macros::IsNone;
 use num::PrimInt;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 
-use crate::{dynamic::DynDataTyped, operator::dynamic::time_series::Range, DBData};
+use crate::{DBData, dynamic::DynDataTyped, operator::dynamic::time_series::Range};
 
 use super::{RADIX, RADIX_BITS};
 
@@ -26,6 +27,7 @@ use super::{RADIX, RADIX_BITS};
     Archive,
     Serialize,
     Deserialize,
+    IsNone,
 )]
 #[archive_attr(derive(Eq, PartialEq, PartialOrd, Ord))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -173,7 +175,7 @@ pub type DynPrefix<TS> = DynDataTyped<Prefix<TS>>;
 
 #[cfg(test)]
 mod test {
-    use rkyv::{archived_root, to_bytes, Deserialize, Infallible};
+    use rkyv::{Deserialize, Infallible, archived_root, to_bytes};
 
     use crate::operator::dynamic::time_series::radix_tree::{Prefix, RADIX_BITS};
 

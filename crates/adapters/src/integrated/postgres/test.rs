@@ -1,10 +1,11 @@
-use dbsp::{utils::Tup1, Runtime};
+use dbsp::{Runtime, utils::Tup1};
 use feldera_sqllib::Variant;
 use feldera_types::{
     deserialize_table_record,
     program_schema::{Relation, SqlIdentifier},
     serde_with_context::{SerializeWithContext, SqlSerdeConfig},
     serialize_table_record,
+    transport::postgres::PostgresWriteMode,
 };
 use pg::PostgresTestStruct;
 use postgres::NoTls;
@@ -14,8 +15,9 @@ use std::{collections::BTreeMap, io::Write, path::Path};
 use tempfile::NamedTempFile;
 
 use crate::{
-    test::{wait, TestStruct},
     Catalog, Controller,
+    integrated::postgres::test::pg::PostgresTestStructCdc,
+    test::{TestStruct, wait},
 };
 
 fn postgres_url() -> String {
@@ -27,8 +29,9 @@ mod pg {
     use std::collections::BTreeMap;
 
     use chrono::SubsecRound;
-    use dbsp::{utils::Tup1, Runtime};
-    use feldera_sqllib::{SqlDecimal, SqlString, Variant, F32, F64};
+    use dbsp::{Runtime, utils::Tup1};
+    use feldera_macros::IsNone;
+    use feldera_sqllib::{F32, F64, SqlDecimal, SqlString, Variant};
     use feldera_types::{
         config::PipelineConfig,
         deserialize_table_record,
@@ -36,9 +39,9 @@ mod pg {
         serialize_table_record,
     };
     use postgres::{NoTls, Row};
-    use rand::{distributions::Standard, prelude::Distribution, Rng};
+    use rand::{Rng, distributions::Standard, prelude::Distribution};
 
-    use crate::{test::TestStruct, Catalog, Controller};
+    use crate::{Catalog, Controller, test::TestStruct};
 
     #[derive(Debug, postgres_types::ToSql, postgres_types::FromSql)]
     #[postgres(name = "test_struct")]
@@ -73,6 +76,7 @@ mod pg {
         rkyv::Archive,
         rkyv::Serialize,
         rkyv::Deserialize,
+        IsNone,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     pub(super) struct PostgresTestStruct {
@@ -95,6 +99,55 @@ mod pg {
         pub string_array_: Vec<feldera_sqllib::SqlString>,
         pub struct_array_: Vec<TestStruct>,
         pub map_: BTreeMap<feldera_sqllib::SqlString, TestStruct>,
+    }
+
+    #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
+    pub(super) struct PostgresTestStructCdc {
+        pub boolean_: bool,
+        pub tinyint_: i8,
+        pub smallint_: i16,
+        pub int_: i32,
+        pub bigint_: i64,
+        pub decimal_: SqlDecimal<38, 10>,
+        pub float_: F32,
+        pub double_: F64,
+        pub varchar_: SqlString,
+        pub time_: feldera_sqllib::Time,
+        pub date_: feldera_sqllib::Date,
+        pub timestamp_: feldera_sqllib::Timestamp,
+        pub variant_: feldera_sqllib::Variant,
+        pub uuid_: feldera_sqllib::Uuid,
+        pub varbinary_: feldera_sqllib::ByteArray,
+        pub struct_: TestStruct,
+        pub string_array_: Vec<feldera_sqllib::SqlString>,
+        pub struct_array_: Vec<TestStruct>,
+        pub map_: BTreeMap<feldera_sqllib::SqlString, TestStruct>,
+        pub __feldera_op: String,
+        pub __feldera_ts: feldera_sqllib::Timestamp,
+    }
+
+    impl PartialEq<PostgresTestStruct> for PostgresTestStructCdc {
+        fn eq(&self, other: &PostgresTestStruct) -> bool {
+            self.boolean_ == other.boolean_
+                && self.tinyint_ == other.tinyint_
+                && self.smallint_ == other.smallint_
+                && self.int_ == other.int_
+                && self.bigint_ == other.bigint_
+                && self.decimal_ == other.decimal_
+                && self.float_ == other.float_
+                && self.double_ == other.double_
+                && self.varchar_ == other.varchar_
+                && self.time_ == other.time_
+                && self.date_ == other.date_
+                && self.timestamp_ == other.timestamp_
+                && self.variant_ == other.variant_
+                && self.uuid_ == other.uuid_
+                && self.varbinary_ == other.varbinary_
+                && self.struct_ == other.struct_
+                && self.string_array_ == other.string_array_
+                && self.struct_array_ == other.struct_array_
+                && self.map_ == other.map_
+        }
     }
 
     serialize_table_record!(PostgresTestStruct[19]{
@@ -147,8 +200,10 @@ mod pg {
     }
 
     impl TempPgTable {
-        fn new(name: &str, uri: String) -> Self {
+        fn new(name: &str, uri: String, pk: bool) -> Self {
             let mut client = postgres::Client::connect(&uri, NoTls).unwrap();
+
+            let pk = if pk { "PRIMARY KEY" } else { "" };
 
             client
                 .execute(
@@ -171,7 +226,7 @@ CREATE TABLE {name} (
     tinyint_      SMALLINT,
     smallint_     SMALLINT,
     int_          INTEGER,
-    bigint_       BIGINT PRIMARY KEY,
+    bigint_       BIGINT {pk},
     decimal_      DECIMAL,
     float_        REAL,
     double_       DOUBLE PRECISION,
@@ -185,7 +240,9 @@ CREATE TABLE {name} (
     string_array_ VARCHAR ARRAY,
     struct_       test_struct,
     struct_array_ test_struct ARRAY,
-    map_          JSONB
+    map_          JSONB,
+    __feldera_op  CHAR,
+    __feldera_ts  BIGINT
 )"#
                     ),
                     &[],
@@ -263,6 +320,51 @@ CREATE TABLE {name} (
         }
     }
 
+    impl From<Row> for PostgresTestStructCdc {
+        fn from(r: Row) -> Self {
+            PostgresTestStructCdc {
+                boolean_: r.get("boolean_"),
+                tinyint_: r.get::<_, i16>("tinyint_") as i8,
+                smallint_: r.get("smallint_"),
+                int_: r.get("int_"),
+                bigint_: r.get("bigint_"),
+                decimal_: r
+                    .get::<_, String>("decimal_str")
+                    .parse::<SqlDecimal<38, 10>>()
+                    .unwrap(),
+                float_: F32::new(r.get("float_")),
+                double_: F64::new(r.get("double_")),
+                varchar_: SqlString::from_ref(r.get("varchar_")),
+                time_: feldera_sqllib::Time::from_time(r.get("time_")),
+                date_: feldera_sqllib::Date::from_date(r.get("date_")),
+                timestamp_: feldera_sqllib::Timestamp::from_naiveDateTime(r.get("timestamp_")),
+                variant_: feldera_sqllib::from_json_string(
+                    &r.get::<_, serde_json::Value>("variant_").to_string(),
+                )
+                .unwrap(),
+                uuid_: r.get::<_, uuid::Uuid>("uuid_").into(),
+                varbinary_: feldera_sqllib::ByteArray::from_vec(r.get::<_, Vec<u8>>("varbinary_")),
+                struct_: { r.get::<_, TempTestStruct>("struct_").into() },
+                string_array_: r
+                    .get::<_, Vec<String>>("string_array_")
+                    .into_iter()
+                    .map(|s| s.into())
+                    .collect(),
+                struct_array_: r
+                    .get::<_, Vec<TempTestStruct>>("struct_array_")
+                    .into_iter()
+                    .map(TestStruct::from)
+                    .collect(),
+                map_: serde_json::from_value(r.get::<_, serde_json::Value>("map_")).unwrap(),
+                __feldera_op: r.get("__feldera_op"),
+                __feldera_ts: feldera_sqllib::Timestamp::from_dateTime(
+                    chrono::DateTime::from_timestamp_micros(r.get::<_, i64>("__feldera_ts"))
+                        .unwrap(),
+                ),
+            }
+        }
+    }
+
     impl PostgresTestStruct {
         pub fn schema() -> Vec<Field> {
             vec![
@@ -304,8 +406,8 @@ CREATE TABLE {name} (
             ]
         }
 
-        pub fn create_table(name: &str, uri: String) -> TempPgTable {
-            TempPgTable::new(name, uri)
+        pub fn create_table(name: &str, uri: String, pk: bool) -> TempPgTable {
+            TempPgTable::new(name, uri, pk)
         }
 
         pub fn test_circuit(
@@ -401,16 +503,16 @@ CREATE TABLE {name} (
     impl Distribution<PostgresTestStruct> for Standard {
         fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> PostgresTestStruct {
             PostgresTestStruct {
-                boolean_: rng.gen(),
-                tinyint_: rng.gen(),
-                smallint_: rng.gen(),
-                int_: rng.gen(),
-                bigint_: rng.gen(),
+                boolean_: rng.r#gen(),
+                tinyint_: rng.r#gen(),
+                smallint_: rng.r#gen(),
+                int_: rng.r#gen(),
+                bigint_: rng.r#gen(),
                 decimal_: SqlDecimal::<38, 10>::new(rng.gen_range::<i128, _>(-100..100), 3)
                     .unwrap(),
-                float_: F32::new((rng.gen::<f32>() * 1000.0).trunc() / 1000.0),
-                double_: F64::new((rng.gen::<f64>() * 1000.0).trunc() / 1000.0),
-                varchar_: rng.gen::<u32>().to_string().into(),
+                float_: F32::new((rng.r#gen::<f32>() * 1000.0).trunc() / 1000.0),
+                double_: F64::new((rng.r#gen::<f64>() * 1000.0).trunc() / 1000.0),
+                varchar_: rng.r#gen::<u32>().to_string().into(),
                 time_: feldera_sqllib::Time::from_time(
                     chrono::Utc::now().naive_utc().time().round_subsecs(5),
                 ),
@@ -418,15 +520,15 @@ CREATE TABLE {name} (
                 timestamp_: feldera_sqllib::Timestamp::from_naiveDateTime(
                     chrono::Utc::now().naive_utc(),
                 ),
-                variant_: feldera_sqllib::Variant::String(rng.gen::<u32>().to_string().into()),
+                variant_: feldera_sqllib::Variant::String(rng.r#gen::<u32>().to_string().into()),
                 uuid_: uuid::Uuid::new_v4().into(),
                 varbinary_: feldera_sqllib::ByteArray::from_vec(vec![rng.gen_range(0..127)]),
-                struct_: rng.gen(),
+                struct_: rng.r#gen(),
                 string_array_: vec![],
-                struct_array_: vec![rng.gen()],
+                struct_array_: vec![rng.r#gen()],
                 map_: {
                     let mut map = BTreeMap::new();
-                    map.insert(rng.gen::<u32>().to_string().into(), rng.gen());
+                    map.insert(rng.r#gen::<u32>().to_string().into(), rng.r#gen());
                     map
                 },
             }
@@ -434,7 +536,7 @@ CREATE TABLE {name} (
     }
 }
 
-fn test_pg_on_conflict(on_conflict_do_nothing: bool) {
+fn test_pg_on_conflict(on_conflict_do_nothing: bool, mode: PostgresWriteMode) {
     let table_name = "test_pg_on_conflict";
     let url = postgres_url();
     let max_buffer_size_bytes = 1024;
@@ -510,7 +612,11 @@ fn test_pg_on_conflict(on_conflict_do_nothing: bool) {
                             "uri": url_clone,
                             "table": table_name,
                             "max_buffer_size_bytes": max_buffer_size_bytes,
-                            "on_conflict_do_nothing": on_conflict_do_nothing
+                            "on_conflict_do_nothing": on_conflict_do_nothing,
+                            "mode": match mode {
+                                PostgresWriteMode::Materialized => "materialized",
+                                PostgresWriteMode::Cdc => "cdc",
+                            }
                         }
                     },
                     "index": "idx"
@@ -520,7 +626,11 @@ fn test_pg_on_conflict(on_conflict_do_nothing: bool) {
         .unwrap()
     };
 
-    let mut table = PostgresTestStruct::create_table(table_name, url);
+    let mut table = PostgresTestStruct::create_table(
+        table_name,
+        url,
+        matches!(mode, PostgresWriteMode::Materialized),
+    );
 
     let (controller, err_receiver) =
         PostgresTestStruct::test_circuit(get_config(insert_file.path()));
@@ -529,17 +639,32 @@ fn test_pg_on_conflict(on_conflict_do_nothing: bool) {
     data.sort();
 
     wait(
-        || {
-            let rows = table.query();
+        || match mode {
+            PostgresWriteMode::Materialized => {
+                let rows = table.query();
 
-            let mut got = rows
-                .into_iter()
-                .map(PostgresTestStruct::from)
-                .collect::<Vec<_>>();
+                let mut got = rows
+                    .into_iter()
+                    .map(PostgresTestStruct::from)
+                    .collect::<Vec<_>>();
 
-            got.sort();
+                got.sort();
 
-            data == got || !err_receiver.is_empty()
+                data == got || !err_receiver.is_empty()
+            }
+            PostgresWriteMode::Cdc => {
+                let rows = table.query();
+
+                let mut got = rows
+                    .into_iter()
+                    .map(PostgresTestStructCdc::from)
+                    .collect::<Vec<_>>();
+
+                got.sort();
+
+                got == data && got.iter().all(|r| r.__feldera_op.as_str() == "i")
+                    || !err_receiver.is_empty()
+            }
         },
         40_000,
     )
@@ -553,28 +678,57 @@ fn test_pg_on_conflict(on_conflict_do_nothing: bool) {
     controller.start();
     upsert_data.sort();
 
-    let expected = if on_conflict_do_nothing {
+    let expected = if on_conflict_do_nothing && matches!(mode, PostgresWriteMode::Materialized) {
         data
     } else {
         upsert_data
     };
 
-    wait(
-        || {
-            let rows = table.query();
+    match mode {
+        PostgresWriteMode::Materialized => {
+            wait(
+                || {
+                    let rows = table.query();
 
-            let mut got = rows
-                .into_iter()
-                .map(PostgresTestStruct::from)
-                .collect::<Vec<_>>();
+                    let mut got = rows
+                        .into_iter()
+                        .map(PostgresTestStruct::from)
+                        .collect::<Vec<_>>();
 
-            got.sort();
+                    got.sort();
 
-            got == expected || !err_receiver.is_empty()
-        },
-        40_000,
-    )
-    .expect("timeout: failed to update data into postgres");
+                    got == expected || !err_receiver.is_empty()
+                },
+                40_000,
+            )
+            .expect("timeout: failed to update data into postgres");
+        }
+        PostgresWriteMode::Cdc => {
+            wait(
+                || {
+                    let rows = table.query();
+
+                    let got = rows
+                        .into_iter()
+                        .map(PostgresTestStructCdc::from)
+                        .collect::<Vec<_>>();
+
+                    let mut got: Vec<_> = got
+                        .iter()
+                        .filter(|r| r.varchar_ == "updated".into())
+                        .cloned()
+                        .collect();
+
+                    got.sort();
+
+                    got == expected && got.iter().all(|r| r.__feldera_op.as_str() == "i")
+                        || !err_receiver.is_empty()
+                },
+                40_000,
+            )
+            .expect("timeout: failed to update data into postgres");
+        }
+    }
 
     controller.stop().unwrap();
 }
@@ -582,18 +736,28 @@ fn test_pg_on_conflict(on_conflict_do_nothing: bool) {
 #[test]
 #[serial]
 fn test_pg_on_conflict_do_update() {
-    test_pg_on_conflict(false);
+    test_pg_on_conflict(false, PostgresWriteMode::Materialized);
 }
 
 #[test]
 #[serial]
 fn test_pg_on_conflict_do_nothing() {
-    test_pg_on_conflict(true);
+    test_pg_on_conflict(true, PostgresWriteMode::Materialized);
 }
 
 #[test]
 #[serial]
 fn test_pg_insert0() {
+    pg_insert0(PostgresWriteMode::Materialized);
+}
+
+#[test]
+#[serial]
+fn test_pg_insert0_cdc() {
+    pg_insert0(PostgresWriteMode::Cdc);
+}
+
+fn pg_insert0(mode: PostgresWriteMode) {
     let table_name = "test_pg_insert";
     let url = postgres_url();
     let max_buffer_size_bytes = 1024;
@@ -646,6 +810,10 @@ fn test_pg_insert0() {
               "uri": url,
               "table": table_name,
               "max_buffer_size_bytes": max_buffer_size_bytes,
+              "mode": match mode {
+                  PostgresWriteMode::Materialized => "materialized",
+                  PostgresWriteMode::Cdc => "cdc",
+              }
             }
           },
           "index": "idx"
@@ -654,25 +822,44 @@ fn test_pg_insert0() {
     }))
     .unwrap();
 
-    let mut table = PostgresTestStruct::create_table(table_name, url);
+    let mut table = PostgresTestStruct::create_table(
+        table_name,
+        url,
+        matches!(mode, PostgresWriteMode::Materialized),
+    );
 
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
     controller.start();
+    data.sort();
 
     wait(
-        || {
-            let rows = table.query();
+        || match mode {
+            PostgresWriteMode::Materialized => {
+                let rows = table.query();
 
-            let mut got = rows
-                .into_iter()
-                .map(PostgresTestStruct::from)
-                .collect::<Vec<_>>();
+                let mut got = rows
+                    .into_iter()
+                    .map(PostgresTestStruct::from)
+                    .collect::<Vec<_>>();
 
-            got.sort();
-            data.sort();
+                got.sort();
 
-            data == got || !err_receiver.is_empty()
+                data == got || !err_receiver.is_empty()
+            }
+            PostgresWriteMode::Cdc => {
+                let rows = table.query();
+
+                let mut got = rows
+                    .into_iter()
+                    .map(PostgresTestStructCdc::from)
+                    .collect::<Vec<_>>();
+
+                got.sort();
+
+                got == data && got.iter().all(|r| r.__feldera_op.as_str() == "i")
+                    || !err_receiver.is_empty()
+            }
         },
         40_000,
     )
@@ -742,7 +929,7 @@ fn test_pg_insert() {
     }))
     .unwrap();
 
-    let mut table = PostgresTestStruct::create_table(table_name, url);
+    let mut table = PostgresTestStruct::create_table(table_name, url, true);
 
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
@@ -770,6 +957,16 @@ fn test_pg_insert() {
 #[test]
 #[serial]
 fn test_pg_upsert0() {
+    pg_upsert0(PostgresWriteMode::Materialized);
+}
+
+#[test]
+#[serial]
+fn test_pg_upsert0_cdc() {
+    pg_upsert0(PostgresWriteMode::Cdc);
+}
+
+fn pg_upsert0(mode: PostgresWriteMode) {
     let table_name = "test_pg_upsert";
     let url = postgres_url();
     let max_buffer_size_bytes = 1024;
@@ -879,7 +1076,12 @@ fn test_pg_upsert0() {
                     "config": {
                         "uri": url,
                         "table": table_name,
-                        "max_buffer_size_bytes": max_buffer_size_bytes
+                        "max_buffer_size_bytes": max_buffer_size_bytes,
+                        "mode": match mode {
+                            PostgresWriteMode::Materialized => "materialized",
+                            PostgresWriteMode::Cdc => "cdc",
+                        }
+
                     }
                 },
                 "index": "idx"
@@ -888,25 +1090,44 @@ fn test_pg_upsert0() {
     }))
     .unwrap();
 
-    let mut table = PostgresTestStruct::create_table(table_name, url);
+    let mut table = PostgresTestStruct::create_table(
+        table_name,
+        url,
+        matches!(mode, PostgresWriteMode::Materialized),
+    );
 
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
     controller.start();
+    data.sort();
 
     wait(
-        || {
-            let rows = table.query();
+        || match mode {
+            PostgresWriteMode::Materialized => {
+                let rows = table.query();
 
-            let mut got = rows
-                .into_iter()
-                .map(PostgresTestStruct::from)
-                .collect::<Vec<_>>();
+                let mut got = rows
+                    .into_iter()
+                    .map(PostgresTestStruct::from)
+                    .collect::<Vec<_>>();
 
-            got.sort();
-            data.sort();
+                got.sort();
 
-            data == got || !err_receiver.is_empty()
+                data == got || !err_receiver.is_empty()
+            }
+            PostgresWriteMode::Cdc => {
+                let rows = table.query();
+
+                let mut got = rows
+                    .into_iter()
+                    .map(PostgresTestStructCdc::from)
+                    .collect::<Vec<_>>();
+
+                got.sort();
+
+                got == data && got.iter().all(|r| r.__feldera_op.as_str() == "i")
+                    || !err_receiver.is_empty()
+            }
         },
         40_000,
     )
@@ -916,19 +1137,46 @@ fn test_pg_upsert0() {
         .start_input_endpoint("ups")
         .expect("failed to start upsert input file connector");
 
+    upsert_data.sort();
+
     wait(
-        || {
-            let rows = table.query();
+        || match mode {
+            PostgresWriteMode::Materialized => {
+                let rows = table.query();
 
-            let mut got = rows
-                .into_iter()
-                .map(PostgresTestStruct::from)
-                .collect::<Vec<_>>();
+                let mut got = rows
+                    .into_iter()
+                    .map(PostgresTestStruct::from)
+                    .collect::<Vec<_>>();
 
-            got.sort();
-            upsert_data.sort();
+                got.sort();
 
-            got == upsert_data || !err_receiver.is_empty()
+                got == upsert_data || !err_receiver.is_empty()
+            }
+            PostgresWriteMode::Cdc => {
+                let rows = table.query();
+
+                let got = rows
+                    .into_iter()
+                    .map(PostgresTestStructCdc::from)
+                    .collect::<Vec<_>>();
+
+                let mut deletes = got
+                    .iter()
+                    .filter(|r| r.__feldera_op.as_str() == "d")
+                    .cloned()
+                    .collect::<Vec<_>>();
+                deletes.sort();
+
+                let mut updates = got
+                    .iter()
+                    .filter(|r| r.varchar_ == "updated".into() && r.__feldera_op.as_str() == "i")
+                    .cloned()
+                    .collect::<Vec<_>>();
+                updates.sort();
+
+                deletes == data && updates == upsert_data || !err_receiver.is_empty()
+            }
         },
         40_000,
     )
@@ -1056,7 +1304,7 @@ fn test_pg_upsert() {
     }))
     .unwrap();
 
-    let mut table = PostgresTestStruct::create_table(table_name, url);
+    let mut table = PostgresTestStruct::create_table(table_name, url, true);
 
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
@@ -1106,6 +1354,16 @@ fn test_pg_upsert() {
 #[test]
 #[serial]
 fn test_pg_delete() {
+    pg_delete(PostgresWriteMode::Materialized)
+}
+
+#[test]
+#[serial]
+fn test_pg_delete_cdc() {
+    pg_delete(PostgresWriteMode::Cdc)
+}
+
+fn pg_delete(mode: PostgresWriteMode) {
     let table_name = "test_pg_delete";
     let url = postgres_url();
 
@@ -1188,7 +1446,11 @@ fn test_pg_delete() {
             "name": "postgres_output",
             "config": {
               "uri": url,
-              "table": table_name
+              "table": table_name,
+              "mode": match mode {
+                  PostgresWriteMode::Materialized => "materialized",
+                  PostgresWriteMode::Cdc => "cdc",
+              }
             }
           },
           "index": "idx"
@@ -1197,25 +1459,44 @@ fn test_pg_delete() {
     }))
     .unwrap();
 
-    let mut table = PostgresTestStruct::create_table(table_name, url);
+    let mut table = PostgresTestStruct::create_table(
+        table_name,
+        url,
+        matches!(mode, PostgresWriteMode::Materialized),
+    );
 
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
     controller.start();
+    data.sort();
 
     wait(
-        || {
-            let rows = table.query();
+        || match mode {
+            PostgresWriteMode::Materialized => {
+                let rows = table.query();
 
-            let mut got = rows
-                .into_iter()
-                .map(PostgresTestStruct::from)
-                .collect::<Vec<_>>();
+                let mut got = rows
+                    .into_iter()
+                    .map(PostgresTestStruct::from)
+                    .collect::<Vec<_>>();
 
-            got.sort();
-            data.sort();
+                got.sort();
 
-            data == got || !err_receiver.is_empty()
+                data == got || !err_receiver.is_empty()
+            }
+            PostgresWriteMode::Cdc => {
+                let rows = table.query();
+
+                let mut got = rows
+                    .into_iter()
+                    .map(PostgresTestStructCdc::from)
+                    .collect::<Vec<_>>();
+
+                got.sort();
+
+                got == data && got.iter().all(|r| r.__feldera_op.as_str() == "i")
+                    || !err_receiver.is_empty()
+            }
         },
         40_000,
     )
@@ -1226,15 +1507,40 @@ fn test_pg_delete() {
         .expect("failed to start delete input file connector");
 
     wait(
-        || {
-            let rows = table.query();
+        || match mode {
+            PostgresWriteMode::Materialized => {
+                let rows = table.query();
 
-            let got = rows
-                .into_iter()
-                .map(PostgresTestStruct::from)
-                .collect::<Vec<_>>();
+                let got = rows
+                    .into_iter()
+                    .map(PostgresTestStruct::from)
+                    .collect::<Vec<_>>();
 
-            got.is_empty() || !err_receiver.is_empty()
+                got.is_empty() || !err_receiver.is_empty()
+            }
+            PostgresWriteMode::Cdc => {
+                let rows = table.query();
+
+                let got = rows
+                    .into_iter()
+                    .map(PostgresTestStructCdc::from)
+                    .collect::<Vec<_>>();
+
+                let mut got = got
+                    .iter()
+                    .filter(|r| r.__feldera_op.as_str() != "i")
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                got.sort();
+
+                got.len() == data.len()
+                    && got
+                        .iter()
+                        .skip(data.len())
+                        .all(|r| r.__feldera_op.as_str() == "d")
+                    || !err_receiver.is_empty()
+            }
         },
         40_000,
     )

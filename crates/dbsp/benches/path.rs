@@ -1,6 +1,6 @@
 use dbsp::{
-    mimalloc::MiMalloc, operator::Generator, typed_batch::DynBatchReader, utils::Tup2, Circuit,
-    OrdZSet, RootCircuit, Runtime, Stream,
+    Circuit, OrdZSet, RootCircuit, Runtime, Stream, mimalloc::MiMalloc, operator::Generator,
+    typed_batch::DynBatchReader, utils::Tup2,
 };
 
 #[global_allocator]

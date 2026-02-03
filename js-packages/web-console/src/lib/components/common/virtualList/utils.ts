@@ -9,16 +9,16 @@ export function scrollStop(refresh = 100) {
 }
 
 export function scrollSpeed(refresh = 200) {
-  let lastScrollPosition: number | undefined = undefined
+  let lastScrollPosition: number | undefined
   let isScrollingFast: ReturnType<typeof setTimeout> | undefined
 
   return (
-      speed: number,
-      callback: {
-        fast: () => void
-        slow: () => void
-      }
-    ) =>
+    speed: number,
+    callback: {
+      fast: () => void
+      slow: () => void
+    }
+  ) =>
     (scrollPosition: number) => {
       if (!lastScrollPosition) {
         lastScrollPosition = scrollPosition

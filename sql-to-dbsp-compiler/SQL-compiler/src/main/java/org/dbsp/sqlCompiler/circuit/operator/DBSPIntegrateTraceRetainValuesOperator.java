@@ -25,7 +25,7 @@ import java.util.Objects;
 
 /** Currently always inserted after the input of a join operator */
 public final class DBSPIntegrateTraceRetainValuesOperator
-        extends DBSPBinaryOperator implements GCOperator {
+        extends DBSPBinaryOperator implements IGCOperator {
 
     public final boolean accumulate;
 
@@ -33,8 +33,13 @@ public final class DBSPIntegrateTraceRetainValuesOperator
             CalciteRelNode node, DBSPExpression function,
             OutputPort data, OutputPort control, boolean accumulate) {
         super(node, accumulate ? "accumulate_integrate_trace_retain_values" : "integrate_trace_retain_values",
-                function, data.outputType(), data.isMultiset(), data, control, false);
+                function, data.outputType(), data.isMultiset(), data, control);
         this.accumulate = accumulate;
+    }
+
+    @Override
+    public DBSPSimpleOperator asOperator() {
+        return this;
     }
 
     public static DBSPIntegrateTraceRetainValuesOperator create(

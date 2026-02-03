@@ -4,17 +4,18 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::{StreamExt, stream::FuturesUnordered};
 use rand::Rng;
 use rkyv::ser::Serializer;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 
 use super::SpineCursor;
-use crate::dynamic::{DynVec, Factory};
-use crate::trace::cursor::{CursorFactory, CursorList};
-use crate::trace::{merge_batches, Batch, BatchReader, BatchReaderFactories, Cursor, Spine};
 use crate::NumEntries;
+use crate::dynamic::{DynVec, Factory};
+use crate::storage::tracking_bloom_filter::BloomFilterStats;
+use crate::trace::cursor::{CursorFactory, CursorList};
+use crate::trace::{Batch, BatchReader, BatchReaderFactories, Cursor, Spine, merge_batches};
 
 pub trait WithSnapshot: Sized {
     type Batch: Batch;
@@ -114,8 +115,22 @@ where
         }
     }
 
+    pub fn with_batches(factories: &B::Factories, batches: Vec<Arc<B>>) -> Self {
+        Self {
+            batches,
+            factories: factories.clone(),
+        }
+    }
+
     pub fn extend(&mut self, other: Self) {
         self.batches.extend(other.batches.iter().cloned())
+    }
+
+    pub fn extend_with_batches<I>(&mut self, batches: I)
+    where
+        I: IntoIterator<Item = Arc<B>>,
+    {
+        self.batches.extend(batches);
     }
 
     pub fn concat<'a, I>(factories: B::Factories, snapshots: I) -> Self
@@ -212,8 +227,8 @@ where
             .fold(0, |acc, batch| acc + batch.approximate_byte_size())
     }
 
-    fn filter_size(&self) -> usize {
-        self.batches.iter().map(|b| b.filter_size()).sum()
+    fn filter_stats(&self) -> BloomFilterStats {
+        self.batches.iter().map(|b| b.filter_stats()).sum()
     }
 
     fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut DynVec<Self::Key>)

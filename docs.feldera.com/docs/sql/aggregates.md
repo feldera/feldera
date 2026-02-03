@@ -177,11 +177,21 @@ The following window aggregate functions are supported:
         the window is used to compute a TopK aggregate.</td>
   </tr>
   <tr>
+    <td><a id="first_value"></a><code>FIRST_VALUE(expression)</code></td>
+    <td>Returns the value of <code>expression</code> at the first row of the window frame.
+    Currently only supported for windows with <code>UNLIMITED RANGE</code>.</td>
+  </tr>
+  <tr>
     <td><a id="lag"></a><code>LAG(</code><em>expression</em>, [<em>offset</em>, [ <em>default</em> ] ]<code>)</code></td>
     <td>Returns <em>expression</em> evaluated at the row that is <em>offset</em> rows before the current row
         within the partition; if there is no such row, instead returns <em>default</em>.
         Both <em>offset</em> and <em>default</em> are evaluated with respect to the current row.
         If omitted, <em>offset</em> defaults to 1 and <em>default</em> to <code>NULL</code>.</td>
+  </tr>
+  <tr>
+    <td><a id="last_value"></a><code>LAST_VALUE(expression)</code></td>
+    <td>Returns the value of <code>expression</code> at the last row of the window frame.
+    Currently only supported for windows with <code>UNLIMITED RANGE</code></td>
   </tr>
   <tr>
     <td><a id="lead"></a><code>LEAD(</code><em>expression</em>, [<em>offset</em>, [ <em>default</em> ] ]<code>)</code></td>

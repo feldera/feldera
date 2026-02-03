@@ -9,11 +9,11 @@
 
 use crate::utils::Tup2;
 use crate::{
-    circuit::{
-        operator_traits::{Operator, SourceOperator},
-        Scope,
-    },
     DBData, OrdZSet, Runtime, ZWeight,
+    circuit::{
+        Scope,
+        operator_traits::{Operator, SourceOperator},
+    },
 };
 use csv::Reader as CsvReader;
 use serde::Deserialize;
@@ -92,7 +92,7 @@ where
 mod test {
     use crate::operator::CsvSource;
     use crate::utils::Tup3;
-    use crate::{zset, Circuit, OrdZSet, RootCircuit};
+    use crate::{Circuit, OrdZSet, RootCircuit, zset};
     use csv::ReaderBuilder;
 
     #[test]

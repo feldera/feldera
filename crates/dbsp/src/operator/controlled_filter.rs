@@ -1,7 +1,7 @@
 use crate::{
+    Circuit, DBData, IndexedZSet, OrdZSet, Stream, TypedBox, ZWeight,
     dynamic::{DowncastTrait, DynData},
     operator::dynamic::controlled_filter::ControlledFilterFactories,
-    Circuit, DBData, IndexedZSet, OrdZSet, Stream, TypedBox, ZWeight,
 };
 
 impl<C, Z> Stream<C, Z>

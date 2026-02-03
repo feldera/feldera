@@ -22,8 +22,9 @@ public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
     public DBSPStreamJoinIndexOperator(
             CalciteRelNode node, DBSPTypeIndexedZSet outputType,
             DBSPExpression function, boolean isMultiset,
-            OutputPort left, OutputPort right) {
-        super(node, "stream_join_index", function, outputType, isMultiset, left, right);
+            OutputPort left, OutputPort right, boolean balanced) {
+        super(node, "stream_join_index", function, outputType, isMultiset, left, right, balanced);
+        Utilities.enforce(!balanced);
         Utilities.enforce(left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType));
     }
 
@@ -35,7 +36,7 @@ public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
             return new DBSPStreamJoinIndexOperator(
                     this.getRelNode(), outputType.to(DBSPTypeIndexedZSet.class),
                     Objects.requireNonNull(function),
-                    this.isMultiset, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+                    this.isMultiset, newInputs.get(0), newInputs.get(1), this.balanced).copyAnnotations(this);
         }
         return this;
     }
@@ -54,8 +55,9 @@ public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator {
     @SuppressWarnings("unused")
     public static DBSPStreamJoinIndexOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        boolean balanced = Utilities.getBooleanProperty(node, "balanced");
         DBSPExpression function = info.getFunction();
-        return new DBSPStreamJoinIndexOperator(CalciteEmptyRel.INSTANCE,
-                info.getIndexedZsetType(), function, info.isMultiset(), info.getInput(0), info.getInput(1));
+        return new DBSPStreamJoinIndexOperator(CalciteEmptyRel.INSTANCE, info.getIndexedZsetType(),
+                function, info.isMultiset(), info.getInput(0), info.getInput(1), balanced);
     }
 }

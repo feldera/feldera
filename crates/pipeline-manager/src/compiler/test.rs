@@ -35,6 +35,7 @@ impl CompilerTest {
         let platform_version = "v0";
         let common_config = CommonConfig {
             bind_address: "127.0.0.1".to_string(),
+            api_host: "127.0.0.1".to_string(),
             api_port: 8080,
             compiler_host: "127.0.0.1".to_string(),
             compiler_port: 8085,
@@ -46,6 +47,7 @@ impl CompilerTest {
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
+            private_ca_cert_path: None,
         };
         let compiler_config = CompilerConfig {
             sql_compiler_path:

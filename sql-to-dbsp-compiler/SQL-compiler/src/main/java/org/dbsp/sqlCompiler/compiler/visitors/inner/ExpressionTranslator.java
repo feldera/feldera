@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
@@ -26,6 +27,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -36,7 +38,7 @@ import java.util.Map;
 import java.util.function.Predicate;
 
 /** A visitor which translates expressions and statements, mostly in postorder */
-public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
+public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> implements IWritesLogs {
     public ExpressionTranslator(DBSPCompiler compiler) {
         super(compiler);
     }
@@ -124,6 +126,17 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     }
 
     @Override
+    public void postorder(DBSPTimeAddSub node) {
+        DBSPExpression left = this.getE(node.left);
+        DBSPExpression right = this.getE(node.right);
+        this.map(node, new DBSPTimeAddSub(node.getNode(),
+                node.getType(),
+                node.opcode,
+                left,
+                right));
+    }
+
+    @Override
     public void postorder(DBSPBlockExpression node) {
         List<DBSPStatement> statements =
                 Linq.map(node.contents, c -> this.get(c).to(DBSPStatement.class));
@@ -181,7 +194,10 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
 
     @Override
     public void postorder(DBSPMinMax aggregator) {
-        this.map(aggregator, aggregator);
+        DBSPExpression post = this.getEN(aggregator.postProcessing);
+        @Nullable DBSPClosureExpression postClosure = post != null ? post.to(DBSPClosureExpression.class) : null;
+        DBSPMinMax result = new DBSPMinMax(aggregator.getNode(), aggregator.getType(), postClosure, aggregator.aggregation);
+        this.map(aggregator, result);
     }
 
     @Override
@@ -278,7 +294,8 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     @Override
     public void postorder(DBSPHandleErrorExpression node) {
         DBSPExpression source = this.getE(node.source);
-        this.map(node, new DBSPHandleErrorExpression(node.getNode(), node.index, source, node.hasSourcePosition));
+        this.map(node, new DBSPHandleErrorExpression(node.getNode(), node.index, node.runtimeBehavior,
+                source, node.hasSourcePosition));
     }
 
     @Override
@@ -393,9 +410,8 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     @Override
     public void postorder(DBSPSortExpression node) {
         DBSPExpression comparator = this.getE(node.comparator);
-        DBSPExpression limit = this.getEN(node.limit);
         this.map(node, new DBSPSortExpression(node.getNode(), node.elementType,
-                comparator.to(DBSPComparatorExpression.class), limit));
+                comparator.to(DBSPComparatorExpression.class)));
     }
 
     @Override
@@ -444,7 +460,12 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     @Override
     public void postorder(DBSPUnwrapExpression node) {
         DBSPExpression expression = this.getE(node.expression);
-        this.map(node, new DBSPUnwrapExpression(expression));
+        this.map(node, new DBSPUnwrapExpression(node.message, expression));
+    }
+
+    @Override
+    public void postorder(DBSPFailExpression node) {
+        this.map(node, node);
     }
 
     @Override
@@ -521,7 +542,11 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
         DBSPExpression body = this.getEN(function.body);
         DBSPFunction result = new DBSPFunction(function.getNode(),
                 function.name, function.parameters, function.returnType, body, function.annotations);
-        this.set(function, result);
+        if (result.sameFields(function)) {
+            this.set(function, function);
+        } else {
+            this.set(function, result);
+        }
     }
 
     @Override
@@ -534,7 +559,11 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
                 });
         DBSPAggregateList result = new DBSPAggregateList(
                 aggregate.getNode(), rowVar.to(DBSPVariablePath.class), implementations);
-        this.set(aggregate, result);
+        if (result.sameFields(aggregate)) {
+            this.set(aggregate, aggregate);
+        } else {
+            this.set(aggregate, result);
+        }
     }
 
     @Override
@@ -557,5 +586,20 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     /** Create a circuit rewriter with a predicate that selects which node to optimize */
     public CircuitRewriter circuitRewriter(Predicate<DBSPOperator> toOptimize) {
         return new CircuitRewriter(this.compiler, this, false, toOptimize);
+    }
+
+    /** Apply the expression translator repeatedly until reaching a fixed-point */
+    public DBSPExpression fixedPoint(DBSPExpression expression, int max) {
+        int iterations = 0;
+        while (true) {
+            DBSPExpression result = this.apply(expression).to(DBSPExpression.class);
+            if (result == expression)
+                return result;
+            expression = result;
+            iterations++;
+            if (iterations == max) {
+                throw new InternalCompilerError(this + ": Convergence not reached after " + max + " iterations");
+            }
+        }
     }
 }

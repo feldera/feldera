@@ -56,8 +56,9 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPInternedStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLongIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
@@ -109,8 +110,8 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeo;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeStr;
@@ -129,6 +130,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
@@ -219,8 +221,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         Logger.INSTANCE.belowLevel(this, 4)
                 .append("Starting ")
                 .appendSupplier(this::toString)
-                .append(" at ")
-                .append(node);
+                .append(" on ")
+                .append(node.getId())
+                .append(" ")
+                .append(node)
+                .newline();
         profiles.start(this);
     }
 
@@ -296,11 +301,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPTypeBaseType) node);
     }
 
-    public VisitDecision preorder(DBSPTypeMillisInterval node) {
+    public VisitDecision preorder(DBSPTypeShortInterval node) {
         return this.preorder((DBSPTypeBaseType) node);
     }
 
-    public VisitDecision preorder(DBSPTypeMonthsInterval node) {
+    public VisitDecision preorder(DBSPTypeLongInterval node) {
         return this.preorder((DBSPTypeBaseType) node);
     }
 
@@ -474,6 +479,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPTypeUser) node);
     }
 
+    public VisitDecision preorder(DBSPTypeSqlResult node) {
+        return this.preorder((DBSPTypeUser) node);
+    }
+
     public VisitDecision preorder(DBSPTypeLazy node) {
         return this.preorder((DBSPTypeUser) node);
     }
@@ -610,6 +619,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPExpression) node);
     }
 
+    public VisitDecision preorder(DBSPTimeAddSub node) {
+        return this.preorder((DBSPExpression) node);
+    }
+
     public VisitDecision preorder(DBSPEnumValue node) {
         return this.preorder((DBSPExpression) node);
     }
@@ -627,6 +640,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPUnwrapExpression node) {
+        return this.preorder((DBSPExpression) node);
+    }
+
+    public VisitDecision preorder(DBSPFailExpression node) {
         return this.preorder((DBSPExpression) node);
     }
 
@@ -747,11 +764,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPLiteral) node);
     }
 
-    public VisitDecision preorder(DBSPIntervalMillisLiteral node) {
+    public VisitDecision preorder(DBSPShortIntervalLiteral node) {
         return this.preorder((DBSPLiteral) node);
     }
 
-    public VisitDecision preorder(DBSPIntervalMonthsLiteral node) {
+    public VisitDecision preorder(DBSPLongIntervalLiteral node) {
         return this.preorder((DBSPLiteral) node);
     }
 
@@ -855,6 +872,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPLiteral) node);
     }
 
+    public VisitDecision preorder(DBSPInternedStringLiteral node) {
+        return this.preorder((DBSPLiteral) node);
+    }
+
     public VisitDecision preorder(DBSPGeoPointConstructor node) {
         return this.preorder((DBSPExpression) node);
     }
@@ -922,11 +943,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPTypeBaseType) node);
     }
 
-    public void postorder(DBSPTypeMillisInterval node) {
+    public void postorder(DBSPTypeShortInterval node) {
         this.postorder((DBSPTypeBaseType) node);
     }
 
-    public void postorder(DBSPTypeMonthsInterval node) {
+    public void postorder(DBSPTypeLongInterval node) {
         this.postorder((DBSPTypeBaseType) node);
     }
 
@@ -1112,6 +1133,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPTypeUser) node);
     }
 
+    public void postorder(DBSPTypeSqlResult node) {
+        this.postorder((DBSPTypeUser) node);
+    }
+
     public void postorder(DBSPTypeLazy node) {
         this.postorder((DBSPTypeUser) node);
     }
@@ -1244,6 +1269,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPExpression) node);
     }
 
+    public void postorder(DBSPTimeAddSub node) {
+        this.postorder((DBSPExpression) node);
+    }
+
     public void postorder(DBSPEnumValue node) {
         this.postorder((DBSPExpression) node);
     }
@@ -1261,6 +1290,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPUnwrapExpression node) {
+        this.postorder((DBSPExpression) node);
+    }
+
+    public void postorder(DBSPFailExpression node) {
         this.postorder((DBSPExpression) node);
     }
 
@@ -1369,11 +1402,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPLiteral) node);
     }
 
-    public void postorder(DBSPIntervalMillisLiteral node) {
+    public void postorder(DBSPShortIntervalLiteral node) {
         this.postorder((DBSPLiteral) node);
     }
 
-    public void postorder(DBSPIntervalMonthsLiteral node) {
+    public void postorder(DBSPLongIntervalLiteral node) {
         this.postorder((DBSPLiteral) node);
     }
 
@@ -1494,6 +1527,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPISizeLiteral node) {
+        this.postorder((DBSPLiteral) node);
+    }
+
+    public void postorder(DBSPInternedStringLiteral node) {
         this.postorder((DBSPLiteral) node);
     }
 

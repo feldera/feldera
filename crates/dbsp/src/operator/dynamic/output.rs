@@ -1,6 +1,6 @@
 use crate::{
-    trace::{merge_batches, Batch},
     OutputHandle,
+    trace::{Batch, merge_batches},
 };
 
 impl<T> OutputHandle<T>

@@ -11,11 +11,11 @@
 //! parallel when DBSP can be scaled.
 
 use self::{
-    generator::{config::Config as GeneratorConfig, NexmarkGenerator},
+    generator::{NexmarkGenerator, config::Config as GeneratorConfig},
     model::Event,
 };
 use config::GeneratorOptions;
-use rand::{rngs::ThreadRng, Rng};
+use rand::{Rng, rngs::ThreadRng};
 use std::{
     collections::VecDeque,
     sync::mpsc,
@@ -195,7 +195,7 @@ pub mod tests {
 
     use super::*;
     use core::ops::Range;
-    use dbsp::{utils::Tup2, OrdZSet, RootCircuit, ZWeight};
+    use dbsp::{OrdZSet, RootCircuit, ZWeight, utils::Tup2};
     use rand::rngs::mock::StepRng;
     use rstest::rstest;
 

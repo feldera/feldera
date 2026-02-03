@@ -3,10 +3,7 @@ use crate::{
     derive_comparison_traits,
     storage::file::{Deserializer, Serializer},
 };
-use rkyv::{
-    archived_value, de::deserializers::SharedDeserializeMap, Archive, Archived, Deserialize,
-    Fallible, Serialize,
-};
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, archived_value};
 use std::{cmp::Ordering, marker::PhantomData, mem::transmute};
 
 /// Trait for DBData that can be deserialized with [`rkyv`].
@@ -42,7 +39,24 @@ pub trait DeserializableDyn {
     ///
     /// The offset must store a valid serialized value of the
     /// concrete type that `self` points to.
-    unsafe fn deserialize_from_bytes(&mut self, bytes: &[u8], pos: usize);
+    unsafe fn deserialize_from_bytes_with(
+        &mut self,
+        bytes: &[u8],
+        pos: usize,
+        deserializer: &mut Deserializer,
+    );
+
+    /// Deserialize `self` from the given slice and offset using the default
+    /// deserializer configuration.
+    ///
+    /// # Safety
+    ///
+    /// The offset must store a valid serialized value of the
+    /// concrete type that `self` points to.
+    unsafe fn deserialize_from_bytes(&mut self, bytes: &[u8], pos: usize) {
+        let mut deserializer = Deserializer::default();
+        unsafe { self.deserialize_from_bytes_with(bytes, pos, &mut deserializer) };
+    }
 }
 
 impl<T> SerializeDyn for T
@@ -60,18 +74,28 @@ impl<T> DeserializableDyn for T
 where
     T: ArchivedDBData,
 {
-    unsafe fn deserialize_from_bytes(&mut self, bytes: &[u8], pos: usize) {
-        let archived: &<Self as Archive>::Archived = archived_value::<Self>(bytes, pos);
+    unsafe fn deserialize_from_bytes_with(
+        &mut self,
+        bytes: &[u8],
+        pos: usize,
+        deserializer: &mut Deserializer,
+    ) {
+        unsafe {
+            let archived: &<Self as Archive>::Archived = archived_value::<Self>(bytes, pos);
 
-        *self = archived
-            .deserialize(&mut SharedDeserializeMap::new())
-            .unwrap();
+            *self = archived.deserialize(deserializer).unwrap();
+        }
     }
 }
 
 /// Object-safe version of the `Deserialize` trait.
 pub trait DeserializeDyn<Trait: ?Sized>: AsAny + Comparable {
-    fn deserialize(&self, target: &mut Trait);
+    fn deserialize_with(&self, target: &mut Trait, deserializer: &mut Deserializer);
+
+    fn deserialize(&self, target: &mut Trait) {
+        let mut deserializer = Deserializer::default();
+        self.deserialize_with(target, &mut deserializer);
+    }
 
     fn eq_target(&self, target: &Trait) -> bool;
     fn cmp_target(&self, target: &Trait) -> Option<Ordering>;
@@ -141,23 +165,22 @@ where
     T: ArchivedDBData + Eq + Ord + 'static,
     Trait: DowncastTrait + ?Sized + 'static,
 {
-    fn deserialize(&self, target: &mut Trait) {
-        *unsafe { target.downcast_mut::<T>() } = self
-            .archived
-            .deserialize(&mut SharedDeserializeMap::new())
-            .unwrap()
+    fn deserialize_with(&self, target: &mut Trait, deserializer: &mut Deserializer) {
+        *unsafe { target.downcast_mut::<T>() } = self.archived.deserialize(deserializer).unwrap()
     }
 
     fn eq_target(&self, other: &Trait) -> bool {
+        let mut deserializer = Deserializer::default();
         self.archived
-            .deserialize(&mut SharedDeserializeMap::new())
+            .deserialize(&mut deserializer)
             .unwrap()
             .eq(unsafe { other.downcast::<T>() })
     }
 
     fn cmp_target(&self, other: &Trait) -> Option<Ordering> {
+        let mut deserializer = Deserializer::default();
         self.archived
-            .deserialize(&mut SharedDeserializeMap::new())
+            .deserialize(&mut deserializer)
             .unwrap()
             .partial_cmp(unsafe { other.downcast::<T>() })
     }

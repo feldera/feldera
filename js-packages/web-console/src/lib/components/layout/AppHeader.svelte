@@ -3,17 +3,20 @@
   import FelderaModernLogoColorLight from '$assets/images/feldera-modern/Feldera Logo Color Light.svg?component'
   import FelderaModernLogomarkColorDark from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
   import FelderaModernLogomarkColorLight from '$assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
-  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
-  import type { Snippet } from '$lib/types/svelte'
   import ProfileButton from '$lib/components/auth/ProfileButton.svelte'
+  import { useClusterHealth } from '$lib/compositions/health/useClusterHealth.svelte'
+  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import { resolve } from '$lib/functions/svelte'
+  import type { Snippet } from '$lib/types/svelte'
 
-  let { afterStart, beforeEnd }: { afterStart?: Snippet; beforeEnd?: Snippet } = $props()
-  let darkMode = useDarkMode()
+  const { afterStart, beforeEnd }: { afterStart?: Snippet; beforeEnd?: Snippet } = $props()
+  const darkMode = useDarkMode()
+
+  const healthStatus = useClusterHealth()
 </script>
 
 <div class="flex w-full flex-row items-center justify-between gap-4 px-2 py-2 md:px-8">
-  <a class="py-3 lg:pb-4 lg:pr-6 lg:pt-2" href={resolve('/')}>
+  <a class="py-3 lg:pt-2 lg:pr-6 lg:pb-4" href={resolve('/')}>
     <span class="hidden lg:block">
       {#if darkMode.current === 'dark'}
         <FelderaModernLogoColorLight class="h-8"></FelderaModernLogoColorLight>
@@ -33,5 +36,5 @@
   <!-- <div class="flex flex-1"></div> -->
   <div class="-mr-4 ml-auto"></div>
   {@render beforeEnd?.()}
-  <ProfileButton compactBreakpoint="xl:"></ProfileButton>
+  <ProfileButton compactBreakpoint="xl:" healthStatus={healthStatus.current}></ProfileButton>
 </div>
