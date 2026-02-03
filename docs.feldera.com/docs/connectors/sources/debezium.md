@@ -194,6 +194,17 @@ CREATE TABLE my_table (
 )
 ```
 
+::: warning
+
+Notice that the data format provided by the connector contains data
+and metadata columns; for example, a metadata column is the "operation", which
+describes whether the row is inserted or deleted.  The table schema
+should only include the data columns, not the metadata columns.  If
+you need to ingest metadata information, see for example
+[`CONNECTOR_METADATA`](/connectors/sources/kafka/#accessing-kafka-metadata).
+
+:::
+
 ### Avro
 
 Configure a Feldera connector to ingest changes from an Avro-encoded Kafka topic.
