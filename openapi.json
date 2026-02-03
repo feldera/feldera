@@ -3457,6 +3457,142 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/events": {
+      "get": {
+        "tags": [
+          "Metrics & Debugging"
+        ],
+        "summary": "List Pipeline Events",
+        "description": "Retrieve a list of retained pipeline monitor events ordered from most recent to least recent.\n\nThe returned events only have limited details, the full details can be retrieved using\nthe `GET /v0/pipelines/<pipeline>/events/<event-id>` endpoint.\n\nPipeline monitor events are collected at a periodic interval (every 10s), however only\nevery 10 minutes or if the overall health changes, does it get inserted into the database\n(and thus, served by this endpoint). The most recent 720 events are retained.",
+        "operationId": "list_pipeline_events",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PipelineMonitorEventSelectedInfo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/events/{event_id}": {
+      "get": {
+        "tags": [
+          "Metrics & Debugging"
+        ],
+        "summary": "Get Pipeline Event",
+        "description": "Get specific pipeline monitor event.\n\nThe identifiers of the events can be retrieved via `GET /v0/pipelines/<pipeline>/events`.\nThe most recent 720 events are retained.\nThis endpoint can return a 404 for an event that no longer exists due to a cleanup.",
+        "operationId": "get_pipeline_event",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "Pipeline monitor event identifier or `latest`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "selector",
+            "in": "query",
+            "description": "The `selector` parameter limits which fields are returned.\nLimiting which fields is particularly handy for instance when frequently\nmonitoring over low bandwidth connections while being only interested\nin status.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PipelineMonitorEventFieldSelector"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineMonitorEventSelectedInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/heap_profile": {
       "get": {
         "tags": [
@@ -8070,6 +8206,15 @@
           }
         }
       },
+      "GetPipelineEventParameters": {
+        "type": "object",
+        "description": "Query parameters to GET a pipeline monitor event.",
+        "properties": {
+          "selector": {
+            "$ref": "#/components/schemas/PipelineMonitorEventFieldSelector"
+          }
+        }
+      },
       "GetPipelineParameters": {
         "type": "object",
         "description": "Query parameters to GET a pipeline or a list of pipelines.",
@@ -9879,6 +10024,73 @@
           },
           "version": {
             "$ref": "#/components/schemas/Version"
+          }
+        }
+      },
+      "PipelineMonitorEventFieldSelector": {
+        "type": "string",
+        "enum": [
+          "all",
+          "status"
+        ]
+      },
+      "PipelineMonitorEventId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Pipeline monitor event identifier."
+      },
+      "PipelineMonitorEventSelectedInfo": {
+        "type": "object",
+        "description": "Pipeline monitor event information which has a selected subset of optional fields.\nIf an optional field is not selected (i.e., is `None`), it will not be serialized.",
+        "required": [
+          "id",
+          "recorded_at",
+          "resources_status",
+          "resources_desired_status",
+          "program_status",
+          "storage_status"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/PipelineMonitorEventId"
+          },
+          "program_status": {
+            "$ref": "#/components/schemas/ProgramStatus"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resources_desired_status": {
+            "$ref": "#/components/schemas/ResourcesDesiredStatus"
+          },
+          "resources_status": {
+            "$ref": "#/components/schemas/ResourcesStatus"
+          },
+          "resources_status_details": {
+            "nullable": true
+          },
+          "runtime_desired_status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeDesiredStatus"
+              }
+            ],
+            "nullable": true
+          },
+          "runtime_status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeStatus"
+              }
+            ],
+            "nullable": true
+          },
+          "runtime_status_details": {
+            "nullable": true
+          },
+          "storage_status": {
+            "$ref": "#/components/schemas/StorageStatus"
           }
         }
       },

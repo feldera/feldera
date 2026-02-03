@@ -1504,3 +1504,24 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             CheckpointMetadata.from_dict(chk)
             for chk in self.client.get_checkpoints(self.name)
         ]
+
+    def events(self) -> List[dict]:
+        """
+        Retrieves all pipeline events (status fields only).
+
+        :returns: List of pipeline events.
+        """
+
+        return self.client.get_pipeline_events(self.name)
+
+    def event(self, event_id: str, selector: str = "status") -> dict:
+        """
+        Retrieves a specific pipeline event.
+
+        :param event_id: Identifier (UUID) of the event to retrieve, or `latest` for the latest event.
+        :param selector: (Optional) Limit the returned fields. Valid values: "all", "status" (default).
+
+        :returns: Event (fields limited based on selector).
+        """
+
+        return self.client.get_pipeline_event(self.name, event_id, selector)
