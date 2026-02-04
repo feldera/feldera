@@ -4522,10 +4522,12 @@ impl TransactionInitiators {
     /// Clear the transaction requested state.
     ///
     /// Must be invoked when a transaction is committed.
-    fn clear(&mut self) {
+    fn clear(&mut self, is_multihost: bool) {
         self.transaction_id = None;
         self.initiated_by_api = None;
-        self.initiated_by_connectors.clear();
+        if !is_multihost {
+            self.initiated_by_connectors.clear();
+        }
     }
 
     /// Returns true if at least one participant has started a transaction and
@@ -4656,14 +4658,34 @@ impl TransactionInfo {
         endpoint_name: &str,
         label: Option<&str>,
     ) -> Result<(), ControllerError> {
+        if self.is_multihost {
+            match self
+                .initiators
+                .initiated_by_connectors
+                .entry(endpoint_name.to_string())
+            {
+                Entry::Vacant(entry) => {
+                    entry.insert(ConnectorTransactionPhase {
+                        phase: TransactionPhase::Started,
+                        label: label.map(String::from),
+                    });
+                    debug!("Connector {endpoint_name} initiated request for transaction");
+                    return Ok(());
+                }
+                Entry::Occupied(_entry) => {
+                    error!("Connector {endpoint_name} had already requested transaction");
+                    return Err(ControllerError::TransactionInProgress);
+                }
+            }
+        }
+
         let mut initiated = false;
 
         if self.transaction_state.is_committing() {
             return Err(ControllerError::TransactionInProgress);
         }
 
-        if self.initiators.transaction_id.is_none() && !self.is_multihost {
-            assert!(!self.initiators.is_ongoing(self.is_multihost));
+        if self.initiators.transaction_id.is_none() {
             self.last_transaction_id += 1;
             self.initiators.transaction_id = Some(self.last_transaction_id);
             initiated = true;
@@ -4706,6 +4728,20 @@ impl TransactionInfo {
         &mut self,
         endpoint_name: &str,
     ) -> Result<(), ControllerError> {
+        if self.is_multihost {
+            debug!("Connector {endpoint_name} requests transaction commit");
+            if self
+                .initiators
+                .initiated_by_connectors
+                .remove(endpoint_name)
+                .is_some()
+            {
+                return Ok(());
+            } else {
+                return Err(ControllerError::NoTransactionInProgress);
+            }
+        }
+
         let num_active_participants = self.initiators.num_active_participants();
 
         match self
@@ -4717,7 +4753,7 @@ impl TransactionInfo {
                 return Err(ControllerError::NoTransactionInProgress);
             }
             Entry::Occupied(mut entry) => {
-                assert!(self.is_multihost || self.initiators.transaction_id.is_some());
+                assert!(self.initiators.transaction_id.is_some());
                 if entry.get().phase != TransactionPhase::Started {
                     return Err(ControllerError::NoTransactionInProgress);
                 }
@@ -4751,6 +4787,10 @@ impl TransactionInfo {
                 }
             })
             .collect()
+    }
+
+    fn clear_initiators(&mut self) {
+        self.initiators.clear(self.is_multihost);
     }
 }
 
@@ -6039,7 +6079,7 @@ impl ControllerInner {
             .is_ready_to_commit(transaction_info.is_multihost)
             && transaction_info.transaction_state == TransactionState::None
         {
-            transaction_info.initiators.clear();
+            transaction_info.clear_initiators();
         }
 
         self.update_transaction_status(transaction_info);
@@ -6076,7 +6116,7 @@ impl ControllerInner {
             .is_ready_to_commit(transaction_info.is_multihost)
             && transaction_info.transaction_state == TransactionState::None
         {
-            transaction_info.initiators.clear();
+            transaction_info.clear_initiators();
         }
 
         self.update_transaction_status(transaction_info);
@@ -6161,7 +6201,7 @@ impl ControllerInner {
                     // Commit the running transaction.
                     transaction_info.transaction_state =
                         TransactionState::Committing(transaction_id);
-                    transaction_info.initiators.clear();
+                    transaction_info.clear_initiators();
                     Some(transaction_info.transaction_state)
                 }
                 TransactionState::Committing(_) => {
