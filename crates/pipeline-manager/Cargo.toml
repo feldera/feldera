@@ -88,6 +88,23 @@ utoipa = { workspace = true, features = ["actix_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { workspace = true, features = ["actix-web"] }
 # The `rustls-0_23-native-roots` feature is such that when you create a default awc::Client (during auth workflow),
 # it can connect to HTTPS with the system root certificates.
+#
+## Why both [awc] and [reqwest]?
+#
+# The pipeline manager uses both [awc] and [reqwest]:
+#
+# - `awc` supports websockets but `reqwest` did not at the time we added
+#   `awc`.  (Now there is the `reqwest_websocket` crate, which can't be
+#   much worse than `awc` since `awc` can send mangled frames to the
+#   client sometimes.)
+#
+# - `awc` is conveniently coupled with `actix-web` typewise.
+#
+# but:
+#
+# - `reqwest` is `Send + Sync`.
+#
+# - `reqwest` has an HTTPS-only mode.
 awc = { workspace = true, features = ["rustls-0_23", "rustls-0_23-native-roots"] }
 reqwest = { workspace = true, features = ["json", "rustls-tls-native-roots"] }
 cached = { workspace = true }
