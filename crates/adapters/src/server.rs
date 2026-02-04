@@ -757,7 +757,7 @@ pub fn run_server(
                     };
                     if Some(stored_status) != prev_stored_status {
                         let storage = storage.clone();
-                        spawn_blocking(move || stored_status.write(&*storage));
+                        let _ = spawn_blocking(move || stored_status.write(&*storage)).await;
                     }
                     prev_stored_status = Some(stored_status);
                     notify.await;
