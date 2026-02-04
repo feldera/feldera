@@ -27,7 +27,21 @@ tolerance](/pipelines/fault-tolerance).
 The connector passes additional options directly to [**librdkafka**](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).  Some of the relevant options:
 
 * `group.id` is ignored.  The connector never uses consumer groups, so `enable.auto.commit`, `enable.auto.offset.store`, and other options related to consumer groups are also ignored.
-* `auto.offset.reset` is ignored.  Use `start_from` (described in the table above) instead.
+
+* `auto.offset.reset`: This option has two purposes:
+
+  - Primarily, it sets the starting point for reading partitions.  This option does
+    not work for that purpose in Feldera.  Use `start_from` (described
+    in the table above) instead.
+
+  - Secondarily, it sets where the consumer restarts reading if the
+    current offset becomes missing on the server, that is, if data is
+    deleted or expires before the connector can read it.  This option
+    is effective for that purpose in Feldera if the deletion occurs
+    after the connector is initialized but before it starts reading,
+    for example if the first read from the connector is delayed by
+    [input connector orchestration](/connectors/orchestration) or if
+    the pipeline starts paused.
 
 ## Example usage
 
