@@ -392,6 +392,23 @@ impl CommonConfig {
     ///
     /// - If HTTPS is not enabled for Feldera HTTP servers, it will return the default client which can
     ///   connect to both HTTP and HTTPS (for any valid system certificates).
+    ///
+    /// # Why both [awc] and [reqwest]?
+    ///
+    /// The pipeline manager uses both [awc] and [reqwest]:
+    ///
+    /// - `awc` supports websockets but `reqwest` did not at the time we added
+    ///   `awc`.  (Now there is the `reqwest_websocket` crate, which can't be
+    ///   much worse than `awc` since `awc` can send mangled frames to the
+    ///   client sometimes.)
+    ///
+    /// - `awc` is conveniently coupled with `actix-web` typewise.
+    ///
+    /// but:
+    ///
+    /// - `reqwest` is `Send + Sync`.
+    ///
+    /// - `reqwest` has an HTTPS-only mode.
     pub fn awc_client(&self) -> awc::Client {
         if self.https_config().is_some() {
             let mut root_cert_store = RootCertStore::empty();
@@ -442,6 +459,10 @@ impl CommonConfig {
     ///
     /// - If HTTPS is not enabled for Feldera HTTP servers, it will return the default client which can
     ///   connect to both HTTP and HTTPS (for any valid system certificates).
+    ///
+    /// # Why both [awc] and [reqwest]?
+    ///
+    /// See [Self::awc_client].
     pub async fn reqwest_client(&self) -> reqwest::Client {
         if self.https_config().is_some() {
             let mut builder = reqwest::ClientBuilder::new()
