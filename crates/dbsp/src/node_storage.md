@@ -43,7 +43,7 @@ Higher values allow more aggressive memory reclamation but may cause cascading d
 │  │                   LeafNode<T>>                  │   │
 │  │  ┌─────────────────┐  ┌─────────────────────┐   │   │
 │  │  │ InternalNodes   │  │    Leaves           │   │   │
-│  │  │ (always pinned) │  │  Vec<Option<L>>     │   │   │
+│  │  │ (always pinned) │  │  Vec<LeafSlot<L>>   │   │   │
 │  │  │ Vec<I>          │  │  (evictable)        │   │   │
 │  │  └─────────────────┘  └────────┬────────────┘   │   │
 │  │                                │                 │   │
@@ -180,6 +180,42 @@ impl NodeStorageConfig {
 }
 ```
 
+### LeafSlot<L>
+
+Enum representing a leaf's state in memory:
+
+```rust
+/// Represents the state of a leaf slot in NodeStorage.
+///
+/// Each leaf is either present in memory or evicted to disk with
+/// cached summary information for checkpoint support.
+pub enum LeafSlot<L> {
+    /// Leaf is in memory
+    Present(L),
+    /// Leaf is evicted to disk, with cached summary for checkpoints
+    Evicted(CachedLeafSummary),
+}
+
+/// Cached summary of an evicted leaf.
+///
+/// Stores enough information to generate LeafSummary for checkpoints
+/// without reloading the leaf from disk.
+pub struct CachedLeafSummary {
+    pub first_key_bytes: Vec<u8>,  // rkyv-serialized first key
+    pub has_first_key: bool,       // false if leaf was empty
+    pub weight_sum: ZWeight,
+    pub entry_count: usize,
+}
+
+impl<L> LeafSlot<L> {
+    pub fn is_present(&self) -> bool;
+    pub fn is_evicted(&self) -> bool;
+    pub fn as_present(&self) -> Option<&L>;
+    pub fn as_present_mut(&mut self) -> Option<&mut L>;
+    pub fn as_evicted(&self) -> Option<&CachedLeafSummary>;
+}
+```
+
 ### NodeStorage<I, L>
 
 Generic storage abstraction separating internal nodes from leaves:
@@ -198,17 +234,18 @@ pub struct NodeStorage<I, L> {
     config: NodeStorageConfig,
 
     // Internal nodes (always in memory)
-    internal_nodes: Vec<NodeWithMeta<InternalNodeTyped<T>>>,
+    internal_nodes: Vec<NodeWithMeta<I>>,
 
-    // Leaf nodes (Some = in memory, None = evicted)
-    leaves: Vec<Option<L>>,
+    // Leaf nodes with state tracking
+    // - Present(L): leaf is in memory
+    // - Evicted(summary): leaf is on disk, summary cached for checkpoints
+    leaves: Vec<LeafSlot<L>>,
 
     // Dirty tracking
     dirty_leaves: HashSet<usize>,
     dirty_bytes: usize,
 
-    // Eviction tracking
-    evicted_leaves: HashSet<usize>,
+    // Spill tracking (leaves written to disk)
     spilled_leaves: HashSet<usize>,
 
     // Disk storage
@@ -216,7 +253,7 @@ pub struct NodeStorage<I, L> {
     spill_file_id: Option<FileId>,
     leaf_block_locations: HashMap<usize, (u64, u32)>,
 
-    // Statistics
+    // Statistics (evicted_leaf_count maintained incrementally)
     stats: StorageStats,
 }
 
@@ -384,11 +421,17 @@ where
 
 ## Memory Eviction
 
-Leaves can be evicted from memory after flushing to disk:
+Leaves can be evicted from memory after flushing to disk. **Flush and eviction are decoupled**:
+- `flush_dirty_to_disk()` writes leaves to disk and marks them clean (durability)
+- `evict_clean_leaves()` removes clean, spilled leaves from memory (memory management)
+
+This separation allows flushing without eviction, which is important for checkpoints to keep hot leaves in memory for immediate runtime resumption.
 
 ```rust
 impl<I, L> NodeStorage<I, L> {
-    /// Evict clean, spilled leaves from memory
+    /// Evict clean, spilled leaves from memory.
+    /// Captures summary (first_key, weight_sum, entry_count) at eviction time
+    /// for checkpoint support without reloading.
     /// Returns (count evicted, bytes freed)
     pub fn evict_clean_leaves(&mut self) -> (usize, usize);
 
@@ -398,7 +441,7 @@ impl<I, L> NodeStorage<I, L> {
     /// Check if leaf is in memory
     pub fn is_leaf_in_memory(&self, loc: LeafLocation) -> bool;
 
-    /// Count of evicted leaves
+    /// Count of evicted leaves (O(1) - maintained incrementally)
     pub fn evicted_leaf_count(&self) -> usize;
 
     /// Count of in-memory leaves
@@ -413,6 +456,7 @@ impl<I, L> NodeStorage<I, L> {
 - Only clean leaves can be evicted (dirty leaves must stay in memory)
 - Only spilled leaves can be evicted (must have disk copy)
 - Evicted leaves auto-reload on access via `get_leaf_reloading()`
+- Summary is captured at eviction time for checkpoint support
 
 ## BufferCache Integration
 
@@ -550,13 +594,15 @@ pub struct StorageStats {
     pub dirty_internal_count: usize,
     pub dirty_leaf_count: usize,
     pub dirty_bytes: usize,
-    pub evicted_leaf_count: usize,
+    pub evicted_leaf_count: usize,  // Maintained incrementally (O(1) updates)
     pub evicted_bytes: usize,
     pub cache_hits: u64,
     pub cache_misses: u64,
-    pub disk_writes: u64,
+    pub leaves_written: u64,
 }
 ```
+
+**Performance Note**: `evicted_leaf_count` is maintained incrementally by evict/reload methods rather than computed via O(n) scans. This avoids performance overhead on frequent mutations (alloc_leaf, get_internal_mut, etc.).
 
 ## OrderStatisticsMultiset Integration
 
@@ -608,6 +654,15 @@ pub struct CommittedLeafStorage<K> {
 
 ```rust
 impl<I, L> NodeStorage<I, L> {
+    /// Prepare storage for checkpoint.
+    /// Flushes all dirty leaves and collects summaries for all leaves.
+    /// Uses cached summaries for evicted leaves (no disk reload needed).
+    /// Returns CommittedLeafStorage containing all checkpoint metadata.
+    pub fn prepare_checkpoint<P: AsRef<Path>>(
+        &mut self,
+        path: Option<P>,
+    ) -> Result<CommittedLeafStorage<L::Key>, FileFormatError>;
+
     /// Flush all leaves to disk for checkpoint.
     pub fn flush_all_leaves_to_disk<P: AsRef<Path>>(
         &mut self,
@@ -618,11 +673,13 @@ impl<I, L> NodeStorage<I, L> {
     pub fn take_spill_file(&mut self) -> Option<PathBuf>;
 
     /// Mark all leaves as evicted (for restore from checkpoint file).
+    /// Summaries are stored in LeafSlot::Evicted for checkpoint support.
     pub fn mark_all_leaves_evicted(
         &mut self,
         num_leaves: usize,
         spill_path: PathBuf,
         block_locations: Vec<(usize, u64, u32)>,
+        summaries: Vec<LeafSummary<L::Key>>,
     );
 
     /// Allocate internal node as clean (for restore).
@@ -632,12 +689,38 @@ impl<I, L> NodeStorage<I, L> {
 
 #### Checkpoint Flow
 
-1. **Checkpoint**: Flush leaves → collect summaries → serialize `CommittedLeafStorage`
-2. **Restore**: Deserialize metadata → rebuild internal nodes from summaries → mark leaves evicted
-3. Checkpoint file becomes live spill file (zero-copy ownership transfer)
-4. Leaves loaded lazily on demand
+1. **Checkpoint**:
+   - Call `prepare_checkpoint()` which flushes all dirty leaves and collects summaries
+   - For in-memory leaves (`LeafSlot::Present`): compute summary directly from leaf
+   - For evicted leaves (`LeafSlot::Evicted`): use cached summary (no disk reload needed)
+   - Copy spill file to checkpoint storage → serialize `CommittedLeafStorage`
+2. **Resume**: Runtime continues immediately with its local spill file (independent from checkpoint)
+3. **Restore**: Deserialize metadata → call `mark_all_leaves_evicted()` with summaries → rebuild internal nodes from summaries → checkpoint file becomes spill file
 
-This is O(num_leaves) instead of O(num_entries), enabling fast checkpoint/restore for large trees.
+This is O(num_leaves) instead of O(num_entries), enabling fast checkpoint/restore for large trees. The cached summaries in `LeafSlot::Evicted` ensure checkpoints don't require reloading evicted leaves.
+
+#### Runtime Resume After Checkpoint
+
+The pipeline stops briefly during checkpoint, then **resumes immediately**. Key design:
+
+1. **Independent copies**: Checkpoint receives a full copy of the spill file; runtime keeps its local copy
+2. **In-place overwrites**: Runtime modifies leaves by overwriting existing blocks (no append-only requirement)
+3. **No shared state**: Checkpoint and runtime are completely independent after checkpoint completes
+
+```
+CHECKPOINT TIME:
+  1. Flush all dirty leaves to local spill_file
+  2. Copy spill_file to checkpoint storage (e.g., S3)
+  3. Collect metadata (summaries, block locations)
+  4. Runtime continues with local spill_file unchanged
+
+RUNTIME AFTER CHECKPOINT:
+  - Reads/writes to local spill_file as normal
+  - Modified leaves overwrite their existing blocks
+  - No coordination with checkpoint needed
+```
+
+This approach prioritizes simplicity and correctness. The primary checkpoint storage (S3) doesn't support partial updates, so full-file copy is the natural fit. For local filesystem deployments, reflink-based copy-on-write could reduce I/O.
 
 ## Usage Example
 
@@ -691,7 +774,7 @@ Requirements:
 
 ## Test Coverage
 
-79 tests covering:
+55+ tests covering:
 - NodeStorage basic operations
 - Dirty tracking and threshold checks
 - LeafFile read/write roundtrips
@@ -700,6 +783,8 @@ Requirements:
 - NodeStorage + LeafFile integration
 - Memory eviction and reload
 - BufferCache integration
+- Checkpoint prepare/restore with evicted leaves
+- LeafSlot state transitions
 
 ## Files
 
@@ -745,3 +830,34 @@ For such structures, you would need either:
 2. A unified `NodeOps` trait that both node types implement
 
 The current design prioritizes simplicity for the common B+ tree case (order-statistics trees, interval trees, segment trees) over full generality.
+
+## Scalability
+
+### Single-File Design for Large Datasets
+
+NodeStorage uses a single spill file containing all leaves. This scales well:
+
+| Leaves | Index Size | File Size (typical) | Notes |
+|--------|------------|---------------------|-------|
+| 1K | 20 KB | ~1 MB | Fits in memory, spilling optional |
+| 1M | 20 MB | ~1 GB | Normal operation |
+| 100M | 2 GB | ~100 GB | Large dataset |
+| 1B | 20 GB | ~1 TB | Index may need streaming access |
+
+**Index in memory**: The in-memory index (`leaf_block_locations`) uses ~20 bytes per leaf.
+For 1M leaves this is 20 MB; for 1B leaves this is 20 GB. Most deployments will have
+far fewer leaves (B+ tree with branching factor 64 means 1B entries ≈ 16M leaves).
+
+**Filesystem requirements**: The single-file approach requires a filesystem supporting:
+- Large files (>2GB): ext4, XFS, NTFS, and all modern filesystems support this
+- Efficient random access: SSDs recommended for large files with random read patterns
+- Sufficient inodes: Not a concern (single file vs millions of small files)
+
+### When Single-File May Not Scale
+
+For extremely large deployments (billions of leaves, not entries), consider:
+- Partitioning data across multiple trees (by key range)
+- Using a different storage backend with native partitioning
+
+The current design targets the common case where trees have millions of leaves (billions
+of entries), not billions of leaves. For reference, 1B entries with B=64 yields ~16M leaves.
