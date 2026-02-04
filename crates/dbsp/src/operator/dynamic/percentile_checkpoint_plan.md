@@ -471,14 +471,28 @@ impl<T: DBData> OrderStatisticsMultiset<T> {
 ```
 checkpoint():
   for each tree:
-    1. flush_all_leaves_to_disk()      # Write leaves not yet on disk
-    2. Move spill file to checkpoint/  # O(1) filesystem rename
+    1. flush_all_leaves_to_disk()      # Write dirty/unspilled leaves
+    2. Copy spill file to checkpoint storage (e.g., S3)
     3. Collect leaf metadata:
        - leaf_block_locations (already tracked by NodeStorage)
        - leaf_summaries (first_key, weight_sum per leaf)
 
   Write metadata.dat (small file with leaf indices + summaries + prev_output)
+
+  # Runtime resumes immediately with its local spill file
 ```
+
+### Runtime Resume After Checkpoint
+
+The pipeline stops briefly during checkpoint, then **resumes immediately**:
+
+1. **Independent copies**: Checkpoint storage receives a copy; runtime keeps its local spill file
+2. **In-place overwrites**: Runtime modifies leaves by overwriting blocks at existing offsets
+3. **No shared state**: Checkpoint and runtime are completely independent
+
+This design uses full-file copy because the primary checkpoint storage (S3) doesn't support
+partial updates. The copy happens from local disk to checkpoint storage, so runtime can
+continue with its local file unchanged.
 
 ### Leaf Categories at Checkpoint Time
 
@@ -487,15 +501,11 @@ Leaves fall into three categories:
 | Category | Location | Action on Checkpoint |
 |----------|----------|---------------------|
 | Already spilled (clean) | On disk, unchanged | **No write** - already in spill file |
-| Dirty | Modified since flush | **Must write** - append to spill file |
-| Never spilled | In memory only | **Must write** - append to spill file |
+| Dirty | Modified since flush | **Must write** - overwrite in spill file |
+| Never spilled | In memory only | **Must write** - write to spill file |
 
-**Checkpoint cost = O(dirty + never-spilled leaves)**
-
-For a steady-state system where most leaves are already spilled:
-- Most leaves are "already spilled (clean)" → no I/O
-- Only recent modifications need writing
-- Move file is O(1)
+**Flush cost = O(dirty + never-spilled leaves)**
+**Copy cost = O(total file size)** - full file copied to checkpoint storage
 
 ### Edge Case: Small Trees (No Spill File Yet)
 
@@ -579,31 +589,33 @@ fn restore_optimized(committed: CommittedLeafStorage<K>) -> OrderStatisticsMulti
 After restore, the checkpoint file IS the live spill file:
 - Leaf access → read from checkpoint file at recorded offset
 - Same format, same offsets, zero transformation
-- If a leaf is modified → appended to file (or new file) as normal
-- Next checkpoint → same process repeats
+- If a leaf is modified → overwrite at existing offset (in-place)
+- Next checkpoint → copy file to checkpoint storage, continue with local file
 
-**No copying, no re-serialization, no bulk reading of leaf data.**
+**Restore requires no bulk reading of leaf data - only metadata + lazy loading.**
 
 ## Benefits
 
-1. **Fast checkpoint**: Skip already-spilled leaves, only write dirty + never-spilled
-2. **No re-serialization**: Already-spilled data stays as-is, just move the file
-3. **Fast restore**: O(num_leaves) index rebuild, not O(num_entries) data read
-4. **Zero-copy restore**: Checkpoint file becomes live spill file directly
-5. **Config-independent format**: Same checkpoint format regardless of `max_spillable_level`
-6. **Correctness**: Internal node reconstruction guarantees correct subtree_sums
+1. **Fast flush**: Skip already-spilled leaves, only write dirty + never-spilled
+2. **Immediate resume**: Runtime continues with local spill file right after checkpoint
+3. **In-place updates**: Modified leaves overwrite existing blocks (no file growth from modifications)
+4. **Fast restore**: O(num_leaves) index rebuild, not O(num_entries) data read
+5. **Zero-copy restore**: Checkpoint file becomes live spill file directly
+6. **Config-independent format**: Same checkpoint format regardless of `max_spillable_level`
+7. **Checkpoint independence**: Each checkpoint is self-contained, no shared state with runtime
 
 ## Required Changes Summary
 
 | Component | Change |
 |-----------|--------|
-| `NodeStorage` | Add `save_leaves()`, `flush_all_leaves_to_disk()` methods |
+| `NodeStorage` | Add `checkpoint_to()`, `flush_all_leaves_to_disk()` methods |
 | `NodeStorage` | Add `mark_all_leaves_evicted()`, `is_leaf_on_disk()` methods |
 | `NodeStorage` | Handle edge case: create spill file if none exists |
+| `NodeStorage` | Support in-place block overwrites for modified leaves |
 | `OrderStatisticsMultiset` | Add `storage_mut()`, `restore()`, `collect_leaf_summaries()` methods |
 | `OrderStatisticsMultiset` | Add `build_internal_nodes_from_summaries()`, `from_storage()` methods |
 | `PercentileOperator` | Implement `checkpoint()`, `restore()` using above |
-| Spill file lifecycle | Checkpoint takes ownership; restore reuses file as spill file |
+| Spill file lifecycle | Checkpoint gets copy; runtime keeps local file; restore reuses checkpoint as spill file |
 
 ### NodeStorage Methods Detail
 
@@ -694,9 +706,9 @@ impl<T: DBData> OrderStatisticsMultiset<T> {
 creates huge checkpoints for large trees. Impractical for billions of entries.
 
 **Optimized leaves-only (this plan):**
-- Checkpoint: Skip already-spilled leaves, write only dirty + never-spilled, move file
-- Restore: Rebuild internal nodes from leaf_summaries, use checkpoint file as spill file
-- No re-serialization of already-spilled data
+- Checkpoint: Flush dirty + never-spilled leaves, copy file to checkpoint storage
+- Resume: Runtime continues with local spill file, in-place overwrites for modifications
+- Restore: Rebuild internal nodes from leaf_summaries, checkpoint file becomes spill file
 - No bulk reading of leaf contents on restore
 - Checkpoint format independent of `max_spillable_level`
 
@@ -712,12 +724,13 @@ For a steady-state system with 1B entries (~1M leaves), mostly already spilled:
 
 | Operation | Cost | Example |
 |-----------|------|---------|
-| Checkpoint (steady state) | O(dirty + unspilled) | ~1000 leaves = fast |
-| Checkpoint (file move) | O(1) | Filesystem rename |
+| Checkpoint (flush) | O(dirty + unspilled) | ~1000 leaves = fast |
+| Checkpoint (file copy) | O(file size) | Copy to S3 |
 | Checkpoint metadata | O(num_leaves) | ~32 MB write |
+| Resume (runtime) | O(1) | Immediate - local file unchanged |
 | Restore (index rebuild) | O(num_leaves) | ~1M leaves = fast |
 | Restore (leaf I/O) | O(0) | Zero - file used directly |
 | First leaf access | O(1) | Read from checkpoint file |
 
-This achieves nearly the same performance as "checkpoint whatever NodeStorage spilled"
-while maintaining a config-independent checkpoint format.
+The file copy to checkpoint storage (S3) is the main checkpoint cost. This is acceptable
+because checkpoints are infrequent and S3 upload bandwidth is typically good.

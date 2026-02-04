@@ -2,9 +2,23 @@
 //!
 //! This module defines the on-disk format for spilled leaf nodes. The format follows
 //! DBSP conventions:
-//! - 512-byte block alignment
+//! - 512-byte block alignment (for Direct I/O compatibility)
 //! - CRC32C checksums for data integrity
 //! - rkyv serialization for efficient storage
+//!
+//! # Block Alignment Rationale
+//!
+//! The 512-byte alignment matches the DBSP storage layer (`FBuf::ALIGNMENT`) and is chosen for:
+//!
+//! 1. **Direct I/O compatibility**: 512 bytes is the minimum alignment required for O_DIRECT
+//!    on Linux, which bypasses the kernel page cache for predictable I/O performance.
+//!
+//! 2. **Disk sector alignment**: Traditional HDDs use 512-byte sectors; modern drives use
+//!    4KB but maintain 512-byte emulation. Aligning to 512 bytes ensures no read-modify-write
+//!    cycles at the hardware level.
+//!
+//! 3. **Consistency with DBSP**: The storage layer in `crates/storage/` uses the same alignment
+//!    for batch files, enabling shared infrastructure and buffer management.
 //!
 //! # File Structure
 //!
@@ -37,6 +51,9 @@ use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use size_of::SizeOf;
 
 /// Block alignment for all disk I/O (512 bytes).
+///
+/// Matches `FBuf::ALIGNMENT` in the DBSP storage layer. This is the minimum alignment
+/// for Direct I/O on Linux and ensures compatibility with disk sector sizes.
 pub const BLOCK_ALIGNMENT: usize = 512;
 
 /// File header size (one block).

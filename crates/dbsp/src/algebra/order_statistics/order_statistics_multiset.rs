@@ -320,12 +320,18 @@ where
 }
 
 impl<T: Ord + Clone> LeafNodeOps for LeafNode<T> {
+    type Key = T;
+
     fn entry_count(&self) -> usize {
         self.entries.len()
     }
 
     fn total_weight(&self) -> ZWeight {
         self.entries.iter().map(|(_, w)| *w).sum()
+    }
+
+    fn first_key(&self) -> Option<Self::Key> {
+        self.entries.first().map(|(k, _)| k.clone())
     }
 }
 
@@ -1228,12 +1234,8 @@ where
         self.storage.flush_all_leaves_to_disk()?;
 
         // Get block locations from storage
-        let leaf_block_locations: Vec<(usize, u64, u32)> = self
-            .storage
-            .leaf_block_locations
-            .iter()
-            .map(|(&id, &(offset, size))| (id, offset, size))
-            .collect();
+        let leaf_block_locations: Vec<(usize, u64, u32)> =
+            self.storage.get_leaf_block_locations().collect();
 
         // Move spill file to checkpoint location
         let dest_path = checkpoint_dir.join(format!("{}.leaves", tree_id));
@@ -1311,6 +1313,7 @@ where
             num_leaves,
             spill_path,
             committed.leaf_block_locations.clone(),
+            committed.leaf_summaries.clone(),
         );
 
         // Build internal nodes from leaf summaries

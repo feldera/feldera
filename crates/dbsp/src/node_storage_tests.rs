@@ -410,7 +410,7 @@ mod tests {
         });
 
         // Manually modify a leaf (bypassing dirty tracking for test)
-        storage.leaves[0].as_mut().unwrap().entries.push((20, 2));
+        storage.leaves[0].as_present_mut().unwrap().entries.push((20, 2));
 
         // Stats may be stale
         let old_entries = storage.stats().total_entries;
@@ -1601,5 +1601,182 @@ mod tests {
         for i in 0..6 {
             assert!(storage.leaf_block_locations.contains_key(&i));
         }
+    }
+
+    // =========================================================================
+    // Checkpoint-Resume Tests
+    // =========================================================================
+
+    #[test]
+    fn test_prepare_checkpoint_preserves_runtime_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_checkpoint_resume.osm");
+
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+
+        // Add leaves
+        let leaf1 = LeafNode {
+            entries: vec![(10, 1), (20, 2), (30, 3)],
+            next_leaf: None,
+        };
+        let leaf2 = LeafNode {
+            entries: vec![(40, 4), (50, 5)],
+            next_leaf: None,
+        };
+        let loc1 = storage.alloc_leaf(leaf1);
+        let loc2 = storage.alloc_leaf(leaf2);
+
+        // Flush to disk first (sets up spill file)
+        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+
+        // Verify spill file exists
+        assert!(storage.spill_file_path().is_some());
+
+        // Prepare checkpoint - this should NOT invalidate runtime state
+        let metadata = storage.prepare_checkpoint().unwrap();
+
+        // Verify runtime state is preserved (spill_file_path NOT cleared)
+        assert!(
+            storage.spill_file_path().is_some(),
+            "spill_file_path should be preserved after prepare_checkpoint"
+        );
+
+        // Verify metadata is correct
+        assert_eq!(metadata.num_leaves, 2);
+        assert_eq!(metadata.leaf_summaries.len(), 2);
+        assert_eq!(metadata.leaf_block_locations.len(), 2);
+
+        // Verify leaf summaries
+        let summary1 = &metadata.leaf_summaries[0];
+        assert_eq!(summary1.first_key, Some(10));
+        assert_eq!(summary1.weight_sum, 6); // 1 + 2 + 3
+        assert_eq!(summary1.entry_count, 3);
+
+        let summary2 = &metadata.leaf_summaries[1];
+        assert_eq!(summary2.first_key, Some(40));
+        assert_eq!(summary2.weight_sum, 9); // 4 + 5
+        assert_eq!(summary2.entry_count, 2);
+
+        // Verify runtime can still read leaves
+        let retrieved1 = storage.get(loc1);
+        assert!(retrieved1.is_leaf());
+        assert_eq!(retrieved1.leaf_total_weight(), Some(6));
+
+        let retrieved2 = storage.get(loc2);
+        assert!(retrieved2.is_leaf());
+        assert_eq!(retrieved2.leaf_total_weight(), Some(9));
+    }
+
+    #[test]
+    fn test_prepare_checkpoint_runtime_can_continue_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_checkpoint_continue.osm");
+
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+
+        // Add initial leaves
+        let leaf1 = LeafNode {
+            entries: vec![(10, 1)],
+            next_leaf: None,
+        };
+        storage.alloc_leaf(leaf1);
+
+        // Flush to disk
+        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+
+        // Prepare checkpoint
+        let metadata1 = storage.prepare_checkpoint().unwrap();
+        assert_eq!(metadata1.num_leaves, 1);
+
+        // Runtime continues - add more leaves AFTER checkpoint
+        let leaf2 = LeafNode {
+            entries: vec![(20, 2)],
+            next_leaf: None,
+        };
+        let loc2 = storage.alloc_leaf(leaf2);
+
+        // Verify new leaf is accessible
+        let retrieved = storage.get(loc2);
+        assert!(retrieved.is_leaf());
+        assert_eq!(retrieved.leaf_total_weight(), Some(2));
+
+        // Flush the new leaf (using existing spill file path)
+        let count = storage.flush_dirty_to_disk(Option::<&std::path::Path>::None).unwrap();
+        assert_eq!(count, 1);
+
+        // Prepare another checkpoint - should include both leaves now
+        let metadata2 = storage.prepare_checkpoint().unwrap();
+        assert_eq!(metadata2.num_leaves, 2);
+    }
+
+    #[test]
+    fn test_prepare_checkpoint_with_evicted_leaves() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_checkpoint_evicted.osm");
+
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+
+        // Add leaves
+        let leaf1 = LeafNode {
+            entries: vec![(100, 10), (200, 20)],
+            next_leaf: None,
+        };
+        let leaf2 = LeafNode {
+            entries: vec![(300, 30)],
+            next_leaf: None,
+        };
+        storage.alloc_leaf(leaf1);
+        storage.alloc_leaf(leaf2);
+
+        // Flush and evict
+        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        let (evicted_count, _) = storage.evict_clean_leaves();
+        assert_eq!(evicted_count, 2);
+
+        // Verify leaves are evicted
+        assert_eq!(storage.evicted_leaf_count(), 2);
+
+        // Prepare checkpoint - should reload evicted leaves to collect summaries
+        let metadata = storage.prepare_checkpoint().unwrap();
+
+        // Verify metadata is correct even with evicted leaves
+        assert_eq!(metadata.num_leaves, 2);
+        assert_eq!(metadata.leaf_summaries.len(), 2);
+
+        let summary1 = &metadata.leaf_summaries[0];
+        assert_eq!(summary1.first_key, Some(100));
+        assert_eq!(summary1.weight_sum, 30); // 10 + 20
+        assert_eq!(summary1.entry_count, 2);
+
+        let summary2 = &metadata.leaf_summaries[1];
+        assert_eq!(summary2.first_key, Some(300));
+        assert_eq!(summary2.weight_sum, 30);
+        assert_eq!(summary2.entry_count, 1);
+    }
+
+    #[test]
+    fn test_take_spill_file_invalidates_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_take_invalidates.osm");
+
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+
+        let leaf = LeafNode {
+            entries: vec![(10, 1)],
+            next_leaf: None,
+        };
+        storage.alloc_leaf(leaf);
+
+        // Flush to disk
+        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        assert!(storage.spill_file_path().is_some());
+
+        // take_spill_file DOES invalidate runtime state (unlike prepare_checkpoint)
+        let taken_path = storage.take_spill_file();
+        assert!(taken_path.is_some());
+        assert!(
+            storage.spill_file_path().is_none(),
+            "spill_file_path should be None after take_spill_file"
+        );
     }
 }

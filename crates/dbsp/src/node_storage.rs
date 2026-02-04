@@ -147,6 +147,8 @@ pub trait StorableNode: Clone + Debug + SizeOf + Send + Sync + 'static {
 ///
 /// ```ignore
 /// impl LeafNodeOps for MyLeafNode {
+///     type Key = i32;
+///
 ///     fn entry_count(&self) -> usize {
 ///         self.entries.len()
 ///     }
@@ -154,14 +156,26 @@ pub trait StorableNode: Clone + Debug + SizeOf + Send + Sync + 'static {
 ///     fn total_weight(&self) -> ZWeight {
 ///         self.entries.iter().map(|(_, w)| *w).sum()
 ///     }
+///
+///     fn first_key(&self) -> Option<Self::Key> {
+///         self.entries.first().map(|(k, _)| k.clone())
+///     }
 /// }
 /// ```
 pub trait LeafNodeOps {
+    /// The key type stored in this leaf.
+    type Key: Clone;
+
     /// Number of entries in this leaf node.
     fn entry_count(&self) -> usize;
 
     /// Total weight (sum of all entry weights) in this leaf node.
     fn total_weight(&self) -> ZWeight;
+
+    /// Get the first key in this leaf (for building separator keys during restore).
+    ///
+    /// Returns `None` if the leaf is empty.
+    fn first_key(&self) -> Option<Self::Key>;
 }
 
 // =============================================================================
@@ -531,7 +545,9 @@ pub struct StorageStats {
     pub internal_node_count: usize,
     /// Number of leaf nodes (total, including evicted)
     pub leaf_node_count: usize,
-    /// Total entries across all in-memory leaves
+    /// Total entries across all leaves (including evicted).
+    /// This count is set during allocation and bulk stats updates,
+    /// and represents the total logical entry count regardless of eviction state.
     pub total_entries: usize,
     /// Estimated memory usage in bytes
     pub memory_bytes: usize,
@@ -555,8 +571,6 @@ pub struct StorageStats {
     // Eviction stats (Phase 6)
     /// Number of leaves currently evicted from memory
     pub evicted_leaf_count: usize,
-    /// Bytes of evicted leaf data (estimated)
-    pub evicted_bytes: usize,
 }
 
 // =============================================================================
@@ -735,8 +749,8 @@ pub struct NodeStorage<I, L> {
     /// Internal nodes - always in memory, with dirty tracking
     internal_nodes: Vec<NodeWithMeta<I>>,
 
-    /// Leaf nodes - Some(leaf) if in memory, None if evicted to disk
-    leaves: Vec<Option<L>>,
+    /// Leaf nodes - Present if in memory, Evicted if on disk only
+    leaves: Vec<LeafSlot<L>>,
 
     /// Set of dirty leaf indices (for efficient tracking)
     #[size_of(skip)]
@@ -757,11 +771,6 @@ pub struct NodeStorage<I, L> {
     #[size_of(skip)]
     spilled_leaves: HashSet<usize>,
 
-    /// Set of leaf indices that have been evicted from memory
-    /// (subset of spilled_leaves - only spilled leaves can be evicted)
-    #[size_of(skip)]
-    evicted_leaves: HashSet<usize>,
-
     // === BufferCache integration ===
     /// FileId for the current spill file (for BufferCache keys)
     #[size_of(skip)]
@@ -770,7 +779,76 @@ pub struct NodeStorage<I, L> {
     /// Block locations for each spilled leaf (for BufferCache keys)
     /// Maps leaf_id -> (offset, size) in the spill file
     #[size_of(skip)]
-    pub leaf_block_locations: std::collections::HashMap<usize, (u64, u32)>,
+    leaf_block_locations: std::collections::HashMap<usize, (u64, u32)>,
+}
+
+/// State of a leaf slot in NodeStorage.
+///
+/// Leaves can be either present in memory or evicted to disk.
+/// When evicted, we cache the summary to avoid reloading for checkpoint.
+#[derive(Debug, Clone)]
+pub enum LeafSlot<L> {
+    /// Leaf is present in memory
+    Present(L),
+    /// Leaf was evicted to disk; summary cached for checkpoint
+    Evicted(CachedLeafSummary),
+}
+
+impl<L> LeafSlot<L> {
+    /// Returns true if the leaf is present in memory.
+    #[inline]
+    pub fn is_present(&self) -> bool {
+        matches!(self, LeafSlot::Present(_))
+    }
+
+    /// Returns true if the leaf is evicted to disk.
+    #[inline]
+    pub fn is_evicted(&self) -> bool {
+        matches!(self, LeafSlot::Evicted(_))
+    }
+
+    /// Returns a reference to the leaf if present in memory.
+    #[inline]
+    pub fn as_present(&self) -> Option<&L> {
+        match self {
+            LeafSlot::Present(leaf) => Some(leaf),
+            LeafSlot::Evicted(_) => None,
+        }
+    }
+
+    /// Returns a mutable reference to the leaf if present in memory.
+    #[inline]
+    pub fn as_present_mut(&mut self) -> Option<&mut L> {
+        match self {
+            LeafSlot::Present(leaf) => Some(leaf),
+            LeafSlot::Evicted(_) => None,
+        }
+    }
+
+    /// Returns the cached summary if evicted.
+    #[inline]
+    pub fn as_evicted(&self) -> Option<&CachedLeafSummary> {
+        match self {
+            LeafSlot::Present(_) => None,
+            LeafSlot::Evicted(summary) => Some(summary),
+        }
+    }
+}
+
+/// Cached leaf summary data stored without generic key type.
+///
+/// The first_key is stored as serialized bytes to avoid type parameters
+/// at the struct level. This is reconstructed into `LeafSummary<K>` when needed.
+#[derive(Debug, Clone)]
+pub struct CachedLeafSummary {
+    /// Serialized first key (rkyv format), or empty if leaf was empty
+    pub first_key_bytes: Vec<u8>,
+    /// Whether first_key_bytes represents Some(key) or None
+    pub has_first_key: bool,
+    /// Sum of weights in the leaf
+    pub weight_sum: ZWeight,
+    /// Number of entries in the leaf
+    pub entry_count: usize,
 }
 
 // =============================================================================
@@ -798,7 +876,6 @@ where
             stats: StorageStats::default(),
             spill_file_path: None,
             spilled_leaves: HashSet::new(),
-            evicted_leaves: HashSet::new(),
             spill_file_id: None,
             leaf_block_locations: std::collections::HashMap::new(),
         }
@@ -959,13 +1036,15 @@ where
         self.update_dirty_stats();
     }
 
-    /// Update dirty-related and eviction statistics.
+    /// Update dirty-related statistics.
+    ///
+    /// Note: evicted_leaf_count is updated directly by evict/reload methods,
+    /// not here, to avoid O(n) scans on every mutation.
     fn update_dirty_stats(&mut self) {
         self.stats.dirty_internal_count =
             self.internal_nodes.iter().filter(|n| n.is_dirty()).count();
         self.stats.dirty_leaf_count = self.dirty_leaves.len();
         self.stats.dirty_bytes = self.dirty_bytes;
-        self.stats.evicted_leaf_count = self.evicted_leaves.len();
     }
 
     // =========================================================================
@@ -987,7 +1066,7 @@ where
         self.dirty_leaves.insert(id);
         self.dirty_bytes += leaf_size;
 
-        self.leaves.push(Some(leaf));
+        self.leaves.push(LeafSlot::Present(leaf));
         self.update_dirty_stats();
 
         NodeLocation::Leaf(LeafLocation { id })
@@ -1053,7 +1132,7 @@ where
             NodeLocation::Internal { id, .. } => NodeRef::Internal(&self.internal_nodes[id].node),
             NodeLocation::Leaf(leaf_loc) => {
                 let leaf = self.leaves[leaf_loc.id]
-                    .as_ref()
+                    .as_present()
                     .expect("Leaf is evicted - use get_leaf() for auto-reload");
                 NodeRef::Leaf(leaf)
             }
@@ -1070,20 +1149,20 @@ where
     #[inline]
     pub fn get_leaf(&self, loc: LeafLocation) -> &L {
         self.leaves[loc.id]
-            .as_ref()
+            .as_present()
             .expect("Leaf is evicted - use get_leaf_reloading() for auto-reload")
     }
 
     /// Check if a leaf is currently in memory (not evicted).
     #[inline]
     pub fn is_leaf_in_memory(&self, loc: LeafLocation) -> bool {
-        loc.id < self.leaves.len() && self.leaves[loc.id].is_some()
+        loc.id < self.leaves.len() && self.leaves[loc.id].is_present()
     }
 
     /// Check if a leaf is evicted (on disk only, not in memory).
     #[inline]
     pub fn is_leaf_evicted(&self, loc: LeafLocation) -> bool {
-        self.evicted_leaves.contains(&loc.id)
+        loc.id < self.leaves.len() && self.leaves[loc.id].is_evicted()
     }
 
     /// Get a reference to an internal node by index.
@@ -1121,7 +1200,7 @@ where
             NodeLocation::Leaf(leaf_loc) => {
                 self.mark_leaf_dirty(leaf_loc.id);
                 let leaf = self.leaves[leaf_loc.id]
-                    .as_mut()
+                    .as_present_mut()
                     .expect("Leaf is evicted - cannot get mutable reference");
                 NodeRefMut::Leaf(leaf)
             }
@@ -1138,7 +1217,7 @@ where
     pub fn get_leaf_mut(&mut self, loc: LeafLocation) -> &mut L {
         self.mark_leaf_dirty(loc.id);
         self.leaves[loc.id]
-            .as_mut()
+            .as_present_mut()
             .expect("Leaf is evicted - cannot get mutable reference")
     }
 
@@ -1164,7 +1243,7 @@ where
     fn mark_leaf_dirty(&mut self, id: usize) {
         if !self.dirty_leaves.contains(&id) {
             let leaf = self.leaves[id]
-                .as_ref()
+                .as_present()
                 .expect("Cannot mark evicted leaf as dirty");
             let leaf_size = Self::estimate_leaf_size(leaf);
             self.dirty_leaves.insert(id);
@@ -1188,7 +1267,6 @@ where
         self.dirty_bytes = 0;
         self.stats = StorageStats::default();
         self.spilled_leaves.clear();
-        self.evicted_leaves.clear();
         self.leaf_block_locations.clear();
         // Don't clear spill_file_path/spill_file_id - file may still exist on disk
     }
@@ -1200,7 +1278,7 @@ where
         self.stats.total_entries = self
             .leaves
             .iter()
-            .filter_map(|l| l.as_ref())
+            .filter_map(|l| l.as_present())
             .map(|l| l.entry_count())
             .sum();
 
@@ -1213,7 +1291,7 @@ where
         let leaf_bytes: usize = self
             .leaves
             .iter()
-            .filter_map(|l| l.as_ref())
+            .filter_map(|l| l.as_present())
             .map(Self::estimate_leaf_size)
             .sum();
         self.stats.memory_bytes = internal_bytes + leaf_bytes;
@@ -1224,13 +1302,14 @@ where
     /// Get the number of leaves currently evicted (on disk only).
     #[inline]
     pub fn evicted_leaf_count(&self) -> usize {
-        self.evicted_leaves.len()
+        self.stats.evicted_leaf_count
     }
 
     /// Get the number of leaves currently in memory.
+    /// Warning! O(n) operation.
     #[inline]
     pub fn in_memory_leaf_count(&self) -> usize {
-        self.leaves.iter().filter(|l| l.is_some()).count()
+        self.leaves.iter().filter(|l| l.is_present()).count()
     }
 
     // =========================================================================
@@ -1277,6 +1356,8 @@ where
     I: StorableNode,
     L: StorableNode + LeafNodeOps + Archive + RkyvSerialize<Serializer>,
     Archived<L>: RkyvDeserialize<L, Deserializer>,
+    L::Key: Archive + RkyvSerialize<Serializer>,
+    Archived<L::Key>: RkyvDeserialize<L::Key, Deserializer>,
 {
     /// Flush all dirty leaves to disk.
     ///
@@ -1367,7 +1448,7 @@ where
         let dirty_ids: Vec<usize> = self.dirty_leaves.iter().copied().collect();
         for &id in &dirty_ids {
             let leaf = self.leaves[id]
-                .as_ref()
+                .as_present()
                 .expect("Dirty leaf must be in memory");
             let block_loc = leaf_file.write_leaf(id as u64, leaf)?;
 
@@ -1376,6 +1457,7 @@ where
             self.leaf_block_locations
                 .insert(id, (block_loc.offset, block_loc.size));
             self.spilled_leaves.insert(id);
+            // Note: Summary is captured at eviction time, not flush time
         }
 
         // Finalize the file
@@ -1415,10 +1497,10 @@ where
         let id = loc.id;
 
         // Check if we have the leaf in memory
-        if id < self.leaves.len() && self.leaves[id].is_some() {
+        if id < self.leaves.len() && self.leaves[id].is_present() {
             // Leaf is in memory, update cache stats
             self.stats.cache_hits += 1;
-            return Ok(self.leaves[id].as_ref().unwrap());
+            return Ok(self.leaves[id].as_present().unwrap());
         }
 
         // Try to load from BufferCache if available (Phase 7)
@@ -1444,20 +1526,26 @@ where
                         let leaf = cached.leaf.clone();
                         let leaf_size = cached.size_bytes;
 
-                        // Store in memory
-                        while self.leaves.len() <= id {
-                            self.leaves.push(None);
-                        }
-                        self.leaves[id] = Some(leaf);
+                        // Track if we're reloading an evicted leaf
+                        let was_evicted = self.leaves[id].is_evicted();
 
-                        // No longer evicted
-                        self.evicted_leaves.remove(&id);
+                        // Store in memory (slot should already exist)
+                        assert!(
+                            id < self.leaves.len(),
+                            "Leaf slot {} should exist before loading from cache",
+                            id
+                        );
+                        self.leaves[id] = LeafSlot::Present(leaf);
 
                         // Update stats
                         self.stats.cache_hits += 1;
                         self.stats.memory_bytes += leaf_size;
+                        if was_evicted {
+                            self.stats.evicted_leaf_count =
+                                self.stats.evicted_leaf_count.saturating_sub(1);
+                        }
 
-                        return Ok(self.leaves[id].as_ref().unwrap());
+                        return Ok(self.leaves[id].as_present().unwrap());
                     }
                 }
             }
@@ -1474,6 +1562,9 @@ where
         // Use StorableNode trait method for size estimation
         let leaf_size = leaf.estimate_size();
 
+        // Track if we're reloading an evicted leaf
+        let was_evicted = self.leaves[id].is_evicted();
+
         self.stats.cache_misses += 1;
 
         // Insert into BufferCache for future access (Phase 7)
@@ -1489,24 +1580,21 @@ where
             }
         }
 
-        // Store in memory (extend if needed)
-        while self.leaves.len() <= id {
-            self.leaves.push(None);
-        }
-        self.leaves[id] = Some(leaf);
+        // Store in memory (slot should already exist)
+        assert!(
+            id < self.leaves.len(),
+            "Leaf slot {} should exist before loading from disk",
+            id
+        );
+        self.leaves[id] = LeafSlot::Present(leaf);
 
-        // No longer evicted
-        self.evicted_leaves.remove(&id);
-
-        // Update memory stats
+        // Update stats
         self.stats.memory_bytes += leaf_size;
+        if was_evicted {
+            self.stats.evicted_leaf_count = self.stats.evicted_leaf_count.saturating_sub(1);
+        }
 
-        Ok(self.leaves[id].as_ref().unwrap())
-    }
-
-    /// Get the path to the current spill file, if any.
-    pub fn spill_file_path(&self) -> Option<&Path> {
-        self.spill_file_path.as_deref()
+        Ok(self.leaves[id].as_present().unwrap())
     }
 
     /// Check if a leaf has been spilled to disk.
@@ -1517,6 +1605,16 @@ where
     /// Get the number of leaves that have been spilled to disk.
     pub fn spilled_leaf_count(&self) -> usize {
         self.spilled_leaves.len()
+    }
+
+    /// Get block locations for all spilled leaves.
+    ///
+    /// Returns an iterator over (leaf_id, offset, size) tuples for each leaf
+    /// that has been written to the spill file. Used for checkpoint metadata.
+    pub fn get_leaf_block_locations(&self) -> impl Iterator<Item = (usize, u64, u32)> + '_ {
+        self.leaf_block_locations
+            .iter()
+            .map(|(&id, &(offset, size))| (id, offset, size))
     }
 
     /// Delete the spill file from disk.
@@ -1545,7 +1643,6 @@ where
         self.spill_file_path = None;
         self.spill_file_id = None;
         self.spilled_leaves.clear();
-        self.evicted_leaves.clear();
         self.leaf_block_locations.clear();
         Ok(())
     }
@@ -1575,29 +1672,46 @@ where
         let mut bytes_freed = 0;
 
         // Only evict leaves that are:
-        // 1. In memory (Some)
+        // 1. In memory (Present)
         // 2. Spilled to disk (in spilled_leaves)
         // 3. Not dirty (not in dirty_leaves)
         for id in 0..self.leaves.len() {
-            if self.leaves[id].is_some()
+            if self.leaves[id].is_present()
                 && self.spilled_leaves.contains(&id)
                 && !self.dirty_leaves.contains(&id)
             {
-                // Calculate size before evicting (using StorableNode trait)
-                let leaf = self.leaves[id].as_ref().unwrap();
+                // Calculate size and capture summary before evicting
+                let leaf = self.leaves[id].as_present().unwrap();
                 let leaf_size = leaf.estimate_size();
 
-                // Evict by setting to None
-                self.leaves[id] = None;
-                self.evicted_leaves.insert(id);
+                // Capture summary for checkpoint support
+                let first_key = leaf.first_key();
+                let (first_key_bytes, has_first_key) = if let Some(ref key) = first_key {
+                    (
+                        Vec::<u8>::from(serialize_to_bytes(key).unwrap_or_default()),
+                        true,
+                    )
+                } else {
+                    (Vec::new(), false)
+                };
+                let summary = CachedLeafSummary {
+                    first_key_bytes,
+                    has_first_key,
+                    weight_sum: leaf.total_weight(),
+                    entry_count: leaf.entry_count(),
+                };
+
+                // Evict by replacing Present with Evicted
+                self.leaves[id] = LeafSlot::Evicted(summary);
 
                 evicted_count += 1;
                 bytes_freed += leaf_size;
             }
         }
 
-        // Update memory stats
+        // Update stats
         self.stats.memory_bytes = self.stats.memory_bytes.saturating_sub(bytes_freed);
+        self.stats.evicted_leaf_count += evicted_count;
 
         (evicted_count, bytes_freed)
     }
@@ -1613,9 +1727,9 @@ where
         let id = loc.id;
 
         // If already in memory, return it
-        if id < self.leaves.len() && self.leaves[id].is_some() {
+        if id < self.leaves.len() && self.leaves[id].is_present() {
             self.stats.cache_hits += 1;
-            return self.leaves[id].as_ref().unwrap();
+            return self.leaves[id].as_present().unwrap();
         }
 
         // Need to reload from disk
@@ -1636,61 +1750,35 @@ where
             None => return Ok(0),
         };
 
-        if self.evicted_leaves.is_empty() {
+        // Collect IDs of evicted leaves
+        let evicted_ids: Vec<usize> = self
+            .leaves
+            .iter()
+            .enumerate()
+            .filter(|(_, slot)| slot.is_evicted())
+            .map(|(id, _)| id)
+            .collect();
+
+        if evicted_ids.is_empty() {
             return Ok(0);
         }
 
         let mut leaf_file: LeafFile<L> = LeafFile::open(&path)?;
         let mut count = 0;
 
-        for id in self.evicted_leaves.clone() {
+        for id in evicted_ids {
             let leaf = leaf_file.load_leaf(id as u64)?;
             // Use StorableNode trait method for size estimation
             let leaf_size = leaf.estimate_size();
 
-            // Ensure we have space
-            while self.leaves.len() <= id {
-                self.leaves.push(None);
-            }
-            self.leaves[id] = Some(leaf);
+            self.leaves[id] = LeafSlot::Present(leaf);
             self.stats.memory_bytes += leaf_size;
             count += 1;
         }
 
-        self.evicted_leaves.clear();
         self.stats.cache_misses += count as u64;
+        self.stats.evicted_leaf_count = self.stats.evicted_leaf_count.saturating_sub(count);
 
-        Ok(count)
-    }
-
-    /// Reload all spilled leaves from disk into memory.
-    ///
-    /// This can be used to restore state after a restart.
-    /// Deprecated: use `reload_evicted_leaves()` instead.
-    pub fn reload_spilled_leaves(&mut self) -> Result<usize, FileFormatError> {
-        let path = match &self.spill_file_path {
-            Some(p) => p.clone(),
-            None => return Ok(0),
-        };
-
-        let mut leaf_file: LeafFile<L> = LeafFile::open(&path)?;
-        let mut count = 0;
-
-        for &id in &self.spilled_leaves.clone() {
-            let leaf = leaf_file.load_leaf(id as u64)?;
-
-            // Ensure we have space
-            while self.leaves.len() <= id {
-                self.leaves.push(None);
-            }
-            self.leaves[id] = Some(leaf);
-            count += 1;
-        }
-
-        // All spilled leaves are now in memory
-        self.evicted_leaves.clear();
-
-        self.stats.cache_misses += count as u64;
         Ok(count)
     }
 
@@ -1737,6 +1825,9 @@ where
             let thread_id = std::thread::current().id();
             let file_name = format!("leaves_{}_{:?}.dat", unique_id, thread_id);
             self.spill_file_path = Some(temp_dir.join(file_name));
+
+            // Generate FileId for BufferCache integration
+            self.spill_file_id = Some(FileId::new());
         }
 
         let path = match &self.spill_file_path {
@@ -1763,7 +1854,7 @@ where
             }
 
             // Get the leaf - skip if evicted
-            let leaf = match &self.leaves[leaf_id] {
+            let leaf = match self.leaves[leaf_id].as_present() {
                 Some(leaf) => leaf,
                 None => continue, // Already evicted, should be in spilled_leaves
             };
@@ -1776,6 +1867,8 @@ where
                 .insert(leaf_id, (location.offset, location.size));
             self.spilled_leaves.insert(leaf_id);
             self.dirty_leaves.remove(&leaf_id);
+            // Note: Summary is captured at eviction time, not flush time
+
             count += 1;
         }
 
@@ -1788,14 +1881,144 @@ where
 
     /// Take ownership of the spill file path.
     ///
-    /// After calling this, Drop will not delete the file. Used during checkpoint
-    /// to transfer file ownership to the checkpointer.
+    /// After calling this, Drop will not delete the file and the runtime
+    /// will no longer be able to access evicted leaves.
+    ///
+    /// # Warning
+    ///
+    /// This is a destructive operation. For normal checkpoint operations,
+    /// use `prepare_checkpoint()` instead, which allows the runtime to
+    /// continue operating after checkpoint.
+    ///
+    /// This method is intended for special cases like transferring file
+    /// ownership to a different process or for cleanup operations.
     ///
     /// # Returns
     ///
     /// The spill file path, if any.
     pub fn take_spill_file(&mut self) -> Option<PathBuf> {
         self.spill_file_path.take()
+    }
+
+    /// Get the current spill file path (if any).
+    ///
+    /// This is useful for checkpoint operations that need to copy the
+    /// spill file to checkpoint storage without taking ownership.
+    ///
+    /// # Returns
+    ///
+    /// Reference to the spill file path, or None if no spill file exists.
+    #[inline]
+    pub fn spill_file_path(&self) -> Option<&Path> {
+        self.spill_file_path.as_deref()
+    }
+
+    /// Prepare checkpoint metadata without invalidating runtime state.
+    ///
+    /// This method:
+    /// 1. Flushes all dirty leaves to the spill file
+    /// 2. Collects leaf summaries for O(num_leaves) restore
+    /// 3. Returns metadata referencing the spill file
+    /// 4. **Does NOT invalidate the spill file** - runtime continues operating
+    ///
+    /// After calling this method, the caller should copy the spill file
+    /// (returned path in metadata) to checkpoint storage. The runtime
+    /// can continue operating with its local spill file.
+    ///
+    /// # Returns
+    ///
+    /// `CommittedLeafStorage` containing:
+    /// - Path to the spill file (caller should copy this to checkpoint storage)
+    /// - Block locations for all leaves
+    /// - Leaf summaries for O(num_leaves) restore
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if flushing leaves to disk fails.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Prepare checkpoint
+    /// let metadata = storage.prepare_checkpoint()?;
+    ///
+    /// // Copy spill file to checkpoint storage (e.g., S3)
+    /// if let Some(path) = storage.spill_file_path() {
+    ///     upload_to_s3(path, &checkpoint_location)?;
+    /// }
+    ///
+    /// // Runtime continues operating with local spill file
+    /// // (no invalidation occurred)
+    /// ```
+    pub fn prepare_checkpoint(&mut self) -> Result<CommittedLeafStorage<L::Key>, FileFormatError>
+    where
+        Archived<L::Key>: RkyvDeserialize<L::Key, Deserializer>,
+    {
+        // 1. Flush all dirty leaves to ensure everything is on disk
+        self.flush_all_leaves_to_disk()?;
+
+        // 2. Collect leaf summaries from LeafSlot:
+        //    - Present(leaf): compute summary directly from leaf (it's in memory)
+        //    - Evicted(summary): use the cached summary (captured at eviction time)
+        let mut leaf_summaries = Vec::with_capacity(self.leaves.len());
+        let mut total_entries = 0usize;
+        let mut total_weight = 0i64;
+
+        for slot in &self.leaves {
+            let summary = match slot {
+                LeafSlot::Present(leaf) => {
+                    // Leaf is in memory - compute summary directly
+                    LeafSummary::new(leaf.first_key(), leaf.total_weight(), leaf.entry_count())
+                }
+                LeafSlot::Evicted(cached) => {
+                    // Leaf is evicted - reconstruct summary from cached data
+                    let first_key =
+                        if cached.has_first_key && !cached.first_key_bytes.is_empty() {
+                            // SAFETY: first_key_bytes was serialized by serialize_to_bytes() in
+                            // evict_clean_leaves() or mark_all_leaves_evicted() using the same
+                            // rkyv serializer. The bytes are guaranteed to be a valid archived
+                            // representation of L::Key. We use unsafe archived_root instead of
+                            // check_archived_root for performance since we trust our own serialization.
+                            let archived =
+                                unsafe { rkyv::archived_root::<L::Key>(&cached.first_key_bytes) };
+                            // Using .ok() here is intentional: if deserialization fails (which
+                            // shouldn't happen with valid serialized data), we treat it as if
+                            // the leaf had no first key. This is acceptable because:
+                            // 1. The weight_sum and entry_count are still valid for restore
+                            // 2. A missing first_key only affects separator key reconstruction
+                            // 3. Failing the entire checkpoint for one corrupt key is too harsh
+                            archived.deserialize(&mut Deserializer::default()).ok()
+                        } else {
+                            None
+                        };
+                    LeafSummary::new(first_key, cached.weight_sum, cached.entry_count)
+                }
+            };
+            total_entries += summary.entry_count;
+            total_weight += summary.weight_sum;
+            leaf_summaries.push(summary);
+        }
+
+        // 3. Collect block locations
+        let leaf_block_locations: Vec<(usize, u64, u32)> = self
+            .leaf_block_locations
+            .iter()
+            .map(|(id, (off, sz))| (*id, *off, *sz))
+            .collect();
+
+        // 4. Build metadata (does NOT invalidate spill_file_path)
+        Ok(CommittedLeafStorage {
+            spill_file_path: self
+                .spill_file_path
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            leaf_block_locations,
+            leaf_summaries,
+            total_entries,
+            total_weight,
+            num_leaves: self.leaves.len(),
+        })
     }
 
     /// Mark all leaves as evicted (on disk, not in memory).
@@ -1808,31 +2031,51 @@ where
     /// - `num_leaves`: Number of leaves in the checkpoint
     /// - `spill_file_path`: Path to the checkpoint file (becomes spill file)
     /// - `block_locations`: Index into the checkpoint file
+    /// - `summaries`: Leaf summaries from checkpoint (stored in LeafSlot::Evicted)
     pub fn mark_all_leaves_evicted(
         &mut self,
         num_leaves: usize,
         spill_file_path: PathBuf,
         block_locations: Vec<(usize, u64, u32)>,
+        summaries: Vec<LeafSummary<L::Key>>,
     ) {
         // Set up the spill file
         self.spill_file_path = Some(spill_file_path);
 
-        // Clear existing leaves
+        // Generate FileId for BufferCache integration
+        self.spill_file_id = Some(FileId::new());
+
+        // Clear existing state
         self.leaves.clear();
-        self.leaves.resize_with(num_leaves, || None);
-
-        // Mark all leaves as spilled (on disk) and evicted (not in memory)
         self.spilled_leaves.clear();
-        self.evicted_leaves.clear();
         self.dirty_leaves.clear();
+        self.leaf_block_locations.clear();
 
+        // Create Evicted slots for each leaf with cached summary
+        for summary in summaries {
+            let (first_key_bytes, has_first_key) = if let Some(ref key) = summary.first_key {
+                (
+                    Vec::<u8>::from(serialize_to_bytes(key).unwrap_or_default()),
+                    true,
+                )
+            } else {
+                (Vec::new(), false)
+            };
+            let cached = CachedLeafSummary {
+                first_key_bytes,
+                has_first_key,
+                weight_sum: summary.weight_sum,
+                entry_count: summary.entry_count,
+            };
+            self.leaves.push(LeafSlot::Evicted(cached));
+        }
+
+        // Mark all leaves as spilled (on disk)
         for i in 0..num_leaves {
             self.spilled_leaves.insert(i);
-            self.evicted_leaves.insert(i);
         }
 
         // Set up block locations for lazy loading
-        self.leaf_block_locations.clear();
         for (leaf_id, offset, size) in block_locations {
             self.leaf_block_locations.insert(leaf_id, (offset, size));
         }
@@ -2157,7 +2400,12 @@ where
         // rkyv stores the root object at the END of the buffer, so we need exact length
         let data = &block[DATA_BLOCK_HEADER_SIZE..DATA_BLOCK_HEADER_SIZE + data_len as usize];
 
-        // Use archived_root to access the archived representation
+        // SAFETY: The data was serialized by write_leaf() using serialize_to_bytes() with
+        // the same rkyv serializer, and we verified the block's CRC32C checksum above in
+        // verify_data_block_header(). The checksum ensures data integrity, and the
+        // serialization format is guaranteed to match. We use unsafe archived_root instead
+        // of check_archived_root for performance since the checksum already validates the
+        // data hasn't been corrupted.
         let archived = unsafe { rkyv::archived_root::<L>(data) };
         let leaf: L = archived
             .deserialize(&mut Deserializer::default())
