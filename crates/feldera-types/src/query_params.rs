@@ -45,13 +45,19 @@ impl Default for ActivateParams {
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema)]
 #[serde(default)]
 pub struct SamplyProfileParams {
+    /// In a multihost pipeline, the ordinal of the pipeline to sample.
+    pub ordinal: usize,
+    /// The number of seconds to sample for the profile.
     pub duration_secs: u64,
 }
 
 /// Default query parameters for POST of a pipeline samply profile.
 impl Default for SamplyProfileParams {
     fn default() -> Self {
-        Self { duration_secs: 30 }
+        Self {
+            ordinal: 0,
+            duration_secs: 30,
+        }
     }
 }
 
@@ -60,6 +66,8 @@ impl Default for SamplyProfileParams {
 #[into_params(parameter_in = Query)]
 #[serde(default)]
 pub struct SamplyProfileGetParams {
+    /// In a multihost pipeline, the ordinal of the pipeline to sample.
+    pub ordinal: usize,
     /// If true, returns 204 redirect with Retry-After header if profile collection is in progress.
     /// If false or not provided, returns the last collected profile.
     pub latest: bool,
