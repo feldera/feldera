@@ -4386,6 +4386,16 @@
             }
           },
           {
+            "name": "ordinal",
+            "in": "query",
+            "description": "In a multihost pipeline, the ordinal of the pipeline to sample.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
             "name": "latest",
             "in": "query",
             "description": "If true, returns 204 redirect with Retry-After header if profile collection is in progress.\nIf false or not provided, returns the last collected profile.",
@@ -4525,8 +4535,19 @@
             }
           },
           {
+            "name": "ordinal",
+            "in": "query",
+            "description": "In a multihost pipeline, the ordinal of the pipeline to sample.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
             "name": "duration_secs",
             "in": "query",
+            "description": "The number of seconds to sample for the profile.",
             "required": false,
             "schema": {
               "type": "integer",
