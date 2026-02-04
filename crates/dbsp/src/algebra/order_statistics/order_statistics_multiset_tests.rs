@@ -12,7 +12,7 @@ mod tests {
 
     #[test]
     fn test_empty_tree() {
-        let tree: OrderStatisticsMultiset<i32> = new_tree();
+        let mut tree: OrderStatisticsMultiset<i32> = new_tree();
         assert_eq!(tree.total_weight(), 0);
         assert_eq!(tree.num_keys(), 0);
         assert!(tree.is_empty());
@@ -130,8 +130,8 @@ mod tests {
 
         // 50th percentile should interpolate between 20 and 30
         let (lower, upper, frac) = tree.select_percentile_bounds(0.5, true).unwrap();
-        assert_eq!(*lower, 20);
-        assert_eq!(*upper, 30);
+        assert_eq!(lower, 20);
+        assert_eq!(upper, 30);
         assert!((frac - 0.5).abs() < 0.001);
     }
 
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_bulk_load_empty() {
-        let tree: OrderStatisticsMultiset<i32> =
+        let mut tree: OrderStatisticsMultiset<i32> =
             OrderStatisticsMultiset::from_sorted_entries(vec![], 64);
         assert!(tree.is_empty());
         assert_eq!(tree.num_keys(), 0);
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn test_bulk_load_single() {
-        let tree = OrderStatisticsMultiset::from_sorted_entries(vec![(42, 5)], 64);
+        let mut tree = OrderStatisticsMultiset::from_sorted_entries(vec![(42, 5)], 64);
         assert_eq!(tree.total_weight(), 5);
         assert_eq!(tree.num_keys(), 1);
         assert_eq!(tree.select_kth(0, true), Some(&42));
@@ -183,7 +183,7 @@ mod tests {
 
         // Build tree via bulk load
         let entries: Vec<_> = incremental.iter().map(|(k, w)| (*k, w)).collect();
-        let bulk = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+        let mut bulk = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
 
         // Verify equality
         assert_eq!(incremental.total_weight(), bulk.total_weight());
@@ -210,7 +210,7 @@ mod tests {
         for size in [1, 10, 63, 64, 65, 100, 127, 128, 129, 1000, 10000] {
             let entries: Vec<_> = (0..size).map(|i| (i as i32, 1)).collect();
 
-            let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+            let mut tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
 
             assert_eq!(tree.num_keys(), size, "num_keys mismatch for size {size}");
             assert_eq!(
@@ -249,7 +249,7 @@ mod tests {
     #[test]
     fn test_bulk_load_with_varying_weights() {
         let entries = vec![(10, 3), (20, 2), (30, 5), (40, 1), (50, 4)];
-        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+        let mut tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
 
         assert_eq!(tree.total_weight(), 15); // 3+2+5+1+4
         assert_eq!(tree.num_keys(), 5);
@@ -279,7 +279,7 @@ mod tests {
     fn test_bulk_load_small_branching_factor() {
         // Use minimum branching factor to force multiple internal levels
         let entries: Vec<_> = (0..100).map(|i| (i, 1)).collect();
-        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 4);
+        let mut tree = OrderStatisticsMultiset::from_sorted_entries(entries, 4);
 
         assert_eq!(tree.num_keys(), 100);
         assert_eq!(tree.total_weight(), 100);
@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn test_bulk_load_rank_queries() {
         let entries: Vec<_> = (0..100).map(|i| (i * 10, 1)).collect();
-        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+        let mut tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
 
         // rank(key) = sum of weights of keys < key
         assert_eq!(tree.rank(&0), 0); // No keys less than 0
@@ -331,7 +331,7 @@ mod tests {
     fn test_bulk_load_negative_weights() {
         // Bulk load with some negative weights (for incremental computation)
         let entries = vec![(10, 5), (20, -2), (30, 3)];
-        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+        let mut tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
 
         assert_eq!(tree.total_weight(), 6); // 5 + (-2) + 3
         assert_eq!(tree.num_keys(), 3);
@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn test_bulk_load_percentile_operations() {
         let entries: Vec<_> = (1..=100).map(|i| (i, 1)).collect();
-        let tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+        let mut tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
 
         // PERCENTILE_DISC
         assert_eq!(tree.select_percentile_disc(0.0, true), Some(&1));
@@ -357,7 +357,98 @@ mod tests {
 
         // PERCENTILE_CONT bounds
         let (lower, upper, _frac) = tree.select_percentile_bounds(0.5, true).unwrap();
-        assert_eq!(*lower, 50);
-        assert_eq!(*upper, 51);
+        assert_eq!(lower, 50);
+        assert_eq!(upper, 51);
+    }
+
+    // ========================================================================
+    // Flush/evict tests
+    // ========================================================================
+
+    fn test_config_with_storage(
+        threshold_bytes: usize,
+    ) -> (NodeStorageConfig, std::sync::Arc<crate::storage::backend::memory_impl::MemoryBackend>) {
+        use crate::storage::backend::memory_impl::MemoryBackend;
+        let backend = std::sync::Arc::new(MemoryBackend::new());
+        let config = NodeStorageConfig {
+            enable_spill: true,
+
+            spill_threshold_bytes: threshold_bytes,
+            target_segment_size: 64 * 1024 * 1024,
+            spill_directory: None,
+            segment_path_prefix: String::new(),
+            storage_backend: Some(backend.clone()),
+            buffer_cache: None,
+        };
+        (config, backend)
+    }
+
+    #[test]
+    fn test_select_kth_after_flush_evict() {
+        let (config, _backend) = test_config_with_storage(0);
+        let mut tree = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config);
+
+        // Insert enough data to have multiple leaves
+        for i in 0..200 {
+            tree.insert(i, 1);
+        }
+
+        // Flush and evict
+        let (flushed, evicted, _freed) = tree.flush_and_evict().unwrap();
+        assert!(flushed > 0, "Should have flushed some leaves");
+        assert!(evicted > 0, "Should have evicted some leaves");
+        assert!(tree.evicted_leaf_count() > 0, "Should have evicted leaves tracked");
+
+        // Verify select_kth still works correctly after eviction
+        assert_eq!(tree.select_kth(0, true), Some(&0));
+        assert_eq!(tree.select_kth(99, true), Some(&99));
+        assert_eq!(tree.select_kth(199, true), Some(&199));
+        assert_eq!(tree.select_kth(200, true), None);
+    }
+
+    #[test]
+    fn test_insert_after_flush_evict() {
+        let (config, _backend) = test_config_with_storage(0);
+        let mut tree = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config);
+
+        // Insert data
+        for i in 0..100 {
+            tree.insert(i * 2, 1); // Even numbers 0, 2, 4, ...198
+        }
+
+        // Flush and evict
+        tree.flush_and_evict().unwrap();
+        assert!(tree.evicted_leaf_count() > 0);
+
+        // Insert into evicted tree
+        for i in 0..50 {
+            tree.insert(i * 2 + 1, 1); // Odd numbers 1, 3, 5, ...99
+        }
+
+        // Verify tree integrity
+        assert_eq!(tree.total_weight(), 150);
+        assert_eq!(tree.num_keys(), 150);
+        assert_eq!(tree.select_kth(0, true), Some(&0));
+        assert_eq!(tree.select_kth(1, true), Some(&1));
+        assert_eq!(tree.select_kth(2, true), Some(&2));
+    }
+
+    #[test]
+    fn test_flush_and_evict_wrapper() {
+        let (config, _backend) = test_config_with_storage(0);
+        let mut tree = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config);
+
+        // Insert data
+        for i in 0..100 {
+            tree.insert(i, 1);
+        }
+
+        assert!(tree.should_flush(), "Should want to flush with threshold 0");
+
+        let (flushed, evicted, freed) = tree.flush_and_evict().unwrap();
+        assert!(flushed > 0, "Should flush dirty leaves");
+        assert!(evicted > 0, "Should evict clean leaves");
+        assert!(freed > 0, "Should free some bytes");
+        assert_eq!(tree.evicted_leaf_count(), evicted);
     }
 }

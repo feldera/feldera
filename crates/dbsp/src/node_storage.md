@@ -14,53 +14,58 @@ The primary use case is `OrderStatisticsMultiset`, an augmented B+ tree used for
 
 The storage design exploits B+ tree access patterns and supports level-based spilling:
 
-**Default behavior (max_spillable_level = 0):**
-
 | Node Type | % of Nodes | Access Pattern | Strategy |
 |-----------|------------|----------------|----------|
 | Internal | ~2% | Every operation | Always pinned in memory |
-| Leaves | ~98% | Sparse by key range | Spill to disk, LRU cache |
+| Leaves | ~98% | Sparse by key range | Spill to disk, reload on demand |
 
 For a tree with 10M keys (B=64): internal nodes use ~5MB (always fits), leaves use ~156MB (spilled as needed).
 
-**Level-based spilling:**
-
-Nodes are organized by level (0 = leaves, 1 = parents of leaves, etc.). The `max_spillable_level` config controls which levels can be spilled:
-- `max_spillable_level = 0`: Only leaves can be spilled (default, most efficient)
-- `max_spillable_level = 1`: Leaves and their direct parents can be spilled
-- `max_spillable_level = u8::MAX`: All nodes can be spilled (aggressive memory savings)
-
-Higher values allow more aggressive memory reclamation but may cause cascading disk reads.
+Only leaves are spilled and evicted. Internal nodes are always pinned in memory.
 
 ### Component Structure
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│              OrderStatisticsMultiset<T>                 │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │        OsmNodeStorage<T> (type alias)           │   │
-│  │    = NodeStorage<InternalNodeTyped<T>,          │   │
-│  │                   LeafNode<T>>                  │   │
-│  │  ┌─────────────────┐  ┌─────────────────────┐   │   │
-│  │  │ InternalNodes   │  │    Leaves           │   │   │
-│  │  │ (always pinned) │  │  Vec<LeafSlot<L>>   │   │   │
-│  │  │ Vec<I>          │  │  (evictable)        │   │   │
-│  │  └─────────────────┘  └────────┬────────────┘   │   │
-│  │                                │                 │   │
-│  │                       ┌────────▼────────────┐   │   │
-│  │                       │     LeafFile<L>     │   │   │
-│  │                       │  (block-based I/O)  │   │   │
-│  │                       └─────────────────────┘   │   │
-│  └─────────────────────────────────────────────────┘   │
-│                              │                          │
-│              ┌───────────────┴───────────────┐         │
-│              ▼                               ▼         │
-│  ┌─────────────────────┐    ┌─────────────────────┐   │
-│  │   BufferCache       │    │   StorageBackend    │   │
-│  │   (LRU caching)     │    │   (file I/O)        │   │
-│  └─────────────────────┘    └─────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
++--------------------------------------------------------------+
+|              OrderStatisticsMultiset<T>                       |
+|  +--------------------------------------------------------+  |
+|  |        OsmNodeStorage<T> (type alias)                  |  |
+|  |    = NodeStorage<InternalNodeTyped<T>, LeafNode<T>>    |  |
+|  |  +------------------+  +----------------------------+  |  |
+|  |  | Internal Nodes   |  |   Leaves                   |  |  |
+|  |  | (always pinned)  |  |  Vec<LeafSlot<L>>          |  |  |
+|  |  | Vec<NodeWithMeta> |  |  (Present or Evicted)      |  |  |
+|  |  +------------------+  +-------------+--------------+  |  |
+|  |                                      |                 |  |
+|  |                           +----------v-----------+     |  |
+|  |                           |  Segment Files       |     |  |
+|  |                           |  (immutable, per-    |     |  |
+|  |                           |   flush, block I/O)  |     |  |
+|  |                           +----------+-----------+     |  |
+|  +--------------------------------------|----------------+  |
+|                                         |                   |
+|              +-------------+------------+----------+        |
+|              v             v                       v        |
+|  +----------------+  +------------------+  +-------------+  |
+|  | StorageBackend |  |  FileReader/     |  | BufferCache |  |
+|  | (create/open)  |  |  FileCommitter   |  | (LRU cache) |  |
+|  +----------------+  +------------------+  +-------------+  |
++--------------------------------------------------------------+
 ```
+
+### Storage Model: Immutable Segments
+
+NodeStorage uses **immutable segment files**, following the same pattern as DBSP's spine_async trace storage:
+
+1. Each `flush_dirty_to_disk()` creates a **new immutable segment file** with a unique ID
+2. Segment files are created via `StorageBackend::create_named()` and become read-only after `writer.complete()`
+3. Each segment has a `FileReader` that provides read access and controls file lifecycle
+4. Multiple segments can coexist; a leaf's location is tracked via `leaf_disk_locations` map
+
+This is fundamentally different from a single mutable spill file. Immutable segments enable:
+- **Checkpoint without copy**: segments are shared between runtime and checkpoint via `mark_for_checkpoint()`
+- **Atomic commit**: segment FileReaders implement `FileCommitter` for checkpoint atomicity
+- **Clean Drop behavior**: files created via `create_named()` are deleted on drop unless marked for checkpoint; files opened via `backend.open()` (restored segments) are never deleted
 
 ## Core Traits
 
@@ -69,46 +74,26 @@ Higher values allow more aggressive memory reclamation but may cause cascading d
 Base trait for all tree nodes that can be stored in NodeStorage:
 
 ```rust
-/// Base trait for tree nodes that can be stored in NodeStorage.
-///
-/// This trait defines the minimal interface for tree nodes. Serialization
-/// bounds are added separately where needed (e.g., for disk spilling) to
-/// keep the base trait simple.
-pub trait StorableNode:
-    Clone + Debug + SizeOf + Send + Sync + 'static
-{
-    /// Estimate the memory size of this node.
+pub trait StorableNode: Clone + Debug + SizeOf + Send + Sync + 'static {
     fn estimate_size(&self) -> usize;
 }
 ```
-
-Default implementations:
-- `InternalNodeTyped<T>` implements `StorableNode`
-- `LeafNode<T>` implements `StorableNode`
 
 ### LeafNodeOps Trait
 
 Trait for leaf-specific operations required by the storage layer:
 
 ```rust
-/// Operations specific to leaf nodes.
-///
-/// This trait defines leaf-specific behavior that the generic storage
-/// layer needs to interact with leaves.
 pub trait LeafNodeOps {
-    /// Key type stored in the leaf
-    type Key;
+    type Key: Clone;
 
-    /// Compute total weight of all entries in this leaf
-    fn total_weight(&self) -> ZWeight;
-
-    /// Number of entries in this leaf
     fn entry_count(&self) -> usize;
-
-    /// Iterate over entries as (key, weight) pairs
-    fn entries(&self) -> impl Iterator<Item = (&Self::Key, ZWeight)>;
+    fn total_weight(&self) -> ZWeight;
+    fn first_key(&self) -> Option<Self::Key>;
 }
 ```
+
+`first_key()` is used during checkpoint to build `LeafSummary` metadata, enabling O(num_leaves) internal node reconstruction on restore without reading leaf contents.
 
 ## Core Types
 
@@ -117,147 +102,103 @@ pub trait LeafNodeOps {
 Strongly-typed node location tracking with level information:
 
 ```rust
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NodeLocation {
-    Internal { id: usize, level: u8 },  // Index into internal nodes vector + level
-    Leaf(LeafLocation),                  // Leaf location (level = 0)
+    Internal { id: usize, level: u8 },
+    Leaf(LeafLocation),
 }
 
-impl NodeLocation {
-    /// Returns the level of this node.
-    /// Level 0 = leaves, Level 1 = parents of leaves, etc.
-    pub fn level(&self) -> u8;
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LeafLocation {
-    pub id: usize,        // Unique leaf identifier
+    pub id: usize,
 }
 ```
 
 ### NodeStorageConfig
 
-Configuration for storage behavior:
-
 ```rust
 pub struct NodeStorageConfig {
-    /// Enable disk spilling
     pub enable_spill: bool,
-
-    /// Maximum node level that can be spilled to disk.
-    /// - Level 0 = leaf nodes only (default, most efficient)
-    /// - Level 1 = leaves + their direct parents
-    /// - Level N = all nodes up to N levels from leaves
-    pub max_spillable_level: u8,
-
-    /// Bytes of dirty data before triggering flush
     pub spill_threshold_bytes: usize,
-
-    /// Directory for spill files (optional)
-    pub spill_directory: Option<PathBuf>,
-
-    /// Storage backend for file I/O
+    pub target_segment_size: usize,
+    pub spill_directory: Option<StoragePath>,
+    pub segment_path_prefix: String,
     pub storage_backend: Option<Arc<dyn StorageBackend>>,
-
-    /// Buffer cache for evicted leaf caching
     pub buffer_cache: Option<Arc<BufferCache>>,
-}
-
-impl NodeStorageConfig {
-    /// Auto-configure from DBSP Runtime settings
-    pub fn from_runtime() -> Self;
-
-    /// Memory-only configuration (no spilling)
-    pub fn memory_only() -> Self;
-
-    /// Configure with specific threshold
-    pub fn with_threshold(bytes: usize) -> Self;
-
-    /// Check if a node at the given level can be spilled
-    pub fn can_spill_level(&self, level: u8) -> bool {
-        self.enable_spill && level <= self.max_spillable_level
-    }
 }
 ```
 
-### LeafSlot<L>
+Key fields:
+- `target_segment_size`: Controls when to start a new segment vs appending to an existing one (default: 64MB)
+- `segment_path_prefix`: Ensures file name uniqueness when multiple NodeStorage instances share a backend. Segment files are named `{prefix}segment_{id}.dat`. For example, prefix `"t42_"` produces `t42_segment_0.dat`.
+- `storage_backend`: Required for all disk I/O. Obtained from DBSP Runtime in production, or created directly for tests.
 
-Enum representing a leaf's state in memory:
+Constructors:
+- `NodeStorageConfig::from_runtime()` - Auto-configure from DBSP Runtime settings
+- `NodeStorageConfig::memory_only()` - No spilling (for testing or small datasets)
+- `NodeStorageConfig::with_threshold(bytes)` - Custom spill threshold
+- `NodeStorageConfig::with_spill_directory(bytes, dir)` - Creates a PosixBackend for the directory
+
+### Segment Types
 
 ```rust
-/// Represents the state of a leaf slot in NodeStorage.
-///
-/// Each leaf is either present in memory or evicted to disk with
-/// cached summary information for checkpoint support.
+/// Unique identifier for a segment file.
+pub struct SegmentId(pub u64);
+
+/// Location of a leaf within segment-based storage.
+pub struct LeafDiskLocation {
+    pub segment_id: SegmentId,
+    pub offset: u64,
+    pub size: u32,
+}
+
+/// Metadata for a completed (immutable) segment file.
+pub struct SegmentMetadata {
+    pub id: SegmentId,
+    pub path: StoragePath,
+    pub leaf_index: HashMap<usize, (u64, u32)>,
+    pub size_bytes: u64,
+    pub leaf_count: usize,
+    pub reader: Option<Arc<dyn FileReader>>,
+}
+```
+
+The `reader` field is the key link to the StorageBackend lifecycle:
+- For segments created via `flush_dirty_to_disk()`: reader comes from `writer.complete()`
+- For segments restored via `restore()`: reader comes from `backend.open()`
+
+### LeafSlot
+
+```rust
 pub enum LeafSlot<L> {
-    /// Leaf is in memory
     Present(L),
-    /// Leaf is evicted to disk, with cached summary for checkpoints
     Evicted(CachedLeafSummary),
 }
 
-/// Cached summary of an evicted leaf.
-///
-/// Stores enough information to generate LeafSummary for checkpoints
-/// without reloading the leaf from disk.
 pub struct CachedLeafSummary {
-    pub first_key_bytes: Vec<u8>,  // rkyv-serialized first key
-    pub has_first_key: bool,       // false if leaf was empty
+    pub first_key_bytes: Vec<u8>,
+    pub has_first_key: bool,
     pub weight_sum: ZWeight,
     pub entry_count: usize,
 }
-
-impl<L> LeafSlot<L> {
-    pub fn is_present(&self) -> bool;
-    pub fn is_evicted(&self) -> bool;
-    pub fn as_present(&self) -> Option<&L>;
-    pub fn as_present_mut(&mut self) -> Option<&mut L>;
-    pub fn as_evicted(&self) -> Option<&CachedLeafSummary>;
-}
 ```
 
-### NodeStorage<I, L>
+The cached summary enables checkpoint metadata generation without reloading evicted leaves from disk.
 
-Generic storage abstraction separating internal nodes from leaves:
+### NodeStorage
 
 ```rust
-/// Generic node-level storage for tree data structures.
-///
-/// `NodeStorage<I, L>` is generic over:
-/// - `I: StorableNode` - internal node type
-/// - `L: StorableNode + LeafNodeOps` - leaf node type
-///
-/// This follows the Spine-Trace pattern from DBSP where storage is
-/// decoupled from the specific data structure using it.
 pub struct NodeStorage<I, L> {
-    // Configuration
-    config: NodeStorageConfig,
-
-    // Internal nodes (always in memory)
+    pub config: NodeStorageConfig,
     internal_nodes: Vec<NodeWithMeta<I>>,
-
-    // Leaf nodes with state tracking
-    // - Present(L): leaf is in memory
-    // - Evicted(summary): leaf is on disk, summary cached for checkpoints
     leaves: Vec<LeafSlot<L>>,
-
-    // Dirty tracking
     dirty_leaves: HashSet<usize>,
     dirty_bytes: usize,
-
-    // Spill tracking (leaves written to disk)
-    spilled_leaves: HashSet<usize>,
-
-    // Disk storage
-    spill_file_path: Option<PathBuf>,
-    spill_file_id: Option<FileId>,
-    leaf_block_locations: HashMap<usize, (u64, u32)>,
-
-    // Statistics (evicted_leaf_count maintained incrementally)
     stats: StorageStats,
+    segments: Vec<SegmentMetadata>,
+    next_segment_id: u64,
+    leaf_disk_locations: HashMap<usize, LeafDiskLocation>,
+    pending_segment: Option<PendingSegment>,
 }
 
-/// Convenience type alias for OrderStatisticsMultiset storage.
 pub type OsmNodeStorage<T> = NodeStorage<InternalNodeTyped<T>, LeafNode<T>>;
 ```
 
@@ -266,108 +207,48 @@ pub type OsmNodeStorage<T> = NodeStorage<InternalNodeTyped<T>, LeafNode<T>>;
 ### Allocation
 
 ```rust
-impl<I, L> NodeStorage<I, L>
-where
-    I: StorableNode,
-    L: StorableNode + LeafNodeOps,
-{
-    /// Allocate new leaf (marked dirty)
-    pub fn alloc_leaf(&mut self, leaf: L) -> NodeLocation;
+/// Allocate new leaf (marked dirty)
+pub fn alloc_leaf(&mut self, leaf: L) -> NodeLocation;
 
-    /// Allocate new internal node at given level (marked dirty)
-    pub fn alloc_internal(&mut self, node: I, level: u8) -> NodeLocation;
-}
+/// Allocate new internal node at given level (marked dirty)
+pub fn alloc_internal(&mut self, node: I, level: u8) -> NodeLocation;
+
+/// Allocate internal node as clean (for restore)
+pub fn alloc_internal_clean(&mut self, node: I, level: u8) -> NodeLocation;
 ```
 
 ### Read Access
 
 ```rust
-impl<I, L> NodeStorage<I, L>
-where
-    I: StorableNode,
-    L: StorableNode + LeafNodeOps,
-{
-    /// Get node reference (immutable)
-    pub fn get(&self, loc: NodeLocation) -> NodeRef<'_, I, L>;
-
-    /// Get leaf directly
-    pub fn get_leaf(&self, loc: LeafLocation) -> &L;
-
-    /// Get leaf, reloading from disk if evicted
-    pub fn get_leaf_reloading(&mut self, loc: LeafLocation) -> &L;
-
-    /// Get internal node directly
-    pub fn get_internal(&self, idx: usize) -> &I;
-}
+pub fn get(&self, loc: NodeLocation) -> NodeRef<'_, I, L>;
+pub fn get_leaf(&self, loc: LeafLocation) -> &L;
+pub fn get_leaf_reloading(&mut self, loc: LeafLocation) -> &L;
+pub fn get_internal(&self, idx: usize) -> &I;
 ```
+
+`get_leaf()` panics if the leaf is evicted. Use `get_leaf_reloading()` when leaves may be evicted - it transparently reloads from disk.
 
 ### Write Access
 
 ```rust
-impl<I, L> NodeStorage<I, L>
-where
-    I: StorableNode,
-    L: StorableNode + LeafNodeOps,
-{
-    /// Get mutable node reference (marks dirty)
-    pub fn get_mut(&mut self, loc: NodeLocation) -> NodeRefMut<'_, I, L>;
-
-    /// Get mutable leaf (marks dirty)
-    pub fn get_leaf_mut(&mut self, loc: LeafLocation) -> &mut L;
-
-    /// Get mutable internal node (marks dirty)
-    pub fn get_internal_mut(&mut self, idx: usize) -> &mut I;
-}
+pub fn get_mut(&mut self, loc: NodeLocation) -> NodeRefMut<'_, I, L>;
+pub fn get_leaf_mut(&mut self, loc: LeafLocation) -> &mut L;
+pub fn get_leaf_reloading_mut(&mut self, loc: LeafLocation) -> &mut L;
+pub fn get_internal_mut(&mut self, idx: usize) -> &mut I;
 ```
 
-### Node References
+All write accessors mark the node as dirty (copy-on-write semantics).
 
-Generic reference types for accessing nodes:
-
-```rust
-/// Immutable reference to a node.
-pub enum NodeRef<'a, I, L> {
-    Internal(&'a I),
-    Leaf(&'a L),
-}
-
-impl<'a, I, L> NodeRef<'a, I, L> {
-    pub fn is_leaf(&self) -> bool;
-}
-
-impl<'a, I, L: LeafNodeOps> NodeRef<'a, I, L> {
-    /// Get total weight (only for leaf nodes)
-    pub fn leaf_total_weight(&self) -> Option<ZWeight>;
-}
-
-/// Mutable reference to a node.
-pub enum NodeRefMut<'a, I, L> {
-    Internal(&'a mut I),
-    Leaf(&'a mut L),
-}
-```
+`get_leaf_mut()` panics if the leaf is evicted. Use `get_leaf_reloading_mut()` when eviction is enabled — it transparently reloads from disk before returning a mutable reference and marking the leaf dirty.
 
 ## Dirty Tracking
 
-Copy-on-write semantics for incremental persistence:
-
 ```rust
-impl<I, L> NodeStorage<I, L> {
-    /// Check if any nodes are dirty
-    pub fn has_dirty_nodes(&self) -> bool;
-
-    /// Count of dirty leaves
-    pub fn dirty_leaf_count(&self) -> usize;
-
-    /// Total bytes of dirty data
-    pub fn dirty_bytes(&self) -> usize;
-
-    /// Check if threshold exceeded
-    pub fn should_flush(&self) -> bool;
-
-    /// Mark all nodes as clean (after persistence)
-    pub fn mark_all_clean(&mut self);
-}
+pub fn has_dirty_nodes(&self) -> bool;
+pub fn dirty_leaf_count(&self) -> usize;
+pub fn dirty_bytes(&self) -> usize;
+pub fn should_flush(&self) -> bool;
+pub fn mark_all_clean(&mut self);
 ```
 
 ## Disk Spilling
@@ -375,217 +256,385 @@ impl<I, L> NodeStorage<I, L> {
 ### Flushing to Disk
 
 ```rust
-impl<I, L> NodeStorage<I, L>
-where
-    I: StorableNode,
-    L: StorableNode + LeafNodeOps + Archive + RkyvSerialize<Serializer>,
-    Archived<L>: RkyvDeserialize<L, Deserializer>,
-{
-    /// Flush dirty leaves to disk file
-    /// Returns number of leaves written
-    pub fn flush_dirty_to_disk(
-        &mut self,
-        path: Option<&Path>,
-    ) -> Result<usize, FileFormatError>;
+/// Flush dirty leaves to a new immutable segment file.
+pub fn flush_dirty_to_disk(&mut self) -> Result<usize, FileFormatError>;
 
-    /// Get current spill file path
-    pub fn spill_file_path(&self) -> Option<&Path>;
-
-    /// Check if leaf has been spilled
-    pub fn is_leaf_spilled(&self, id: usize) -> bool;
-
-    /// Count of spilled leaves
-    pub fn spilled_leaf_count(&self) -> usize;
-}
+/// Flush ALL leaves (dirty + never-spilled) to disk.
+/// Used internally by prepare_checkpoint().
+pub fn flush_all_leaves_to_disk(&mut self) -> Result<usize, FileFormatError>;
 ```
+
+Each flush creates a new segment file via `StorageBackend::create_named()`. The segment lifecycle:
+1. Create file with `backend.create_named(&path)`
+2. Write serialized leaf blocks with checksums
+3. Write index block at end of file
+4. Finalize with `writer.complete()` → returns `FileReader`
+5. `FileReader` is stored in `SegmentMetadata.reader`
+
+The FileReader **does NOT** have `mark_for_checkpoint()` called at flush time. This means the file will be deleted on drop unless `save()` is called later. This is correct behavior: segments that were never checkpointed should be cleaned up.
 
 ### Loading from Disk
 
 ```rust
-impl<I, L> NodeStorage<I, L>
-where
-    I: StorableNode,
-    L: StorableNode + LeafNodeOps + Archive + RkyvSerialize<Serializer>,
-    Archived<L>: RkyvDeserialize<L, Deserializer>,
-{
-    /// Load leaf from disk (checks BufferCache first)
-    pub fn load_leaf_from_disk(
-        &mut self,
-        loc: LeafLocation,
-    ) -> Result<&L, FileFormatError>;
-
-    /// Reload all spilled leaves into memory
-    pub fn reload_spilled_leaves(&mut self) -> Result<usize, FileFormatError>;
-}
+pub fn load_leaf_from_disk(&mut self, loc: LeafLocation) -> Result<&L, FileFormatError>;
+pub fn reload_evicted_leaves(&mut self) -> Result<usize, FileFormatError>;
 ```
+
+Loading uses the `FileReader` stored in `SegmentMetadata` to read blocks via `reader.read_block()`.
 
 ## Memory Eviction
 
-Leaves can be evicted from memory after flushing to disk. **Flush and eviction are decoupled**:
+Flush and eviction are decoupled:
 - `flush_dirty_to_disk()` writes leaves to disk and marks them clean (durability)
 - `evict_clean_leaves()` removes clean, spilled leaves from memory (memory management)
 
-This separation allows flushing without eviction, which is important for checkpoints to keep hot leaves in memory for immediate runtime resumption.
+```rust
+pub fn evict_clean_leaves(&mut self) -> (usize, usize);
+pub fn is_leaf_evicted(&self, loc: LeafLocation) -> bool;
+pub fn is_leaf_in_memory(&self, loc: LeafLocation) -> bool;
+pub fn evicted_leaf_count(&self) -> usize;
+pub fn reload_evicted_leaves(&mut self) -> Result<usize, FileFormatError>;
+```
+
+**Eviction rules:**
+- Only clean leaves can be evicted (dirty leaves must stay in memory)
+- Only spilled leaves can be evicted (must have a disk copy in some segment)
+- Summary is captured at eviction time (stored in `LeafSlot::Evicted`)
+- Evicted leaves auto-reload via `get_leaf_reloading()` (read) or `get_leaf_reloading_mut()` (write)
+
+## Backpressure
 
 ```rust
-impl<I, L> NodeStorage<I, L> {
-    /// Evict clean, spilled leaves from memory.
-    /// Captures summary (first_key, weight_sum, entry_count) at eviction time
-    /// for checkpoint support without reloading.
-    /// Returns (count evicted, bytes freed)
-    pub fn evict_clean_leaves(&mut self) -> (usize, usize);
+pub fn should_apply_backpressure(&self) -> bool; // dirty_bytes >= 2x threshold
+pub fn should_relieve_backpressure(&self) -> bool; // dirty_bytes < threshold
+pub fn backpressure_status(&self) -> (bool, f64);
+```
 
-    /// Check if leaf is evicted
-    pub fn is_leaf_evicted(&self, loc: LeafLocation) -> bool;
+## Checkpoint / Restore
 
-    /// Check if leaf is in memory
-    pub fn is_leaf_in_memory(&self, loc: LeafLocation) -> bool;
+NodeStorage integrates with DBSP's checkpoint system following the **spine_async pattern**: reference-based checkpointing via `FileCommitter` registration and `StorageBackend::open()` for restore.
 
-    /// Count of evicted leaves (O(1) - maintained incrementally)
-    pub fn evicted_leaf_count(&self) -> usize;
+### Checkpoint Data Structures
 
-    /// Count of in-memory leaves
-    pub fn in_memory_leaf_count(&self) -> usize;
+```rust
+/// Per-leaf summary - enough to rebuild internal nodes without reading leaf contents.
+pub struct LeafSummary<K> {
+    pub first_key: Option<K>,
+    pub weight_sum: ZWeight,
+    pub entry_count: usize,
+}
 
-    /// Reload all evicted leaves
-    pub fn reload_evicted_leaves(&mut self) -> Result<usize, FileFormatError>;
+/// Committed checkpoint metadata referencing segment files.
+pub struct CommittedSegmentStorage<K> {
+    pub segment_paths: Vec<String>,
+    pub segment_metadata: Vec<CommittedSegment>,
+    pub leaf_summaries: Vec<LeafSummary<K>>,
+    pub total_entries: usize,
+    pub total_weight: ZWeight,
+    pub num_leaves: usize,
+    pub segment_path_prefix: String,
+}
+
+pub struct CommittedSegment {
+    pub id: u64,
+    pub leaf_blocks: Vec<(usize, u64, u32)>,  // (leaf_id, offset, size)
+    pub size_bytes: u64,
 }
 ```
 
-**Eviction Rules:**
-- Only clean leaves can be evicted (dirty leaves must stay in memory)
-- Only spilled leaves can be evicted (must have disk copy)
-- Evicted leaves auto-reload on access via `get_leaf_reloading()`
-- Summary is captured at eviction time for checkpoint support
-
-## BufferCache Integration
-
-Evicted leaves are cached in DBSP's global BufferCache for faster reload:
+`CommittedSegmentStorage` stores **paths as strings** (same pattern as `CommittedSpine` in spine_async which stores `batches: Vec<String>`). The actual data remains in segment files; the metadata just references them. The `segment_path_prefix` preserves the unique prefix used for segment file naming, ensuring restored instances recover their correct prefix and avoid file name collisions.
 
 ```rust
-/// Wrapper for caching leaves in BufferCache
-pub struct CachedLeafNode<L> {
-    pub leaf: L,
-    pub size_bytes: usize,
+/// Information returned by NodeStorage::restore() for the caller to rebuild
+/// higher-level data structures (e.g., internal nodes) without reading leaf contents.
+pub struct NodeStorageRestoreInfo<K> {
+    pub leaf_summaries: Vec<LeafSummary<K>>,
+    pub total_weight: ZWeight,
+    pub total_entries: usize,
+    pub num_leaves: usize,
 }
+```
 
-impl<L> CacheEntry for CachedLeafNode<L> {
-    fn cost(&self) -> usize {
-        self.size_bytes
+### Checkpoint Methods
+
+```rust
+/// Save for checkpoint: flush dirty leaves, serialize metadata to its own file,
+/// and register segment FileReaders for atomic commit.
+/// Writes metadata to {base}/nodestorage-{persistent_id}.dat via backend.write().
+pub fn save(
+    &mut self,
+    base: &StoragePath,
+    persistent_id: &str,
+    files: &mut Vec<Arc<dyn FileCommitter>>,
+) -> Result<(), FileFormatError>;
+
+/// Restore from checkpoint: read metadata file, open segment files,
+/// create evicted leaf slots. Returns info needed to rebuild higher-level structures.
+pub fn restore(
+    &mut self,
+    base: &StoragePath,
+    persistent_id: &str,
+) -> Result<NodeStorageRestoreInfo<L::Key>, FileFormatError>;
+```
+
+Internal helpers (private):
+- `prepare_checkpoint()` — flushes dirty leaves, collects `CommittedSegmentStorage` metadata
+- `restore_from_committed()` — opens segment files, creates evicted leaf slots, restores `segment_path_prefix`
+
+### Checkpoint Flow (following spine_async pattern)
+
+NodeStorage writes and reads its own metadata file, matching the Spine pattern where `Spine::save()` calls `to_bytes()` + `backend.write()` internally.
+
+**Save (`save(base, persistent_id, files)`):**
+```
+1. prepare_checkpoint()
+   a. flush_all_leaves_to_disk()  -- ensures all leaves are in segment files
+   b. Collect LeafSummary for each leaf (Present: compute directly, Evicted: use cache)
+   c. Build CommittedSegmentStorage metadata (including segment_path_prefix)
+
+2. For each segment's FileReader:
+   a. reader.mark_for_checkpoint()  -- prevents file deletion on drop
+   b. files.push(reader.clone())    -- registers for atomic commit
+
+3. Serialize CommittedSegmentStorage via serialize_to_bytes()
+4. Write to {base}/nodestorage-{persistent_id}.dat via backend.write()
+   (backend.write() auto-calls mark_for_checkpoint(); result dropped — matches Spine)
+```
+
+**Restore (`restore(base, persistent_id)`):**
+```
+1. Read {base}/nodestorage-{persistent_id}.dat via backend.read()
+2. Deserialize CommittedSegmentStorage via rkyv (archived_root + deserialize)
+3. restore_from_committed(&committed):
+   a. Restore segment_path_prefix from committed metadata
+   b. For each segment path: backend.open(&path) -> FileReader
+   c. Build SegmentMetadata, populate leaf_disk_locations index
+   d. For each leaf summary: create LeafSlot::Evicted with cached summary
+4. Return NodeStorageRestoreInfo (leaf_summaries, total_weight, total_entries, num_leaves)
+5. Leaves are lazily loaded on demand via load_leaf_from_disk()
+```
+
+**Runtime resume after checkpoint:**
+After `save()`, the runtime continues operating normally. Segment files are shared between the runtime (via in-memory `SegmentMetadata.reader`) and the checkpoint (via the `files` vec). `mark_for_checkpoint()` ensures the files survive even if the runtime drops its reference first.
+
+### Drop Behavior
+
+```rust
+impl<I, L> Drop for NodeStorage<I, L> {
+    fn drop(&mut self) {
+        self.segments.clear(); // Drops FileReaders, triggering cleanup
     }
 }
 ```
 
-**Cache Flow:**
-1. `flush_dirty_to_disk()` records FileId and block locations
-2. `load_leaf_from_disk()` checks BufferCache first (using FileId + offset as key)
-3. On cache miss, loads from disk and inserts into BufferCache
-4. `cleanup_spill_file()` evicts all entries for the file
+File cleanup is entirely driven by the `FileReader` lifecycle:
 
-## Backpressure
+| Segment origin | `mark_for_checkpoint()` called? | Behavior on drop |
+|---------------|-------------------------------|-----------------|
+| `flush_dirty_to_disk()` (via `create_named` + `complete`) | No | File **deleted** |
+| `flush_dirty_to_disk()`, then `save()` | Yes (by `save()`) | File **kept** |
+| `restore()` (via `backend.open`) | N/A | File **never deleted** |
 
-Prevents unbounded memory growth during heavy writes:
+This matches the spine_async pattern where:
+- Batch files from `persisted()` are deleted on drop unless `file_reader()` marks them for checkpoint
+- Batch files from `from_path()` (restore) are never deleted
 
-```rust
-impl<I, L> NodeStorage<I, L> {
-    /// Returns true when dirty_bytes >= 2x threshold
-    pub fn should_apply_backpressure(&self) -> bool;
+### Checkpoint File
 
-    /// Returns true when dirty_bytes < threshold
-    pub fn should_relieve_backpressure(&self) -> bool;
+NodeStorage writes its metadata to `{base}/nodestorage-{persistent_id}.dat`. This file contains the rkyv-serialized `CommittedSegmentStorage<K>` struct. The file is written via `backend.write()` which auto-calls `mark_for_checkpoint()`, ensuring the file persists across the checkpoint lifecycle without being pushed to the `files` vec. This matches the Spine pattern exactly.
 
-    /// Returns (should_apply, ratio) for monitoring
-    pub fn backpressure_status(&self) -> (bool, f64);
-}
-```
+### Comparison with spine_async
 
-## Cleanup
+| Aspect | spine_async (Spine) | NodeStorage |
+|--------|-------------------|-------------|
+| Save signature | `save(&mut self, base, id, files)` | `save(&mut self, base, id, files)` |
+| File registration | `files.push(batch.file_reader())` | `files.push(reader.clone())` |
+| mark_for_checkpoint | Called inside `file_reader()` | Called explicitly in `save()` loop |
+| Metadata format | `CommittedSpine { batches: Vec<String> }` | `CommittedSegmentStorage { segment_paths: Vec<String>, ... }` |
+| Metadata serialization | `to_bytes()` + `backend.write()` | `serialize_to_bytes()` + `backend.write()` (same pattern) |
+| Restore | `restore(&mut self, base, id)` | `restore(&mut self, base, id)` |
+| Restore file opening | `B::from_path()` -> `backend.open()` | `backend.open()` directly |
+| Drop cleanup | FileReader `DeleteOnDrop` flag | Same via segment FileReaders |
 
-```rust
-impl<I, L> NodeStorage<I, L> {
-    /// Delete spill file and clear tracking state
-    /// Warning: evicted leaves will be lost!
-    pub fn cleanup_spill_file(&mut self) -> Result<(), std::io::Error>;
+NodeStorage now follows the Spine pattern exactly: it writes/reads its own metadata file rather than returning metadata for the caller to serialize.
 
-    /// Clear all storage
-    pub fn clear(&mut self);
-}
-```
-
-## File Format
+## Segment File Format
 
 Block-based format with 512-byte alignment and CRC32C checksums:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│ File Header (512 bytes)                             │
-│   checksum: u32 (CRC32C of bytes [4..512])         │
-│   magic: "OSML" (Order Statistics Multiset Leaf)   │
-│   version: u32 (= 1)                                │
-│   num_leaves: u64                                   │
-│   index_offset: u64                                 │
-│   total_entries: u64                                │
-│   total_weight: i64                                 │
-│   reserved: [u8; 468]                               │
-├─────────────────────────────────────────────────────┤
-│ Data Blocks (512-byte aligned)                      │
-│   [checksum:4][magic:4][leaf_id:8][data_len:8]     │
-│   [rkyv serialized leaf node]                      │
-│   [padding to 512-byte boundary]                   │
-├─────────────────────────────────────────────────────┤
-│ Index Block (at index_offset)                       │
-│   checksum + magic "OSMI" + num_entries            │
-│   Array of (leaf_id, offset, size) entries         │
-└─────────────────────────────────────────────────────┘
++-----------------------------------------------------+
+| File Header (512 bytes)                              |
+|   checksum: u32 (CRC32C of bytes [4..512])          |
+|   magic: "OSML" (Order Statistics Multiset Leaf)     |
+|   version: u32 (= 1)                                |
+|   num_leaves: u64                                    |
+|   index_offset: u64                                  |
+|   total_entries: u64                                 |
+|   total_weight: i64                                  |
+|   reserved: [u8; 468]                                |
++-----------------------------------------------------+
+| Data Blocks (512-byte aligned)                       |
+|   [checksum:4][magic:4][leaf_id:8][data_len:8]       |
+|   [rkyv serialized leaf node]                        |
+|   [padding to 512-byte boundary]                     |
++-----------------------------------------------------+
+| Index Block (at index_offset)                        |
+|   checksum + magic "OSMI" + num_entries              |
+|   Array of (leaf_id, offset, size) entries           |
++-----------------------------------------------------+
 ```
 
-## LeafFile API
+## OrderStatisticsMultiset Integration
 
 ```rust
-pub struct LeafFile<L> {
-    path: PathBuf,
-    file: Option<File>,
-    index: HashMap<u64, FileBlockLocation>,
-    header: FileHeader,
-    // ...
+pub struct OrderStatisticsMultiset<T> {
+    storage: OsmNodeStorage<T>,
+    root: Option<NodeLocation>,
+    first_leaf: Option<LeafLocation>,
+    total_weight: ZWeight,
+    num_keys: usize,
+    max_leaf_entries: usize,
+    max_internal_children: usize,
 }
+```
 
-impl<L> LeafFile<L>
-where
-    L: StorableNode + Archive + RkyvSerialize<Serializer>,
-    Archived<L>: RkyvDeserialize<L, Deserializer>,
-{
-    /// Create new file for writing
-    pub fn create<P: AsRef<Path>>(path: P) -> Result<Self, FileFormatError>;
+### Eviction-Aware Query Methods
 
-    /// Open existing file for reading
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, FileFormatError>;
+All query methods that access leaf data take `&mut self` and use `get_leaf_reloading()` / `get_leaf_reloading_mut()` to transparently handle evicted leaves:
 
-    /// Write leaf to file
-    pub fn write_leaf(
-        &mut self,
-        leaf_id: u64,
-        leaf: &L,
-    ) -> Result<FileBlockLocation, FileFormatError>;
+```rust
+pub fn select_kth(&mut self, k: ZWeight, ascending: bool) -> Option<&T>;
+pub fn select_percentile_bounds(&mut self, percentile: f64, ascending: bool) -> Option<(T, T, f64)>;
+pub fn select_percentile_disc(&mut self, percentile: f64, ascending: bool) -> Option<&T>;
+pub fn rank(&mut self, key: &T) -> ZWeight;
+pub fn get_weight(&mut self, key: &T) -> ZWeight;
+```
 
-    /// Load leaf by ID
-    pub fn load_leaf(&mut self, leaf_id: u64) -> Result<L, FileFormatError>;
+`select_percentile_bounds` returns **owned** values `(T, T, f64)` rather than references to avoid overlapping mutable borrows from two internal `select_kth` calls. Clone cost is negligible for the numeric types used in practice (F32/F64).
 
-    /// Write index and finalize file
-    pub fn finalize(&mut self) -> Result<(), FileFormatError>;
+Methods that access only cached fields (`is_empty()`, `total_weight()`, `num_keys()`) remain `&self`.
 
-    /// Check if leaf exists
-    pub fn contains(&self, leaf_id: u64) -> bool;
+The `iter()` method also remains `&self` — callers must call `reload_evicted_leaves()` first if leaves may be evicted.
 
-    /// Number of leaves in file
-    pub fn num_leaves(&self) -> u64;
+### Flush/Evict Wrapper Methods
+
+Convenience wrappers over the underlying `NodeStorage` flush/evict API:
+
+```rust
+pub fn should_flush(&self) -> bool;
+pub fn flush_and_evict(&mut self) -> Result<(usize, usize, usize), FileFormatError>;
+pub fn evicted_leaf_count(&self) -> usize;
+pub fn reload_evicted_leaves(&mut self) -> Result<usize, FileFormatError>;
+```
+
+`flush_and_evict()` calls `flush_dirty_to_disk()` then `evict_clean_leaves()`, returning `(leaves_flushed, leaves_evicted, bytes_freed)`.
+
+### Checkpoint/Restore API
+
+```rust
+/// Save for checkpoint: delegates to NodeStorage::save(), which writes its own
+/// metadata file and registers segment FileReaders for atomic commit.
+pub fn save(
+    &mut self,
+    base: &StoragePath,
+    persistent_id: &str,
+    files: &mut Vec<Arc<dyn FileCommitter>>,
+) -> Result<(), Error>;
+
+/// Restore from checkpoint: creates NodeStorage, delegates to NodeStorage::restore()
+/// which reads its own metadata file, then rebuilds internal nodes from summaries.
+pub fn restore(
+    base: &StoragePath,
+    persistent_id: &str,
+    branching_factor: usize,
+    storage_config: NodeStorageConfig,
+) -> Result<Self, Error>;
+```
+
+The restore process is O(num_leaves), not O(num_entries):
+1. `NodeStorage::restore()` reads its metadata file, opens segment files, creates evicted leaf slots
+2. `build_internal_nodes_from_summaries()` rebuilds the internal node tree from `LeafSummary` data
+3. No leaf content is read - leaves are lazily loaded on demand
+
+### PercentileOperator Integration
+
+`PercentileOperator` maintains a `BTreeMap<K, OrderStatisticsMultiset<V>>` and a `BTreeMap<K, u64>` mapping keys to tree IDs. It implements the full `Operator` lifecycle including `clock_end()` for flush/evict and `checkpoint()` / `restore()` for fault tolerance.
+
+**Runtime flush/evict lifecycle:**
+
+The operator triggers flush/evict at two points:
+
+1. **Inline backpressure during `eval()`**: After processing all values for each key, checks `tree.should_flush()` and flushes proactively. This bounds memory during pathological cases where a single `eval()` processes millions of inserts.
+
+2. **`clock_end()`**: After all operators finish eval for the step, flushes and evicts all trees that exceed the spill threshold. By `clock_end()`, no more reads happen until the next step, making eviction safe. Follows existing DBSP lifecycle patterns (analogous to Spine's proactive spilling).
+
+```rust
+fn clock_end(&mut self, _scope: Scope) {
+    for tree in self.trees.values_mut() {
+        if tree.should_flush() {
+            let _ = tree.flush_and_evict();
+        }
+    }
 }
+```
+
+**Operator metadata reporting:**
+
+`metadata()` reports `evicted_leaves` count alongside `num_keys`, `total_entries`, `percentile_pct`, and `ascending` for monitoring spill activity.
+
+**Checkpoint:**
+```rust
+fn checkpoint(&mut self, base, persistent_id, files) {
+    // Each tree's OSM writes its own metadata file + registers segment files
+    for (key, tree) in self.trees.iter_mut() {
+        let tree_id = self.tree_ids[key];
+        let tree_pid = format!("{}_t{}", persistent_id, tree_id);
+        tree.save(base, &tree_pid, files)?;
+    }
+    // Write operator-level metadata only (tree_ids, prev_output, config, next_tree_id)
+    // via backend.write() — matches Spine pattern
+}
+```
+
+**Restore:**
+```rust
+fn restore(&mut self, base, persistent_id) {
+    // Read operator-level metadata
+    // Restore next_tree_id (prevents ID collisions after restore)
+    for (key, tree_id) in archived_tree_ids {
+        let tree_pid = format!("{}_t{}", persistent_id, tree_id);
+        let tree = OrderStatisticsMultiset::restore(
+            base, &tree_pid, branching_factor, config
+        )?;
+        self.trees.insert(key, tree);
+        self.tree_ids.insert(key, tree_id);
+    }
+}
+```
+
+**Operator metadata (`CommittedPercentileOperator`)** contains only:
+- `tree_ids: Vec<(K, u64)>` — key-to-tree-ID mapping
+- `prev_output: Vec<(K, Option<V>)>` — previous output for delta computation
+- `percentile`, `ascending`, `branching_factor` — configuration
+- `next_tree_id: u64` — counter for assigning unique IDs to new trees
+
+Each tree gets a unique `segment_path_prefix` (e.g., `"t0_"`, `"t1_"`) derived from its tree ID via `next_tree_id` counter. The prefix is persisted in `CommittedSegmentStorage.segment_path_prefix` and restored automatically by `NodeStorage::restore()`.
+
+**Architecture alignment with Spine/Z1Trace:**
+```
+PercentileOperator::checkpoint()        (analogous to Z1Trace)
+├── for each tree:
+│   └── tree.save(base, tree_pid, files)           // OSM delegates
+│       └── storage.save(base, tree_pid, files)     // NodeStorage writes:
+│           ├── [segment files registered with files]
+│           └── nodestorage-{tree_pid}.dat          // metadata file
+└── writes percentile-{op_id}.dat                   // operator metadata only
 ```
 
 ## Statistics
 
 ```rust
-#[derive(Default, Clone, Debug)]
 pub struct StorageStats {
     pub internal_node_count: usize,
     pub leaf_node_count: usize,
@@ -594,175 +643,21 @@ pub struct StorageStats {
     pub dirty_internal_count: usize,
     pub dirty_leaf_count: usize,
     pub dirty_bytes: usize,
-    pub evicted_leaf_count: usize,  // Maintained incrementally (O(1) updates)
-    pub evicted_bytes: usize,
+    pub evicted_leaf_count: usize,
     pub cache_hits: u64,
     pub cache_misses: u64,
     pub leaves_written: u64,
 }
 ```
 
-**Performance Note**: `evicted_leaf_count` is maintained incrementally by evict/reload methods rather than computed via O(n) scans. This avoids performance overhead on frequent mutations (alloc_leaf, get_internal_mut, etc.).
-
-## OrderStatisticsMultiset Integration
-
-The tree uses `OsmNodeStorage<T>` internally:
-
-```rust
-pub struct OrderStatisticsMultiset<T> {
-    storage: OsmNodeStorage<T>,  // = NodeStorage<InternalNodeTyped<T>, LeafNode<T>>
-    root: Option<NodeLocation>,
-    first_leaf: Option<LeafLocation>,
-    total_weight: ZWeight,
-    num_keys: usize,
-    // ...
-}
-```
-
-Key type changes from arena-based storage:
-- `InternalNodeTyped.children: Vec<NodeLocation>` (was `Vec<usize>`)
-- `LeafNode.next_leaf: Option<LeafLocation>` (was `usize`)
-
-### Checkpoint/Restore
-
-NodeStorage supports efficient O(num_leaves) checkpoint/restore for fault tolerance.
-
-#### Checkpoint Data Structures
-
-```rust
-/// Summary of a leaf node - enough to rebuild internal nodes without reading leaf contents.
-#[derive(Archive, RkyvSerialize, RkyvDeserialize)]
-pub struct LeafSummary<K> {
-    pub first_key: Option<K>,  // First key in leaf (for separator keys)
-    pub weight_sum: ZWeight,   // Sum of weights (for subtree_sums)
-    pub entry_count: usize,    // Number of entries
-}
-
-/// Committed (checkpoint) state for NodeStorage leaves.
-#[derive(Archive, RkyvSerialize, RkyvDeserialize)]
-pub struct CommittedLeafStorage<K> {
-    pub spill_file_path: String,                    // Path to leaf data file
-    pub leaf_block_locations: Vec<(usize, u64, u32)>, // (leaf_id, offset, size)
-    pub leaf_summaries: Vec<LeafSummary<K>>,        // Per-leaf summaries
-    pub total_entries: usize,
-    pub total_weight: ZWeight,
-    pub num_leaves: usize,
-}
-```
-
-#### Checkpoint Methods
-
-```rust
-impl<I, L> NodeStorage<I, L> {
-    /// Prepare storage for checkpoint.
-    /// Flushes all dirty leaves and collects summaries for all leaves.
-    /// Uses cached summaries for evicted leaves (no disk reload needed).
-    /// Returns CommittedLeafStorage containing all checkpoint metadata.
-    pub fn prepare_checkpoint<P: AsRef<Path>>(
-        &mut self,
-        path: Option<P>,
-    ) -> Result<CommittedLeafStorage<L::Key>, FileFormatError>;
-
-    /// Flush all leaves to disk for checkpoint.
-    pub fn flush_all_leaves_to_disk<P: AsRef<Path>>(
-        &mut self,
-        path: Option<P>,
-    ) -> Result<usize, FileFormatError>;
-
-    /// Take ownership of spill file path (prevents cleanup on drop).
-    pub fn take_spill_file(&mut self) -> Option<PathBuf>;
-
-    /// Mark all leaves as evicted (for restore from checkpoint file).
-    /// Summaries are stored in LeafSlot::Evicted for checkpoint support.
-    pub fn mark_all_leaves_evicted(
-        &mut self,
-        num_leaves: usize,
-        spill_path: PathBuf,
-        block_locations: Vec<(usize, u64, u32)>,
-        summaries: Vec<LeafSummary<L::Key>>,
-    );
-
-    /// Allocate internal node as clean (for restore).
-    pub fn alloc_internal_clean(&mut self, node: I, level: u8) -> NodeLocation;
-}
-```
-
-#### Checkpoint Flow
-
-1. **Checkpoint**:
-   - Call `prepare_checkpoint()` which flushes all dirty leaves and collects summaries
-   - For in-memory leaves (`LeafSlot::Present`): compute summary directly from leaf
-   - For evicted leaves (`LeafSlot::Evicted`): use cached summary (no disk reload needed)
-   - Copy spill file to checkpoint storage → serialize `CommittedLeafStorage`
-2. **Resume**: Runtime continues immediately with its local spill file (independent from checkpoint)
-3. **Restore**: Deserialize metadata → call `mark_all_leaves_evicted()` with summaries → rebuild internal nodes from summaries → checkpoint file becomes spill file
-
-This is O(num_leaves) instead of O(num_entries), enabling fast checkpoint/restore for large trees. The cached summaries in `LeafSlot::Evicted` ensure checkpoints don't require reloading evicted leaves.
-
-#### Runtime Resume After Checkpoint
-
-The pipeline stops briefly during checkpoint, then **resumes immediately**. Key design:
-
-1. **Independent copies**: Checkpoint receives a full copy of the spill file; runtime keeps its local copy
-2. **In-place overwrites**: Runtime modifies leaves by overwriting existing blocks (no append-only requirement)
-3. **No shared state**: Checkpoint and runtime are completely independent after checkpoint completes
-
-```
-CHECKPOINT TIME:
-  1. Flush all dirty leaves to local spill_file
-  2. Copy spill_file to checkpoint storage (e.g., S3)
-  3. Collect metadata (summaries, block locations)
-  4. Runtime continues with local spill_file unchanged
-
-RUNTIME AFTER CHECKPOINT:
-  - Reads/writes to local spill_file as normal
-  - Modified leaves overwrite their existing blocks
-  - No coordination with checkpoint needed
-```
-
-This approach prioritizes simplicity and correctness. The primary checkpoint storage (S3) doesn't support partial updates, so full-file copy is the natural fit. For local filesystem deployments, reflink-based copy-on-write could reduce I/O.
-
-## Usage Example
-
-```rust
-use dbsp::algebra::{OrderStatisticsMultiset, NodeStorageConfig};
-
-// Create with auto-configuration from Runtime
-let mut tree = OrderStatisticsMultiset::<i32>::new();
-
-// Or with explicit configuration
-let config = NodeStorageConfig::with_threshold(64 * 1024 * 1024);
-let mut tree = OrderStatisticsMultiset::with_storage_config(64, config);
-
-// Insert elements
-for i in 0..1_000_000 {
-    tree.insert(i, 1);
-}
-
-// Check backpressure and flush if needed
-if tree.storage().should_apply_backpressure() {
-    tree.storage_mut().flush_dirty_to_disk(None)?;
-    tree.storage_mut().evict_clean_leaves();
-}
-
-// Query operations (auto-reload evicted leaves)
-let median = tree.select_kth(500_000, true);
-let rank = tree.rank(&500_000);
-```
+`evicted_leaf_count` is maintained incrementally by evict/reload methods rather than computed via O(n) scans.
 
 ## Extensibility
 
 The generic design enables using `NodeStorage<I, L>` for other **B+ tree variants** where data resides in leaves:
 
 ```rust
-// Example: Interval tree storage (B+ tree variant)
-type IntervalInternalNode = ...;
-type IntervalLeafNode = ...;  // Must implement LeafNodeOps
 type IntervalNodeStorage = NodeStorage<IntervalInternalNode, IntervalLeafNode>;
-
-// Example: Segment tree storage (B+ tree variant)
-type SegmentInternalNode = ...;
-type SegmentLeafNode = ...;  // Must implement LeafNodeOps
 type SegmentNodeStorage = NodeStorage<SegmentInternalNode, SegmentLeafNode>;
 ```
 
@@ -770,94 +665,31 @@ Requirements:
 - Internal node type must implement `StorableNode`
 - Leaf node type must implement `StorableNode + LeafNodeOps`
 - For disk spilling, leaf type must also implement rkyv `Archive`, `Serialize`, and `Deserialize`
-- **The tree must follow B+ tree semantics**: data entries stored only in leaves, internal nodes for navigation only
+- **The tree must follow B+ tree semantics**: data entries stored only in leaves
+
+## Files
+
+| File | Contents |
+|------|----------|
+| `node_storage.rs` | Core types, traits, config, in-memory operations. Includes `node_storage_disk.rs` via `include!()` |
+| `node_storage_disk.rs` | Disk I/O: flush, load, evict, checkpoint (save/restore), file format, Drop impl |
+| `node_storage_tests.rs` | 55+ tests covering all operations |
+| `order_statistics_multiset.rs` | `OrderStatisticsMultiset<T>`, `LeafNode<T>`, `InternalNodeTyped<T>` |
 
 ## Test Coverage
 
 55+ tests covering:
 - NodeStorage basic operations
 - Dirty tracking and threshold checks
-- LeafFile read/write roundtrips
+- Segment file read/write roundtrips
 - Large leaves, many leaves, string keys
 - Negative weights, empty files
-- NodeStorage + LeafFile integration
-- Memory eviction and reload
+- NodeStorage + segment integration
+- Memory eviction and reload (`get_leaf_reloading`, `get_leaf_reloading_mut`)
 - BufferCache integration
-- Checkpoint prepare/restore with evicted leaves
+- Checkpoint save/restore with evicted leaves
 - LeafSlot state transitions
-
-## Files
-
-| File | Contents |
-|------|----------|
-| `node_storage.rs` | `NodeStorage<I,L>`, `LeafFile<L>`, `CachedLeafNode<L>`, `OsmNodeStorage<T>` |
-| `order_statistics_file_format.rs` | Block format constants, `FileHeader`, `IndexEntry` |
-| `order_statistics_multiset.rs` | `OrderStatisticsMultiset<T>`, `LeafNode<T>`, `InternalNodeTyped<T>` |
-
-## Design Notes: B+ Tree Assumption and LeafNodeOps
-
-### Why LeafNodeOps?
-
-The `LeafNodeOps` trait exists because `NodeStorage` assumes **B+ tree semantics** where:
-
-1. **Leaves contain data**: All actual key-value entries (with weights) are stored in leaf nodes
-2. **Internal nodes are indexes**: Internal nodes contain only routing keys, child pointers, and aggregate metadata (like subtree sums)
-
-This is distinct from classic B-trees where internal nodes also store data entries.
-
-### What LeafNodeOps Provides
-
-The `LeafNodeOps` trait enables:
-- **Statistics collection**: `entry_count()` and `total_weight()` for dirty bytes tracking and memory accounting
-- **Weight queries**: The `NodeRef::leaf_total_weight()` accessor for querying leaf statistics
-
-### Level-Based Spilling vs Node Semantics
-
-The `max_spillable_level` configuration unifies **which levels can be evicted to disk**, but does not change the fundamental data model:
-- Level 0 (leaves) contains the actual data entries
-- Level 1+ (internal nodes) contains navigation/index information
-
-Even when internal nodes can be spilled (`max_spillable_level > 0`), they remain structurally different from leaves - they don't have "entries" or "weights" in the same sense.
-
-### Limitations
-
-This design does **not** support:
-- **B-trees** where internal nodes store data entries
-- **Trees with queryable internal node data** beyond navigation metadata
-
-For such structures, you would need either:
-1. An `InternalNodeOps` trait mirroring `LeafNodeOps`
-2. A unified `NodeOps` trait that both node types implement
-
-The current design prioritizes simplicity for the common B+ tree case (order-statistics trees, interval trees, segment trees) over full generality.
-
-## Scalability
-
-### Single-File Design for Large Datasets
-
-NodeStorage uses a single spill file containing all leaves. This scales well:
-
-| Leaves | Index Size | File Size (typical) | Notes |
-|--------|------------|---------------------|-------|
-| 1K | 20 KB | ~1 MB | Fits in memory, spilling optional |
-| 1M | 20 MB | ~1 GB | Normal operation |
-| 100M | 2 GB | ~100 GB | Large dataset |
-| 1B | 20 GB | ~1 TB | Index may need streaming access |
-
-**Index in memory**: The in-memory index (`leaf_block_locations`) uses ~20 bytes per leaf.
-For 1M leaves this is 20 MB; for 1B leaves this is 20 GB. Most deployments will have
-far fewer leaves (B+ tree with branching factor 64 means 1B entries ≈ 16M leaves).
-
-**Filesystem requirements**: The single-file approach requires a filesystem supporting:
-- Large files (>2GB): ext4, XFS, NTFS, and all modern filesystems support this
-- Efficient random access: SSDs recommended for large files with random read patterns
-- Sufficient inodes: Not a concern (single file vs millions of small files)
-
-### When Single-File May Not Scale
-
-For extremely large deployments (billions of leaves, not entries), consider:
-- Partitioning data across multiple trees (by key range)
-- Using a different storage backend with native partitioning
-
-The current design targets the common case where trees have millions of leaves (billions
-of entries), not billions of leaves. For reference, 1B entries with B=64 yields ~16M leaves.
+- FileReader lifecycle (drop cleanup)
+- OSM flush/evict wrappers (`should_flush`, `flush_and_evict`, `evicted_leaf_count`)
+- OSM query correctness after flush/evict (`select_kth`, `insert` on evicted trees)
+- PercentileOperator `clock_end` triggering flush/evict with correct post-eviction queries

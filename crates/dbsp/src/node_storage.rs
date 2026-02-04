@@ -60,39 +60,10 @@ use std::sync::Arc;
 
 use crate::algebra::ZWeight;
 use crate::circuit::Runtime;
-use crate::storage::backend::{BlockLocation, FileId, StorageBackend, StorageError};
-
-/// Serialize a value to bytes using DBSP's Serializer.
-///
-/// This is similar to `rkyv::to_bytes` but uses DBSP's serializer types
-/// (FBuf-backed with 64KB scratch space) for compatibility with the rest
-/// of the DBSP storage layer.
-fn serialize_to_bytes<T>(value: &T) -> Result<FBuf, FileFormatError>
-where
-    T: Archive + RkyvSerialize<Serializer>,
-{
-    use rkyv::ser::Serializer as RkyvSerializer;
-
-    // Create DBSP's serializer with FBuf backing
-    let fbuf = FBuf::with_capacity(4096);
-    let mut serializer = CompositeSerializer::<
-        _,
-        FallbackScratch<HeapScratch<65536>, AllocScratch>,
-        SharedSerializeMap,
-    >::new(
-        FBufSerializer::new(fbuf, usize::MAX),
-        FallbackScratch::default(),
-        SharedSerializeMap::default(),
-    );
-
-    serializer
-        .serialize_value(value)
-        .map_err(|e| FileFormatError::Serialization(format!("{:?}", e)))?;
-
-    // Extract the bytes from the serializer
-    let fbuf = serializer.into_serializer().into_inner();
-    Ok(fbuf)
-}
+use crate::storage::backend::posixio_impl::PosixBackend;
+use crate::storage::backend::{BlockLocation, FileReader, StorageBackend, StoragePath};
+use feldera_storage::FileCommitter;
+use feldera_types::config::{FileBackendConfig, StorageCacheConfig};
 
 // =============================================================================
 // Node Traits
@@ -103,18 +74,10 @@ where
 /// `StorableNode` defines the basic interface for tree nodes. Serialization
 /// bounds for disk spilling are added separately on impl blocks that need I/O.
 ///
-/// # Level-Based Spilling
+/// # Spilling
 ///
-/// Nodes are organized by level:
-/// - Level 0: Leaf nodes (no children)
-/// - Level 1: Direct parents of leaves
-/// - Level 2: Parents of level-1 nodes
-/// - etc.
-///
-/// The `max_spillable_level` config controls which levels can be spilled:
-/// - `max_spillable_level = 0`: Only leaves can be spilled (default, most efficient)
-/// - `max_spillable_level = 1`: Leaves and their parents can be spilled
-/// - `max_spillable_level = u8::MAX`: All nodes can be spilled
+/// Only leaf nodes (level 0) are spilled to disk and evicted from memory.
+/// Internal nodes are always pinned in memory.
 ///
 /// # Implementation
 ///
@@ -191,23 +154,30 @@ pub struct NodeStorageConfig {
     /// Whether to enable disk spilling
     pub enable_spill: bool,
 
-    /// Maximum node level that can be spilled to disk.
-    ///
-    /// - Level 0 = leaf nodes only (default, most efficient)
-    /// - Level 1 = leaves + their direct parents
-    /// - Level N = all nodes up to N levels from leaves
-    ///
-    /// Higher values allow more aggressive memory reclamation but may
-    /// cause cascading disk reads when accessing spilled internal nodes.
-    pub max_spillable_level: u8,
-
     /// Threshold for triggering flush of dirty nodes (bytes)
     /// When dirty_bytes exceeds this, `should_flush()` returns true
     pub spill_threshold_bytes: usize,
 
+    /// Target segment file size in bytes (default: 64MB).
+    ///
+    /// Each flush creates a new segment file. This controls when to start
+    /// a new segment vs appending to an existing one. Larger segments reduce
+    /// file count but increase checkpoint/restore overhead.
+    pub target_segment_size: usize,
+
     /// Directory for spill files (if enable_spill is true)
-    /// If None, uses system temp directory
-    pub spill_directory: Option<std::path::PathBuf>,
+    /// If None, uses storage backend's default path or system temp directory
+    pub spill_directory: Option<StoragePath>,
+
+    /// Prefix for segment file names to ensure uniqueness.
+    ///
+    /// When multiple NodeStorage instances share the same backend/directory,
+    /// each instance must have a unique prefix to prevent file name collisions.
+    /// Segment files are named `{prefix}segment_{id}.dat`.
+    ///
+    /// If empty (default), segment files are named `segment_{id}.dat`.
+    /// Set this to e.g. `"tree_42_"` to produce `tree_42_segment_0.dat`.
+    pub segment_path_prefix: String,
 
     /// Storage backend for file I/O (if running in a Runtime with storage)
     /// If None, uses direct file I/O
@@ -222,9 +192,10 @@ impl Debug for NodeStorageConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NodeStorageConfig")
             .field("enable_spill", &self.enable_spill)
-            .field("max_spillable_level", &self.max_spillable_level)
             .field("spill_threshold_bytes", &self.spill_threshold_bytes)
+            .field("target_segment_size", &self.target_segment_size)
             .field("spill_directory", &self.spill_directory)
+            .field("segment_path_prefix", &self.segment_path_prefix)
             .field(
                 "storage_backend",
                 &self.storage_backend.as_ref().map(|_| "<StorageBackend>"),
@@ -241,9 +212,10 @@ impl Default for NodeStorageConfig {
     fn default() -> Self {
         Self {
             enable_spill: false,
-            max_spillable_level: 0,                  // Only leaves by default
             spill_threshold_bytes: 64 * 1024 * 1024, // 64MB
+            target_segment_size: 64 * 1024 * 1024,   // 64MB
             spill_directory: None,
+            segment_path_prefix: String::new(),
             storage_backend: None,
             buffer_cache: None,
         }
@@ -255,9 +227,10 @@ impl NodeStorageConfig {
     pub fn memory_only() -> Self {
         Self {
             enable_spill: false,
-            max_spillable_level: 0,
             spill_threshold_bytes: usize::MAX,
+            target_segment_size: 64 * 1024 * 1024,
             spill_directory: None,
+            segment_path_prefix: String::new(),
             storage_backend: None,
             buffer_cache: None,
         }
@@ -267,25 +240,35 @@ impl NodeStorageConfig {
     pub fn with_threshold(threshold_bytes: usize) -> Self {
         Self {
             enable_spill: true,
-            max_spillable_level: 0,
             spill_threshold_bytes: threshold_bytes,
+            target_segment_size: 64 * 1024 * 1024,
             spill_directory: None,
+            segment_path_prefix: String::new(),
             storage_backend: None,
             buffer_cache: None,
         }
     }
 
-    /// Create config with specific threshold and directory
-    pub fn with_spill_directory<P: Into<std::path::PathBuf>>(
-        threshold_bytes: usize,
-        dir: P,
-    ) -> Self {
+    /// Create config with specific threshold and directory.
+    ///
+    /// This creates a `PosixBackend` for the specified directory, enabling
+    /// file-based storage. Primarily used for testing; production code should
+    /// use `from_runtime()` to get the backend from the Runtime.
+    pub fn with_spill_directory(threshold_bytes: usize, dir: &str) -> Self {
+        // Create a PosixBackend for the directory
+        let backend = Arc::new(PosixBackend::new(
+            std::path::Path::new(dir),
+            StorageCacheConfig::default(),
+            &FileBackendConfig::default(),
+        ));
+        let spill_dir = StoragePath::from(dir);
         Self {
             enable_spill: true,
-            max_spillable_level: 0,
             spill_threshold_bytes: threshold_bytes,
-            spill_directory: Some(dir.into()),
-            storage_backend: None,
+            target_segment_size: 64 * 1024 * 1024,
+            spill_directory: Some(spill_dir),
+            segment_path_prefix: String::new(),
+            storage_backend: Some(backend),
             buffer_cache: None,
         }
     }
@@ -329,9 +312,10 @@ impl NodeStorageConfig {
 
         Self {
             enable_spill: true,
-            max_spillable_level: 0, // Only leaves by default
             spill_threshold_bytes,
+            target_segment_size: 64 * 1024 * 1024, // 64MB
             spill_directory: None, // Will use storage_backend instead
+            segment_path_prefix: String::new(),
             storage_backend,
             buffer_cache,
         }
@@ -340,12 +324,6 @@ impl NodeStorageConfig {
     /// Check if this config uses a storage backend (vs direct file I/O)
     pub fn has_storage_backend(&self) -> bool {
         self.storage_backend.is_some()
-    }
-
-    /// Check if a node at the given level can be spilled to disk.
-    #[inline]
-    pub fn can_spill_level(&self, level: u8) -> bool {
-        self.enable_spill && level <= self.max_spillable_level
     }
 
     /// Check if this config has a buffer cache configured
@@ -382,66 +360,16 @@ impl<L: Send + Sync + 'static> CacheEntry for CachedLeafNode<L> {
     }
 }
 
-/// Minimal FileReader implementation for BufferCache lookups.
-///
-/// The BufferCache API requires a `&dyn FileReader` for `get()` operations,
-/// but only uses the `file_id()` method. This wrapper provides just enough
-/// implementation to satisfy that requirement.
-#[derive(Debug)]
-struct CacheFileHandle {
-    file_id: FileId,
-    path: feldera_storage::StoragePath,
-}
-
-impl feldera_storage::FileRw for CacheFileHandle {
-    fn file_id(&self) -> FileId {
-        self.file_id
-    }
-
-    fn path(&self) -> &feldera_storage::StoragePath {
-        &self.path
-    }
-}
-
-impl feldera_storage::FileCommitter for CacheFileHandle {
-    fn commit(&self) -> Result<(), StorageError> {
-        // Not used for cache lookups
-        Ok(())
-    }
-}
-
-impl feldera_storage::FileReader for CacheFileHandle {
-    fn mark_for_checkpoint(&self) {
-        // Not used for cache lookups
-    }
-
-    fn read_block(&self, _location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
-        // Not used for cache lookups - we use the cache, not direct reads
-        Err(StorageError::StdIo {
-            kind: std::io::ErrorKind::Unsupported,
-            operation: "read_block",
-            path: None,
-        })
-    }
-
-    fn get_size(&self) -> Result<u64, StorageError> {
-        // Not used for cache lookups
-        Ok(0)
-    }
-}
-
 // =============================================================================
 // Node Location Types
 // =============================================================================
 
-/// Location of a node in storage with level tracking for spill decisions.
+/// Location of a node in storage with level tracking.
 ///
 /// Nodes are organized by level:
 /// - Level 0: Leaf nodes (no children)
 /// - Level 1: Direct parents of leaves
 /// - Level 2+: Higher internal nodes
-///
-/// The level determines spill eligibility based on `max_spillable_level` config.
 #[derive(
     Clone,
     Copy,
@@ -668,6 +596,263 @@ impl<K> Default for CommittedLeafStorage<K> {
 }
 
 // =============================================================================
+// Segment-Based Storage Types (Phase 2)
+// =============================================================================
+
+/// Unique identifier for a segment file.
+///
+/// Segments are immutable files containing serialized leaf data. Once a segment
+/// is written and completed, it cannot be modified. This aligns with the
+/// StorageBackend semantics where files become read-only after `complete()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SizeOf)]
+pub struct SegmentId(pub u64);
+
+impl SegmentId {
+    /// Create a new segment ID.
+    #[inline]
+    pub fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// Get the numeric value of this segment ID.
+    #[inline]
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+}
+
+/// Location of a leaf within segment-based storage.
+///
+/// This maps a leaf to its physical location in a segment file, enabling
+/// efficient random access without scanning the entire file.
+#[derive(Debug, Clone, Copy, SizeOf)]
+pub struct LeafDiskLocation {
+    /// The segment containing this leaf
+    pub segment_id: SegmentId,
+    /// Byte offset within the segment file
+    pub offset: u64,
+    /// Size of the serialized leaf in bytes
+    pub size: u32,
+}
+
+impl LeafDiskLocation {
+    /// Create a new leaf disk location.
+    pub fn new(segment_id: SegmentId, offset: u64, size: u32) -> Self {
+        Self {
+            segment_id,
+            offset,
+            size,
+        }
+    }
+
+    /// Convert to a BlockLocation (for StorageBackend compatibility).
+    pub fn to_block_location(&self) -> BlockLocation {
+        BlockLocation::new(self.offset, self.size as usize)
+            .expect("Invalid block location")
+    }
+}
+
+/// Metadata for a completed (immutable) segment file.
+///
+/// Once a segment is completed, this metadata allows efficient access to
+/// individual leaves without re-reading the segment index from disk.
+pub struct SegmentMetadata {
+    /// Unique identifier for this segment
+    pub id: SegmentId,
+    /// Path to the segment file
+    pub path: StoragePath,
+    /// Index mapping leaf_id -> (offset, size) within this segment
+    pub leaf_index: std::collections::HashMap<usize, (u64, u32)>,
+    /// Total bytes in the segment file
+    pub size_bytes: u64,
+    /// Number of leaves in this segment
+    pub leaf_count: usize,
+    /// File reader for this segment (when using StorageBackend)
+    ///
+    /// This is Some when the segment was created via StorageBackend,
+    /// allowing efficient reads without reopening the file.
+    pub reader: Option<Arc<dyn FileReader>>,
+}
+
+impl Debug for SegmentMetadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SegmentMetadata")
+            .field("id", &self.id)
+            .field("path", &self.path)
+            .field("leaf_index", &self.leaf_index)
+            .field("size_bytes", &self.size_bytes)
+            .field("leaf_count", &self.leaf_count)
+            .field("reader", &self.reader.as_ref().map(|_| "<FileReader>"))
+            .finish()
+    }
+}
+
+impl SegmentMetadata {
+    /// Create metadata for a new segment.
+    pub fn new(id: SegmentId, path: StoragePath) -> Self {
+        Self {
+            id,
+            path,
+            leaf_index: std::collections::HashMap::new(),
+            size_bytes: 0,
+            leaf_count: 0,
+            reader: None,
+        }
+    }
+
+    /// Create metadata with an associated file reader.
+    pub fn with_reader(id: SegmentId, path: StoragePath, reader: Arc<dyn FileReader>) -> Self {
+        Self {
+            id,
+            path,
+            leaf_index: std::collections::HashMap::new(),
+            size_bytes: 0,
+            leaf_count: 0,
+            reader: Some(reader),
+        }
+    }
+
+    /// Check if this segment contains a specific leaf.
+    #[inline]
+    pub fn contains_leaf(&self, leaf_id: usize) -> bool {
+        self.leaf_index.contains_key(&leaf_id)
+    }
+
+    /// Get the location of a leaf within this segment.
+    #[inline]
+    pub fn get_leaf_location(&self, leaf_id: usize) -> Option<LeafDiskLocation> {
+        self.leaf_index.get(&leaf_id).map(|(offset, size)| {
+            LeafDiskLocation::new(self.id, *offset, *size)
+        })
+    }
+}
+
+/// A segment file currently being written (not yet completed).
+///
+/// This represents the mutable state of a segment during the flush operation.
+/// Once all leaves are written, the segment is finalized and becomes a
+/// `SegmentMetadata`.
+#[derive(Debug)]
+pub struct PendingSegment {
+    /// Unique identifier for this segment
+    pub id: SegmentId,
+    /// Path to the segment file being written
+    pub path: StoragePath,
+    /// Filesystem path for direct I/O (temporary until full StorageBackend migration)
+    pub fs_path: std::path::PathBuf,
+    /// Leaves written so far: (leaf_id, offset, size)
+    pub leaves_written: Vec<(usize, u64, u32)>,
+    /// Current write offset in the file
+    pub write_offset: u64,
+    /// Total bytes written
+    pub bytes_written: u64,
+}
+
+impl PendingSegment {
+    /// Create a new pending segment.
+    pub fn new(id: SegmentId, path: StoragePath, fs_path: std::path::PathBuf) -> Self {
+        Self {
+            id,
+            path,
+            fs_path,
+            leaves_written: Vec::new(),
+            write_offset: 0,
+            bytes_written: 0,
+        }
+    }
+
+    /// Record that a leaf was written to this segment.
+    pub fn record_leaf(&mut self, leaf_id: usize, offset: u64, size: u32) {
+        self.leaves_written.push((leaf_id, offset, size));
+        self.bytes_written += size as u64;
+    }
+
+    /// Finalize this segment into immutable metadata.
+    pub fn finalize(self) -> SegmentMetadata {
+        let mut meta = SegmentMetadata::new(self.id, self.path);
+        meta.size_bytes = self.bytes_written;
+        meta.leaf_count = self.leaves_written.len();
+        for (leaf_id, offset, size) in self.leaves_written {
+            meta.leaf_index.insert(leaf_id, (offset, size));
+        }
+        meta
+    }
+}
+
+/// Committed state for segment-based checkpoint.
+///
+/// This replaces `CommittedLeafStorage` for segment-based storage. It contains
+/// all information needed to restore NodeStorage state without re-reading
+/// leaf contents.
+#[derive(Debug, Clone, Archive, RkyvSerialize, RkyvDeserialize)]
+#[archive(bound(serialize = "__S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer"))]
+#[archive(check_bytes)]
+pub struct CommittedSegmentStorage<K> {
+    /// Paths to all segment files (relative to checkpoint base)
+    pub segment_paths: Vec<String>,
+
+    /// Per-segment metadata: segment_id, list of (leaf_id, offset, size)
+    pub segment_metadata: Vec<CommittedSegment>,
+
+    /// Per-leaf summaries for O(num_leaves) index reconstruction
+    pub leaf_summaries: Vec<LeafSummary<K>>,
+
+    /// Total number of entries across all leaves (for validation)
+    pub total_entries: usize,
+
+    /// Total weight across all leaves (for validation)
+    pub total_weight: ZWeight,
+
+    /// Number of leaves
+    pub num_leaves: usize,
+
+    /// Segment path prefix for this storage instance.
+    /// Restored on checkpoint restore to prevent file name collisions
+    /// when multiple trees share the same StorageBackend namespace.
+    pub segment_path_prefix: String,
+}
+
+impl<K> Default for CommittedSegmentStorage<K> {
+    fn default() -> Self {
+        Self {
+            segment_paths: Vec::new(),
+            segment_metadata: Vec::new(),
+            leaf_summaries: Vec::new(),
+            total_entries: 0,
+            total_weight: 0,
+            num_leaves: 0,
+            segment_path_prefix: String::new(),
+        }
+    }
+}
+
+/// Metadata for a single segment in a checkpoint.
+#[derive(Debug, Clone, Archive, RkyvSerialize, RkyvDeserialize)]
+#[archive(check_bytes)]
+pub struct CommittedSegment {
+    /// Segment ID
+    pub id: u64,
+    /// Leaves in this segment: (leaf_id, offset, size)
+    pub leaf_blocks: Vec<(usize, u64, u32)>,
+    /// Total size of the segment file
+    pub size_bytes: u64,
+}
+
+/// Information returned by NodeStorage::restore() for the caller to rebuild
+/// internal tree structure (e.g., OSM rebuilds internal nodes from this).
+#[derive(Debug)]
+pub struct NodeStorageRestoreInfo<K> {
+    /// Per-leaf summaries for rebuilding internal nodes
+    pub leaf_summaries: Vec<LeafSummary<K>>,
+    /// Total weight across all leaves
+    pub total_weight: ZWeight,
+    /// Total number of entries across all leaves
+    pub total_entries: usize,
+    /// Number of leaves
+    pub num_leaves: usize,
+}
+
+// =============================================================================
 // Internal Node with Metadata
 // =============================================================================
 
@@ -762,24 +947,23 @@ pub struct NodeStorage<I, L> {
     /// Statistics
     stats: StorageStats,
 
-    // === Disk spilling state ===
-    /// Path to the current spill file (if any)
+    // === Segment-based storage ===
+    /// Completed, immutable segment files
     #[size_of(skip)]
-    spill_file_path: Option<std::path::PathBuf>,
+    segments: Vec<SegmentMetadata>,
 
-    /// Set of leaf indices that have been written to disk
-    #[size_of(skip)]
-    spilled_leaves: HashSet<usize>,
+    /// Next segment ID to assign
+    next_segment_id: u64,
 
-    // === BufferCache integration ===
-    /// FileId for the current spill file (for BufferCache keys)
+    /// Maps leaf_id -> segment location for efficient lookup.
+    /// If a leaf is in this map, it has been written to disk.
     #[size_of(skip)]
-    spill_file_id: Option<FileId>,
+    leaf_disk_locations: std::collections::HashMap<usize, LeafDiskLocation>,
 
-    /// Block locations for each spilled leaf (for BufferCache keys)
-    /// Maps leaf_id -> (offset, size) in the spill file
+    /// Segment currently being written (not yet completed)
+    /// None if no flush in progress
     #[size_of(skip)]
-    leaf_block_locations: std::collections::HashMap<usize, (u64, u32)>,
+    pending_segment: Option<PendingSegment>,
 }
 
 /// State of a leaf slot in NodeStorage.
@@ -874,10 +1058,10 @@ where
             dirty_leaves: HashSet::new(),
             dirty_bytes: 0,
             stats: StorageStats::default(),
-            spill_file_path: None,
-            spilled_leaves: HashSet::new(),
-            spill_file_id: None,
-            leaf_block_locations: std::collections::HashMap::new(),
+            segments: Vec::new(),
+            next_segment_id: 0,
+            leaf_disk_locations: std::collections::HashMap::new(),
+            pending_segment: None,
         }
     }
 
@@ -906,6 +1090,78 @@ where
     /// Get the current configuration (immutable access).
     pub fn config_ref(&self) -> &NodeStorageConfig {
         &self.config
+    }
+
+    // =========================================================================
+    // Segment-Based Storage Accessors
+    // =========================================================================
+
+    /// Get the number of completed segments.
+    #[inline]
+    pub fn segment_count(&self) -> usize {
+        self.segments.len()
+    }
+
+    /// Get all completed segments.
+    #[inline]
+    pub fn segments(&self) -> &[SegmentMetadata] {
+        &self.segments
+    }
+
+    /// Check if there's a pending segment being written.
+    #[inline]
+    pub fn has_pending_segment(&self) -> bool {
+        self.pending_segment.is_some()
+    }
+
+    /// Get the pending segment (if any).
+    #[inline]
+    pub fn pending_segment(&self) -> Option<&PendingSegment> {
+        self.pending_segment.as_ref()
+    }
+
+    /// Get the next segment ID that will be assigned.
+    #[inline]
+    pub fn next_segment_id(&self) -> u64 {
+        self.next_segment_id
+    }
+
+    /// Check if a leaf has a known segment location.
+    #[inline]
+    pub fn leaf_has_segment_location(&self, leaf_id: usize) -> bool {
+        self.leaf_disk_locations.contains_key(&leaf_id)
+    }
+
+    /// Get the segment location for a leaf (if known).
+    #[inline]
+    pub fn get_leaf_segment_location(&self, leaf_id: usize) -> Option<&LeafDiskLocation> {
+        self.leaf_disk_locations.get(&leaf_id)
+    }
+
+    /// Get the total number of leaves stored in segments.
+    pub fn leaves_in_segments(&self) -> usize {
+        self.leaf_disk_locations.len()
+    }
+
+    /// Check if segment-based storage is being used.
+    ///
+    /// Returns true if there are any completed segments or a pending segment.
+    #[inline]
+    pub fn uses_segment_storage(&self) -> bool {
+        !self.segments.is_empty() || self.pending_segment.is_some()
+    }
+
+    /// Generate a path for a new segment file.
+    ///
+    /// The path is based on the configured spill directory and the segment ID.
+    pub fn generate_segment_path(&self, segment_id: SegmentId) -> StoragePath {
+        let prefix = &self.config.segment_path_prefix;
+        let filename = format!("{}segment_{}.dat", prefix, segment_id.value());
+        if let Some(ref dir) = self.config.spill_directory {
+            dir.child(filename.as_str())
+        } else {
+            StoragePath::from(filename.as_str())
+        }
     }
 
     // =========================================================================
@@ -1258,7 +1514,7 @@ where
 
     /// Clear all nodes from storage.
     ///
-    /// Note: This does not delete any spill files on disk. Use `cleanup_spill_file()`
+    /// Note: This does not delete any segment files on disk. Use `cleanup_segments()`
     /// if you want to remove disk files.
     pub fn clear(&mut self) {
         self.internal_nodes.clear();
@@ -1266,9 +1522,8 @@ where
         self.dirty_leaves.clear();
         self.dirty_bytes = 0;
         self.stats = StorageStats::default();
-        self.spilled_leaves.clear();
-        self.leaf_block_locations.clear();
-        // Don't clear spill_file_path/spill_file_id - file may still exist on disk
+        self.leaf_disk_locations.clear();
+        // Don't clear segments - files may still exist on disk
     }
 
     /// Update statistics after bulk modifications.
@@ -1342,751 +1597,6 @@ where
 }
 
 // =============================================================================
-// Disk Spilling Methods
-// =============================================================================
-
-use std::path::{Path, PathBuf};
-
-/// Disk spilling methods for NodeStorage.
-///
-/// These methods require the full `StorableNode` bounds on leaf nodes plus
-/// rkyv serialization support for disk spilling.
-impl<I, L> NodeStorage<I, L>
-where
-    I: StorableNode,
-    L: StorableNode + LeafNodeOps + Archive + RkyvSerialize<Serializer>,
-    Archived<L>: RkyvDeserialize<L, Deserializer>,
-    L::Key: Archive + RkyvSerialize<Serializer>,
-    Archived<L::Key>: RkyvDeserialize<L::Key, Deserializer>,
-{
-    /// Flush all dirty leaves to disk.
-    ///
-    /// Creates (or overwrites) a spill file containing all dirty leaves.
-    /// After flushing, leaves are marked as clean and added to `spilled_leaves`.
-    ///
-    /// # Arguments
-    /// * `path` - Optional path override. If None, uses config's spill_directory
-    ///            or creates a temp file.
-    ///
-    /// # Returns
-    /// * Number of leaves written on success
-    /// * Error if I/O fails
-    ///
-    /// # Example
-    /// ```ignore
-    /// let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(
-    ///     NodeStorageConfig::with_threshold(1024)
-    /// );
-    /// // ... add leaves ...
-    /// if storage.should_flush() {
-    ///     let count = storage.flush_dirty_to_disk(None)?;
-    ///     println!("Flushed {} leaves to disk", count);
-    /// }
-    /// ```
-    pub fn flush_dirty_to_disk<P: AsRef<Path>>(
-        &mut self,
-        path: Option<P>,
-    ) -> Result<usize, FileFormatError> {
-        if self.dirty_leaves.is_empty() {
-            return Ok(0);
-        }
-
-        // Determine the file path
-        // Priority: explicit path > storage_backend path > config.spill_directory > temp dir
-        let file_path = match path {
-            Some(p) => p.as_ref().to_path_buf(),
-            None => {
-                // Generate a unique filename with process ID and a random suffix
-                let filename = format!(
-                    "osm_spill_{}_{:x}.osm",
-                    std::process::id(),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_nanos() as u64)
-                        .unwrap_or(0)
-                );
-
-                if let Some(ref dir) = self.config.spill_directory {
-                    // Use explicitly configured spill directory
-                    dir.join(&filename)
-                } else if let Some(ref backend) = self.config.storage_backend {
-                    // Use storage backend's file system path if available
-                    if let Some(base_path) = backend.file_system_path() {
-                        base_path.join("osm_spill").join(&filename)
-                    } else {
-                        // Storage backend doesn't support local files (e.g., object storage)
-                        // Fall back to temp directory
-                        std::env::temp_dir().join(&filename)
-                    }
-                } else {
-                    // No backend, use temp directory
-                    std::env::temp_dir().join(&filename)
-                }
-            }
-        };
-
-        // Ensure parent directory exists
-        if let Some(parent) = file_path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    FileFormatError::Io(format!(
-                        "Failed to create spill directory {}: {}",
-                        parent.display(),
-                        e
-                    ))
-                })?;
-            }
-        }
-
-        // Create the leaf file
-        let mut leaf_file: LeafFile<L> = LeafFile::create(&file_path)?;
-
-        // Generate a new FileId for this spill file (for BufferCache integration)
-        let file_id = FileId::new();
-
-        // Write all dirty leaves and record their block locations
-        let dirty_ids: Vec<usize> = self.dirty_leaves.iter().copied().collect();
-        for &id in &dirty_ids {
-            let leaf = self.leaves[id]
-                .as_present()
-                .expect("Dirty leaf must be in memory");
-            let block_loc = leaf_file.write_leaf(id as u64, leaf)?;
-
-            // Store block location for BufferCache key (Phase 7)
-            // Store as (offset, size) tuple for conversion to BlockLocation later
-            self.leaf_block_locations
-                .insert(id, (block_loc.offset, block_loc.size));
-            self.spilled_leaves.insert(id);
-            // Note: Summary is captured at eviction time, not flush time
-        }
-
-        // Finalize the file
-        leaf_file.finalize()?;
-
-        // Update statistics
-        let count = dirty_ids.len();
-        self.stats.leaves_written += count as u64;
-
-        // Mark all as clean
-        self.dirty_leaves.clear();
-        self.dirty_bytes = 0;
-        self.update_dirty_stats();
-
-        // Store file info for later use
-        self.spill_file_id = Some(file_id);
-
-        // Store the path for potential later use
-        self.spill_file_path = Some(file_path);
-
-        Ok(count)
-    }
-
-    /// Load a specific leaf from the spill file.
-    ///
-    /// If the leaf is already in memory, returns a reference to it.
-    /// If the leaf was evicted to disk, checks the BufferCache first,
-    /// then loads from disk if necessary.
-    ///
-    /// # Arguments
-    /// * `loc` - The leaf location
-    ///
-    /// # Returns
-    /// * Reference to the leaf
-    /// * Error if the leaf cannot be loaded
-    pub fn load_leaf_from_disk(&mut self, loc: LeafLocation) -> Result<&L, FileFormatError> {
-        let id = loc.id;
-
-        // Check if we have the leaf in memory
-        if id < self.leaves.len() && self.leaves[id].is_present() {
-            // Leaf is in memory, update cache stats
-            self.stats.cache_hits += 1;
-            return Ok(self.leaves[id].as_present().unwrap());
-        }
-
-        // Try to load from BufferCache if available (Phase 7)
-        if let Some(ref buffer_cache) = self.config.buffer_cache {
-            if let (Some(file_id), Some(&(offset, size))) =
-                (self.spill_file_id, self.leaf_block_locations.get(&id))
-            {
-                // Create a minimal FileReader for cache lookup
-                let cache_handle = CacheFileHandle {
-                    file_id,
-                    path: feldera_storage::StoragePath::default(),
-                };
-
-                // Convert tuple to BlockLocation for BufferCache
-                let block_loc = BlockLocation {
-                    offset,
-                    size: size as usize,
-                };
-
-                if let Some(entry) = buffer_cache.get(&cache_handle, block_loc) {
-                    // Found in BufferCache! Downcast and store in leaves
-                    if let Some(cached) = entry.downcast::<CachedLeafNode<L>>() {
-                        let leaf = cached.leaf.clone();
-                        let leaf_size = cached.size_bytes;
-
-                        // Track if we're reloading an evicted leaf
-                        let was_evicted = self.leaves[id].is_evicted();
-
-                        // Store in memory (slot should already exist)
-                        assert!(
-                            id < self.leaves.len(),
-                            "Leaf slot {} should exist before loading from cache",
-                            id
-                        );
-                        self.leaves[id] = LeafSlot::Present(leaf);
-
-                        // Update stats
-                        self.stats.cache_hits += 1;
-                        self.stats.memory_bytes += leaf_size;
-                        if was_evicted {
-                            self.stats.evicted_leaf_count =
-                                self.stats.evicted_leaf_count.saturating_sub(1);
-                        }
-
-                        return Ok(self.leaves[id].as_present().unwrap());
-                    }
-                }
-            }
-        }
-
-        // Need to load from disk
-        let path = self
-            .spill_file_path
-            .as_ref()
-            .ok_or_else(|| FileFormatError::Io(format!("No spill file for leaf {}", id)))?;
-
-        let mut leaf_file: LeafFile<L> = LeafFile::open(path)?;
-        let leaf = leaf_file.load_leaf(id as u64)?;
-        // Use StorableNode trait method for size estimation
-        let leaf_size = leaf.estimate_size();
-
-        // Track if we're reloading an evicted leaf
-        let was_evicted = self.leaves[id].is_evicted();
-
-        self.stats.cache_misses += 1;
-
-        // Insert into BufferCache for future access (Phase 7)
-        if let Some(ref buffer_cache) = self.config.buffer_cache {
-            if let (Some(file_id), Some(&(offset, _size))) =
-                (self.spill_file_id, self.leaf_block_locations.get(&id))
-            {
-                let cached = Arc::new(CachedLeafNode {
-                    leaf: leaf.clone(),
-                    size_bytes: leaf_size,
-                });
-                buffer_cache.insert(file_id, offset, cached);
-            }
-        }
-
-        // Store in memory (slot should already exist)
-        assert!(
-            id < self.leaves.len(),
-            "Leaf slot {} should exist before loading from disk",
-            id
-        );
-        self.leaves[id] = LeafSlot::Present(leaf);
-
-        // Update stats
-        self.stats.memory_bytes += leaf_size;
-        if was_evicted {
-            self.stats.evicted_leaf_count = self.stats.evicted_leaf_count.saturating_sub(1);
-        }
-
-        Ok(self.leaves[id].as_present().unwrap())
-    }
-
-    /// Check if a leaf has been spilled to disk.
-    pub fn is_leaf_spilled(&self, id: usize) -> bool {
-        self.spilled_leaves.contains(&id)
-    }
-
-    /// Get the number of leaves that have been spilled to disk.
-    pub fn spilled_leaf_count(&self) -> usize {
-        self.spilled_leaves.len()
-    }
-
-    /// Get block locations for all spilled leaves.
-    ///
-    /// Returns an iterator over (leaf_id, offset, size) tuples for each leaf
-    /// that has been written to the spill file. Used for checkpoint metadata.
-    pub fn get_leaf_block_locations(&self) -> impl Iterator<Item = (usize, u64, u32)> + '_ {
-        self.leaf_block_locations
-            .iter()
-            .map(|(&id, &(offset, size))| (id, offset, size))
-    }
-
-    /// Delete the spill file from disk.
-    ///
-    /// This should be called when the storage is no longer needed or
-    /// when all data has been persisted elsewhere.
-    ///
-    /// **Warning**: If there are evicted leaves, they will be lost!
-    /// Call `reload_evicted_leaves()` first if you need to preserve them.
-    pub fn cleanup_spill_file(&mut self) -> Result<(), std::io::Error> {
-        // Evict entries from BufferCache if present (Phase 7)
-        if let (Some(buffer_cache), Some(file_id)) = (&self.config.buffer_cache, self.spill_file_id)
-        {
-            let cache_handle = CacheFileHandle {
-                file_id,
-                path: feldera_storage::StoragePath::default(),
-            };
-            buffer_cache.evict(&cache_handle);
-        }
-
-        if let Some(ref path) = self.spill_file_path {
-            if path.exists() {
-                std::fs::remove_file(path)?;
-            }
-        }
-        self.spill_file_path = None;
-        self.spill_file_id = None;
-        self.spilled_leaves.clear();
-        self.leaf_block_locations.clear();
-        Ok(())
-    }
-
-    /// Evict clean leaves from memory to free RAM.
-    ///
-    /// Only clean leaves that have been spilled to disk can be evicted.
-    /// Dirty leaves are kept in memory since they haven't been persisted yet.
-    ///
-    /// This should be called after `flush_dirty_to_disk()` to actually free
-    /// the memory. Without eviction, leaves remain in memory even after
-    /// being written to disk.
-    ///
-    /// # Returns
-    /// * Tuple of (number of leaves evicted, bytes freed)
-    ///
-    /// # Example
-    /// ```ignore
-    /// if storage.should_flush() {
-    ///     storage.flush_dirty_to_disk(None)?;  // Write dirty leaves to disk
-    ///     let (evicted, freed) = storage.evict_clean_leaves();  // Free memory
-    ///     println!("Evicted {} leaves, freed {} bytes", evicted, freed);
-    /// }
-    /// ```
-    pub fn evict_clean_leaves(&mut self) -> (usize, usize) {
-        let mut evicted_count = 0;
-        let mut bytes_freed = 0;
-
-        // Only evict leaves that are:
-        // 1. In memory (Present)
-        // 2. Spilled to disk (in spilled_leaves)
-        // 3. Not dirty (not in dirty_leaves)
-        for id in 0..self.leaves.len() {
-            if self.leaves[id].is_present()
-                && self.spilled_leaves.contains(&id)
-                && !self.dirty_leaves.contains(&id)
-            {
-                // Calculate size and capture summary before evicting
-                let leaf = self.leaves[id].as_present().unwrap();
-                let leaf_size = leaf.estimate_size();
-
-                // Capture summary for checkpoint support
-                let first_key = leaf.first_key();
-                let (first_key_bytes, has_first_key) = if let Some(ref key) = first_key {
-                    (
-                        Vec::<u8>::from(serialize_to_bytes(key).unwrap_or_default()),
-                        true,
-                    )
-                } else {
-                    (Vec::new(), false)
-                };
-                let summary = CachedLeafSummary {
-                    first_key_bytes,
-                    has_first_key,
-                    weight_sum: leaf.total_weight(),
-                    entry_count: leaf.entry_count(),
-                };
-
-                // Evict by replacing Present with Evicted
-                self.leaves[id] = LeafSlot::Evicted(summary);
-
-                evicted_count += 1;
-                bytes_freed += leaf_size;
-            }
-        }
-
-        // Update stats
-        self.stats.memory_bytes = self.stats.memory_bytes.saturating_sub(bytes_freed);
-        self.stats.evicted_leaf_count += evicted_count;
-
-        (evicted_count, bytes_freed)
-    }
-
-    /// Get a leaf, automatically reloading from disk if evicted.
-    ///
-    /// This is the primary method for accessing leaves when eviction is enabled.
-    /// It handles the common case of reloading evicted leaves transparently.
-    ///
-    /// # Panics
-    /// Panics if the leaf location is invalid or if reload fails.
-    pub fn get_leaf_reloading(&mut self, loc: LeafLocation) -> &L {
-        let id = loc.id;
-
-        // If already in memory, return it
-        if id < self.leaves.len() && self.leaves[id].is_present() {
-            self.stats.cache_hits += 1;
-            return self.leaves[id].as_present().unwrap();
-        }
-
-        // Need to reload from disk
-        self.load_leaf_from_disk(loc)
-            .expect("Failed to reload evicted leaf from disk")
-    }
-
-    /// Reload all evicted leaves from disk into memory.
-    ///
-    /// This can be used to restore all leaves to memory, e.g., before
-    /// serialization or when memory pressure is relieved.
-    ///
-    /// # Returns
-    /// * Number of leaves reloaded
-    pub fn reload_evicted_leaves(&mut self) -> Result<usize, FileFormatError> {
-        let path = match &self.spill_file_path {
-            Some(p) => p.clone(),
-            None => return Ok(0),
-        };
-
-        // Collect IDs of evicted leaves
-        let evicted_ids: Vec<usize> = self
-            .leaves
-            .iter()
-            .enumerate()
-            .filter(|(_, slot)| slot.is_evicted())
-            .map(|(id, _)| id)
-            .collect();
-
-        if evicted_ids.is_empty() {
-            return Ok(0);
-        }
-
-        let mut leaf_file: LeafFile<L> = LeafFile::open(&path)?;
-        let mut count = 0;
-
-        for id in evicted_ids {
-            let leaf = leaf_file.load_leaf(id as u64)?;
-            // Use StorableNode trait method for size estimation
-            let leaf_size = leaf.estimate_size();
-
-            self.leaves[id] = LeafSlot::Present(leaf);
-            self.stats.memory_bytes += leaf_size;
-            count += 1;
-        }
-
-        self.stats.cache_misses += count as u64;
-        self.stats.evicted_leaf_count = self.stats.evicted_leaf_count.saturating_sub(count);
-
-        Ok(count)
-    }
-
-    // =========================================================================
-    // Checkpoint Methods
-    // =========================================================================
-
-    /// Check if a leaf is already on disk (spilled and not dirty).
-    ///
-    /// Returns true if the leaf has been written to disk and hasn't been
-    /// modified since. Such leaves don't need re-serialization during checkpoint.
-    #[inline]
-    pub fn is_leaf_on_disk(&self, leaf_id: usize) -> bool {
-        // A leaf is on disk if it's in spilled_leaves and not dirty
-        self.spilled_leaves.contains(&leaf_id) && !self.dirty_leaves.contains(&leaf_id)
-    }
-
-    /// Flush all leaves to disk, writing only those not yet persisted.
-    ///
-    /// This method handles three categories of leaves:
-    /// - Already spilled (clean): SKIP - no re-serialization needed
-    /// - Dirty: MUST write - modified since last flush
-    /// - Never spilled: MUST write - only in memory
-    ///
-    /// Creates a spill file if none exists (handles small trees).
-    ///
-    /// # Returns
-    ///
-    /// Number of leaves written to disk.
-    pub fn flush_all_leaves_to_disk(&mut self) -> Result<usize, FileFormatError> {
-        // Create spill file if none exists
-        if self.spill_file_path.is_none() && !self.leaves.is_empty() {
-            let temp_dir = self.config.spill_directory.clone().unwrap_or_else(|| {
-                std::env::temp_dir().join("dbsp_node_storage")
-            });
-            std::fs::create_dir_all(&temp_dir)
-                .map_err(|e| FileFormatError::Io(format!("Failed to create spill dir: {}", e)))?;
-
-            // Generate unique filename using timestamp and thread id
-            let unique_id = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0);
-            let thread_id = std::thread::current().id();
-            let file_name = format!("leaves_{}_{:?}.dat", unique_id, thread_id);
-            self.spill_file_path = Some(temp_dir.join(file_name));
-
-            // Generate FileId for BufferCache integration
-            self.spill_file_id = Some(FileId::new());
-        }
-
-        let path = match &self.spill_file_path {
-            Some(p) => p.clone(),
-            None => return Ok(0), // No leaves to flush
-        };
-
-        // Open or create the leaf file
-        let mut leaf_file: LeafFile<L> = if path.exists() {
-            // Open existing file for appending
-            LeafFile::open(&path)?
-        } else {
-            // Create new file
-            LeafFile::create(&path)?
-        };
-
-        let mut count = 0;
-
-        // Write leaves that aren't already on disk
-        for leaf_id in 0..self.leaves.len() {
-            // Skip if already on disk and clean
-            if self.is_leaf_on_disk(leaf_id) {
-                continue;
-            }
-
-            // Get the leaf - skip if evicted
-            let leaf = match self.leaves[leaf_id].as_present() {
-                Some(leaf) => leaf,
-                None => continue, // Already evicted, should be in spilled_leaves
-            };
-
-            // Write to file
-            let location = leaf_file.write_leaf(leaf_id as u64, leaf)?;
-
-            // Update tracking
-            self.leaf_block_locations
-                .insert(leaf_id, (location.offset, location.size));
-            self.spilled_leaves.insert(leaf_id);
-            self.dirty_leaves.remove(&leaf_id);
-            // Note: Summary is captured at eviction time, not flush time
-
-            count += 1;
-        }
-
-        // Finalize the file (writes index)
-        leaf_file.finalize()?;
-
-        self.stats.leaves_written += count as u64;
-        Ok(count)
-    }
-
-    /// Take ownership of the spill file path.
-    ///
-    /// After calling this, Drop will not delete the file and the runtime
-    /// will no longer be able to access evicted leaves.
-    ///
-    /// # Warning
-    ///
-    /// This is a destructive operation. For normal checkpoint operations,
-    /// use `prepare_checkpoint()` instead, which allows the runtime to
-    /// continue operating after checkpoint.
-    ///
-    /// This method is intended for special cases like transferring file
-    /// ownership to a different process or for cleanup operations.
-    ///
-    /// # Returns
-    ///
-    /// The spill file path, if any.
-    pub fn take_spill_file(&mut self) -> Option<PathBuf> {
-        self.spill_file_path.take()
-    }
-
-    /// Get the current spill file path (if any).
-    ///
-    /// This is useful for checkpoint operations that need to copy the
-    /// spill file to checkpoint storage without taking ownership.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the spill file path, or None if no spill file exists.
-    #[inline]
-    pub fn spill_file_path(&self) -> Option<&Path> {
-        self.spill_file_path.as_deref()
-    }
-
-    /// Prepare checkpoint metadata without invalidating runtime state.
-    ///
-    /// This method:
-    /// 1. Flushes all dirty leaves to the spill file
-    /// 2. Collects leaf summaries for O(num_leaves) restore
-    /// 3. Returns metadata referencing the spill file
-    /// 4. **Does NOT invalidate the spill file** - runtime continues operating
-    ///
-    /// After calling this method, the caller should copy the spill file
-    /// (returned path in metadata) to checkpoint storage. The runtime
-    /// can continue operating with its local spill file.
-    ///
-    /// # Returns
-    ///
-    /// `CommittedLeafStorage` containing:
-    /// - Path to the spill file (caller should copy this to checkpoint storage)
-    /// - Block locations for all leaves
-    /// - Leaf summaries for O(num_leaves) restore
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if flushing leaves to disk fails.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Prepare checkpoint
-    /// let metadata = storage.prepare_checkpoint()?;
-    ///
-    /// // Copy spill file to checkpoint storage (e.g., S3)
-    /// if let Some(path) = storage.spill_file_path() {
-    ///     upload_to_s3(path, &checkpoint_location)?;
-    /// }
-    ///
-    /// // Runtime continues operating with local spill file
-    /// // (no invalidation occurred)
-    /// ```
-    pub fn prepare_checkpoint(&mut self) -> Result<CommittedLeafStorage<L::Key>, FileFormatError>
-    where
-        Archived<L::Key>: RkyvDeserialize<L::Key, Deserializer>,
-    {
-        // 1. Flush all dirty leaves to ensure everything is on disk
-        self.flush_all_leaves_to_disk()?;
-
-        // 2. Collect leaf summaries from LeafSlot:
-        //    - Present(leaf): compute summary directly from leaf (it's in memory)
-        //    - Evicted(summary): use the cached summary (captured at eviction time)
-        let mut leaf_summaries = Vec::with_capacity(self.leaves.len());
-        let mut total_entries = 0usize;
-        let mut total_weight = 0i64;
-
-        for slot in &self.leaves {
-            let summary = match slot {
-                LeafSlot::Present(leaf) => {
-                    // Leaf is in memory - compute summary directly
-                    LeafSummary::new(leaf.first_key(), leaf.total_weight(), leaf.entry_count())
-                }
-                LeafSlot::Evicted(cached) => {
-                    // Leaf is evicted - reconstruct summary from cached data
-                    let first_key =
-                        if cached.has_first_key && !cached.first_key_bytes.is_empty() {
-                            // SAFETY: first_key_bytes was serialized by serialize_to_bytes() in
-                            // evict_clean_leaves() or mark_all_leaves_evicted() using the same
-                            // rkyv serializer. The bytes are guaranteed to be a valid archived
-                            // representation of L::Key. We use unsafe archived_root instead of
-                            // check_archived_root for performance since we trust our own serialization.
-                            let archived =
-                                unsafe { rkyv::archived_root::<L::Key>(&cached.first_key_bytes) };
-                            // Using .ok() here is intentional: if deserialization fails (which
-                            // shouldn't happen with valid serialized data), we treat it as if
-                            // the leaf had no first key. This is acceptable because:
-                            // 1. The weight_sum and entry_count are still valid for restore
-                            // 2. A missing first_key only affects separator key reconstruction
-                            // 3. Failing the entire checkpoint for one corrupt key is too harsh
-                            archived.deserialize(&mut Deserializer::default()).ok()
-                        } else {
-                            None
-                        };
-                    LeafSummary::new(first_key, cached.weight_sum, cached.entry_count)
-                }
-            };
-            total_entries += summary.entry_count;
-            total_weight += summary.weight_sum;
-            leaf_summaries.push(summary);
-        }
-
-        // 3. Collect block locations
-        let leaf_block_locations: Vec<(usize, u64, u32)> = self
-            .leaf_block_locations
-            .iter()
-            .map(|(id, (off, sz))| (*id, *off, *sz))
-            .collect();
-
-        // 4. Build metadata (does NOT invalidate spill_file_path)
-        Ok(CommittedLeafStorage {
-            spill_file_path: self
-                .spill_file_path
-                .as_ref()
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            leaf_block_locations,
-            leaf_summaries,
-            total_entries,
-            total_weight,
-            num_leaves: self.leaves.len(),
-        })
-    }
-
-    /// Mark all leaves as evicted (on disk, not in memory).
-    ///
-    /// Used during restore to indicate leaves should be lazy-loaded from the
-    /// checkpoint file. The checkpoint file becomes the live spill file.
-    ///
-    /// # Arguments
-    ///
-    /// - `num_leaves`: Number of leaves in the checkpoint
-    /// - `spill_file_path`: Path to the checkpoint file (becomes spill file)
-    /// - `block_locations`: Index into the checkpoint file
-    /// - `summaries`: Leaf summaries from checkpoint (stored in LeafSlot::Evicted)
-    pub fn mark_all_leaves_evicted(
-        &mut self,
-        num_leaves: usize,
-        spill_file_path: PathBuf,
-        block_locations: Vec<(usize, u64, u32)>,
-        summaries: Vec<LeafSummary<L::Key>>,
-    ) {
-        // Set up the spill file
-        self.spill_file_path = Some(spill_file_path);
-
-        // Generate FileId for BufferCache integration
-        self.spill_file_id = Some(FileId::new());
-
-        // Clear existing state
-        self.leaves.clear();
-        self.spilled_leaves.clear();
-        self.dirty_leaves.clear();
-        self.leaf_block_locations.clear();
-
-        // Create Evicted slots for each leaf with cached summary
-        for summary in summaries {
-            let (first_key_bytes, has_first_key) = if let Some(ref key) = summary.first_key {
-                (
-                    Vec::<u8>::from(serialize_to_bytes(key).unwrap_or_default()),
-                    true,
-                )
-            } else {
-                (Vec::new(), false)
-            };
-            let cached = CachedLeafSummary {
-                first_key_bytes,
-                has_first_key,
-                weight_sum: summary.weight_sum,
-                entry_count: summary.entry_count,
-            };
-            self.leaves.push(LeafSlot::Evicted(cached));
-        }
-
-        // Mark all leaves as spilled (on disk)
-        for i in 0..num_leaves {
-            self.spilled_leaves.insert(i);
-        }
-
-        // Set up block locations for lazy loading
-        for (leaf_id, offset, size) in block_locations {
-            self.leaf_block_locations.insert(leaf_id, (offset, size));
-        }
-
-        // Update stats
-        self.stats.leaf_node_count = num_leaves;
-        self.stats.evicted_leaf_count = num_leaves;
-    }
-}
-
-// =============================================================================
 // Node References
 // =============================================================================
 
@@ -2134,430 +1644,7 @@ impl<'a, I, L> NodeRefMut<'a, I, L> {
     }
 }
 
-// =============================================================================
-// Leaf File - Block-Based Disk Storage (Phase 4)
-// =============================================================================
-
-use super::algebra::order_statistics::order_statistics_file_format::{
-    BlockLocation as FileBlockLocation, DATA_BLOCK_HEADER_SIZE, FILE_HEADER_SIZE, FileHeader,
-    INDEX_ENTRY_SIZE, IndexEntry, MAGIC_INDEX_BLOCK, align_to_block, create_data_block_header,
-    set_block_checksum, verify_data_block_header,
-};
-
-// Re-export FileFormatError for use by OrderStatisticsMultiset
-pub use super::algebra::order_statistics::order_statistics_file_format::FileFormatError;
-use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
-use std::io::{Read as IoRead, Seek, SeekFrom, Write as IoWrite};
-
-/// A file-backed storage for leaf nodes.
-///
-/// LeafFile provides block-based storage for leaf nodes with:
-/// - 512-byte block alignment for efficient I/O
-/// - CRC32C checksums for data integrity
-/// - rkyv serialization for compact storage
-/// - In-memory index for fast lookups
-///
-/// # File Format
-///
-/// See `order_statistics_file_format.rs` for detailed format documentation.
-///
-/// # Type Parameters
-///
-/// - `L`: The leaf node type, must implement `StorableNode`
-#[derive(Debug)]
-pub struct LeafFile<L> {
-    /// File path
-    path: PathBuf,
-    /// File handle (None if not open)
-    file: Option<File>,
-    /// Current write position
-    write_offset: u64,
-    /// Index mapping leaf_id -> block location
-    index: HashMap<u64, FileBlockLocation>,
-    /// File header (updated on finalize)
-    header: FileHeader,
-    /// Whether the file is finalized (read-only)
-    finalized: bool,
-    /// Phantom for type parameter
-    _phantom: std::marker::PhantomData<L>,
-}
-
-impl<L> LeafFile<L>
-where
-    L: StorableNode + Archive + RkyvSerialize<Serializer>,
-    Archived<L>: RkyvDeserialize<L, Deserializer>,
-{
-    /// Create a new leaf file for writing.
-    ///
-    /// The file is created with a placeholder header that will be updated
-    /// when `finalize()` is called.
-    pub fn create<P: AsRef<Path>>(path: P) -> Result<Self, FileFormatError> {
-        let path = path.as_ref().to_path_buf();
-
-        // Create the file
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&path)
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-
-        // Write placeholder header
-        let header = FileHeader::default();
-        let header_bytes = header.to_bytes();
-        file.write_all(&header_bytes)
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-
-        Ok(Self {
-            path,
-            file: Some(file),
-            write_offset: FILE_HEADER_SIZE as u64,
-            index: HashMap::new(),
-            header,
-            finalized: false,
-            _phantom: std::marker::PhantomData,
-        })
-    }
-
-    /// Open an existing leaf file for reading.
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, FileFormatError> {
-        let path = path.as_ref().to_path_buf();
-
-        let mut file = OpenOptions::new()
-            .read(true)
-            .open(&path)
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-
-        // Read and verify header
-        let mut header_bytes = [0u8; FILE_HEADER_SIZE];
-        file.read_exact(&mut header_bytes)
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-        let header = FileHeader::from_bytes(&header_bytes)?;
-
-        // Read index
-        let index = Self::read_index(&mut file, &header)?;
-
-        Ok(Self {
-            path,
-            file: Some(file),
-            write_offset: header.index_offset,
-            index,
-            header,
-            finalized: true,
-            _phantom: std::marker::PhantomData,
-        })
-    }
-
-    /// Read the index from the file.
-    fn read_index(
-        file: &mut File,
-        header: &FileHeader,
-    ) -> Result<HashMap<u64, FileBlockLocation>, FileFormatError> {
-        if header.index_offset == 0 || header.num_leaves == 0 {
-            return Ok(HashMap::new());
-        }
-
-        // Seek to index block
-        file.seek(SeekFrom::Start(header.index_offset))
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-
-        // Calculate the index block size (header 16 + entries, aligned to 512 bytes)
-        let num_entries = header.num_leaves as usize;
-        let entries_size = num_entries * INDEX_ENTRY_SIZE;
-        let index_size = 16 + entries_size;
-        let index_block_size = align_to_block(index_size);
-
-        // Read the full aligned block (including padding)
-        let mut index_block = vec![0u8; index_block_size];
-        file.read_exact(&mut index_block)
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-
-        // Verify checksum of the full block (bytes [4..])
-        let stored_checksum = u32::from_le_bytes(index_block[0..4].try_into().unwrap());
-        let computed_checksum = crc32c::crc32c(&index_block[4..]);
-        if stored_checksum != computed_checksum {
-            return Err(FileFormatError::ChecksumMismatch {
-                expected: computed_checksum,
-                found: stored_checksum,
-            });
-        }
-
-        // Verify magic
-        if &index_block[4..8] != &MAGIC_INDEX_BLOCK {
-            return Err(FileFormatError::InvalidMagic {
-                expected: MAGIC_INDEX_BLOCK,
-                found: [
-                    index_block[4],
-                    index_block[5],
-                    index_block[6],
-                    index_block[7],
-                ],
-            });
-        }
-
-        // Parse entries from bytes [16..16+entries_size]
-        let mut index = HashMap::with_capacity(num_entries);
-        for i in 0..num_entries {
-            let start = 16 + i * INDEX_ENTRY_SIZE;
-            let entry = IndexEntry::from_bytes(&index_block[start..start + INDEX_ENTRY_SIZE]);
-            index.insert(entry.leaf_id, entry.location);
-        }
-
-        Ok(index)
-    }
-
-    /// Write a leaf node to the file.
-    ///
-    /// Returns the block location where the leaf was written.
-    pub fn write_leaf(
-        &mut self,
-        leaf_id: u64,
-        leaf: &L,
-    ) -> Result<FileBlockLocation, FileFormatError>
-    where
-        L: LeafNodeOps,
-    {
-        if self.finalized {
-            return Err(FileFormatError::Io(
-                "file is finalized (read-only)".to_string(),
-            ));
-        }
-
-        let file = self
-            .file
-            .as_mut()
-            .ok_or_else(|| FileFormatError::Io("file not open".to_string()))?;
-
-        // Serialize the leaf using DBSP's Serializer
-        let serialized = serialize_to_bytes(leaf)?;
-
-        // Create block: header + serialized data
-        let data_size = DATA_BLOCK_HEADER_SIZE + serialized.len();
-        let block_size = align_to_block(data_size);
-        let mut block = vec![0u8; block_size];
-
-        // Write header (includes the actual serialized data length for deserialization)
-        let header = create_data_block_header(leaf_id, serialized.len() as u64);
-        block[..DATA_BLOCK_HEADER_SIZE].copy_from_slice(&header);
-
-        // Write data
-        block[DATA_BLOCK_HEADER_SIZE..DATA_BLOCK_HEADER_SIZE + serialized.len()]
-            .copy_from_slice(&serialized);
-
-        // Compute and set checksum
-        set_block_checksum(&mut block);
-
-        // Write to file
-        file.seek(SeekFrom::Start(self.write_offset))
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-        file.write_all(&block)
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-
-        // Create location
-        let location = FileBlockLocation::new(self.write_offset, block_size as u32);
-
-        // Update state
-        self.index.insert(leaf_id, location);
-        self.write_offset += block_size as u64;
-        self.header.num_leaves += 1;
-        self.header.total_entries += leaf.entry_count() as u64;
-        self.header.total_weight += leaf.total_weight();
-
-        Ok(location)
-    }
-
-    /// Load a leaf node from the file.
-    pub fn load_leaf(&mut self, leaf_id: u64) -> Result<L, FileFormatError> {
-        let location = self
-            .index
-            .get(&leaf_id)
-            .copied()
-            .ok_or(FileFormatError::BlockNotFound { leaf_id })?;
-
-        self.load_leaf_at(location)
-    }
-
-    /// Load a leaf node from a specific block location.
-    pub fn load_leaf_at(&mut self, location: FileBlockLocation) -> Result<L, FileFormatError> {
-        let file = self
-            .file
-            .as_mut()
-            .ok_or_else(|| FileFormatError::Io("file not open".to_string()))?;
-
-        // Read block
-        let mut block = vec![0u8; location.size as usize];
-        file.seek(SeekFrom::Start(location.offset))
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-        file.read_exact(&mut block)
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-
-        // Verify header and checksum, extract data_len
-        let (_leaf_id, data_len) = verify_data_block_header(&block)?;
-
-        // Extract only the actual serialized data (without padding)
-        // rkyv stores the root object at the END of the buffer, so we need exact length
-        let data = &block[DATA_BLOCK_HEADER_SIZE..DATA_BLOCK_HEADER_SIZE + data_len as usize];
-
-        // SAFETY: The data was serialized by write_leaf() using serialize_to_bytes() with
-        // the same rkyv serializer, and we verified the block's CRC32C checksum above in
-        // verify_data_block_header(). The checksum ensures data integrity, and the
-        // serialization format is guaranteed to match. We use unsafe archived_root instead
-        // of check_archived_root for performance since the checksum already validates the
-        // data hasn't been corrupted.
-        let archived = unsafe { rkyv::archived_root::<L>(data) };
-        let leaf: L = archived
-            .deserialize(&mut Deserializer::default())
-            .map_err(|e| FileFormatError::Serialization(format!("{:?}", e)))?;
-
-        Ok(leaf)
-    }
-
-    /// Finalize the file, writing the index and updating the header.
-    ///
-    /// After calling this, the file becomes read-only.
-    pub fn finalize(&mut self) -> Result<(), FileFormatError> {
-        if self.finalized {
-            return Ok(());
-        }
-
-        let file = self
-            .file
-            .as_mut()
-            .ok_or_else(|| FileFormatError::Io("file not open".to_string()))?;
-
-        // Write index block
-        let index_offset = self.write_offset;
-
-        // Build index block: header (16 bytes) + entries
-        let num_entries = self.index.len();
-        let index_size = 16 + num_entries * INDEX_ENTRY_SIZE;
-        let index_block_size = align_to_block(index_size);
-        let mut index_block = vec![0u8; index_block_size];
-
-        // Index header: checksum(4) + magic(4) + num_entries(8)
-        index_block[4..8].copy_from_slice(&MAGIC_INDEX_BLOCK);
-        index_block[8..16].copy_from_slice(&(num_entries as u64).to_le_bytes());
-
-        // Write entries (sorted by leaf_id for consistency)
-        let mut entries: Vec<_> = self.index.iter().collect();
-        entries.sort_by_key(|(id, _)| *id);
-
-        for (i, (leaf_id, location)) in entries.iter().enumerate() {
-            let entry = IndexEntry::new(**leaf_id, location.offset, location.size);
-            let entry_bytes = entry.to_bytes();
-            let start = 16 + i * INDEX_ENTRY_SIZE;
-            index_block[start..start + INDEX_ENTRY_SIZE].copy_from_slice(&entry_bytes);
-        }
-
-        // Set checksum
-        set_block_checksum(&mut index_block);
-
-        // Write index block
-        file.seek(SeekFrom::Start(index_offset))
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-        file.write_all(&index_block)
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-
-        // Update and rewrite header
-        self.header.index_offset = index_offset;
-        let header_bytes = self.header.to_bytes();
-        file.seek(SeekFrom::Start(0))
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-        file.write_all(&header_bytes)
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-
-        // Flush to disk
-        file.sync_all()
-            .map_err(|e| FileFormatError::Io(e.to_string()))?;
-
-        self.finalized = true;
-        Ok(())
-    }
-
-    /// Get the number of leaves in the file.
-    pub fn num_leaves(&self) -> u64 {
-        self.header.num_leaves
-    }
-
-    /// Get the file path.
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    /// Check if the file is finalized.
-    pub fn is_finalized(&self) -> bool {
-        self.finalized
-    }
-
-    /// Get a reference to the index.
-    pub fn index(&self) -> &HashMap<u64, FileBlockLocation> {
-        &self.index
-    }
-
-    /// Check if a leaf exists in the file.
-    pub fn contains(&self, leaf_id: u64) -> bool {
-        self.index.contains_key(&leaf_id)
-    }
-
-    /// Close the file (releases file handle).
-    pub fn close(&mut self) {
-        self.file = None;
-    }
-}
-
-impl<L> Drop for LeafFile<L> {
-    fn drop(&mut self) {
-        // Just close the file handle.
-        // Note: finalize() should be called explicitly before dropping to persist
-        // the index. If not finalized, the file will be incomplete.
-        // We don't call finalize() here because it requires rkyv bounds that Drop can't have.
-        if !self.finalized && self.file.is_some() && !self.index.is_empty() {
-            // Log warning or debug info about unfinalizing file
-            // The file can still be read back using the index stored in memory
-            // until this object is dropped.
-        }
-        // File handle is automatically closed when dropped
-    }
-}
-
-// =============================================================================
-// Drop Implementation for NodeStorage
-// =============================================================================
-
-impl<I, L> Drop for NodeStorage<I, L> {
-    fn drop(&mut self) {
-        // Clean up spill file when NodeStorage is dropped.
-        // This ensures we don't leave orphan spill files on disk.
-        //
-        // Note: This is a best-effort cleanup. If the process crashes,
-        // spill files in temp directories will be cleaned up by the OS.
-        if let Some(ref path) = self.spill_file_path {
-            if path.exists() {
-                if let Err(e) = std::fs::remove_file(path) {
-                    // Log but don't panic - it's okay if cleanup fails
-                    tracing::debug!(
-                        "Failed to cleanup NodeStorage spill file {}: {}",
-                        path.display(),
-                        e
-                    );
-                }
-            }
-        }
-
-        // Evict entries from BufferCache if present
-        if let (Some(buffer_cache), Some(file_id)) =
-            (&self.config.buffer_cache, self.spill_file_id)
-        {
-            let cache_handle = CacheFileHandle {
-                file_id,
-                path: feldera_storage::StoragePath::default(),
-            };
-            buffer_cache.evict(&cache_handle);
-        }
-    }
-}
+include!("node_storage_disk.rs");
 
 #[cfg(test)]
 #[path = "node_storage_tests.rs"]

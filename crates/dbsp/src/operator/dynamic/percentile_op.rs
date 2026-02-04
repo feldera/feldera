@@ -146,22 +146,18 @@ pub struct DiscMode;
 // Checkpoint Data Structures
 // =============================================================================
 
-// Re-export checkpoint types from node_storage for use in checkpoint metadata
-use crate::node_storage::CommittedLeafStorage;
-
 /// Committed (checkpoint) state for the PercentileOperator.
 ///
-/// This uses reference-based checkpointing:
-/// - Each tree's leaf data is stored in a separate `.leaves` file
-/// - The metadata file contains references to those files + leaf summaries
-/// - On restore, internal nodes are rebuilt from leaf summaries (O(num_leaves))
-/// - Checkpoint files become live spill files (zero-copy restore)
+/// The operator only stores its own metadata here. Each tree's NodeStorage
+/// writes/reads its own metadata file (like Spine), so we only need
+/// `tree_ids` to know which trees to restore, not embedded storage metadata.
 ///
 /// # Benefits
 ///
-/// - Checkpoint size: O(num_leaves) metadata vs O(all data) for direct serialization
-/// - Checkpoint time: Skip already-spilled leaves
-/// - Restore time: O(num_leaves) vs O(num_entries)
+/// - Follows Spine pattern: storage layer manages its own persistence
+/// - Checkpoint size: operator-level metadata is tiny (keys + prev_output + config)
+/// - `next_tree_id` is saved/restored to prevent ID collisions
+/// - segment_path_prefix is saved in NodeStorage's own metadata
 #[derive(Archive, RkyvSerialize, RkyvDeserialize)]
 #[archive(bound(serialize = "__S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer"))]
 #[archive(check_bytes)]
@@ -170,12 +166,8 @@ where
     K: Archive,
     V: Archive,
 {
-    /// Per-key tree metadata (references leaf files, not data)
-    /// Each `CommittedLeafStorage<V>` contains:
-    /// - Path to the leaf file
-    /// - Leaf block locations (index into the file)
-    /// - Leaf summaries (for O(num_leaves) internal node rebuild)
-    trees: Vec<(K, CommittedLeafStorage<V>)>,
+    /// Per-key tree IDs (NodeStorage writes its own metadata files)
+    tree_ids: Vec<(K, u64)>,
     /// Previous output values for delta computation
     prev_output: Vec<(K, Option<V>)>,
     /// Configuration
@@ -183,6 +175,8 @@ where
     ascending: bool,
     /// Branching factor for tree reconstruction
     branching_factor: u32,
+    /// Next tree ID counter (`next_tree_id` is saved/restored to prevent ID collisions)
+    next_tree_id: u64,
 }
 
 // =============================================================================
@@ -216,6 +210,11 @@ where
     /// Per-key order statistics trees
     trees: BTreeMap<K, OrderStatisticsMultiset<V>>,
 
+    /// Per-key tree IDs for checkpoint file naming.
+    /// Maps each key to a unique tree_id used to derive persistent_id
+    /// for each tree's NodeStorage metadata file.
+    tree_ids: BTreeMap<K, u64>,
+
     /// Previous output values for computing deltas
     prev_output: BTreeMap<K, Option<V>>,
 
@@ -227,6 +226,12 @@ where
 
     /// Storage config for spill-to-disk
     storage_config: NodeStorageConfig,
+
+    /// Counter for generating unique segment path prefixes per tree.
+    /// Each tree gets a unique prefix like "t0_", "t1_", etc. to prevent
+    /// segment file name collisions when multiple trees share the same
+    /// StorageBackend namespace.
+    next_tree_id: u64,
 
     /// Global node ID for checkpoint file naming
     global_id: GlobalNodeId,
@@ -248,10 +253,12 @@ where
     pub fn new_cont(percentile: f64, ascending: bool) -> Self {
         Self {
             trees: BTreeMap::new(),
+            tree_ids: BTreeMap::new(),
             prev_output: BTreeMap::new(),
             percentile,
             ascending,
             storage_config: NodeStorageConfig::from_runtime(),
+            next_tree_id: 0,
             global_id: GlobalNodeId::root(),
             _mode: std::marker::PhantomData,
         }
@@ -270,10 +277,12 @@ where
     pub fn new_disc(percentile: f64, ascending: bool) -> Self {
         Self {
             trees: BTreeMap::new(),
+            tree_ids: BTreeMap::new(),
             prev_output: BTreeMap::new(),
             percentile,
             ascending,
             storage_config: NodeStorageConfig::from_runtime(),
+            next_tree_id: 0,
             global_id: GlobalNodeId::root(),
             _mode: std::marker::PhantomData,
         }
@@ -312,6 +321,7 @@ where
     fn metadata(&self, meta: &mut OperatorMeta) {
         let num_keys = self.trees.len();
         let total_entries: usize = self.trees.values().map(|t| t.num_keys()).sum();
+        let total_evicted: usize = self.trees.values().map(|t| t.evicted_leaf_count()).sum();
 
         meta.extend([
             (
@@ -330,12 +340,29 @@ where
                 Cow::Borrowed("ascending"),
                 MetaItem::Bool(self.ascending),
             ),
+            (
+                Cow::Borrowed("evicted_leaves"),
+                MetaItem::Count(total_evicted),
+            ),
         ]);
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
         // Not at fixedpoint if we have any state
         self.trees.is_empty()
+    }
+
+    fn clock_end(&mut self, _scope: Scope) {
+        // Flush dirty leaves to disk and evict clean leaves for all trees.
+        // By clock_end(), all mutations are complete for this step, making
+        // eviction safe. Follows existing DBSP lifecycle patterns.
+        for tree in self.trees.values_mut() {
+            if tree.should_flush() {
+                if let Err(e) = tree.flush_and_evict() {
+                    tracing::warn!("PercentileOperator: flush_and_evict failed: {}", e);
+                }
+            }
+        }
     }
 
     fn checkpoint(
@@ -346,59 +373,36 @@ where
     ) -> Result<(), Error> {
         let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
 
-        // Create checkpoint directory
-        let checkpoint_dir = std::path::PathBuf::from(format!("{}/{}", base, persistent_id));
-        std::fs::create_dir_all(&checkpoint_dir).map_err(|e| {
-            use std::io::{Error as IoError, ErrorKind};
-            Error::IO(IoError::new(
-                ErrorKind::Other,
-                format!("Failed to create checkpoint dir: {}", e),
-            ))
-        })?;
-
-        // Save each tree's leaves using reference-based checkpointing
-        // This:
-        // 1. Flushes dirty/never-spilled leaves to disk
-        // 2. Moves spill file to checkpoint location
-        // 3. Returns metadata referencing the leaf file
-        let mut trees: Vec<(K, CommittedLeafStorage<V>)> = Vec::new();
-        for (i, (key, tree)) in self.trees.iter_mut().enumerate() {
-            let tree_id = format!("tree_{}", i);
-            let committed_leaf_storage = tree
-                .save_leaves(&checkpoint_dir, &tree_id)
-                .map_err(|e| {
-                    use std::io::{Error as IoError, ErrorKind};
-                    Error::IO(IoError::new(
-                        ErrorKind::Other,
-                        format!("Failed to save tree leaves: {:?}", e),
-                    ))
-                })?;
-            trees.push((key.clone(), committed_leaf_storage));
+        // Each tree's OSM writes its own metadata file + registers segment files.
+        // This follows the Spine pattern: storage layer manages its own persistence.
+        for (key, tree) in self.trees.iter_mut() {
+            let tree_id = self.tree_ids[key];
+            let tree_pid = format!("{}_t{}", persistent_id, tree_id);
+            tree.save(base, &tree_pid, files)?;
         }
 
-        // Convert prev_output
-        let prev_output: Vec<_> = self
-            .prev_output
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        // Create the committed state (small - just metadata + prev_output)
+        // Write operator-level metadata (small — just keys, prev_output, config).
+        // Like Spine, metadata is written via backend.write() which auto-calls
+        // mark_for_checkpoint(). Not pushed to `files`.
         let committed = CommittedPercentileOperator {
-            trees,
-            prev_output,
+            tree_ids: self.tree_ids.iter().map(|(k, id)| (k.clone(), *id)).collect(),
+            prev_output: self
+                .prev_output
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             percentile: self.percentile.to_bits(),
             ascending: self.ascending,
             branching_factor: DEFAULT_BRANCHING_FACTOR as u32,
+            next_tree_id: self.next_tree_id,
         };
 
-        // Serialize and write metadata file
         let bytes = to_bytes(&committed).expect("Serializing checkpoint should work");
-        files.push(
-            Runtime::storage_backend()
-                .unwrap()
-                .write(&Self::checkpoint_file(base, persistent_id), bytes)?,
-        );
+        let backend = self.storage_config.storage_backend.clone()
+            .or_else(|| Runtime::storage_backend().ok())
+            .expect("No storage backend available for checkpoint");
+        let _file = backend
+            .write(&Self::checkpoint_file(base, persistent_id), bytes)?;
 
         Ok(())
     }
@@ -406,9 +410,12 @@ where
     fn restore(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
 
-        // Read checkpoint metadata file
+        // Read operator metadata file
         let path = Self::checkpoint_file(base, persistent_id);
-        let content = Runtime::storage_backend().unwrap().read(&path)?;
+        let backend = self.storage_config.storage_backend.clone()
+            .or_else(|| Runtime::storage_backend().ok())
+            .expect("No storage backend available for restore");
+        let content = backend.read(&path)?;
 
         // Deserialize using rkyv
         let archived =
@@ -419,15 +426,14 @@ where
 
         let branching_factor = archived.branching_factor as usize;
 
-        // Restore trees using O(num_leaves) restore
-        // This:
-        // 1. Points NodeStorage at the checkpoint file (no copy!)
-        // 2. Rebuilds internal nodes from leaf_summaries (no leaf I/O!)
-        // 3. Marks all leaves as evicted (lazy-loaded on demand)
+        // restore next_tree_id to prevent ID collisions
+        self.next_tree_id = archived.next_tree_id;
+
+        // Restore each tree via OSM::restore (NodeStorage reads its own metadata).
         self.trees.clear();
-        for archived_tree in archived.trees.iter() {
-            // Deserialize the key
-            let key: K = rkyv::Deserialize::deserialize(&archived_tree.0, &mut deserializer)
+        self.tree_ids.clear();
+        for archived_entry in archived.tree_ids.iter() {
+            let key: K = rkyv::Deserialize::deserialize(&archived_entry.0, &mut deserializer)
                 .map_err(|e| {
                     use std::io::{Error as IoError, ErrorKind};
                     Error::IO(IoError::new(
@@ -435,26 +441,22 @@ where
                         format!("Failed to deserialize key: {e:?}"),
                     ))
                 })?;
+            let tree_id: u64 = archived_entry.1.into();
 
-            // Deserialize the CommittedLeafStorage metadata
-            let committed_leaf_storage: CommittedLeafStorage<V> =
-                rkyv::Deserialize::deserialize(&archived_tree.1, &mut deserializer).map_err(
-                    |e| {
-                        use std::io::{Error as IoError, ErrorKind};
-                        Error::IO(IoError::new(
-                            ErrorKind::Other,
-                            format!("Failed to deserialize CommittedLeafStorage: {e:?}"),
-                        ))
-                    },
-                )?;
+            let tree_pid = format!("{}_t{}", persistent_id, tree_id);
+            let mut config = self.storage_config.clone();
+            config.segment_path_prefix = format!("t{}_", tree_id);
 
-            // Use O(num_leaves) restore - checkpoint file becomes spill file
-            let tree = OrderStatisticsMultiset::restore_from_committed(
-                committed_leaf_storage,
+            // OSM::restore delegates to NodeStorage::restore which reads its own metadata.
+            // Bug B fix: NodeStorage restores segment_path_prefix from its saved state.
+            let tree = OrderStatisticsMultiset::restore(
+                base,
+                &tree_pid,
                 branching_factor,
-                self.storage_config.clone(),
+                config,
             )?;
-            self.trees.insert(key, tree);
+            self.trees.insert(key.clone(), tree);
+            self.tree_ids.insert(key, tree_id);
         }
 
         // Restore prev_output
@@ -492,6 +494,7 @@ where
 
     fn clear_state(&mut self) -> Result<(), Error> {
         self.trees.clear();
+        self.tree_ids.clear();
         self.prev_output.clear();
         Ok(())
     }
@@ -521,12 +524,20 @@ where
             // Downcast the key from dynamic type
             let key: K = unsafe { cursor.key().downcast::<K>().clone() };
 
-            // Get or create tree for this key
-            let storage_config = self.storage_config.clone();
+            // Get or create tree for this key, assigning a unique segment
+            // path prefix to prevent file name collisions across trees.
+            let next_tree_id = &mut self.next_tree_id;
+            let tree_ids = &mut self.tree_ids;
+            let storage_config = &self.storage_config;
             let tree = self.trees.entry(key.clone()).or_insert_with(|| {
+                let tree_id = *next_tree_id;
+                let mut config = storage_config.clone();
+                config.segment_path_prefix = format!("t{}_", tree_id);
+                *next_tree_id += 1;
+                tree_ids.insert(key.clone(), tree_id);
                 OrderStatisticsMultiset::with_config(
                     DEFAULT_BRANCHING_FACTOR,
-                    storage_config,
+                    config,
                 )
             });
 
@@ -555,6 +566,11 @@ where
                 cursor.step_val();
             }
 
+            // Inline backpressure: flush proactively if this tree exceeded threshold
+            if tree.should_flush() {
+                let _ = tree.flush_and_evict();
+            }
+
             changed_keys.push(key);
             cursor.step_key();
         }
@@ -564,13 +580,13 @@ where
 
         for key in changed_keys {
             // Compute new percentile value for this key using interpolation
-            let new_value = self.trees.get(&key).and_then(|tree| {
+            let new_value = self.trees.get_mut(&key).and_then(|tree| {
                 if tree.is_empty() {
                     None
                 } else {
                     // PERCENTILE_CONT: interpolate between adjacent values
                     tree.select_percentile_bounds(self.percentile, self.ascending)
-                        .map(|(lower, upper, fraction)| V::interpolate(lower, upper, fraction))
+                        .map(|(lower, upper, fraction)| V::interpolate(&lower, &upper, fraction))
                 }
             });
             let prev_value = self.prev_output.get(&key).cloned().flatten();
@@ -601,6 +617,7 @@ where
             if let Some(tree) = self.trees.get(&key) {
                 if tree.is_empty() {
                     self.trees.remove(&key);
+                    self.tree_ids.remove(&key);
                     self.prev_output.remove(&key);
                 }
             }
@@ -639,12 +656,20 @@ where
             // Downcast the key from dynamic type
             let key: K = unsafe { cursor.key().downcast::<K>().clone() };
 
-            // Get or create tree for this key
-            let storage_config = self.storage_config.clone();
+            // Get or create tree for this key, assigning a unique segment
+            // path prefix to prevent file name collisions across trees.
+            let next_tree_id = &mut self.next_tree_id;
+            let tree_ids = &mut self.tree_ids;
+            let storage_config = &self.storage_config;
             let tree = self.trees.entry(key.clone()).or_insert_with(|| {
+                let tree_id = *next_tree_id;
+                let mut config = storage_config.clone();
+                config.segment_path_prefix = format!("t{}_", tree_id);
+                *next_tree_id += 1;
+                tree_ids.insert(key.clone(), tree_id);
                 OrderStatisticsMultiset::with_config(
                     DEFAULT_BRANCHING_FACTOR,
-                    storage_config,
+                    config,
                 )
             });
 
@@ -673,6 +698,11 @@ where
                 cursor.step_val();
             }
 
+            // Inline backpressure: flush proactively if this tree exceeded threshold
+            if tree.should_flush() {
+                let _ = tree.flush_and_evict();
+            }
+
             changed_keys.push(key);
             cursor.step_key();
         }
@@ -682,7 +712,7 @@ where
 
         for key in changed_keys {
             // Compute new percentile value for this key (discrete, no interpolation)
-            let new_value = self.trees.get(&key).and_then(|tree| {
+            let new_value = self.trees.get_mut(&key).and_then(|tree| {
                 if tree.is_empty() {
                     None
                 } else {
@@ -719,6 +749,7 @@ where
             if let Some(tree) = self.trees.get(&key) {
                 if tree.is_empty() {
                     self.trees.remove(&key);
+                    self.tree_ids.remove(&key);
                     self.prev_output.remove(&key);
                 }
             }
@@ -996,43 +1027,69 @@ mod tests {
     #[test]
     fn test_percentile_operator_checkpoint_restore() {
         use crate::circuit::{GlobalNodeId, NodeId};
+        use crate::circuit::operator_traits::Operator;
+        use crate::storage::backend::posixio_impl::PosixBackend;
         use tempfile::TempDir;
 
         // Create a temp directory for checkpoint files
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let checkpoint_dir = temp_dir.path();
 
+        // Create a PosixBackend for the temp directory so segment files
+        // can be written and later opened for restore.
+        let backend: Arc<dyn crate::storage::backend::StorageBackend> = Arc::new(
+            PosixBackend::new(
+                checkpoint_dir.to_path_buf(),
+                feldera_types::config::StorageCacheConfig::default(),
+                &feldera_types::config::FileBackendConfig::default(),
+            ),
+        );
+
         // Create operator directly with storage config that allows disk spilling
         let storage_config = NodeStorageConfig {
             enable_spill: true,
-            max_spillable_level: 0,
+
             spill_threshold_bytes: 0, // Allow spilling immediately
-            spill_directory: Some(checkpoint_dir.to_path_buf()),
-            storage_backend: None,
+            target_segment_size: 64 * 1024 * 1024, // 64MB
+            spill_directory: None, // Use backend's base directory
+            segment_path_prefix: String::new(),
+            storage_backend: Some(backend),
             buffer_cache: None,
         };
 
+        let global_id = GlobalNodeId::child(&GlobalNodeId::root(), NodeId::new(42));
+
         let mut op1: PercentileOperator<i32, F64, ContMode> = PercentileOperator {
             trees: BTreeMap::new(),
+            tree_ids: BTreeMap::new(),
             prev_output: BTreeMap::new(),
             percentile: 0.5,
             ascending: true,
             storage_config: storage_config.clone(),
-            global_id: GlobalNodeId::child(&GlobalNodeId::root(), NodeId::new(42)),
+            next_tree_id: 0,
+            global_id: global_id.clone(),
             _mode: std::marker::PhantomData,
         };
 
-        // Insert some data into the trees
-        let mut tree1 = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, storage_config.clone());
+        // Insert some data into the trees, each with unique segment_path_prefix
+        let mut config1 = storage_config.clone();
+        config1.segment_path_prefix = "t0_".to_string();
+        let mut tree1 = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config1);
         tree1.insert(F64::new(10.0), 1);
         tree1.insert(F64::new(20.0), 1);
         tree1.insert(F64::new(30.0), 1);
         op1.trees.insert(1, tree1);
+        op1.tree_ids.insert(1, 0);
 
-        let mut tree2 = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, storage_config.clone());
+        let mut config2 = storage_config.clone();
+        config2.segment_path_prefix = "t1_".to_string();
+        let mut tree2 = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config2);
         tree2.insert(F64::new(100.0), 1);
         tree2.insert(F64::new(200.0), 1);
         op1.trees.insert(2, tree2);
+        op1.tree_ids.insert(2, 1);
+
+        op1.next_tree_id = 2;
 
         // Set some prev_output
         op1.prev_output.insert(1, Some(F64::new(20.0)));
@@ -1043,94 +1100,45 @@ mod tests {
         assert_eq!(op1.trees.get(&1).unwrap().num_keys(), 3);
         assert_eq!(op1.trees.get(&2).unwrap().num_keys(), 2);
 
-        // Convert to checkpointable form using save_leaves (the new reference-based approach)
-        let mut trees: Vec<(i32, CommittedLeafStorage<F64>)> = Vec::new();
-        for (k, tree) in op1.trees.iter_mut() {
-            // Create tree-specific checkpoint file
-            let tree_id = format!("tree_{}", k);
-            let committed_storage = tree
-                .save_leaves(checkpoint_dir, &tree_id)
-                .expect("save_leaves should work");
-            trees.push((*k, committed_storage));
-        }
-
-        let prev_output: Vec<_> = op1
-            .prev_output
-            .iter()
-            .map(|(k, v)| (*k, v.clone()))
-            .collect();
-
-        let committed = CommittedPercentileOperator {
-            trees,
-            prev_output,
-            percentile: op1.percentile.to_bits(),
-            ascending: op1.ascending,
-            branching_factor: DEFAULT_BRANCHING_FACTOR as u32,
-        };
-
-        // Serialize
-        let bytes = to_bytes(&committed).expect("Serializing checkpoint should work");
-
-        // Deserialize
-        let archived =
-            unsafe { rkyv::archived_root::<CommittedPercentileOperator<i32, F64>>(&bytes) };
+        // Checkpoint using the Operator trait method
+        let base = StoragePath::default();
+        let persistent_id = Some("test_op");
+        let mut files: Vec<Arc<dyn FileCommitter>> = Vec::new();
+        op1.checkpoint(&base, persistent_id, &mut files)
+            .expect("checkpoint should work");
 
         // Create a new operator with different initial values (to verify restore overwrites)
         let mut op2: PercentileOperator<i32, F64, ContMode> = PercentileOperator {
             trees: BTreeMap::new(),
+            tree_ids: BTreeMap::new(),
             prev_output: BTreeMap::new(),
             percentile: 0.0, // Different from op1
             ascending: false, // Different from op1
             storage_config: storage_config.clone(),
-            global_id: GlobalNodeId::root(),
+            next_tree_id: 0,
+            global_id: global_id.clone(),
             _mode: std::marker::PhantomData,
         };
 
-        // Restore from archived data
-        let mut deserializer = Deserializer::new(0);
-
-        // Restore trees using the O(num_leaves) approach
-        op2.trees.clear();
-        let branching_factor = archived.branching_factor as usize;
-        for archived_tree in archived.trees.iter() {
-            let key: i32 = rkyv::Deserialize::deserialize(&archived_tree.0, &mut deserializer)
-                .expect("Deserializing key should work");
-
-            let committed_leaf_storage: CommittedLeafStorage<F64> =
-                rkyv::Deserialize::deserialize(&archived_tree.1, &mut deserializer)
-                    .expect("Deserializing CommittedLeafStorage should work");
-
-            // Use O(num_leaves) restore - checkpoint file becomes spill file
-            let tree = OrderStatisticsMultiset::restore_from_committed(
-                committed_leaf_storage,
-                branching_factor,
-                storage_config.clone(),
-            )
-            .expect("restore_from_committed should work");
-            op2.trees.insert(key, tree);
-        }
-
-        // Restore prev_output
-        op2.prev_output.clear();
-        for archived_entry in archived.prev_output.iter() {
-            let key: i32 = rkyv::Deserialize::deserialize(&archived_entry.0, &mut deserializer)
-                .expect("Deserializing prev_output key should work");
-
-            let value: Option<F64> =
-                rkyv::Deserialize::deserialize(&archived_entry.1, &mut deserializer)
-                    .expect("Deserializing prev_output value should work");
-
-            op2.prev_output.insert(key, value);
-        }
-
-        // Restore config
-        op2.percentile = f64::from_bits(archived.percentile);
-        op2.ascending = archived.ascending;
+        // Restore using the Operator trait method
+        op2.restore(&base, persistent_id)
+            .expect("restore should work");
 
         // Verify the restored operator matches the original
         assert_eq!(op2.trees.len(), op1.trees.len());
         assert_eq!(op2.trees.get(&1).unwrap().num_keys(), 3);
         assert_eq!(op2.trees.get(&2).unwrap().num_keys(), 2);
+
+        // verify next_tree_id is restored
+        assert_eq!(op2.next_tree_id, 2, "next_tree_id should be restored");
+
+        // new trees after restore don't collide with restored trees
+        assert!(op2.next_tree_id >= 2, "next_tree_id should be >= 2 to avoid collision");
+
+        // Verify tree_ids are restored
+        assert_eq!(op2.tree_ids.len(), 2);
+        assert_eq!(op2.tree_ids.get(&1), Some(&0));
+        assert_eq!(op2.tree_ids.get(&2), Some(&1));
 
         // Reload evicted leaves before iterating (after restore, leaves are on disk)
         for tree in op2.trees.values_mut() {
@@ -1158,5 +1166,70 @@ mod tests {
         // Verify config
         assert_eq!(op2.percentile, 0.5);
         assert!(op2.ascending);
+    }
+
+    #[test]
+    fn test_clock_end_triggers_flush() {
+        use crate::circuit::{GlobalNodeId, NodeId};
+        use crate::circuit::operator_traits::Operator;
+        use crate::storage::backend::memory_impl::MemoryBackend;
+
+        let backend: Arc<dyn crate::storage::backend::StorageBackend> = Arc::new(
+            MemoryBackend::new(),
+        );
+
+        // Create operator with a very low spill threshold to force flushing
+        let storage_config = NodeStorageConfig {
+            enable_spill: true,
+
+            spill_threshold_bytes: 0, // Force flush on any data
+            target_segment_size: 64 * 1024 * 1024,
+            spill_directory: None,
+            segment_path_prefix: String::new(),
+            storage_backend: Some(backend),
+            buffer_cache: None,
+        };
+
+        let global_id = GlobalNodeId::child(&GlobalNodeId::root(), NodeId::new(99));
+
+        let mut op: PercentileOperator<i32, F64, ContMode> = PercentileOperator {
+            trees: BTreeMap::new(),
+            tree_ids: BTreeMap::new(),
+            prev_output: BTreeMap::new(),
+            percentile: 0.5,
+            ascending: true,
+            storage_config: storage_config.clone(),
+            next_tree_id: 0,
+            global_id: global_id.clone(),
+            _mode: std::marker::PhantomData,
+        };
+
+        // Insert data into trees directly
+        let mut config1 = storage_config.clone();
+        config1.segment_path_prefix = "t0_".to_string();
+        let mut tree1 = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config1);
+        for i in 0..200 {
+            tree1.insert(F64::new(i as f64), 1);
+        }
+        op.trees.insert(1, tree1);
+        op.tree_ids.insert(1, 0);
+        op.next_tree_id = 1;
+
+        // Verify no evicted leaves before clock_end
+        let evicted_before: usize = op.trees.values().map(|t| t.evicted_leaf_count()).sum();
+        assert_eq!(evicted_before, 0);
+
+        // Call clock_end - should trigger flush and eviction
+        op.clock_end(0);
+
+        // After clock_end, some leaves should be evicted
+        let evicted_after: usize = op.trees.values().map(|t| t.evicted_leaf_count()).sum();
+        assert!(evicted_after > 0, "clock_end should trigger eviction");
+
+        // Verify tree still works correctly after eviction
+        // (select_kth transparently reloads evicted leaves)
+        let tree = op.trees.get_mut(&1).unwrap();
+        assert_eq!(tree.select_kth(0, true), Some(&F64::new(0.0)));
+        assert_eq!(tree.select_kth(199, true), Some(&F64::new(199.0)));
     }
 }
