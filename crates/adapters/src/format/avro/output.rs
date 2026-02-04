@@ -694,7 +694,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
         };
 
         let mut value_buffer = vec![0u8; 5];
-        let mut key_buffer = vec![0u8; 5];
+        let mut key_buffer = [0u8; 5];
 
         if !config.skip_schema_id {
             value_buffer[1..].clone_from_slice(&value_schema_id.to_be_bytes());
@@ -836,7 +836,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                     key_avro_schema: key_avro_schema.clone(),
                     value_buffer: vec![0u8; 5],
                     key_buffer: vec![0u8; 5],
-                    skip_schema_id: skip_schema_id,
+                    skip_schema_id,
                     update_format: update_format.clone(),
                     cdc_field: cdc_field.clone(),
                     value_avro_schema_with_cdc: value_avro_schema_with_cdc.clone(),
