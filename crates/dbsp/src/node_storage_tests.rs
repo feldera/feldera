@@ -6,8 +6,6 @@
 mod tests {
     use std::sync::Arc;
 
-    use rkyv::Deserialize;
-
     use crate::{
         node_storage::CachedLeafNode,
         storage::buffer_cache::{BufferCache, CacheEntry},
@@ -17,12 +15,28 @@ mod tests {
         InternalNodeTyped, LeafNode, OsmNodeStorage,
     };
     use crate::node_storage::{
-        DATA_BLOCK_HEADER_SIZE, FILE_HEADER_SIZE, FileFormatError, FileHeader, LeafFile,
-        verify_data_block_header,
+        storage_path_to_fs_path, LeafLocation, NodeLocation, NodeRef, NodeStorage,
+        NodeStorageConfig, ZWeight,
     };
-    use crate::node_storage::{
-        LeafLocation, NodeLocation, NodeRef, NodeStorage, NodeStorageConfig, ZWeight,
-    };
+    use crate::storage::backend::memory_impl::MemoryBackend;
+
+    /// Helper to create a test config with an in-memory storage backend.
+    ///
+    /// This is required since flush_dirty_to_disk requires a StorageBackend.
+    fn test_config_with_storage(threshold_bytes: usize) -> (NodeStorageConfig, Arc<MemoryBackend>) {
+        let backend = Arc::new(MemoryBackend::new());
+        let config = NodeStorageConfig {
+            enable_spill: true,
+
+            spill_threshold_bytes: threshold_bytes,
+            target_segment_size: 64 * 1024 * 1024,
+            spill_directory: None,
+            segment_path_prefix: String::new(),
+            storage_backend: Some(backend.clone()),
+            buffer_cache: None,
+        };
+        (config, backend)
+    }
 
     #[test]
     fn test_storage_empty() {
@@ -424,397 +438,31 @@ mod tests {
     }
 
     // =========================================================================
-    // Phase 4: LeafFile Disk I/O Tests
+    // NodeStorage Disk Spilling Tests
     // =========================================================================
 
     #[test]
-    fn test_leaf_file_create_and_write() {
+    fn test_flush_dirty_to_disk_empty_old_api() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_leaves.osm");
-
-        let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::create(&path).unwrap();
-
-        // Write a leaf
-        let leaf = LeafNode {
-            entries: vec![(10, 1), (20, 2), (30, 3)],
-            next_leaf: None,
-        };
-        let location = leaf_file.write_leaf(0, &leaf).unwrap();
-
-        assert!(location.offset > 0);
-        assert!(location.size > 0);
-        assert_eq!(leaf_file.num_leaves(), 1);
-        assert!(leaf_file.contains(0));
-    }
-
-    #[test]
-    fn test_leaf_file_header_roundtrip() {
-        use std::io::Read as _;
-
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_header.osm");
-
-        // Create and finalize a leaf file
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::create(&path).unwrap();
-            let leaf = LeafNode {
-                entries: vec![(10, 1)],
-                next_leaf: None,
-            };
-            leaf_file.write_leaf(0, &leaf).unwrap();
-            leaf_file.finalize().unwrap();
-        }
-
-        // Read raw header bytes
-        let mut file = std::fs::File::open(&path).unwrap();
-        let mut header_bytes = [0u8; FILE_HEADER_SIZE];
-        file.read_exact(&mut header_bytes).unwrap();
-
-        // Manually verify checksum
-        let stored_checksum = u32::from_le_bytes(header_bytes[0..4].try_into().unwrap());
-        let computed_checksum = crc32c::crc32c(&header_bytes[4..]);
-
-        eprintln!("Stored checksum: {}", stored_checksum);
-        eprintln!("Computed checksum: {}", computed_checksum);
-        eprintln!("Magic bytes: {:?}", &header_bytes[4..8]);
-
-        assert_eq!(
-            stored_checksum, computed_checksum,
-            "Header checksum mismatch"
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
         );
-
-        // Also verify with from_bytes
-        let header = FileHeader::from_bytes(&header_bytes).unwrap();
-        assert_eq!(header.num_leaves, 1);
-    }
-
-    #[test]
-    fn test_leaf_node_rkyv_roundtrip() {
-        // Test rkyv serialization/deserialization directly without file I/O
-        let original = LeafNode {
-            entries: vec![(10i32, 1i64), (20, 2), (30, 3)],
-            next_leaf: None,
-        };
-
-        // Serialize
-        let bytes = rkyv::to_bytes::<_, 4096>(&original).unwrap();
-        eprintln!("Serialized {} bytes", bytes.len());
-
-        // Deserialize
-        let archived = unsafe { rkyv::archived_root::<LeafNode<i32>>(&bytes) };
-        let restored: LeafNode<i32> = archived.deserialize(&mut rkyv::Infallible).unwrap();
-
-        // Verify
-        assert_eq!(restored.entries.len(), 3, "entries len mismatch");
-        assert_eq!(restored.entries[0], (10, 1));
-        assert_eq!(restored.entries[1], (20, 2));
-        assert_eq!(restored.entries[2], (30, 3));
-        assert_eq!(restored.next_leaf, None);
-    }
-
-    #[test]
-    fn test_leaf_file_debug_write_read() {
-        use std::io::{Read as _, Seek as _};
-
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_debug.osm");
-
-        let original = LeafNode {
-            entries: vec![(10i32, 1i64), (20, 2)],
-            next_leaf: None,
-        };
-
-        // Write using LeafFile
-        let location = {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::create(&path).unwrap();
-            let loc = leaf_file.write_leaf(0, &original).unwrap();
-            eprintln!("Wrote leaf at offset {}, size {}", loc.offset, loc.size);
-            leaf_file.finalize().unwrap();
-            loc
-        };
-
-        // Read the raw data block manually
-        {
-            let mut file = std::fs::File::open(&path).unwrap();
-
-            // Seek to the data block
-            file.seek(std::io::SeekFrom::Start(location.offset))
-                .unwrap();
-
-            // Read the block
-            let mut block = vec![0u8; location.size as usize];
-            file.read_exact(&mut block).unwrap();
-
-            eprintln!("Block first 32 bytes: {:?}", &block[0..32.min(block.len())]);
-
-            // Verify header and get data_len
-            let (_leaf_id, data_len) = verify_data_block_header(&block).unwrap();
-            eprintln!("Extracted data_len from header: {}", data_len);
-
-            // Extract only the actual serialized data (without padding)
-            let data = &block[DATA_BLOCK_HEADER_SIZE..DATA_BLOCK_HEADER_SIZE + data_len as usize];
-            eprintln!("Data section len: {}", data.len());
-            eprintln!("Data first 32 bytes: {:?}", &data[0..32.min(data.len())]);
-
-            // Try to deserialize directly from data
-            let archived = unsafe { rkyv::archived_root::<LeafNode<i32>>(data) };
-            let restored: LeafNode<i32> = archived.deserialize(&mut rkyv::Infallible).unwrap();
-
-            eprintln!("Restored entries: {:?}", restored.entries);
-            assert_eq!(
-                restored.entries.len(),
-                2,
-                "Manual read: entries len mismatch"
-            );
-        }
-
-        // Read using LeafFile
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::open(&path).unwrap();
-            let loaded = leaf_file.load_leaf(0).unwrap();
-            eprintln!("Loaded via LeafFile entries: {:?}", loaded.entries);
-            assert_eq!(
-                loaded.entries.len(),
-                2,
-                "LeafFile read: entries len mismatch"
-            );
-        }
-    }
-
-    #[test]
-    fn test_leaf_file_write_and_read() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_leaves.osm");
-
-        // Write
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::create(&path).unwrap();
-
-            let leaf1 = LeafNode {
-                entries: vec![(10, 1), (20, 2)],
-                next_leaf: None,
-            };
-            leaf_file.write_leaf(0, &leaf1).unwrap();
-
-            let leaf2 = LeafNode {
-                entries: vec![(30, 3), (40, 4), (50, 5)],
-                next_leaf: None,
-            };
-            leaf_file.write_leaf(1, &leaf2).unwrap();
-
-            leaf_file.finalize().unwrap();
-        }
-
-        // Read
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::open(&path).unwrap();
-
-            assert_eq!(leaf_file.num_leaves(), 2);
-
-            let loaded1 = leaf_file.load_leaf(0).unwrap();
-            assert_eq!(loaded1.entries.len(), 2);
-            assert_eq!(loaded1.entries[0], (10, 1));
-            assert_eq!(loaded1.entries[1], (20, 2));
-
-            let loaded2 = leaf_file.load_leaf(1).unwrap();
-            assert_eq!(loaded2.entries.len(), 3);
-            assert_eq!(loaded2.entries[0], (30, 3));
-            assert_eq!(loaded2.total_weight(), 12);
-        }
-    }
-
-    #[test]
-    fn test_leaf_file_many_leaves() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_many_leaves.osm");
-
-        // Write many leaves
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::create(&path).unwrap();
-
-            for i in 0..100 {
-                let leaf = LeafNode {
-                    entries: vec![(i * 10, 1), (i * 10 + 1, 2)],
-                    next_leaf: None,
-                };
-                leaf_file.write_leaf(i as u64, &leaf).unwrap();
-            }
-
-            leaf_file.finalize().unwrap();
-        }
-
-        // Read and verify
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::open(&path).unwrap();
-
-            assert_eq!(leaf_file.num_leaves(), 100);
-
-            // Spot check some leaves
-            for i in [0, 25, 50, 75, 99] {
-                let loaded = leaf_file.load_leaf(i as u64).unwrap();
-                assert_eq!(loaded.entries[0].0, i * 10);
-            }
-        }
-    }
-
-    #[test]
-    fn test_leaf_file_string_keys() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_string_leaves.osm");
-
-        // Write
-        {
-            let mut leaf_file: LeafFile<LeafNode<String>> = LeafFile::create(&path).unwrap();
-
-            let leaf = LeafNode {
-                entries: vec![
-                    ("apple".to_string(), 5),
-                    ("banana".to_string(), 3),
-                    ("cherry".to_string(), 7),
-                ],
-                next_leaf: None,
-            };
-            leaf_file.write_leaf(0, &leaf).unwrap();
-            leaf_file.finalize().unwrap();
-        }
-
-        // Read
-        {
-            let mut leaf_file: LeafFile<LeafNode<String>> = LeafFile::open(&path).unwrap();
-
-            let loaded = leaf_file.load_leaf(0).unwrap();
-            assert_eq!(loaded.entries.len(), 3);
-            assert_eq!(loaded.entries[0].0, "apple");
-            assert_eq!(loaded.entries[1].0, "banana");
-            assert_eq!(loaded.entries[2].0, "cherry");
-            assert_eq!(loaded.total_weight(), 15);
-        }
-    }
-
-    #[test]
-    fn test_leaf_file_empty() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_empty.osm");
-
-        // Create and finalize empty file
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::create(&path).unwrap();
-            leaf_file.finalize().unwrap();
-        }
-
-        // Open and verify
-        {
-            let leaf_file: LeafFile<LeafNode<i32>> = LeafFile::open(&path).unwrap();
-            assert_eq!(leaf_file.num_leaves(), 0);
-            assert!(leaf_file.index().is_empty());
-        }
-    }
-
-    #[test]
-    fn test_leaf_file_not_found() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_not_found.osm");
-
-        // Write one leaf
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::create(&path).unwrap();
-            let leaf = LeafNode {
-                entries: vec![(10, 1)],
-                next_leaf: None,
-            };
-            leaf_file.write_leaf(0, &leaf).unwrap();
-            leaf_file.finalize().unwrap();
-        }
-
-        // Try to load non-existent leaf
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::open(&path).unwrap();
-            let result = leaf_file.load_leaf(999);
-            assert!(matches!(
-                result,
-                Err(FileFormatError::BlockNotFound { leaf_id: 999 })
-            ));
-        }
-    }
-
-    #[test]
-    fn test_leaf_file_large_leaf() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_large_leaf.osm");
-
-        // Create a large leaf (many entries)
-        let mut entries = Vec::new();
-        for i in 0..1000 {
-            entries.push((i, (i % 10 + 1) as ZWeight));
-        }
-
-        // Write
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::create(&path).unwrap();
-            let leaf = LeafNode {
-                entries: entries.clone(),
-                next_leaf: None,
-            };
-            leaf_file.write_leaf(0, &leaf).unwrap();
-            leaf_file.finalize().unwrap();
-        }
-
-        // Read and verify
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::open(&path).unwrap();
-            let loaded = leaf_file.load_leaf(0).unwrap();
-            assert_eq!(loaded.entries.len(), 1000);
-            assert_eq!(loaded.entries, entries);
-        }
-    }
-
-    #[test]
-    fn test_leaf_file_negative_weights() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_negative.osm");
-
-        // Write leaf with negative weights
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::create(&path).unwrap();
-            let leaf = LeafNode {
-                entries: vec![(10, 5), (20, -3), (30, 2)],
-                next_leaf: None,
-            };
-            leaf_file.write_leaf(0, &leaf).unwrap();
-            leaf_file.finalize().unwrap();
-        }
-
-        // Read and verify
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::open(&path).unwrap();
-            let loaded = leaf_file.load_leaf(0).unwrap();
-            assert_eq!(loaded.entries[1].1, -3);
-            assert_eq!(loaded.total_weight(), 4);
-        }
-    }
-
-    // =========================================================================
-    // NodeStorage + LeafFile Integration Tests
-    // =========================================================================
-
-    #[test]
-    fn test_flush_dirty_to_disk_empty() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_empty_flush.osm");
-
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Flushing empty storage should succeed with 0 leaves written
-        let count = storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        let count = storage.flush_dirty_to_disk().unwrap();
         assert_eq!(count, 0);
     }
 
     #[test]
-    fn test_flush_dirty_to_disk_basic() {
+    fn test_flush_dirty_to_disk_basic_old_api() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_flush_basic.osm");
-
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add some leaves
         let leaf1 = LeafNode {
@@ -834,7 +482,7 @@ mod tests {
         assert!(storage.dirty_bytes() > 0);
 
         // Flush to disk
-        let count = storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        let count = storage.flush_dirty_to_disk().unwrap();
         assert_eq!(count, 2);
 
         // Verify clean state
@@ -850,56 +498,54 @@ mod tests {
 
     #[test]
     fn test_flush_and_reload() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_flush_reload.osm");
+        let (config, _backend) = test_config_with_storage(1024);
 
         let original_entries1 = vec![(100i32, 10i64), (200, 20), (300, 30)];
         let original_entries2 = vec![(400, 40), (500, 50)];
 
         // Create and flush storage
-        {
-            let mut storage: OsmNodeStorage<i32> =
-                NodeStorage::with_config(NodeStorageConfig::with_spill_directory(1024, dir.path()));
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
-            let leaf1 = LeafNode {
-                entries: original_entries1.clone(),
-                next_leaf: None,
-            };
-            let leaf2 = LeafNode {
-                entries: original_entries2.clone(),
-                next_leaf: None,
-            };
+        let leaf1 = LeafNode {
+            entries: original_entries1.clone(),
+            next_leaf: None,
+        };
+        let leaf2 = LeafNode {
+            entries: original_entries2.clone(),
+            next_leaf: None,
+        };
 
-            storage.alloc_leaf(leaf1);
-            storage.alloc_leaf(leaf2);
+        let loc1 = storage.alloc_leaf(leaf1);
+        let loc2 = storage.alloc_leaf(leaf2);
 
-            storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        // Flush to disk
+        storage.flush_dirty_to_disk().unwrap();
+        assert_eq!(storage.segment_count(), 1);
 
-            // Take ownership of the spill file to prevent auto-cleanup on drop
-            let _ = storage.take_spill_file();
-        }
+        // Evict leaves from memory
+        let (evicted, _) = storage.evict_clean_leaves();
+        assert_eq!(evicted, 2);
 
-        // Read back using LeafFile directly
-        {
-            let mut leaf_file: LeafFile<LeafNode<i32>> = LeafFile::open(&path).unwrap();
+        // Load leaves back from disk and verify contents
+        let leaf_loc1 = loc1.as_leaf().unwrap();
+        let loaded1 = storage.load_leaf_from_disk(leaf_loc1).unwrap();
+        assert_eq!(loaded1.entries, original_entries1);
 
-            let loaded1 = leaf_file.load_leaf(0).unwrap();
-            assert_eq!(loaded1.entries, original_entries1);
-
-            let loaded2 = leaf_file.load_leaf(1).unwrap();
-            assert_eq!(loaded2.entries, original_entries2);
-        }
+        let leaf_loc2 = loc2.as_leaf().unwrap();
+        let loaded2 = storage.load_leaf_from_disk(leaf_loc2).unwrap();
+        assert_eq!(loaded2.entries, original_entries2);
     }
 
     #[test]
     fn test_threshold_check_triggers_flush() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_threshold.osm");
 
-        // Very low threshold to trigger easily
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(
-            NodeStorageConfig::with_threshold(100), // 100 bytes threshold
+        // Very low threshold to trigger easily (100 bytes threshold)
+        let config = NodeStorageConfig::with_spill_directory(
+            100,
+            dir.path().to_string_lossy().as_ref(),
         );
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add a leaf that exceeds threshold
         let leaf = LeafNode {
@@ -921,7 +567,7 @@ mod tests {
         assert!(storage.should_flush());
 
         // Flush
-        let count = storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        let count = storage.flush_dirty_to_disk().unwrap();
         assert_eq!(count, 1);
 
         // Should no longer need flush
@@ -994,11 +640,13 @@ mod tests {
     }
 
     #[test]
-    fn test_cleanup_spill_file() {
+    fn test_cleanup_segments() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_cleanup.osm");
-
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         let leaf = LeafNode {
             entries: vec![(10, 1)],
@@ -1007,22 +655,31 @@ mod tests {
         storage.alloc_leaf(leaf);
 
         // Flush
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
-        assert!(path.exists());
+        storage.flush_dirty_to_disk().unwrap();
+        assert_eq!(storage.segment_count(), 1);
+
+        // Get segment path for verification - pass the backend for correct path resolution
+        let segment_path = storage_path_to_fs_path(
+            &storage.segments()[0].path,
+            storage.config_ref().storage_backend.as_deref(),
+        );
+        assert!(segment_path.exists());
 
         // Cleanup
-        storage.cleanup_spill_file().unwrap();
-        assert!(!path.exists());
-        assert!(storage.spill_file_path().is_none());
+        storage.cleanup_segments().unwrap();
+        assert!(!segment_path.exists());
+        assert_eq!(storage.segment_count(), 0);
         assert_eq!(storage.spilled_leaf_count(), 0);
     }
 
     #[test]
     fn test_incremental_flush() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_incremental.osm");
-
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add first leaf
         let leaf1 = LeafNode {
@@ -1031,10 +688,11 @@ mod tests {
         };
         storage.alloc_leaf(leaf1);
 
-        // Flush first batch
-        let count1 = storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        // Flush first batch - creates first segment
+        let count1 = storage.flush_dirty_to_disk().unwrap();
         assert_eq!(count1, 1);
         assert_eq!(storage.dirty_leaf_count(), 0);
+        assert_eq!(storage.segment_count(), 1);
 
         // Add second leaf
         let leaf2 = LeafNode {
@@ -1046,10 +704,10 @@ mod tests {
         // Only new leaf is dirty
         assert_eq!(storage.dirty_leaf_count(), 1);
 
-        // Flush second batch (this creates a new file - leaves from first flush are lost)
-        // In a real system, we'd append or use a different strategy
-        let count2 = storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        // Flush second batch - creates second segment
+        let count2 = storage.flush_dirty_to_disk().unwrap();
         assert_eq!(count2, 1);
+        assert_eq!(storage.segment_count(), 2);
 
         // Stats show total leaves written
         assert_eq!(storage.stats().leaves_written, 2);
@@ -1058,11 +716,14 @@ mod tests {
     #[test]
     fn test_load_leaf_from_disk() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_load.osm");
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
         let original_entries = vec![(111i32, 11i64), (222, 22), (333, 33)];
 
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add leaf
         let leaf = LeafNode {
@@ -1072,7 +733,7 @@ mod tests {
         let loc = storage.alloc_leaf(leaf);
 
         // Flush to disk
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        storage.flush_dirty_to_disk().unwrap();
 
         // Load from disk (even though it's still in memory, this tests the path)
         if let NodeLocation::Leaf(leaf_loc) = loc {
@@ -1090,9 +751,12 @@ mod tests {
     #[test]
     fn test_evict_clean_leaves_basic() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_evict.osm");
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add leaves
         let leaf1 = LeafNode {
@@ -1112,7 +776,7 @@ mod tests {
         assert_eq!(storage.evicted_leaf_count(), 0);
 
         // Flush to disk
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        storage.flush_dirty_to_disk().unwrap();
 
         // Still all in memory (flush doesn't evict)
         assert_eq!(storage.in_memory_leaf_count(), 2);
@@ -1134,9 +798,12 @@ mod tests {
     #[test]
     fn test_evict_does_not_affect_dirty_leaves() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_evict_dirty.osm");
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add leaves
         let leaf1 = LeafNode {
@@ -1152,7 +819,7 @@ mod tests {
         storage.alloc_leaf(leaf2);
 
         // Flush both to disk
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        storage.flush_dirty_to_disk().unwrap();
 
         // Now modify leaf1 (making it dirty again)
         if let NodeLocation::Leaf(leaf_loc) = loc1 {
@@ -1177,9 +844,12 @@ mod tests {
     #[test]
     fn test_evict_does_not_affect_non_spilled_leaves() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_evict_nonspilled.osm");
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add first leaf
         let leaf1 = LeafNode {
@@ -1189,7 +859,7 @@ mod tests {
         storage.alloc_leaf(leaf1);
 
         // Flush leaf1 to disk
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        storage.flush_dirty_to_disk().unwrap();
 
         // Add second leaf (not yet spilled)
         let leaf2 = LeafNode {
@@ -1214,11 +884,14 @@ mod tests {
     #[test]
     fn test_reload_evicted_leaf() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_reload.osm");
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
         let original_entries = vec![(10i32, 1i64), (20, 2), (30, 3)];
 
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add leaf
         let leaf = LeafNode {
@@ -1228,7 +901,7 @@ mod tests {
         let loc = storage.alloc_leaf(leaf);
 
         // Flush and evict
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        storage.flush_dirty_to_disk().unwrap();
         let (evicted, _) = storage.evict_clean_leaves();
         assert_eq!(evicted, 1);
 
@@ -1252,9 +925,12 @@ mod tests {
     #[test]
     fn test_reload_evicted_leaves_bulk() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_reload_bulk.osm");
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add multiple leaves
         for i in 0..5 {
@@ -1266,7 +942,7 @@ mod tests {
         }
 
         // Flush and evict all
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        storage.flush_dirty_to_disk().unwrap();
         let (evicted, bytes_freed) = storage.evict_clean_leaves();
         assert_eq!(evicted, 5);
         assert!(bytes_freed > 0);
@@ -1289,9 +965,12 @@ mod tests {
     #[test]
     fn test_eviction_memory_stats() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_evict_stats.osm");
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add a leaf
         let leaf = LeafNode {
@@ -1304,7 +983,7 @@ mod tests {
         assert!(memory_before > 0);
 
         // Flush and evict
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        storage.flush_dirty_to_disk().unwrap();
         let (_, bytes_freed) = storage.evict_clean_leaves();
 
         let memory_after = storage.stats().memory_bytes;
@@ -1318,9 +997,12 @@ mod tests {
     #[test]
     fn test_cache_hit_miss_stats() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_cache_stats.osm");
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add leaf
         let leaf = LeafNode {
@@ -1330,7 +1012,7 @@ mod tests {
         let loc = storage.alloc_leaf(leaf);
 
         // Flush and evict
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        storage.flush_dirty_to_disk().unwrap();
         storage.evict_clean_leaves();
 
         // Initial stats
@@ -1399,9 +1081,11 @@ mod tests {
         // Create config with BufferCache
         let config = NodeStorageConfig {
             enable_spill: true,
-            max_spillable_level: 0,           // Default: only leaves
+
             spill_threshold_bytes: 64 * 1024, // 64KB
+            target_segment_size: 64 * 1024 * 1024, // 64MB
             spill_directory: None,
+            segment_path_prefix: String::new(),
             storage_backend: None,
             buffer_cache: Some(buffer_cache.clone()),
         };
@@ -1414,21 +1098,12 @@ mod tests {
     }
 
     #[test]
-    fn test_flush_records_block_locations() {
+    fn test_flush_records_disk_locations() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_block_locs.osm");
-
-        // Create BufferCache
-        let buffer_cache = Arc::new(BufferCache::new(1024 * 1024));
-
-        let config = NodeStorageConfig {
-            enable_spill: true,
-            max_spillable_level: 0,
-            spill_threshold_bytes: 64 * 1024,
-            spill_directory: None,
-            storage_backend: None,
-            buffer_cache: Some(buffer_cache),
-        };
+        let config = NodeStorageConfig::with_spill_directory(
+            64 * 1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
@@ -1442,39 +1117,28 @@ mod tests {
         }
 
         // Flush to disk
-        let count = storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        let count = storage.flush_dirty_to_disk().unwrap();
         assert_eq!(count, 5);
 
-        // Block locations should be recorded
-        assert_eq!(storage.leaf_block_locations.len(), 5);
+        // Disk locations should be recorded
+        assert_eq!(storage.leaves_in_segments(), 5);
 
-        // Verify each leaf has a block location
+        // Verify each leaf has a disk location
         for i in 0..5 {
-            assert!(storage.leaf_block_locations.contains_key(&i));
-            let &(offset, size) = storage.leaf_block_locations.get(&i).unwrap();
-            assert!(offset > 0); // After file header
-            assert!(size > 0); // Non-empty
+            assert!(storage.leaf_has_segment_location(i));
         }
 
-        // FileId should be assigned
-        assert!(storage.spill_file_id.is_some());
+        // Segments should be created
+        assert_eq!(storage.segment_count(), 1);
     }
 
     #[test]
-    fn test_cleanup_clears_block_locations() {
+    fn test_cleanup_clears_disk_locations() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_cleanup_locs.osm");
-
-        let buffer_cache = Arc::new(BufferCache::new(1024 * 1024));
-
-        let config = NodeStorageConfig {
-            enable_spill: true,
-            max_spillable_level: 0,
-            spill_threshold_bytes: 64 * 1024,
-            spill_directory: None,
-            storage_backend: None,
-            buffer_cache: Some(buffer_cache),
-        };
+        let config = NodeStorageConfig::with_spill_directory(
+            64 * 1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
@@ -1484,35 +1148,27 @@ mod tests {
             next_leaf: None,
         };
         storage.alloc_leaf(leaf);
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        storage.flush_dirty_to_disk().unwrap();
 
         // Verify locations are recorded
-        assert!(!storage.leaf_block_locations.is_empty());
-        assert!(storage.spill_file_id.is_some());
+        assert!(storage.leaves_in_segments() > 0);
+        assert_eq!(storage.segment_count(), 1);
 
         // Cleanup
-        storage.cleanup_spill_file().unwrap();
+        storage.cleanup_segments().unwrap();
 
         // All tracking data should be cleared
-        assert!(storage.leaf_block_locations.is_empty());
-        assert!(storage.spill_file_id.is_none());
+        assert_eq!(storage.leaves_in_segments(), 0);
+        assert_eq!(storage.segment_count(), 0);
     }
 
     #[test]
-    fn test_evict_and_reload_with_buffer_cache() {
+    fn test_evict_and_reload_from_segment() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_cache_reload.osm");
-
-        let buffer_cache = Arc::new(BufferCache::new(1024 * 1024));
-
-        let config = NodeStorageConfig {
-            enable_spill: true,
-            max_spillable_level: 0,
-            spill_threshold_bytes: 64 * 1024,
-            spill_directory: None,
-            storage_backend: None,
-            buffer_cache: Some(buffer_cache),
-        };
+        let config = NodeStorageConfig::with_spill_directory(
+            64 * 1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
@@ -1526,7 +1182,7 @@ mod tests {
         let loc = storage.alloc_leaf(leaf);
 
         // Flush to disk
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        storage.flush_dirty_to_disk().unwrap();
 
         // Evict the leaf
         let (evicted, _) = storage.evict_clean_leaves();
@@ -1537,7 +1193,7 @@ mod tests {
             assert!(storage.is_leaf_evicted(leaf_loc));
         }
 
-        // Reload - this will insert into BufferCache for future lookups
+        // Reload from segment
         if let NodeLocation::Leaf(leaf_loc) = loc {
             let loaded = storage.get_leaf_reloading(leaf_loc);
             assert_eq!(loaded.entries, original_entries);
@@ -1546,27 +1202,17 @@ mod tests {
             assert!(!storage.is_leaf_evicted(leaf_loc));
         }
 
-        // The leaf data was loaded from disk and should have been
-        // inserted into the BufferCache (even though we can't verify
-        // the cache directly, we can verify it didn't error)
-        assert!(storage.leaf_block_locations.contains_key(&0));
+        // The leaf should have a segment location
+        assert!(storage.leaf_has_segment_location(0));
     }
 
     #[test]
-    fn test_multiple_flushes_update_block_locations() {
+    fn test_multiple_flushes_create_segments() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_multi_flush.osm");
-
-        let buffer_cache = Arc::new(BufferCache::new(1024 * 1024));
-
-        let config = NodeStorageConfig {
-            enable_spill: true,
-            max_spillable_level: 0,
-            spill_threshold_bytes: 64 * 1024,
-            spill_directory: None,
-            storage_backend: None,
-            buffer_cache: Some(buffer_cache),
-        };
+        let config = NodeStorageConfig::with_spill_directory(
+            64 * 1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
@@ -1579,9 +1225,10 @@ mod tests {
             storage.alloc_leaf(leaf);
         }
 
-        // First flush
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
-        assert_eq!(storage.leaf_block_locations.len(), 3);
+        // First flush - creates first segment
+        storage.flush_dirty_to_disk().unwrap();
+        assert_eq!(storage.segment_count(), 1);
+        assert_eq!(storage.leaves_in_segments(), 3);
 
         // Add more leaves
         for i in 3..6 {
@@ -1592,14 +1239,14 @@ mod tests {
             storage.alloc_leaf(leaf);
         }
 
-        // Second flush - existing leaves are skipped (not dirty), new ones written
-        // Note: This actually appends to the same file
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
-        assert_eq!(storage.leaf_block_locations.len(), 6);
+        // Second flush - creates second segment
+        storage.flush_dirty_to_disk().unwrap();
+        assert_eq!(storage.segment_count(), 2);
+        assert_eq!(storage.leaves_in_segments(), 6);
 
         // All leaves should have locations
         for i in 0..6 {
-            assert!(storage.leaf_block_locations.contains_key(&i));
+            assert!(storage.leaf_has_segment_location(i));
         }
     }
 
@@ -1610,9 +1257,12 @@ mod tests {
     #[test]
     fn test_prepare_checkpoint_preserves_runtime_state() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_checkpoint_resume.osm");
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add leaves
         let leaf1 = LeafNode {
@@ -1626,25 +1276,25 @@ mod tests {
         let loc1 = storage.alloc_leaf(leaf1);
         let loc2 = storage.alloc_leaf(leaf2);
 
-        // Flush to disk first (sets up spill file)
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        // Flush to disk first (creates segment)
+        storage.flush_dirty_to_disk().unwrap();
 
-        // Verify spill file exists
-        assert!(storage.spill_file_path().is_some());
+        // Verify segment exists
+        assert!(storage.segment_count() > 0);
 
         // Prepare checkpoint - this should NOT invalidate runtime state
         let metadata = storage.prepare_checkpoint().unwrap();
 
-        // Verify runtime state is preserved (spill_file_path NOT cleared)
+        // Verify runtime state is preserved (segments NOT cleared)
         assert!(
-            storage.spill_file_path().is_some(),
-            "spill_file_path should be preserved after prepare_checkpoint"
+            storage.segment_count() > 0,
+            "segments should be preserved after prepare_checkpoint"
         );
 
         // Verify metadata is correct
         assert_eq!(metadata.num_leaves, 2);
         assert_eq!(metadata.leaf_summaries.len(), 2);
-        assert_eq!(metadata.leaf_block_locations.len(), 2);
+        assert_eq!(metadata.segment_metadata.len(), 1);
 
         // Verify leaf summaries
         let summary1 = &metadata.leaf_summaries[0];
@@ -1670,9 +1320,12 @@ mod tests {
     #[test]
     fn test_prepare_checkpoint_runtime_can_continue_writing() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_checkpoint_continue.osm");
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add initial leaves
         let leaf1 = LeafNode {
@@ -1682,7 +1335,7 @@ mod tests {
         storage.alloc_leaf(leaf1);
 
         // Flush to disk
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        storage.flush_dirty_to_disk().unwrap();
 
         // Prepare checkpoint
         let metadata1 = storage.prepare_checkpoint().unwrap();
@@ -1700,8 +1353,8 @@ mod tests {
         assert!(retrieved.is_leaf());
         assert_eq!(retrieved.leaf_total_weight(), Some(2));
 
-        // Flush the new leaf (using existing spill file path)
-        let count = storage.flush_dirty_to_disk(Option::<&std::path::Path>::None).unwrap();
+        // Flush the new leaf (to existing segment directory)
+        let count = storage.flush_dirty_to_disk().unwrap();
         assert_eq!(count, 1);
 
         // Prepare another checkpoint - should include both leaves now
@@ -1712,9 +1365,12 @@ mod tests {
     #[test]
     fn test_prepare_checkpoint_with_evicted_leaves() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_checkpoint_evicted.osm");
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
 
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add leaves
         let leaf1 = LeafNode {
@@ -1729,7 +1385,7 @@ mod tests {
         storage.alloc_leaf(leaf2);
 
         // Flush and evict
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
+        storage.flush_dirty_to_disk().unwrap();
         let (evicted_count, _) = storage.evict_clean_leaves();
         assert_eq!(evicted_count, 2);
 
@@ -1754,29 +1410,319 @@ mod tests {
         assert_eq!(summary2.entry_count, 1);
     }
 
+    // =========================================================================
+    // Segment-Based Storage Tests (Phase 2)
+    // =========================================================================
+
     #[test]
-    fn test_take_spill_file_invalidates_runtime() {
+    fn test_segment_storage_initial_state() {
+        let storage: OsmNodeStorage<i32> = NodeStorage::new();
+
+        // Initially no segments
+        assert_eq!(storage.segment_count(), 0);
+        assert!(!storage.has_pending_segment());
+        assert_eq!(storage.next_segment_id(), 0);
+        assert!(!storage.uses_segment_storage());
+        assert_eq!(storage.leaves_in_segments(), 0);
+    }
+
+    #[test]
+    fn test_flush_dirty_to_disk_empty() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_take_invalidates.osm");
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
-        let mut storage: OsmNodeStorage<i32> = NodeStorage::new();
+        // Flushing empty storage should return 0
+        let count = storage.flush_dirty_to_disk().unwrap();
+        assert_eq!(count, 0);
+        assert_eq!(storage.segment_count(), 0);
+    }
 
+    #[test]
+    fn test_flush_dirty_to_disk_single_leaf() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
+
+        // Add a leaf
         let leaf = LeafNode {
+            entries: vec![(10, 1), (20, 2), (30, 3)],
+            next_leaf: None,
+        };
+        let loc = storage.alloc_leaf(leaf);
+        assert!(storage.has_dirty_nodes());
+
+        // Flush to segment
+        let count = storage.flush_dirty_to_disk().unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(storage.segment_count(), 1);
+        assert!(storage.uses_segment_storage());
+        assert_eq!(storage.leaves_in_segments(), 1);
+        assert!(storage.leaf_has_segment_location(loc.as_leaf().unwrap().id));
+
+        // No more dirty leaves
+        assert!(!storage.has_dirty_nodes() || storage.dirty_leaf_count() == 0);
+    }
+
+    #[test]
+    fn test_flush_dirty_to_disk_multiple_leaves() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
+
+        // Add multiple leaves
+        let leaf1 = LeafNode {
+            entries: vec![(10, 1), (20, 2)],
+            next_leaf: None,
+        };
+        let leaf2 = LeafNode {
+            entries: vec![(100, 10), (200, 20)],
+            next_leaf: None,
+        };
+        let leaf3 = LeafNode {
+            entries: vec![(1000, 100)],
+            next_leaf: None,
+        };
+        let loc1 = storage.alloc_leaf(leaf1);
+        let loc2 = storage.alloc_leaf(leaf2);
+        let loc3 = storage.alloc_leaf(leaf3);
+
+        // Flush all to one segment
+        let count = storage.flush_dirty_to_disk().unwrap();
+        assert_eq!(count, 3);
+        assert_eq!(storage.segment_count(), 1);
+        assert_eq!(storage.leaves_in_segments(), 3);
+
+        // All leaves should have segment locations
+        assert!(storage.leaf_has_segment_location(loc1.as_leaf().unwrap().id));
+        assert!(storage.leaf_has_segment_location(loc2.as_leaf().unwrap().id));
+        assert!(storage.leaf_has_segment_location(loc3.as_leaf().unwrap().id));
+    }
+
+    #[test]
+    fn test_multiple_segment_flushes() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
+
+        // First batch of leaves
+        let leaf1 = LeafNode {
             entries: vec![(10, 1)],
             next_leaf: None,
         };
-        storage.alloc_leaf(leaf);
+        storage.alloc_leaf(leaf1);
 
-        // Flush to disk
-        storage.flush_dirty_to_disk(Some(&path)).unwrap();
-        assert!(storage.spill_file_path().is_some());
+        // Flush to first segment
+        let count1 = storage.flush_dirty_to_disk().unwrap();
+        assert_eq!(count1, 1);
+        assert_eq!(storage.segment_count(), 1);
+        assert_eq!(storage.next_segment_id(), 1);
 
-        // take_spill_file DOES invalidate runtime state (unlike prepare_checkpoint)
-        let taken_path = storage.take_spill_file();
-        assert!(taken_path.is_some());
-        assert!(
-            storage.spill_file_path().is_none(),
-            "spill_file_path should be None after take_spill_file"
+        // Second batch of leaves
+        let leaf2 = LeafNode {
+            entries: vec![(20, 2)],
+            next_leaf: None,
+        };
+        storage.alloc_leaf(leaf2);
+
+        // Flush to second segment
+        let count2 = storage.flush_dirty_to_disk().unwrap();
+        assert_eq!(count2, 1);
+        assert_eq!(storage.segment_count(), 2);
+        assert_eq!(storage.next_segment_id(), 2);
+        assert_eq!(storage.leaves_in_segments(), 2);
+
+        // Verify segments have different IDs
+        let segments = storage.segments();
+        assert_eq!(segments[0].id.value(), 0);
+        assert_eq!(segments[1].id.value(), 1);
+    }
+
+    #[test]
+    fn test_load_leaf_from_disk_after_eviction() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
         );
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
+
+        // Add and flush a leaf
+        let leaf = LeafNode {
+            entries: vec![(10, 1), (20, 2), (30, 3)],
+            next_leaf: None,
+        };
+        let loc = storage.alloc_leaf(leaf);
+        storage.flush_dirty_to_disk().unwrap();
+
+        // Leaf should still be in memory (not evicted)
+        let leaf_ref = storage.get_leaf(loc.as_leaf().unwrap());
+        assert_eq!(leaf_ref.entries.len(), 3);
+
+        // Evict the leaf
+        storage.evict_clean_leaves();
+
+        // Load from segment
+        let leaf_id = loc.as_leaf().unwrap().id;
+        let loaded = storage.load_leaf_from_disk(LeafLocation::new(leaf_id)).unwrap();
+        assert_eq!(loaded.entries.len(), 3);
+        assert_eq!(loaded.entries[0], (10, 1));
+        assert_eq!(loaded.entries[1], (20, 2));
+        assert_eq!(loaded.entries[2], (30, 3));
+    }
+
+    #[test]
+    fn test_load_leaf_from_disk_multiple() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
+
+        // Add multiple leaves
+        let leaf1 = LeafNode {
+            entries: vec![(10, 1)],
+            next_leaf: None,
+        };
+        let leaf2 = LeafNode {
+            entries: vec![(100, 10), (200, 20)],
+            next_leaf: None,
+        };
+        let loc1 = storage.alloc_leaf(leaf1);
+        let loc2 = storage.alloc_leaf(leaf2);
+
+        // Flush to segment
+        storage.flush_dirty_to_disk().unwrap();
+
+        // Evict all leaves
+        storage.evict_clean_leaves();
+
+        // Load leaf 2 (second leaf)
+        let id2 = loc2.as_leaf().unwrap().id;
+        let loaded2 = storage.load_leaf_from_disk(LeafLocation::new(id2)).unwrap();
+        assert_eq!(loaded2.entries.len(), 2);
+        assert_eq!(loaded2.entries[0], (100, 10));
+
+        // Load leaf 1 (first leaf)
+        let id1 = loc1.as_leaf().unwrap().id;
+        let loaded1 = storage.load_leaf_from_disk(LeafLocation::new(id1)).unwrap();
+        assert_eq!(loaded1.entries.len(), 1);
+        assert_eq!(loaded1.entries[0], (10, 1));
+    }
+
+    #[test]
+    fn test_segment_metadata_tracking() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
+
+        // Add leaves
+        let leaf1 = LeafNode {
+            entries: vec![(10, 1), (20, 2)],
+            next_leaf: None,
+        };
+        let leaf2 = LeafNode {
+            entries: vec![(100, 10)],
+            next_leaf: None,
+        };
+        storage.alloc_leaf(leaf1);
+        storage.alloc_leaf(leaf2);
+
+        // Flush to segment
+        storage.flush_dirty_to_disk().unwrap();
+
+        // Check segment metadata
+        let segments = storage.segments();
+        assert_eq!(segments.len(), 1);
+
+        let seg = &segments[0];
+        assert_eq!(seg.id.value(), 0);
+        assert_eq!(seg.leaf_count, 2);
+        assert!(seg.size_bytes > 0);
+        assert!(seg.contains_leaf(0));
+        assert!(seg.contains_leaf(1));
+        assert!(!seg.contains_leaf(2));
+
+        // Check leaf locations in segment
+        let loc0 = seg.get_leaf_location(0);
+        assert!(loc0.is_some());
+        let loc0 = loc0.unwrap();
+        assert_eq!(loc0.segment_id.value(), 0);
+
+        let loc1 = seg.get_leaf_location(1);
+        assert!(loc1.is_some());
+        let loc1 = loc1.unwrap();
+        assert_eq!(loc1.segment_id.value(), 0);
+        // Both leaves should have valid offsets (they may or may not be ordered)
+        // Just verify they're not at the same offset (different blocks)
+        assert!(loc0.offset != loc1.offset || loc0.size != loc1.size);
+    }
+
+    // =========================================================================
+    // get_leaf_reloading_mut Tests
+    // =========================================================================
+
+    #[test]
+    fn test_get_leaf_reloading_mut_evicted() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = NodeStorageConfig::with_spill_directory(
+            1024,
+            dir.path().to_string_lossy().as_ref(),
+        );
+
+        let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
+
+        let original_entries = vec![(10i32, 1i64), (20, 2), (30, 3)];
+
+        // Add leaf
+        let leaf = LeafNode {
+            entries: original_entries.clone(),
+            next_leaf: None,
+        };
+        let loc = storage.alloc_leaf(leaf);
+
+        // Flush to disk and evict
+        storage.flush_dirty_to_disk().unwrap();
+        let (evicted, _) = storage.evict_clean_leaves();
+        assert_eq!(evicted, 1);
+
+        // Verify it's evicted
+        if let NodeLocation::Leaf(leaf_loc) = loc {
+            assert!(storage.is_leaf_evicted(leaf_loc));
+
+            // Get mutable reference to evicted leaf - should auto-reload
+            let leaf_mut = storage.get_leaf_reloading_mut(leaf_loc);
+            assert_eq!(leaf_mut.entries, original_entries);
+
+            // Mutate the leaf
+            leaf_mut.entries.push((40, 4));
+
+            // Verify mutation stuck
+            let leaf_ref = storage.get_leaf(leaf_loc);
+            assert_eq!(leaf_ref.entries.len(), 4);
+            assert_eq!(leaf_ref.entries[3], (40, 4));
+
+            // Should be back in memory and dirty
+            assert!(!storage.is_leaf_evicted(leaf_loc));
+            assert!(storage.is_leaf_in_memory(leaf_loc));
+        } else {
+            panic!("Expected leaf location");
+        }
     }
 }

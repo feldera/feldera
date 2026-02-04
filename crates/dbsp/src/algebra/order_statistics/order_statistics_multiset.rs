@@ -43,12 +43,11 @@ use std::{
 
 use crate::Error;
 use crate::algebra::ZWeight;
-use crate::circuit::Runtime;
 use crate::node_storage::{
     LeafLocation, LeafNodeOps, NodeLocation, NodeStorageConfig, StorableNode,
 };
 use crate::utils::IsNone;
-use feldera_storage::{FileCommitter, StoragePath};
+use feldera_storage::FileCommitter;
 
 /// Default branching factor for the B+ tree.
 /// Larger values are more cache/disk friendly but may have higher constant factors.
@@ -805,9 +804,9 @@ where
     }
 
     /// Get the total weight of a node at the given location.
-    fn node_total_weight(&self, loc: NodeLocation) -> ZWeight {
+    fn node_total_weight(&mut self, loc: NodeLocation) -> ZWeight {
         match loc {
-            NodeLocation::Leaf(leaf_loc) => self.storage.get_leaf(leaf_loc).total_weight(),
+            NodeLocation::Leaf(leaf_loc) => self.storage.get_leaf_reloading(leaf_loc).total_weight(),
             NodeLocation::Internal { id, .. } => self.storage.get_internal(id).total_weight(),
         }
     }
@@ -822,14 +821,14 @@ where
         match loc {
             NodeLocation::Leaf(leaf_loc) => {
                 // Insert into leaf
-                let leaf = self.storage.get_leaf_mut(leaf_loc);
+                let leaf = self.storage.get_leaf_reloading_mut(leaf_loc);
                 let new_key = leaf.find_key_pos(&key).is_err();
                 leaf.insert(key, weight);
                 let needs_split = leaf.needs_split(self.max_leaf_entries);
 
                 // Handle split if needed
                 if needs_split {
-                    let leaf = self.storage.get_leaf_mut(leaf_loc);
+                    let leaf = self.storage.get_leaf_reloading_mut(leaf_loc);
                     let (split_key, right_leaf) = leaf.split();
                     // right_leaf already has the correct next_leaf (inherited from left)
 
@@ -840,7 +839,7 @@ where
                         .expect("alloc_leaf returns Leaf location");
 
                     // Update the left leaf's next pointer to the new right leaf
-                    self.storage.get_leaf_mut(leaf_loc).next_leaf = Some(right_leaf_loc);
+                    self.storage.get_leaf_reloading_mut(leaf_loc).next_leaf = Some(right_leaf_loc);
 
                     (new_key, Some((split_key, right_loc)))
                 } else {
@@ -909,7 +908,7 @@ where
     ///
     /// # Complexity
     /// O(log n)
-    pub fn select_kth(&self, k: ZWeight, ascending: bool) -> Option<&T> {
+    pub fn select_kth(&mut self, k: ZWeight, ascending: bool) -> Option<&T> {
         let effective_k = if ascending {
             k
         } else {
@@ -925,9 +924,9 @@ where
         self.select_kth_recursive(self.root.unwrap(), effective_k)
     }
 
-    fn select_kth_recursive(&self, loc: NodeLocation, k: ZWeight) -> Option<&T> {
+    fn select_kth_recursive(&mut self, loc: NodeLocation, k: ZWeight) -> Option<&T> {
         match loc {
-            NodeLocation::Leaf(leaf_loc) => self.storage.get_leaf(leaf_loc).select_kth(k),
+            NodeLocation::Leaf(leaf_loc) => self.storage.get_leaf_reloading(leaf_loc).select_kth(k),
             NodeLocation::Internal { id, .. } => {
                 let internal = self.storage.get_internal(id);
                 let (child_loc, remaining_k) = internal.find_child_for_select(k)?;
@@ -943,16 +942,16 @@ where
     ///
     /// # Complexity
     /// O(log n)
-    pub fn rank(&self, key: &T) -> ZWeight {
+    pub fn rank(&mut self, key: &T) -> ZWeight {
         match self.root {
             None => 0,
             Some(loc) => self.rank_recursive(loc, key),
         }
     }
 
-    fn rank_recursive(&self, loc: NodeLocation, key: &T) -> ZWeight {
+    fn rank_recursive(&mut self, loc: NodeLocation, key: &T) -> ZWeight {
         match loc {
-            NodeLocation::Leaf(leaf_loc) => self.storage.get_leaf(leaf_loc).prefix_weight(key),
+            NodeLocation::Leaf(leaf_loc) => self.storage.get_leaf_reloading(leaf_loc).prefix_weight(key),
             NodeLocation::Internal { id, .. } => {
                 let internal = self.storage.get_internal(id);
                 let child_pos = internal.find_child(key);
@@ -976,10 +975,10 @@ where
     /// # Complexity
     /// O(log n) - two select operations
     pub fn select_percentile_bounds(
-        &self,
+        &mut self,
         percentile: f64,
         ascending: bool,
-    ) -> Option<(&T, &T, f64)> {
+    ) -> Option<(T, T, f64)> {
         if self.total_weight <= 0 || !(0.0..=1.0).contains(&percentile) {
             return None;
         }
@@ -993,8 +992,8 @@ where
 
         let n = self.total_weight;
         if n == 1 {
-            let value = self.select_kth(0, true)?;
-            return Some((value, value, 0.0));
+            let value = self.select_kth(0, true)?.clone();
+            return Some((value.clone(), value, 0.0));
         }
 
         // SQL standard PERCENTILE_CONT formula
@@ -1003,16 +1002,12 @@ where
         let upper_idx = pos.ceil() as ZWeight;
         let fraction = pos - (lower_idx as f64);
 
-        let lower_value = self.select_kth(lower_idx, true)?;
+        let lower_value = self.select_kth(lower_idx, true)?.clone();
         if lower_idx == upper_idx {
-            if ascending {
-                return Some((lower_value, lower_value, 0.0));
-            } else {
-                return Some((lower_value, lower_value, 0.0));
-            }
+            return Some((lower_value.clone(), lower_value, 0.0));
         }
 
-        let upper_value = self.select_kth(upper_idx, true)?;
+        let upper_value = self.select_kth(upper_idx, true)?.clone();
 
         if ascending {
             Some((lower_value, upper_value, fraction))
@@ -1031,7 +1026,7 @@ where
     ///
     /// # Complexity
     /// O(log n)
-    pub fn select_percentile_disc(&self, percentile: f64, ascending: bool) -> Option<&T> {
+    pub fn select_percentile_disc(&mut self, percentile: f64, ascending: bool) -> Option<&T> {
         if self.total_weight <= 0 || !(0.0..=1.0).contains(&percentile) {
             return None;
         }
@@ -1060,17 +1055,17 @@ where
     ///
     /// # Complexity
     /// O(log n)
-    pub fn get_weight(&self, key: &T) -> ZWeight {
+    pub fn get_weight(&mut self, key: &T) -> ZWeight {
         match self.root {
             None => 0,
             Some(loc) => self.get_weight_recursive(loc, key),
         }
     }
 
-    fn get_weight_recursive(&self, loc: NodeLocation, key: &T) -> ZWeight {
+    fn get_weight_recursive(&mut self, loc: NodeLocation, key: &T) -> ZWeight {
         match loc {
             NodeLocation::Leaf(leaf_loc) => {
-                let leaf = self.storage.get_leaf(leaf_loc);
+                let leaf = self.storage.get_leaf_reloading(leaf_loc);
                 match leaf.find_key_pos(key) {
                     Ok(pos) => leaf.entries[pos].1,
                     Err(_) => 0,
@@ -1116,6 +1111,26 @@ where
     /// * Err - If loading fails
     pub fn reload_evicted_leaves(&mut self) -> Result<usize, crate::node_storage::FileFormatError> {
         self.storage.reload_evicted_leaves()
+    }
+
+    /// Check if storage has enough dirty data to warrant flushing.
+    pub fn should_flush(&self) -> bool {
+        self.storage.should_flush()
+    }
+
+    /// Flush dirty leaves to disk and evict clean leaves from memory.
+    /// Returns (leaves_flushed, leaves_evicted, bytes_freed).
+    pub fn flush_and_evict(
+        &mut self,
+    ) -> Result<(usize, usize, usize), crate::node_storage::FileFormatError> {
+        let flushed = self.storage.flush_dirty_to_disk()?;
+        let (evicted, freed) = self.storage.evict_clean_leaves();
+        Ok((flushed, evicted, freed))
+    }
+
+    /// Number of leaves currently evicted to disk.
+    pub fn evicted_leaf_count(&self) -> usize {
+        self.storage.evicted_leaf_count()
     }
 
     /// Merge another multiset into this one.
@@ -1200,125 +1215,89 @@ where
         summaries
     }
 
-    /// Checkpoint the tree's leaves to disk.
+    /// Save the tree's leaves for checkpoint, following the spine_async pattern.
     ///
     /// This method:
-    /// 1. Flushes all dirty/never-spilled leaves to disk
-    /// 2. Collects leaf summaries for O(num_leaves) restore
-    /// 3. Moves the spill file to checkpoint location
-    /// 4. Returns metadata referencing the checkpoint file
+    /// 1. Flushes all dirty/never-spilled leaves to segment files
+    /// 2. Marks segment FileReaders for checkpoint (prevents deletion on drop)
+    /// 3. Registers segment FileReaders with `files` for atomic commit
+    /// 4. Returns metadata for checkpoint serialization
+    ///
+    /// Unlike the previous approach that copied segment files to a checkpoint
+    /// directory, this uses the StorageBackend's `mark_for_checkpoint()` +
+    /// `commit()` lifecycle to ensure segments persist atomically.
     ///
     /// # Arguments
     ///
-    /// - `checkpoint_dir`: Directory for checkpoint files
-    /// - `tree_id`: Unique identifier for this tree's checkpoint file
+    /// - `files`: Vector to append FileCommitters for atomic checkpoint commit
     ///
     /// # Returns
     ///
-    /// `CommittedLeafStorage` containing metadata for restore.
-    pub fn save_leaves(
+    /// `CommittedSegmentStorage` containing metadata for restore.
+    /// Save OSM state for checkpoint, delegating to NodeStorage.
+    ///
+    /// NodeStorage writes its own metadata file and registers segment files
+    /// with the `files` vector for atomic checkpoint commit.
+    pub fn save(
         &mut self,
-        checkpoint_dir: &std::path::Path,
-        tree_id: &str,
-    ) -> Result<crate::node_storage::CommittedLeafStorage<T>, crate::node_storage::FileFormatError> {
-        use crate::node_storage::{CommittedLeafStorage, FileFormatError};
-
-        // Ensure checkpoint directory exists
-        std::fs::create_dir_all(checkpoint_dir)
-            .map_err(|e| FileFormatError::Io(format!("Failed to create checkpoint dir: {}", e)))?;
-
-        // Collect summaries BEFORE flushing (need access to all leaf data)
-        let leaf_summaries = self.collect_leaf_summaries();
-
-        // Flush all leaves to disk
-        self.storage.flush_all_leaves_to_disk()?;
-
-        // Get block locations from storage
-        let leaf_block_locations: Vec<(usize, u64, u32)> =
-            self.storage.get_leaf_block_locations().collect();
-
-        // Move spill file to checkpoint location
-        let dest_path = checkpoint_dir.join(format!("{}.leaves", tree_id));
-
-        if let Some(src_path) = self.storage.take_spill_file() {
-            if src_path.exists() {
-                // Try rename first (fast, same filesystem)
-                // Fall back to copy if rename fails (cross-filesystem)
-                if std::fs::rename(&src_path, &dest_path).is_err() {
-                    std::fs::copy(&src_path, &dest_path).map_err(|e| {
-                        FileFormatError::Io(format!(
-                            "Failed to copy spill file to checkpoint: {}",
-                            e
-                        ))
-                    })?;
-                    // Clean up source after successful copy
-                    let _ = std::fs::remove_file(&src_path);
-                }
-            }
-        }
-
-        // Compute totals
-        let total_entries: usize = leaf_summaries.iter().map(|s| s.entry_count).sum();
-        let total_weight: ZWeight = leaf_summaries.iter().map(|s| s.weight_sum).sum();
-        let num_leaves = leaf_summaries.len();
-
-        Ok(CommittedLeafStorage {
-            spill_file_path: dest_path.to_string_lossy().to_string(),
-            leaf_block_locations,
-            leaf_summaries,
-            total_entries,
-            total_weight,
-            num_leaves,
+        base: &crate::storage::backend::StoragePath,
+        persistent_id: &str,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error> {
+        self.storage.save(base, persistent_id, files).map_err(|e| {
+            use std::io::{Error as IoError, ErrorKind};
+            Error::IO(IoError::new(
+                ErrorKind::Other,
+                format!("Failed to save OSM NodeStorage: {}", e),
+            ))
         })
     }
 
     /// Restore from checkpoint - O(num_leaves), not O(num_entries).
     ///
-    /// This method:
-    /// 1. Points NodeStorage at the checkpoint file (no copy!)
-    /// 2. Rebuilds internal nodes from leaf_summaries (no leaf I/O!)
-    /// 3. Marks all leaves as evicted (lazy-loaded on demand)
-    ///
-    /// The checkpoint file becomes the live spill file.
+    /// NodeStorage reads its own metadata file and restores segment state.
+    /// OSM then rebuilds internal nodes from the returned leaf summaries.
     ///
     /// # Arguments
     ///
-    /// - `committed`: Checkpoint metadata from `save_leaves()`
+    /// - `base`: Base storage path for checkpoint files
+    /// - `persistent_id`: Unique identifier for this storage instance
     /// - `branching_factor`: Branching factor for the tree
     /// - `storage_config`: Configuration for the storage backend
     ///
     /// # Returns
     ///
     /// A restored `OrderStatisticsMultiset`.
-    pub fn restore_from_committed(
-        committed: crate::node_storage::CommittedLeafStorage<T>,
+    pub fn restore(
+        base: &crate::storage::backend::StoragePath,
+        persistent_id: &str,
         branching_factor: usize,
         storage_config: crate::node_storage::NodeStorageConfig,
     ) -> Result<Self, Error> {
-        use std::path::PathBuf;
-
-        let num_leaves = committed.num_leaves;
-
-        if num_leaves == 0 {
-            // Empty tree
-            return Ok(Self::with_config(branching_factor, storage_config));
-        }
-
-        // Create storage with the checkpoint file as spill file
         let mut storage = OsmNodeStorage::with_config(storage_config);
+        let info = storage.restore(base, persistent_id).map_err(|e| {
+            use std::io::{Error as IoError, ErrorKind};
+            Error::IO(IoError::new(
+                ErrorKind::Other,
+                format!("Failed to restore NodeStorage: {}", e),
+            ))
+        })?;
 
-        // Set up the checkpoint file as our spill file
-        let spill_path = PathBuf::from(&committed.spill_file_path);
-        storage.mark_all_leaves_evicted(
-            num_leaves,
-            spill_path,
-            committed.leaf_block_locations.clone(),
-            committed.leaf_summaries.clone(),
-        );
+        if info.num_leaves == 0 {
+            return Ok(Self {
+                storage,
+                root: None,
+                total_weight: 0,
+                max_leaf_entries: branching_factor.max(MIN_BRANCHING_FACTOR),
+                max_internal_children: branching_factor.max(MIN_BRANCHING_FACTOR),
+                first_leaf: None,
+                num_keys: 0,
+            });
+        }
 
         // Build internal nodes from leaf summaries
         let (internal_nodes_with_levels, root_loc, first_leaf_loc) =
-            Self::build_internal_nodes_from_summaries(&committed.leaf_summaries, branching_factor);
+            Self::build_internal_nodes_from_summaries(&info.leaf_summaries, branching_factor);
 
         // Add internal nodes to storage (as clean since they're rebuilt from summaries)
         for (node, level) in internal_nodes_with_levels {
@@ -1326,14 +1305,14 @@ where
         }
 
         // Count total keys from summaries
-        let num_keys: usize = committed.leaf_summaries.iter().map(|s| s.entry_count).sum();
+        let num_keys: usize = info.leaf_summaries.iter().map(|s| s.entry_count).sum();
 
         Ok(Self {
             storage,
             root: root_loc,
-            total_weight: committed.total_weight,
-            max_leaf_entries: branching_factor,
-            max_internal_children: branching_factor,
+            total_weight: info.total_weight,
+            max_leaf_entries: branching_factor.max(MIN_BRANCHING_FACTOR),
+            max_internal_children: branching_factor.max(MIN_BRANCHING_FACTOR),
             first_leaf: first_leaf_loc,
             num_keys,
         })
@@ -1644,141 +1623,9 @@ where
     }
 }
 
-// ============================================================================
-// Checkpoint save/restore support
-// ============================================================================
-
-/// Helper function to serialize to bytes using rkyv.
-fn to_bytes<T>(value: &T) -> Result<feldera_storage::fbuf::FBuf, Error>
-where
-    T: Archive + for<'a> RkyvSerialize<rkyv::ser::serializers::AllocSerializer<4096>>,
-{
-    use feldera_storage::fbuf::FBuf;
-    use rkyv::ser::Serializer as RkyvSerializer;
-    use rkyv::ser::serializers::AllocSerializer;
-    use std::io::{Error as IoError, ErrorKind};
-
-    let mut serializer = AllocSerializer::<4096>::default();
-    serializer.serialize_value(value).map_err(|e| {
-        Error::IO(IoError::new(
-            ErrorKind::Other,
-            format!("Failed to serialize: {e}"),
-        ))
-    })?;
-    let bytes = serializer.into_serializer().into_inner();
-
-    // Copy to FBuf which has the required 512-byte alignment
-    let mut fbuf = FBuf::with_capacity(bytes.len());
-    fbuf.extend_from_slice(&bytes);
-    Ok(fbuf)
-}
-
-impl<T> OrderStatisticsMultiset<T>
-where
-    T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
-    Archived<T>: RkyvDeserialize<T, Deserializer>,
-    <T as Archive>::Archived: Ord,
-    SerializableOrderStatisticsMultiset<T>:
-        for<'a> rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<4096>>,
-    ArchivedSerializableOrderStatisticsMultiset<T>:
-        rkyv::Deserialize<SerializableOrderStatisticsMultiset<T>, Deserializer>,
-{
-    /// Save the multiset state to persistent storage.
-    ///
-    /// Creates a checkpoint file at `{base}/{persistent_id}_osm.dat` containing
-    /// a serialized representation of the multiset.
-    ///
-    /// # Arguments
-    /// * `base` - Base directory for checkpoint files
-    /// * `persistent_id` - Unique identifier for this multiset's state
-    /// * `files` - Vector to append FileCommitter for atomic checkpoint commit
-    ///
-    /// # Example
-    /// ```ignore
-    /// let mut files = Vec::new();
-    /// tree.save(&"checkpoint/uuid".into(), "percentile_0", &mut files)?;
-    /// // Later, commit all files atomically
-    /// for file in files {
-    ///     file.commit()?;
-    /// }
-    /// ```
-    pub fn save(
-        &self,
-        base: &StoragePath,
-        persistent_id: &str,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
-        let backend = Runtime::storage_backend()?;
-
-        // Convert to serializable form and serialize
-        let serializable: SerializableOrderStatisticsMultiset<T> = self.into();
-        let bytes = to_bytes(&serializable)?;
-
-        // Write to checkpoint file
-        let path = Self::checkpoint_file(base, persistent_id);
-        let committer = backend.write(&path, bytes)?;
-        files.push(committer);
-
-        Ok(())
-    }
-
-    /// Restore the multiset state from persistent storage.
-    ///
-    /// Reads the checkpoint file at `{base}/{persistent_id}_osm.dat` and
-    /// reconstructs the multiset from the serialized data.
-    ///
-    /// # Arguments
-    /// * `base` - Base directory for checkpoint files
-    /// * `persistent_id` - Unique identifier for this multiset's state
-    ///
-    /// # Example
-    /// ```ignore
-    /// let mut tree = OrderStatisticsMultiset::new();
-    /// tree.restore(&"checkpoint/uuid".into(), "percentile_0")?;
-    /// ```
-    pub fn restore(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
-        let backend = Runtime::storage_backend()?;
-
-        // Read checkpoint file
-        let path = Self::checkpoint_file(base, persistent_id);
-        let content = backend.read(&path)?;
-
-        // Deserialize using rkyv with DBSP's Deserializer
-        // SAFETY: The data was written by save() using rkyv serialization
-        let archived =
-            unsafe { rkyv::archived_root::<SerializableOrderStatisticsMultiset<T>>(&content) };
-
-        // Use DBSP's Deserializer which wraps SharedDeserializeMap
-        // Version 0 since we use AllocSerializer (not file format)
-        let mut deserializer = Deserializer::new(0);
-        let serializable: SerializableOrderStatisticsMultiset<T> =
-            rkyv::Deserialize::deserialize(archived, &mut deserializer).map_err(|e| {
-                use std::io::{Error as IoError, ErrorKind};
-                Error::IO(IoError::new(
-                    ErrorKind::Other,
-                    format!("Failed to deserialize checkpoint: {e:?}"),
-                ))
-            })?;
-
-        // Reconstruct the tree using bulk load for O(n) instead of O(n log n)
-        *self = serializable.into();
-
-        Ok(())
-    }
-
-    /// Generate the checkpoint file path for this multiset.
-    fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
-        StoragePath::from(format!("{base}/{persistent_id}_osm.dat"))
-    }
-
-    /// Clear the multiset state and reset to empty.
-    ///
-    /// This is called during state management operations like clearing
-    /// before a restore or resetting operator state.
-    pub fn clear_state(&mut self) {
-        self.clear();
-    }
-}
+// The old direct-serialization save()/restore() methods have been removed.
+// Use save_leaves(files) and restore_from_committed() instead, which provide
+// O(num_leaves) checkpoint/restore via reference-based segment file management.
 
 #[cfg(test)]
 #[path = "order_statistics_multiset_tests.rs"]
