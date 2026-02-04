@@ -2891,12 +2891,17 @@ impl CircuitThread {
         // until the transaction is committed. This is necessary to ensure liveness, i.e.,
         // the transaction does not continue indefinitely because connectors keep reinitiating
         // it.
-        let committing = self
-            .controller
-            .transaction_info
-            .lock()
-            .unwrap()
-            .committed_connectors();
+        let committing = if coordination_request.is_none() {
+            self.controller
+                .transaction_info
+                .lock()
+                .unwrap()
+                .committed_connectors()
+        } else {
+            // When there is a coordinator, the coordinator decides which input
+            // connectors to use.
+            Default::default()
+        };
 
         for (&endpoint_id, status) in statuses.iter() {
             if barriers_only && !status.is_barrier()
