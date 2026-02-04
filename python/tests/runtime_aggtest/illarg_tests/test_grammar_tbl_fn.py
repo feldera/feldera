@@ -1,4 +1,76 @@
-from tests.runtime_aggtest.aggtst_base import TstView
+from tests.runtime_aggtest.aggtst_base import TstTable, TstView
+
+
+# CONNECTOR_METADATA
+class illarg_connector_metadata_legal_tbl(TstTable):
+    """Define the table used by connector_metadata passing test"""
+
+    def __init__(self):
+        self.sql = """CREATE TABLE connector_metadata_legal_tbl(
+                          id INT,
+                          meta_val VARCHAR
+                              DEFAULT CAST(CONNECTOR_METADATA()['check'] AS VARCHAR)
+                      ) WITH (
+                            'connectors' = '[{
+                          "name": "check",
+                          "transport": {
+                            "name": "datagen",
+                            "config": {
+                              "plan": [{"limit": 2}]
+                            }
+                          }
+                        }]'
+                            );"""
+        self.data = []
+
+
+class illarg_connector_metadata_legal(TstView):
+    def __init__(self):
+        self.data = [{"id": 0, "meta_val": "0"}, {"id": 1, "meta_val": "1"}]
+        self.sql = """CREATE MATERIALIZED VIEW illarg_connector_metadata_legal AS SELECT
+                      *
+                      FROM connector_metadata_legal_tbl"""
+
+
+# Negative Test
+class illarg_connector_metadata_illegal_tbl(TstTable):
+    """Define the table used by connector_metadata failing test"""
+
+    def __init__(self):
+        self.sql = """CREATE TABLE connector_metadata_illegal_tbl(
+                          id INT,
+                          meta_val VARCHAR
+                              DEFAULT CAST(CONNECTOR_METADATA('check')['check'] AS VARCHAR)
+                      ) WITH (
+                            'connectors' = '[{
+                          "name": "check",
+                          "transport": {
+                            "name": "datagen",
+                            "config": {
+                              "plan": [{"limit": 2}]
+                            }
+                          }
+                        }]'
+                            );"""
+        self.data = []
+        self.expected_error = "Invalid number of arguments to function 'connector_metadata'. Was expecting 0 arguments"
+
+
+# DEFAULT
+class illarg_default_legal(TstTable):
+    def __init__(self):
+        self.sql = """CREATE TABLE default_legal (
+                      x INT DEFAULT CAST(42 AS INTEGER))"""
+        self.data = []
+
+
+# Negative Test
+class illarg_default_illegal(TstTable):
+    def __init__(self):
+        self.sql = """CREATE TABLE default_illegal(
+                      intt INT DEFAULT CAST(intt AS INTEGER))"""
+        self.data = []
+        self.expected_error = "column 'intt' not found in any table"
 
 
 # AS

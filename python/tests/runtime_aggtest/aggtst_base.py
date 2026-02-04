@@ -195,6 +195,29 @@ class TstAccumulator:
         self.tables = []
         self.views = []
 
+    @staticmethod
+    def get_object_type_name(obj: SqlObject) -> str:
+        """Get the type name of a SQL object (Table or View)"""
+        return "View" if isinstance(obj, View) else "Table"
+
+    @staticmethod
+    def has_expected_error(obj: SqlObject) -> bool:
+        """Check if a table or a view has a non-empty expected_error attribute"""
+        expected_error = getattr(obj, "expected_error", None)
+        return expected_error is not None and str(expected_error).strip() != ""
+
+    @staticmethod
+    def filter_by_expected_error(
+        objects: list[SqlObject], should_fail: bool
+    ) -> list[SqlObject]:
+        """Filter tables and views based on whether they are expected to fail or not"""
+        if should_fail:
+            return [obj for obj in objects if TstAccumulator.has_expected_error(obj)]
+        else:
+            return [
+                obj for obj in objects if not TstAccumulator.has_expected_error(obj)
+            ]
+
     def add_table(self, table: Table):
         """Add a new table to the program"""
         if DEBUG:
@@ -222,8 +245,17 @@ class TstAccumulator:
             print("Generated sql\n" + result)
         return result
 
-    def run_pipeline(self, pipeline_name_prefix: str, sql: str, views: list[View]):
+    def run_pipeline(
+        self,
+        pipeline_name_prefix: str,
+        sql: str,
+        views: list[View],
+        tables: list[Table] = None,
+    ):
         """Run pipeline with the given SQL, load tables, validate views, and shutdown"""
+        if tables is None:
+            tables = self.tables
+
         pipeline = None
         sql_id = sql_hash(sql)
         pipeline_name = unique_pipeline_name(f"{pipeline_name_prefix}_{sql_id}")
@@ -246,7 +278,7 @@ class TstAccumulator:
 
             pipeline.start()
 
-            for table in self.tables:
+            for table in tables:
                 if table.get_data() != []:
                     pipeline.input_json(
                         table.name, table.get_data(), update_format="insert_delete"
@@ -289,64 +321,114 @@ class TstAccumulator:
                 pipeline.stop(force=True)
                 pipeline.delete(True)
 
-    def assert_expected_error(self, view: View, actual_exception: Exception):
+    def assert_expected_error(self, obj: SqlObject, actual_exception: Exception):
         """Validate the error produced by the failing pipeline with the expected error type"""
         expected_substring = (
-            str(getattr(view, "expected_error", "") or "").strip().lower()
+            str(getattr(obj, "expected_error", "") or "").strip().lower()
         )
         actual_message = str(actual_exception).strip().lower()
 
+        obj_type = self.get_object_type_name(obj)
+
         if DEBUG:
             print(
-                f"[DEBUG] View `{view.name}` expected error substring: '{expected_substring}'"
+                f"[DEBUG] {obj_type} `{obj.name}` expected error substring: '{expected_substring}'"
             )
             print(
-                f"[DEBUG] View `{view.name}` received error message:\n{actual_message}"
+                f"[DEBUG] {obj_type} `{obj.name}` received error message:\n{actual_message}"
             )
 
         if expected_substring not in actual_message:
             raise AssertionError(
-                f"\n[FAIL] failed view: {view.name} did not produce expected error substring.\n"
+                f"\n[FAIL] failed {obj_type.lower()}: {obj.name} did not produce expected error substring.\n"
                 f"Expected to find: '{expected_substring}'\n"
                 f"Received error message:\n{actual_message}"
-            )  # Validate based on: does the error received contain the expected substring?
+            )
 
         if DEBUG:
-            print(f"[PASS] View `{view.name}` failed as expected.")
+            print(f"[PASS] {obj_type} `{obj.name}` failed as expected.")
+
+    def run_failing_object_test(
+        self,
+        obj: SqlObject,
+        pipeline_name_prefix: str,
+        sql: str,
+        views: list[View],
+        tables: list[Table],
+    ):
+        """Run a test for a single object(view, table) expected to fail and verify it produces the expected error"""
+        obj_type = self.get_object_type_name(obj)
+        if DEBUG:
+            print(f"Testing failing {obj_type.lower()}: {obj.name}...")
+
+        try:
+            self.run_pipeline(pipeline_name_prefix, sql, views=views, tables=tables)
+            raise AssertionError(
+                f"{obj_type}: `{obj.name}` was expected to fail, but it passed."
+            )
+        except AssertionError:
+            raise
+        except Exception as e:
+            self.assert_expected_error(obj, e)
+
+    def run_table_tests(self, pipeline_name_prefix: str):
+        """Test passing tables together in a single pipeline, failing tables separately in individual pipelines"""
+        # Separate tables by whether they have a non-empty expected_error attribute
+        failing_tables = self.filter_by_expected_error(self.tables, should_fail=True)
+        passing_tables = self.filter_by_expected_error(self.tables, should_fail=False)
+
+        # Test all passing tables together
+        if passing_tables:
+            if DEBUG:
+                print(f"Testing {len(passing_tables)} passing tables together...")
+            sql = TstAccumulator.generate_sql(
+                passing_tables, []
+            )  # Contains SQL for all passing tables
+            self.run_pipeline(
+                pipeline_name_prefix, sql, views=[], tables=passing_tables
+            )
+
+        # Test each failing table individually
+        for table in failing_tables:
+            sql = table.get_sql()  # Contains SQL for the failing tables
+            self.run_failing_object_test(
+                table, pipeline_name_prefix, sql, views=[], tables=[table]
+            )
 
     def run_expected_failures(self, pipeline_name_prefix: str):
-        """Run each view that is expected to fail in a separate pipeline"""
-        # List of views that contain the attribute: expected error type
-        failing_views = [v for v in self.views if v.expected_error]
+        """Loop through each view that is expected to fail in a separate pipeline"""
+        # Only use passing tables when testing views
+        passing_tables = self.filter_by_expected_error(self.tables, should_fail=False)
+        failing_views = self.filter_by_expected_error(self.views, should_fail=True)
+
         for view in failing_views:
-            if DEBUG:
-                print(f"Running failing view: {view.name}...")
             sql = TstAccumulator.generate_sql(
-                self.tables, [view]
-            )  # Contains SQL for the failing view and its related tables only
-            try:
-                self.run_pipeline(pipeline_name_prefix, sql, views=[view])
-                raise AssertionError(
-                    f"View: `{view.name}` was expected to fail, but it passed."
-                )
-            except AssertionError:
-                raise  # Re-raise assertion errors about unexpected success
-            except Exception as e:
-                self.assert_expected_error(view, e)
+                passing_tables, [view]
+            )  # Contains SQL for the failing views and tables
+            self.run_failing_object_test(
+                view, pipeline_name_prefix, sql, views=[view], tables=passing_tables
+            )
 
     def run_expected_successes(self, pipeline_name_prefix: str):
         """Run all views that are expected to pass in a single pipeline"""
-        # List of views that don't contain the attribute: expected error type
-        passing_views = [v for v in self.views if not v.expected_error]
+        # Use only passing tables when testing views
+        passing_tables = self.filter_by_expected_error(self.tables, should_fail=False)
+        passing_views = self.filter_by_expected_error(self.views, should_fail=False)
+
         if not passing_views:
             return
         sql = TstAccumulator.generate_sql(
-            self.tables, passing_views
+            passing_tables, passing_views
         )  # Contains SQL for all passing views and their related tables
-        self.run_pipeline(pipeline_name_prefix, sql, views=passing_views)
+        self.run_pipeline(
+            pipeline_name_prefix, sql, views=passing_views, tables=passing_tables
+        )
 
     def run_tests(self, pipeline_name_prefix: str):
         """Run all tests registered"""
+        # Test tables (passing tables together, failing tables individually)
+        self.run_table_tests(pipeline_name_prefix)
+        # Test views (failing views individually, passing views together)
         self.run_expected_failures(pipeline_name_prefix)
         self.run_expected_successes(pipeline_name_prefix)
 
@@ -354,12 +436,16 @@ class TstAccumulator:
 class TstTable:
     """Base class for defining tables"""
 
+    expected_error = None
+
     def __init__(self):
         self.sql = ""
         self.data = []
 
     def register(self, ta: TstAccumulator):
-        ta.add_table(Table(self.sql, self.data))
+        table = Table(self.sql, self.data)
+        table.expected_error = getattr(self, "expected_error", None)
+        ta.add_table(table)
 
 
 class TstView:
