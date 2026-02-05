@@ -129,8 +129,6 @@ where
     }
 
     // Ideally we'd combine the sorting and value merging portions
-    // This line right here is literally the hottest code within the entirety of the
-    // program. It makes up 90% of the work done while joining or merging anything
     slice.sort_unstable_by(|Tup2(key1, _), Tup2(key2, _)| key1.cmp(key2));
 
     consolidate_slice_inner(
@@ -222,8 +220,6 @@ where
     }
 
     // Ideally we'd combine the sorting and value merging portions
-    // This line right here is literally the hottest code within the entirety of the
-    // program. It makes up 90% of the work done while joining or merging anything
     quicksort::quicksort(&mut keys[offset..], &mut diffs[offset..]);
 
     // Deduplicate all difference values
@@ -252,9 +248,6 @@ where
     }
 
     // Ideally we'd combine the sorting and value merging portions
-    // These lines right here are literally the hottest code within the entirety of
-    // the program. They make up 90% of the work done while joining or merging
-    // anything
     quicksort::quicksort(keys, diffs);
 
     // Safety: the keys & diffs slices are the same length and are non-empty
