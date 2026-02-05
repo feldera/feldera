@@ -5,12 +5,12 @@
   import PipelineMemoryGraph from '$lib/components/layout/pipelines/PipelineMemoryGraph.svelte'
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
   import PipelineThroughputGraph from '$lib/components/layout/pipelines/PipelineThroughputGraph.svelte'
+  import MetricsTables from '$lib/components/pipelines/editor/MetricsTables.svelte'
   import { useIsScreenXl } from '$lib/compositions/layout/useIsMobile.svelte'
   import {
     type PipelineManagerApi,
     usePipelineManager
   } from '$lib/compositions/usePipelineManager.svelte'
-  import { humanSize } from '$lib/functions/common/string'
   import { formatDateTime, useElapsedTime } from '$lib/functions/format'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import {
@@ -252,74 +252,7 @@
     </div>
     {#if metrics.current.views.size || metrics.current.tables.size}
       <div class="flex flex-wrap gap-4">
-        {#if metrics.current.tables.size}
-          <table class="bg-white-dark table h-min max-w-[1000px] rounded text-base">
-            <thead>
-              <tr>
-                <th class="font-normal text-surface-600-400">Table</th>
-                <th class="!text-end font-normal text-surface-600-400">Ingested records</th>
-                <th class="!text-end font-normal text-surface-600-400">Ingested bytes</th>
-                <th class="!text-end font-normal text-surface-600-400">Parse errors</th>
-                <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each metrics.current.tables.entries() as [relation, stats]}
-                <tr>
-                  <td>
-                    {relation}
-                  </td>
-                  <td class="text-end">
-                    {formatQty(stats.total_records)}
-                  </td>
-                  <td class="text-end">
-                    {humanSize(stats.total_bytes)}
-                  </td>
-                  <td class="text-end">{formatQty(stats.num_parse_errors)} </td>
-                  <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-        {#if metrics.current.views.size}
-          <table class="bg-white-dark table h-min max-w-[1500px] rounded text-base">
-            <thead>
-              <tr>
-                <th class="font-normal text-surface-600-400">View</th>
-                <th class="!text-end font-normal text-surface-600-400">Transmitted records</th>
-                <th class="!text-end font-normal text-surface-600-400">Transmitted bytes</th>
-                <th class="!text-end font-normal text-surface-600-400">Buffered records</th>
-                <th class="!text-end font-normal text-surface-600-400">Queued records</th>
-                <th class="!text-end font-normal text-surface-600-400">Buffered batches</th>
-                <th class="!text-end font-normal text-surface-600-400">Queued batches</th>
-                <th class="!text-end font-normal text-surface-600-400">Encode errors</th>
-                <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each metrics.current.views.entries() as [relation, stats]}
-                <tr>
-                  <td>
-                    {relation}
-                  </td>
-                  <td class="text-end">
-                    {formatQty(stats.transmitted_records)}
-                  </td>
-                  <td class="text-end">
-                    {humanSize(stats.transmitted_bytes)}
-                  </td>
-                  <td class="text-end">{formatQty(stats.buffered_records)} </td>
-                  <td class="text-end">{formatQty(stats.queued_records)} </td>
-                  <td class="text-end">{formatQty(stats.buffered_batches)} </td>
-                  <td class="text-end">{formatQty(stats.queued_batches)} </td>
-                  <td class="text-end">{formatQty(stats.num_encode_errors)} </td>
-                  <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
+        <MetricsTables {metrics} />
       </div>
     {/if}
   </div>

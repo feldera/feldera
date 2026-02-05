@@ -8,7 +8,6 @@ import {
 } from '$lib/functions/pipelineMetrics'
 import { isMetricsAvailable } from '$lib/functions/pipelines/status'
 import type { ExtendedPipeline } from '$lib/services/pipelineManager'
-import { useToast } from './useToastNotification'
 
 const metrics: Record<string, PipelineMetrics> = {} // Disable reactivity for metrics data for better performance
 let getMetrics = $state<() => typeof metrics>(() => metrics)
