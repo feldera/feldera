@@ -12,9 +12,17 @@ import type {
 import type { GlobalMetricsTimestamp, TimeSeriesEntry } from '$lib/types/pipelineManager'
 import { discreteDerivative } from './common/math'
 
+export type AggregatedMetrics<M> = {
+  aggregate: M
+  connectors: {
+    endpointName: string
+    metrics: M
+  }[]
+}
+
 export const emptyPipelineMetrics = {
-  tables: new Map<string, InputEndpointMetrics>(),
-  views: new Map<string, OutputEndpointMetrics>(),
+  tables: new Map<string, AggregatedMetrics<InputEndpointMetrics>>(),
+  views: new Map<string, AggregatedMetrics<OutputEndpointMetrics>>(),
   inputs: [] as InputEndpointStatus[],
   outputs: [] as OutputEndpointStatus[],
   global: {} as GlobalMetricsTimestamp
@@ -46,10 +54,13 @@ export const accumulatePipelineMetrics =
       outputs: newData.outputs,
       tables: new Map(
         groupBy(newData.inputs, (i) => normalizeCaseIndependentName({ name: i.config.stream })).map(
-          ([relationName, metrics]) =>
-            tuple(
-              relationName,
-              metrics.reduce(
+          ([relationName, endpoints]) => {
+            const metrics: AggregatedMetrics<InputEndpointMetrics> = {
+              connectors: endpoints.map((cur) => ({
+                endpointName: cur.endpoint_name,
+                metrics: cur.metrics
+              })),
+              aggregate: endpoints.reduce(
                 (acc: InputEndpointMetrics, cur) => {
                   const metrics = cur.metrics
                   return {
@@ -72,16 +83,21 @@ export const accumulatePipelineMetrics =
                   end_of_input: false
                 }
               )
-            )
+            }
+            return tuple(relationName, metrics)
+          }
         )
       ),
       views: new Map(
         groupBy(newData.outputs, (i) =>
           normalizeCaseIndependentName({ name: i.config.stream })
-        ).map(([relationName, metrics]) =>
-          tuple(
-            relationName,
-            metrics.reduce(
+        ).map(([relationName, endpoints]) => {
+          const metrics: AggregatedMetrics<OutputEndpointMetrics> = {
+            connectors: endpoints.map((cur) => ({
+              endpointName: cur.endpoint_name,
+              metrics: cur.metrics
+            })),
+            aggregate: endpoints.reduce(
               (acc: OutputEndpointMetrics, cur) => {
                 const metrics = cur.metrics
                 return {
@@ -111,8 +127,9 @@ export const accumulatePipelineMetrics =
                 memory: 0
               }
             )
-          )
-        )
+          }
+          return tuple(relationName, metrics)
+        })
       ),
       global: globalWithTimestamp
     } as any
