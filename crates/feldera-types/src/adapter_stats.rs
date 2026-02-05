@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{suspend::SuspendError, transaction::TransactionId};
+use crate::{coordination::Step, suspend::SuspendError, transaction::TransactionId};
 
 /// Pipeline state.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -277,6 +277,31 @@ pub struct ExternalGlobalControllerMetrics {
     pub total_processed_bytes: u64,
     /// Total number of input records processed to completion.
     pub total_completed_records: u64,
+    /// Number of steps that have been initiated.
+    ///
+    /// # Interpretation
+    ///
+    /// This is a count, not a step number.  If `total_initiated_steps` is 0, no
+    /// steps have been initiated.  If `total_initiated_steps > 0`, then step
+    /// `total_initiated_steps - 1` has been started and all steps previous to
+    /// that have been completely processed by the circuit.
+    #[schema(value_type = u64)]
+    pub total_initiated_steps: Step,
+    /// Number of steps whose input records have been processed to completion.
+    ///
+    /// A record is processed to completion if it has been processed by the DBSP engine and
+    /// all outputs derived from it have been processed by all output connectors.
+    ///
+    /// # Interpretation
+    ///
+    /// This is a count, not a step number.  If `total_completed_steps` is 0, no
+    /// steps have been processed to completion.  If `total_completed_steps >
+    /// 0`, then the last step whose input records have been processed to
+    /// completion is `total_completed_steps - 1`. A record that was ingested
+    /// when `total_initiated_steps` was `n` is fully processed when
+    /// `total_completed_steps >= n`.
+    #[schema(value_type = u64)]
+    pub total_completed_steps: Step,
     /// True if the pipeline has processed all input data to completion.
     pub pipeline_complete: bool,
 }

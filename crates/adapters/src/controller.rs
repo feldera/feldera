@@ -22,7 +22,7 @@ use crate::controller::checkpoint::{
     CheckpointInputEndpointMetrics, CheckpointOffsets, CheckpointOutputEndpointMetrics,
 };
 use crate::controller::journal::Journal;
-use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics};
+use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, ProcessedRecords};
 use crate::controller::sync::{
     CHECKPOINT_SYNC_PULL_DURATION_SECONDS, CHECKPOINT_SYNC_PULL_FAILURES,
     CHECKPOINT_SYNC_PULL_SUCCESS, CHECKPOINT_SYNC_PULL_TRANSFER_SPEED,
@@ -84,7 +84,7 @@ use feldera_types::adapter_stats::{
 };
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::coordination::{
-    self, AdHocCatalog, CheckpointCoordination, StepAction, StepRequest, StepStatus,
+    self, AdHocCatalog, CheckpointCoordination, Completion, StepAction, StepRequest, StepStatus,
     TransactionCoordination,
 };
 use feldera_types::format::json::JsonLines;
@@ -874,6 +874,11 @@ impl Controller {
     /// Returns an object for monitoring progress of transactions.
     pub fn transaction_watcher(&self) -> tokio::sync::watch::Receiver<TransactionCoordination> {
         self.inner.transaction_receiver.clone()
+    }
+
+    /// Returns an object for monitoring progress of input completion.
+    pub fn completion_watcher(&self) -> tokio::sync::watch::Receiver<Completion> {
+        self.inner.status.completion_notifier.subscribe()
     }
 
     pub fn release_checkpoint(&self) {
@@ -1697,7 +1702,14 @@ impl Controller {
 
     /// Check whether all records identified by the completion token
     /// have been fully processed by the pipeline.
-    pub fn completion_status(&self, token: &CompletionToken) -> Result<bool, ControllerError> {
+    ///
+    /// Returns `None` if the token is definitely incomplete, `Some(step)` if it
+    /// is complete once `GlobalControllerMetrics::completed_steps` reaches
+    /// `step`, or an error if the token is invalid.
+    pub fn completion_status(
+        &self,
+        token: &CompletionToken,
+    ) -> Result<Option<Step>, ControllerError> {
         self.status().completion_status(token)
     }
 
@@ -2401,6 +2413,12 @@ impl CircuitThread {
     }
 
     fn step(&mut self) -> Result<bool, ControllerError> {
+        self.controller
+            .status
+            .global_metrics
+            .total_initiated_steps
+            .store(self.step + 1, Ordering::Release);
+
         self.step_sender
             .send_replace(StepStatus::new(self.step, StepAction::Step));
         let total_consumed =
@@ -2436,7 +2454,10 @@ impl CircuitThread {
         let processed_records = self.processed_records(total_consumed);
         let processed_records = if self.controller.get_transaction_state() == TransactionState::None
         {
-            Some(processed_records)
+            Some(ProcessedRecords {
+                total_processed_input_records: processed_records,
+                total_processed_steps: self.step,
+            })
         } else {
             None
         };
@@ -3054,10 +3075,10 @@ impl CircuitThread {
     ///
     /// # Arguments
     ///
-    /// * `processed_records` is the total number of records processed by the
-    ///   pipeline *before* this step. If `processed_records` is `None`, we're in
-    ///   the middle of a transaction and the records are not fully processed yet.
-    fn push_output(&mut self, processed_records: Option<u64>) {
+    /// * `processed_records` is the records processed by the pipeline *before*
+    ///   this step. If `processed_records` is `None`, we're in the middle of a
+    ///   transaction and the records are not fully processed yet.
+    fn push_output(&mut self, processed_records: Option<ProcessedRecords>) {
         let outputs = self.controller.outputs.read().unwrap();
         for (_stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
             let delta_batch = output_handles.delta_handle.as_ref().concat();
@@ -3078,7 +3099,11 @@ impl CircuitThread {
                     self.controller.status.enqueue_batch(*endpoint_id, 0);
 
                     // We need to propagate processed_records to the connector for progress tracking.
-                    endpoint.queue.push((self.step, None, processed_records));
+                    endpoint.queue.push(BatchQueueEntry {
+                        step: self.step,
+                        data: None,
+                        processed_records,
+                    });
                     endpoint.unparker.unpark();
                     continue;
                 }
@@ -3092,9 +3117,11 @@ impl CircuitThread {
                     delta_batch.as_ref().unwrap().clone()
                 };
 
-                endpoint
-                    .queue
-                    .push((self.step, Some(batch), processed_records));
+                endpoint.queue.push(BatchQueueEntry {
+                    step: self.step,
+                    data: Some(batch),
+                    processed_records,
+                });
 
                 // Wake up the output thread.  We're not trying to be smart here and
                 // wake up the thread conditionally if it was previously idle, as I
@@ -4177,12 +4204,30 @@ impl Drop for StatisticsThread {
     }
 }
 
+struct BatchQueueEntry {
+    /// The step in which the output was produced.
+    step: Step,
+
+    /// The output batch.
+    ///
+    /// This is `None` if the step produced no output.  We still create an entry
+    /// to allow for progress tracking.
+    data: Option<Arc<dyn SerBatchReader>>,
+
+    /// The records processed by the pipeline *before* this step.
+    ///
+    /// This is `None` if we're in the middle of a transaction and the records
+    /// are not fully processed yet.
+    processed_records: Option<ProcessedRecords>,
+}
+
 /// A lock-free queue used to send output batches from the circuit thread
-/// to output endpoint threads.  Each entry is annotated with a progress label
-/// that is equal to the number of input records fully processed by
-/// DBSP before emitting this batch of outputs or `None` if the circuit is
-/// executing a transaction.  The label increases monotonically over time.
-type BatchQueue = SegQueue<(Step, Option<Arc<dyn SerBatchReader>>, Option<u64>)>;
+/// to output endpoint threads.
+///
+/// Each entry is labeled with information about the records processed by DBSP
+/// before emitting this batch of outputs or `None` if the circuit is executing
+/// a transaction.  The label increases monotonically over time.
+type BatchQueue = SegQueue<BatchQueueEntry>;
 
 /// State tracked by the controller for each output endpoint.
 struct OutputEndpointDescr {
@@ -4314,12 +4359,13 @@ struct OutputBuffer {
     /// Time when the first batch was pushed to the buffer.
     buffer_since: Instant,
 
-    /// Number of input records that will be fully processed after the buffer is flushed.
+    /// Records that will be fully processed after the buffer is flushed.
     ///
-    /// This is a part of the progress tracking mechanism, which tracks the number of inputs
-    /// to the pipeline that have been processed to completion.  It is currently used
-    /// to determine when the circuit has run to completion.
-    buffered_processed_records: u64,
+    /// This is a part of the progress tracking mechanism, which tracks the
+    /// number of inputs to the pipeline that have been processed to completion.
+    /// It is used for watermarks, completion tokens, and to determine when the
+    /// circuit has run to completion.
+    buffered_processed_records: ProcessedRecords,
 }
 
 impl OutputBuffer {
@@ -4330,7 +4376,7 @@ impl OutputBuffer {
             buffer: None,
             buffered_step: 0,
             buffer_since: Instant::now(),
-            buffered_processed_records: 0,
+            buffered_processed_records: ProcessedRecords::default(),
         }
     }
 
@@ -4350,7 +4396,7 @@ impl OutputBuffer {
         &mut self,
         batch: Option<Arc<dyn SerBatchReader>>,
         step: Step,
-        processed_records: Option<u64>,
+        processed_records: Option<ProcessedRecords>,
     ) {
         if let Some(batch) = batch {
             if let Some(buffer) = &mut self.buffer {
@@ -5579,7 +5625,12 @@ impl ControllerInner {
                     .status
                     .output_buffered_batches(endpoint_id, output_buffer.buffered_processed_records);
                 controller.circuit_thread_unparker.unpark()
-            } else if let Some((step, data, processed_records)) = queue.pop() {
+            } else if let Some(BatchQueueEntry {
+                step,
+                data,
+                processed_records,
+            }) = queue.pop()
+            {
                 // Dequeue the next output batch. If output buffering is enabled, push it to the
                 // buffer; we will check if the buffer needs to be flushed at the next iteration of
                 // the loop.  If buffering is disabled, push the buffer directly to the encoder.

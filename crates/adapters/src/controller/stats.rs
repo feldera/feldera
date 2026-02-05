@@ -49,7 +49,7 @@ use crossbeam::sync::Unparker;
 use feldera_adapterlib::{
     errors::journal::ControllerError,
     format::BufferSize,
-    transport::{InputReader, Resume, Watermark},
+    transport::{InputReader, Resume, Step, Watermark},
 };
 use feldera_storage::histogram::SlidingHistogram;
 use feldera_types::{
@@ -59,6 +59,7 @@ use feldera_types::{
         TransactionStatus,
     },
     config::{FtModel, PipelineConfig},
+    coordination::Completion,
     suspend::SuspendError,
     time_series::SampleStatistics,
     transaction::TransactionId,
@@ -68,7 +69,6 @@ use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::{
-    cmp::min,
     collections::{BTreeMap, BTreeSet, VecDeque},
     sync::{
         Mutex,
@@ -76,7 +76,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -234,6 +234,31 @@ pub struct GlobalControllerMetrics {
     /// all outputs derived from it have been processed by all output connectors.
     pub total_completed_records: AtomicU64,
 
+    /// Number of steps that have been initiated.
+    ///
+    /// # Interpretation
+    ///
+    /// This is a count, not a step number.  If `total_initiated_steps` is 0, no
+    /// steps have been initiated.  If `total_initiated_steps > 0`, then step
+    /// `total_initiated_steps - 1` has been started and all steps previous to
+    /// that have been completely processed by the circuit.
+    pub total_initiated_steps: Atomic<Step>,
+
+    /// Number of steps whose input records have been processed to completion.
+    ///
+    /// A record is processed to completion if it has been processed by the DBSP engine and
+    /// all outputs derived from it have been processed by all output connectors.
+    ///
+    /// # Interpretation
+    ///
+    /// This is a count, not a step number.  If `total_completed_steps` is 0, no
+    /// steps have been processed to completion.  If `total_completed_steps >
+    /// 0`, then the last step whose input records have been processed to
+    /// completion is `total_completed_steps - 1`. A record that was ingested
+    /// when `total_initiated_steps` was `n` is fully processed when
+    /// `total_completed_steps >= n`.
+    pub total_completed_steps: Atomic<Step>,
+
     /// Forces the controller to perform a step regardless of the state of
     /// input buffers.
     pub step_requested: AtomicBool,
@@ -265,6 +290,8 @@ impl GlobalControllerMetrics {
             total_processed_bytes: AtomicU64::new(0),
             total_completed_records: AtomicU64::new(processed_records),
             step_requested: AtomicBool::new(false),
+            total_initiated_steps: Atomic::new(0),
+            total_completed_steps: Atomic::new(0),
         }
     }
 
@@ -328,6 +355,14 @@ impl GlobalControllerMetrics {
         self.total_processed_records.load(Ordering::Acquire)
     }
 
+    pub fn total_initiated_steps(&self) -> Step {
+        self.total_initiated_steps.load(Ordering::Acquire)
+    }
+
+    pub fn total_completed_steps(&self) -> Step {
+        self.total_completed_steps.load(Ordering::Acquire)
+    }
+
     pub fn num_total_processed_bytes(&self) -> u64 {
         self.total_processed_bytes.load(Ordering::Acquire)
     }
@@ -373,6 +408,9 @@ pub struct ControllerStatus {
     /// Broadcast channel for notifying subscribers about new time series data.
     pub time_series_notifier: broadcast::Sender<SampleStatistics>,
 
+    /// Watch channel for notifying subscribers about [Completion] updates.
+    pub completion_notifier: watch::Sender<Completion>,
+
     /// Input endpoint configs and metrics.
     pub(crate) inputs: InputsStatus,
 
@@ -387,11 +425,13 @@ impl ControllerStatus {
         initial_start_time: Option<DateTime<Utc>>,
     ) -> Self {
         let (time_series_notifier, _) = broadcast::channel(1024); // Buffer for up to 1024 time series updates
+        let (completion_notifier, _) = watch::channel(Completion::default());
         Self {
             pipeline_config,
             global_metrics: GlobalControllerMetrics::new(processed_records, initial_start_time),
             time_series: Mutex::new(VecDeque::with_capacity(60)),
             time_series_notifier,
+            completion_notifier,
             inputs: RwLock::new(BTreeMap::new()),
             outputs: RwLock::new(BTreeMap::new()),
         }
@@ -686,7 +726,7 @@ impl ControllerStatus {
         pending_output_records
     }
 
-    /// Update `global_metrics.total_completed_records`.
+    /// Update `global_metrics.total_completed_records` and `global_metrics.total_completed_steps`.
     ///
     /// Must be invoked any time this metric can change, i.e., after every output
     /// produced by an output connector as well as after each step.
@@ -708,28 +748,39 @@ impl ControllerStatus {
 
         let output_status = self.output_status();
 
-        let mut total_completed_records = self
-            .global_metrics
-            .total_processed_records
-            .load(Ordering::Acquire);
-
+        let mut total_completed_records = self.global_metrics.num_total_processed_records();
+        let mut total_completed_steps = self.global_metrics.total_initiated_steps();
         for output_ep in output_status.values() {
-            total_completed_records = min(
-                total_completed_records,
-                output_ep.num_total_processed_input_records(),
-            );
+            total_completed_records =
+                total_completed_records.min(output_ep.num_total_processed_input_records());
+            total_completed_steps =
+                total_completed_steps.min(output_ep.num_total_processed_steps());
         }
 
         drop(output_status);
 
         // Use `fetch_max` to ensure that the biggest value wins among multiple writers.
-        let old = self
+        let old_records = self
             .global_metrics
             .total_completed_records
             .fetch_max(total_completed_records, Ordering::SeqCst);
-
-        if total_completed_records >= old {
+        if total_completed_records >= old_records {
             self.watermarks_update_completed(total_completed_records);
+        }
+
+        let old_steps = self
+            .global_metrics
+            .total_completed_steps
+            .fetch_max(total_completed_steps, Ordering::SeqCst);
+        if total_completed_steps >= old_steps {
+            self.completion_notifier.send_if_modified(|state| {
+                if state.total_completed_steps != total_completed_steps {
+                    state.total_completed_steps = total_completed_steps;
+                    true
+                } else {
+                    false
+                }
+            });
         }
     }
 
@@ -751,8 +802,8 @@ impl ControllerStatus {
     ) -> Result<CompletionToken, ControllerError> {
         if let Some(endpoint_stats) = self.input_status().get(&endpoint_id) {
             let num_input_records = endpoint_stats.completion_token(
-                self.num_total_circuit_input_records(),
-                self.num_total_completed_records(),
+                self.global_metrics.total_initiated_steps(),
+                self.global_metrics.total_completed_steps(),
             );
             Ok(CompletionToken::new(
                 self.global_metrics.incarnation_uuid,
@@ -764,11 +815,15 @@ impl ControllerStatus {
         }
     }
 
-    /// Check completion status of a token.
+    /// Check completion status of `completion_token`.
+    ///
+    /// Returns `None` if the token is definitely incomplete, `Some(step)` if it
+    /// is complete once `GlobalControllerMetrics::total_completed_steps`
+    /// reaches `step`, or an error if the token is invalid.
     pub fn completion_status(
         &self,
         completion_token: &CompletionToken,
-    ) -> Result<bool, ControllerError> {
+    ) -> Result<Option<Step>, ControllerError> {
         if completion_token.incarnation != self.global_metrics.incarnation_uuid {
             return Err(ControllerError::pipeline_restarted(&format!(
                 "Completion token was created by a previous incarnation of the pipeline (incarnation uuid: {}) and is not valid for the current incarnation ({}). This indicates that the pipeline was suspended and resumed from a checkpoint or restarted after a failure.",
@@ -777,8 +832,7 @@ impl ControllerStatus {
         }
 
         if let Some(endpoint_stats) = self.input_status().get(&completion_token.endpoint_id) {
-            Ok(endpoint_stats
-                .completion_status(completion_token.count, self.num_total_completed_records()))
+            Ok(endpoint_stats.completion_status(completion_token.count))
         } else {
             Err(ControllerError::unknown_endpoint_in_completion_token(
                 completion_token.endpoint_id,
@@ -897,7 +951,8 @@ impl ControllerStatus {
                 step_results,
                 watermarks,
                 self.num_total_circuit_input_records(),
-                self.num_total_completed_records(),
+                self.global_metrics.total_initiated_steps(),
+                self.global_metrics.total_completed_steps(),
             );
             finished = endpoint_stats.finished();
         };
@@ -933,19 +988,20 @@ impl ControllerStatus {
         };
     }
 
-    /// `total_processed_records` is the total number of records processed by the circuit
-    /// before this output batch was produced or `None` if the circuit is executing a transaction.
+    /// `processed` is statistics about records processed by the circuit before
+    /// this output batch was produced or `None` if the circuit is executing a
+    /// transaction.
     pub fn output_batch(
         &self,
         endpoint_id: EndpointId,
-        total_processed_records: Option<u64>,
+        processed: Option<ProcessedRecords>,
         num_records: usize,
         circuit_thread_unparker: &Unparker,
     ) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             let threshold = endpoint_stats.config.connector_config.max_queued_records;
 
-            let old = endpoint_stats.output_batch(total_processed_records, num_records);
+            let old = endpoint_stats.output_batch(processed, num_records);
 
             let new = old - (num_records as u64);
             if (old >= threshold && new <= threshold) || new == 0 {
@@ -964,9 +1020,9 @@ impl ControllerStatus {
         }
     }
 
-    pub fn output_buffered_batches(&self, endpoint_id: EndpointId, total_processed_records: u64) {
+    pub fn output_buffered_batches(&self, endpoint_id: EndpointId, processed: ProcessedRecords) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
-            endpoint_stats.output_buffered_batches(total_processed_records);
+            endpoint_stats.output_buffered_batches(processed);
         }
         self.update_total_completed_records();
     }
@@ -1127,6 +1183,8 @@ impl ControllerStatus {
                 .global_metrics
                 .total_completed_records
                 .load(Ordering::Acquire),
+            total_initiated_steps: self.global_metrics.total_initiated_steps(),
+            total_completed_steps: self.global_metrics.total_completed_steps(),
             pipeline_complete,
         };
 
@@ -1336,12 +1394,17 @@ const MAX_TOKENLIST_LEN: usize = 1_000_000;
 /// Tracks the set of tokens issued by the connector and the state needed to report
 /// completion status for these tokens.
 ///
-/// A token is the number of records ingested by the connector at the time the token
-/// was requested.  When all records up to this offset are pushed from the connector's
-/// queue into the circuit, we record the corresponding index (global offset) in the
-/// globally ordered stream of input to the circuit.  We can then determine whether
-/// all records associated with the token have been fully processed by comparing this
-/// offset with the `total_completed_records` counter.
+/// # Processing
+///
+/// Processing a token has two phases:
+///
+/// 1. Initialize the token consists as just the number of records ingested *by
+///    the connector* at the time it was created.  After the circuit ingests all
+///    of the records associated with the token, we additionally label the token
+///    with the step in which the last record was ingested.
+///
+/// 2. Wait until all of the records output for the labeled step have been sent
+///    to the output connector, by watching the `total_completed_steps` counter.
 ///
 /// # Garbage collection
 ///
@@ -1362,8 +1425,8 @@ const MAX_TOKENLIST_LEN: usize = 1_000_000;
 struct TokenList(Mutex<TokenListInner>);
 
 struct TokenListInner {
-    /// List of (token, global offset) mappings.
-    token_list: VecDeque<(u64, Option<u64>)>,
+    /// List of (token, step) mappings.
+    token_list: VecDeque<(u64, Option<Step>)>,
 }
 
 impl TokenListInner {
@@ -1378,39 +1441,39 @@ impl TokenListInner {
     /// Invoked when a new token is pushed to the queue or when additional records are pushed from
     /// the connector to the circuit.
     ///
-    /// * Set `total_circuit_input_records` as the global offset for all tokens that are <= connector_input_records,
-    ///   and that don't have a global offset yet.
-    /// * GC all but one tokens whose global offset is `<= total_completed_records`.
+    /// * Set `total_initiated_steps` as the step for all tokens that are <= connector_input_records
+    ///   and that don't have a step yet.
+    /// * GC all but one token whose step is `< total_completed_steps`.
     /// * Remove tokens that exceed queue capacity.
     ///
     /// # Arguments
     ///
     /// * `connector_circuit_input_records` - total number of inputs **from this connector** ingested by the circuit.
-    /// * `total_circuit_input_records` - total number of inputs across all connectors ingested by the circuit.
-    /// * `total_completed_records` - the number of records processed by the pipeline to completion.
+    /// * `total_initiated_steps` - Number of steps that have been initiated.
+    /// * `total_completed_steps` - Number of steps whose output has been delivered to connectors
     fn update(
         &mut self,
         connector_circuit_input_records: u64,
-        total_circuit_input_records: u64,
-        total_completed_records: u64,
+        total_initiated_steps: Step,
+        total_completed_steps: Step,
     ) {
-        // Label all unlabeled tokens <= connector_input_records with total_circuit_input_records
+        // Label all unlabeled tokens <= `connector_circuit_input_records` with `total_initiated_steps`.
         let first_unlabeled = self
             .token_list
             .partition_point(|(_token, label)| label.is_some());
 
         for (token, label) in self.token_list.range_mut(first_unlabeled..) {
             if *token <= connector_circuit_input_records {
-                *label = Some(total_circuit_input_records)
+                *label = Some(total_initiated_steps)
             } else {
                 break;
             }
         }
 
-        // Delete all but one tokens whose global offset is `<= total_completed_records`.
+        // Delete all but one token whose global offset is `<= total_completed_steps`.
         let first_completed = self.token_list.partition_point(|(_token, label)| {
             if let Some(label) = label {
-                *label <= total_completed_records
+                *label <= total_completed_steps
             } else {
                 false
             }
@@ -1443,33 +1506,22 @@ impl TokenListInner {
         self.token_list.push_back((token_input_records, None));
     }
 
-    /// Check completion status of a token.
+    /// Check completion status of `token`, an offset in the connector's input stream.
     ///
-    /// # Arguments
-    ///
-    /// * `token` - offset in the connector's input stream.
-    ///
-    /// * `total_completed_records` - the total number of records processed by the pipeline to completion.
-    ///   The token is considered completed if its associated global offset is `<= total_completed_records`.
-    ///
-    /// # Return value
-    ///
-    /// `true` if the token is completed; `false` otherwise.
-    fn completion_status(&self, token: u64, total_completed_records: u64) -> bool {
+    /// Returns `None` if the token is definitely incomplete, or `Some(step)` if
+    /// it is complete once [GlobalControllerMetrics::total_completed_steps]
+    /// reaches `step`.
+    fn completion_status(&self, token: u64) -> Option<Step> {
         // The first queued token `>= token`.
         let nearest_index = self
             .token_list
             .partition_point(|(queue_token, _label)| *queue_token < token);
 
-        if nearest_index >= self.token_list.len() {
-            warn!("Client requested completion status of unknown token {token}");
-            return false;
-        };
-
-        if let Some(global_offset) = &self.token_list[nearest_index].1 {
-            *global_offset <= total_completed_records
+        if let Some((_token, label)) = self.token_list.get(nearest_index) {
+            *label
         } else {
-            false
+            warn!("Client requested completion status of unknown token {token}");
+            None
         }
     }
 }
@@ -1481,13 +1533,13 @@ impl TokenList {
     fn update(
         &self,
         connector_circuit_input_records: u64,
-        total_circuit_input_records: u64,
-        total_completed_records: u64,
+        total_initiated_steps: Step,
+        total_completed_steps: Step,
     ) {
         self.0.lock().unwrap().update(
             connector_circuit_input_records,
-            total_circuit_input_records,
-            total_completed_records,
+            total_initiated_steps,
+            total_completed_steps,
         );
     }
 
@@ -1495,11 +1547,13 @@ impl TokenList {
         self.0.lock().unwrap().add_token(token_input_records);
     }
 
-    fn completion_status(&self, token: u64, total_completed_records: u64) -> bool {
-        self.0
-            .lock()
-            .unwrap()
-            .completion_status(token, total_completed_records)
+    /// Check completion status of `token`, an offset in the connector's input stream.
+    ///
+    /// Returns `None` if the token is definitely incomplete, or `Some(step)` if
+    /// it is complete once [GlobalControllerMetrics::total_completed_steps]
+    /// reaches `step`.
+    fn completion_status(&self, token: u64) -> Option<Step> {
+        self.0.lock().unwrap().completion_status(token)
     }
 }
 
@@ -1970,14 +2024,16 @@ impl InputEndpointStatus {
     ///
     /// # Arguments
     ///
-    /// `total_circuit_input_records`, `total_completed_records` - current pipeline-level metrics
-    /// (already updated with `step_results`) used to update `completion_tokens`.
+    /// `total_circuit_input_records`, `total_initiated_steps`,
+    /// `total_completed_steps` - current pipeline-level metrics (already
+    /// updated with `step_results`) used to update `completion_tokens`.
     fn extended(
         &self,
         step_results: StepResults,
         watermarks: Vec<Watermark>,
         total_circuit_input_records: u64,
-        total_completed_records: u64,
+        total_initiated_steps: Step,
+        total_completed_steps: Step,
     ) {
         let num_records = step_results.amt.records as u64;
         let num_bytes = step_results.amt.bytes as u64;
@@ -1997,8 +2053,8 @@ impl InputEndpointStatus {
             .fetch_add(num_records, Ordering::AcqRel);
         self.completion_tokens.update(
             old_circuit_input_records + num_records,
-            total_circuit_input_records,
-            total_completed_records,
+            total_initiated_steps,
+            total_completed_steps,
         );
         self.completed_frontier
             .append(watermarks, total_circuit_input_records);
@@ -2008,11 +2064,7 @@ impl InputEndpointStatus {
     /// `completion_tokens` queue.
     ///
     /// Returns the input offset that can be used to build `CompletionToken`.
-    fn completion_token(
-        &self,
-        total_circuit_input_records: u64,
-        total_completed_records: u64,
-    ) -> u64 {
+    fn completion_token(&self, total_initiated_steps: Step, total_completed_steps: Step) -> u64 {
         let token_input_records = self.metrics.total_records.load(Ordering::Acquire);
 
         // To avoid a race, we add a token _before_ reading the circuit_input_records
@@ -2024,16 +2076,19 @@ impl InputEndpointStatus {
 
         self.completion_tokens.update(
             connector_circuit_input_records,
-            total_circuit_input_records,
-            total_completed_records,
+            total_initiated_steps,
+            total_completed_steps,
         );
         token_input_records
     }
 
-    /// Check the status of a completion token.
-    fn completion_status(&self, token: u64, total_completed_records: u64) -> bool {
-        self.completion_tokens
-            .completion_status(token, total_completed_records)
+    /// Check completion status of `token`, an offset in the connector's input stream.
+    ///
+    /// Returns `None` if the token is definitely incomplete, or `Some(step)` if
+    /// it is complete once [GlobalControllerMetrics::total_completed_steps]
+    /// reaches `step`.
+    fn completion_status(&self, token: u64) -> Option<Step> {
+        self.completion_tokens.completion_status(token)
     }
 
     pub fn is_barrier(&self) -> bool {
@@ -2092,6 +2147,18 @@ pub struct OutputEndpointMetrics {
     /// processing `total_processed_input_records` records.
     pub total_processed_input_records: AtomicU64,
 
+    /// The number of steps whose input records have been processed by the
+    /// endpoint.
+    ///
+    /// # Interpretation
+    ///
+    /// This is a count, not a step number.  If `total_processed_steps` is 0, no
+    /// steps have been processed to completion.  If `total_processed_steps >
+    /// 0`, then the last step whose input records have been processed to
+    /// completion is `total_processed_steps - 1`. A record that was ingested in
+    /// step `n` is fully processed when `total_processed_steps > n`.
+    pub total_processed_steps: Atomic<Step>,
+
     /// Extra memory in use beyond that used for queuing records.  Not all
     /// output connectors report this.
     pub memory: AtomicU64,
@@ -2113,6 +2180,7 @@ impl OutputEndpointMetrics {
             num_encode_errors: AtomicU64::new(initial_statistics.num_encode_errors),
             num_transport_errors: AtomicU64::new(initial_statistics.num_transport_errors),
             total_processed_input_records: AtomicU64::new(total_processed_input_records),
+            total_processed_steps: Atomic::new(0),
             memory: AtomicU64::new(0),
         }
     }
@@ -2151,6 +2219,27 @@ impl OutputEndpointMetrics {
             memory: self.memory.load(Ordering::Relaxed),
         }
     }
+}
+
+/// Statistics for a collection of records being processed by an output
+/// endpoint.
+#[derive(Copy, Clone, Default)]
+pub struct ProcessedRecords {
+    /// Total number of input records ingested by the circuit across all
+    /// endpoints corresponding to these records.
+    ///
+    /// When the records represented by these statistics are fully processed by
+    /// the output endpoint, this value becomes the output endpoint's new
+    /// [OutputEndpointMetrics::total_processed_input_records].
+    pub total_processed_input_records: u64,
+
+    /// The number of steps whose input records have been processed by the
+    /// endpoint, once the endpoint has fully processed these records.
+    ///
+    /// When the records represented by these statistics are fully processed by
+    /// the output endpoint, this value becomes the output endpoint's new
+    /// [OutputEndpointMetrics::total_processed_steps].
+    pub total_processed_steps: Step,
 }
 
 /// Output endpoint status information.
@@ -2221,11 +2310,14 @@ impl OutputEndpointStatus {
 
     /// A batch has been pushed to the output transport directly from the queue,
     /// bypassing the buffer.
-    fn output_batch(&self, total_processed_input_records: Option<u64>, num_records: usize) -> u64 {
-        if let Some(total_processed_input_records) = total_processed_input_records {
+    fn output_batch(&self, processed: Option<ProcessedRecords>, num_records: usize) -> u64 {
+        if let Some(processed) = processed {
             self.metrics
                 .total_processed_input_records
-                .store(total_processed_input_records, Ordering::Release);
+                .store(processed.total_processed_input_records, Ordering::Release);
+            self.metrics
+                .total_processed_steps
+                .store(processed.total_processed_steps, Ordering::Release);
         }
 
         let old = self
@@ -2260,16 +2352,18 @@ impl OutputEndpointStatus {
     ///
     /// # Arguments
     ///
-    /// * `total_processed_input_records` - the output of the endpoint is now
-    ///   up to speed with the output of the circuit after processing this
-    ///   many records.
-    fn output_buffered_batches(&self, total_processed_input_records: u64) {
+    /// * `processed` - the output of the endpoint is now up to speed with the
+    ///   output of the circuit after processing these records.
+    fn output_buffered_batches(&self, processed: ProcessedRecords) {
         self.metrics.buffered_records.store(0, Ordering::Release);
         self.metrics.buffered_batches.store(0, Ordering::Release);
 
         self.metrics
             .total_processed_input_records
-            .store(total_processed_input_records, Ordering::Release);
+            .store(processed.total_processed_input_records, Ordering::Release);
+        self.metrics
+            .total_processed_steps
+            .store(processed.total_processed_steps, Ordering::Release);
     }
 
     fn output_buffer(&self, num_bytes: usize, num_records: usize) {
@@ -2306,5 +2400,9 @@ impl OutputEndpointStatus {
         self.metrics
             .total_processed_input_records
             .load(Ordering::Acquire)
+    }
+
+    fn num_total_processed_steps(&self) -> u64 {
+        self.metrics.total_processed_steps.load(Ordering::Acquire)
     }
 }

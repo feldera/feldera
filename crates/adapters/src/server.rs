@@ -1212,6 +1212,7 @@ where
         .service(coordination_checkpoint_prepare)
         .service(coordination_checkpoint_release)
         .service(coordination_transaction_status)
+        .service(coordination_completion_status)
         .service(coordination_adhoc_catalog)
         .service(coordination_adhoc_lease)
         .service(coordination_adhoc_scan)
@@ -2276,15 +2277,14 @@ async fn completion_status(
     let token = CompletionToken::decode(&args.token).map_err(|e| PipelineError::InvalidParam {
         error: format!("invalid completion token: {e}"),
     })?;
-    if state
-        .controller()?
-        .completion_status(&token)
-        .map_err(|e| state.maybe_missing_controller_error(e))?
-    {
-        Ok(HttpResponse::Ok().json(CompletionStatusResponse::complete()))
-    } else {
-        Ok(HttpResponse::Accepted().json(CompletionStatusResponse::inprogress()))
-    }
+
+    let controller = state.controller()?;
+    Ok(HttpResponse::Ok().json(CompletionStatusResponse::new(
+        controller
+            .completion_status(&token)
+            .map_err(|e| state.maybe_missing_controller_error(e))?,
+        controller.status().global_metrics.total_completed_steps(),
+    )))
 }
 
 #[post("/rebalance")]
@@ -2382,6 +2382,17 @@ async fn coordination_transaction_status(
 ) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
         WatchStream::new(state.controller()?.transaction_watcher()).map(|value| {
+            Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
+        }),
+    ))
+}
+
+#[get("/coordination/completion/status")]
+async fn coordination_completion_status(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
+        WatchStream::new(state.controller()?.completion_watcher()).map(|value| {
             Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
         }),
     ))
@@ -2917,7 +2928,7 @@ outputs:
                             .body()
                             .await
                             .unwrap();
-                        let CompletionStatusResponse { status } =
+                        let CompletionStatusResponse { status, .. } =
                             serde_json::from_slice(&resp).unwrap();
                         println!("completion status: {status:?}");
 
