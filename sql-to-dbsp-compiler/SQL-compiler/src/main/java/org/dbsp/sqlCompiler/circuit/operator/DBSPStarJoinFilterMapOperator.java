@@ -20,7 +20,9 @@ import java.util.List;
 
 /** A Join operator that has N inputs, combined with a filter and a map;
  * each input is indexed and all keys must be of the same type;
- * this operator is incremental-only. */
+ * this operator is incremental-only.  When the operator is lowered
+ * the synthesized function returns None when filter(function) is false, and Some(map(function))
+ * otherwise.  So the type of the function does NOT always match the output type of the operator.*/
 public class DBSPStarJoinFilterMapOperator extends DBSPStarJoinBaseOperator implements IIncremental {
     // If the following is null, the function represents the combined function/filter
     // and the function returns Option.
@@ -35,7 +37,6 @@ public class DBSPStarJoinFilterMapOperator extends DBSPStarJoinBaseOperator impl
         super(node, "inner_star_join_flatmap", outputType, function, isMultiset, inputs);
         this.filter = filter;
         this.map = map;
-        Utilities.enforce(function.getResultType().sameType(outputType.to(DBSPTypeZSet.class).elementType));
     }
 
     @Override

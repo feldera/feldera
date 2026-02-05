@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -82,12 +83,24 @@ public class ImplementJoins extends CircuitCloneVisitor {
     /** A class representing an expansion of a StarJoinBase operator into a tree of standard joins */
     public static class StarJoinImplementation {
         final DBSPCompiler compiler;
-        public final List<DBSPJoinIndexOperator> joins;
+        public final List<DBSPJoinBaseOperator> joins;
         public final DBSPSimpleOperator result;
+        final boolean delta;
 
-        public StarJoinImplementation(DBSPCompiler compiler, DBSPStarJoinBaseOperator operator, List<OutputPort> inputs) {
+        /** Expand a {@link DBSPStarJoinOperator} or {@link DBSPStarJoinIndexOperator} operator
+         * into a tree of joins.
+         * @param compiler   Compiler.
+         * @param operator   Operator to expand.
+         * @param inputs     Inputs to use for expansion.
+         * @param delta      If true use {@link DBSPStreamJoinIndexOperator}s operators in the expansion,
+         *                   else use {@link DBSPJoinIndexOperator}s.  This is set to 'true' during
+         *                   {@link org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DeltaExpandOperators}.
+         */
+        public StarJoinImplementation(DBSPCompiler compiler, DBSPStarJoinBaseOperator operator,
+                                      List<OutputPort> inputs, boolean delta) {
             this.compiler = compiler;
             this.joins = new ArrayList<>();
+            this.delta = delta;
 
             DBSPType keyType = operator.inputs.get(0).getOutputIndexedZSetType().keyType;
             var concat = this.concatenateFields(operator.getRelNode(), keyType, inputs);
@@ -102,7 +115,7 @@ public class ImplementJoins extends CircuitCloneVisitor {
                 throw new InternalCompilerError("Unexpected operator " + operator);
         }
 
-        void addOperator(DBSPJoinIndexOperator operator) {
+        void addOperator(DBSPJoinBaseOperator operator) {
             this.joins.add(operator);
         }
 
@@ -125,8 +138,14 @@ public class ImplementJoins extends CircuitCloneVisitor {
                     DBSPTupleExpression.flatten(leftVar.deref(), rightVar.deref()));
             DBSPClosureExpression appendFields = body.closure(key, leftVar, rightVar);
 
-            DBSPJoinIndexOperator result = new DBSPJoinIndexOperator(
-                    node, joinOutputType, appendFields, false, left, right, false);
+            final DBSPJoinBaseOperator result;
+            if (!this.delta) {
+                result = new DBSPJoinIndexOperator(
+                        node, joinOutputType, appendFields, false, left, right, false);
+            } else {
+                result = new DBSPStreamJoinIndexOperator(
+                        node, joinOutputType, appendFields, false, left, right, false);
+            }
             this.addOperator(result);
             return result;
         }
@@ -142,7 +161,7 @@ public class ImplementJoins extends CircuitCloneVisitor {
                 if (i == inputs.size() - 1) {
                     pairs.add(inputs.get(i));
                 } else {
-                    DBSPSimpleOperator join = combineTwoInputs(
+                    DBSPSimpleOperator join = this.combineTwoInputs(
                             node, groupKeyType, inputs.get(i), inputs.get(i + 1));
                     pairs.add(join.outputPort());
                 }
@@ -167,7 +186,11 @@ public class ImplementJoins extends CircuitCloneVisitor {
                 arguments[i] = new DBSPTupleExpression(fields, false).borrow();
             }
             DBSPExpression apply = closure.call(arguments).closure(var);
-            return apply.reduce(this.compiler).to(DBSPClosureExpression.class);
+            DBSPClosureExpression result = apply.reduce(this.compiler).to(DBSPClosureExpression.class);
+            if (this.delta) {
+                result = result.ensureTree(this.compiler).to(DBSPClosureExpression.class);
+            }
+            return result;
         }
     }
 
@@ -175,7 +198,7 @@ public class ImplementJoins extends CircuitCloneVisitor {
     public void postorder(DBSPStarJoinIndexOperator operator) {
         if (EXPAND_STAR) {
             var inputs = Linq.map(operator.inputs, this::mapped);
-            StarJoinImplementation impl = new StarJoinImplementation(this.compiler, operator, inputs);
+            StarJoinImplementation impl = new StarJoinImplementation(this.compiler, operator, inputs, false);
             for (var op: impl.joins)
                 this.addOperator(op);
             this.map(operator, impl.result);
@@ -188,7 +211,7 @@ public class ImplementJoins extends CircuitCloneVisitor {
     public void postorder(DBSPStarJoinOperator operator) {
         if (EXPAND_STAR) {
             var inputs = Linq.map(operator.inputs, this::mapped);
-            StarJoinImplementation impl = new StarJoinImplementation(this.compiler, operator, inputs);
+            StarJoinImplementation impl = new StarJoinImplementation(this.compiler, operator, inputs, false);
             for (var op: impl.joins)
                 this.addOperator(op);
             this.map(operator, impl.result);

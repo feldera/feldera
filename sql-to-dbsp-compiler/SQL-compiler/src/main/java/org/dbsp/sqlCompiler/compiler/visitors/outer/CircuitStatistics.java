@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
@@ -31,6 +32,7 @@ public class CircuitStatistics extends CircuitVisitor {
         public int tables;
         public int views;
         public int joins;
+        public int starJoins;
         public int linear;
         public int linearAggregates;
         public int nonLinearAggregates;
@@ -49,6 +51,7 @@ public class CircuitStatistics extends CircuitVisitor {
                     ",\n  \"tables\": " + tables +
                     ",\n  \"views\": " + views +
                     ",\n  \"joins\": " + joins +
+                    ",\n  \"starJoins\": " + starJoins +
                     ",\n  \"linear\": " + linear +
                     ",\n  \"linearAggregates\": " + linearAggregates +
                     ",\n  \"nonLinearAggregates\": " + nonLinearAggregates +
@@ -96,6 +99,8 @@ public class CircuitStatistics extends CircuitVisitor {
             this.stats.tables++;
         if (operator.is(DBSPViewBaseOperator.class))
             this.stats.views++;
+        if (operator.is(DBSPStarJoinBaseOperator.class))
+            this.stats.starJoins++;
         if (operator.is(IGCOperator.class))
             this.stats.gcOperators++;
         if (operator.is(DBSPWindowOperator.class))
