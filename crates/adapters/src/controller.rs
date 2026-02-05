@@ -2579,7 +2579,7 @@ impl CircuitThread {
         // in the circuit thread will directly delay the start of the next step,
         // so drop them in a separate thread.
         TOKIO.spawn_blocking(move || {
-            let _ = old_snapshot;
+            let _ = std::hint::black_box(old_snapshot);
         });
     }
 
