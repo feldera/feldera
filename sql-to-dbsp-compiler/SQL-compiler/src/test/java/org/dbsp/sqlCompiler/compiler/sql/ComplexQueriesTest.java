@@ -246,6 +246,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
             }
         };
         visitor.apply(circuit);
+        // This will compile the same program a second time, but with different flags, to
+        // match the other tests in this file, and it will also Rust-compile the result.
         this.compileRustTestCase(sql);
     }
 

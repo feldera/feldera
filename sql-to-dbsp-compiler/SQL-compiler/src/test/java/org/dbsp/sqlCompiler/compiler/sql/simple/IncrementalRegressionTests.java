@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -1978,7 +1979,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
     @Test
     public void projectionBug() {
-        String sql = """
+        this.getCCS("""
                 CREATE TABLE flows(ts TIMESTAMP NOT NULL LATENESS INTERVAL 5 SECONDS)
                 WITH ('append_only' = 'true');
                 
@@ -1987,6 +1988,118 @@ public class IncrementalRegressionTests extends SqlIoTest {
                             MAX(ts) AS ts_max,
                             window_start,
                             window_end
+                FROM TABLE(
+                        TUMBLE(
+                            TABLE flows,
+                            DESCRIPTOR(ts),
+                            INTERVAL '1' MINUTES
+                        )
+                    )
+                    GROUP BY window_start, window_end;
+                
+                CREATE VIEW final
+                    WITH ('emit_final' = 'window_end')
+                    AS SELECT window_start, window_end
+                    FROM tumble""");
+    }
+
+    @Test
+    public void starJoinFlatmapTest() {
+        // Check GC for StarJoinFilterMapOperator
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT, y INT LATENESS 1);
+                CREATE VIEW V WITH ('emit_final' = 'y')
+                AS SELECT
+                y,
+                MIN(x),
+                MAX(x),
+                STDDEV(x),
+                ARG_MAX(y, x)
+                FROM T GROUP BY y
+                HAVING y > 1;""");
+        // Because of emit_final nothing is emitted in the first step
+        ccs.step("INSERT INTO T VALUES(0, 0), (1, 2), (2, 2)", """
+                 y | min | max | stddev | arg_max | weight
+                -------------------------------------------""");
+        // Insert one tuple which produces no output yet; output for
+        // data inserted so far is now emitted.
+        ccs.step("INSERT INTO T VALUES(1, 5)", """
+                 y | min | max | stddev | arg_max | weight
+                -------------------------------------------
+                 2 |   1 |   2 |      1 |       2 | 1""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int joins = 0;
+
+            @Override
+            public void postorder(DBSPStarJoinFilterMapOperator operator) {
+                this.joins++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.joins);
+            }
+        });
+    }
+
+    @Test
+    public void starJoinFlatmapOptOutTest() {
+        // Test that we can inhibit the use of star joins using options
+        // This test may eventually be removed
+        var ccs = this.getCCS("""
+                SET FELDERA_AVOID_STAR_JOINS = ON;
+                
+                CREATE TABLE T(x INT, y INT);
+                CREATE VIEW V AS SELECT
+                y,
+                MIN(x),
+                MAX(x),
+                STDDEV(x),
+                ARG_MAX(y, x)
+                FROM T GROUP BY y
+                HAVING y > 1;""");
+        ccs.step("INSERT INTO T VALUES(0, 0), (1, 2), (2, 2)", """
+                 y | min | max | stddev | arg_max | weight
+                -------------------------------------------
+                 2 |   1 |   2 |      1 |       2 | 1""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int joins = 0;
+
+            @Override
+            public void postorder(DBSPStarJoinFilterMapOperator operator) {
+                this.joins++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(0, this.joins);
+            }
+        });
+    }
+
+    @Test
+    public void testEmitFinalStarJoin() {
+        // Test waterline propagation through star join.
+        // This will fail if propagation is not good enough because of the 'emit_final' view annotation.
+        this.getCCS("""
+                CREATE TABLE T (
+                  ts TIMESTAMP NOT NULL LATENESS INTERVAL 5 MINUTE,
+                  a VARCHAR NOT NULL
+                );
+                
+                CREATE TABLE flows (
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 5 SECONDS,
+                    src VARCHAR NOT NULL,
+                    sequence_number BIGINT
+                );
+                
+                CREATE LOCAL VIEW tumble AS
+                    SELECT
+                            MIN(ts) AS ts_min,
+                            MAX(ts) AS ts_max,
+                            window_end - INTERVAL 5 MINUTE as delayed_window_end,
+                            src,
+                            MAX(sequence_number) AS sequence_number
                     FROM TABLE(
                         TUMBLE(
                             TABLE flows,
@@ -1995,11 +2108,13 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         )
                     )
                     GROUP BY window_start, window_end;
-
+                
                 CREATE VIEW final
                     WITH ('emit_final' = 'window_end')
                     AS SELECT window_start, window_end
-                    FROM tumble;""";
-        this.getCCS(sql);
+                    FROM tumble
+                     LEFT ASOF JOIN T
+                        MATCH_CONDITION(tumble.delayed_window_end >= T.ts)
+                        ON tumble.src = T.a;;""");
     }
 }

@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
@@ -58,6 +59,7 @@ public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
         DBSPOperator operator = port.node();
         int input = port.port();
         return operator.is(DBSPJoinBaseOperator.class) ||
+                operator.is(DBSPStarJoinBaseOperator.class) ||
                 (operator.is(DBSPWindowOperator.class) && input == 0) ||
                 operator.is(DBSPPartitionedRollingAggregateOperator.class) ||
                 operator.is(DBSPDistinctOperator.class) ||
