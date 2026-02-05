@@ -84,6 +84,7 @@ public class CircuitOptimizer extends Passes {
             this.add(new EnsureDistinctOutputs(compiler));
         this.add(new PropagateEmptySources(compiler));
         this.add(new MergeSums(compiler));
+        this.add(new CreateStarJoins(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         AnalyzedSet<DBSPOperator> operatorsAnalyzed = new AnalyzedSet<>();
         this.add(new OptimizeWithGraph(compiler,

@@ -32,7 +32,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements ICon
             CalciteRelNode node, CalciteObject object,
             boolean lowerInclusive, boolean upperInclusive,
             OutputPort data, OutputPort control) {
-        super(node, "window", new NoExpression(object, DBSPTypeVoid.INSTANCE), data.outputType(),
+        super(node, "window", new NoExpression(DBSPTypeVoid.INSTANCE), data.outputType(),
                 data.isMultiset(), data, control);
         // Check that the left input and output are indexed ZSets
         this.getOutputIndexedZSetType();

@@ -382,13 +382,13 @@
     }, "s2": {
       "operation": "nested",
       "outputs": [
-        { "node": "s9", "output": 0 }
+        { "node": "s8", "output": 0 }
       ],
       "s3": {
         "operation": "Z",
         "inputs": [],
         "table": "fibonacci-decl",
-        "backedges": [{ "node": "s9", "output": 0 }],
+        "backedges": [{ "node": "s8", "output": 0 }],
         "calcite": {
           "final": 2
         },
@@ -447,19 +447,6 @@
         "persistent_id": "af7a20a52ece7365a3b1440e05c39292ac5a55c6c641581b350a01ef95f65dc8"
       },
       "s7": {
-        "operation": "map",
-        "inputs": [
-          { "node": "s6", "output": 0 }
-        ],
-        "calcite": {
-          "partial": 10
-        },
-        "positions": [
-          {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
-        ],
-        "persistent_id": "dc3dde8d51bd87a5aef072c7e3f49bb64f1585467dff64fe9d6aae0777f581f9"
-      },
-      "s8": {
         "operation": "join",
         "inputs": [
           { "node": "s4", "output": 0 },
@@ -475,19 +462,19 @@
         ],
         "persistent_id": "d2d417d4519df7cdda5f1b3418fbfdb6b8fd0a9bd9f9b890d0631e73a66cca5a"
       },
-      "s9": {
+      "s8": {
         "operation": "sum",
         "inputs": [
-          { "node": "s7", "output": 0 },
-          { "node": "s8", "output": 0 }
+          { "node": "s6", "output": 0 },
+          { "node": "s7", "output": 0 }
         ],
         "calcite": {
           "final": 10
         },
         "positions": [],
-        "persistent_id": "1b0a54fcd87bb8e0b251dd69693425ae5b5d3b5753a123d5a0d22fe6f5ea740e"
+        "persistent_id": "2f8076b543c6c81cf65784aee26bc1ce6ea646ada4c0be4625030c4f561b1413"
       }
-    }, "s10": {
+    }, "s9": {
       "operation": "inspect",
       "inputs": [
         { "node": "s2", "output": 0 }
@@ -500,8 +487,8 @@
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1},
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
       ],
-      "persistent_id": "3035407bd189e60ab4a95c6e8e3555453d98937a42f859a252171247c5bd3a46"
-    }, "s11": {
+      "persistent_id": "54fa67f4bb42d34f5476863b19a23ce73c84d18ce7911f8c9f59d056e5d9c994"
+    }, "s10": {
       "operation": "inspect",
       "inputs": [
         { "node": "s0", "output": 0 }
