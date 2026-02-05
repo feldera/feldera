@@ -73,6 +73,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVoidLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
@@ -518,7 +519,7 @@ public class Simplify extends ExpressionTranslator {
                 } else {
                     result = negative;
                     if (result == null)
-                        result = new DBSPRawTupleExpression();
+                        result = DBSPVoidLiteral.INSTANCE;
                 }
             }
         } else if (negative != null &&

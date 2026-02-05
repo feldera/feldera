@@ -77,6 +77,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVoidLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPathSegment;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
@@ -172,6 +173,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPNullLiteral literal) {
         this.builder.append("None::<()>");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPVoidLiteral literal) {
+        this.builder.append("()");
         return VisitDecision.STOP;
     }
 

@@ -75,6 +75,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVoidLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPathSegment;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
@@ -733,6 +734,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPNullLiteral node) {
+        return this.preorder((DBSPLiteral) node);
+    }
+
+    public VisitDecision preorder(DBSPVoidLiteral node) {
         return this.preorder((DBSPLiteral) node);
     }
 
@@ -1411,6 +1416,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPNullLiteral node) {
+        this.postorder((DBSPLiteral) node);
+    }
+
+    public void postorder(DBSPVoidLiteral node) {
         this.postorder((DBSPLiteral) node);
     }
 
