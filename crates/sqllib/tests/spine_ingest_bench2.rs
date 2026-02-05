@@ -48,7 +48,7 @@ enum InputType {
 
 #[test]
 #[ignore]
-fn spine_ingest_tput_file_storage() {
+fn spine_ingest_tput_file_storage2() {
     let threads_list = parse_csv_env("THREADS", DEFAULT_THREADS);
     let input_type = parse_input_type();
     let input_sizes = match input_type {
@@ -297,7 +297,7 @@ fn generate_batch_str(batch_size: usize, input_size: usize, rng: &mut u64) -> Ba
         tuples.push(Tup2(Tup2(key, ()), 1));
     }
     BatchPayload {
-        tuples: Box::new(LeanVec::from(tuples)).erase_box(),
+        tuples: Box::new(LeanVec::from(tuples)),
         len: batch_size,
     }
 }
