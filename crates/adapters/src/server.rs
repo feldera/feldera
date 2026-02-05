@@ -1457,15 +1457,8 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
 /// Retrieve whether a pipeline is suspendable or not.
 #[get("/suspendable")]
 async fn suspendable(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let suspend_error = state
-        .controller()?
-        .status()
-        .suspend_error
-        .lock()
-        .unwrap()
-        .clone();
-    let reasons = match suspend_error {
-        Some(SuspendError::Permanent(errors)) => Some(errors.clone()),
+    let reasons = match state.controller()?.can_suspend() {
+        Err(SuspendError::Permanent(errors)) => Some(errors),
         _ => None,
     };
     Ok(HttpResponse::Ok().json(SuspendableResponse::new(
@@ -1506,14 +1499,14 @@ async fn query(
 
 #[get("/stats")]
 async fn stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    Ok(HttpResponse::Ok().json(state.controller()?.status().to_api_type()))
+    Ok(HttpResponse::Ok().json(state.controller()?.api_status()))
 }
 
 /// This endpoint returns a subset of stats that don't need updating and so is more performant than /stats
 #[get("/stats/errors")]
 async fn error_stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     let controller = state.controller()?;
-    let controller_status = controller.stale_status();
+    let controller_status = controller.status();
 
     let inputs: Vec<EndpointErrorStats<InputEndpointErrorMetrics>> = controller_status
         .input_status()
