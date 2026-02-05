@@ -7032,6 +7032,13 @@
         "properties": {
           "status": {
             "$ref": "#/components/schemas/CompletionStatus"
+          },
+          "step": {
+            "type": "integer",
+            "format": "int64",
+            "description": "If all of the data associated with the token has been processed through\nthe pipeline, this is the final step that includes at least one record.\nWhen the pipeline's `total_completed_steps` reaches this value, the\ntoken has been completed.\n\nThis is `None` before the data associated with the token has been\nprocessed through the pipeline.",
+            "nullable": true,
+            "minimum": 0
           }
         }
       },
@@ -8133,6 +8140,8 @@
           "total_processed_records",
           "total_processed_bytes",
           "total_completed_records",
+          "total_initiated_steps",
+          "total_completed_steps",
           "pipeline_complete"
         ],
         "properties": {
@@ -8210,6 +8219,18 @@
             "type": "integer",
             "format": "int64",
             "description": "Total number of input records processed to completion.",
+            "minimum": 0
+          },
+          "total_completed_steps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of steps whose input records have been processed to completion.\n\nA record is processed to completion if it has been processed by the DBSP engine and\nall outputs derived from it have been processed by all output connectors.\n\n# Interpretation\n\nThis is a count, not a step number.  If `total_completed_steps` is 0, no\nsteps have been processed to completion.  If `total_completed_steps >\n0`, then the last step whose input records have been processed to\ncompletion is `total_completed_steps - 1`. A record that was ingested\nwhen `total_initiated_steps` was `n` is fully processed when\n`total_completed_steps >= n`.",
+            "minimum": 0
+          },
+          "total_initiated_steps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of steps that have been initiated.\n\n# Interpretation\n\nThis is a count, not a step number.  If `total_initiated_steps` is 0, no\nsteps have been initiated.  If `total_initiated_steps > 0`, then step\n`total_initiated_steps - 1` has been started and all steps previous to\nthat have been completely processed by the circuit.",
             "minimum": 0
           },
           "total_input_bytes": {
