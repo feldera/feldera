@@ -58,7 +58,7 @@
     "flowbite-svelte": "1.29.1",
     "formsnap": "2.0.1",
     "globals": "16.5.0",
-    "jsonpath": "1.1.1",
+    "jsonpath": "1.2.0",
     "jwt-decode": "4.0.0",
     "monaco-editor": "0.55.1",
     "new-github-issue-url": "1.1.0",
