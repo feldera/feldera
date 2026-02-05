@@ -20,7 +20,7 @@
     /**
      * The text label for the timeline
      */
-    label: string
+    label?: string
     /**
      * The list of events to display
      */
@@ -360,7 +360,11 @@
   <div class="">
     {label}
     {#if healthStatus}
-      {@const style = getStyle(healthStatus)} - <span class={style.text}>{style.label}</span>
+      {@const style = getStyle(healthStatus)}
+      {label ? ' - ' : ''}
+      <span class={style.text}>
+        {style.label}
+      </span>
     {/if}
   </div>
   <div class="relative {className}">
@@ -396,12 +400,12 @@
             {@const style = getStyle(status)}
             <div class="flex items-center gap-1.5">
               <div class="h-3 w-3 rounded-sm {style.bg}"></div>
-              <span class="text-surface-600-300">{style.label}</span>
+              <span class="">{style.label}</span>
             </div>
           {/each}
           <div class="flex items-center gap-1.5">
             <div class="h-3 w-3 rounded-sm bg-surface-300-700"></div>
-            <span class="text-surface-600-300">No data</span>
+            <span class="">No data</span>
           </div>
         </div>
       {/if}

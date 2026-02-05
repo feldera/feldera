@@ -10,6 +10,7 @@
   import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
   import * as TabProfileVisualizer from '$lib/components/pipelines/editor/TabProfileVisualizer.svelte'
   import * as TabSamplyProfile from '$lib/components/pipelines/editor/TabSamplyProfile.svelte'
+  import * as TabPipelineEvents from '$lib/components/pipelines/editor/TabPipelineEvents.svelte'
   import PanelLogs from '$lib/components/pipelines/editor/TabLogs.svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
@@ -52,7 +53,8 @@
         true
       ),
       tuple('Samply' as const, TabSamplyProfile.Label, TabSamplyProfile.default, false),
-      tuple('Logs' as const, TabLogs, PanelLogs, false)
+      tuple('Logs' as const, TabLogs, PanelLogs, false),
+      tuple('Pipeline Health' as const, TabPipelineEvents.Label, TabPipelineEvents.default, true)
     ].filter((tab) => tab[0] !== currentInteractionTab)
   )
   let currentTab = $derived(

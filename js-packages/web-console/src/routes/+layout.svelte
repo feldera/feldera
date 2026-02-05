@@ -28,9 +28,7 @@
 
   // Scarf.sh tracking for OSS deployments
   // Only track Open source edition (excludes Enterprise builds)
-  const shouldTrack = $derived(
-    browser && page.data.feldera?.config?.edition === 'Open source'
-  )
+  const shouldTrack = $derived(browser && page.data.feldera?.config?.edition === 'Open source')
   const scarfPixelId = 'c5e8a21a-5f5a-424d-81c4-5ded97174900'
   const scarfTrackingUrl = $derived(
     shouldTrack
