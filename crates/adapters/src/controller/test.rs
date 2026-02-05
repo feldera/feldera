@@ -2087,18 +2087,6 @@ fn test_external_controller_status_serialization() {
         status.set_bootstrap_in_progress(false);
 
         // Set public atomic fields
-        status
-            .global_metrics
-            .rss_bytes
-            .store(1024 * 1024 * 512, Ordering::Relaxed); // 512 MB
-        status
-            .global_metrics
-            .cpu_msecs
-            .store(45000, Ordering::Relaxed);
-        status
-            .global_metrics
-            .uptime_msecs
-            .store(120000, Ordering::Relaxed);
         status.global_metrics.start_time = Utc.timestamp_opt(1700000000, 0).unwrap();
         status.global_metrics.incarnation_uuid =
             Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
@@ -2143,16 +2131,6 @@ fn test_external_controller_status_serialization() {
             .global_metrics
             .total_completed_records
             .store(998000, Ordering::Relaxed);
-        status
-            .global_metrics
-            .pipeline_complete
-            .store(false, Ordering::Relaxed);
-
-        // Set suspend error (std::sync::Mutex returns Result, so we need to unwrap)
-        *status.suspend_error.lock().unwrap() = Some(SuspendError::Permanent(vec![
-            PermanentSuspendError::StorageRequired,
-            PermanentSuspendError::UnsupportedInputEndpoint("kafka_input".to_string()),
-        ]));
 
         // Add input endpoints
         let mut inputs = status.inputs.write();
@@ -2316,7 +2294,16 @@ fn test_external_controller_status_serialization() {
     let controller_status = create_mock_status();
 
     // Convert to ExternalControllerStatus using the to_api_type method
-    let external_status = controller_status.to_api_type();
+    let mut external_status = controller_status.to_api_type(
+        Err(SuspendError::Permanent(vec![
+            PermanentSuspendError::StorageRequired,
+            PermanentSuspendError::UnsupportedInputEndpoint("kafka_input".to_string()),
+        ])),
+        false,
+    );
+    external_status.global_metrics.rss_bytes = 1024 * 1024 * 512; // 512 MB
+    external_status.global_metrics.cpu_msecs = 45_000;
+    external_status.global_metrics.uptime_msecs = 120_000;
 
     // Serialize the ExternalControllerStatus to JSON
     let external_json = serde_json::to_value(&external_status)
