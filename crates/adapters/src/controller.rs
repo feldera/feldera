@@ -2579,7 +2579,15 @@ impl CircuitThread {
         // in the circuit thread will directly delay the start of the next step,
         // so drop them in a separate thread.
         TOKIO.spawn_blocking(move || {
-            let _ = old_snapshot;
+            if let Some((_, old_snapshot)) = old_snapshot.as_ref()
+                && Arc::strong_count(old_snapshot) > 1
+            {
+                println!(
+                    "Old snapshot has {} strong references",
+                    Arc::strong_count(old_snapshot)
+                );
+            }
+            let _ = std::hint::black_box(old_snapshot);
         });
     }
 
