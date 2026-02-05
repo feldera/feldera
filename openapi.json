@@ -8250,7 +8250,7 @@
           "uptime_msecs": {
             "type": "integer",
             "format": "int64",
-            "description": "Time since the pipeline process started, in milliseconds.",
+            "description": "Time since the pipeline process started, including time that the\npipeline was running or paused.\n\nThis is the elapsed time since `start_time`.",
             "minimum": 0
           }
         }

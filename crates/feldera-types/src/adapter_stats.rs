@@ -242,7 +242,10 @@ pub struct ExternalGlobalControllerMetrics {
     pub rss_bytes: u64,
     /// CPU time used by the pipeline across all threads, in milliseconds.
     pub cpu_msecs: u64,
-    /// Time since the pipeline process started, in milliseconds.
+    /// Time since the pipeline process started, including time that the
+    /// pipeline was running or paused.
+    ///
+    /// This is the elapsed time since `start_time`.
     pub uptime_msecs: u64,
     /// Time at which the pipeline process started, in seconds since the epoch.
     #[serde(with = "chrono::serde::ts_seconds")]

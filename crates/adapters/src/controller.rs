@@ -79,7 +79,8 @@ use feldera_storage::metrics::{
     WRITE_LATENCY_MICROSECONDS,
 };
 use feldera_types::adapter_stats::{
-    ExternalInputEndpointStatus, ExternalOutputEndpointStatus, TransactionStatus,
+    ExternalControllerStatus, ExternalInputEndpointStatus, ExternalOutputEndpointStatus,
+    TransactionStatus,
 };
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::coordination::{
@@ -788,16 +789,16 @@ impl Controller {
         self.inner.output_endpoint_status(endpoint_name)
     }
 
-    /// Returns controller status.
+    /// Returns the current controller status.
     pub fn status(&self) -> &ControllerStatus {
-        // Update pipeline stats computed on-demand.
-        self.inner.status.update(self.can_suspend().err());
         &self.inner.status
     }
 
-    /// Returns the current controller status without updating the lazily updated data.
-    pub fn stale_status(&self) -> &ControllerStatus {
-        &self.inner.status
+    /// Returns the current controller status in the form used by the external
+    /// API.
+    pub fn api_status(&self) -> ExternalControllerStatus {
+        self.status()
+            .to_api_type(self.can_suspend(), self.pipeline_complete())
     }
 
     /// Returns the pipeline state.

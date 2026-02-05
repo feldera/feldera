@@ -163,21 +163,6 @@ pub struct GlobalControllerMetrics {
     /// Entities that initiated the current transaction.
     pub transaction_initiators: Mutex<TransactionInitiators>,
 
-    /// Resident set size of the pipeline process, in bytes.
-    // This field is computed on-demand by calling `ControllerStatus::update`.
-    pub rss_bytes: AtomicU64,
-
-    /// CPU time used by the pipeline across all threads, in milliseconds.
-    // This field is computed on-demand by calling `ControllerStatus::update`.
-    pub cpu_msecs: AtomicU64,
-
-    /// Time since the pipeline process started, including time that the
-    /// pipeline was running or paused.
-    ///
-    /// This is the elapsed time since `start_time`.
-    // This field is computed on-demand by calling `ControllerStatus::update`.
-    pub uptime_msecs: AtomicU64,
-
     /// Time at which the pipeline process started, in seconds since the epoch.
     pub start_time: DateTime<Utc>,
 
@@ -247,19 +232,7 @@ pub struct GlobalControllerMetrics {
     ///
     /// A record is processed to completion if it has been processed by the DBSP engine and
     /// all outputs derived from it have been processed by all output connectors.
-    // This field is computed on-demand by calling `ControllerStatus::update_total_completed_records`.
     pub total_completed_records: AtomicU64,
-
-    /// True if the pipeline has processed all input data to completion.
-    /// This means that the following conditions hold:
-    ///
-    /// * All input endpoints have signalled end-of-input.
-    /// * All input records received from all endpoints have been processed by
-    ///   the circuit.
-    /// * All output records have been sent to respective output transport
-    ///   endpoints.
-    // This field is computed on-demand by calling `ControllerStatus::update`.
-    pub pipeline_complete: AtomicBool,
 
     /// Forces the controller to perform a step regardless of the state of
     /// input buffers.
@@ -276,9 +249,6 @@ impl GlobalControllerMetrics {
             transaction_id: Atomic::new(0),
             transaction_status: Atomic::new(TransactionStatus::NoTransaction),
             transaction_initiators: Mutex::new(TransactionInitiators::default()),
-            rss_bytes: AtomicU64::new(0),
-            cpu_msecs: AtomicU64::new(0),
-            uptime_msecs: AtomicU64::new(0),
             start_time,
             incarnation_uuid: Uuid::now_v7(),
             initial_start_time,
@@ -294,7 +264,6 @@ impl GlobalControllerMetrics {
             total_processed_records: AtomicU64::new(processed_records),
             total_processed_bytes: AtomicU64::new(0),
             total_completed_records: AtomicU64::new(processed_records),
-            pipeline_complete: AtomicBool::new(false),
             step_requested: AtomicBool::new(false),
         }
     }
@@ -333,14 +302,6 @@ impl GlobalControllerMetrics {
         self.total_processed_records
             .fetch_add(amt.records as u64, Ordering::AcqRel)
             + amt.records as u64
-    }
-
-    pub fn rss_bytes(&self) -> u64 {
-        self.rss_bytes.load(Ordering::Relaxed)
-    }
-
-    pub fn cpu_msecs(&self) -> u64 {
-        self.cpu_msecs.load(Ordering::Relaxed)
     }
 
     pub fn num_buffered_input_records(&self) -> u64 {
@@ -412,11 +373,6 @@ pub struct ControllerStatus {
     /// Broadcast channel for notifying subscribers about new time series data.
     pub time_series_notifier: broadcast::Sender<SampleStatistics>,
 
-    /// If this is empty, the pipeline can be suspended or checkpointed.  If
-    /// this is nonempty, it is the (permanent or temporary) reasons why not.
-    // This field is computed on-demand by calling `ControllerStatus::update`.
-    pub suspend_error: Mutex<Option<SuspendError>>,
-
     /// Input endpoint configs and metrics.
     pub(crate) inputs: InputsStatus,
 
@@ -436,7 +392,6 @@ impl ControllerStatus {
             global_metrics: GlobalControllerMetrics::new(processed_records, initial_start_time),
             time_series: Mutex::new(VecDeque::with_capacity(60)),
             time_series_notifier,
-            suspend_error: Mutex::new(None),
             inputs: RwLock::new(BTreeMap::new()),
             outputs: RwLock::new(BTreeMap::new()),
         }
@@ -1085,44 +1040,15 @@ impl ControllerStatus {
         true
     }
 
-    pub fn update(&self, suspend_error: Option<SuspendError>) {
-        self.global_metrics
-            .pipeline_complete
-            .store(self.pipeline_complete(), Ordering::Release);
-
-        *self.suspend_error.lock().unwrap() = suspend_error;
-
-        let uptime = Utc::now() - self.global_metrics.start_time;
-        self.global_metrics.uptime_msecs.store(
-            uptime.num_milliseconds().try_into().unwrap_or(0),
-            Ordering::Relaxed,
-        );
-
-        if let Some(usage) = memory_stats() {
-            self.global_metrics
-                .rss_bytes
-                .store(usage.physical_mem as u64, Ordering::Relaxed);
-        } else {
-            error!("Failed to fetch process RSS");
-        }
-
-        match ProcessTime::try_now() {
-            Ok(time) => {
-                self.global_metrics
-                    .cpu_msecs
-                    .store(time.as_duration().as_millis() as u64, Ordering::Relaxed);
-            }
-            Err(e) => {
-                error!("Failed to fetch process times: {e}");
-            }
-        }
-    }
-
     /// Convert from internal `ControllerStatus` to the public API type in `feldera_types`.
     ///
     /// This function ensures that the "duplicate" types in `feldera_types::adapter_stats`
     /// stay correlated with the original types and won't go out of sync.
-    pub fn to_api_type(&self) -> feldera_types::adapter_stats::ExternalControllerStatus {
+    pub fn to_api_type(
+        &self,
+        suspend_error: Result<(), SuspendError>,
+        pipeline_complete: bool,
+    ) -> feldera_types::adapter_stats::ExternalControllerStatus {
         use feldera_types::adapter_stats;
 
         // Convert global metrics
@@ -1147,14 +1073,28 @@ impl ControllerStatus {
                 .lock()
                 .unwrap()
                 .to_api_type(),
-            rss_bytes: self.global_metrics.rss_bytes.load(Ordering::Relaxed),
-            cpu_msecs: self.global_metrics.cpu_msecs.load(Ordering::Relaxed),
-            uptime_msecs: self.global_metrics.uptime_msecs.load(Ordering::Relaxed),
             start_time: self.global_metrics.start_time,
             incarnation_uuid: self.global_metrics.incarnation_uuid,
             initial_start_time: self.global_metrics.initial_start_time,
             storage_bytes: self.global_metrics.storage_bytes.load(Ordering::Relaxed),
             storage_mb_secs: self.global_metrics.storage_mb_secs.load(Ordering::Relaxed),
+            uptime_msecs: (Utc::now() - self.global_metrics.start_time)
+                .num_milliseconds()
+                .try_into()
+                .unwrap_or(0),
+            rss_bytes: if let Some(usage) = memory_stats() {
+                usage.physical_mem as u64
+            } else {
+                error!("Failed to fetch process RSS");
+                0
+            },
+            cpu_msecs: match ProcessTime::try_now() {
+                Ok(time) => time.as_duration().as_millis() as u64,
+                Err(e) => {
+                    error!("Failed to fetch process times: {e}");
+                    0
+                }
+            },
             runtime_elapsed_msecs: self
                 .global_metrics
                 .runtime_elapsed_msecs
@@ -1187,10 +1127,7 @@ impl ControllerStatus {
                 .global_metrics
                 .total_completed_records
                 .load(Ordering::Acquire),
-            pipeline_complete: self
-                .global_metrics
-                .pipeline_complete
-                .load(Ordering::Acquire),
+            pipeline_complete,
         };
 
         // Convert input endpoints and sort by endpoint_name to match serialize_inputs behavior
@@ -1268,7 +1205,7 @@ impl ControllerStatus {
 
         adapter_stats::ExternalControllerStatus {
             global_metrics,
-            suspend_error: self.suspend_error.lock().unwrap().clone(),
+            suspend_error: suspend_error.err(),
             inputs,
             outputs,
         }
