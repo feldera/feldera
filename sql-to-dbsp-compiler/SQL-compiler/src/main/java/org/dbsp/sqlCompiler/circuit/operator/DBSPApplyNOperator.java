@@ -18,21 +18,26 @@ import java.util.List;
 /** Equivalent to the apply_n operator from DBSP
  * which applies an arbitrary function to its N inputs.
  * The inputs and outputs cannot be Z-sets or indexed Z-sets.
- * The comments from {@link DBSPApplyOperator} apply to this operator as well. */
+ * The comments from {@link DBSPApplyOperator} apply to this operator as well.
+ * All inputs must have the same type. */
 public final class DBSPApplyNOperator extends DBSPSimpleOperator implements ILinear {
     public DBSPApplyNOperator(CalciteRelNode node, DBSPClosureExpression function,
                               List<OutputPort> inputs) {
         super(node, "apply_n", function, function.getResultType(), false);
+        Utilities.enforce(!inputs.isEmpty());
         for (var input: inputs)
             this.addInput(input);
         Utilities.enforce(function.parameters.length == inputs.size(),
                 () -> "Expected " + inputs.size() + " parameters for function " + function);
+        DBSPType param0Type = function.parameters[0].type.deref();
         for (int i = 0; i < inputs.size(); i++) {
             DBSPType paramIType = function.parameters[i].getType().deref();
             var inputType = inputs.get(i).outputType();
             int finalI = i;
             Utilities.enforce(inputType.sameType(paramIType),
                     () -> "Parameter " + finalI + " type " + paramIType + " does not match input type " + inputType);
+            Utilities.enforce(paramIType.sameType(param0Type),
+                    () -> "Parameter " + finalI + " type " + paramIType + " does not match parameter 0 type " + param0Type);
             DBSPApplyOperator.noZsets(inputType);
         }
         DBSPApplyOperator.noZsets(this.outputType());

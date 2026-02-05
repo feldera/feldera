@@ -62,7 +62,8 @@ import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Base class for SQL-based tests. */
+/** Base class for SQL-based tests: collects all tests that generate Rust from a single derived class
+ * and generates a single Rust file. */
 public class BaseSQLTests {
     // Debugging: set to true to only compile SQL
     public static final boolean skipRust = false;

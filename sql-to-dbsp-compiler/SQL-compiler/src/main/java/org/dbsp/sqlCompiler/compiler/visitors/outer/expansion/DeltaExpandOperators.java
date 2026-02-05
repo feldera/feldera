@@ -303,7 +303,7 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
                     operator.outputType, joinInputs, false)
                     .to(DBSPStarJoinBaseOperator.class);
             ImplementJoins.StarJoinImplementation implementation = new ImplementJoins.StarJoinImplementation(
-                    this.compiler, join, joinInputs);
+                    this.compiler, join, joinInputs, true);
             for (var j: implementation.joins)
                 this.addOperator(j);
             this.addOperator(implementation.result);
@@ -451,6 +451,9 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
         @Nullable DBSPDelayedIntegralOperator rightIntegrator = null;
         @Nullable DBSPStreamJoinOperator rightJoin = null;
         @Nullable DBSPFilterOperator rightFilter = null;
+        @Nullable DBSPMapOperator leftMap = null;
+        @Nullable DBSPMapOperator rightMap = null;
+        @Nullable DBSPMapOperator map = null;
         List<OutputPort> sumInputs = new ArrayList<>();
 
         if (hasRightIntegrator) {
@@ -463,7 +466,12 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
             this.addOperator(leftJoin);
             leftFilter = new DBSPFilterOperator(operator.getRelNode(), operator.getFilter(), leftJoin.outputPort());
             this.addOperator(leftFilter);
-            sumInputs.add(leftFilter.outputPort());
+            if (operator.map != null) {
+                leftMap = new DBSPMapOperator(operator.getRelNode(), operator.map, leftFilter.outputPort());
+                sumInputs.add(leftMap.outputPort());
+            } else {
+                sumInputs.add(leftFilter.outputPort());
+            }
         }
 
         DBSPTypeZSet type = operator.getOutputZSetType();
@@ -472,7 +480,12 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
         this.addOperator(deltaJoin);
         DBSPFilterOperator filter = new DBSPFilterOperator(operator.getRelNode(), operator.getFilter(), deltaJoin.outputPort());
         this.addOperator(filter);
-        sumInputs.add(filter.outputPort());
+        if (operator.map != null) {
+            map = new DBSPMapOperator(operator.getRelNode(), operator.map, filter.outputPort());
+            sumInputs.add(map.outputPort());
+        } else {
+            sumInputs.add(filter.outputPort());
+        }
 
         if (hasLeftIntegrator) {
             leftIntegrator = new DBSPDelayedIntegralOperator(operator.getRelNode(), inputs.get(0));
@@ -484,12 +497,17 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
             this.addOperator(rightJoin);
             rightFilter = new DBSPFilterOperator(operator.getRelNode(), operator.getFilter(), rightJoin.outputPort());
             this.addOperator(rightFilter);
-            sumInputs.add(rightFilter.outputPort());
+            if (operator.map != null) {
+                rightMap = new DBSPMapOperator(operator.getRelNode(), operator.map, rightFilter.outputPort());
+                sumInputs.add(rightMap.outputPort());
+            } else {
+                sumInputs.add(rightFilter.outputPort());
+            }
         }
 
         DBSPSumOperator sum = new DBSPSumOperator(operator.getRelNode(), sumInputs);
         this.map(operator, sum);
         this.addExpansion(operator, new JoinFilterMapExpansion(leftIntegrator, rightIntegrator,
-                leftJoin, rightJoin, deltaJoin, leftFilter, rightFilter, filter, sum));
+                leftJoin, rightJoin, deltaJoin, leftFilter, rightFilter, filter, leftMap, rightMap, map, sum));
     }
 }

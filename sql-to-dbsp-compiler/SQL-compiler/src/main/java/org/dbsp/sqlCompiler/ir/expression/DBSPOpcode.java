@@ -53,9 +53,10 @@ public enum DBSPOpcode {
     // map index in a variant value
     VARIANT_INDEX("indexV", false),
     RUST_INDEX("[]", false),
+
+    // Lossless conversion between decimal and integer, used for range aggregates
     DECIMAL_TO_INTEGER("decimal_to_integer", false),
     INTEGER_TO_DECIMAL("integer_to_decimal", false),
-
     // Interval-based operations
     INTERVAL_MUL("*", false),
     INTERVAL_DIV("/", false),

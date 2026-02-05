@@ -241,7 +241,6 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
             result.setDerivedFrom(source);
             return result;
         } else if (source.is(DBSPStarJoinOperator.class)) {
-            Utilities.enforce(join != null);
             DBSPSimpleOperator result = new DBSPStarJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.inputs);
             result.setDerivedFrom(source);

@@ -241,7 +241,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         return switch (operator.operation) {
             case "waterline" -> " style=filled fillcolor=lightgreen";
             case "controlled_filter" -> " style=filled fillcolor=cyan";
-            case "apply", "apply2" -> " style=filled fillcolor=yellow";
+            case "apply", "apply2", "apply_n" -> " style=filled fillcolor=yellow";
             case "partitioned_rolling_aggregate_with_waterline", "window" -> " style=filled fillcolor=pink";
             // stateful operators
             case "distinct", "stream_distinct",

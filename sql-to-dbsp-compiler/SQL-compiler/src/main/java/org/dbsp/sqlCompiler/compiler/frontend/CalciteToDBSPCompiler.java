@@ -97,6 +97,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
@@ -229,7 +230,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -798,19 +798,31 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPClosureExpression function = new DBSPRawTupleExpression(
                 DBSPTupleExpression.flatten(var.deref()),
                 new DBSPTupleExpression(fields, false)).closure(parameters);
-        // Incremental operator; must sandwich with D-I
-        List<OutputPort> differentiators = new ArrayList<>();
-        for (DBSPSimpleOperator agg: aggregates) {
-            var diff = new DBSPDifferentiateOperator(node, agg.outputPort());
-            addOperator.accept(diff);
-            differentiators.add(diff.outputPort());
-        }
 
-        DBSPSimpleOperator result = new DBSPStarJoinIndexOperator(
-                node, new DBSPTypeIndexedZSet(node, groupKeyType, resultValueType), function,
-                false, differentiators);
-        addOperator.accept(result);
-        result = new DBSPIntegrateOperator(node, result.outputPort());
+        final DBSPSimpleOperator result;
+        final DBSPTypeIndexedZSet resultType = new DBSPTypeIndexedZSet(node, groupKeyType, resultValueType);
+        if (aggregates.size() > 1) {
+            // Use a star join
+            // Incremental operator; must sandwich with D-I
+            List<OutputPort> differentiators = new ArrayList<>();
+            for (DBSPSimpleOperator agg : aggregates) {
+                var diff = new DBSPDifferentiateOperator(node, agg.outputPort());
+                addOperator.accept(diff);
+                differentiators.add(diff.outputPort());
+            }
+
+            DBSPSimpleOperator join = new DBSPStarJoinIndexOperator(
+                    node, resultType, function,
+                    false, differentiators);
+            addOperator.accept(join);
+            result = new DBSPIntegrateOperator(node, join.outputPort());
+        } else {
+            Utilities.enforce(aggregates.size() == 2);
+            // use a standard binary join
+            result = new DBSPStreamJoinIndexOperator(
+                    node, resultType, function, false,
+                    aggregates.get(0).outputPort(), aggregates.get(1).outputPort(), false);
+        }
         addOperator.accept(result);
         return result;
     }
