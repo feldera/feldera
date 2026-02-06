@@ -8,6 +8,7 @@ import {
   getConfigSession as _getConfigSession,
   getPipeline as _getPipeline,
   getPipelineDataflowGraph as _getPipelineDataflowGraph,
+  getPipelineEvent as _getPipelineEvent,
   getPipelineStats as _getPipelineStats,
   type ProgramStatus as _ProgramStatus,
   patchPipeline as _patchPipeline,
@@ -23,6 +24,7 @@ import {
   httpInput,
   listApiKeys,
   listClusterEvents,
+  listPipelineEvents,
   listPipelines,
   type PipelineSelectedInfo,
   type PostPutPipeline,
@@ -528,6 +530,18 @@ export const getClusterEvents = () => mapResponse(listClusterEvents(), (v) => v)
 export const getClusterEvent = (eventId: string) =>
   mapResponse(
     _getClusterEvent({ path: { event_id: eventId }, query: { selector: 'all' } }),
+    (v) => v
+  )
+
+export const getPipelineEvents = (pipelineName: string) =>
+  mapResponse(listPipelineEvents({ path: { pipeline_name: pipelineName } }), (v) => v)
+
+export const getPipelineEvent = (pipelineName: string, eventId: string) =>
+  mapResponse(
+    _getPipelineEvent({
+      path: { pipeline_name: pipelineName, event_id: eventId },
+      query: { selector: 'all' }
+    }),
     (v) => v
   )
 

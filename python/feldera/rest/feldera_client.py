@@ -1331,3 +1331,36 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
     def get_checkpoints(self, pipeline_name: str):
         return self.http.get(path=f"/pipelines/{pipeline_name}/checkpoints")
+
+    def get_pipeline_events(self, pipeline_name: str) -> list[dict]:
+        """
+        Retrieves all pipeline events (status fields only).
+
+        :param pipeline_name: Name of the pipeline.
+
+        :returns: List of pipeline events.
+        """
+        return self.http.get(path=f"/pipelines/{pipeline_name}/events")
+
+    def get_pipeline_event(
+        self, pipeline_name: str, event_id: str, selector: str = "status"
+    ) -> dict:
+        """
+        Retrieves a specific pipeline event.
+
+        :param pipeline_name: Name of the pipeline.
+        :param event_id: Identifier (UUID) of the event to retrieve, or `latest` for the latest event.
+        :param selector: (Optional) Limit the returned fields. Valid values: "all", "status" (default).
+
+        :returns: Event (fields limited based on selector).
+        """
+        # Selector of fields
+        if selector not in ["all", "status"]:
+            raise ValueError(
+                f'invalid selector: {selector} (must be either "all" or "status")'
+            )
+
+        # Issue request and return response
+        return self.http.get(
+            path=f"/pipelines/{pipeline_name}/events/{event_id}?selector={selector}"
+        )

@@ -1,5 +1,9 @@
 use crate::db::error::DBError;
+use crate::db::types::program::ProgramStatus;
+use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
+use crate::db::types::storage::StorageStatus;
 use chrono::{DateTime, Utc};
+use feldera_types::runtime_status::{RuntimeDesiredStatus, RuntimeStatus};
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::fmt;
@@ -135,4 +139,46 @@ pub struct ExtendedClusterMonitorEvent {
     /// Human-readable API server(s) status report of the resources backing the runner
     /// -- in particular, the Kubernetes objects.
     pub runner_resources_info: String,
+}
+
+/// Pipeline monitor event identifier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, ToSchema)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct PipelineMonitorEventId(
+    #[cfg_attr(test, proptest(strategy = "crate::db::test::limited_uuid()"))] pub Uuid,
+);
+impl Display for PipelineMonitorEventId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// Brief pipeline monitoring event with only the identifier, timestamp and status.
+#[derive(Clone, Debug, Serialize, ToSchema, PartialEq)]
+pub struct PipelineMonitorEvent {
+    pub id: PipelineMonitorEventId,
+    pub recorded_at: DateTime<Utc>,
+    pub resources_status: ResourcesStatus,
+    pub resources_desired_status: ResourcesDesiredStatus,
+    pub runtime_status: Option<RuntimeStatus>,
+    pub runtime_desired_status: Option<RuntimeDesiredStatus>,
+    pub program_status: ProgramStatus,
+    pub storage_status: StorageStatus,
+}
+
+/// Extended pipeline monitoring event with full details.
+#[derive(Clone, Debug, Serialize, ToSchema, PartialEq)]
+pub struct ExtendedPipelineMonitorEvent {
+    pub id: PipelineMonitorEventId,
+    pub recorded_at: DateTime<Utc>,
+    pub resources_status: ResourcesStatus,
+    pub resources_status_details: serde_json::Value,
+    pub resources_desired_status: ResourcesDesiredStatus,
+    pub runtime_status: Option<RuntimeStatus>,
+    pub runtime_status_details: Option<serde_json::Value>,
+    pub runtime_desired_status: Option<RuntimeDesiredStatus>,
+    pub program_status: ProgramStatus,
+    pub storage_status: StorageStatus,
 }

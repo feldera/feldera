@@ -30,6 +30,9 @@ import type {
   GetCheckpointSyncStatusData,
   GetCheckpointSyncStatusErrors,
   GetCheckpointSyncStatusResponses,
+  GetCheckpointsData,
+  GetCheckpointsErrors,
+  GetCheckpointsResponses,
   GetClusterEventData,
   GetClusterEventErrors,
   GetClusterEventResponses,
@@ -61,6 +64,9 @@ import type {
   GetPipelineDataflowGraphErrors,
   GetPipelineDataflowGraphResponses,
   GetPipelineErrors,
+  GetPipelineEventData,
+  GetPipelineEventErrors,
+  GetPipelineEventResponses,
   GetPipelineHeapProfileData,
   GetPipelineHeapProfileErrors,
   GetPipelineHeapProfileResponses,
@@ -104,6 +110,9 @@ import type {
   ListClusterEventsData,
   ListClusterEventsErrors,
   ListClusterEventsResponses,
+  ListPipelineEventsData,
+  ListPipelineEventsErrors,
+  ListPipelineEventsResponses,
   ListPipelinesData,
   ListPipelinesErrors,
   ListPipelinesResponses,
@@ -596,6 +605,20 @@ export const getCheckpointStatus = <ThrowOnError extends boolean = false>(
   })
 
 /**
+ * Get the checkpoints for a pipeline
+ *
+ * Retrieve the current checkpoints made by a pipeline.
+ */
+export const getCheckpoints = <ThrowOnError extends boolean = false>(
+  options: Options<GetCheckpointsData, ThrowOnError>
+) =>
+  (options.client ?? client).get<GetCheckpointsResponses, GetCheckpointsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/checkpoints',
+    ...options
+  })
+
+/**
  * Performance Profile JSON
  *
  * Retrieve the circuit performance profile in JSON format of a running or paused pipeline.
@@ -727,6 +750,49 @@ export const httpOutput = <ThrowOnError extends boolean = false>(
   (options.client ?? client).post<HttpOutputResponses, HttpOutputErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/egress/{table_name}',
+    ...options
+  })
+
+/**
+ * List Pipeline Events
+ *
+ * Retrieve a list of retained pipeline monitor events ordered from most recent to least recent.
+ *
+ * The returned events only have limited details, the full details can be retrieved using
+ * the `GET /v0/pipelines/<pipeline>/events/<event-id>` endpoint.
+ *
+ * Pipeline monitor events are collected at a periodic interval (every 10s), however only
+ * every 10 minutes or if the overall health changes, does it get inserted into the database
+ * (and thus, served by this endpoint). The most recent 720 events are retained.
+ */
+export const listPipelineEvents = <ThrowOnError extends boolean = false>(
+  options: Options<ListPipelineEventsData, ThrowOnError>
+) =>
+  (options.client ?? client).get<
+    ListPipelineEventsResponses,
+    ListPipelineEventsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/events',
+    ...options
+  })
+
+/**
+ * Get Pipeline Event
+ *
+ * Get specific pipeline monitor event.
+ *
+ * The identifiers of the events can be retrieved via `GET /v0/pipelines/<pipeline>/events`.
+ * The most recent 720 events are retained.
+ * This endpoint can return a 404 for an event that no longer exists due to a cleanup.
+ */
+export const getPipelineEvent = <ThrowOnError extends boolean = false>(
+  options: Options<GetPipelineEventData, ThrowOnError>
+) =>
+  (options.client ?? client).get<GetPipelineEventResponses, GetPipelineEventErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/events/{event_id}',
     ...options
   })
 

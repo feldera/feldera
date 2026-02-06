@@ -16,6 +16,8 @@ import {
   getDemos,
   getExtendedPipeline,
   getPipelineDataflowGraph,
+  getPipelineEvent,
+  getPipelineEvents,
   getPipelineStats,
   getPipelineStatus,
   getPipelines,
@@ -199,6 +201,8 @@ export const usePipelineManager = (options?: FetchOptions) => {
     deleteApiKey: reportError(deleteApiKey, (keyName) => `Failed to delete ${keyName} API key`),
     getClusterEvents: reportError(getClusterEvents),
     getClusterEvent: reportError(getClusterEvent),
+    getPipelineEvents: reportError(getPipelineEvents),
+    getPipelineEvent: reportError(getPipelineEvent),
     getSamplyProfile: reportError(getSamplyProfile),
     downloadSamplyProfile: reportError(
       downloadSamplyProfile,

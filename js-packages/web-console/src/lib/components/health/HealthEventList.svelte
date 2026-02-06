@@ -1,9 +1,7 @@
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { slide } from 'svelte/transition'
-  import { match } from 'ts-pattern'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { formatDateTime } from '$lib/functions/format'
   import type { HealthEventBucket } from '$lib/functions/pipelines/health'
 
@@ -11,15 +9,15 @@
     eventParts,
     onClose,
     onNavigatePrevious,
-    onNavigateNext
+    onNavigateNext,
+    loadEventDetail
   }: {
     eventParts: HealthEventBucket
     onClose: () => void
     onNavigatePrevious?: () => void
     onNavigateNext?: () => void
+    loadEventDetail: (eventId: string) => Promise<{ timestamp: Date; description: string } | null>
   } = $props()
-
-  const api = usePipelineManager()
 
   // Track loaded event details and loading states
   let fullEvents: (null | {
@@ -52,30 +50,13 @@
     }
 
     loadingStates[index] = true
-    api.getClusterEvent(event.id).then(
-      (e) => {
-        if (!e) {
+    loadEventDetail(event.id).then(
+      (detail) => {
+        if (!detail) {
           loadingStates[index] = false
           return
         }
-        if (eventParts === null) {
-          // Handle the case when the component was unmounted before the request completed
-          return
-        }
-        fullEvents[index] = {
-          timestamp: new Date(e.recorded_at),
-          description: match(eventParts.tag)
-            .with('api', () => (e.api_self_info || '') + '\n' + (e.api_resources_info || ''))
-            .with(
-              'compiler',
-              () => (e.compiler_self_info || '') + '\n' + (e.compiler_resources_info || '')
-            )
-            .with(
-              'runner',
-              () => (e.runner_self_info || '') + '\n' + (e.runner_resources_info || '')
-            )
-            .exhaustive()
-        }
+        fullEvents[index] = detail
         loadingStates[index] = false
       },
       () => {
@@ -140,7 +121,7 @@
       </div>
 
       <div class="flex flex-nowrap items-center gap-2">
-        <div class="text-surface-600-300 w-66 text-sm">
+        <div class="w-66 text-sm">
           {formatDateTime(eventParts.timestampFrom)} - {formatDateTime(eventParts.timestampTo)}
         </div>
         <button
@@ -182,24 +163,31 @@
               ></div>
               <div class="h-3 w-3 rounded-full {getStatusColor(event.status)}"></div>
               <span class="text-sm">
-                {formatDateTime(event.timestamp)}
+                {formatDateTime(event.timestamp, 'h:mm:ss A')}
               </span>
+              {#if event.thumb}
+                <span>
+                  {event.thumb}
+                </span>
+              {/if}
             </div>
           {/snippet}
           {#snippet content()}
-            {#if fullEvents[i]}
-              <div transition:slide={{ duration: 150 }} class="px-2 pb-2">
-                <div class="rounded font-dm-mono text-sm whitespace-pre-wrap">
-                  {fullEvents[i]?.description || ''}
+            <div transition:slide={{ duration: 150 }}>
+              {#if fullEvents[i]}
+                <div class="px-2 pb-2">
+                  <div class="rounded font-dm-mono text-sm whitespace-pre-wrap">
+                    {fullEvents[i]?.description || ''}
+                  </div>
                 </div>
-              </div>
-            {:else if loadingStates[i]}
-              <Progress class="-mt-2 -mb-1 h-1" value={null}>
-                <Progress.Track>
-                  <Progress.Range class="bg-primary-500" />
-                </Progress.Track>
-              </Progress>
-            {/if}
+              {:else if loadingStates[i]}
+                <Progress class="-mt-2 -mb-1 h-1" value={null}>
+                  <Progress.Track>
+                    <Progress.Range class="bg-primary-500" />
+                  </Progress.Track>
+                </Progress>
+              {/if}
+            </div>
           {/snippet}
         </InlineDropdown>
       {/each}

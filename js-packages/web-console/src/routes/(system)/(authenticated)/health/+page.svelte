@@ -12,10 +12,14 @@
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { partition } from '$lib/functions/common/array'
-  import { ceilToHour } from '$lib/functions/common/date'
   import {
+    type ClusterEventTag,
+    createBucketFromTimelineGroup,
+    formatClusterEventDetail,
     groupHealthEvents,
     type HealthEventBucket,
+    healthTimeWindowEnd,
+    healthTimeWindowStart,
     unpackCombinedEvent
   } from '$lib/functions/pipelines/health'
   import { resolve } from '$lib/functions/svelte'
@@ -23,9 +27,7 @@
 
   let {}: {} = $props()
 
-  type EventTag = 'api' | 'compiler' | 'runner'
-
-  const componentLabels: Record<EventTag, string> = {
+  const componentLabels: Record<ClusterEventTag, string> = {
     api: 'API server',
     compiler: 'Compiler server',
     runner: 'Runner'
@@ -41,10 +43,8 @@
 
   const healthWindowHours = 72
 
-  const firstTimestamp = (events: ClusterMonitorEventSelectedInfo[] | null) =>
-    new Date(lastTimestamp(events).getTime() - healthWindowHours * 60 * 60 * 1000)
-  const lastTimestamp = (events: ClusterMonitorEventSelectedInfo[] | null) =>
-    ceilToHour(events?.length ? new Date(events.at(0)!.recorded_at) : new Date())
+  const endAt = $derived(healthTimeWindowEnd(events))
+  const startAt = $derived(healthTimeWindowStart(endAt, healthWindowHours))
 
   // Group events for EventLogList
   const groupedClusterEvents = $derived.by(() =>
@@ -72,73 +72,42 @@
     }
   ])
 
-  let selectedEvent: HealthEventBucket | null = $state(null)
+  let selectedEvent: HealthEventBucket<ClusterEventTag> | null = $state(null)
 
   // Track selected time range (unified for both timeline bars and event list)
-  let selectedEventTimestamp = $state<{ tag: EventTag; from: Date; to: Date } | null>(null)
+  let selectedEventTimestamp = $state<{ tag: ClusterEventTag; from: Date; to: Date } | null>(null)
 
   // Component refs for navigation
   let eventLogListRef: EventLogList | undefined = $state()
-  let timelineRefs: { [key in EventTag]?: StatusTimeline } = $state({})
+  let timelineRefs: { [key in ClusterEventTag]?: StatusTimeline } = $state({})
 
   // Track which component has the active selection
-  type ActiveComponent = { type: 'timeline'; tag: EventTag } | { type: 'incident' }
+  type ActiveComponent = { type: 'timeline'; tag: ClusterEventTag } | { type: 'incident' }
   let activeComponent: ActiveComponent | null = $state(null)
 
   // Open drawer with all events (including healthy) from the clicked timeline bar for a specific component
-  function handleBarClick(tag: EventTag, group: TimelineGroup) {
+  function handleBarClick(tag: ClusterEventTag, group: TimelineGroup) {
     activeComponent = { type: 'timeline', tag }
-    if (!rawClusterEvents.length) {
-      return
-    }
+    const bucket = createBucketFromTimelineGroup(rawClusterEvents, tag, group, componentLabels[tag])
+    if (!bucket) return
 
-    // Find all events within the time range for this tag (including healthy events)
-    const eventsInRange = rawClusterEvents.filter((e) => {
-      const eventTime = e.timestamp.getTime()
-      return e.tag === tag && eventTime >= group.startTime && eventTime < group.endTime
-    })
-
-    if (eventsInRange.length === 0) {
-      return
-    }
-
-    // Create a HealthEventBucket from all events in the time range
-    const bucket: HealthEventBucket = {
-      timestampFrom: new Date(group.startTime),
-      timestampTo: new Date(group.endTime),
-      type: group.status,
-      description: `${componentLabels[tag]} events`,
-      tag,
-      active: false,
-      title: `${componentLabels[tag]} status history`,
-      events: eventsInRange.map((e) => ({
-        id: e.id,
-        timestamp: e.timestamp,
-        status: e.type
-      }))
-    }
-
-    // Update selected time range for this component
     selectedEventTimestamp = {
       tag,
       from: new Date(group.startTime),
       to: new Date(group.endTime)
     }
-
     selectedEvent = bucket
   }
 
   // Open drawer when an event is selected from EventLogList
   function handleEventSelected(eventBucket: HealthEventBucket) {
     activeComponent = { type: 'incident' }
-    // Update selected event time range
     selectedEventTimestamp = {
-      tag: eventBucket.tag,
+      tag: eventBucket.tag as ClusterEventTag,
       from: eventBucket.timestampFrom,
       to: eventBucket.timestampTo
     }
-
-    selectedEvent = eventBucket
+    selectedEvent = eventBucket as HealthEventBucket<ClusterEventTag>
   }
 
   // Navigate to previous event by delegating to the active component
@@ -181,6 +150,18 @@
   const canNavigatePrevious = $derived(activeNavigationState && activeNavigationState !== 'start')
 
   const canNavigateNext = $derived(activeNavigationState && activeNavigationState !== 'end')
+
+  // Load cluster event details for the drawer
+  function loadClusterEventDetail(
+    eventId: string
+  ): Promise<{ timestamp: Date; description: string } | null> {
+    if (!selectedEvent) return Promise.resolve(null)
+    const tag = selectedEvent.tag
+    return api.getClusterEvent(eventId).then((e) => {
+      if (!e) return null
+      return formatClusterEventDetail(e, tag)
+    })
+  }
 </script>
 
 <AppHeader>
@@ -212,14 +193,14 @@
     <div class="flex flex-col gap-2">
       {#each Object.entries(componentLabels) as [tag, label], i}
         <StatusTimeline
-          bind:this={timelineRefs[tag as EventTag]}
+          bind:this={timelineRefs[tag as ClusterEventTag]}
           {label}
           events={rawClusterEvents.filter((e) => e.tag === tag)}
-          startAt={firstTimestamp(events)}
-          endAt={lastTimestamp(events)}
+          {startAt}
+          {endAt}
           unitDurationMs={60 * 60 * 1000}
           class="flex flex-col gap-2"
-          onBarClick={(group) => handleBarClick(tag as EventTag, group)}
+          onBarClick={(group) => handleBarClick(tag as ClusterEventTag, group)}
           legend={i === 2}
           selectedBars={selectedEventTimestamp?.tag === tag
             ? { from: selectedEventTimestamp.from, to: selectedEventTimestamp.to }
@@ -259,6 +240,7 @@
         }}
         onNavigatePrevious={canNavigatePrevious ? navigatePrevious : undefined}
         onNavigateNext={canNavigateNext ? navigateNext : undefined}
+        loadEventDetail={loadClusterEventDetail}
       ></HealthEventList>
     {/if}
   </InlineDrawer>

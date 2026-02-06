@@ -162,6 +162,39 @@ export type CheckpointFailure = {
 }
 
 /**
+ * Holds meta-data about a checkpoint that was taken for persistent storage
+ * and recovery of a circuit's state.
+ */
+export type CheckpointMetadata = {
+  /**
+   * Fingerprint of the circuit at the time of the checkpoint.
+   */
+  fingerprint: number
+  /**
+   * An optional name for the checkpoint.
+   */
+  identifier?: string | null
+  /**
+   * Total number of records processed.
+   */
+  processed_records?: number | null
+  /**
+   * Total size of the checkpoint files in bytes.
+   */
+  size?: number | null
+  /**
+   * Total number of steps made.
+   */
+  steps?: number | null
+  /**
+   * A unique identifier for the given checkpoint.
+   *
+   * This is used to identify the checkpoint in the file-system hierarchy.
+   */
+  uuid: string
+}
+
+/**
  * Response to a checkpoint request.
  */
 export type CheckpointResponse = {
@@ -320,6 +353,7 @@ export type CombinedStatus =
   | 'Stopped'
   | 'Provisioning'
   | 'Unavailable'
+  | 'Coordination'
   | 'Standby'
   | 'AwaitingApproval'
   | 'Initializing'
@@ -446,8 +480,27 @@ export type Configuration = {
   version: string
 }
 
+/**
+ * Options for connecting to a NATS server.
+ */
 export type ConnectOptions = {
   auth?: Auth
+  /**
+   * Connection timeout
+   *
+   * How long to wait when establishing the initial connection to the
+   * NATS server.
+   */
+  connection_timeout_secs?: number
+  /**
+   * Request timeout in seconds.
+   *
+   * How long to wait for responses to requests.
+   */
+  request_timeout_secs?: number
+  /**
+   * NATS server URL (e.g., "nats://localhost:4222").
+   */
   server_url: string
 }
 
@@ -1292,6 +1345,13 @@ export type GenerationPlan = {
  */
 export type GetClusterEventParameters = {
   selector?: ClusterMonitorEventFieldSelector
+}
+
+/**
+ * Query parameters to GET a pipeline monitor event.
+ */
+export type GetPipelineEventParameters = {
+  selector?: PipelineMonitorEventFieldSelector
 }
 
 /**
@@ -2433,7 +2493,10 @@ export type PipelineConfig = {
   /**
    * Number of DBSP hosts.
    *
-   * The worker threads are evenly divided among the hosts.
+   * The worker threads are evenly divided among the hosts.  For single-host
+   * deployments, this should be 1 (the default).
+   *
+   * Multihost pipelines are an enterprise-only preview feature.
    */
   hosts?: number
   /**
@@ -2641,6 +2704,30 @@ export type PipelineInfo = {
   udf_rust: string
   udf_toml: string
   version: Version
+}
+
+export type PipelineMonitorEventFieldSelector = 'all' | 'status'
+
+/**
+ * Pipeline monitor event identifier.
+ */
+export type PipelineMonitorEventId = string
+
+/**
+ * Pipeline monitor event information which has a selected subset of optional fields.
+ * If an optional field is not selected (i.e., is `None`), it will not be serialized.
+ */
+export type PipelineMonitorEventSelectedInfo = {
+  id: PipelineMonitorEventId
+  program_status: ProgramStatus
+  recorded_at: string
+  resources_desired_status: ResourcesDesiredStatus
+  resources_status: ResourcesStatus
+  resources_status_details?: unknown
+  runtime_desired_status?: RuntimeDesiredStatus | null
+  runtime_status?: RuntimeStatus | null
+  runtime_status_details?: unknown
+  storage_status: StorageStatus
 }
 
 /**
@@ -3437,7 +3524,10 @@ export type RuntimeConfig = {
   /**
    * Number of DBSP hosts.
    *
-   * The worker threads are evenly divided among the hosts.
+   * The worker threads are evenly divided among the hosts.  For single-host
+   * deployments, this should be 1 (the default).
+   *
+   * Multihost pipelines are an enterprise-only preview feature.
    */
   hosts?: number
   /**
@@ -4961,6 +5051,38 @@ export type GetCheckpointStatusResponses = {
 export type GetCheckpointStatusResponse =
   GetCheckpointStatusResponses[keyof GetCheckpointStatusResponses]
 
+export type GetCheckpointsData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/checkpoints'
+}
+
+export type GetCheckpointsErrors = {
+  /**
+   * Pipeline with that name does not exist
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+  503: ErrorResponse
+}
+
+export type GetCheckpointsError = GetCheckpointsErrors[keyof GetCheckpointsErrors]
+
+export type GetCheckpointsResponses = {
+  /**
+   * Checkpoints retrieved successfully
+   */
+  200: CheckpointMetadata
+}
+
+export type GetCheckpointsResponse = GetCheckpointsResponses[keyof GetCheckpointsResponses]
+
 export type GetPipelineCircuitJsonProfileData = {
   body?: never
   path: {
@@ -5231,6 +5353,66 @@ export type HttpOutputResponses = {
 }
 
 export type HttpOutputResponse = HttpOutputResponses[keyof HttpOutputResponses]
+
+export type ListPipelineEventsData = {
+  body?: never
+  path: {
+    pipeline_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/events'
+}
+
+export type ListPipelineEventsErrors = {
+  500: ErrorResponse
+  501: ErrorResponse
+}
+
+export type ListPipelineEventsError = ListPipelineEventsErrors[keyof ListPipelineEventsErrors]
+
+export type ListPipelineEventsResponses = {
+  200: Array<PipelineMonitorEventSelectedInfo>
+}
+
+export type ListPipelineEventsResponse =
+  ListPipelineEventsResponses[keyof ListPipelineEventsResponses]
+
+export type GetPipelineEventData = {
+  body?: never
+  path: {
+    /**
+     * Pipeline monitor event identifier or `latest`
+     */
+    event_id: string
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: {
+    /**
+     * The `selector` parameter limits which fields are returned.
+     * Limiting which fields is particularly handy for instance when frequently
+     * monitoring over low bandwidth connections while being only interested
+     * in status.
+     */
+    selector?: PipelineMonitorEventFieldSelector
+  }
+  url: '/v0/pipelines/{pipeline_name}/events/{event_id}'
+}
+
+export type GetPipelineEventErrors = {
+  404: ErrorResponse
+  500: ErrorResponse
+}
+
+export type GetPipelineEventError = GetPipelineEventErrors[keyof GetPipelineEventErrors]
+
+export type GetPipelineEventResponses = {
+  200: PipelineMonitorEventSelectedInfo
+}
+
+export type GetPipelineEventResponse = GetPipelineEventResponses[keyof GetPipelineEventResponses]
 
 export type GetPipelineHeapProfileData = {
   body?: never
@@ -5542,13 +5724,14 @@ export type GetPipelineSamplyProfileData = {
      * Unique pipeline name
      */
     pipeline_name: string
+  }
+  query?: {
     /**
-     * If true, returns 307 redirect if profile collection is in progress.
+     * If true, returns 204 redirect with Retry-After header if profile collection is in progress.
      * If false or not provided, returns the last collected profile.
      */
-    latest: boolean
+    latest?: boolean
   }
-  query?: never
   url: '/v0/pipelines/{pipeline_name}/samply_profile'
 }
 
@@ -5570,13 +5753,9 @@ export type GetPipelineSamplyProfileError =
 
 export type GetPipelineSamplyProfileResponses = {
   /**
-   * Samply profile as a gzip containing the profile that can be inspected by the samply tool
+   * Samply profile as a gzip containing the profile that can be inspected by the samply tool. Note: may return 204 No Content with Retry-After header if latest=true and profiling is in progress.
    */
   200: Blob | File
-  /**
-   * Samply profile collection is in progress. Check the Retry-After header for expected completion time.
-   */
-  204: void
 }
 
 export type GetPipelineSamplyProfileResponse =

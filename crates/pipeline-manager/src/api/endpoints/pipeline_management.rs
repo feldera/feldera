@@ -1,3 +1,5 @@
+pub mod pipeline_events;
+
 use crate::api::error::ApiError;
 use crate::api::examples;
 use crate::api::main::ServerState;

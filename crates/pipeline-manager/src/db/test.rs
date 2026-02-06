@@ -1,12 +1,14 @@
 use crate::api::support_data_collector::SupportBundleData;
 use crate::auth::{generate_api_key, TenantRecord};
 use crate::db::error::DBError;
+use crate::db::operations::pipeline_monitor::MONITOR_PIPELINE_RETENTION_NUM;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::{is_pipeline_assigned_to_worker, StoragePostgres};
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId, ApiPermission};
 use crate::db::types::monitor::{
-    ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent, MonitorStatus,
-    NewClusterMonitorEvent,
+    ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
+    ExtendedPipelineMonitorEvent, MonitorStatus, NewClusterMonitorEvent, PipelineMonitorEvent,
+    PipelineMonitorEventId,
 };
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
@@ -44,6 +46,7 @@ use std::borrow::BorrowMut;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::sync::Arc;
 use std::time::Duration;
 use std::vec;
 use tokio::sync::Mutex;
@@ -2164,6 +2167,28 @@ enum StorageAction {
         #[proptest(strategy = "limited_new_cluster_monitor_event()")] NewClusterMonitorEvent,
     ),
     DeleteClusterMonitorEventsBeyondRetention(u16, u16),
+    ListPipelineMonitorEvents(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+    ),
+    GetPipelineMonitorEventShort(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+        PipelineMonitorEventId,
+    ),
+    GetPipelineMonitorEventExtended(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+        PipelineMonitorEventId,
+    ),
+    GetLatestPipelineMonitorEventShort(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+    ),
+    GetLatestPipelineMonitorEventExtended(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+    ),
 }
 
 /// Alias for a result from the database.
@@ -2220,6 +2245,26 @@ fn convert_cluster_monitor_event_extended_with_constant_timestamps(
     mut event: ExtendedClusterMonitorEvent,
 ) -> ExtendedClusterMonitorEvent {
     let timestamp = Utc.timestamp_nanos(0);
+    event.recorded_at = timestamp;
+    event
+}
+
+/// Convert pipeline monitor event (short) for test comparison.
+fn convert_pipeline_monitor_event_short_with_constant_timestamps(
+    mut event: PipelineMonitorEvent,
+) -> PipelineMonitorEvent {
+    let timestamp = Utc.timestamp_nanos(0);
+    event.id = PipelineMonitorEventId(Uuid::nil());
+    event.recorded_at = timestamp;
+    event
+}
+
+/// Convert pipeline monitor event (extended) for test comparison.
+fn convert_pipeline_monitor_event_extended_with_constant_timestamps(
+    mut event: ExtendedPipelineMonitorEvent,
+) -> ExtendedPipelineMonitorEvent {
+    let timestamp = Utc.timestamp_nanos(0);
+    event.id = PipelineMonitorEventId(Uuid::nil());
     event.recorded_at = timestamp;
     event
 }
@@ -2485,6 +2530,53 @@ fn check_response_cluster_monitor_event_extended(
     check_responses(step, result_model, result_impl);
 }
 
+/// Compares model response to that of the database implementation
+/// when the type is `Vec<PipelineMonitorEvent>`.
+fn check_responses_pipeline_monitor_events(
+    step: usize,
+    mut result_model: DBResult<Vec<PipelineMonitorEvent>>,
+    mut result_impl: DBResult<Vec<PipelineMonitorEvent>>,
+) {
+    result_model = result_model.map(|mut v| {
+        v.sort_by(|p1, p2| p1.id.cmp(&p2.id));
+        v.into_iter()
+            .map(convert_pipeline_monitor_event_short_with_constant_timestamps)
+            .collect()
+    });
+    result_impl = result_impl.map(|mut v| {
+        v.sort_by(|p1, p2| p1.id.cmp(&p2.id));
+        v.into_iter()
+            .map(convert_pipeline_monitor_event_short_with_constant_timestamps)
+            .collect()
+    });
+    check_responses(step, result_model, result_impl);
+}
+
+/// Compares model response to that of the database implementation
+/// when the type is `PipelineMonitorEvent`.
+fn check_response_pipeline_monitor_event(
+    step: usize,
+    mut result_model: DBResult<PipelineMonitorEvent>,
+    mut result_impl: DBResult<PipelineMonitorEvent>,
+) {
+    result_model = result_model.map(convert_pipeline_monitor_event_short_with_constant_timestamps);
+    result_impl = result_impl.map(convert_pipeline_monitor_event_short_with_constant_timestamps);
+    check_responses(step, result_model, result_impl);
+}
+
+/// Compares model response to that of the database implementation
+/// when the type is `ExtendedPipelineMonitorEvent`.
+fn check_response_pipeline_monitor_event_extended(
+    step: usize,
+    mut result_model: DBResult<ExtendedPipelineMonitorEvent>,
+    mut result_impl: DBResult<ExtendedPipelineMonitorEvent>,
+) {
+    result_model =
+        result_model.map(convert_pipeline_monitor_event_extended_with_constant_timestamps);
+    result_impl = result_impl.map(convert_pipeline_monitor_event_extended_with_constant_timestamps);
+    check_responses(step, result_model, result_impl);
+}
+
 async fn create_tenants_if_not_exists(
     model: &Mutex<DbModel>,
     handle: &DbHandle,
@@ -2530,7 +2622,10 @@ fn db_impl_behaves_like_model() {
     let mut config = Config::default();
     config.max_shrink_iters = u32::MAX;
     config.source_file = Some("src/db/test.rs");
+    config.cases = 512; // Default is 256
     let mut runner = TestRunner::new(config);
+    let case_counter: Arc<std::sync::Mutex<u64>> = Arc::new(std::sync::Mutex::new(0));
+    let case_counter_clone = case_counter.clone();
     let res = runner
         .run(
             &prop::collection::vec(any::<StorageAction>(), 0..256),
@@ -2539,12 +2634,17 @@ fn db_impl_behaves_like_model() {
                     tenants: BTreeMap::new(),
                     api_keys: BTreeMap::new(),
                     pipelines: BTreeMap::new(),
+                    pipeline_events: BTreeMap::new(),
                     cluster_events: BTreeMap::new(),
                 });
                 runtime.block_on(async {
                     // We empty all tables in the database before each test
                     // (with TRUNCATE TABLE). We also reset the sequence ids
                     // (with RESTART IDENTITY)
+                    if let Ok(mut c) = case_counter_clone.lock() {
+                        *c += 1;
+                        // println!("Case of fuzzer: {c}");
+                    }
                     handle
                         .db
                         .pool.get().await.unwrap()
@@ -2558,7 +2658,6 @@ fn db_impl_behaves_like_model() {
                         )
                         .await
                         .unwrap();
-
                     for (i, action) in actions.into_iter().enumerate() {
                         match action {
                             StorageAction::ListApiKeys(tenant_id) => {
@@ -2853,13 +2952,38 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.delete_cluster_monitor_events_beyond_retention(retention_hours, retention_num).await;
                                 check_responses(i, model_response, impl_response);
                             }
+                            StorageAction::ListPipelineMonitorEvents(tenant_id, pipeline_name) => {
+                                let model_response = model.list_pipeline_monitor_events(tenant_id, pipeline_name.clone()).await;
+                                let impl_response = handle.db.list_pipeline_monitor_events(tenant_id, pipeline_name).await;
+                                check_responses_pipeline_monitor_events(i, model_response, impl_response);
+                            }
+                            StorageAction::GetPipelineMonitorEventShort(tenant_id, pipeline_name, event_id) => {
+                                let model_response = model.get_pipeline_monitor_event_short(tenant_id, pipeline_name.clone(), event_id).await;
+                                let impl_response = handle.db.get_pipeline_monitor_event_short(tenant_id, pipeline_name, event_id).await;
+                                check_response_pipeline_monitor_event(i, model_response, impl_response);
+                            }
+                            StorageAction::GetPipelineMonitorEventExtended(tenant_id, pipeline_name, event_id) => {
+                                let model_response = model.get_pipeline_monitor_event_extended(tenant_id, pipeline_name.clone(), event_id).await;
+                                let impl_response = handle.db.get_pipeline_monitor_event_extended(tenant_id, pipeline_name, event_id).await;
+                                check_response_pipeline_monitor_event_extended(i, model_response, impl_response);
+                            }
+                            StorageAction::GetLatestPipelineMonitorEventShort(tenant_id, pipeline_name) => {
+                                let model_response = model.get_latest_pipeline_monitor_event_short(tenant_id, pipeline_name.clone()).await;
+                                let impl_response = handle.db.get_latest_pipeline_monitor_event_short(tenant_id, pipeline_name).await;
+                                check_response_pipeline_monitor_event(i, model_response, impl_response);
+                            }
+                            StorageAction::GetLatestPipelineMonitorEventExtended(tenant_id, pipeline_name) => {
+                                let model_response = model.get_latest_pipeline_monitor_event_extended(tenant_id, pipeline_name.clone()).await;
+                                let impl_response = handle.db.get_latest_pipeline_monitor_event_extended(tenant_id, pipeline_name).await;
+                                check_response_pipeline_monitor_event_extended(i, model_response, impl_response);
+                            }
                         }
                     }
                 });
                 Ok(())
             },
         );
-
+    println!("Cases run by fuzzer: {}", case_counter.lock().unwrap());
     if let Err(e) = res {
         panic!("{e:#}");
     }
@@ -2871,11 +2995,18 @@ struct DbModel {
     pub tenants: BTreeMap<TenantId, TenantRecord>,
     pub api_keys: BTreeMap<(TenantId, String), (ApiKeyId, String, Vec<ApiPermission>)>,
     pub pipelines: BTreeMap<(TenantId, PipelineId), ExtendedPipelineDescr>,
+    pub pipeline_events: BTreeMap<(TenantId, PipelineId), Vec<ExtendedPipelineMonitorEvent>>,
     pub cluster_events: BTreeMap<ClusterMonitorEventId, ExtendedClusterMonitorEvent>,
 }
 
 #[async_trait]
 trait ModelHelpers {
+    async fn new_pipeline_monitor_event(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<(), DBError>;
+
     #[allow(clippy::too_many_arguments)]
     async fn validate_and_apply_pipeline_update(
         &self,
@@ -2896,6 +3027,42 @@ trait ModelHelpers {
 
 #[async_trait]
 impl ModelHelpers for Mutex<DbModel> {
+    async fn new_pipeline_monitor_event(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<(), DBError> {
+        let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        self.lock()
+            .await
+            .pipeline_events
+            .get_mut(&(tenant_id, pipeline.id))
+            .unwrap()
+            .push(ExtendedPipelineMonitorEvent {
+                id: PipelineMonitorEventId(Uuid::now_v7()),
+                recorded_at: Utc::now(),
+                resources_status: pipeline.deployment_resources_status,
+                resources_status_details: pipeline
+                    .deployment_resources_status_details
+                    .unwrap_or(json!({})),
+                resources_desired_status: pipeline.deployment_resources_desired_status,
+                runtime_status: pipeline.deployment_runtime_status,
+                runtime_status_details: pipeline.deployment_runtime_status_details,
+                runtime_desired_status: pipeline.deployment_runtime_desired_status,
+                program_status: pipeline.program_status,
+                storage_status: pipeline.storage_status,
+            });
+        let mut state = self.lock().await;
+        let events = state
+            .pipeline_events
+            .get_mut(&(tenant_id, pipeline.id))
+            .unwrap();
+        if events.len() > (MONITOR_PIPELINE_RETENTION_NUM as usize) {
+            events.drain(0..(events.len() - (MONITOR_PIPELINE_RETENTION_NUM as usize)));
+        }
+        Ok(())
+    }
+
     /// Helps update the pipeline user fields by checking all the constraints and applying the
     /// relevant changes.
     async fn validate_and_apply_pipeline_update(
@@ -3115,6 +3282,10 @@ impl ModelHelpers for Mutex<DbModel> {
             .insert((tenant_id, pipeline.id), pipeline.clone());
 
         // Return the final extended pipeline descriptor
+        if version_increment {
+            self.new_pipeline_monitor_event(tenant_id, pipeline.id)
+                .await?;
+        }
         Ok(pipeline)
     }
 }
@@ -3539,8 +3710,14 @@ impl Storage for Mutex<DbModel> {
         state
             .pipelines
             .insert((tenant_id, pipeline_id), extended_pipeline.clone());
+        state
+            .pipeline_events
+            .insert((tenant_id, pipeline_id), vec![]);
 
         // Return the extended pipeline descriptor
+        drop(state);
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(extended_pipeline)
     }
 
@@ -3654,6 +3831,10 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .remove(&(tenant_id, pipeline.id));
+        self.lock()
+            .await
+            .pipeline_events
+            .remove(&(tenant_id, pipeline.id));
         Ok(pipeline.id)
     }
 
@@ -3684,6 +3865,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -3705,6 +3888,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -3739,6 +3924,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -3760,6 +3947,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -3796,6 +3985,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -3824,6 +4015,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -3852,6 +4045,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -3880,6 +4075,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -3929,6 +4126,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline.id)
+            .await?;
         Ok(pipeline.id)
     }
 
@@ -3960,6 +4159,8 @@ impl Storage for Mutex<DbModel> {
                 .await
                 .pipelines
                 .insert((tenant_id, pipeline.id), pipeline.clone());
+            self.new_pipeline_monitor_event(tenant_id, pipeline.id)
+                .await?;
             Ok((true, pipeline.id))
         } else {
             Ok((false, pipeline.id))
@@ -3994,6 +4195,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline.id)
+            .await?;
         Ok(pipeline.id)
     }
 
@@ -4028,6 +4231,12 @@ impl Storage for Mutex<DbModel> {
 
         // Apply changes
         pipeline.storage_status = StorageStatus::InUse;
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         pipeline.deployment_id = Some(deployment_id);
         // Retain: pipeline.deployment_initial
         pipeline.deployment_config = Some(deployment_config);
@@ -4049,6 +4258,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -4076,6 +4287,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -4121,6 +4334,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -4155,6 +4370,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -4177,8 +4394,19 @@ impl Storage for Mutex<DbModel> {
         )?;
 
         // Apply changes
+        if pipeline.deployment_resources_desired_status != ResourcesDesiredStatus::Stopped {
+            pipeline.deployment_initial = None;
+            pipeline.bootstrap_policy = None;
+            pipeline.deployment_resources_desired_status = ResourcesDesiredStatus::Stopped;
+            pipeline.deployment_resources_desired_status_since = Utc::now();
+            self.lock()
+                .await
+                .pipelines
+                .insert((tenant_id, pipeline.id), pipeline.clone());
+            self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+                .await?;
+        }
         pipeline.deployment_id = None;
-        pipeline.deployment_initial = None;
         pipeline.deployment_config = None;
         pipeline.deployment_location = None;
         pipeline.deployment_error = deployment_error;
@@ -4186,18 +4414,17 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_resources_status = new_resources_status;
         pipeline.deployment_resources_status_details = None;
         pipeline.deployment_resources_status_since = Utc::now();
-        pipeline.deployment_resources_desired_status = ResourcesDesiredStatus::Stopped;
-        pipeline.deployment_resources_desired_status_since = Utc::now();
         pipeline.deployment_runtime_status = None;
         pipeline.deployment_runtime_status_since = None;
         pipeline.deployment_runtime_desired_status = None;
         pipeline.deployment_runtime_desired_status_since = None;
-        pipeline.bootstrap_policy = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -4225,6 +4452,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -4265,6 +4494,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -4289,6 +4520,8 @@ impl Storage for Mutex<DbModel> {
                 .await
                 .pipelines
                 .insert((tenant_id, pipeline.id), pipeline.clone());
+            self.new_pipeline_monitor_event(tenant_id, pipeline.id)
+                .await?;
         }
         Ok(pipeline.id)
     }
@@ -4313,6 +4546,8 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
         Ok(())
     }
 
@@ -4587,7 +4822,7 @@ impl Storage for Mutex<DbModel> {
                 runner_status: e.runner_status,
             })
             .collect();
-        events.sort_by(|e1, e2| e1.recorded_at.cmp(&e2.recorded_at));
+        events.sort_by(|e1, e2| (e2.recorded_at, e2.id).cmp(&(e1.recorded_at, e1.id))); // Descending
         Ok(events)
     }
 
@@ -4720,5 +4955,132 @@ impl Storage for Mutex<DbModel> {
         db_model.cluster_events = new_cluster_events;
 
         Ok((s1 - s2, s2 - s3))
+    }
+
+    async fn list_pipeline_monitor_events(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+    ) -> Result<Vec<PipelineMonitorEvent>, DBError> {
+        let pipeline_id = self.get_pipeline(tenant_id, &pipeline_name).await?.id;
+        let mut events: Vec<PipelineMonitorEvent> = self
+            .lock()
+            .await
+            .pipeline_events
+            .get(&(tenant_id, pipeline_id))
+            .unwrap()
+            .clone()
+            .into_iter()
+            .map(|e| PipelineMonitorEvent {
+                id: e.id,
+                recorded_at: e.recorded_at,
+                resources_status: e.resources_status,
+                resources_desired_status: e.resources_desired_status,
+                runtime_status: e.runtime_status,
+                runtime_desired_status: e.runtime_desired_status,
+                program_status: e.program_status,
+                storage_status: e.storage_status,
+            })
+            .collect();
+        events.sort_by(|e1, e2| (e2.recorded_at, e2.id).cmp(&(e1.recorded_at, e1.id))); // Descending
+        Ok(events)
+    }
+
+    async fn get_pipeline_monitor_event_short(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+        event_id: PipelineMonitorEventId,
+    ) -> Result<PipelineMonitorEvent, DBError> {
+        let pipeline_id = self.get_pipeline(tenant_id, &pipeline_name).await?.id;
+        self.lock()
+            .await
+            .pipeline_events
+            .get(&(tenant_id, pipeline_id))
+            .cloned()
+            .unwrap()
+            .iter()
+            .find(|e| e.id == event_id)
+            .ok_or(DBError::UnknownPipelineMonitorEvent { event_id })
+            .map(|e| PipelineMonitorEvent {
+                id: e.id,
+                recorded_at: e.recorded_at,
+                resources_status: e.resources_status,
+                resources_desired_status: e.resources_desired_status,
+                runtime_status: e.runtime_status,
+                runtime_desired_status: e.runtime_desired_status,
+                program_status: e.program_status,
+                storage_status: e.storage_status,
+            })
+    }
+
+    async fn get_pipeline_monitor_event_extended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+        event_id: PipelineMonitorEventId,
+    ) -> Result<ExtendedPipelineMonitorEvent, DBError> {
+        let pipeline_id = self.get_pipeline(tenant_id, &pipeline_name).await?.id;
+        self.lock()
+            .await
+            .pipeline_events
+            .get(&(tenant_id, pipeline_id))
+            .cloned()
+            .unwrap()
+            .iter()
+            .find(|e| e.id == event_id)
+            .cloned()
+            .ok_or(DBError::UnknownPipelineMonitorEvent { event_id })
+    }
+
+    async fn get_latest_pipeline_monitor_event_short(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+    ) -> Result<PipelineMonitorEvent, DBError> {
+        let pipeline_id = self.get_pipeline(tenant_id, &pipeline_name).await?.id;
+        let mut events = self
+            .lock()
+            .await
+            .pipeline_events
+            .get(&(tenant_id, pipeline_id))
+            .cloned()
+            .unwrap();
+        events.sort_by(|e1, e2| (e2.recorded_at, e2.id).cmp(&(e1.recorded_at, e1.id))); // Descending
+        if events.is_empty() {
+            Err(DBError::NoPipelineMonitorEventsAvailable)
+        } else {
+            Ok(PipelineMonitorEvent {
+                id: events[0].id,
+                recorded_at: events[0].recorded_at,
+                resources_status: events[0].resources_status,
+                resources_desired_status: events[0].resources_desired_status,
+                runtime_status: events[0].runtime_status,
+                runtime_desired_status: events[0].runtime_desired_status,
+                program_status: events[0].program_status,
+                storage_status: events[0].storage_status,
+            })
+        }
+    }
+
+    async fn get_latest_pipeline_monitor_event_extended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+    ) -> Result<ExtendedPipelineMonitorEvent, DBError> {
+        let pipeline_id = self.get_pipeline(tenant_id, &pipeline_name).await?.id;
+        let mut events = self
+            .lock()
+            .await
+            .pipeline_events
+            .get(&(tenant_id, pipeline_id))
+            .cloned()
+            .unwrap();
+        events.sort_by(|e1, e2| (e2.recorded_at, e2.id).cmp(&(e1.recorded_at, e1.id))); // Descending
+        if events.is_empty() {
+            Err(DBError::NoPipelineMonitorEventsAvailable)
+        } else {
+            Ok(events[0].clone())
+        }
     }
 }
