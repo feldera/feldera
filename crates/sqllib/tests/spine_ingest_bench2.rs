@@ -211,13 +211,11 @@ where
                 }
                 match batch_rx.try_recv() {
                     Ok(mut payload) => {
-                        payload.tuples.sort_unstable();
-                        /*let mut batcher =
+                        let mut batcher =
                             <FallbackWSet<_, _> as Batch>::Batcher::new_batcher(&factories, ());
                         pairs.from_pairs(payload.tuples.as_mut());
                         batcher.push_batch(&mut pairs);
                         let batch = batcher.seal();
-                        */
 
                         // old interface leave commented for now
                         //let batch =

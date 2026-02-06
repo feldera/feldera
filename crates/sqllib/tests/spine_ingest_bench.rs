@@ -12,6 +12,7 @@ use dbsp::DBData;
 use dbsp::DynZWeight;
 use dbsp::Runtime;
 use dbsp::ZWeight;
+use dbsp::circuit::metadata::OperatorMeta;
 use dbsp::circuit::{
     CircuitConfig, CircuitStorageConfig, StorageCacheConfig, StorageConfig, StorageOptions,
 };
@@ -156,7 +157,11 @@ where
                 let mut rng_state = (worker_index as u64)
                     .wrapping_mul(0x9e37_79b9_7f4a_7c15)
                     .wrapping_add(producer_idx as u64 + 1);
-                producers.push(std::thread::spawn(move || {
+                let thread_name = format!("b-producer-{worker_index}-{producer_idx}");
+                producers.push(
+                    std::thread::Builder::new()
+                        .name(thread_name)
+                        .spawn(move || {
                     let mut next_log = Instant::now() + Duration::from_secs(10);
                     loop {
                         if stop.load(Ordering::Acquire) {
@@ -183,7 +188,9 @@ where
                             }
                         }
                     }
-                }));
+                        })
+                        .expect("spawn b-producer thread"),
+                );
             }
 
             let factories = FallbackWSetFactories::<DynData, DynZWeight>::new::<K, (), ZWeight>();
@@ -211,18 +218,13 @@ where
                 }
                 match batch_rx.try_recv() {
                     Ok(mut payload) => {
-                        payload.tuples.sort_unstable();
-                        /*let mut batcher =
+                        let mut batcher =
                             <FallbackWSet<_, _> as Batch>::Batcher::new_batcher(&factories, ());
                         pairs.from_pairs(payload.tuples.as_mut());
                         batcher.push_batch(&mut pairs);
                         let batch = batcher.seal();
-                        */
 
-                        // old interface leave commented for now
-                        //let batch =
-                        //    FallbackWSet::dyn_from_tuples(&factories, (), &mut payload.tuples);
-                        //spine.insert(batch);
+                        spine.insert(batch);
                         records += payload.len as u64;
                         bytes += payload.len as u64 * input_size as u64;
                     }
@@ -233,6 +235,9 @@ where
                     Err(TryRecvError::Disconnected) => break,
                 }
             }
+            let mut operator_metadata: OperatorMeta = OperatorMeta::new();
+            spine.metadata(&mut operator_metadata);
+            eprintln!("{:#?}", operator_metadata);
             let elapsed = start.elapsed();
 
             stop.store(true, Ordering::Release);

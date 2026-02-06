@@ -232,7 +232,7 @@ where
     }
 
     fn should_apply_backpressure(&self) -> bool {
-        const HIGH_THRESHOLD: usize = 128;
+        const HIGH_THRESHOLD: usize = 256;
         self.slots
             .iter()
             .map(|s| s.loose_batches.len())
