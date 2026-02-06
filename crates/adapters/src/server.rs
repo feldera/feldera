@@ -72,9 +72,7 @@ use feldera_types::runtime_status::{
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
 use feldera_types::{
-    checkpoint::CheckpointMetadata,
-    config::{TransportConfig, default_max_batch_size},
-    transport::http::HttpInputConfig,
+    checkpoint::CheckpointMetadata, config::TransportConfig, transport::http::HttpInputConfig,
 };
 use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
 use futures::StreamExt;
@@ -1997,7 +1995,8 @@ async fn create_http_input_endpoint(
             format: Some(format),
             index: None,
             output_buffer_config: Default::default(),
-            max_batch_size: default_max_batch_size(),
+            max_batch_size: None,
+            max_worker_batch_size: None,
             max_queued_records: HttpInputTransport::default_max_buffered_records(),
             paused: false,
             labels: vec![],
@@ -2177,7 +2176,8 @@ async fn output_endpoint(
             )?),
             index: None,
             output_buffer_config: Default::default(),
-            max_batch_size: default_max_batch_size(),
+            max_batch_size: None,
+            max_worker_batch_size: None,
             max_queued_records: HttpOutputTransport::default_max_buffered_records(),
             paused: false,
             labels: vec![],

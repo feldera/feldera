@@ -69,7 +69,8 @@ pub fn now_endpoint_config(config: &PipelineConfig) -> InputEndpointConfig {
             }),
             index: None,
             output_buffer_config: OutputBufferConfig::default(),
-            max_batch_size: 1,
+            max_batch_size: Some(1),
+            max_worker_batch_size: None,
             // This must be >1; otherwise the controller will pause the connector after every input.
             max_queued_records: 2,
             paused: false,
