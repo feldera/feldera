@@ -56,6 +56,12 @@ pub const PREFIX_BATCHES_LABEL: &str = "prefix batches";
 /// Output batch sizes.
 pub const OUTPUT_BATCHES_LABEL: &str = "output batches";
 
+/// Input batch bytes (size in bytes of all input batches).
+pub const INPUT_BYTES_LABEL: &str = "input bytes";
+
+/// Output batch bytes (size in bytes of all output batches).
+pub const OUTPUT_BYTES_LABEL: &str = "output bytes";
+
 /// The amount of time an async operator spent wait to become ready.
 pub const EXCHANGE_WAIT_TIME: &str = "exchange_wait_time";
 
@@ -97,17 +103,26 @@ pub type MetaLabel = Cow<'static, str>;
 // TODO: add a histogram.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct BatchSizeStats {
-    /// Smallest batch size.
+    /// Smallest batch size (in records).
     min: usize,
 
-    /// Largest batch size.
+    /// Largest batch size (in records).
     max: usize,
 
     /// The number of batches.
     cnt: usize,
 
-    /// Total size.
+    /// Total size (in records).
     total: usize,
+
+    /// Smallest batch size (in bytes).
+    min_bytes: usize,
+
+    /// Largest batch size (in bytes).
+    max_bytes: usize,
+
+    /// Total bytes.
+    total_bytes: usize,
 }
 
 impl BatchSizeStats {
@@ -117,18 +132,35 @@ impl BatchSizeStats {
             max: 0,
             cnt: 0,
             total: 0,
+            min_bytes: usize::MAX,
+            max_bytes: 0,
+            total_bytes: 0,
         }
     }
 
     pub fn add_batch(&mut self, size: usize) {
+        self.add_batch_with_bytes(size, 0);
+    }
+
+    pub fn add_batch_with_bytes(&mut self, size: usize, bytes: usize) {
         self.cnt += 1;
         self.total = self.total.wrapping_add(size);
         self.min = if size < self.min { size } else { self.min };
         self.max = if size > self.max { size } else { self.max };
+
+        if bytes > 0 {
+            self.total_bytes = self.total_bytes.wrapping_add(bytes);
+            self.min_bytes = if bytes < self.min_bytes { bytes } else { self.min_bytes };
+            self.max_bytes = if bytes > self.max_bytes { bytes } else { self.max_bytes };
+        }
     }
 
     pub fn total_size(&self) -> usize {
         self.total
+    }
+
+    pub fn total_bytes(&self) -> usize {
+        self.total_bytes
     }
 
     pub fn metadata(&self) -> MetaItem {
@@ -136,6 +168,21 @@ impl BatchSizeStats {
             MetaItem::Map(
                 metadata! {
                     "batches" => MetaItem::Count(0),
+                }
+                .into(),
+            )
+        } else if self.total_bytes > 0 {
+            MetaItem::Map(
+                metadata! {
+                    "batches" => MetaItem::Count(self.cnt),
+                    "min size" => MetaItem::Count(self.min),
+                    "max size" => MetaItem::Count(self.max),
+                    "avg size" => MetaItem::Count(self.total / self.cnt),
+                    "total records" => MetaItem::Count(self.total),
+                    "min bytes" => MetaItem::Bytes(HumanBytes::new(self.min_bytes as u64)),
+                    "max bytes" => MetaItem::Bytes(HumanBytes::new(self.max_bytes as u64)),
+                    "avg bytes" => MetaItem::Bytes(HumanBytes::new((self.total_bytes / self.cnt) as u64)),
+                    "total bytes" => MetaItem::Bytes(HumanBytes::new(self.total_bytes as u64))
                 }
                 .into(),
             )
