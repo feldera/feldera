@@ -159,7 +159,8 @@ pub use feldera_types::config::{
     RuntimeConfig, TransportConfig,
 };
 use feldera_types::config::{
-    FileBackendConfig, FtConfig, FtModel, OutputBufferConfig, StorageBackendConfig, SyncConfig,
+    DEFAULT_MAX_WORKER_BATCH_SIZE, FileBackendConfig, FtConfig, FtModel, OutputBufferConfig,
+    StorageBackendConfig, SyncConfig,
 };
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
@@ -4786,6 +4787,8 @@ pub struct ControllerInner {
     // The mutex is acquired from async context by actix and
     // from the sync context by the circuit thread.
     transaction_info: Mutex<TransactionInfo>,
+
+    /// Workers local to this host.
     workers: Range<usize>,
 
     /// Current transaction number.
@@ -4944,6 +4947,32 @@ impl ControllerInner {
             command_receiver,
             controller,
         ))
+    }
+
+    /// Compute max_batch_size for a connector.
+    ///
+    /// `max_batch_size` is a (soft) bound on the number of records ingested in one step from
+    /// the connector.
+    ///
+    /// If the connector config specifies a `max_batch_size`, it is used as is.
+    ///
+    /// Otherwise, `max_batch_size` is computed as the number of workers times `config.max_worker_batch_size` (if specified)
+    /// or `DEFAULT_MAX_WORKER_BATCH_SIZE` otherwise.
+    pub fn max_connector_batch_size(&self, connector_config: &ConnectorConfig) -> usize {
+        if let Some(max_batch_size) = connector_config.max_batch_size {
+            return max_batch_size as usize;
+        };
+
+        let num_local_workers = std::cmp::max(self.workers.len(), 1);
+
+        let max_worker_batch_size =
+            if let Some(max_worker_batch_size) = connector_config.max_worker_batch_size {
+                max_worker_batch_size as usize
+            } else {
+                DEFAULT_MAX_WORKER_BATCH_SIZE as usize
+            };
+
+        max_worker_batch_size * num_local_workers
     }
 
     fn last_checkpoint(&self) -> LastCheckpoint {
@@ -6224,11 +6253,13 @@ impl InputProbe {
         connector_config: &ConnectorConfig,
         controller: Arc<ControllerInner>,
     ) -> Self {
+        let max_batch_size = controller.max_connector_batch_size(connector_config);
+
         Self {
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
             controller,
-            max_batch_size: connector_config.max_batch_size as usize,
+            max_batch_size,
             transaction_in_progress: AtomicBool::new(false),
         }
     }

@@ -29,8 +29,7 @@ use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
 };
 use feldera_types::config::{
-    ConnectorConfig, FormatConfig, InputEndpointConfig, TransportConfig, default_max_batch_size,
-    default_max_queued_records,
+    ConnectorConfig, FormatConfig, InputEndpointConfig, TransportConfig, default_max_queued_records,
 };
 use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::serde_with_context::serde_config::{
@@ -287,7 +286,8 @@ impl DataSink for AdHocTableSink {
                 }),
                 index: None,
                 output_buffer_config: Default::default(),
-                max_batch_size: default_max_batch_size(),
+                max_batch_size: None,
+                max_worker_batch_size: None,
                 max_queued_records: default_max_queued_records(),
                 paused: false,
                 labels: vec![],

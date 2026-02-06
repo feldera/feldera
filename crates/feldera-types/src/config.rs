@@ -43,13 +43,7 @@ pub const fn default_max_queued_records() -> u64 {
     1_000_000
 }
 
-/// Default maximum batch size for connectors, in records.
-///
-/// If you change this then update the comment on
-/// [ConnectorConfig::max_batch_size].
-pub const fn default_max_batch_size() -> u64 {
-    10_000
-}
+pub const DEFAULT_MAX_WORKER_BATCH_SIZE: u64 = 10_000;
 
 pub const DEFAULT_CLOCK_RESOLUTION_USECS: u64 = 1_000_000;
 
@@ -1368,22 +1362,35 @@ pub struct ConnectorConfig {
     #[serde(flatten)]
     pub output_buffer_config: OutputBufferConfig,
 
-    /// Maximum batch size, in records.
+    /// Maximum number of records from this connector to process in a single batch.
     ///
-    /// This is the maximum number of records to process in one batch through
-    /// the circuit.  The time and space cost of processing a batch is
-    /// asymptotically superlinear in the size of the batch, but very small
-    /// batches are less efficient due to constant factors.
+    /// When set, this caps how many records are taken from the connector’s input
+    /// buffer and pushed through the circuit at once.
     ///
-    /// This should usually be less than `max_queued_records`, to give the
-    /// connector a round-trip time to restart and refill the buffer while
-    /// batches are being processed.
+    /// This is typically configured lower than `max_queued_records` to allow the
+    /// connector time to restart and refill its buffer while a batch is being
+    /// processed.
     ///
-    /// Some input adapters might not honor this setting.
+    /// Not all input adapters honor this limit.
     ///
-    /// The default is 10,000.
-    #[serde(default = "default_max_batch_size")]
-    pub max_batch_size: u64,
+    /// If this is not set, the batch size is derived from `max_worker_batch_size`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_batch_size: Option<u64>,
+
+    /// Maximum number of records processed per batch, per worker thread.
+    ///
+    /// When `max_batch_size` is not set, this setting is used to cap
+    /// the number of records that can be taken from the connector’s input
+    /// buffer and pushed through the circuit at once.  The effective batch size is computed as:
+    /// `max_worker_batch_size × workers`.
+    ///
+    /// This provides an alternative to `max_batch_size` that automatically adjusts batch
+    /// size as the number of worker threads changes to maintain constant amount of
+    /// work per worker per batch.
+    ///
+    /// Defaults to 10,000 records per worker.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_worker_batch_size: Option<u64>,
 
     /// Backpressure threshold.
     ///
