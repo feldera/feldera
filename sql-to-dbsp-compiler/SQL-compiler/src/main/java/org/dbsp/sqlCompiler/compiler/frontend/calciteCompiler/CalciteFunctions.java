@@ -307,9 +307,6 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.STRUCT_ACCESS, "$STRUCT_ACCESS", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.CARDINALITY, "CARDINALITY", SqlLibrary.STANDARD, "array#cardinality,map#cardinality", FunctionDocumentation.NO_FILE, false),
 
-            new Func(SqlStdOperatorTable.TUMBLE, "TUMBLE", SqlLibrary.STANDARD, "table#tumble", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.HOP, "HOP", SqlLibrary.STANDARD, "table#hop", FunctionDocumentation.NO_FILE, false),
-
             // SqlLibraryOperators operators
             // DATEADD is not implemented, but give a better error message
             new Func(SqlLibraryOperators.DATEADD, "DATEADD", SqlLibrary.POSTGRESQL, "", FunctionDocumentation.NO_FILE, false),

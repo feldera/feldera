@@ -61,6 +61,9 @@ public class Logger {
      * @param level   Level of message that is being logged.
      * @return        A stream where the message can be appended. */
     public IIndentStream belowLevel(IWritesLogs module, int level) {
+        if (this.loggingLevel.isEmpty())
+            // Fast check
+            return this.noStream;
         return this.belowLevel(module.getClass(), level);
     }
 
