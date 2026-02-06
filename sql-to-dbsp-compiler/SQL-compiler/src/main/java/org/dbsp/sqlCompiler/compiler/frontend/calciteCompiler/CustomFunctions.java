@@ -85,6 +85,8 @@ public class CustomFunctions {
         this.functions.add(new ToJsonFunction());
         this.functions.add(new ConnectorMetadataFunction());
         this.functions.add(new WriteLogFunction());
+        this.functions.add(FelderaSqlTumbleTableFunction.INSTANCE);
+        this.functions.add(FelderaSqlHopTableFunction.INSTANCE);
         this.udf = new HashMap<>();
         this.aggregates = new HashMap<>();
     }

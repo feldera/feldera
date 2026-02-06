@@ -122,6 +122,8 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.FelderaSqlHopTableFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.FelderaSqlTumbleTableFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
@@ -228,6 +230,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -658,15 +661,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
         RexNode operation = tf.getCall();
         Utilities.enforce(operation instanceof RexCall);
         RexCall call = (RexCall) operation;
-        switch (call.getOperator().getName()) {
-            case "HOP":
-                this.compileHop(tf, call);
-                return;
-            case "TUMBLE":
-                this.compileTumble(tf, call);
-                return;
-            default:
-                break;
+        String opName = call.getOperator().getName();
+        if (opName.equalsIgnoreCase(FelderaSqlHopTableFunction.NAME) ||
+                opName.equalsIgnoreCase(SqlKind.HOP.name())) {
+            this.compileHop(tf, call);
+            return;
+        } else if (opName.equalsIgnoreCase(FelderaSqlTumbleTableFunction.NAME) ||
+                opName.equalsIgnoreCase(SqlKind.TUMBLE.name())) {
+            this.compileTumble(tf, call);
+            return;
         }
         throw new UnimplementedException("Table function " + tf + " not yet implemented", node);
     }

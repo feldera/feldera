@@ -133,7 +133,6 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExtendedSqlParserPos;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlAttributeDefinition;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateAggregate;
@@ -164,7 +163,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.FreshName;
@@ -735,6 +733,21 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
+    /** The TUMBLE and HOP functions in Calcite have a hardwired precision for their TIMESTAMP types to 3 */
+    static class ReplaceTumbleHop extends SqlShuttle {
+        @Override
+        public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlCall call) {
+            SqlCall newCall = Objects.requireNonNull((SqlCall) super.visit(call));
+            if (call.getOperator().getName().equals(SqlKind.TUMBLE.lowerName))
+                newCall = new SqlBasicCall(FelderaSqlTumbleTableFunction.INSTANCE,
+                        call.getOperandList(), call.getParserPosition());
+            if (call.getOperator().getName().equals(SqlKind.HOP.lowerName))
+                newCall = new SqlBasicCall(FelderaSqlHopTableFunction.INSTANCE,
+                        call.getOperandList(), call.getParserPosition());
+            return newCall;
+        }
+    }
+
     SqlNode postParsingProcess(SqlNode node, boolean saveLines) {
         node.accept(this.getExtraValidator());
         if (this.options.languageOptions.unaryPlusNoop) {
@@ -743,6 +756,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
         ReplacePositions replace = new ReplacePositions(!saveLines);
         node = Objects.requireNonNull(replace.visitNode(node));
+        ReplaceTumbleHop fixWindowOperators = new ReplaceTumbleHop();
+        node = Objects.requireNonNull(fixWindowOperators.visitNode(node));
         return node;
     }
 
@@ -2097,6 +2112,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 if (node.statement() instanceof SqlRemove)
                     return this.compileRemove(node);
                 break;
+            case ORDER_BY:
             case SELECT:
                 throw new UnsupportedException(
                         "Raw 'SELECT' statements are not supported; did you forget to CREATE VIEW?",
