@@ -4,7 +4,7 @@ use crate::{
     circuit::{
         GlobalNodeId, LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
         circuit_builder::CircuitBase,
-        metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL, OperatorMeta},
+        metadata::{BatchSizeStats, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::{BinarySinkOperator, Operator, SinkOperator},
     },
     storage::file::to_bytes,
@@ -515,7 +515,7 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            OUTPUT_BATCHES_LABEL => self.output_batch_stats.metadata(),
+            OUTPUT_BATCHES_STATS => self.output_batch_stats.metadata(),
         });
     }
 
