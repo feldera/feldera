@@ -16,6 +16,7 @@ pub(crate) mod csv;
 mod json;
 pub mod parquet;
 pub(crate) mod raw;
+mod workerpool;
 
 #[cfg(feature = "with-avro")]
 use crate::format::avro::output::AvroOutputFormat;

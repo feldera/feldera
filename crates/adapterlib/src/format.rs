@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::fmt::{Display, Error as FmtError, Formatter};
 use std::hash::Hasher;
 use std::ops::{Add, AddAssign};
+use std::sync::Arc;
 
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
@@ -347,7 +348,7 @@ pub trait Encoder: Send {
 
     /// Encode a batch of updates, push encoded buffers to the consumer
     /// using [`OutputConsumer::push_buffer`].
-    fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()>;
+    fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()>;
 }
 
 pub trait OutputConsumer: Send {

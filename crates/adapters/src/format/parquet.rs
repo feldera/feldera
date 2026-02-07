@@ -402,7 +402,7 @@ impl Encoder for ParquetEncoder {
         self.output_consumer.as_mut()
     }
 
-    fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
+    fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
         let mut buffer = take(&mut self.buffer);
         let props = WriterProperties::builder().build();
         let fields =

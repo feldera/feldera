@@ -182,7 +182,7 @@ pub enum AvroEncoderKeyMode {
 }
 
 /// Avro output format configuration.
-#[derive(Clone, Serialize, Deserialize, Debug, Default, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AvroEncoderConfig {
     /// Format used to encode data change events in this stream.
@@ -249,4 +249,32 @@ pub struct AvroEncoderConfig {
     /// assigned by the registry in the
     #[serde(flatten)]
     pub registry_config: AvroSchemaRegistryConfig,
+
+    /// The number of workers to use during encoding.
+    ///
+    /// Avro encoder supports encoding multiple records in parallel. This configuration specifies
+    /// the number of workers to run in parallel.
+    /// Default: 1
+    #[serde(default = "default_encoder_workers")]
+    pub workers: usize,
+}
+
+impl Default for AvroEncoderConfig {
+    fn default() -> Self {
+        Self {
+            update_format: Default::default(),
+            key_mode: Default::default(),
+            schema: Default::default(),
+            cdc_field: Default::default(),
+            namespace: Default::default(),
+            subject_name_strategy: Default::default(),
+            skip_schema_id: Default::default(),
+            registry_config: Default::default(),
+            workers: default_encoder_workers(),
+        }
+    }
+}
+
+fn default_encoder_workers() -> usize {
+    8
 }
