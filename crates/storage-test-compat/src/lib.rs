@@ -393,9 +393,11 @@ mod tests {
         buffer_cache, golden_file_directory, golden_row, golden_row_small, GoldenRow,
         GoldenRowSmall,
     };
+    use dbsp::circuit::checkpointer::Checkpoint;
     use dbsp::dynamic::{DynData, Erase};
     use dbsp::storage::backend::{StorageBackend, StoragePath};
     use dbsp::storage::file::reader::Reader;
+    use dbsp::storage::file::format::VERSION_NUMBER;
     use dbsp::storage::file::Factories;
     use dbsp::DBData;
     use feldera_types::config::{StorageConfig, StorageOptions};
@@ -438,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn can_read_golden_files() -> io::Result<()> {
+    fn can_read_golden_batches() -> io::Result<()> {
         let golden_files = golden_file_directory();
         if !golden_files.exists() {
             panic!(
@@ -459,7 +461,7 @@ mod tests {
         for file_path in fs::read_dir(golden_files)? {
             let file_path = file_path?;
             let file_name = file_path.file_name().to_string_lossy().to_string();
-            if !file_name.ends_with(".feldera") {
+            if !file_name.starts_with("golden-batch-") || !file_name.ends_with(".feldera") {
                 continue;
             }
             println!("processing {}", file_name);
@@ -472,6 +474,52 @@ mod tests {
                 validate_rows::<GoldenRow>(&*storage_backend, storage_path, golden_row);
             }
         }
+
+        Ok(())
+    }
+
+    fn validate_checkpoint<T>(path: &std::path::Path, row_builder: fn(usize) -> T)
+    where
+        T: Checkpoint + Default + Eq + std::fmt::Debug,
+    {
+        let data = fs::read(path).unwrap();
+        let mut value = T::default();
+        value.restore(&data).unwrap();
+        assert_eq!(value, row_builder(0));
+    }
+
+    #[test]
+    fn can_read_golden_checkpoints() -> io::Result<()> {
+        let golden_files = golden_file_directory();
+        if !golden_files.exists() {
+            panic!(
+                "missing golden storage file: {} (run the golden-writer binary)",
+                golden_files.display()
+            );
+        }
+
+        let large = golden_files.join(format!(
+            "golden-checkpoint-v{VERSION_NUMBER}-large.feldera"
+        ));
+        let small = golden_files.join(format!(
+            "golden-checkpoint-v{VERSION_NUMBER}-small.feldera"
+        ));
+
+        if !large.exists() {
+            panic!(
+                "missing golden checkpoint file: {} (run the golden-writer binary)",
+                large.display()
+            );
+        }
+        if !small.exists() {
+            panic!(
+                "missing golden checkpoint file: {} (run the golden-writer binary)",
+                small.display()
+            );
+        }
+
+        validate_checkpoint::<GoldenRow>(&large, golden_row);
+        validate_checkpoint::<GoldenRowSmall>(&small, golden_row_small);
 
         Ok(())
     }

@@ -3,10 +3,12 @@
 ///
 /// whenever you increment `VERSION_NUMBER`
 ///
-/// This writes both large (Tup65) and small (Tup10) batches, in compressed
-/// and uncompressed variants, under `crates/storage-test-compat/golden-files/`.
+/// This writes both large (Tup65) and small (Tup8) batches, in compressed
+/// and uncompressed variants, plus checkpoint payloads under
+/// `crates/storage-test-compat/golden-files/`.
 use std::path::PathBuf;
 
+use dbsp::circuit::checkpointer::Checkpoint;
 use dbsp::dynamic::DynData;
 use dbsp::storage::backend::StorageBackend;
 use dbsp::storage::file::format::Compression;
@@ -50,6 +52,17 @@ impl Config {
             }
             None => (),
         }
+        file_name += "-";
+        file_name += self.size.suffix();
+        file_name += ".feldera";
+
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("golden-files")
+            .join(file_name)
+    }
+
+    fn checkpoint_output(&self) -> PathBuf {
+        let mut file_name = format!("golden-checkpoint-v{VERSION_NUMBER}");
         file_name += "-";
         file_name += self.size.suffix();
         file_name += ".feldera";
@@ -120,6 +133,23 @@ where
     Ok(())
 }
 
+fn write_checkpoint<T>(
+    output: &std::path::Path,
+    row_builder: fn(usize) -> T,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    T: Checkpoint,
+{
+    if let Some(base_dir) = output.parent() {
+        std::fs::create_dir_all(base_dir)?;
+    }
+    let row = row_builder(0);
+    let bytes = row.checkpoint()?;
+    std::fs::write(output, bytes)?;
+    println!("wrote checkpoint to {}", output.display());
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::default();
     for size in [GoldenSize::Large, GoldenSize::Small] {
@@ -127,10 +157,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for compression in [None, Some(Compression::Snappy)] {
             config.compression = compression;
 
-            let output = if config.output().is_absolute() {
-                config.output()
+            let output = config.output();
+            let output = if output.is_absolute() {
+                output
             } else {
-                std::env::current_dir()?.join(config.output())
+                std::env::current_dir()?.join(output)
             };
 
             match config.size {
@@ -143,6 +174,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     config.compression,
                     golden_row_small,
                 )?,
+            }
+        }
+
+        let checkpoint_output = config.checkpoint_output();
+        let checkpoint_output = if checkpoint_output.is_absolute() {
+            checkpoint_output
+        } else {
+            std::env::current_dir()?.join(checkpoint_output)
+        };
+        match config.size {
+            GoldenSize::Large => write_checkpoint::<GoldenRow>(&checkpoint_output, golden_row)?,
+            GoldenSize::Small => {
+                write_checkpoint::<GoldenRowSmall>(&checkpoint_output, golden_row_small)?
             }
         }
     }
