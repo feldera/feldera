@@ -87,8 +87,21 @@ If you get an error like this:
 🔥 Unexpected error occurred. Token "<SomeNewType>" does not exist.
 ```
 
-then add the new type to `crates/pipeline-manager/src/api/main.rs`,
-and then rerun both commands above. If there is more than one new
+then:
+
+- If the new type is a `struct` or `enum`, add it to
+  `crates/pipeline-manager/src/api/main.rs`.
+
+- If the new type is a `type` type alias, then you will have to
+  manually annotate each occurrence with what its expansion, like
+  this:
+
+  ```
+  #[schema(value_type = Option<u64>)]
+  pub step: Option<Step>,
+  ```
+
+Afterward, rerun both commands above. If there is more than one new
 type, you may want to add all of them at once, because this will only
 report one each time.
 

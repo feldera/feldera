@@ -275,3 +275,22 @@ pub struct Labels {
     /// All the labels on incomplete connectors.
     pub incomplete: HashSet<String>,
 }
+
+/// `/coordination/completion/status` reply, streamed from pipeline to coordinator.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Completion {
+    /// Number of steps whose input records have been processed to completion.
+    ///
+    /// A record is processed to completion if it has been processed by the DBSP engine and
+    /// all outputs derived from it have been processed by all output connectors.
+    ///
+    /// # Interpretation
+    ///
+    /// This is a count, not a step number.  If `total_completed_steps` is 0, no
+    /// steps have been processed to completion.  If `total_completed_steps >
+    /// 0`, then the last step whose input records have been processed to
+    /// completion is `total_completed_steps - 1`. A record that was ingested
+    /// in step `n` is fully processed when `total_completed_steps >= n`.
+    #[serde(rename = "c")]
+    pub total_completed_steps: Step,
+}

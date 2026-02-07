@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::coordination::Step;
+
 /// Response to a completion token creation request.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct CompletionTokenResponse {
@@ -20,7 +22,7 @@ impl CompletionTokenResponse {
 }
 
 /// URL-encoded arguments to the `/completion_status` endpoint.
-#[derive(Clone, Debug, PartialEq, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct CompletionStatusArgs {
     /// Completion token returned by the `/completion_token` or `/ingress`
     /// endpoint.
@@ -44,18 +46,27 @@ pub enum CompletionStatus {
 pub struct CompletionStatusResponse {
     /// Completion token status.
     pub status: CompletionStatus,
+
+    /// If all of the data associated with the token has been processed through
+    /// the pipeline, this is the final step that includes at least one record.
+    /// When the pipeline's `total_completed_steps` reaches this value, the
+    /// token has been completed.
+    ///
+    /// This is `None` before the data associated with the token has been
+    /// processed through the pipeline.
+    #[schema(value_type = Option<u64>)]
+    pub step: Option<Step>,
 }
 
 impl CompletionStatusResponse {
-    pub fn complete() -> Self {
-        Self {
-            status: CompletionStatus::Complete,
-        }
-    }
-
-    pub fn inprogress() -> Self {
-        Self {
-            status: CompletionStatus::InProgress,
-        }
+    pub fn new(step: Option<Step>, total_completed_steps: Step) -> Self {
+        let status = if let Some(step) = step
+            && total_completed_steps >= step
+        {
+            CompletionStatus::Complete
+        } else {
+            CompletionStatus::InProgress
+        };
+        Self { step, status }
     }
 }

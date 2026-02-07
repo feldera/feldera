@@ -1214,6 +1214,7 @@ where
         .service(coordination_checkpoint_prepare)
         .service(coordination_checkpoint_release)
         .service(coordination_transaction_status)
+        .service(coordination_completion_status)
         .service(coordination_adhoc_catalog)
         .service(coordination_adhoc_lease)
         .service(coordination_adhoc_scan)
@@ -1459,15 +1460,8 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
 /// Retrieve whether a pipeline is suspendable or not.
 #[get("/suspendable")]
 async fn suspendable(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let suspend_error = state
-        .controller()?
-        .status()
-        .suspend_error
-        .lock()
-        .unwrap()
-        .clone();
-    let reasons = match suspend_error {
-        Some(SuspendError::Permanent(errors)) => Some(errors.clone()),
+    let reasons = match state.controller()?.can_suspend() {
+        Err(SuspendError::Permanent(errors)) => Some(errors),
         _ => None,
     };
     Ok(HttpResponse::Ok().json(SuspendableResponse::new(
@@ -1508,14 +1502,14 @@ async fn query(
 
 #[get("/stats")]
 async fn stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    Ok(HttpResponse::Ok().json(state.controller()?.status().to_api_type()))
+    Ok(HttpResponse::Ok().json(state.controller()?.api_status()))
 }
 
 /// This endpoint returns a subset of stats that don't need updating and so is more performant than /stats
 #[get("/stats/errors")]
 async fn error_stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     let controller = state.controller()?;
-    let controller_status = controller.stale_status();
+    let controller_status = controller.status();
 
     let inputs: Vec<EndpointErrorStats<InputEndpointErrorMetrics>> = controller_status
         .input_status()
@@ -2283,15 +2277,14 @@ async fn completion_status(
     let token = CompletionToken::decode(&args.token).map_err(|e| PipelineError::InvalidParam {
         error: format!("invalid completion token: {e}"),
     })?;
-    if state
-        .controller()?
-        .completion_status(&token)
-        .map_err(|e| state.maybe_missing_controller_error(e))?
-    {
-        Ok(HttpResponse::Ok().json(CompletionStatusResponse::complete()))
-    } else {
-        Ok(HttpResponse::Accepted().json(CompletionStatusResponse::inprogress()))
-    }
+
+    let controller = state.controller()?;
+    Ok(HttpResponse::Ok().json(CompletionStatusResponse::new(
+        controller
+            .completion_status(&token)
+            .map_err(|e| state.maybe_missing_controller_error(e))?,
+        controller.status().global_metrics.total_completed_steps(),
+    )))
 }
 
 #[post("/rebalance")]
@@ -2389,6 +2382,17 @@ async fn coordination_transaction_status(
 ) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
         WatchStream::new(state.controller()?.transaction_watcher()).map(|value| {
+            Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
+        }),
+    ))
+}
+
+#[get("/coordination/completion/status")]
+async fn coordination_completion_status(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
+        WatchStream::new(state.controller()?.completion_watcher()).map(|value| {
             Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
         }),
     ))
@@ -2924,7 +2928,7 @@ outputs:
                             .body()
                             .await
                             .unwrap();
-                        let CompletionStatusResponse { status } =
+                        let CompletionStatusResponse { status, .. } =
                             serde_json::from_slice(&resp).unwrap();
                         println!("completion status: {status:?}");
 
