@@ -13,7 +13,9 @@ TESTS=(
     "asof_tests/main.py"
     "complex_type_tests/main.py"
     "illarg_tests/main.py"
+    "illarg_tests2/main.py"
     "negative_tests/main.py"
+    "negative_tests2/main.py"
     "orderby_tests/main.py"
     "variant_tests/main.py"
 )
