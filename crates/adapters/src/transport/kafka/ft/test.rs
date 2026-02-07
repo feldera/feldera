@@ -27,7 +27,7 @@ use feldera_macros::IsNone;
 use feldera_sqllib::{ByteArray, SqlString, Variant};
 use feldera_types::config::{
     ConnectorConfig, FormatConfig, FtModel, InputEndpointConfig, OutputBufferConfig,
-    TransportConfig, default_max_batch_size, default_max_queued_records,
+    TransportConfig, default_max_queued_records,
 };
 use feldera_types::deserialize_table_record;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
@@ -1396,7 +1396,8 @@ fn test_offset(
             }),
             index: None,
             output_buffer_config: OutputBufferConfig::default(),
-            max_batch_size: default_max_batch_size(),
+            max_batch_size: None,
+            max_worker_batch_size: None,
             max_queued_records: default_max_queued_records(),
             paused: false,
             labels: Vec::new(),
@@ -1835,7 +1836,8 @@ fn test_input_partition(
             }),
             index: None,
             output_buffer_config: OutputBufferConfig::default(),
-            max_batch_size: default_max_batch_size(),
+            max_batch_size: None,
+            max_worker_batch_size: None,
             max_queued_records: default_max_queued_records(),
             paused: false,
             labels: Vec::new(),
