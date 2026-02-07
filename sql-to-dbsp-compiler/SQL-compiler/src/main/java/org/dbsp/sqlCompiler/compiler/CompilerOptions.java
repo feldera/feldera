@@ -245,10 +245,6 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                         "Options -png and -jpg cannot be used at the same time");
                 return false;
             }
-            if (this.noRust && !this.outputFile.isEmpty()) {
-                reporter.reportWarning(SourcePositionRange.INVALID, "Invalid options",
-                        "Options --nooutput and -o used at the same time");
-            }
             return true;
         }
 

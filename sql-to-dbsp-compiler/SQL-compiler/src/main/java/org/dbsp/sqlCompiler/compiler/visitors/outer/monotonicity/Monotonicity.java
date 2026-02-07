@@ -7,7 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctIncrementalOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
@@ -560,7 +560,7 @@ public class Monotonicity extends CircuitVisitor {
     }
 
     @Override
-    public void postorder(DBSPDistinctIncrementalOperator node) {
+    public void postorder(DBSPBinaryDistinctOperator node) {
         // The right input is the delta.
         MonotoneExpression input = this.getMonotoneExpression(node.right());
         if (input == null)
@@ -610,7 +610,7 @@ public class Monotonicity extends CircuitVisitor {
 
         DBSPTypeIndexedZSet inputType = node.input().getOutputIndexedZSetType();
         DBSPVariablePath kx = new DBSPTypeRawTuple(inputType.keyType.ref(), inputType.elementType.ref()).var();
-        DBSPExpression noExpression = new NoExpression(function.getNode(), function.parameters[1].type);
+        DBSPExpression noExpression = new NoExpression(function.parameters[1].type);
         DBSPExpression dataPart = function.call(kx.field(1), noExpression);
         DBSPExpression transfer = new DBSPRawTupleExpression(
                 kx.field(0).deref(), dataPart).closure(kx).reduce(this.compiler())
@@ -694,7 +694,7 @@ public class Monotonicity extends CircuitVisitor {
                     if (index != node.leftTimestampIndex) {
                         // Since this is not a streaming join, we can't say anything about
                         // non-timestamp fields
-                        expr = new NoExpression(expr.getNode(), expr.getType());
+                        expr = new NoExpression(expr.getType());
                     } else {
                         expr = min.deepCopy();
                     }
@@ -704,7 +704,7 @@ public class Monotonicity extends CircuitVisitor {
                     if (index != node.rightTimestampIndex) {
                         // Since this is not a streaming join, we can't say anything about
                         // non-timestamp fields
-                        expr = new NoExpression(expr.getNode(), expr.getType());
+                        expr = new NoExpression(expr.getType());
                     } else {
                         expr = min.deepCopy().castToNullable();
                     }
@@ -779,7 +779,7 @@ public class Monotonicity extends CircuitVisitor {
      * *DOES NOT WORK PROPERLY FOR EMPTY TUPLES. */
     static DBSPExpression makeNoExpression(DBSPType type) {
         if (type.is(DBSPTypeBaseType.class) || type.is(DBSPTypeArray.class) || type.is(DBSPTypeMap.class)) {
-            return new NoExpression(CalciteObject.EMPTY, type);
+            return new NoExpression(type);
         } else if (type.is(DBSPTypeTupleBase.class)) {
             // Tricky if the tuple is empty, this *will* be monotone!
             DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
@@ -789,7 +789,7 @@ public class Monotonicity extends CircuitVisitor {
             return makeNoExpression(type.ref()).borrow();
         } else if (type.is(DBSPTypeUser.class)) {
             // Can happen for e.g., user-defined aggregates
-            return new NoExpression(CalciteObject.EMPTY, type);
+            return new NoExpression(type);
         } else {
             throw new InternalCompilerError("Monotonicity information for type " + type,
                     type.getNode());

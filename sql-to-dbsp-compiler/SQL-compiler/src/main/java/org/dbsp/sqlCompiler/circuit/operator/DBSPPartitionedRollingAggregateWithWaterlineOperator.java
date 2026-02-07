@@ -49,7 +49,7 @@ import java.util.List;
 
 public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         extends DBSPBinaryOperator
-        implements INonLinearAggregate {
+        implements INonLinearAggregate, IIncremental {
     @Nullable
     public final DBSPAggregateList aggregateList;
     public final DBSPClosureExpression partitioningFunction;

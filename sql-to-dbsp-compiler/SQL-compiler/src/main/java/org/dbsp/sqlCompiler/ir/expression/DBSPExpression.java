@@ -147,8 +147,8 @@ public abstract class DBSPExpression
         return new DBSPBorrowExpression(this, mutable);
     }
 
-    public DBSPFieldExpression field(int index) {
-        return new DBSPFieldExpression(this, index);
+    public DBSPExpression field(int index) {
+        return new DBSPFieldExpression(this, index).simplify();
     }
 
     public DBSPFieldExpression field(CalciteObject node, int index) {

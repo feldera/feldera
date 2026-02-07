@@ -368,8 +368,8 @@ public class InternInner extends ExpressionTranslator {
             DBSPExpression[] rExpr = new DBSPExpression[lTuple.size()];
             for (int i = 0; i < lTuple.size(); i++) {
                 var fields = this.uninternBothOrNone(
-                        left.unwrapIfNullable("Cannot be NULL").field(i).simplify(),
-                        right.unwrapIfNullable("Cannot be NULL").field(i).simplify(),
+                        left.unwrapIfNullable("Cannot be NULL").field(i),
+                        right.unwrapIfNullable("Cannot be NULL").field(i),
                         lTuple.getFieldType(i), rTuple.getFieldType(i));
                 lExpr[i] = this.applyClone(fields.left);
                 rExpr[i] = this.applyClone(fields.right);

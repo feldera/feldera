@@ -129,14 +129,15 @@ public class RangeAggregates extends WindowAggregates {
         if (orderKeys.size() > 1)
             throw new UnimplementedException("ORDER BY in OVER requires exactly 1 column", 457, this.node);
 
-        DBSPType sortType, originalSortType;
-        DBSPType unsignedSortType;
-        DBSPSimpleOperator mapIndex;
-        boolean ascending = this.collation.getDirection() == RelFieldCollation.Direction.ASCENDING;
-        boolean nullsLast = this.collation.nullDirection != RelFieldCollation.NullDirection.FIRST;
-        DBSPType partitionType;
-        DBSPType partitionAndRowType;
-        DBSPTypeTuple lastTupleType = lastOperator.getOutputZSetElementType().to(DBSPTypeTuple.class);
+        DBSPType sortType;
+        final DBSPType originalSortType;
+        final DBSPType unsignedSortType;
+        final DBSPSimpleOperator mapIndex;
+        final boolean ascending = this.collation.getDirection() == RelFieldCollation.Direction.ASCENDING;
+        final boolean nullsLast = this.collation.nullDirection != RelFieldCollation.NullDirection.FIRST;
+        final DBSPType partitionType;
+        final DBSPType partitionAndRowType;
+        final DBSPTypeTuple lastTupleType = lastOperator.getOutputZSetElementType().to(DBSPTypeTuple.class);
 
         {
             DBSPTupleExpression partitionKeys = this.partitionKeys();

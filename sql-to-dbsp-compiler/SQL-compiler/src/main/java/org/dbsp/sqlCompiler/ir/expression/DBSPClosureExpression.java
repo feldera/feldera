@@ -101,6 +101,11 @@ public final class DBSPClosureExpression extends DBSPExpression {
         return new DBSPApplyExpression(this, arguments);
     }
 
+    public DBSPApplyExpression call(List<DBSPExpression> arguments) {
+        DBSPExpression[] args = arguments.toArray(DBSPExpression[]::new);
+        return this.call(args);
+    }
+
     @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);

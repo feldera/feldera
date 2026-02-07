@@ -16,6 +16,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
@@ -99,6 +102,40 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         return this.operatorsAnalyzed.done(operator);
     }
 
+    boolean processStarJoin(DBSPStarJoinBaseOperator join) {
+        DBSPClosureExpression joinFunction = join.getClosureFunction();
+        if (this.done(join))
+            return false;
+        joinFunction = this.find.findUnusedFields(joinFunction);
+
+        RewriteFields rw = this.find.getFieldRewriter(1);
+        List<FieldUseMap> useMaps = new ArrayList<>();
+        boolean anyUnused = false;
+        for (int i = 1; i < joinFunction.parameters.length; i++) {
+            FieldUseMap map = rw.getUseMap(joinFunction.parameters[i]);
+            if (map.hasUnusedFields(1))
+                anyUnused = true;
+            useMaps.add(map);
+        }
+        if (!anyUnused) {
+            return false;
+        }
+
+        List<OutputPort> narrow = new ArrayList<>();
+        for (int i = 0; i < join.inputs.size(); i++) {
+            OutputPort port = getProjection(join.getRelNode(), useMaps.get(i), join.inputs.get(i));
+            narrow.add(port);
+        }
+
+        // Parameter 0 does not emit fields in the body of the function, leave it unchanged
+        rw.parameterFullyUsed(joinFunction.parameters[0]);
+        DBSPClosureExpression newJoinFunction = rw.rewriteClosure(joinFunction);
+        DBSPSimpleOperator replacement =
+                join.withFunctionAndInputs(newJoinFunction, narrow);
+        this.map(join, replacement);
+        return true;
+    }
+
     boolean processJoin(DBSPJoinBaseOperator join) {
         DBSPClosureExpression joinFunction = join.getClosureFunction();
         if (this.done(join))
@@ -171,6 +208,20 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPJoinIndexOperator join) {
         boolean done = this.processJoin(join);
+        if (!done)
+            super.postorder(join);
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinOperator join) {
+        boolean done = this.processStarJoin(join);
+        if (!done)
+            super.postorder(join);
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinIndexOperator join) {
+        boolean done = this.processStarJoin(join);
         if (!done)
             super.postorder(join);
     }

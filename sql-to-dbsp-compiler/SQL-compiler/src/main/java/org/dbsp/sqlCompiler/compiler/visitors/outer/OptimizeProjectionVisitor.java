@@ -10,6 +10,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
@@ -91,23 +93,25 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
             } else if (source.node().is(DBSPJoinOperator.class)
                     || source.node().is(DBSPLeftJoinOperator.class)
                     || source.node().is(DBSPStreamJoinOperator.class)
-                    || source.node().is(DBSPAsofJoinOperator.class)) {
+                    || source.node().is(DBSPAsofJoinOperator.class)
+                    || source.node().is(DBSPStarJoinOperator.class)) {
                 if (inputFanout == 1 && projection.isOnlyFieldAccesses()) {
                     // We only do this if the source is a projection, because then the join function
                     // will still have a simple shape.  Subsequent analyses may care about this.
                     DBSPSimpleOperator result = mapAfterJoin(
-                            this.compiler, source.node().to(DBSPJoinBaseOperator.class), operator);
+                            this.compiler, source.simpleNode(), operator);
                     this.map(operator, result);
                     return;
                 }
             } else if (source.node().is(DBSPJoinIndexOperator.class)
                     || source.node().is(DBSPLeftJoinIndexOperator.class)
-                    || source.node().is(DBSPStreamJoinIndexOperator.class)) {
+                    || source.node().is(DBSPStreamJoinIndexOperator.class)
+                    || source.node().is(DBSPStarJoinIndexOperator.class)) {
                 if (inputFanout == 1 && projection.isOnlyFieldAccesses()) {
                     // We only do this if the source is a projection, because then the join function
                     // will still have a simple shape.  Subsequent analyses may care about this.
                     DBSPSimpleOperator result = mapAfterJoinIndex(
-                            this.compiler, source.node().to(DBSPJoinBaseOperator.class), operator);
+                            this.compiler, source.simpleNode(), operator);
                     this.map(operator, result);
                     return;
                 }
@@ -126,16 +130,18 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         if (inputFanout == 1 && projection.isProjection && projection.isOnlyFieldAccesses()) {
             if (source.node().is(DBSPJoinOperator.class)
                     || source.node().is(DBSPStreamJoinOperator.class)
-                    || source.node().is(DBSPLeftJoinOperator.class)) {
+                    || source.node().is(DBSPLeftJoinOperator.class)
+                    || source.node().is(DBSPStarJoinOperator.class)) {
                 DBSPSimpleOperator result = mapIndexAfterJoin(
-                        this.compiler, source.node().to(DBSPJoinBaseOperator.class), operator);
+                        this.compiler, source.simpleNode(), operator);
                 this.map(operator, result);
                 return;
             } else if (source.node().is(DBSPJoinIndexOperator.class)
                     || source.node().is(DBSPLeftJoinIndexOperator.class)
-                    || source.node().is(DBSPStreamJoinIndexOperator.class)) {
+                    || source.node().is(DBSPStreamJoinIndexOperator.class)
+                    || source.node().is(DBSPStarJoinIndexOperator.class)) {
                 DBSPSimpleOperator result = mapIndexAfterJoinIndex(
-                        this.compiler, source.node().to(DBSPJoinBaseOperator.class), operator);
+                        this.compiler, source.simpleNode(), operator);
                 this.map(operator, result);
                 return;
             } else if (source.node().is(DBSPConstantOperator.class)) {
@@ -161,74 +167,91 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         super.postorder(operator);
     }
 
-    static DBSPJoinBaseOperator mapAfterJoin(
-            DBSPCompiler reporter, DBSPJoinBaseOperator source, DBSPMapOperator operator) {
+    static DBSPSimpleOperator mapAfterJoin(
+            DBSPCompiler reporter, DBSPSimpleOperator source, DBSPMapOperator operator) {
         DBSPClosureExpression joinFunction = source.getClosureFunction();
         DBSPExpression function = operator.getFunction();
         DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
                 .applyAfter(reporter, joinFunction, Maybe.YES);
         return source.withFunction(newFunction, operator.outputType)
                 .copyAnnotations(source)
-                .to(DBSPJoinBaseOperator.class);
+                .to(DBSPSimpleOperator.class);
     }
 
     static DBSPSimpleOperator mapAfterJoinIndex(
-            DBSPCompiler compiler, DBSPJoinBaseOperator source, DBSPMapOperator operator) {
-        DBSPJoinBaseOperator sourceJoin = source.to(DBSPJoinBaseOperator.class);
-        DBSPClosureExpression joinFunction = source.getClosureFunction();
-        DBSPClosureExpression function = operator.getClosureFunction();
+            DBSPCompiler compiler, DBSPSimpleOperator source, DBSPMapOperator operator) {
+        final DBSPClosureExpression joinFunction = source.getClosureFunction();
+        final DBSPClosureExpression function = operator.getClosureFunction();
         if (function.parameters.length != 1)
             throw new InternalCompilerError("Expected closure with 1 parameter", operator);
-        DBSPExpression argument = new DBSPRawTupleExpression(
+        final DBSPExpression argument = new DBSPRawTupleExpression(
                 joinFunction.body.field(0).borrow(),
                 joinFunction.body.field(1).borrow());
-        DBSPExpression apply = function.call(argument).reduce(compiler);
-        DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters);
+        final DBSPExpression apply = function.call(argument).reduce(compiler);
+        final DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters);
+        final DBSPJoinBaseOperator join = source.as(DBSPJoinBaseOperator.class);
         if (source.is(DBSPJoinIndexOperator.class)) {
+            Utilities.enforce(join != null);
             return new DBSPJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
-                    newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right(), source.balanced)
+                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced)
                     .copyAnnotations(source);
         } else if (source.is(DBSPLeftJoinIndexOperator.class)) {
+            Utilities.enforce(join != null);
             return new DBSPLeftJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
-                    newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right(), source.balanced)
+                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced)
                     .copyAnnotations(source);
-        } else {
-            Utilities.enforce(source.is(DBSPStreamJoinIndexOperator.class));
+        } else if (source.is(DBSPStreamJoinIndexOperator.class)) {
+            Utilities.enforce(join != null);
             return new DBSPStreamJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
-                    newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right(), source.balanced)
+                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced)
+                    .copyAnnotations(source);
+        } else if (source.is(DBSPStarJoinIndexOperator.class)) {
+            return new DBSPStarJoinOperator(source.getRelNode(), operator.getOutputZSetType(), newFunction,
+                    operator.isMultiset, source.inputs)
                     .copyAnnotations(source);
         }
+        throw new InternalCompilerError("Unexpected join operator " + source);
     }
 
-    static DBSPJoinBaseOperator mapIndexAfterJoin(
-            DBSPCompiler reporter, DBSPJoinBaseOperator source, DBSPMapIndexOperator operator) {
+    static DBSPSimpleOperator mapIndexAfterJoin(
+            DBSPCompiler reporter, DBSPSimpleOperator source, DBSPMapIndexOperator operator) {
         DBSPExpression function = operator.getFunction();
         DBSPClosureExpression joinFunction = source.getClosureFunction();
-        DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
+        DBSPClosureExpression newFunction = function.to(DBSPClosureExpression.class)
                 .applyAfter(reporter, joinFunction, Maybe.YES);
         CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
+        DBSPJoinBaseOperator join = source.as(DBSPJoinBaseOperator.class);
+        
         if (source.is(DBSPJoinOperator.class)) {
+            Utilities.enforce(join != null);
             DBSPJoinBaseOperator result = new DBSPJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, source.left(), source.right(), source.balanced);
+                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced);
             result.setDerivedFrom(source);
             return result;
         } else if (source.is(DBSPStreamJoinOperator.class)) {
+            Utilities.enforce(join != null);
             DBSPJoinBaseOperator result = new DBSPStreamJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, source.left(), source.right(), source.balanced);
+                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced);
             result.setDerivedFrom(source);
             return result;
         } else if (source.is(DBSPLeftJoinOperator.class)) {
+            Utilities.enforce(join != null);
             DBSPJoinBaseOperator result = new DBSPLeftJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, source.left(), source.right(), source.balanced);
+                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced);
+            result.setDerivedFrom(source);
+            return result;
+        } else if (source.is(DBSPStarJoinOperator.class)) {
+            DBSPSimpleOperator result = new DBSPStarJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
+                    newFunction, operator.isMultiset, source.inputs);
             result.setDerivedFrom(source);
             return result;
         } else {
-            return source.withFunction(newFunction, operator.outputType).to(DBSPJoinBaseOperator.class);
+            return source.withFunction(newFunction, operator.outputType).to(DBSPSimpleOperator.class);
         }
     }
 
-    static DBSPJoinBaseOperator mapIndexAfterJoinIndex(
-            DBSPCompiler reporter, DBSPJoinBaseOperator source, DBSPMapIndexOperator operator) {
+    static DBSPSimpleOperator mapIndexAfterJoinIndex(
+            DBSPCompiler reporter, DBSPSimpleOperator source, DBSPMapIndexOperator operator) {
         DBSPClosureExpression joinFunction = source.getClosureFunction();
         DBSPClosureExpression function = operator.getClosureFunction();
         if (function.parameters.length != 1)
@@ -239,22 +262,32 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         DBSPExpression apply = function.call(argument).reduce(reporter);
         DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters);
         CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
+
+        DBSPJoinBaseOperator join = source.as(DBSPJoinBaseOperator.class);
         if (source.is(DBSPJoinIndexOperator.class)) {
+            Utilities.enforce(join != null);
             DBSPJoinBaseOperator result = new DBSPJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, source.left(), source.right(), source.balanced);
+                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced);
             result.setDerivedFrom(source);
             return result;
         } else if (source.is(DBSPLeftJoinIndexOperator.class)) {
+            Utilities.enforce(join != null);
             DBSPJoinBaseOperator result = new DBSPLeftJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, source.left(), source.right(), source.balanced);
+                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced);
             result.setDerivedFrom(source);
             return result;
-        } else {
-            Utilities.enforce(source.is(DBSPStreamJoinIndexOperator.class));
+        } else if (source.is(DBSPStarJoinIndexOperator.class)) {
+            DBSPSimpleOperator result = new DBSPStarJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
+                    newFunction, operator.isMultiset, source.inputs);
+            result.setDerivedFrom(source);
+            return result;
+        } else if (source.is(DBSPStreamJoinIndexOperator.class)) {
+            Utilities.enforce(join != null);
             DBSPJoinBaseOperator result = new DBSPStreamJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, source.left(), source.right(), source.balanced);
+                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced);
             result.setDerivedFrom(source);
             return result;
         }
+        throw new InternalCompilerError("Unexpected join " + source);
     }
 }

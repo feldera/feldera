@@ -16,7 +16,7 @@ import java.util.List;
 
 /** The z^-1 operator from DBSP.
  * If the function is specified, it is the initial value produced by the delay. */
-public final class DBSPDelayOperator extends DBSPUnaryOperator implements IStateful {
+public final class DBSPDelayOperator extends DBSPUnaryOperator implements IStateful, ILinear {
     public DBSPDelayOperator(CalciteRelNode node, @Nullable DBSPExpression initial, OutputPort source) {
         super(node, initial == null ? "transaction_delay" : "transaction_delay_with_initial_value",
                 initial, source.outputType(), source.isMultiset(), source);

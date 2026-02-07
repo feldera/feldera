@@ -226,4 +226,13 @@ public class Regression2Tests extends SqlIoTest {
             }
         });
     }
+
+    @Test
+    public void issue5520() {
+        this.q("""
+                SELECT EXP(10192);
+                 e
+                ---
+                 Infinity""");
+    }
 }
