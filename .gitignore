@@ -40,6 +40,7 @@ nexmark_comment.txt
 galen_results.csv
 ldbc_results.csv
 benchmark-run-data
+bench_results.csv
 
 # pipeline manager
 manager.db
