@@ -289,6 +289,12 @@ pub struct Deserializer {
 impl Deserializer {
     /// Create a deserializer configured for the given file format version.
     pub fn new(version: u32) -> Self {
+        // Proper error is returned in reader.rs, this is a sanity check.
+        assert!(
+            version >= format::VERSION_NUMBER,
+            "Unable to read old (pre-v{}) checkpoint data on this feldera version, pipeline needs to backfilled to start.",
+            format::VERSION_NUMBER
+        );
         Self {
             version,
             inner: SharedDeserializeMap::new(),
