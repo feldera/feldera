@@ -6,24 +6,27 @@ Stateful operator for computing SQL `PERCENTILE_CONT` and `PERCENTILE_DISC` incr
 
 The `PercentileOperator` maintains per-key `OrderStatisticsZSet` state across steps, enabling O(log n) incremental updates instead of O(n) per-step rescanning used by the generic aggregate approach.
 
+Multiple percentiles sharing the same ORDER BY column are computed from a single tree regardless of sort direction or continuous/discrete mode. The tree is always stored in natural (ascending) sorted order — DESC with percentile p is equivalent to ASC with percentile (1-p). The SQL compiler normalizes DESC to ASC by inverting percentile values at compile time.
+
 ## Architecture
 
 ```
-PercentileOperator<K, V, Mode>
+PercentileOperator<K, V, O, F>
 ├── trees: BTreeMap<K, OrderStatisticsZSet<V>>  // Per-key state
 ├── tree_ids: BTreeMap<K, u64>                       // Unique IDs per tree for checkpoint naming
-├── prev_output: BTreeMap<K, Option<V>>              // Previous outputs for delta computation
+├── prev_output: BTreeMap<K, O>                      // Previous outputs for delta computation
 │                                                     // Keys persist even after tree cleanup
 │                                                     // to enable proper NULL retraction
-├── percentile: f64                                   // Percentile to compute (0.0-1.0)
+├── percentiles: Vec<f64>                             // Percentile values to compute (0.0-1.0)
+├── is_continuous: Vec<bool>                          // Per-percentile CONT/DISC flag
 ├── ascending: bool                                   // Sort order
+├── build_output: F                                   // Closure: &[PercentileResult<V>] -> O
 ├── storage_config: NodeStorageConfig                 // Spill-to-disk config
 ├── next_tree_id: u64                                 // Counter for unique segment path prefixes
-├── global_id: GlobalNodeId                           // For checkpoint file naming
-└── _mode: PhantomData<Mode>                          // ContMode or DiscMode (zero-sized)
+└── global_id: GlobalNodeId                           // For checkpoint file naming
 ```
 
-`Mode` is a compile-time marker type — either `ContMode` (interpolated) or `DiscMode` (discrete). This avoids a runtime `continuous: bool` flag and lets the two modes have different trait bounds at compile time.
+The operator is unified — a single operator handles both CONT and DISC queries from the same tree. Each percentile has an `is_continuous` flag determining whether to return interpolation bounds (`PercentileResult::Cont`) or a discrete value (`PercentileResult::Disc`). The `build_output` closure performs any needed interpolation or value extraction.
 
 ## Interpolate Trait
 
@@ -153,7 +156,7 @@ Complexity is O(num_leaves) per tree, not O(num_entries) — internal nodes are 
 ## Implementation Files
 
 - **`operator/percentile.rs`**: Sharded stream extension methods (primary API)
-- **`operator/dynamic/percentile_op.rs`**: `PercentileOperator` struct, `Interpolate` trait, `ContMode`/`DiscMode` markers, non-sharded `_stateful` methods, checkpoint/restore logic
+- **`operator/dynamic/percentile_op.rs`**: `PercentileOperator` struct, `Interpolate` trait, `PercentileResult` enum, non-sharded `_stateful` methods, checkpoint/restore logic
 - **`operator/dynamic/percentile_op_tests.rs`**: Unit tests
 
 ## SQL Compiler Integration

@@ -484,6 +484,34 @@ public class PercentileTests extends SqlIoTest {
     }
 
     @Test
+    public void testMultiplePercentileMixedAscDesc() {
+        // ASC and DESC on the same column should share a single tree.
+        // PERCENTILE_CONT(p, DESC) = PERCENTILE_CONT(1-p, ASC).
+        var ccs = this.getCCS("""
+                CREATE TABLE mixed_dir (val DOUBLE);
+
+                CREATE VIEW v_mixed_dir AS SELECT
+                    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY val ASC) AS p25_asc,
+                    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY val DESC) AS p75_desc,
+                    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY val ASC) AS p75_asc,
+                    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY val DESC) AS p25_desc
+                FROM mixed_dir;
+                """);
+
+        // Values: 10, 20, 30, 40 (n=4)
+        // p25_asc = 0.25*3=0.75 → interp(10,20,0.75) = 17.5
+        // p75_desc = normalized to p25_asc = 17.5
+        // p75_asc = 0.75*3=2.25 → interp(30,40,0.25) = 32.5
+        // p25_desc = normalized to p75_asc = 32.5
+        ccs.step("""
+                INSERT INTO mixed_dir VALUES (10.0), (20.0), (30.0), (40.0);
+                """, """
+                 p25_asc | p75_desc | p75_asc | p25_desc | weight
+                ---------------------------------------------------
+                 17.5    | 17.5     | 32.5    | 32.5     | 1""");
+    }
+
+    @Test
     public void testMultiplePercentileMixedContDisc() {
         var ccs = this.getCCS("""
                 CREATE TABLE mixed_pct (val DOUBLE);
@@ -500,6 +528,33 @@ public class PercentileTests extends SqlIoTest {
                  cont_50 | disc_50 | weight
                 ----------------------------
                  25      | 20      | 1""");
+    }
+
+    @Test
+    public void testMultiplePercentileDiscMixedAscDesc() {
+        // PERCENTILE_DISC with ASC and DESC on the same column should share a single tree.
+        var ccs = this.getCCS("""
+                CREATE TABLE disc_dir (val DOUBLE);
+
+                CREATE VIEW v_disc_dir AS SELECT
+                    PERCENTILE_DISC(0.25) WITHIN GROUP (ORDER BY val ASC) AS p25_asc,
+                    PERCENTILE_DISC(0.75) WITHIN GROUP (ORDER BY val DESC) AS p75_desc,
+                    PERCENTILE_DISC(0.75) WITHIN GROUP (ORDER BY val ASC) AS p75_asc,
+                    PERCENTILE_DISC(0.25) WITHIN GROUP (ORDER BY val DESC) AS p25_desc
+                FROM disc_dir;
+                """);
+
+        // Values: 10, 20, 30, 40 (n=4)
+        // p25_asc: ceil(0.25*4)=1, idx=0, val=10
+        // p75_desc: normalized to p25_asc = 10
+        // p75_asc: ceil(0.75*4)=3, idx=2, val=30
+        // p25_desc: normalized to p75_asc = 30
+        ccs.step("""
+                INSERT INTO disc_dir VALUES (10.0), (20.0), (30.0), (40.0);
+                """, """
+                 p25_asc | p75_desc | p75_asc | p25_desc | weight
+                ---------------------------------------------------
+                 10      | 10       | 30      | 30       | 1""");
     }
 
     @Test
@@ -604,5 +659,109 @@ public class PercentileTests extends SqlIoTest {
                  grp | median | cnt | weight
                 --------------------------------
                  1   | 20     | 3   | 1""");
+    }
+
+    // ---- Mixed CONT + DISC sharing a single operator ----
+
+    @Test
+    public void testMixedContDiscSameOperator() {
+        // CONT and DISC on the same ORDER BY column now share a single tree.
+        var ccs = this.getCCS("""
+                CREATE TABLE shared_tree (val DOUBLE);
+
+                CREATE VIEW v_shared AS SELECT
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY val) AS cont_50,
+                    PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY val) AS disc_50,
+                    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY val) AS cont_25,
+                    PERCENTILE_DISC(0.75) WITHIN GROUP (ORDER BY val) AS disc_75
+                FROM shared_tree;
+                """);
+
+        // Values: 10, 20, 30, 40 (n=4)
+        // cont_50: interpolated at 50th pct = 25.0
+        // disc_50: ceil(0.5*4)=2, idx=1, val=20.0
+        // cont_25: interpolated at 25th pct = 17.5
+        // disc_75: ceil(0.75*4)=3, idx=2, val=30.0
+        ccs.step("""
+                INSERT INTO shared_tree VALUES (10.0), (20.0), (30.0), (40.0);
+                """, """
+                 cont_50 | disc_50 | cont_25 | disc_75 | weight
+                --------------------------------------------------
+                 25       | 20     | 17.5    | 30      | 1""");
+    }
+
+    @Test
+    public void testMixedContDiscOnInteger() {
+        // CONT and DISC on an INTEGER column sharing one tree.
+        // CONT should return DOUBLE via interpolation, DISC returns the original INT.
+        var ccs = this.getCCS("""
+                CREATE TABLE int_shared (val INTEGER);
+
+                CREATE VIEW v_int_shared AS SELECT
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY val) AS cont_50,
+                    PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY val) AS disc_50
+                FROM int_shared;
+                """);
+
+        // Values: 10, 20, 30, 40 (n=4)
+        // cont_50: 25.0 (interpolated as double)
+        // disc_50: 20 (discrete integer)
+        ccs.step("""
+                INSERT INTO int_shared VALUES (10), (20), (30), (40);
+                """, """
+                 cont_50 | disc_50 | weight
+                ----------------------------
+                 25       | 20     | 1""");
+    }
+
+    @Test
+    public void testMixedContDiscOnDecimal() {
+        // CONT and DISC on a DECIMAL column sharing one tree.
+        var ccs = this.getCCS("""
+                CREATE TABLE dec_shared (val DECIMAL(5,2));
+
+                CREATE VIEW v_dec_shared AS SELECT
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY val) AS cont_50,
+                    PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY val) AS disc_50
+                FROM dec_shared;
+                """);
+
+        // Values: 10.00, 20.00, 30.00, 40.00
+        // cont_50: 25.0 (double)
+        // disc_50: 20.00 (decimal)
+        ccs.step("""
+                INSERT INTO dec_shared VALUES (10.00), (20.00), (30.00), (40.00);
+                """, """
+                 cont_50 | disc_50 | weight
+                ----------------------------
+                 25       | 20.00  | 1""");
+    }
+
+    @Test
+    public void testMixedContDiscGroupBy() {
+        // CONT and DISC sharing a tree with GROUP BY.
+        var ccs = this.getCCS("""
+                CREATE TABLE grp_shared (
+                    grp INT,
+                    val DOUBLE
+                );
+
+                CREATE VIEW v_grp_shared AS SELECT
+                    grp,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY val) AS cont_50,
+                    PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY val) AS disc_50
+                FROM grp_shared
+                GROUP BY grp;
+                """);
+
+        ccs.step("""
+                INSERT INTO grp_shared VALUES
+                    (1, 10.0), (1, 20.0), (1, 30.0), (1, 40.0),
+                    (2, 100.0), (2, 200.0);
+                """, """
+                 grp | cont_50 | disc_50 | weight
+                ------------------------------------
+                 1   | 25      | 20      | 1
+                 2   | 150     | 100     | 1""");
     }
 }

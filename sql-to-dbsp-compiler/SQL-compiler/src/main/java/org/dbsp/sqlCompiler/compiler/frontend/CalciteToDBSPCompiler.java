@@ -790,13 +790,21 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     /** Key for grouping compatible percentile calls that can share a single operator.
-     *  Calls are compatible if they have the same ORDER BY column, direction, and mode. */
-    record PercentileGroupKey(int orderByFieldIndex, boolean ascending, boolean continuous) {}
+     *  Calls are compatible if they have the same ORDER BY column.
+     *  Both CONT and DISC calls can share the same tree — the operator returns
+     *  PercentileResult (bounds for CONT, discrete value for DISC) and the build_output
+     *  closure handles interpolation or value extraction per-field.
+     *  Direction (ASC/DESC) does NOT affect grouping because DESC with percentile p is
+     *  mathematically equivalent to ASC with percentile (1-p). DESC calls are normalized
+     *  to ASC by inverting their percentile value at compile time. */
+    record PercentileGroupKey(int orderByFieldIndex) {}
 
     /** Implement percentile aggregates using the stateful DBSPPercentileOperator.
      *  This operator maintains OrderStatisticsZSet state per key for O(log n) incremental updates.
-     *  Compatible percentile calls (same ORDER BY column, direction, mode) are merged into a
-     *  single operator with one shared tree, eliminating redundant tree maintenance. */
+     *  Compatible percentile calls (same ORDER BY column) are merged into a single operator
+     *  with one shared tree, eliminating redundant tree maintenance. Both CONT and DISC
+     *  calls can share the same tree.
+     *  DESC calls are normalized to ASC by inverting their percentile values (1-p). */
     DBSPSimpleOperator implementPercentileAggregates(
             CalciteRelNode node,
             LogicalAggregate aggregate,
@@ -814,8 +822,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         List<RexNode> projects = project.getProjects();
 
         // Parse each call's properties and group compatible calls.
-        // Each entry: (groupKey, percentileValue, originalIndex)
-        record ParsedCall(PercentileGroupKey groupKey, double percentileValue, int origIndex) {}
+        // Each entry: (groupKey, percentileValue, continuous, originalIndex)
+        record ParsedCall(PercentileGroupKey groupKey, double percentileValue, boolean continuous, int origIndex) {}
         List<ParsedCall> parsedCalls = new ArrayList<>();
 
         for (int i = 0; i < aggregateCalls.size(); i++) {
@@ -862,9 +870,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 throw new CompilationError("Invalid percentile field index: " + percentileFieldIndex, node);
             }
 
+            // Normalize DESC to ASC: PERCENTILE(p, DESC) = PERCENTILE(1-p, ASC)
+            double effectivePercentile = ascending ? percentileValue : 1.0 - percentileValue;
             parsedCalls.add(new ParsedCall(
-                    new PercentileGroupKey(orderByFieldIndex, ascending, continuous),
-                    percentileValue, i));
+                    new PercentileGroupKey(orderByFieldIndex),
+                    effectivePercentile, continuous, i));
         }
 
         // Group compatible calls by their PercentileGroupKey (preserving insertion order)
@@ -885,34 +895,31 @@ public class CalciteToDBSPCompiler extends RelVisitor
             PercentileGroupKey gk = entry.getKey();
             List<ParsedCall> calls = entry.getValue();
 
-            // Build the percentile values array
+            // Build the percentile values and isContinuous arrays
             double[] percentileValues = new double[calls.size()];
+            boolean[] isContinuous = new boolean[calls.size()];
             for (int j = 0; j < calls.size(); j++) {
                 percentileValues[j] = calls.get(j).percentileValue();
+                isContinuous[j] = calls.get(j).continuous();
                 callMapping[calls.get(j).origIndex()] = new int[]{groupOpIdx, j};
             }
 
             // Create value extractor closure: (key_ref, value_ref) -> order_by_value
+            // The tree stores the original type; interpolation for CONT happens in build_output.
             DBSPTypeTupleBase kvRefType = indexedInput.getOutputIndexedZSetType().getKVRefType();
             DBSPVariablePath kvVar = kvRefType.var();
             DBSPExpression orderByValue = kvVar.field(1).deref().field(gk.orderByFieldIndex()).applyCloneIfNeeded();
-
-            // PERCENTILE_CONT always returns DOUBLE per SQL standard.
-            if (gk.continuous() && !orderByValue.getType().is(DBSPTypeDouble.class)) {
-                DBSPType doubleType = new DBSPTypeDouble(
-                        orderByValue.getNode(), orderByValue.getType().mayBeNull);
-                orderByValue = orderByValue.cast(node, doubleType,
-                        DBSPCastExpression.CastType.SqlUnsafe);
-            }
 
             DBSPClosureExpression valueExtractor = orderByValue.closure(kvVar);
 
             // Build output tuple type: TupN<Option<V1>, Option<V2>, ...>
             // Each field corresponds to one percentile in this group.
+            // CONT fields are always DOUBLE (interpolation produces f64).
+            // DISC fields preserve the original type.
             DBSPType[] outputFieldTypes = new DBSPType[calls.size()];
             for (int j = 0; j < calls.size(); j++) {
                 int origIdx = calls.get(j).origIndex();
-                if (gk.continuous()) {
+                if (isContinuous[j]) {
                     outputFieldTypes[j] = new DBSPTypeDouble(node, true);
                 } else {
                     outputFieldTypes[j] = aggTypes[origIdx].withMayBeNull(true);
@@ -921,9 +928,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPTypeTuple outputValueTuple = new DBSPTypeTuple(outputFieldTypes);
             DBSPTypeIndexedZSet outputType = makeIndexedZSet(groupKeyType, outputValueTuple);
 
+            // Always ascending=true because DESC was normalized by inverting percentile values
             DBSPPercentileOperator percentileOp = new DBSPPercentileOperator(
-                    node, percentileValues, gk.continuous(), gk.ascending(),
-                    valueExtractor, null, outputType, indexedInput);
+                    node, percentileValues, isContinuous, true,
+                    valueExtractor, outputType, indexedInput);
             this.addOperator(percentileOp);
             groupOperators.add(percentileOp);
             groupOpIdx++;

@@ -26,41 +26,40 @@ import java.util.List;
  * incrementally (O(log n) per change) instead of rescanning all values.
  *
  * Supports computing multiple percentiles from a single shared tree when
- * they share the same ORDER BY column and direction (CONT vs DISC).
+ * they share the same ORDER BY column. Each percentile can independently
+ * be CONT or DISC, controlled by the isContinuous array.
+ * Sort direction (ASC/DESC) does not require separate trees because
+ * DESC with percentile p is equivalent to ASC with percentile (1-p);
+ * the compiler normalizes DESC to ASC by inverting percentile values.
  *
- * This operator calls the stream methods percentile_cont() or percentile_disc()
- * defined in dbsp's operator/percentile.rs.
+ * This operator calls the stream method percentile() defined in
+ * dbsp's operator/percentile.rs.
  */
 public final class DBSPPercentileOperator extends DBSPUnaryOperator {
     /** The percentile values (each 0.0 to 1.0) */
     public final double[] percentiles;
-    /** Whether to use PERCENTILE_CONT (true) or PERCENTILE_DISC (false) */
-    public final boolean continuous;
+    /** Per-percentile CONT (true) / DISC (false) flag */
+    public final boolean[] isContinuous;
     /** Sort order: true = ascending */
     public final boolean ascending;
     /** Closure that extracts the value to compute percentile over from input tuples.
      *  Signature: (key, value) -> percentile_value */
     public final DBSPClosureExpression valueExtractor;
-    /** Post-processing closure for PERCENTILE_CONT interpolation.
-     *  For types needing interpolation (integers -> f64), this handles the conversion.
-     *  Signature: Option<V> -> ResultType */
-    @Nullable
-    public final DBSPClosureExpression postProcessor;
 
     public DBSPPercentileOperator(CalciteRelNode node,
                                   double[] percentiles,
-                                  boolean continuous,
+                                  boolean[] isContinuous,
                                   boolean ascending,
                                   DBSPClosureExpression valueExtractor,
-                                  @Nullable DBSPClosureExpression postProcessor,
                                   DBSPType outputType,
                                   OutputPort source) {
         super(node, "percentile", valueExtractor, outputType, source.isMultiset(), source);
+        assert percentiles.length == isContinuous.length :
+                "percentiles and isContinuous must have the same length";
         this.percentiles = percentiles;
-        this.continuous = continuous;
+        this.isContinuous = isContinuous;
         this.ascending = ascending;
         this.valueExtractor = valueExtractor;
-        this.postProcessor = postProcessor;
     }
 
     @Override
@@ -72,16 +71,16 @@ public final class DBSPPercentileOperator extends DBSPUnaryOperator {
             visitor.property("percentile_" + i);
             new DBSPDoubleLiteral(this.percentiles[i]).accept(visitor);
         }
-        visitor.property("continuous");
-        new DBSPBoolLiteral(this.continuous).accept(visitor);
+        visitor.property("isContinuousCount");
+        new DBSPDoubleLiteral(this.isContinuous.length).accept(visitor);
+        for (int i = 0; i < this.isContinuous.length; i++) {
+            visitor.property("isContinuous_" + i);
+            new DBSPBoolLiteral(this.isContinuous[i]).accept(visitor);
+        }
         visitor.property("ascending");
         new DBSPBoolLiteral(this.ascending).accept(visitor);
         visitor.property("valueExtractor");
         this.valueExtractor.accept(visitor);
-        if (this.postProcessor != null) {
-            visitor.property("postProcessor");
-            this.postProcessor.accept(visitor);
-        }
     }
 
     @Override
@@ -92,7 +91,7 @@ public final class DBSPPercentileOperator extends DBSPUnaryOperator {
         if (otherOp == null)
             return false;
         return Arrays.equals(this.percentiles, otherOp.percentiles) &&
-                this.continuous == otherOp.continuous &&
+                Arrays.equals(this.isContinuous, otherOp.isContinuous) &&
                 this.ascending == otherOp.ascending;
     }
 
@@ -104,10 +103,9 @@ public final class DBSPPercentileOperator extends DBSPUnaryOperator {
             return new DBSPPercentileOperator(
                     this.getRelNode(),
                     this.percentiles,
-                    this.continuous,
+                    this.isContinuous,
                     this.ascending,
                     this.valueExtractor,
-                    this.postProcessor,
                     outputType,
                     newInputs.get(0)).copyAnnotations(this);
         }
@@ -131,17 +129,17 @@ public final class DBSPPercentileOperator extends DBSPUnaryOperator {
         for (int i = 0; i < percentileCount; i++) {
             percentiles[i] = node.get("percentile_" + i).asDouble();
         }
-        boolean continuous = node.get("continuous").asBoolean();
+        int isContinuousCount = (int) node.get("isContinuousCount").asDouble();
+        boolean[] isContinuous = new boolean[isContinuousCount];
+        for (int i = 0; i < isContinuousCount; i++) {
+            isContinuous[i] = node.get("isContinuous_" + i).asBoolean();
+        }
         boolean ascending = node.get("ascending").asBoolean();
         DBSPClosureExpression valueExtractor = fromJsonInner(node, "valueExtractor", decoder, DBSPClosureExpression.class);
-        DBSPClosureExpression postProcessor = null;
-        if (node.has("postProcessor")) {
-            postProcessor = fromJsonInner(node, "postProcessor", decoder, DBSPClosureExpression.class);
-        }
         return new DBSPPercentileOperator(
                 CalciteEmptyRel.INSTANCE,
-                percentiles, continuous, ascending,
-                valueExtractor, postProcessor,
+                percentiles, isContinuous, ascending,
+                valueExtractor,
                 info.outputType(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPPercentileOperator.class);
     }

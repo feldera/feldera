@@ -120,6 +120,10 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.util.Bijection;
 import org.dbsp.util.HashString;
 import org.dbsp.util.IIndentStream;
@@ -1233,7 +1237,37 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    @Override
+    /** Generate the to_f64 cast expression for cont_interpolate.
+     *  Handles nullable and non-nullable types:
+     *  - F64: |__v| __v.into_inner()
+     *  - F32: |__v| __v.into_inner() as f64
+     *  - i8/i16/i32/i64: |__v| *__v as f64
+     *  - Decimal: |__v| f64::from(*__v)
+     *  - Option<T>: |__v| { <inner cast on unwrapped> } */
+    private String generateToF64Cast(DBSPType valueType) {
+        DBSPType inner = valueType.mayBeNull ? valueType.withMayBeNull(false) : valueType;
+        String innerCast;
+        if (inner.is(DBSPTypeDouble.class)) {
+            innerCast = "__vi.into_inner()";
+        } else if (inner.is(DBSPTypeReal.class)) {
+            innerCast = "__vi.into_inner() as f64";
+        } else if (inner.is(DBSPTypeInteger.class)) {
+            innerCast = "*__vi as f64";
+        } else if (inner.is(DBSPTypeDecimal.class)) {
+            innerCast = "f64::from(*__vi)";
+        } else {
+            // Fallback: try direct cast
+            innerCast = "*__vi as f64";
+        }
+
+        if (valueType.mayBeNull) {
+            // For Option<T>, unwrap the Some value (tree never contains None)
+            return "|__v| { let __vi = __v.as_ref().unwrap(); " + innerCast + " }";
+        } else {
+            return "|__v| { let __vi = __v; " + innerCast + " }";
+        }
+    }
+
     public VisitDecision preorder(DBSPPercentileOperator operator) {
         this.computeHash(operator);
         this.innerVisitor.setOperatorContext(operator);
@@ -1242,7 +1276,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
         // Generate: let result: StreamType = input
         //     .map_index(|t| ((*t.0).clone(), value_extractor_body))
-        //     .percentile_cont(hash, &[p1, p2, ...], ascending, |results| TupN(...))
+        //     .percentile(hash, &[p1, p2, ...], &[true, false, ...], ascending, |results| TupN(...))
         this.writeComments(operator)
                 .append("let ")
                 .append(operator.getNodeName(this.preferHash))
@@ -1268,46 +1302,52 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.decrease()
                 .append(").");
 
-        // Use percentile_cont or percentile_disc
-        if (operator.continuous) {
-            this.builder.append("percentile_cont");
-        } else {
-            this.builder.append("percentile_disc");
-        }
+        // Use unified percentile method
+        this.builder.append("percentile");
 
-        // Generate: (hash, &[p1, p2, ...], ascending, |results| TupN(...))
+        // Generate: (hash, &[p1, p2, ...], &[true, false, ...], ascending, |results| TupN(...))
         this.builder.append("(hash, &[");
         for (int i = 0; i < numPercentiles; i++) {
             if (i > 0) this.builder.append(", ");
             this.builder.append(Double.toString(operator.percentiles[i]));
         }
+        this.builder.append("], &[");
+        for (int i = 0; i < numPercentiles; i++) {
+            if (i > 0) this.builder.append(", ");
+            this.builder.append(Boolean.toString(operator.isContinuous[i]));
+        }
         this.builder.append("], ")
                 .append(Boolean.toString(operator.ascending))
                 .append(", ");
 
-        // Generate build_output closure
+        // Generate build_output closure using PercentileResult
         DBSPType extractedValueType = operator.valueExtractor.body.getType();
         boolean needsFlatten = extractedValueType.mayBeNull;
+
+        // Precompute the to_f64 cast string (only needed if any CONT fields exist)
+        String toF64Cast = this.generateToF64Cast(extractedValueType);
 
         this.builder.append("|__results| Tup").append(Integer.toString(numPercentiles)).append("(");
         for (int i = 0; i < numPercentiles; i++) {
             if (i > 0) this.builder.append(", ");
-            if (needsFlatten) {
-                this.builder.append("__results[").append(Integer.toString(i)).append("].flatten()");
+            if (operator.isContinuous[i]) {
+                // CONT: use cont_interpolate with to_f64 conversion
+                this.builder.append("__results[").append(Integer.toString(i)).append("]")
+                        .append(".cont_interpolate(").append(toF64Cast).append(")");
             } else {
-                this.builder.append("__results[").append(Integer.toString(i)).append("].clone()");
+                // DISC: extract discrete value
+                if (needsFlatten) {
+                    this.builder.append("__results[").append(Integer.toString(i)).append("]")
+                            .append(".clone().disc_value().flatten()");
+                } else {
+                    this.builder.append("__results[").append(Integer.toString(i)).append("]")
+                            .append(".clone().disc_value()");
+                }
             }
         }
         this.builder.append(")");
 
         this.builder.append(")");
-
-        // Apply post-processor if exists (for type conversions like integer -> f64)
-        if (operator.postProcessor != null) {
-            this.builder.append(".map_index(|(k, v)| ((*k).clone(), (");
-            operator.postProcessor.accept(this.innerVisitor);
-            this.builder.append(")(v)))");
-        }
 
         this.builder.append(this.markDistinct(operator))
                 .append(";");

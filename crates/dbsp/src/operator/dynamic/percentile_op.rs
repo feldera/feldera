@@ -17,17 +17,34 @@
 //! # Multi-percentile support
 //!
 //! A single operator can compute multiple percentiles from the same tree,
-//! avoiding redundant tree maintenance when the same WITHIN GROUP clause
+//! avoiding redundant tree maintenance when the same ORDER BY column
 //! is shared across multiple PERCENTILE_CONT or PERCENTILE_DISC calls.
+//! The sort direction (ASC/DESC) does not require separate trees because
+//! DESC with percentile p is equivalent to ASC with percentile (1-p).
+//! The SQL compiler normalizes DESC to ASC by inverting percentile values
+//! at compile time.
+//!
+//! # Unified CONT/DISC support
+//!
+//! A single operator can compute both PERCENTILE_CONT and PERCENTILE_DISC
+//! percentiles from the same tree. Each percentile has an `is_continuous` flag
+//! that determines whether to use interpolation (CONT) or discrete selection (DISC).
+//! The tree stores the original ORDER BY type; for CONT, interpolation is performed
+//! in the `build_output` closure using `PercentileResult::cont_interpolate()`.
 //!
 //! # Usage
 //!
 //! ```ignore
-//! let percentiles = input_stream.percentile_cont(
+//! let percentiles = input_stream.percentile(
 //!     Some("my_percentile_op"),
 //!     &[0.25, 0.5, 0.75],
+//!     &[true, true, false],  // first two CONT, third DISC
 //!     true,  // ascending
-//!     |results| Tup3(results[0].clone(), results[1].clone(), results[2].clone()),
+//!     |results| Tup3(
+//!         results[0].cont_interpolate(|v| v.into_inner()),
+//!         results[1].cont_interpolate(|v| v.into_inner()),
+//!         results[2].clone().disc_value(),
+//!     ),
 //! );
 //! ```
 
@@ -133,24 +150,49 @@ impl<T: Interpolate> Interpolate for Option<T> {
 }
 
 // =============================================================================
-// Marker types for PERCENTILE_CONT vs PERCENTILE_DISC modes
+// PercentileResult: unified result for CONT and DISC queries
 // =============================================================================
 
-/// Marker type for PERCENTILE_CONT (continuous/interpolated) mode.
+/// Result of a single percentile query from the tree.
 ///
-/// PERCENTILE_CONT performs linear interpolation between adjacent values.
-/// According to SQL standard, it only works with numeric types and always
-/// returns DOUBLE PRECISION.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ContMode;
+/// For CONT percentiles, this holds the lower/upper bounds and interpolation fraction.
+/// For DISC percentiles, this holds the discrete value directly.
+/// The `build_output` closure uses the helpers on this type to extract final values.
+#[derive(Clone, Debug)]
+pub enum PercentileResult<V: Clone> {
+    /// PERCENTILE_CONT result: (lower, upper, fraction) for interpolation.
+    /// None means the tree was empty (NULL result).
+    Cont(Option<(V, V, f64)>),
+    /// PERCENTILE_DISC result: the discrete value.
+    /// None means the tree was empty (NULL result).
+    Disc(Option<V>),
+}
 
-/// Marker type for PERCENTILE_DISC (discrete) mode.
-///
-/// PERCENTILE_DISC returns an actual value from the set without interpolation.
-/// It works with any ordered type (numeric, string, date, etc.) and returns
-/// the same type as the input.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct DiscMode;
+impl<V: Clone> PercentileResult<V> {
+    /// Interpolate CONT bounds using a to_f64 conversion function, returning `Option<F64>`.
+    ///
+    /// For use in the `build_output` closure when the tree stores the original type
+    /// and interpolation to DOUBLE is needed at output time.
+    pub fn cont_interpolate(&self, to_f64: impl Fn(&V) -> f64) -> Option<F64> {
+        match self {
+            PercentileResult::Cont(Some((lower, upper, fraction))) => {
+                let l = to_f64(lower);
+                let u = to_f64(upper);
+                Some(F64::new(l + fraction * (u - l)))
+            }
+            PercentileResult::Cont(None) => None,
+            PercentileResult::Disc(_) => panic!("cont_interpolate called on Disc result"),
+        }
+    }
+
+    /// Extract the discrete value from a DISC result.
+    pub fn disc_value(self) -> Option<V> {
+        match self {
+            PercentileResult::Disc(v) => v,
+            PercentileResult::Cont(_) => panic!("disc_value called on Cont result"),
+        }
+    }
+}
 
 // =============================================================================
 // Checkpoint Data Structures
@@ -176,6 +218,8 @@ where
     /// Configuration — percentile values stored as u64 bits for rkyv compatibility
     percentiles: Vec<u64>,
     ascending: bool,
+    /// Per-percentile CONT/DISC flag (0=disc, 1=cont)
+    is_continuous: Vec<u8>,
     /// Branching factor for tree reconstruction
     branching_factor: u32,
     /// Next tree ID counter (`next_tree_id` is saved/restored to prevent ID collisions)
@@ -190,62 +234,65 @@ where
 ///
 /// This operator maintains `OrderStatisticsZSet` state per key across steps,
 /// enabling O(log n) incremental updates instead of O(n) per-step rescanning.
-/// When multiple percentiles share the same ORDER BY column and direction,
-/// they can be computed from a single shared tree, eliminating redundant
-/// tree maintenance.
+/// When multiple percentiles share the same ORDER BY column, they can be
+/// computed from a single shared tree regardless of sort direction, because
+/// DESC with percentile p is equivalent to ASC with percentile (1-p).
+///
+/// Both PERCENTILE_CONT and PERCENTILE_DISC queries can share the same tree.
+/// The `is_continuous` flag per percentile determines whether interpolation
+/// bounds (CONT) or a discrete value (DISC) is returned via `PercentileResult`.
 ///
 /// # Type Parameters
 ///
 /// - `K`: Key type for grouping
 /// - `V`: Value type being aggregated (stored in the tree)
 /// - `O`: Output value type (e.g., `Option<V>` for single, `Tup3<Option<V>, ...>` for multi)
-/// - `Mode`: Either `ContMode` (interpolated) or `DiscMode` (discrete)
-/// - `F`: Closure type `Fn(&[Option<V>]) -> O` that builds the output from computed percentile results
-pub struct PercentileOperator<K, V, O, Mode, F>
+/// - `F`: Closure type `Fn(&[PercentileResult<V>]) -> O` that builds the output from computed percentile results
+pub struct PercentileOperator<K, V, O, F>
 where
     K: DBData,
     V: DBData,
     O: DBData,
 {
     /// Per-key order statistics trees
-    trees: BTreeMap<K, OrderStatisticsZSet<V>>,
+    pub(crate) trees: BTreeMap<K, OrderStatisticsZSet<V>>,
 
     /// Per-key tree IDs for checkpoint file naming.
-    tree_ids: BTreeMap<K, u64>,
+    pub(crate) tree_ids: BTreeMap<K, u64>,
 
     /// Previous output values for computing deltas
-    prev_output: BTreeMap<K, O>,
+    pub(crate) prev_output: BTreeMap<K, O>,
 
     /// Percentile values to compute (each 0.0 to 1.0)
-    percentiles: Vec<f64>,
+    pub(crate) percentiles: Vec<f64>,
+
+    /// Per-percentile CONT (true) / DISC (false) flag
+    is_continuous: Vec<bool>,
 
     /// Sort order (true = ascending)
-    ascending: bool,
+    pub(crate) ascending: bool,
 
     /// Closure that builds the output value from a slice of computed percentile results.
     /// Each element in the slice corresponds to one percentile value.
     build_output: F,
 
     /// Storage config for spill-to-disk
-    storage_config: NodeStorageConfig,
+    pub(crate) storage_config: NodeStorageConfig,
 
     /// Counter for generating unique segment path prefixes per tree.
-    next_tree_id: u64,
+    pub(crate) next_tree_id: u64,
 
     /// Global node ID for checkpoint file naming
-    global_id: GlobalNodeId,
+    pub(crate) global_id: GlobalNodeId,
 
     /// Input batch size statistics for profiling
     input_batch_stats: BatchSizeStats,
 
     /// Output batch size statistics for profiling
     output_batch_stats: BatchSizeStats,
-
-    /// Marker for CONT vs DISC mode (zero-sized, compile-time only)
-    _mode: std::marker::PhantomData<Mode>,
 }
 
-impl<K, V, O, Mode, F> SizeOf for PercentileOperator<K, V, O, Mode, F>
+impl<K, V, O, F> SizeOf for PercentileOperator<K, V, O, F>
 where
     K: DBData,
     V: DBData,
@@ -256,23 +303,35 @@ where
         self.tree_ids.size_of_children(context);
         self.prev_output.size_of_children(context);
         self.percentiles.size_of_children(context);
+        self.is_continuous.size_of_children(context);
     }
 }
 
-impl<K, V, O, F> PercentileOperator<K, V, O, ContMode, F>
+impl<K, V, O, F> PercentileOperator<K, V, O, F>
 where
     K: DBData,
     V: DBData,
     O: DBData,
-    F: Fn(&[Option<V>]) -> O + Clone + Send + 'static,
+    F: Fn(&[PercentileResult<V>]) -> O + Clone + Send + 'static,
 {
-    /// Create a new PERCENTILE_CONT operator computing one or more percentiles.
-    pub fn new_cont(percentiles: Vec<f64>, ascending: bool, build_output: F) -> Self {
+    /// Create a new unified percentile operator computing one or more percentiles.
+    ///
+    /// Each percentile can independently be CONT or DISC, controlled by `is_continuous`.
+    /// The tree stores the original value type; interpolation for CONT happens in `build_output`.
+    pub fn new(
+        percentiles: Vec<f64>,
+        is_continuous: Vec<bool>,
+        ascending: bool,
+        build_output: F,
+    ) -> Self {
+        assert_eq!(percentiles.len(), is_continuous.len(),
+            "percentiles and is_continuous must have the same length");
         Self {
             trees: BTreeMap::new(),
             tree_ids: BTreeMap::new(),
             prev_output: BTreeMap::new(),
             percentiles,
+            is_continuous,
             ascending,
             build_output,
             storage_config: NodeStorageConfig::from_runtime(),
@@ -280,38 +339,11 @@ where
             global_id: GlobalNodeId::root(),
             input_batch_stats: BatchSizeStats::new(),
             output_batch_stats: BatchSizeStats::new(),
-            _mode: std::marker::PhantomData,
         }
     }
 }
 
-impl<K, V, O, F> PercentileOperator<K, V, O, DiscMode, F>
-where
-    K: DBData,
-    V: DBData,
-    O: DBData,
-    F: Fn(&[Option<V>]) -> O + Clone + Send + 'static,
-{
-    /// Create a new PERCENTILE_DISC operator computing one or more percentiles.
-    pub fn new_disc(percentiles: Vec<f64>, ascending: bool, build_output: F) -> Self {
-        Self {
-            trees: BTreeMap::new(),
-            tree_ids: BTreeMap::new(),
-            prev_output: BTreeMap::new(),
-            percentiles,
-            ascending,
-            build_output,
-            storage_config: NodeStorageConfig::from_runtime(),
-            next_tree_id: 0,
-            global_id: GlobalNodeId::root(),
-            input_batch_stats: BatchSizeStats::new(),
-            output_batch_stats: BatchSizeStats::new(),
-            _mode: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<K, V, O, Mode, F> PercentileOperator<K, V, O, Mode, F>
+impl<K, V, O, F> PercentileOperator<K, V, O, F>
 where
     K: DBData,
     V: DBData,
@@ -325,13 +357,12 @@ where
     }
 }
 
-impl<K, V, O, Mode, F> Operator for PercentileOperator<K, V, O, Mode, F>
+impl<K, V, O, F> Operator for PercentileOperator<K, V, O, F>
 where
     K: DBData,
     V: DBData,
     O: DBData,
-    Mode: Send + 'static,
-    F: Fn(&[Option<V>]) -> O + Clone + Send + 'static,
+    F: Fn(&[PercentileResult<V>]) -> O + Clone + Send + 'static,
     <K as Archive>::Archived: Ord,
     <V as Archive>::Archived: Ord,
     <O as Archive>::Archived: Ord,
@@ -409,6 +440,7 @@ where
                 .collect(),
             percentiles: self.percentiles.iter().map(|p| p.to_bits()).collect(),
             ascending: self.ascending,
+            is_continuous: self.is_continuous.iter().map(|&c| if c { 1 } else { 0 }).collect(),
             branching_factor: DEFAULT_BRANCHING_FACTOR as u32,
             next_tree_id: self.next_tree_id,
         };
@@ -498,6 +530,7 @@ where
         // Restore config
         self.percentiles = archived.percentiles.iter().map(|p| f64::from_bits((*p).into())).collect();
         self.ascending = archived.ascending;
+        self.is_continuous = archived.is_continuous.iter().map(|&c| c != 0).collect();
 
         Ok(())
     }
@@ -511,7 +544,7 @@ where
 }
 
 // =============================================================================
-// Helper: process input delta (shared between ContMode and DiscMode)
+// Helper: process input delta (shared between CONT and DISC)
 // =============================================================================
 
 /// Process the input delta batch, inserting/deleting values into per-key trees.
@@ -638,19 +671,19 @@ where
 }
 
 // =============================================================================
-// UnaryOperator implementation for PERCENTILE_CONT (requires Interpolate)
+// UnaryOperator implementation (unified CONT + DISC)
 // =============================================================================
 
 impl<K, V, O, F> UnaryOperator<OrdIndexedZSet<K, V>, OrdIndexedZSet<K, O>>
-    for PercentileOperator<K, V, O, ContMode, F>
+    for PercentileOperator<K, V, O, F>
 where
     K: DBData,
     <K as crate::storage::file::Deserializable>::ArchivedDeser: Ord,
-    V: DBData + IsNone + Interpolate,
+    V: DBData + IsNone,
     <V as Archive>::Archived: Ord,
     O: DBData,
     <O as Archive>::Archived: Ord,
-    F: Fn(&[Option<V>]) -> O + Clone + Send + 'static,
+    F: Fn(&[PercentileResult<V>]) -> O + Clone + Send + 'static,
 {
     async fn eval(&mut self, delta: &OrdIndexedZSet<K, V>) -> OrdIndexedZSet<K, O> {
         self.input_batch_stats.add_batch(delta.inner().len());
@@ -671,16 +704,29 @@ where
                 // Tree is empty: emit a NULL output if we previously emitted something,
                 // so that downstream sees the retraction of old value + insertion of NULL row.
                 if self.prev_output.contains_key(key) {
-                    let null_results: Vec<Option<V>> = vec![None; num_percentiles];
+                    let null_results: Vec<PercentileResult<V>> = (0..num_percentiles).map(|i| {
+                        if self.is_continuous[i] {
+                            PercentileResult::Cont(None)
+                        } else {
+                            PercentileResult::Disc(None)
+                        }
+                    }).collect();
                     Some((self.build_output)(&null_results))
                 } else {
                     None
                 }
             } else {
                 let tree = self.trees.get_mut(key).unwrap();
-                let results: Vec<Option<V>> = self.percentiles.iter().map(|p| {
-                    tree.select_percentile_bounds(*p, self.ascending)
-                        .map(|(lower, upper, fraction)| V::interpolate(&lower, &upper, fraction))
+                let results: Vec<PercentileResult<V>> = self.percentiles.iter().enumerate().map(|(i, p)| {
+                    if self.is_continuous[i] {
+                        PercentileResult::Cont(
+                            tree.select_percentile_bounds(*p, self.ascending)
+                        )
+                    } else {
+                        PercentileResult::Disc(
+                            tree.select_percentile_disc(*p, self.ascending).cloned()
+                        )
+                    }
                 }).collect();
                 Some((self.build_output)(&results))
             }
@@ -705,68 +751,50 @@ where
 }
 
 // =============================================================================
-// UnaryOperator implementation for PERCENTILE_DISC (no Interpolate required)
+// Stream Extension Methods — unified (works with any ordered type)
 // =============================================================================
 
-impl<K, V, O, F> UnaryOperator<OrdIndexedZSet<K, V>, OrdIndexedZSet<K, O>>
-    for PercentileOperator<K, V, O, DiscMode, F>
+impl<C, K, V> Stream<C, OrdIndexedZSet<K, V>>
 where
+    C: Circuit,
     K: DBData,
     <K as crate::storage::file::Deserializable>::ArchivedDeser: Ord,
     V: DBData + IsNone,
     <V as Archive>::Archived: Ord,
-    O: DBData,
-    <O as Archive>::Archived: Ord,
-    F: Fn(&[Option<V>]) -> O + Clone + Send + 'static,
 {
-    async fn eval(&mut self, delta: &OrdIndexedZSet<K, V>) -> OrdIndexedZSet<K, O> {
-        self.input_batch_stats.add_batch(delta.inner().len());
-
-        let changed_keys = process_delta(
-            delta,
-            &mut self.trees,
-            &mut self.tree_ids,
-            &mut self.next_tree_id,
-            &self.storage_config,
+    /// Compute one or more percentiles (CONT and/or DISC) incrementally with persistent state.
+    ///
+    /// This is the unified method that supports mixed CONT/DISC queries from a single tree.
+    /// The `build_output` closure receives `&[PercentileResult<V>]` and must call
+    /// `cont_interpolate()` or `disc_value()` as appropriate for each result.
+    ///
+    /// # Arguments
+    ///
+    /// - `persistent_id`: Optional identifier for checkpoint/restore
+    /// - `percentiles`: Slice of values between 0.0 and 1.0
+    /// - `is_continuous`: Slice of booleans (true=CONT, false=DISC) per percentile
+    /// - `ascending`: If true, sorts values in ascending order
+    /// - `build_output`: Closure converting `&[PercentileResult<V>]` → `O`
+    #[track_caller]
+    pub fn percentile_stateful<O, F>(
+        &self,
+        persistent_id: Option<&str>,
+        percentiles: &[f64],
+        is_continuous: &[bool],
+        ascending: bool,
+        build_output: F,
+    ) -> Stream<C, OrdIndexedZSet<K, O>>
+    where
+        O: DBData,
+        <O as Archive>::Archived: Ord,
+        F: Fn(&[PercentileResult<V>]) -> O + Clone + Send + 'static,
+    {
+        let operator = PercentileOperator::<K, V, O, F>::new(
+            percentiles.to_vec(), is_continuous.to_vec(), ascending, build_output,
         );
-
-        // Compute new outputs for each changed key
-        let num_percentiles = self.percentiles.len();
-        let new_outputs: Vec<Option<O>> = changed_keys.iter().map(|key| {
-            let tree_empty = self.trees.get(key).map_or(true, |t| t.is_empty());
-            if tree_empty {
-                // Tree is empty: emit a NULL output if we previously emitted something,
-                // so that downstream sees the retraction of old value + insertion of NULL row.
-                if self.prev_output.contains_key(key) {
-                    let null_results: Vec<Option<V>> = vec![None; num_percentiles];
-                    Some((self.build_output)(&null_results))
-                } else {
-                    None
-                }
-            } else {
-                let tree = self.trees.get_mut(key).unwrap();
-                let results: Vec<Option<V>> = self.percentiles.iter().map(|p| {
-                    tree.select_percentile_disc(*p, self.ascending).cloned()
-                }).collect();
-                Some((self.build_output)(&results))
-            }
-        }).collect();
-
-        let tuples = emit_deltas(
-            changed_keys,
-            new_outputs,
-            &mut self.prev_output,
-            &mut self.trees,
-            &mut self.tree_ids,
-        );
-
-        let result: OrdIndexedZSet<K, O> = TypedBatch::from_tuples((), tuples);
-        self.output_batch_stats.add_batch(result.inner().len());
-        result
-    }
-
-    fn input_preference(&self) -> OwnershipPreference {
-        OwnershipPreference::PREFER_OWNED
+        self.circuit()
+            .add_unary_operator(operator, self)
+            .set_persistent_id(persistent_id)
     }
 }
 
@@ -783,6 +811,9 @@ where
     <V as Archive>::Archived: Ord,
 {
     /// Compute one or more PERCENTILE_CONT values incrementally with persistent state.
+    ///
+    /// This convenience method wraps `percentile_stateful` by performing interpolation
+    /// internally, so the `build_output` closure receives `&[Option<V>]`.
     ///
     /// # Arguments
     ///
@@ -803,8 +834,21 @@ where
         <O as Archive>::Archived: Ord,
         F: Fn(&[Option<V>]) -> O + Clone + Send + 'static,
     {
-        let operator = PercentileOperator::<K, V, O, ContMode, F>::new_cont(
-            percentiles.to_vec(), ascending, build_output,
+        let is_continuous: Vec<bool> = vec![true; percentiles.len()];
+        let build_output_wrapper = move |results: &[PercentileResult<V>]| {
+            let interpolated: Vec<Option<V>> = results.iter().map(|r| {
+                match r {
+                    PercentileResult::Cont(Some((lower, upper, fraction))) => {
+                        Some(V::interpolate(lower, upper, *fraction))
+                    }
+                    PercentileResult::Cont(None) => None,
+                    PercentileResult::Disc(_) => unreachable!("percentile_cont_stateful only uses CONT"),
+                }
+            }).collect();
+            build_output(&interpolated)
+        };
+        let operator = PercentileOperator::new(
+            percentiles.to_vec(), is_continuous, ascending, build_output_wrapper,
         );
         self.circuit()
             .add_unary_operator(operator, self)
@@ -835,6 +879,9 @@ where
 {
     /// Compute one or more PERCENTILE_DISC values incrementally with persistent state.
     ///
+    /// This convenience method wraps `percentile_stateful` by extracting discrete values
+    /// internally, so the `build_output` closure receives `&[Option<V>]`.
+    ///
     /// # Arguments
     ///
     /// - `persistent_id`: Optional identifier for checkpoint/restore
@@ -854,8 +901,18 @@ where
         <O as Archive>::Archived: Ord,
         F: Fn(&[Option<V>]) -> O + Clone + Send + 'static,
     {
-        let operator = PercentileOperator::<K, V, O, DiscMode, F>::new_disc(
-            percentiles.to_vec(), ascending, build_output,
+        let is_continuous: Vec<bool> = vec![false; percentiles.len()];
+        let build_output_wrapper = move |results: &[PercentileResult<V>]| {
+            let discrete: Vec<Option<V>> = results.iter().map(|r| {
+                match r {
+                    PercentileResult::Disc(v) => v.clone(),
+                    PercentileResult::Cont(_) => unreachable!("percentile_disc_stateful only uses DISC"),
+                }
+            }).collect();
+            build_output(&discrete)
+        };
+        let operator = PercentileOperator::new(
+            percentiles.to_vec(), is_continuous, ascending, build_output_wrapper,
         );
         self.circuit()
             .add_unary_operator(operator, self)

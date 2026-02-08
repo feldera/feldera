@@ -12,7 +12,7 @@ mod tests {
         },
         indexed_zset,
         node_storage::NodeStorageConfig,
-        operator::dynamic::percentile_op::{ContMode, PercentileOperator},
+        operator::dynamic::percentile_op::{PercentileOperator, PercentileResult},
         trace::{BatchReader},
         utils::{Tup2},
     };
@@ -204,10 +204,21 @@ mod tests {
 
         let global_id = GlobalNodeId::child(&GlobalNodeId::root(), NodeId::new(42));
 
-        let build_output = |r: &[Option<F64>]| r[0].clone();
+        // Use the unified API with all-CONT
+        let build_output = |r: &[PercentileResult<F64>]| -> Option<F64> {
+            match &r[0] {
+                PercentileResult::Cont(Some((lower, upper, fraction))) => {
+                    let l = lower.into_inner();
+                    let u = upper.into_inner();
+                    Some(F64::new(l + fraction * (u - l)))
+                }
+                PercentileResult::Cont(None) => None,
+                PercentileResult::Disc(_) => unreachable!(),
+            }
+        };
 
-        let mut op1 = PercentileOperator::<i32, F64, Option<F64>, ContMode, _>::new_cont(
-            vec![0.5], true, build_output.clone(),
+        let mut op1 = PercentileOperator::<i32, F64, Option<F64>, _>::new(
+            vec![0.5], vec![true], true, build_output.clone(),
         );
         op1.storage_config = storage_config.clone();
         op1.global_id = global_id.clone();
@@ -249,8 +260,8 @@ mod tests {
             .expect("checkpoint should work");
 
         // Create a new operator with different initial values (to verify restore overwrites)
-        let mut op2 = PercentileOperator::<i32, F64, Option<F64>, ContMode, _>::new_cont(
-            vec![0.0], false, build_output,
+        let mut op2 = PercentileOperator::<i32, F64, Option<F64>, _>::new(
+            vec![0.0], vec![true], false, build_output,
         );
         op2.storage_config = storage_config.clone();
         op2.global_id = global_id.clone();
@@ -322,8 +333,19 @@ mod tests {
 
         let global_id = GlobalNodeId::child(&GlobalNodeId::root(), NodeId::new(99));
 
-        let mut op = PercentileOperator::<i32, F64, Option<F64>, ContMode, _>::new_cont(
-            vec![0.5], true, |r: &[Option<F64>]| r[0].clone(),
+        let mut op = PercentileOperator::<i32, F64, Option<F64>, _>::new(
+            vec![0.5], vec![true], true,
+            |r: &[PercentileResult<F64>]| -> Option<F64> {
+                match &r[0] {
+                    PercentileResult::Cont(Some((lower, upper, fraction))) => {
+                        let l = lower.into_inner();
+                        let u = upper.into_inner();
+                        Some(F64::new(l + fraction * (u - l)))
+                    }
+                    PercentileResult::Cont(None) => None,
+                    PercentileResult::Disc(_) => unreachable!(),
+                }
+            },
         );
         op.storage_config = storage_config.clone();
         op.global_id = global_id.clone();
@@ -631,6 +653,59 @@ mod tests {
         assert_eq!(
             result,
             indexed_zset! { 1 => { expected_val => 1 } }
+        );
+    }
+
+    /// Test mixed CONT + DISC from a single operator using the unified API.
+    #[test]
+    fn test_mixed_cont_disc_single_operator() {
+        let (mut circuit, (input, output)) = Runtime::init_circuit(1, |circuit| {
+            let (input, input_handle) = circuit.add_input_indexed_zset::<i32, F64>();
+            // p50 CONT, p50 DISC from the same tree
+            let output = input.percentile_stateful(
+                None,
+                &[0.5, 0.5],
+                &[true, false],  // first is CONT, second is DISC
+                true,
+                |results: &[PercentileResult<F64>]| {
+                    let cont_val: Option<F64> = results[0].cont_interpolate(|v| v.into_inner());
+                    let disc_val: Option<F64> = results[1].clone().disc_value();
+                    Tup2(cont_val, disc_val)
+                },
+            );
+            Ok((input_handle, output.output()))
+        })
+        .unwrap();
+
+        // [10, 20, 30, 40] -> CONT p50 = 25.0, DISC p50 = 20.0
+        input.append(&mut vec![
+            Tup2(1, Tup2(F64::new(10.0), 1)),
+            Tup2(1, Tup2(F64::new(20.0), 1)),
+            Tup2(1, Tup2(F64::new(30.0), 1)),
+            Tup2(1, Tup2(F64::new(40.0), 1)),
+        ]);
+        circuit.transaction().unwrap();
+
+        let result = output.consolidate();
+        let expected_val = Tup2(Some(F64::new(25.0)), Some(F64::new(20.0)));
+        assert_eq!(
+            result,
+            indexed_zset! { 1 => { expected_val => 1 } }
+        );
+
+        // Step 2: add a value, verify delta
+        input.append(&mut vec![
+            Tup2(1, Tup2(F64::new(50.0), 1)),
+        ]);
+        circuit.transaction().unwrap();
+
+        let result = output.consolidate();
+        // [10, 20, 30, 40, 50] -> CONT p50 = 30.0, DISC p50 = 30
+        let old_val = Tup2(Some(F64::new(25.0)), Some(F64::new(20.0)));
+        let new_val = Tup2(Some(F64::new(30.0)), Some(F64::new(30.0)));
+        assert_eq!(
+            result,
+            indexed_zset! { 1 => { old_val => -1, new_val => 1 } }
         );
     }
 }
