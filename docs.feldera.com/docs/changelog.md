@@ -13,7 +13,14 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
 
-        ## Unreleased
+        ## 0.227.0
+        
+        Loading data from checkpoints made in earlier versions of feldera (0.226.0 and below)
+        are not compatible with versions 0.227.0 and above.
+        When upgrading to a version >=0.227, existing pipelines should be backfilled
+        rather than starting from a previous checkpoint.
+        
+        ## 0.226.0
 
         The Delta Lake connector's `skip_unused_columns` property has been deprecated. Use
         table-level [`skip_unused_colums`](https://docs.feldera.com/sql/grammar#skip-unused-columns)
