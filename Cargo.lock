@@ -3857,6 +3857,7 @@ dependencies = [
  "colored",
  "comfy-table",
  "cpu-time",
+ "criterion",
  "crossbeam",
  "csv",
  "csv-core",

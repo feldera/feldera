@@ -11,7 +11,7 @@ use std::{
 };
 
 #[cfg(feature = "with-avro")]
-pub(crate) mod avro;
+pub mod avro;
 pub(crate) mod csv;
 mod json;
 pub mod parquet;

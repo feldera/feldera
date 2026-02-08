@@ -229,3 +229,9 @@ mockall = { workspace = true }
 pretty_assertions = { workspace = true }
 google-cloud-googleapis = { workspace = true }
 postgres-types = { version = "0.2.9", features = ["derive"] }
+criterion = { workspace = true }
+
+[[bench]]
+name = "avro_encoder"
+harness = false
+required-features = ["with-avro"]

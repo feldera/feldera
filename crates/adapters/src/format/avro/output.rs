@@ -363,7 +363,7 @@ impl AvroParallelEncoder {
     }
 }
 
-pub(crate) struct AvroEncoder {
+pub struct AvroEncoder {
     /// Consumer to push serialized data to.
     output_consumer: Box<dyn OutputConsumer>,
 
@@ -416,7 +416,7 @@ pub fn use_key(config: &AvroEncoderConfig, key_schema: &Option<Relation>) -> boo
 }
 
 impl AvroEncoder {
-    pub(crate) fn create(
+    pub fn create(
         endpoint_name: &str,
         key_schema: &Option<Relation>,
         value_schema: &Relation,
