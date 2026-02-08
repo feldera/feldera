@@ -25,6 +25,7 @@ pub mod multijoin;
 pub mod neighborhood;
 pub mod outer_join;
 mod output;
+pub mod percentile_op;
 pub mod recursive;
 pub mod sample;
 mod saturate;
@@ -32,7 +33,6 @@ pub mod semijoin;
 pub mod time_series;
 pub mod trace;
 pub(crate) mod upsert;
-pub mod percentile_op;
 
 /// The "standard" indexed Z-set type used by monomorphic
 /// versions of operators.

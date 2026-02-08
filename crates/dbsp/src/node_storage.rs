@@ -314,7 +314,7 @@ impl NodeStorageConfig {
             enable_spill: true,
             spill_threshold_bytes,
             target_segment_size: 64 * 1024 * 1024, // 64MB
-            spill_directory: None, // Will use storage_backend instead
+            spill_directory: None,                 // Will use storage_backend instead
             segment_path_prefix: String::new(),
             storage_backend,
             buffer_cache,
@@ -647,8 +647,7 @@ impl LeafDiskLocation {
 
     /// Convert to a BlockLocation (for StorageBackend compatibility).
     pub fn to_block_location(&self) -> BlockLocation {
-        BlockLocation::new(self.offset, self.size as usize)
-            .expect("Invalid block location")
+        BlockLocation::new(self.offset, self.size as usize).expect("Invalid block location")
     }
 }
 
@@ -721,9 +720,9 @@ impl SegmentMetadata {
     /// Get the location of a leaf within this segment.
     #[inline]
     pub fn get_leaf_location(&self, leaf_id: usize) -> Option<LeafDiskLocation> {
-        self.leaf_index.get(&leaf_id).map(|(offset, size)| {
-            LeafDiskLocation::new(self.id, *offset, *size)
-        })
+        self.leaf_index
+            .get(&leaf_id)
+            .map(|(offset, size)| LeafDiskLocation::new(self.id, *offset, *size))
     }
 }
 

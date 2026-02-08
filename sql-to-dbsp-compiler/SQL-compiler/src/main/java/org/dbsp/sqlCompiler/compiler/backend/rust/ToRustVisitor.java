@@ -1241,7 +1241,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
         // Generate: let result: StreamType = input
         //     .map_index(|t| ((*t.0).clone(), value_extractor_body))
-        //     .percentile_cont(percentile, ascending)  // or percentile_disc
+        //     .percentile_cont(hash, percentile, ascending)  // or percentile_disc
         //     .map_index(|k, v| (k.clone(), post_processor(v)))  // if post_processor exists
         this.writeComments(operator)
                 .append("let ")
@@ -1277,7 +1277,7 @@ public class ToRustVisitor extends CircuitVisitor {
         } else {
             this.builder.append("percentile_disc");
         }
-        this.builder.append("(")
+        this.builder.append("(hash, ")
                 .append(Double.toString(operator.percentile))
                 .append(", ")
                 .append(Boolean.toString(operator.ascending))

@@ -806,7 +806,9 @@ where
     /// Get the total weight of a node at the given location.
     fn node_total_weight(&mut self, loc: NodeLocation) -> ZWeight {
         match loc {
-            NodeLocation::Leaf(leaf_loc) => self.storage.get_leaf_reloading(leaf_loc).total_weight(),
+            NodeLocation::Leaf(leaf_loc) => {
+                self.storage.get_leaf_reloading(leaf_loc).total_weight()
+            }
             NodeLocation::Internal { id, .. } => self.storage.get_internal(id).total_weight(),
         }
     }
@@ -951,7 +953,9 @@ where
 
     fn rank_recursive(&mut self, loc: NodeLocation, key: &T) -> ZWeight {
         match loc {
-            NodeLocation::Leaf(leaf_loc) => self.storage.get_leaf_reloading(leaf_loc).prefix_weight(key),
+            NodeLocation::Leaf(leaf_loc) => {
+                self.storage.get_leaf_reloading(leaf_loc).prefix_weight(key)
+            }
             NodeLocation::Internal { id, .. } => {
                 let internal = self.storage.get_internal(id);
                 let child_pos = internal.find_child(key);
@@ -1336,7 +1340,11 @@ where
     fn build_internal_nodes_from_summaries(
         summaries: &[crate::node_storage::LeafSummary<T>],
         branching_factor: usize,
-    ) -> (Vec<(InternalNodeTyped<T>, u8)>, Option<NodeLocation>, Option<LeafLocation>) {
+    ) -> (
+        Vec<(InternalNodeTyped<T>, u8)>,
+        Option<NodeLocation>,
+        Option<LeafLocation>,
+    ) {
         if summaries.is_empty() {
             return (Vec::new(), None, None);
         }
@@ -1345,7 +1353,11 @@ where
 
         if summaries.len() == 1 {
             // Single leaf - no internal nodes needed, root is the leaf
-            return (Vec::new(), Some(NodeLocation::Leaf(LeafLocation::new(0))), first_leaf);
+            return (
+                Vec::new(),
+                Some(NodeLocation::Leaf(LeafLocation::new(0))),
+                first_leaf,
+            );
         }
 
         let mut internal_nodes: Vec<(InternalNodeTyped<T>, u8)> = Vec::new();
@@ -1392,7 +1404,10 @@ where
                 let node_id = internal_nodes.len();
                 internal_nodes.push((internal_node, current_level));
 
-                next_level_locations.push(NodeLocation::Internal { id: node_id, level: current_level });
+                next_level_locations.push(NodeLocation::Internal {
+                    id: node_id,
+                    level: current_level,
+                });
                 next_level_sums.push(subtree_sums.iter().sum());
                 next_level_keys.push(current_level_keys[chunk_start].clone());
             }

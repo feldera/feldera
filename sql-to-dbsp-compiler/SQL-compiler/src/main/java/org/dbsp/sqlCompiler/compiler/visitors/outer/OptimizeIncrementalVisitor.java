@@ -116,6 +116,11 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPChainAggregateOperator operator) { this.linear(operator); }
 
+    // Percentile is a stateful delta operator: it expects deltas and produces deltas.
+    // I() can be pushed through it just like other aggregate-like operators.
+    @Override
+    public void postorder(DBSPPercentileOperator operator) { this.linear(operator); }
+
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
         this.linear(operator);
