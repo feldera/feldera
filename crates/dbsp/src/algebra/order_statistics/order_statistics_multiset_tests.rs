@@ -1,13 +1,16 @@
 #[cfg(test)]
 mod tests {
-    use crate::algebra::{OrderStatisticsMultiset, ZWeight, DEFAULT_BRANCHING_FACTOR};
+    use crate::algebra::{DEFAULT_BRANCHING_FACTOR, OrderStatisticsMultiset, ZWeight};
     use crate::node_storage::NodeStorageConfig;
 
     fn new_tree<T>() -> OrderStatisticsMultiset<T>
     where
         T: crate::DBData,
     {
-        OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, NodeStorageConfig::memory_only())
+        OrderStatisticsMultiset::with_config(
+            DEFAULT_BRANCHING_FACTOR,
+            NodeStorageConfig::memory_only(),
+        )
     }
 
     #[test]
@@ -367,7 +370,10 @@ mod tests {
 
     fn test_config_with_storage(
         threshold_bytes: usize,
-    ) -> (NodeStorageConfig, std::sync::Arc<crate::storage::backend::memory_impl::MemoryBackend>) {
+    ) -> (
+        NodeStorageConfig,
+        std::sync::Arc<crate::storage::backend::memory_impl::MemoryBackend>,
+    ) {
         use crate::storage::backend::memory_impl::MemoryBackend;
         let backend = std::sync::Arc::new(MemoryBackend::new());
         let config = NodeStorageConfig {
@@ -397,7 +403,10 @@ mod tests {
         let (flushed, evicted, _freed) = tree.flush_and_evict().unwrap();
         assert!(flushed > 0, "Should have flushed some leaves");
         assert!(evicted > 0, "Should have evicted some leaves");
-        assert!(tree.evicted_leaf_count() > 0, "Should have evicted leaves tracked");
+        assert!(
+            tree.evicted_leaf_count() > 0,
+            "Should have evicted leaves tracked"
+        );
 
         // Verify select_kth still works correctly after eviction
         assert_eq!(tree.select_kth(0, true), Some(&0));

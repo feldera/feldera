@@ -64,23 +64,27 @@ where
     /// # Example
     /// ```ignore
     /// // Compute the median (50th percentile) for each key
-    /// let medians = indexed_zset.percentile_cont(0.5, true);
+    /// let medians = indexed_zset.percentile_cont(None, 0.5, true);
     /// ```
     #[track_caller]
     pub fn percentile_cont(
         &self,
+        persistent_id: Option<&str>,
         percentile: f64,
         ascending: bool,
     ) -> Stream<C, OrdIndexedZSet<K, Option<V>>> {
         // Shard input by key to ensure all values for a key are on the same worker
         let sharded = self.shard();
         let operator = PercentileOperator::<K, V, ContMode>::new_cont(percentile, ascending);
-        sharded.circuit().add_unary_operator(operator, &sharded)
+        sharded
+            .circuit()
+            .add_unary_operator(operator, &sharded)
+            .set_persistent_id(persistent_id)
     }
 
     /// Compute the median (50th percentile) for each group.
     ///
-    /// This is a convenience method equivalent to `percentile_cont(0.5, true)`.
+    /// This is a convenience method equivalent to `percentile_cont(None, 0.5, true)`.
     ///
     /// # Example
     /// ```ignore
@@ -88,7 +92,7 @@ where
     /// ```
     #[track_caller]
     pub fn median(&self) -> Stream<C, OrdIndexedZSet<K, Option<V>>> {
-        self.percentile_cont(0.5, true)
+        self.percentile_cont(None, 0.5, true)
     }
 }
 
@@ -101,7 +105,7 @@ where
     C: Circuit,
     K: DBData,
     <K as Deserializable>::ArchivedDeser: Ord,
-    V: DBData + IsNone,  // No Interpolate bound - works with any ordered type
+    V: DBData + IsNone, // No Interpolate bound - works with any ordered type
     <V as Archive>::Archived: Ord,
 {
     /// Compute PERCENTILE_DISC for each group.
@@ -132,17 +136,21 @@ where
     /// # Example
     /// ```ignore
     /// // Compute the discrete median for each key
-    /// let medians = indexed_zset.percentile_disc(0.5, true);
+    /// let medians = indexed_zset.percentile_disc(None, 0.5, true);
     /// ```
     #[track_caller]
     pub fn percentile_disc(
         &self,
+        persistent_id: Option<&str>,
         percentile: f64,
         ascending: bool,
     ) -> Stream<C, OrdIndexedZSet<K, Option<V>>> {
         // Shard input by key to ensure all values for a key are on the same worker
         let sharded = self.shard();
         let operator = PercentileOperator::<K, V, DiscMode>::new_disc(percentile, ascending);
-        sharded.circuit().add_unary_operator(operator, &sharded)
+        sharded
+            .circuit()
+            .add_unary_operator(operator, &sharded)
+            .set_persistent_id(persistent_id)
     }
 }

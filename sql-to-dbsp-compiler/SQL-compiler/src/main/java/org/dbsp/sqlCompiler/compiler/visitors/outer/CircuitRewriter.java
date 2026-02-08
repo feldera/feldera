@@ -55,6 +55,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPercentileOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
@@ -294,6 +295,28 @@ public class CircuitRewriter extends CircuitCloneVisitor {
             result = new DBSPIndexedTopKOperator(operator.getRelNode(),
                     operator.numbering, function, limit, equalityComparator,
                     outputProducer, input)
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPPercentileOperator operator) {
+        DBSPClosureExpression valueExtractor = this.transform(operator.valueExtractor)
+                .to(DBSPClosureExpression.class);
+        @Nullable DBSPClosureExpression postProcessor = operator.postProcessor != null
+                ? this.transform(operator.postProcessor).to(DBSPClosureExpression.class)
+                : null;
+        DBSPType outputType = this.transform(operator.outputType);
+        OutputPort input = this.mapped(operator.input());
+        DBSPSimpleOperator result = operator;
+        if (valueExtractor != operator.valueExtractor
+                || postProcessor != operator.postProcessor
+                || !outputType.sameType(operator.outputType)
+                || !input.equals(operator.input())) {
+            result = new DBSPPercentileOperator(operator.getRelNode(),
+                    operator.percentile, operator.continuous, operator.ascending,
+                    valueExtractor, postProcessor, outputType, input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

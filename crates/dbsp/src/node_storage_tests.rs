@@ -15,8 +15,8 @@ mod tests {
         InternalNodeTyped, LeafNode, OsmNodeStorage,
     };
     use crate::node_storage::{
-        storage_path_to_fs_path, LeafLocation, NodeLocation, NodeRef, NodeStorage,
-        NodeStorageConfig, ZWeight,
+        LeafLocation, NodeLocation, NodeRef, NodeStorage, NodeStorageConfig, ZWeight,
+        storage_path_to_fs_path,
     };
     use crate::storage::backend::memory_impl::MemoryBackend;
 
@@ -424,7 +424,11 @@ mod tests {
         });
 
         // Manually modify a leaf (bypassing dirty tracking for test)
-        storage.leaves[0].as_present_mut().unwrap().entries.push((20, 2));
+        storage.leaves[0]
+            .as_present_mut()
+            .unwrap()
+            .entries
+            .push((20, 2));
 
         // Stats may be stale
         let old_entries = storage.stats().total_entries;
@@ -444,10 +448,8 @@ mod tests {
     #[test]
     fn test_flush_dirty_to_disk_empty_old_api() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Flushing empty storage should succeed with 0 leaves written
@@ -458,10 +460,8 @@ mod tests {
     #[test]
     fn test_flush_dirty_to_disk_basic_old_api() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add some leaves
@@ -541,10 +541,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         // Very low threshold to trigger easily (100 bytes threshold)
-        let config = NodeStorageConfig::with_spill_directory(
-            100,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(100, dir.path().to_string_lossy().as_ref());
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add a leaf that exceeds threshold
@@ -642,10 +640,8 @@ mod tests {
     #[test]
     fn test_cleanup_segments() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         let leaf = LeafNode {
@@ -675,10 +671,8 @@ mod tests {
     #[test]
     fn test_incremental_flush() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add first leaf
@@ -716,10 +710,8 @@ mod tests {
     #[test]
     fn test_load_leaf_from_disk() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
 
         let original_entries = vec![(111i32, 11i64), (222, 22), (333, 33)];
 
@@ -751,10 +743,8 @@ mod tests {
     #[test]
     fn test_evict_clean_leaves_basic() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
@@ -798,10 +788,8 @@ mod tests {
     #[test]
     fn test_evict_does_not_affect_dirty_leaves() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
@@ -844,10 +832,8 @@ mod tests {
     #[test]
     fn test_evict_does_not_affect_non_spilled_leaves() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
@@ -884,10 +870,8 @@ mod tests {
     #[test]
     fn test_reload_evicted_leaf() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
 
         let original_entries = vec![(10i32, 1i64), (20, 2), (30, 3)];
 
@@ -925,10 +909,8 @@ mod tests {
     #[test]
     fn test_reload_evicted_leaves_bulk() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
@@ -965,10 +947,8 @@ mod tests {
     #[test]
     fn test_eviction_memory_stats() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
@@ -997,10 +977,8 @@ mod tests {
     #[test]
     fn test_cache_hit_miss_stats() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
@@ -1082,7 +1060,7 @@ mod tests {
         let config = NodeStorageConfig {
             enable_spill: true,
 
-            spill_threshold_bytes: 64 * 1024, // 64KB
+            spill_threshold_bytes: 64 * 1024,      // 64KB
             target_segment_size: 64 * 1024 * 1024, // 64MB
             spill_directory: None,
             segment_path_prefix: String::new(),
@@ -1257,10 +1235,8 @@ mod tests {
     #[test]
     fn test_prepare_checkpoint_preserves_runtime_state() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
@@ -1320,10 +1296,8 @@ mod tests {
     #[test]
     fn test_prepare_checkpoint_runtime_can_continue_writing() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
@@ -1365,10 +1339,8 @@ mod tests {
     #[test]
     fn test_prepare_checkpoint_with_evicted_leaves() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
@@ -1429,10 +1401,8 @@ mod tests {
     #[test]
     fn test_flush_dirty_to_disk_empty() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Flushing empty storage should return 0
@@ -1444,10 +1414,8 @@ mod tests {
     #[test]
     fn test_flush_dirty_to_disk_single_leaf() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add a leaf
@@ -1473,10 +1441,8 @@ mod tests {
     #[test]
     fn test_flush_dirty_to_disk_multiple_leaves() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add multiple leaves
@@ -1511,10 +1477,8 @@ mod tests {
     #[test]
     fn test_multiple_segment_flushes() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // First batch of leaves
@@ -1553,10 +1517,8 @@ mod tests {
     #[test]
     fn test_load_leaf_from_disk_after_eviction() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add and flush a leaf
@@ -1576,7 +1538,9 @@ mod tests {
 
         // Load from segment
         let leaf_id = loc.as_leaf().unwrap().id;
-        let loaded = storage.load_leaf_from_disk(LeafLocation::new(leaf_id)).unwrap();
+        let loaded = storage
+            .load_leaf_from_disk(LeafLocation::new(leaf_id))
+            .unwrap();
         assert_eq!(loaded.entries.len(), 3);
         assert_eq!(loaded.entries[0], (10, 1));
         assert_eq!(loaded.entries[1], (20, 2));
@@ -1586,10 +1550,8 @@ mod tests {
     #[test]
     fn test_load_leaf_from_disk_multiple() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add multiple leaves
@@ -1626,10 +1588,8 @@ mod tests {
     #[test]
     fn test_segment_metadata_tracking() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
         // Add leaves
@@ -1681,10 +1641,8 @@ mod tests {
     #[test]
     fn test_get_leaf_reloading_mut_evicted() {
         let dir = tempfile::tempdir().unwrap();
-        let config = NodeStorageConfig::with_spill_directory(
-            1024,
-            dir.path().to_string_lossy().as_ref(),
-        );
+        let config =
+            NodeStorageConfig::with_spill_directory(1024, dir.path().to_string_lossy().as_ref());
 
         let mut storage: OsmNodeStorage<i32> = NodeStorage::with_config(config);
 
