@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -24,12 +25,15 @@ import java.util.List;
  * Unlike the aggregate-based approach, this operator applies delta changes
  * incrementally (O(log n) per change) instead of rescanning all values.
  *
+ * Supports computing multiple percentiles from a single shared tree when
+ * they share the same ORDER BY column and direction (CONT vs DISC).
+ *
  * This operator calls the stream methods percentile_cont() or percentile_disc()
  * defined in dbsp's operator/percentile.rs.
  */
 public final class DBSPPercentileOperator extends DBSPUnaryOperator {
-    /** The percentile value (0.0 to 1.0) */
-    public final double percentile;
+    /** The percentile values (each 0.0 to 1.0) */
+    public final double[] percentiles;
     /** Whether to use PERCENTILE_CONT (true) or PERCENTILE_DISC (false) */
     public final boolean continuous;
     /** Sort order: true = ascending */
@@ -44,7 +48,7 @@ public final class DBSPPercentileOperator extends DBSPUnaryOperator {
     public final DBSPClosureExpression postProcessor;
 
     public DBSPPercentileOperator(CalciteRelNode node,
-                                  double percentile,
+                                  double[] percentiles,
                                   boolean continuous,
                                   boolean ascending,
                                   DBSPClosureExpression valueExtractor,
@@ -52,7 +56,7 @@ public final class DBSPPercentileOperator extends DBSPUnaryOperator {
                                   DBSPType outputType,
                                   OutputPort source) {
         super(node, "percentile", valueExtractor, outputType, source.isMultiset(), source);
-        this.percentile = percentile;
+        this.percentiles = percentiles;
         this.continuous = continuous;
         this.ascending = ascending;
         this.valueExtractor = valueExtractor;
@@ -62,8 +66,12 @@ public final class DBSPPercentileOperator extends DBSPUnaryOperator {
     @Override
     public void accept(InnerVisitor visitor) {
         super.accept(visitor);
-        visitor.property("percentile");
-        new DBSPDoubleLiteral(this.percentile).accept(visitor);
+        visitor.property("percentileCount");
+        new DBSPDoubleLiteral(this.percentiles.length).accept(visitor);
+        for (int i = 0; i < this.percentiles.length; i++) {
+            visitor.property("percentile_" + i);
+            new DBSPDoubleLiteral(this.percentiles[i]).accept(visitor);
+        }
         visitor.property("continuous");
         new DBSPBoolLiteral(this.continuous).accept(visitor);
         visitor.property("ascending");
@@ -83,7 +91,7 @@ public final class DBSPPercentileOperator extends DBSPUnaryOperator {
         DBSPPercentileOperator otherOp = other.as(DBSPPercentileOperator.class);
         if (otherOp == null)
             return false;
-        return this.percentile == otherOp.percentile &&
+        return Arrays.equals(this.percentiles, otherOp.percentiles) &&
                 this.continuous == otherOp.continuous &&
                 this.ascending == otherOp.ascending;
     }
@@ -95,7 +103,7 @@ public final class DBSPPercentileOperator extends DBSPUnaryOperator {
         if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPPercentileOperator(
                     this.getRelNode(),
-                    this.percentile,
+                    this.percentiles,
                     this.continuous,
                     this.ascending,
                     this.valueExtractor,
@@ -118,7 +126,11 @@ public final class DBSPPercentileOperator extends DBSPUnaryOperator {
     @SuppressWarnings("unused")
     public static DBSPPercentileOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        double percentile = node.get("percentile").asDouble();
+        int percentileCount = (int) node.get("percentileCount").asDouble();
+        double[] percentiles = new double[percentileCount];
+        for (int i = 0; i < percentileCount; i++) {
+            percentiles[i] = node.get("percentile_" + i).asDouble();
+        }
         boolean continuous = node.get("continuous").asBoolean();
         boolean ascending = node.get("ascending").asBoolean();
         DBSPClosureExpression valueExtractor = fromJsonInner(node, "valueExtractor", decoder, DBSPClosureExpression.class);
@@ -128,7 +140,7 @@ public final class DBSPPercentileOperator extends DBSPUnaryOperator {
         }
         return new DBSPPercentileOperator(
                 CalciteEmptyRel.INSTANCE,
-                percentile, continuous, ascending,
+                percentiles, continuous, ascending,
                 valueExtractor, postProcessor,
                 info.outputType(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPPercentileOperator.class);

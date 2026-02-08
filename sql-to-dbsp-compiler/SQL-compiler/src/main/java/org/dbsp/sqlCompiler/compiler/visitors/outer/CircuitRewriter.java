@@ -315,7 +315,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || !outputType.sameType(operator.outputType)
                 || !input.equals(operator.input())) {
             result = new DBSPPercentileOperator(operator.getRelNode(),
-                    operator.percentile, operator.continuous, operator.ascending,
+                    operator.percentiles, operator.continuous, operator.ascending,
                     valueExtractor, postProcessor, outputType, input)
                     .copyAnnotations(operator);
         }

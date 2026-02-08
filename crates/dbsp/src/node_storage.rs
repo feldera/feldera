@@ -969,7 +969,7 @@ pub struct NodeStorage<I, L> {
 ///
 /// Leaves can be either present in memory or evicted to disk.
 /// When evicted, we cache the summary to avoid reloading for checkpoint.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SizeOf)]
 pub enum LeafSlot<L> {
     /// Leaf is present in memory
     Present(L),
@@ -1022,7 +1022,7 @@ impl<L> LeafSlot<L> {
 ///
 /// The first_key is stored as serialized bytes to avoid type parameters
 /// at the struct level. This is reconstructed into `LeafSummary<K>` when needed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SizeOf)]
 pub struct CachedLeafSummary {
     /// Serialized first key (rkyv format), or empty if leaf was empty
     pub first_key_bytes: Vec<u8>,

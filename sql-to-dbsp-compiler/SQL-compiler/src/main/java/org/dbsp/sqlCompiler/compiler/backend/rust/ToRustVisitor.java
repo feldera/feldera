@@ -1238,11 +1238,11 @@ public class ToRustVisitor extends CircuitVisitor {
         this.computeHash(operator);
         this.innerVisitor.setOperatorContext(operator);
         DBSPType streamType = this.streamType(operator);
+        int numPercentiles = operator.percentiles.length;
 
         // Generate: let result: StreamType = input
         //     .map_index(|t| ((*t.0).clone(), value_extractor_body))
-        //     .percentile_cont(hash, percentile, ascending)  // or percentile_disc
-        //     .map_index(|k, v| (k.clone(), post_processor(v)))  // if post_processor exists
+        //     .percentile_cont(hash, &[p1, p2, ...], ascending, |results| TupN(...))
         this.writeComments(operator)
                 .append("let ")
                 .append(operator.getNodeName(this.preferHash))
@@ -1254,13 +1254,10 @@ public class ToRustVisitor extends CircuitVisitor {
                 .increase();
 
         // Generate closure: move |t: (&K, &V)| ((*t.0).clone(), value_extractor_body)
-        // The valueExtractor closure takes (key_ref, value_ref) tuple and extracts order-by value
-        // We need to wrap it in a tuple with the cloned key for map_index
         this.builder.append("move |");
         operator.valueExtractor.parameters[0].accept(this.innerVisitor);
         this.builder.append("| ");
 
-        // Generate tuple: ((*param.0).clone(), body)
         String paramName = operator.valueExtractor.parameters[0].name;
         this.builder.append("(((*")
                 .append(paramName)
@@ -1277,26 +1274,33 @@ public class ToRustVisitor extends CircuitVisitor {
         } else {
             this.builder.append("percentile_disc");
         }
-        this.builder.append("(hash, ")
-                .append(Double.toString(operator.percentile))
-                .append(", ")
-                .append(Boolean.toString(operator.ascending))
-                .append(")");
 
-        // After percentile_cont/disc, add post-processing:
-        // - Flatten Option<Option<T>> to Option<T> if the extracted value was nullable
-        // - Wrap in Tup1 to match SQL aggregate output format
-        // Note: map_index takes a closure with a single tuple argument |(k, v)| not |k, v|
-        DBSPType extractedValueType = operator.valueExtractor.body.getType();
-        this.builder.append(".map_index(|(k, v)| ((*k).clone(), Tup1(");
-        if (extractedValueType.mayBeNull) {
-            // Flatten Option<Option<T>> to Option<T>
-            this.builder.append("(*v).flatten()");
-        } else {
-            // Just clone the Option<T>
-            this.builder.append("(*v).clone()");
+        // Generate: (hash, &[p1, p2, ...], ascending, |results| TupN(...))
+        this.builder.append("(hash, &[");
+        for (int i = 0; i < numPercentiles; i++) {
+            if (i > 0) this.builder.append(", ");
+            this.builder.append(Double.toString(operator.percentiles[i]));
         }
-        this.builder.append(")))");
+        this.builder.append("], ")
+                .append(Boolean.toString(operator.ascending))
+                .append(", ");
+
+        // Generate build_output closure
+        DBSPType extractedValueType = operator.valueExtractor.body.getType();
+        boolean needsFlatten = extractedValueType.mayBeNull;
+
+        this.builder.append("|__results| Tup").append(Integer.toString(numPercentiles)).append("(");
+        for (int i = 0; i < numPercentiles; i++) {
+            if (i > 0) this.builder.append(", ");
+            if (needsFlatten) {
+                this.builder.append("__results[").append(Integer.toString(i)).append("].flatten()");
+            } else {
+                this.builder.append("__results[").append(Integer.toString(i)).append("].clone()");
+            }
+        }
+        this.builder.append(")");
+
+        this.builder.append(")");
 
         // Apply post-processor if exists (for type conversions like integer -> f64)
         if (operator.postProcessor != null) {
