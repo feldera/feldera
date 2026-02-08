@@ -17,8 +17,7 @@ use feldera_types::config::{StorageConfig, StorageOptions};
 
 use storage_test_compat::{
     buffer_cache, golden_aux, golden_row, golden_row_small, storage_base_and_path, GoldenRow,
-    GoldenRowSmall,
-    DEFAULT_ROWS,
+    GoldenRowSmall, DEFAULT_ROWS,
 };
 
 #[derive(Copy, Clone)]

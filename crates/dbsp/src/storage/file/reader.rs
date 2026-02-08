@@ -49,7 +49,7 @@ use std::{
     sync::Arc,
 };
 use thiserror::Error as ThisError;
-use tracing::{info, warn};
+use tracing::info;
 
 mod bulk_rows;
 pub use bulk_rows::BulkRows;
