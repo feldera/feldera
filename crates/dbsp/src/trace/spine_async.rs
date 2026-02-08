@@ -11,7 +11,7 @@ use crate::{
     circuit::{
         metadata::{
             BLOOM_FILTER_BITS_PER_KEY, BLOOM_FILTER_HIT_RATE_PERCENT, BLOOM_FILTER_HITS_COUNT,
-            BLOOM_FILTER_MISSES_COUNT, BLOOM_FILTER_SIZE_BYTES, COMPLETED_MERGES_COUNT,
+            BLOOM_FILTER_MISSES_COUNT, BLOOM_FILTER_SIZE_BYTES, COMPLETED_MERGES,
             LOOSE_BATCHES_COUNT, LOOSE_MEMORY_RECORDS_COUNT, LOOSE_STORAGE_RECORDS_COUNT,
             MERGE_BACKPRESSURE_WAIT_TIME_SECONDS, MERGE_REDUCTION_PERCENT, MERGING_BATCHES_COUNT,
             MERGING_MEMORY_RECORDS_COUNT, MERGING_SIZE_BYTES, MERGING_STORAGE_RECORDS_COUNT,
@@ -568,7 +568,7 @@ where
             }
             if slot.n_merged > 0 {
                 meta.extend([MetricReading::new(
-                    COMPLETED_MERGES_COUNT,
+                    COMPLETED_MERGES,
                     vec![(Cow::Borrowed("slot"), index.to_string().into())],
                     MetaItem::Map(BTreeMap::from([
                         (Cow::Borrowed("merges"), MetaItem::Count(slot.n_merged)),

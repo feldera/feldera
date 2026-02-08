@@ -73,6 +73,7 @@ pub const OUTPUT_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("output_batche
 pub const EXCHANGE_WAIT_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("exchange_wait_time_seconds"));
 pub const KEY_DISTRIBUTION: MetricId = MetricId(Cow::Borrowed("key_distribution"));
+pub const SIZE_DISTRIBUTION: MetricId = MetricId(Cow::Borrowed("size_distribution"));
 pub const LOCAL_SHARD_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("local_shard_records_count"));
 pub const BALANCER_POLICY: MetricId = MetricId(Cow::Borrowed("balancer_policy"));
@@ -98,14 +99,10 @@ pub const COMPUTED_OUTPUT_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("computed_output_records_count"));
 pub const OUTPUT_REDUNDANCY_PERCENT: MetricId =
     MetricId(Cow::Borrowed("output_redundancy_percent"));
-pub const CACHE_FOREGROUND_HITS_COUNT: MetricId =
-    MetricId(Cow::Borrowed("foreground_cache_hits_count"));
-pub const CACHE_FOREGROUND_MISSES_COUNT: MetricId =
-    MetricId(Cow::Borrowed("foreground_cache_misses_count"));
-pub const CACHE_BACKGROUND_HITS_STATS: MetricId =
-    MetricId(Cow::Borrowed("background_cache_hits_stats"));
-pub const CACHE_BACKGROUND_MISSES_STATS: MetricId =
-    MetricId(Cow::Borrowed("background_cache_misses_stats"));
+pub const CACHE_FOREGROUND_HITS: MetricId = MetricId(Cow::Borrowed("foreground_cache_hits"));
+pub const CACHE_FOREGROUND_MISSES: MetricId = MetricId(Cow::Borrowed("foreground_cache_misses"));
+pub const CACHE_BACKGROUND_HITS: MetricId = MetricId(Cow::Borrowed("background_cache_hits"));
+pub const CACHE_BACKGROUND_MISSES: MetricId = MetricId(Cow::Borrowed("background_cache_misses"));
 pub const CACHE_FOREGROUND_HIT_RATE_PERCENT: MetricId =
     MetricId(Cow::Borrowed("foreground_cache_hit_rate_percent"));
 pub const CACHE_BACKGROUND_HIT_RATE_PERCENT: MetricId =
@@ -120,7 +117,7 @@ pub const MERGING_MEMORY_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("merging_memory_records_count"));
 pub const MERGING_STORAGE_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("merging_storage_records_count"));
-pub const COMPLETED_MERGES_COUNT: MetricId = MetricId(Cow::Borrowed("completed_merges_count"));
+pub const COMPLETED_MERGES: MetricId = MetricId(Cow::Borrowed("completed_merges"));
 pub const BLOOM_FILTER_BITS_PER_KEY: MetricId =
     MetricId(Cow::Borrowed("bloom_filter_bits_per_key"));
 pub const BLOOM_FILTER_HITS_COUNT: MetricId = MetricId(Cow::Borrowed("bloom_filter_hits_count"));
@@ -146,15 +143,15 @@ pub const CIRCUIT_IDLE_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("circuit_idle_time_seconds"));
 pub const CIRCUIT_RUNTIME_ELAPSED_SECONDS: MetricId =
     MetricId(Cow::Borrowed("circuit_runtime_elapsed_seconds"));
-pub const FOREGROUND_CACHE_OCCUPANCY_BYTES: MetricId =
-    MetricId(Cow::Borrowed("foreground_cache_occupancy_bytes"));
-pub const BACKGROUND_CACHE_OCCUPANCY_BYTES: MetricId =
-    MetricId(Cow::Borrowed("background_cache_occupancy_bytes"));
+pub const FOREGROUND_CACHE_OCCUPANCY: MetricId =
+    MetricId(Cow::Borrowed("foreground_cache_occupancy"));
+pub const BACKGROUND_CACHE_OCCUPANCY: MetricId =
+    MetricId(Cow::Borrowed("background_cache_occupancy"));
 pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batches_stats"));
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 59] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 61] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -282,6 +279,18 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 59] = [
         advanced: true,
         description: "Bounds used by the garbage collector to discard unused state.",
     },
+    CircuitMetric {
+        name: SIZE_DISTRIBUTION,
+        category: CircuitMetricCategory::State,
+        advanced: true,
+        description: "Distribution of sizes in batches. The metric value is an array of counts, one for each batch in the state.",
+    },
+    CircuitMetric {
+        name: COMPLETED_MERGES,
+        category: CircuitMetricCategory::State,
+        advanced: true,
+        description: "Information about the batches that were compacted (merged).",
+    },
     // Inputs
     CircuitMetric {
         name: INPUT_RECORDS_COUNT,
@@ -321,7 +330,7 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 59] = [
     },
     CircuitMetric {
         name: PREFIX_BATCHES_STATS,
-        category: CircuitMetricCategory::Outputs,
+        category: CircuitMetricCategory::Inputs,
         advanced: false,
         description: "Distribution of prefix batch sizes ingested by a match operator.",
     },
@@ -396,7 +405,7 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 59] = [
     CircuitMetric {
         name: CIRCUIT_RUNTIME_ELAPSED_SECONDS,
         category: CircuitMetricCategory::Time,
-        advanced: false,
+        advanced: true,
         description: "Time elapsed while the circuit is executing a step, multiplied by the number of foreground and background threads.",
     },
     CircuitMetric {
@@ -468,28 +477,28 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 59] = [
     },
     // Cache
     CircuitMetric {
-        name: CACHE_FOREGROUND_HITS_COUNT,
+        name: CACHE_FOREGROUND_HITS,
         category: CircuitMetricCategory::Cache,
         advanced: false,
-        description: "Number of cache hits in the foreground thread.",
+        description: "Statistics about cache hits in the foreground thread.",
     },
     CircuitMetric {
-        name: CACHE_FOREGROUND_MISSES_COUNT,
+        name: CACHE_FOREGROUND_MISSES,
         category: CircuitMetricCategory::Cache,
         advanced: false,
-        description: "Number of cache misses in the foreground thread.",
+        description: "Statistics about cache misses in the foreground thread.",
     },
     CircuitMetric {
-        name: CACHE_BACKGROUND_HITS_STATS,
+        name: CACHE_BACKGROUND_HITS,
         category: CircuitMetricCategory::Cache,
         advanced: false,
-        description: "Number of cache hits in the background thread.",
+        description: "Statistics about cache hits in the background thread.",
     },
     CircuitMetric {
-        name: CACHE_BACKGROUND_MISSES_STATS,
+        name: CACHE_BACKGROUND_MISSES,
         category: CircuitMetricCategory::Cache,
         advanced: false,
-        description: "Number of cache misses in the background thread.",
+        description: "Statistics about cache misses in the background thread.",
     },
     CircuitMetric {
         name: CACHE_FOREGROUND_HIT_RATE_PERCENT,
@@ -504,13 +513,13 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 59] = [
         description: "Cache hit rate for the background thread.",
     },
     CircuitMetric {
-        name: FOREGROUND_CACHE_OCCUPANCY_BYTES,
+        name: FOREGROUND_CACHE_OCCUPANCY,
         category: CircuitMetricCategory::Cache,
         advanced: false,
         description: "Occupancy of the foreground cache.",
     },
     CircuitMetric {
-        name: BACKGROUND_CACHE_OCCUPANCY_BYTES,
+        name: BACKGROUND_CACHE_OCCUPANCY,
         category: CircuitMetricCategory::Cache,
         advanced: false,
         description: "Occupancy of the background cache.",
@@ -566,23 +575,29 @@ impl BatchSizeStats {
     }
 
     pub fn metadata(&self) -> MetaItem {
-        if self.cnt == 0 {
-            MetaItem::Map(BTreeMap::from([(
-                Cow::Borrowed("batches"),
-                MetaItem::Count(0),
-            )]))
-        } else {
-            MetaItem::Map(BTreeMap::from([
-                (Cow::Borrowed("count"), MetaItem::Count(self.cnt)),
-                (Cow::Borrowed("min_size"), MetaItem::Count(self.min)),
-                (Cow::Borrowed("max_size"), MetaItem::Count(self.max)),
-                (
-                    Cow::Borrowed("avg_size"),
-                    MetaItem::Count(self.total / self.cnt),
-                ),
-                (Cow::Borrowed("record_count"), MetaItem::Count(self.total)),
-            ]))
-        }
+        MetaItem::Map(BTreeMap::from([
+            (Cow::Borrowed("batches_count"), MetaItem::Count(self.cnt)),
+            (
+                Cow::Borrowed("min_records_count"),
+                MetaItem::Count(if self.cnt == 0 { 0 } else { self.min }),
+            ),
+            (
+                Cow::Borrowed("max_records_count"),
+                MetaItem::Count(self.max),
+            ),
+            (
+                Cow::Borrowed("avg_records_count"),
+                MetaItem::Count(if self.cnt == 0 {
+                    0
+                } else {
+                    self.total / self.cnt
+                }),
+            ),
+            (
+                Cow::Borrowed("total_records_count"),
+                MetaItem::Count(self.total),
+            ),
+        ]))
     }
 }
 
@@ -625,12 +640,9 @@ impl OperatorMeta {
         }
     }
 
-    // pub fn get(&self, attribute: &str) -> Option<MetaItem> {
-    //     self.entries
-    //         .iter()
-    //         .find(|(label, _item)| label == attribute)
-    //         .map(|(_label, item)| item.clone())
-    // }
+    pub fn get(&self, metric_id: MetricId) -> Option<MetaItem> {
+        self.entries.get(&(metric_id, Vec::new())).cloned()
+    }
 
     pub fn merge(&mut self, other: &Self) {
         for (label, src) in &other.entries {

@@ -113,3 +113,7 @@ The API endpoint `/v0/<pipeline_name>/circuit_profile` can be used to download t
 profile of a running pipeline. It returns a zip file containing multiple profiles (one
 for each worker) as `.dot` files, and a `Makefile` to transform the `.dot` files into
 `.pdf` files.
+
+Alternatively, profile data can be [browsed
+iteractively](/operations/visualizing-profiles.md) using the WEB
+UI.

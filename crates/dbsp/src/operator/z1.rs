@@ -2,7 +2,7 @@
 
 use crate::Runtime;
 use crate::circuit::circuit_builder::StreamId;
-use crate::circuit::metadata::{MEMORY_ALLOCATIONS_COUNT, STATE_RECORDS_COUNT};
+use crate::circuit::metadata::{MEMORY_ALLOCATIONS_COUNT, SIZE_DISTRIBUTION, STATE_RECORDS_COUNT};
 use crate::{
     Error, NumEntries,
     algebra::HasZero,
@@ -491,7 +491,7 @@ where
 
         meta.extend(metadata! {
             STATE_RECORDS_COUNT => MetaItem::Count(total_size),
-            STATE_RECORDS_COUNT => MetaItem::Array(batch_sizes),
+            SIZE_DISTRIBUTION => MetaItem::Array(batch_sizes),
             ALLOCATED_MEMORY_BYTES => MetaItem::bytes(total_bytes.total_bytes()),
             USED_MEMORY_BYTES => MetaItem::bytes(total_bytes.used_bytes()),
             MEMORY_ALLOCATIONS_COUNT => MetaItem::Count(total_bytes.distinct_allocations()),
