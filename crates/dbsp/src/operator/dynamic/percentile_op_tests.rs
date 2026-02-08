@@ -8,7 +8,7 @@ mod tests {
         Runtime,
         algebra::{
             DEFAULT_BRANCHING_FACTOR, F64,
-            OrderStatisticsMultiset,
+            OrderStatisticsZSet,
         },
         indexed_zset,
         node_storage::NodeStorageConfig,
@@ -223,7 +223,7 @@ mod tests {
         // Insert some data into the trees, each with unique segment_path_prefix
         let mut config1 = storage_config.clone();
         config1.segment_path_prefix = "t0_".to_string();
-        let mut tree1 = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config1);
+        let mut tree1 = OrderStatisticsZSet::with_config(DEFAULT_BRANCHING_FACTOR, config1);
         tree1.insert(F64::new(10.0), 1);
         tree1.insert(F64::new(20.0), 1);
         tree1.insert(F64::new(30.0), 1);
@@ -232,7 +232,7 @@ mod tests {
 
         let mut config2 = storage_config.clone();
         config2.segment_path_prefix = "t1_".to_string();
-        let mut tree2 = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config2);
+        let mut tree2 = OrderStatisticsZSet::with_config(DEFAULT_BRANCHING_FACTOR, config2);
         tree2.insert(F64::new(100.0), 1);
         tree2.insert(F64::new(200.0), 1);
         op1.trees.insert(2, tree2);
@@ -358,7 +358,7 @@ mod tests {
         // Insert data into trees directly
         let mut config1 = storage_config.clone();
         config1.segment_path_prefix = "t0_".to_string();
-        let mut tree1 = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config1);
+        let mut tree1 = OrderStatisticsZSet::with_config(DEFAULT_BRANCHING_FACTOR, config1);
         for i in 0..200 {
             tree1.insert(F64::new(i as f64), 1);
         }

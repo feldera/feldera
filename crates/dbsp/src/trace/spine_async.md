@@ -1,6 +1,6 @@
 # Spine Async: Persistence and Spill-to-Disk Architecture
 
-This document describes the persistence and spill-to-disk behavior of the `Spine` data structure in DBSP, intended as a reference for implementing similar capabilities in other data structures like `OrderStatisticsMultiset`.
+This document describes the persistence and spill-to-disk behavior of the `Spine` data structure in DBSP, intended as a reference for implementing similar capabilities in other data structures like `OrderStatisticsZSet`.
 
 ## Overview
 
@@ -382,9 +382,9 @@ pub trait Batch: BatchReader {
 
 ## Design Patterns for New Data Structures
 
-### Applying to OrderStatisticsMultiset
+### Applying to OrderStatisticsZSet
 
-The OrderStatisticsMultiset B+ tree can adopt similar patterns:
+The OrderStatisticsZSet B+ tree can adopt similar patterns:
 
 #### 1. Two-Tier Node Storage
 
@@ -409,7 +409,7 @@ Unlike batches where the entire thing is memory or disk, B+ trees can have:
 - **Cold nodes**: Rarely accessed leaves (loaded on demand)
 
 ```rust
-struct OrderStatisticsMultiset<T> {
+struct OrderStatisticsZSet<T> {
     // Always in memory: root and top k levels
     hot_nodes: Vec<InternalNode<T>>,
 
@@ -486,7 +486,7 @@ fn persist_node(&mut self, node_idx: usize) -> u64 {
 During bulk loading or heavy updates:
 
 ```rust
-impl OrderStatisticsMultiset<T> {
+impl OrderStatisticsZSet<T> {
     fn insert(&mut self, key: T, weight: ZWeight) {
         // Normal insert logic...
 
@@ -555,7 +555,7 @@ struct SerializedInternal<T> {
 // [Leaf 0] [Leaf 1] ... [Leaf N] [Internal 0] ... [Internal M] [Root] [Trailer]
 ```
 
-## Key Takeaways for OrderStatisticsMultiset
+## Key Takeaways for OrderStatisticsZSet
 
 1. **Start Simple**: Begin with in-memory-only, add disk spilling as optimization
 2. **Use Existing Infrastructure**: Leverage `BufferCache`, `Runtime` thresholds, `StorageBackend`
@@ -572,4 +572,4 @@ struct SerializedInternal<T> {
 - `crates/dbsp/src/storage/buffer_cache/`: LRU block cache
 - `crates/dbsp/src/storage/file/reader.rs`: File format reading
 - `crates/dbsp/src/storage/file/writer.rs`: File format writing
-- `crates/dbsp/src/algebra/order_statistics_multiset.rs`: Target for spill-to-disk
+- `crates/dbsp/src/algebra/order_statistics_zset.rs`: Target for spill-to-disk

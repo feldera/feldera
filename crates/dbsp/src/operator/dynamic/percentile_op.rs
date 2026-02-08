@@ -1,7 +1,7 @@
 //! Stateful percentile operator with incremental updates.
 //!
 //! This module provides a dedicated `PercentileOperator` that maintains
-//! `OrderStatisticsMultiset` state per key across steps, enabling O(log n)
+//! `OrderStatisticsZSet` state per key across steps, enabling O(log n)
 //! incremental updates instead of re-scanning the entire input trace each step.
 //!
 //! # Architecture
@@ -9,7 +9,7 @@
 //! Unlike the aggregate-based percentile implementation which re-scans the entire
 //! input each step, this operator:
 //!
-//! 1. Maintains per-key `OrderStatisticsMultiset` state across steps
+//! 1. Maintains per-key `OrderStatisticsZSet` state across steps
 //! 2. Applies delta changes incrementally (O(log n) per change)
 //! 3. Supports checkpoint/restore for fault tolerance
 //! 4. Uses spill-to-disk for large trees via `NodeStorage`
@@ -35,7 +35,7 @@ use crate::{
     Circuit, DBData, Error, Runtime, Stream, ZWeight,
     algebra::{
         AddAssignByRef, DEFAULT_BRANCHING_FACTOR, F32, F64, HasOne, HasZero,
-        OrderStatisticsMultiset,
+        OrderStatisticsZSet,
     },
     circuit::{
         GlobalNodeId, OwnershipPreference, Scope,
@@ -183,7 +183,7 @@ where
 
 /// A stateful operator that computes percentiles incrementally.
 ///
-/// This operator maintains `OrderStatisticsMultiset` state per key across steps,
+/// This operator maintains `OrderStatisticsZSet` state per key across steps,
 /// enabling O(log n) incremental updates instead of O(n) per-step rescanning.
 ///
 /// # Type Parameters
@@ -206,7 +206,7 @@ where
     V: DBData,
 {
     /// Per-key order statistics trees
-    trees: BTreeMap<K, OrderStatisticsMultiset<V>>,
+    trees: BTreeMap<K, OrderStatisticsZSet<V>>,
 
     /// Per-key tree IDs for checkpoint file naming.
     /// Maps each key to a unique tree_id used to derive persistent_id
@@ -447,7 +447,7 @@ where
 
             // OSM::restore delegates to NodeStorage::restore which reads its own metadata.
             // Bug B fix: NodeStorage restores segment_path_prefix from its saved state.
-            let tree = OrderStatisticsMultiset::restore(base, &tree_pid, branching_factor, config)?;
+            let tree = OrderStatisticsZSet::restore(base, &tree_pid, branching_factor, config)?;
             self.trees.insert(key.clone(), tree);
             self.tree_ids.insert(key, tree_id);
         }
@@ -528,7 +528,7 @@ where
                 config.segment_path_prefix = format!("t{}_", tree_id);
                 *next_tree_id += 1;
                 tree_ids.insert(key.clone(), tree_id);
-                OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config)
+                OrderStatisticsZSet::with_config(DEFAULT_BRANCHING_FACTOR, config)
             });
 
             // Process all values for this key
@@ -656,7 +656,7 @@ where
                 config.segment_path_prefix = format!("t{}_", tree_id);
                 *next_tree_id += 1;
                 tree_ids.insert(key.clone(), tree_id);
-                OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config)
+                OrderStatisticsZSet::with_config(DEFAULT_BRANCHING_FACTOR, config)
             });
 
             // Process all values for this key
@@ -764,7 +764,7 @@ where
     /// Compute PERCENTILE_CONT incrementally with persistent state.
     ///
     /// Unlike the aggregate-based percentile, this operator maintains
-    /// `OrderStatisticsMultiset` state per key across steps for O(log n)
+    /// `OrderStatisticsZSet` state per key across steps for O(log n)
     /// incremental updates instead of O(n) per-step rescanning.
     ///
     /// # SQL Standard
@@ -829,7 +829,7 @@ where
     /// Compute PERCENTILE_DISC incrementally with persistent state.
     ///
     /// Unlike the aggregate-based percentile, this operator maintains
-    /// `OrderStatisticsMultiset` state per key across steps for O(log n)
+    /// `OrderStatisticsZSet` state per key across steps for O(log n)
     /// incremental updates.
     ///
     /// # SQL Standard

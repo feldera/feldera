@@ -4345,7 +4345,7 @@ DBSP is based on a formal theoretical foundation that provides:
 
 #### **`algebra/`**
 Mathematical foundations and algebraic structures underlying DBSP's incremental computation model. Contains abstract algebraic concepts including monoids, groups, rings, and lattices that provide the theoretical basis for change propagation and differential computation. The `zset/` subdirectory implements Z-sets (collections with multiplicities) which are fundamental to representing insertions and deletions in incremental computation. Includes specialized number types (`checked_int.rs`, `floats.rs`) and ordering abstractions (`order.rs`, `lattice.rs`) essential for maintaining mathematical correctness in streaming operations.
-Also contains `OrderStatisticsMultiset` (`order_statistics_multiset.rs`) - an augmented B+ tree for O(log n) rank/select queries used by percentile aggregates (see `order_statistics_multiset.md` for design details).
+Also contains `OrderStatisticsZSet` (`order_statistics_zset.rs`) - an augmented B+ tree for O(log n) rank/select queries used by percentile aggregates (see `order_statistics_zset.md` for design details).
 
 #### **`circuit/`**
 Core circuit infrastructure providing the runtime execution engine for DBSP computations. Contains circuit construction (`circuit_builder.rs`), execution control (`runtime.rs`), and scheduling (`schedule/`) components. The `dbsp_handle.rs` provides the main API for multi-worker circuit execution, while `checkpointer.rs` handles state persistence for fault tolerance. Includes performance monitoring (`metrics.rs`), circuit introspection (`trace.rs`), and integration with async runtimes (`tokio.rs`). The scheduler supports dynamic work distribution with NUMA-aware thread management.
@@ -4539,8 +4539,8 @@ circuit.recursive(|child| {
 - **Shard**: Partitioning data for parallel processing
 
 **Order Statistics** (`algebra/order_statistics/`):
-- **OrderStatisticsMultiset**: Augmented B+ tree for O(log n) update/rank/select queries used by percentile aggregates
-- See design docs: `order_statistics_multiset.md`, `order_statistics_sql_functions.md`, `order_statistics_bulk_load_plan.md`, `order_statistics_node_storage_plan.md`, `order_statistics_storage_vs_spine.md`
+- **OrderStatisticsZSet**: Augmented B+ tree for O(log n) update/rank/select queries used by percentile aggregates
+- See design docs: `order_statistics_zset.md`, `order_statistics_sql_functions.md`, `order_statistics_bulk_load_plan.md`, `order_statistics_node_storage_plan.md`, `order_statistics_storage_vs_spine.md`
 
 ### **Dynamic vs Static APIs**
 
@@ -4602,7 +4602,7 @@ FileBatch {
 ```
 
 #### **NodeStorage** (`node_storage.rs`)
-Generic spillable storage abstraction for tree-based data structures (e.g., `OrderStatisticsMultiset`). Enables nodes to spill to disk when memory is constrained. See `node_storage.md` for design details, `node_storage_applications.md` for potential uses.
+Generic spillable storage abstraction for tree-based data structures (e.g., `OrderStatisticsZSet`). Enables nodes to spill to disk when memory is constrained. See `node_storage.md` for design details, `node_storage_applications.md` for potential uses.
 
 ## Performance Architecture
 
@@ -4923,7 +4923,7 @@ The `group/` subdirectory contains operators for per-key grouping operations:
 - **Lag operations**: Window lookback within groups
 - **Custom ordering**: User-defined comparison functions
 
-These operators use `OrderStatisticsMultiset` for O(log n) rank operations, enabling efficient SQL window functions like `ROW_NUMBER()`, `RANK()`, and `PERCENTILE_CONT()`.
+These operators use `OrderStatisticsZSet` for O(log n) rank operations, enabling efficient SQL window functions like `ROW_NUMBER()`, `RANK()`, and `PERCENTILE_CONT()`.
 
 ## Key Design Principles
 
@@ -5025,7 +5025,7 @@ Dynamic operator implementations providing runtime-flexible streaming computatio
 |----------|---------|------------|
 | `percentile_op.rs` | PERCENTILE_CONT/DISC computation | **select k-th** |
 
-Uses `OrderStatisticsMultiset` (augmented B+ tree with subtree weight sums) for O(log n) select queries. This is the **only** operator requiring position-based data structure support—all others use key-based lookups, sequential scans, or accumulators.
+Uses `OrderStatisticsZSet` (augmented B+ tree with subtree weight sums) for O(log n) select queries. This is the **only** operator requiring position-based data structure support—all others use key-based lookups, sequential scans, or accumulators.
 
 ## Query Types
 
@@ -5040,7 +5040,7 @@ Operators access data using different query patterns, which determines their per
 | **range query** | Queries over contiguous key/time ranges using tree structures | O(log n) per range |
 | **select k-th** | Finds element at arbitrary position k in weighted multiset | O(log n) per query |
 
-Most operators use **key lookup** or **cursor scan** patterns that work efficiently with standard sorted traces. Only `percentile_op.rs` requires **select k-th**, necessitating an augmented B+ tree (`OrderStatisticsMultiset`) with subtree weight sums.
+Most operators use **key lookup** or **cursor scan** patterns that work efficiently with standard sorted traces. Only `percentile_op.rs` requires **select k-th**, necessitating an augmented B+ tree (`OrderStatisticsZSet`) with subtree weight sums.
 
 ## Operator Overview
 
@@ -5140,7 +5140,7 @@ Most operators use **key lookup** or **cursor scan** patterns that work efficien
 
 ### Order Statistics Operator
 
-**`percentile_op.rs`** - Implements PERCENTILE_CONT and PERCENTILE_DISC SQL functions with O(log n) incremental updates. Maintains per-key `OrderStatisticsMultiset` (augmented B+ tree) state that supports O(log n) select queries ("what's the k-th element?"). This is the **only** DBSP operator requiring true O(log n) position-based data structure support — all other operators use key-based lookups, sequential iteration, or accumulation patterns.
+**`percentile_op.rs`** - Implements PERCENTILE_CONT and PERCENTILE_DISC SQL functions with O(log n) incremental updates. Maintains per-key `OrderStatisticsZSet` (augmented B+ tree) state that supports O(log n) select queries ("what's the k-th element?"). This is the **only** DBSP operator requiring true O(log n) position-based data structure support — all other operators use key-based lookups, sequential iteration, or accumulation patterns.
 <!-- SECTION:crates/dbsp/src/operator/dynamic/CLAUDE.md END -->
 
 ---

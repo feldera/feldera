@@ -1,13 +1,13 @@
-# SQL Functions Enabled by OrderStatisticsMultiset
+# SQL Functions Enabled by OrderStatisticsZSet
 
 ## Abstract
 
-OrderStatisticsMultiset enables efficient incremental computation for **distribution and positional SQL functions** - a family of aggregate and window functions that require:
+OrderStatisticsZSet enables efficient incremental computation for **distribution and positional SQL functions** - a family of aggregate and window functions that require:
 
 1. **Select-by-position**: Find the element at cumulative position k (e.g., "what value is at the 50th percentile?")
 2. **Rank queries**: Find the cumulative position of a given value (e.g., "what percentile is value X at?")
 
-These operations are mathematically dual: select maps position → value, while rank maps value → position. Traditional implementations require O(n) linear scans; OrderStatisticsMultiset provides O(log n) for both operations through subtree weight augmentation in a B+ tree structure.
+These operations are mathematically dual: select maps position → value, while rank maps value → position. Traditional implementations require O(n) linear scans; OrderStatisticsZSet provides O(log n) for both operations through subtree weight augmentation in a B+ tree structure.
 
 ### Implementation Tiers
 
@@ -45,7 +45,7 @@ This section categorizes functions by how they can be efficiently implemented, f
 
 ### Tier 1: Direct Percentile Operator (O(log n))
 
-These functions map directly to OrderStatisticsMultiset operations with **single-value output**:
+These functions map directly to OrderStatisticsZSet operations with **single-value output**:
 
 | Function | Implementation | Why O(log n) |
 |----------|----------------|--------------|
@@ -234,7 +234,7 @@ Is output a single value?
 | 3 | PERCENT_RANK, CUME_DIST, NTILE | O(n) | O(n) | Output size dominates |
 | 4 | MAD | O(n log n) | O(n log n) | Requires second tree |
 
-## Functions That Benefit from OrderStatisticsMultiset
+## Functions That Benefit from OrderStatisticsZSet
 
 ### PERCENTILE_CONT(fraction) ✅ Implemented
 
@@ -248,11 +248,11 @@ SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY salary) AS median_salary
 FROM employees;
 ```
 
-**Why OrderStatisticsMultiset**:
+**Why OrderStatisticsZSet**:
 - Requires `select(position)` to find bounding values for interpolation
 - Position = fraction × (total_weight - 1)
 - Without augmentation: O(n) scan to find position
-- With OrderStatisticsMultiset: O(log n) via `select_percentile_bounds()`
+- With OrderStatisticsZSet: O(log n) via `select_percentile_bounds()`
 
 **Incremental benefit**: When employees are added/removed, only O(log n) tree updates needed; percentile query remains O(log n).
 
@@ -270,7 +270,7 @@ SELECT PERCENTILE_DISC(0.75) WITHIN GROUP (ORDER BY response_time) AS p75_latenc
 FROM requests;
 ```
 
-**Why OrderStatisticsMultiset**:
+**Why OrderStatisticsZSet**:
 - Requires `select(ceil(fraction × total_weight) - 1)` for discrete selection
 - Same positional access pattern as PERCENTILE_CONT
 - O(log n) via `select_percentile_disc()`
@@ -288,7 +288,7 @@ FROM requests;
 SELECT MEDIAN(price) FROM products;
 ```
 
-**Why OrderStatisticsMultiset**: Same as PERCENTILE_CONT with fraction=0.5.
+**Why OrderStatisticsZSet**: Same as PERCENTILE_CONT with fraction=0.5.
 
 ---
 
@@ -305,7 +305,7 @@ SELECT customer_id, revenue,
 FROM customers;
 ```
 
-**Why OrderStatisticsMultiset**:
+**Why OrderStatisticsZSet**:
 - Bucket boundaries at positions: `total_weight × i / n` for i in 1..n
 - For each row, need to determine which bucket it falls into
 - Requires: `rank(value)` to find row's position, then `position × n / total_weight` for bucket
@@ -394,7 +394,7 @@ SELECT student_id, score,
 FROM exam_results;
 ```
 
-**Why OrderStatisticsMultiset**:
+**Why OrderStatisticsZSet**:
 - Requires `rank(value)` to find position of current value
 - Requires `total_weight()` for count (O(1) cached)
 - Formula: `(rank(value)) / (total_weight - 1)`
@@ -425,7 +425,7 @@ SELECT product_id, sales,
 FROM products;
 ```
 
-**Why OrderStatisticsMultiset**:
+**Why OrderStatisticsZSet**:
 - Requires `rank(value) + weight(value)` for count of rows ≤ value
 - Requires `total_weight()` for total count
 - Formula: `(rank(value) + weight(value)) / total_weight`
@@ -457,12 +457,12 @@ SELECT date, price,
 FROM stock_prices;
 ```
 
-**Why OrderStatisticsMultiset**:
+**Why OrderStatisticsZSet**:
 - Requires `select(n - 1)` for 1-based indexing
 - Direct positional access without scanning
 - O(log n) via existing `select_kth()` operation
 
-**Note**: NTH_VALUE is typically used as a window function with frame bounds. OrderStatisticsMultiset benefits the case where the frame is the entire partition.
+**Note**: NTH_VALUE is typically used as a window function with frame bounds. OrderStatisticsZSet benefits the case where the frame is the entire partition.
 
 ---
 
@@ -480,7 +480,7 @@ FROM employees
 GROUP BY department;
 ```
 
-**Why OrderStatisticsMultiset**:
+**Why OrderStatisticsZSet**:
 - Direct mapping to existing `select_kth(k - 1)` for 1-based indexing
 - For largest: `select_kth_desc(k - 1)` or `select_kth(total_weight - k)`
 - **O(log n)** - this is the primary operation the data structure is designed for
@@ -516,7 +516,7 @@ FROM employees;
 -- Returns 0.82 meaning 82% of salaries are <= 75000
 ```
 
-**Why OrderStatisticsMultiset**:
+**Why OrderStatisticsZSet**:
 - Direct mapping to existing `rank(value)` operation
 - Formula: `(rank(value) + weight(value)) / total_weight`
 - **O(log n)** - the dual operation to select-by-position
@@ -556,7 +556,7 @@ FROM employees;
 
 **Analysis**:
 
-OrderStatisticsMultiset provides **partial benefit**:
+OrderStatisticsZSet provides **partial benefit**:
 
 | Step | Operation | Complexity | Notes |
 |------|-----------|------------|-------|
@@ -565,7 +565,7 @@ OrderStatisticsMultiset provides **partial benefit**:
 | 3. Sum values in range | **Not supported** | O(k) | ❌ Must iterate |
 | 4. Compute mean | Division | O(1) | ✅ Trivial |
 
-**The limitation**: OrderStatisticsMultiset tracks **weight sums** (counts) per subtree, not **value sums**. Computing the sum of values between two positions requires iterating through those values.
+**The limitation**: OrderStatisticsZSet tracks **weight sums** (counts) per subtree, not **value sums**. Computing the sum of values between two positions requires iterating through those values.
 
 **Possible enhancement**: Add `subtree_value_sum` augmentation alongside `subtree_weight_sum`:
 
@@ -648,13 +648,13 @@ Same enhancement (subtree value sums) would make this O(log n).
 
 **Current implementation**: `topk.rs` with specialized TopK operator
 
-**Why not OrderStatisticsMultiset**:
+**Why not OrderStatisticsZSet**:
 - These are typically used with `WHERE rank <= k` (top-k pattern)
 - TopK operator only materializes k elements, not full order statistics
-- OrderStatisticsMultiset would be overkill - maintains full tree when only top-k needed
+- OrderStatisticsZSet would be overkill - maintains full tree when only top-k needed
 - TopK is O(n log k) for n insertions, keeping only k elements
 
-**When OrderStatisticsMultiset would help**: If you need the rank of *every* row (not just top-k), OrderStatisticsMultiset provides O(log n) per row. The current TopK approach doesn't support this efficiently.
+**When OrderStatisticsZSet would help**: If you need the rank of *every* row (not just top-k), OrderStatisticsZSet provides O(log n) per row. The current TopK approach doesn't support this efficiently.
 
 ---
 
@@ -662,10 +662,10 @@ Same enhancement (subtree value sums) would make this O(log n).
 
 **Semantics**: Returns the most frequently occurring value.
 
-**Why not OrderStatisticsMultiset**:
+**Why not OrderStatisticsZSet**:
 - MODE is frequency-based, not position-based
 - Requires tracking "which value has highest weight" - a max-heap problem
-- OrderStatisticsMultiset tracks cumulative positions, not maximum weights
+- OrderStatisticsZSet tracks cumulative positions, not maximum weights
 - Better structure: heap or frequency-indexed tree
 
 ---
@@ -702,7 +702,7 @@ Original values: [1, 2, 3, 10, 100]  →  median = 3
 Deviations:      [2, 1, 0, 7, 97]    →  completely different order
 ```
 
-**Conclusion**: OrderStatisticsMultiset cannot help with MAD. The algorithm inherently requires:
+**Conclusion**: OrderStatisticsZSet cannot help with MAD. The algorithm inherently requires:
 1. O(log n) to find median
 2. O(n) to compute all deviations
 3. O(n log n) to sort/structure deviations (or O(n) with linear-time median)
@@ -720,10 +720,10 @@ Deviations:      [2, 1, 0, 7, 97]    →  completely different order
 
 **Semantics**: First/last value in ordered window frame.
 
-**Why not OrderStatisticsMultiset**:
+**Why not OrderStatisticsZSet**:
 - Just need min/max, not arbitrary position
 - Any sorted structure (BTreeMap, sorted vec) provides O(log n) or O(1) access
-- OrderStatisticsMultiset's augmentation provides no benefit for min/max
+- OrderStatisticsZSet's augmentation provides no benefit for min/max
 
 ---
 
@@ -731,7 +731,7 @@ Deviations:      [2, 1, 0, 7, 97]    →  completely different order
 
 **Semantics**: Access value at fixed row offset from current row.
 
-**Why not OrderStatisticsMultiset**:
+**Why not OrderStatisticsZSet**:
 - Offset-based access relative to current row position
 - Requires row iteration context, not absolute position queries
 - Typically implemented as streaming operators with bounded buffers
@@ -742,7 +742,7 @@ Deviations:      [2, 1, 0, 7, 97]    →  completely different order
 
 **Semantics**: Standard aggregate functions.
 
-**Why not OrderStatisticsMultiset**:
+**Why not OrderStatisticsZSet**:
 - No positional queries needed
 - Simple accumulators suffice
 - O(1) incremental updates with basic semigroup operations
@@ -771,7 +771,7 @@ Deviations:      [2, 1, 0, 7, 97]    →  completely different order
 
 1. **Full benefit** (✅): O(log n) query complexity, single value output
    - PERCENTILE_CONT/DISC, KTH_SMALLEST/LARGEST, NTH_VALUE, CDF
-   - These are the "sweet spot" for OrderStatisticsMultiset
+   - These are the "sweet spot" for OrderStatisticsZSet
 
 2. **Per-row output** (⚠️): O(log n) per query, but O(n) to compute all rows
    - NTILE, PERCENT_RANK, CUME_DIST
@@ -846,5 +846,5 @@ Based on SQL usage patterns, incremental benefit, and implementation complexity:
 - SQL:2016 Standard - Part 2: Foundation, Section 10.9 (Aggregate functions)
 - SQL:2003 Standard - Window function specifications
 - PostgreSQL documentation on window functions
-- `order_statistics_multiset.md` - Implementation details
-- `order_statistics_multiset.rs` - Source implementation
+- `order_statistics_zset.md` - Implementation details
+- `order_statistics_zset.rs` - Source implementation

@@ -443,4 +443,112 @@ public class IncrementalPercentileTests extends SqlIoTest {
                  1   |        | -1
                  1   | 100    | 1""");
     }
+
+    /** Test mixing PERCENTILE_CONT with regular aggregates (COUNT, AVG) in the same GROUP BY. */
+    @Test
+    public void testMixedPercentileAndRegularAggregates() {
+        var ccs = this.getCCS("""
+                CREATE TABLE mixed_data(grp INT NOT NULL, val DOUBLE NOT NULL);
+                CREATE VIEW v AS SELECT grp, COUNT(*) AS cnt,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY val) AS median,
+                    AVG(val) AS avg_val
+                FROM mixed_data GROUP BY grp""");
+
+        // Step 1: Insert group 1 with 4 values
+        // grp1=[10,20,30,40] -> cnt=4, median=25, avg=25
+        ccs.step("""
+                INSERT INTO mixed_data VALUES (1, 10.0), (1, 20.0), (1, 30.0), (1, 40.0)""", """
+                 grp | cnt | median | avg_val | weight
+                ----------------------------------------
+                 1   | 4   | 25     | 25      | 1""");
+
+        // Step 2: Add group 2
+        // grp2=[100,200] -> cnt=2, median=150, avg=150
+        ccs.step("""
+                INSERT INTO mixed_data VALUES (2, 100.0), (2, 200.0)""", """
+                 grp | cnt | median | avg_val | weight
+                ----------------------------------------
+                 2   | 2   | 150    | 150     | 1""");
+
+        // Step 3: Add value to group 1 (median and avg change)
+        // grp1=[10,20,30,40,50] -> cnt=5, median=30, avg=30
+        ccs.step("""
+                INSERT INTO mixed_data VALUES (1, 50.0)""", """
+                 grp | cnt | median | avg_val | weight
+                ----------------------------------------
+                 1   | 4   | 25     | 25      | -1
+                 1   | 5   | 30     | 30      | 1""");
+    }
+
+    /** Test the user's original query pattern: salary_month, COUNT(*), PERCENTILE_CONT, AVG. */
+    @Test
+    public void testMixedPercentileSalaryQuery() {
+        var ccs = this.getCCS("""
+                CREATE TABLE worker_salary(
+                    salary_month INT NOT NULL,
+                    salary_amount DOUBLE NOT NULL
+                );
+                CREATE VIEW salary_stats AS SELECT
+                    salary_month,
+                    COUNT(*) AS workers_count,
+                    PERCENTILE_CONT(0.10) WITHIN GROUP (ORDER BY salary_amount) AS p10_salary,
+                    AVG(salary_amount) AS avg_salary_amount
+                FROM worker_salary GROUP BY salary_month""");
+
+        // Step 1: January data
+        ccs.step("""
+                INSERT INTO worker_salary VALUES
+                    (1, 3000.0), (1, 4000.0), (1, 5000.0), (1, 6000.0), (1, 7000.0)""", """
+                 salary_month | workers_count | p10_salary | avg_salary_amount | weight
+                -------------------------------------------------------------------------
+                 1            | 5             | 3400       | 5000              | 1""");
+    }
+
+    /** Test with percentile aggregate listed FIRST to exercise the field permutation path. */
+    @Test
+    public void testMixedPercentileFirstOrdering() {
+        var ccs = this.getCCS("""
+                CREATE TABLE pf_data(grp INT NOT NULL, val DOUBLE NOT NULL);
+                CREATE VIEW v_pf AS SELECT grp,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY val) AS median,
+                    COUNT(*) AS cnt,
+                    AVG(val) AS avg_val
+                FROM pf_data GROUP BY grp""");
+
+        // grp1=[10,20,30] -> median=20, cnt=3, avg=20
+        ccs.step("""
+                INSERT INTO pf_data VALUES (1, 10.0), (1, 20.0), (1, 30.0)""", """
+                 grp | median | cnt | avg_val | weight
+                -----------------------------------------
+                 1   | 20     | 3   | 20      | 1""");
+
+        // grp1=[10,20,30,40] -> median=25, cnt=4, avg=25
+        ccs.step("""
+                INSERT INTO pf_data VALUES (1, 40.0)""", """
+                 grp | median | cnt | avg_val | weight
+                -----------------------------------------
+                 1   | 20     | 3   | 20      | -1
+                 1   | 25     | 4   | 25      | 1""");
+    }
+
+    /** Test with multiple percentile aggregates mixed with multiple regular aggregates. */
+    @Test
+    public void testMixedMultiplePercentileAndRegular() {
+        var ccs = this.getCCS("""
+                CREATE TABLE mm_data(grp INT NOT NULL, val DOUBLE NOT NULL);
+                CREATE VIEW v_mm AS SELECT grp,
+                    COUNT(*) AS cnt,
+                    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY val) AS p25,
+                    SUM(val) AS total,
+                    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY val) AS p75,
+                    AVG(val) AS avg_val
+                FROM mm_data GROUP BY grp""");
+
+        // grp1=[0,10,20,30,40] -> cnt=5, p25=10, total=100, p75=30, avg=20
+        ccs.step("""
+                INSERT INTO mm_data VALUES (1, 0.0), (1, 10.0), (1, 20.0), (1, 30.0), (1, 40.0)""", """
+                 grp | cnt | p25 | total | p75 | avg_val | weight
+                ---------------------------------------------------
+                 1   | 5   | 10  | 100   | 30  | 20      | 1""");
+    }
 }

@@ -4,13 +4,13 @@ Stateful operator for computing SQL `PERCENTILE_CONT` and `PERCENTILE_DISC` incr
 
 ## Overview
 
-The `PercentileOperator` maintains per-key `OrderStatisticsMultiset` state across steps, enabling O(log n) incremental updates instead of O(n) per-step rescanning used by the generic aggregate approach.
+The `PercentileOperator` maintains per-key `OrderStatisticsZSet` state across steps, enabling O(log n) incremental updates instead of O(n) per-step rescanning used by the generic aggregate approach.
 
 ## Architecture
 
 ```
 PercentileOperator<K, V, Mode>
-├── trees: BTreeMap<K, OrderStatisticsMultiset<V>>  // Per-key state
+├── trees: BTreeMap<K, OrderStatisticsZSet<V>>  // Per-key state
 ├── tree_ids: BTreeMap<K, u64>                       // Unique IDs per tree for checkpoint naming
 ├── prev_output: BTreeMap<K, Option<V>>              // Previous outputs for delta computation
 │                                                     // Keys persist even after tree cleanup
@@ -123,7 +123,7 @@ The operator implements checkpoint/restore for fault tolerance.
 
 ### Checkpoint
 
-1. Each per-key tree's `OrderStatisticsMultiset` writes its own metadata file and registers segment files via `tree.save(base, tree_pid, files)`. This follows the Spine pattern where the storage layer manages its own persistence.
+1. Each per-key tree's `OrderStatisticsZSet` writes its own metadata file and registers segment files via `tree.save(base, tree_pid, files)`. This follows the Spine pattern where the storage layer manages its own persistence.
 2. Operator-level metadata (`CommittedPercentileOperator`) is written separately:
    - `tree_ids`: `Vec<(K, u64)>` — which trees exist and their IDs
    - `prev_output`: `Vec<(K, Option<V>)>` — previous output values
@@ -134,7 +134,7 @@ The operator implements checkpoint/restore for fault tolerance.
 
 1. Reads `CommittedPercentileOperator` metadata file
 2. Restores `next_tree_id` to prevent ID collisions
-3. For each `(key, tree_id)`, calls `OrderStatisticsMultiset::restore()` which reads its own NodeStorage metadata and rebuilds internal nodes from leaf summaries
+3. For each `(key, tree_id)`, calls `OrderStatisticsZSet::restore()` which reads its own NodeStorage metadata and rebuilds internal nodes from leaf summaries
 4. Restores `prev_output` for correct delta computation on next step
 
 Complexity is O(num_leaves) per tree, not O(num_entries) — internal nodes are rebuilt from leaf summaries without reading leaf data.
@@ -142,7 +142,7 @@ Complexity is O(num_leaves) per tree, not O(num_entries) — internal nodes are 
 ### Checkpoint file naming
 
 - Operator metadata: `{base}/percentile-{persistent_id}.dat`
-- Per-tree metadata: delegated to `OrderStatisticsMultiset::save()` with `persistent_id = "{op_persistent_id}_t{tree_id}"`
+- Per-tree metadata: delegated to `OrderStatisticsZSet::save()` with `persistent_id = "{op_persistent_id}_t{tree_id}"`
 - Segment files use prefix `t{tree_id}_` to prevent collisions across trees sharing the same StorageBackend namespace
 
 ## Limitations
@@ -170,5 +170,5 @@ The SQL compiler generates code using `DBSPPercentileOperator`, which calls the 
 
 ## Related Documentation
 
-- `algebra/order_statistics/order_statistics_multiset.md` - Augmented B+ tree design
+- `algebra/order_statistics/order_statistics_zset.md` - Augmented B+ tree design
 - `node_storage.md` - Spill-to-disk storage abstraction

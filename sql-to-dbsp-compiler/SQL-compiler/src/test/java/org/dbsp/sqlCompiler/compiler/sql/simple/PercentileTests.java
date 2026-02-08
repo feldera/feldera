@@ -550,4 +550,59 @@ public class PercentileTests extends SqlIoTest {
                 ) t;
                 """);
     }
+
+    // ---- Mixed percentile + regular aggregates ----
+
+    @Test
+    public void testMixedPercentileAndRegularAggregates() {
+        var ccs = this.getCCS("""
+                CREATE TABLE mixed_agg (
+                    grp INT,
+                    val DOUBLE
+                );
+
+                CREATE VIEW v_mixed_agg AS SELECT
+                    grp,
+                    COUNT(*) AS cnt,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY val) AS median,
+                    AVG(val) AS avg_val
+                FROM mixed_agg
+                GROUP BY grp;
+                """);
+
+        ccs.step("""
+                INSERT INTO mixed_agg VALUES
+                    (1, 10.0), (1, 20.0), (1, 30.0), (1, 40.0),
+                    (2, 100.0), (2, 200.0);
+                """, """
+                 grp | cnt | median | avg_val | weight
+                ----------------------------------------
+                 1   | 4   | 25     | 25      | 1
+                 2   | 2   | 150    | 150     | 1""");
+    }
+
+    @Test
+    public void testMixedPercentileFirstOrdering() {
+        var ccs = this.getCCS("""
+                CREATE TABLE mixed_order (
+                    grp INT,
+                    val DOUBLE
+                );
+
+                CREATE VIEW v_mixed_order AS SELECT
+                    grp,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY val) AS median,
+                    COUNT(*) AS cnt
+                FROM mixed_order
+                GROUP BY grp;
+                """);
+
+        ccs.step("""
+                INSERT INTO mixed_order VALUES
+                    (1, 10.0), (1, 20.0), (1, 30.0);
+                """, """
+                 grp | median | cnt | weight
+                --------------------------------
+                 1   | 20     | 3   | 1""");
+    }
 }
