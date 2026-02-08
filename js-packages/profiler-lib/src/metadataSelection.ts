@@ -31,7 +31,16 @@ export class MetadataSelector {
                 this.allMetrics.add(metric);
             }
         }
-        this.selectedMetric = this.allMetrics.values().next().value || "";
+
+        // Initial metric value
+        if (this.allMetrics.has("time%")) {
+            // Legacy metrics support, to be removed
+            this.selectedMetric = "time%";
+        } else if (this.allMetrics.has("runtime_percent")) {
+            this.selectedMetric = "runtime_percent";
+        } else {
+            this.selectedMetric = this.allMetrics.values().next().value || "";
+        }
     }
 
     changed(): void {
@@ -107,7 +116,7 @@ export class MetadataSelector {
     }
 
     public static getFullSelection(): MetadataSelection {
-        return new MetadataSelection("time", new SubList(_ => true))
+        return new MetadataSelection("runtime_percent", new SubList(_ => true))
     }
 
     getSelection(): MetadataSelection {

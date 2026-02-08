@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 
 use crate::circuit::metadata::{
-    CACHE_BACKGROUND_HIT_RATE_PERCENT, CACHE_BACKGROUND_HITS_STATS, CACHE_BACKGROUND_MISSES_STATS,
-    CACHE_FOREGROUND_HIT_RATE_PERCENT, CACHE_FOREGROUND_HITS_COUNT, CACHE_FOREGROUND_MISSES_COUNT,
-    MetaItem, MetricId, MetricReading, OperatorMeta,
+    CACHE_BACKGROUND_HIT_RATE_PERCENT, CACHE_BACKGROUND_HITS, CACHE_BACKGROUND_MISSES,
+    CACHE_FOREGROUND_HIT_RATE_PERCENT, CACHE_FOREGROUND_HITS, CACHE_FOREGROUND_MISSES, MetaItem,
+    MetricId, MetricReading, OperatorMeta,
 };
 use crate::circuit::runtime::ThreadType;
 use crate::storage::backend::{BlockLocation, FileId, FileReader};
@@ -275,10 +275,10 @@ pub enum CacheAccess {
 
 fn cache_metric(thread_type: ThreadType, access: CacheAccess) -> MetricId {
     match (thread_type, access) {
-        (ThreadType::Foreground, CacheAccess::Hit) => CACHE_FOREGROUND_HITS_COUNT,
-        (ThreadType::Foreground, CacheAccess::Miss) => CACHE_FOREGROUND_MISSES_COUNT,
-        (ThreadType::Background, CacheAccess::Hit) => CACHE_BACKGROUND_HITS_STATS,
-        (ThreadType::Background, CacheAccess::Miss) => CACHE_BACKGROUND_MISSES_STATS,
+        (ThreadType::Foreground, CacheAccess::Hit) => CACHE_FOREGROUND_HITS,
+        (ThreadType::Foreground, CacheAccess::Miss) => CACHE_FOREGROUND_MISSES,
+        (ThreadType::Background, CacheAccess::Hit) => CACHE_BACKGROUND_HITS,
+        (ThreadType::Background, CacheAccess::Miss) => CACHE_BACKGROUND_MISSES,
     }
 }
 

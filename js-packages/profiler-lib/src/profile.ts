@@ -6,6 +6,123 @@ import { type MirNode, SourcePositionRanges, SourcePositionRange, Sources, type 
 type JsonMeasurement = Array<any>;
 export type NodeId = string;
 
+export type CircuitMetricCategory = "State" | "Inputs" | "Outputs" | "Cache" | "Time" | "Balancer";
+
+export interface ProfileMetricDescription {
+    readonly name: string;
+    readonly category: CircuitMetricCategory;
+    readonly advanced: boolean;
+    readonly description: string;
+}
+
+// Base class for all metric representations in the new profile representation
+interface JsonMetricBase {
+    metric_id: string;
+    labels: Array<[string, string]>;
+    value: JsonMetricValue;
+}
+
+// A metric value as it appears in the profile, serialized from Rust as JSON
+interface MetricValue { };
+
+// Base types
+interface PersistentIdMetricValue extends MetricValue {
+    type: "string";
+    value: string;
+}
+
+interface IntMetricValue extends MetricValue {
+    type: "int";
+    value: number;
+}
+
+interface CountMetricValue extends MetricValue {
+    type: "count";
+    value: number;
+}
+
+interface DurationMetricValue {
+    type: "duration";
+    value: {
+        secs: number;
+        nanos: number;
+    }
+}
+
+interface BytesMetricValue {
+    type: "bytes";
+    value: number;
+}
+
+interface PercentMetricValue {
+    type: "percent";
+    value: {
+        numerator: number;
+        denominator: number;
+    }
+}
+
+// Composite types
+interface StatsMetricValue extends MetricValue {
+    avg_records_count: CountMetricValue;
+    batches_count: CountMetricValue;
+    max_records_count: CountMetricValue;
+    min_records_count: CountMetricValue;
+    total_records_count: CountMetricValue;
+}
+
+interface MergesMetricValue extends MetricValue {
+    avg_step_time: DurationMetricValue;
+    batches: CountMetricValue;
+    merges: CountMetricValue;
+    steps: CountMetricValue;
+}
+
+interface SerializedStringValue {
+    type: "string";
+    value: string;
+}
+
+interface RetainmentValue extends MetricValue {
+    key: SerializedStringValue | Array<SerializedStringValue>;
+    value: SerializedStringValue | Array<SerializedStringValue>;
+}
+
+interface DistributionValue {
+    values: Array<number>;
+}
+
+interface OccupancyValue extends MetricValue {
+    max: BytesMetricValue;
+    used: BytesMetricValue;
+}
+
+interface CacheStatsValue extends MetricValue {
+    type: "cachecounts";
+    value: {
+        count: number;
+        bytes: number;
+        elapsed: {
+            secs: number;
+            nanos: number;
+        };
+    }
+}
+
+type JsonMetricValue =
+    CountMetricValue |
+    BytesMetricValue |
+    PercentMetricValue |
+    DurationMetricValue |
+    StatsMetricValue |
+    PersistentIdMetricValue |
+    DistributionValue |
+    RetainmentValue |
+    IntMetricValue |
+    MergesMetricValue |
+    OccupancyValue |
+    CacheStatsValue;
+
 // Serialized representation of the measurements for a node.
 interface JsonProfileEntries {
     entries: Array<JsonMeasurement>;
@@ -55,13 +172,25 @@ interface JsonGraph {
 // Serialized JSON representation for the
 // profiles received from the Feldera pipeline manager.
 export interface JsonProfiles {
-    readonly worker_profiles: Array<JsonWorkerProfile>;
+    // The "metrics" property only exists in new profiles
+    readonly metrics?: Array<ProfileMetricDescription>;
+    readonly worker_profiles: Array<JsonWorkerProfile> | Array<Map<NodeId, JsonProfileEntries>>;
     readonly graph: JsonGraph;
 }
 
 ///////////////// Parsing code to decode measurements
 
-/** Base class for (numeric) property values. */
+function formatValue(val: number, base: number, prefixes: Array<string>): string {
+    let index = 0;
+    while ((Math.abs(val) >= base) && (index < (prefixes.length - 1))) {
+        val = val / base;
+        index++;
+    }
+    return val.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + prefixes[index];
+}
+
+/** Base class for (numeric) property values; representation which abstracts away from the
+ * JSON Serialization. */
 export abstract class PropertyValue implements Comparable<PropertyValue> {
     abstract getNumericValue(): Option<number>;
 
@@ -95,27 +224,15 @@ export abstract class PropertyValue implements Comparable<PropertyValue> {
         let v = this.getNumericValue();
         if (v.isSome()) {
             let value = v.unwrap();
-            let unit = "";
-            if (value > 1_000_000_000_000) {
-                unit = "T";
-                value = value / 1_000_000_000_000;
-            } else if (value > 1_000_000_000) {
-                unit = "G";
-                value = value / 1_000_000_000;
-            } else if (value > 1_000_000) {
-                unit = "M";
-                value = value / 1_000_000;
-            } else if (value > 1_000) {
-                unit = "K";
-                value = value / 1000;
-            }
-            return value.toLocaleString('en-US', { maximumFractionDigits: 2 }) + unit;
+            let prefixes = ["", "K", "M", "B"];
+            return formatValue(value, 1000, prefixes);
         } else {
             return "N/A";
         }
     }
 
-    abstract plus(other: PropertyValue): PropertyValue;
+    /** Combine values from multiple operators; the semantics depends on the value kind. */
+    abstract combine(other: PropertyValue): PropertyValue;
 }
 
 /** A property value represented as a numerator and denominator, which are supposed to represent a percentage. */
@@ -129,6 +246,14 @@ class PercentValue extends PropertyValue {
         this.denominator = enforceNumber(denominator);
     }
 
+    static fromNumbers(numerator: number, denominator: number): PercentValue {
+        return new PercentValue(numerator, denominator);
+    }
+
+    static fromPercentMetric(s: PercentMetricValue) {
+        return new PercentValue(s.value.numerator, s.value.denominator);
+    }
+
     getNumericValue(): Option<number> {
         if (this.denominator === 0) {
             return Option.some(0);
@@ -139,13 +264,13 @@ class PercentValue extends PropertyValue {
     override toString(): string {
         let v = this.getNumericValue();
         if (v.isSome()) {
-            return v.unwrap().toFixed(3);
+            return v.unwrap().toFixed(1) + "%";
         } else {
             return "N/A";
         }
     }
 
-    plus(other: PropertyValue): PropertyValue {
+    override combine(other: PropertyValue): PropertyValue {
         if (other instanceof MissingValue) {
             return this;
         }
@@ -160,8 +285,8 @@ class PercentValue extends PropertyValue {
     }
 }
 
-/** A property value that is a simple number. */
-class NumberValue extends PropertyValue {
+/** A property value that is a simple count. */
+class CountValue extends PropertyValue {
     readonly value: number;
 
     constructor(value: any) {
@@ -169,18 +294,62 @@ class NumberValue extends PropertyValue {
         this.value = enforceNumber(value);
     }
 
+    static fromNumber(value: number): CountValue {
+        return new CountValue(value);
+    }
+
+    static fromCountMetric(value: CountMetricValue): CountValue {
+        return new CountValue(value.value);
+    }
+
     getNumericValue(): Option<number> {
         return Option.some(this.value);
     }
 
-    plus(other: PropertyValue): PropertyValue {
+    override combine(other: PropertyValue): PropertyValue {
         if (other instanceof MissingValue) {
             return this;
         }
-        if (other instanceof NumberValue) {
-            return new NumberValue(this.value + other.value);
+        if (other instanceof CountValue) {
+            return new CountValue(this.value + other.value);
         }
-        throw new Error("Cannot add NumberValue to " + other);
+        throw new Error("Cannot add CountValue to " + other);
+    }
+}
+
+class BytesValue extends PropertyValue {
+    readonly value: number;
+
+    constructor(value: any) {
+        super();
+        this.value = enforceNumber(value);
+    }
+
+    static fromNumber(value: number): BytesValue {
+        return new BytesValue(value);
+    }
+
+    static fromBytesMetric(value: BytesMetricValue): BytesValue {
+        return new BytesValue(value.value);
+    }
+
+    getNumericValue(): Option<number> {
+        return Option.some(this.value);
+    }
+
+    override combine(other: PropertyValue): PropertyValue {
+        if (other instanceof MissingValue) {
+            return this;
+        }
+        if (other instanceof BytesValue) {
+            return new BytesValue(this.value + other.value);
+        }
+        throw new Error("Cannot add BytesValue to " + other);
+    }
+
+    override toString(): string {
+        let prefixes = ["B", "KiB", "MiB", "GiB", "TiB"];
+        return formatValue(this.value, 1024, prefixes);
     }
 }
 
@@ -211,7 +380,7 @@ class BooleanValue extends PropertyValue {
         return super.compareTo(other);
     }
 
-    override plus(other: PropertyValue): PropertyValue {
+    override combine(other: PropertyValue): PropertyValue {
         if (other instanceof MissingValue) {
             return this;
         }
@@ -242,6 +411,10 @@ class StringValue extends PropertyValue {
         this.value = id;
     }
 
+    static fromString(value: string): StringValue {
+        return new StringValue(value);
+    }
+
     getNumericValue(): Option<number> {
         return Option.none();
     }
@@ -257,12 +430,15 @@ class StringValue extends PropertyValue {
         return super.compareTo(other);
     }
 
-    override plus(other: PropertyValue): PropertyValue {
+    override combine(other: PropertyValue): PropertyValue {
         if (other instanceof MissingValue) {
             return this;
         }
         if (other instanceof StringValue) {
-            return new StringValue(this.value + other.value);
+            if (this.value === other.value) {
+                return this;
+            }
+            return new StringValue("<multiple values>");
         }
         throw new Error("Cannot add StringValue to " + other);
     }
@@ -288,7 +464,7 @@ export class MissingValue extends PropertyValue {
         return Option.none();
     }
 
-    plus(other: PropertyValue): PropertyValue {
+    override combine(other: PropertyValue): PropertyValue {
         return other;
     }
 }
@@ -303,11 +479,15 @@ class TimeValue extends PropertyValue {
         return new TimeValue(enforceNumber(secs) + enforceNumber(nanos) / 1_000_000_000);
     }
 
+    static fromDurationMetric(s: DurationMetricValue): TimeValue {
+        return this.fromSecondsNanos(s.value.secs, s.value.nanos);
+    }
+
     getNumericValue(): Option<number> {
         return Option.some(this.seconds);
     }
 
-    plus(other: PropertyValue): PropertyValue {
+    override combine(other: PropertyValue): PropertyValue {
         if (other instanceof MissingValue) {
             return this;
         }
@@ -315,6 +495,40 @@ class TimeValue extends PropertyValue {
             return new TimeValue(this.seconds + other.seconds);
         }
         throw new Error("Cannot add TimeValue to " + other);
+    }
+
+    override toString(): string {
+        let v = this.getNumericValue();
+        if (v.isSome()) {
+            let value = v.unwrap();
+            if (value === 0) {
+                return "0s";
+            } else if (value < 0.001) {
+                value = value * 1000_000;
+                return value.toLocaleString('en-US', { maximumFractionDigits: 2 }) + "us";
+            } else if (value < 1) {
+                value = value * 1000;
+                return value.toLocaleString('en-US', { maximumFractionDigits: 2 }) + "ms";
+            } else if (value >= 3600) {
+                // Discard sub-second part
+                let seconds = Math.floor(value);
+                let days = Math.floor(seconds / 86400);
+                let inDay = seconds - days * 86400;
+                let hours = Math.floor(inDay / 3600);
+                let minutes = Math.floor((seconds % 3600) / 60);
+                let secs = seconds % 60;
+                let result = "";
+                if (days > 0) {
+                    result += days + "days ";
+                }
+                result += String(hours).padStart(2, "0") + ":" +
+                    String(minutes).padStart(2, "0") + ":" +
+                    String(secs).padStart(2, "0");
+            }
+            return value.toLocaleString('en-US', { maximumFractionDigits: 2 }) + "s";
+        } else {
+            return "N/A";
+        }
     }
 }
 
@@ -405,13 +619,74 @@ function legacyMeasurementCategory(prop: string): string {
     return "";
 }
 
-/** Which category does a measurement belong to */
-export function measurementCategory(prop: string): string {
-    const index = prop.indexOf(".");
-    if (index === -1) {
-        return legacyMeasurementCategory(prop);
+export class MetricDescriptions {
+    private static KEY_ORDER: Map<string, number> = new Map();
+    private static METRIC_DESCRIPTIONS: Map<string, ProfileMetricDescription> = new Map();
+
+    static known(): boolean {
+        return MetricDescriptions.METRIC_DESCRIPTIONS.size > 0;
     }
-    return prop.slice(0, index);
+
+    /** Get the ordinal number of the metric in the metadata array (coming from the profile,
+     * where it comes from the metadata.rs file).  Note that the metric string here
+     * can be a composite name, e.g., output_batches_stats.record_count; only the part
+     * before the dot is the actual metric name. */
+    static getMetricIndex(metric: string): number {
+        let dot = metric.indexOf(".");
+        if (dot >= 0)
+            metric = metric.substring(0, dot);
+        let result = MetricDescriptions.KEY_ORDER.get(metric);
+        if (result !== undefined)
+            return result;
+        return MetricDescriptions.KEY_ORDER.size;
+    }
+
+    static setMetricDescriptions(descriptions: Array<ProfileMetricDescription>) {
+        let index = 0;
+        for (const pmd of descriptions) {
+            MetricDescriptions.KEY_ORDER.set(pmd.name, index);
+            MetricDescriptions.METRIC_DESCRIPTIONS.set(pmd.name, pmd);
+            index++;
+        }
+    }
+
+    static getMetricInfo(metric: string): ProfileMetricDescription | undefined {
+        return MetricDescriptions.METRIC_DESCRIPTIONS.get(metric);
+    }
+
+    static getMetricDescription(metric: string): string | undefined {
+        return MetricDescriptions.getMetricInfo(metric)?.description;
+    }
+}
+
+function stripSuffix(prop: string): string {
+    let dot = prop.indexOf(".");
+    if (dot >= 0) {
+        // Dot is used when appending measurements for a metric with multiple values
+        prop = prop.substring(0, dot);
+    }
+    return prop;
+}
+
+/** Which category does a measurement belong to? */
+export function measurementCategory(prop: string): string {
+    let info = MetricDescriptions.getMetricInfo(stripSuffix(prop));
+    if (info !== undefined) {
+        return info.category;
+    }
+
+    // If we couldn't find the description, treat as if in an old-style profile
+    return legacyMeasurementCategory(prop);
+}
+
+/** Return a description of the measurement and a boolean indicating whether the measurements is "advanced" */
+export function measurementDescription(prop: string): { description: string, advanced: boolean } {
+    let info = MetricDescriptions.getMetricInfo(stripSuffix(prop));
+    if (info !== undefined) {
+        return { description: info.description, advanced: info.advanced };
+    }
+
+    return { description: "", advanced: false };
 }
 
 // Decoded measurement value.
@@ -420,14 +695,11 @@ export class Measurement {
         readonly property: string,
         readonly value: Option<PropertyValue>) { };
 
-    // If true generate random data for testing.
-    static readonly RANDOM_DATA = false;
-
     public static fromJson(prefix: string, json: JsonMeasurement): Measurement {
         let name = prefix + (json[0] as string);
         return new Measurement(
             name,
-            Measurement.parsePropertyValue(name, json.slice(1))
+            Measurement.parseLegacyPropertyValue(name, json.slice(1))
         );
     }
 
@@ -435,18 +707,145 @@ export class Measurement {
         return this.property + ", " + this.value.toString();
     }
 
-    /** Parse a JSON object with the specified label into zero or more measurements. */
-    static parseValues(json: JsonMeasurement): Array<Measurement> {
+    static parseValues(metric: JsonMetricBase): Array<Measurement> {
+        let metric_id = metric.metric_id;
+        let kind = metric_id.split("_").pop(); // count, bytes, etc
+        let labels = metric.labels.map(e => e.join(":")).join(".");
+        if (metric.labels.length !== 0) {
+            metric_id = metric_id + "." + labels;
+        }
+        switch (kind) {
+            case "bytes": {
+                let m = metric.value as BytesMetricValue;
+                let bytes = BytesValue.fromBytesMetric(m);
+                return [new Measurement(metric_id, Option.some(bytes))];
+            }
+            case "count": {
+                let m = metric.value as CountMetricValue;
+                let count = CountValue.fromCountMetric(m);
+                return [new Measurement(metric_id, Option.some(count))];
+            }
+            case "hits":
+            case "misses": {
+                let s = metric.value as CacheStatsValue;
+                let count = new CountValue(s.value.count);
+                let bytes = new BytesValue(s.value.bytes);
+                let elapsed = TimeValue.fromSecondsNanos(s.value.elapsed.secs, s.value.elapsed.nanos);
+                let avg_latency = new TimeValue(count.value === 0 ? 0 : elapsed.seconds / count.value);
+                return [
+                    new Measurement(metric_id + ".count", Option.some(count)),
+                    new Measurement(metric_id + ".bytes", Option.some(bytes)),
+                    new Measurement(metric_id + ".elapsed", Option.some(elapsed)),
+                    new Measurement(metric_id + ".avg_latency", Option.some(avg_latency))
+                ];
+            }
+            case "stats": {
+                let s = metric.value as StatsMetricValue;
+                let count = CountValue.fromCountMetric(s.batches_count);
+                let avg_size = CountValue.fromCountMetric(s.avg_records_count);
+                let max_size = CountValue.fromCountMetric(s.max_records_count);
+                let min_size = CountValue.fromCountMetric(s.min_records_count);
+                let record_count = CountValue.fromCountMetric(s.total_records_count);
+                return [
+                    new Measurement(metric_id + ".count", Option.some(count)),
+                    new Measurement(metric_id + ".avg_size", Option.some(avg_size)),
+                    new Measurement(metric_id + ".max_size", Option.some(max_size)),
+                    new Measurement(metric_id + ".min_size", Option.some(min_size)),
+                    new Measurement(metric_id + ".record_count", Option.some(record_count))
+                ];
+            }
+            case "id": { // persistent_id
+                let s = metric.value as PersistentIdMetricValue;
+                let str = StringValue.fromString(s.value);
+                return [new Measurement(metric_id, Option.some(str))];
+            }
+            case "percent": {
+                let s = metric.value as PercentMetricValue;
+                let perc = PercentValue.fromPercentMetric(s);
+                return [new Measurement(metric_id, Option.some(perc))];
+            }
+            case "seconds": {
+                let s = metric.value as DurationMetricValue;
+                let duration = TimeValue.fromDurationMetric(s);
+                return [new Measurement(metric_id, Option.some(duration))];
+            }
+            case "occupancy": {
+                let s = metric.value as OccupancyValue;
+                let max = BytesValue.fromBytesMetric(s.max);
+                let used = BytesValue.fromBytesMetric(s.used);
+                return [
+                    new Measurement(metric_id + ".max", Option.some(max)),
+                    new Measurement(metric_id + ".used", Option.some(used))
+                ];
+            }
+            case "bounds": {
+                // retainment_bounds
+                let s = metric.value as RetainmentValue;
+                let object: Array<string> = [];
+                let result = [];
+                if (s.key instanceof Array) {
+                    for (const keyVal of s.key) {
+                        if (keyVal.value !== "None") {
+                            object.push(keyVal.value);
+                        }
+                    }
+                } else {
+                    let keyValue = (s.key as SerializedStringValue).value;
+                    if (keyValue !== "None") {
+                        object.push(keyValue);
+                    }
+                }
+                if (object.length !== 0) {
+                    let str = object.join();
+                    result.push(new Measurement(metric_id + ".key_bounds", Option.some(new StringValue(str))));
+                }
+
+                object = [];
+                if (s.value instanceof Array) {
+                    for (const valVal of s.value) {
+                        if (valVal.value !== "None") {
+                            object.push(valVal.value);
+                        }
+                    }
+                } else {
+                    let valValue = (s.value as SerializedStringValue).value;
+                    if (valValue !== "None") {
+                        object.push(valValue);
+                    }
+                }
+                if (object.length !== 0) {
+                    let str = object.join();
+                    result.push(new Measurement(metric_id + ".value_bounds", Option.some(new StringValue(str))));
+                }
+
+                return result;
+            }
+            case "merges": {
+                let s = metric.value as MergesMetricValue;
+                let avg_step_time = TimeValue.fromDurationMetric(s.avg_step_time);
+                let batches = CountValue.fromCountMetric(s.batches);
+                let merges = CountValue.fromCountMetric(s.merges);
+                let steps = CountValue.fromCountMetric(s.steps);
+                return [
+                    new Measurement(metric_id + ".avg_step_time", Option.some(avg_step_time)),
+                    new Measurement(metric_id + ".batches", Option.some(batches)),
+                    new Measurement(metric_id + ".merges", Option.some(merges)),
+                    new Measurement(metric_id + ".steps", Option.some(steps)),
+                ];
+            }
+        }
+        return [];
+    }
+
+    /** Parse a JSON object with the specified label into zero or more measurements.
+     * TODO: remove this function once legacy representations are no longer supported. */
+    static parseLegacyValues(json: JsonMeasurement): Array<Measurement> {
         let prefix = json[0] as string;
         let value = json.slice(1);
         let result: Array<Measurement> = new Array();
         switch (prefix) {
-            // TODO: legacy property names, to be removed
             case "output batches":
             case "input batches":
-            // TODO: remove to here
-            case "storage.output_batches":
-            case "storage.input_batches":
                 if (Array.isArray(value[0])) {
                     // Empty object was serialized as an empty array
                     break
@@ -456,22 +855,16 @@ export class Measurement {
                     result.push(Measurement.fromJson(prefix + ".", e));
                 }
                 break;
-            // TODO: legacy property names, to be removed
             case "foreground cache misses":
             case "foreground cache hits":
             case "background cache misses":
             case "background cache hits":
-            // TODO: remove to here
-            case "cache.foreground.misses":
-            case "cache.foreground.hits":
-            case "cache.background.misses":
-            case "cache.background.hits":
                 let count = value[0].count;
                 result.push(
-                    new Measurement(prefix + ".count", Option.some(new NumberValue(count))));
+                    new Measurement(prefix + ".count", Option.some(new CountValue(count))));
                 let bytes = value[0].bytes;
                 result.push(
-                    new Measurement(prefix + ".bytes", Option.some(new NumberValue(bytes))));
+                    new Measurement(prefix + ".bytes", Option.some(new CountValue(bytes))));
                 let elapsed = value[0].elapsed;
                 result.push(
                     new Measurement(prefix + ".elapsed", Option.some(TimeValue.fromSecondsNanos(
@@ -486,29 +879,15 @@ export class Measurement {
 
     static unknownProperties: Set<string> = new Set();
 
-    private static parsePropertyValue(prop: string, value: Array<any>): Option<PropertyValue> {
-        // This list of properties may need to be updated; it has been discovered empirically
-        // by looking at some generated profiles.
+    private static parseLegacyPropertyValue(prop: string, value: Array<any>): Option<PropertyValue> {
         switch (prop) {
-            // TODO: legacy property names, to be removed
             case "time%":
             case "merge reduction":
             case "output redundancy":
             case "background cache hit rate":
             case "foreground cache hit rate":
             case "Bloom filter hit rate":
-            // TODO: remove to here
-            case "time.percent":
-            case "storage.merge_reduction":
-            case "record_count.output_redundancy_percents":
-            case "cache.background.hit_rate":
-            case "cache.foreground.hit_rate":
-                if (Measurement.RANDOM_DATA) {
-                    let v = Math.random() * 100;
-                    return Option.some(new PercentValue(v, 1));
-                }
                 return Option.some(new PercentValue(value[0][0], value[0][1]));
-            // TODO: legacy property names, to be removed
             case "Bloom filter size":
             case "Bloom filter bits/key":
             case "Bloom filter hits":
@@ -542,43 +921,7 @@ export class Measurement {
             case "rebalancings":
             case "local shard size":
             case "accumulator records to repartition":
-            // TODO: remove to here
-            case "memory.bytes.Bloom_filter":
-            case "memory.Bloom_filter.bits_per_key":
-            case "memory.record_count.stored":
-            case "time.invocations":
-            case "memory.bytes.allocated":
-            case "memory.bytes.used":
-            case "memory.bytes.shared":
-            case "storage.spine_batches":
-            case "storage.bytes.spine_size":
-            case "storage.merging_batches":
-            case "storage.merging_size":
-            case "memory.allocations":
-            case "record_count.left_inputs":
-            case "record_count.right_inputs":
-            case "record_count.computed_outputs":
-            case "memory.record_count.inputs":
-            case "time.steps":
-            case "storage.input_batches.count":
-            case "storage.input_batches.min_size":
-            case "storage.input_batches.max_size":
-            case "storage.input_batches.avg_size":
-            case "storage.input_batches.record_count":
-            case "storage.output_batches.count":
-            case "storage.output_batches.min_size":
-            case "storage.output_batches.max_size":
-            case "storage.output_batches.avg_size":
-            case "storage.output_batches.record_count":
-            case "balancer.integral_records_to_repartition":
-            case "balancer.rebalancings":
-            case "balancer.local_shard_size":
-            case "balancer.accumulator_records_to_repartition":
-                if (Measurement.RANDOM_DATA) {
-                    return Option.some(new NumberValue(Math.random() * 1000));
-                }
-                return Option.some(new NumberValue(value[0]));
-            // TODO: legacy property names, to be removed
+                return Option.some(new CountValue(value[0]));
             case "wait_time":
             case "exchange_wait_time":
             case "merge backpressure wait":
@@ -588,30 +931,11 @@ export class Measurement {
             case "total_runtime":
             case "total rebalancing time":
             case "in-progress rebalancing time":
-            // TODO: remove to here
-            case "time.wait":
-            case "time.exchange_wait":
-            case "time.merge_backpressure_wait":
-            case "time.total":
-            case "time.total_idle":
-            case "time.runtime_elapsed":
-            case "time.total_runtime":
-            case "balancer.total_time":
-            case "balancer.time_in_progress":
-            case "storage.bytes.batch_sizes.used":
-            case "storage.bytes.batch_sizes.allocated":
-                if (Measurement.RANDOM_DATA) {
-                    return Option.some(TimeValue.fromSecondsNanos(Math.floor(Math.random() * 100), 0));
-                }
                 return Option.some(TimeValue.fromSecondsNanos(value[0].secs, value[0].nanos));
             case "persistent_id":
-            // TODO: legacy property names, to be removed
             case "foreground cache occupancy":
             case "background cache occupancy":
             case "balancer policy":
-            // TODO: remove to here
-            case "cache.foreground_occupancy":
-            case "cache.background_occupancy":
             case "slot 0 loose":
             case "slot 1 loose":
             case "slot 2 loose":
@@ -629,10 +953,7 @@ export class Measurement {
             case "slot 4 merging":
             case "balancer.policy":
                 return Option.some(new StringValue(value[0]));
-            // TODO: legacy property name, to be removed
             case "rebalancing in progress":
-            // TODO: remove to here
-            case "balancer.rebalancing_in_progress":
                 return Option.some(new BooleanValue(value[0]));
             case "bounds":
             case "mir_node":
@@ -670,9 +991,9 @@ class Measurements {
 
     add(worker: number, m: Measurement) {
         if (m.value.isNone()) return;  // Ignore unknown properties.
-        let value = m.value.unwrap().getNumericValue();
-        if (value.isNone()) return;  // Ignore non-numeric properties.
-
+        if (m.property === "persistent_id") {
+            return;
+        }
         let meas = this.measurements.get(m.property);
         let arr: Array<PropertyValue>;
         if (meas.isNone()) {
@@ -687,7 +1008,13 @@ class Measurements {
     }
 
     getMetrics(): Iterable<string> {
-        return this.measurements.keys();
+        let result = this.measurements.keys();
+        if (MetricDescriptions.known()) {
+            let data = [...result];
+            data.sort((c1, c2) => MetricDescriptions.getMetricIndex(c1) - MetricDescriptions.getMetricIndex(c2));
+            return data;
+        }
+        return result;
     }
 
     append(other: Measurements) {
@@ -699,7 +1026,11 @@ class Measurements {
                 let arr = existing.unwrap();
                 assert(arr.length === values.length, "Mismatched measurement lengths");
                 for (let i = 0; i < values.length; i++) {
-                    arr[i] = arr[i]!.plus(values[i]!);
+                    if (key.includes("avg") || key.includes("min") || key.includes("percent") || key.includes("max"))
+                        // Heuristic
+                        arr[i] = arr[i]!.max(values[i]!);
+                    else
+                        arr[i] = arr[i]!.combine(values[i]!);
                 }
             }
         }
@@ -1038,12 +1369,29 @@ export class CircuitProfile {
     }
 
     // Decode the data in a worker profile; return a map from nodeId to an array of measurements for that node
-    private decodeWorkerProfile(json: JsonWorkerProfile): Map<NodeId, Array<Measurement>> {
+    private decodeWorkerProfile(json: Map<NodeId, JsonProfileEntries>): Map<NodeId, Array<Measurement>> {
         let metadata = new Map<NodeId, Array<Measurement>>();
-        for (const [nodeId, data] of Object.entries(json.metadata)) {
+        for (const [nodeId, data] of Object.entries(json)) {
+            let parsed: Array<Measurement> = [];
+            for (const datum of data) {
+                let measurements = Measurement.parseValues(datum);
+                for (const m of measurements) {
+                    parsed.push(m);
+                    this.allMetrics.add(m.property);
+                }
+            }
+            metadata.set(nodeId, parsed);
+        }
+        return metadata;
+    }
+
+    // Decoder for legacy profile format, to be removed
+    private decodeLegacyWorkerProfile(json: Map<NodeId, JsonProfileEntries>): Map<NodeId, Array<Measurement>> {
+        let metadata = new Map<NodeId, Array<Measurement>>();
+        for (const [nodeId, data] of Object.entries(json)) {
             let parsed: Array<Measurement> = [];
             for (const datum of data.entries) {
-                let measurements = Measurement.parseValues(datum);
+                let measurements = Measurement.parseLegacyValues(datum);
                 for (const m of measurements) {
                     parsed.push(m);
                     this.allMetrics.add(m.property);
@@ -1056,6 +1404,11 @@ export class CircuitProfile {
 
     /** Create a CircuitProfile from the JSON serialization */
     static fromJson(json: JsonProfiles) {
+        let isNewProfile = json.metrics !== undefined;
+        if (isNewProfile) {
+            MetricDescriptions.setMetricDescriptions(json.metrics!);
+        }
+
         let worker_count = json.worker_profiles.length;
         // Decode the graph structure and create the nodes.
         // The graph itself is always a complex node.
@@ -1073,7 +1426,13 @@ export class CircuitProfile {
 
         // Decode the profile information and attach to the nodes.
         for (const [index, workerProfile] of json.worker_profiles.entries()) {
-            const decoded: Map<NodeId, Array<Measurement>> = result.decodeWorkerProfile(workerProfile);
+            let decoded: Map<NodeId, Array<Measurement>>;
+            let wp: JsonWorkerProfile = workerProfile as JsonWorkerProfile;
+            if (!isNewProfile) {
+                decoded = result.decodeLegacyWorkerProfile(wp.metadata);
+            } else {
+                decoded = result.decodeWorkerProfile(wp.metadata);
+            }
             for (const [node, measurements] of decoded.entries()) {
                 let n: SimpleNode;
                 if (result.simpleNodes.has(node)) {
