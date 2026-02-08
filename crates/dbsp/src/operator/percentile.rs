@@ -6,7 +6,7 @@
 //! # Implementation
 //!
 //! The percentile methods use a dedicated `PercentileOperator` that maintains
-//! `OrderStatisticsMultiset` state per key across steps. This enables O(log n)
+//! `OrderStatisticsZSet` state per key across steps. This enables O(log n)
 //! incremental updates per change instead of O(n) per-step rescanning.
 //!
 //! The operator:
@@ -43,7 +43,7 @@ where
     ///
     /// NULL values in the input are automatically excluded from the calculation.
     ///
-    /// This method uses a stateful operator that maintains `OrderStatisticsMultiset`
+    /// This method uses a stateful operator that maintains `OrderStatisticsZSet`
     /// state per key, enabling O(log n) incremental updates instead of O(n)
     /// per-step rescanning.
     ///
@@ -116,7 +116,7 @@ where
     ///
     /// NULL values in the input are automatically excluded from the calculation.
     ///
-    /// This method uses a stateful operator that maintains `OrderStatisticsMultiset`
+    /// This method uses a stateful operator that maintains `OrderStatisticsZSet`
     /// state per key, enabling O(log n) incremental updates instead of O(n)
     /// per-step rescanning.
     ///

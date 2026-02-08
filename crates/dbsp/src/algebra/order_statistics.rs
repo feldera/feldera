@@ -1,1 +1,1 @@
-pub mod order_statistics_multiset;
+pub mod order_statistics_zset;

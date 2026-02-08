@@ -102,7 +102,7 @@ Two O(log n) queries on the same tree.
 
 ### MODE (Most Frequent Value)
 
-**Current status**: Listed in `order_statistics_sql_functions.md` as "not benefiting" from OrderStatisticsMultiset.
+**Current status**: Listed in `order_statistics_sql_functions.md` as "not benefiting" from OrderStatisticsZSet.
 
 **However**, MODE could benefit from a **different** NodeStorage-backed tree:
 
@@ -128,7 +128,7 @@ Operations:
 - Need to maintain sorted-by-frequency order for O(log n) max lookup
 - Spine's immutable batches would require full rebuilds
 
-**Note**: This requires a different tree structure than OrderStatisticsMultiset. The same NodeStorage infrastructure could support it.
+**Note**: This requires a different tree structure than OrderStatisticsZSet. The same NodeStorage infrastructure could support it.
 
 ---
 
@@ -152,9 +152,9 @@ FROM players;
 -- Returns ALL rows with their ranks
 ```
 
-#### Detailed Analysis: Can OrderStatisticsMultiset Be Used?
+#### Detailed Analysis: Can OrderStatisticsZSet Be Used?
 
-**OrderStatisticsMultiset data model**:
+**OrderStatisticsZSet data model**:
 ```rust
 // Leaf stores (value, weight) pairs - NOT individual rows
 LeafNode { entries: Vec<(T, ZWeight)> }
@@ -164,7 +164,7 @@ LeafNode { entries: Vec<(T, ZWeight)> }
 // - select_kth(k): find value at cumulative position k → O(log n)
 ```
 
-| Function | Required Query | OrderStatisticsMultiset Support |
+| Function | Required Query | OrderStatisticsZSet Support |
 |----------|----------------|--------------------------------|
 | **RANK()** | Count of rows with smaller values | ✅ `rank(value) + 1` works directly |
 | **DENSE_RANK()** | Count of distinct values smaller | ❌ Needs `subtree_key_count` augmentation |
@@ -181,7 +181,7 @@ Values:     [1, 2, 2, 3]  (value 2 has weight 2)
 RANK():     [1, 2, 2, 4]
 ```
 
-**Why OrderStatisticsMultiset works**:
+**Why OrderStatisticsZSet works**:
 - `rank(value)` returns sum of weights of all values < `value`
 - For value 3: `rank(3) = weight(1) + weight(2) = 1 + 2 = 3`
 - Window RANK = `rank(value) + 1 = 4` ✓
@@ -189,7 +189,7 @@ RANK():     [1, 2, 2, 4]
 **Data flow for RANK()**:
 ```
 1. Original rows in Spine: (partition_key, row_data, order_by_value)
-2. Per partition: OrderStatisticsMultiset<order_by_value> with weights
+2. Per partition: OrderStatisticsZSet<order_by_value> with weights
 3. Output: for each row, compute tree.rank(row.order_by_value) + 1
 ```
 
@@ -207,7 +207,7 @@ DENSE_RANK():  [1, 2, 2, 3]  (no gaps)
 RANK():        [1, 2, 2, 4]  (gap at 3)
 ```
 
-**Why OrderStatisticsMultiset doesn't work directly**:
+**Why OrderStatisticsZSet doesn't work directly**:
 - `rank(3)` returns weight sum = 3, not distinct count = 2
 - Need count of distinct keys, not sum of weights
 
@@ -237,7 +237,7 @@ Values:        [1, 2, 2, 3]
 ROW_NUMBER():  [1, 2, 3, 4]  (both 2s get different numbers)
 ```
 
-**Why OrderStatisticsMultiset cannot support this**:
+**Why OrderStatisticsZSet cannot support this**:
 - Tree stores `(value → weight)`, not individual rows
 - For two rows with `value=2`, tree sees `weight=2`, not two separate rows
 - Cannot distinguish or order rows with identical ORDER BY values
@@ -246,14 +246,14 @@ ROW_NUMBER():  [1, 2, 3, 4]  (both 2s get different numbers)
 
 | Option | Structure | Key | Weight | Pros | Cons |
 |--------|-----------|-----|--------|------|------|
-| **A. Extended key** | OrderStatisticsMultiset | `(value, row_id)` | 1 | Same tree ops | Larger keys, always unique |
+| **A. Extended key** | OrderStatisticsZSet | `(value, row_id)` | 1 | Same tree ops | Larger keys, always unique |
 | **B. Row storage** | New structure | `value` | N/A | Preserves rows | Different data model |
-| **C. Post-join** | OSM + Spine | `value` | count | Reuses OSM | Complex join logic |
+| **C. Post-join** | OSZSet + Spine | `value` | count | Reuses OSZSet | Complex join logic |
 
 **Option A (Extended Key)** is most practical:
 ```rust
-// Instead of: OrderStatisticsMultiset<OrderByValue>
-// Use:        OrderStatisticsMultiset<(OrderByValue, RowId)>
+// Instead of: OrderStatisticsZSet<OrderByValue>
+// Use:        OrderStatisticsZSet<(OrderByValue, RowId)>
 
 // For rows: [(id=A, val=1), (id=B, val=2), (id=C, val=2), (id=D, val=3)]
 // Tree keys: [(1,A), (2,B), (2,C), (3,D)]  all with weight=1
@@ -268,11 +268,11 @@ This transforms the weighted multiset into an ordered set with compound keys.
 
 #### Summary: Data Structure Requirements
 
-| Function | OrderStatisticsMultiset<T> | Modification Needed |
+| Function | OrderStatisticsZSet<T> | Modification Needed |
 |----------|---------------------------|---------------------|
 | RANK() | ✅ Use as-is | None |
 | DENSE_RANK() | ⚠️ Modify | Add `subtree_key_count` augmentation |
-| ROW_NUMBER() | ❌ Different key | Use `OrderStatisticsMultiset<(T, RowId)>` with weight=1 |
+| ROW_NUMBER() | ❌ Different key | Use `OrderStatisticsZSet<(T, RowId)>` with weight=1 |
 
 **All three can use the same NodeStorage infrastructure** - the differences are:
 1. **RANK**: Standard `(value → weight)` multiset
@@ -292,13 +292,13 @@ This transforms the weighted multiset into an ordered set with compound keys.
 │                                                                  │
 │  Per-Partition State (NodeStorage-backed):                       │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │  RANK():       OrderStatisticsMultiset<OrderByValue>    │    │
+│  │  RANK():       OrderStatisticsZSet<OrderByValue>    │    │
 │  │                (value → weight)                          │    │
 │  ├─────────────────────────────────────────────────────────┤    │
-│  │  DENSE_RANK(): OrderStatisticsMultiset<OrderByValue>    │    │
+│  │  DENSE_RANK(): OrderStatisticsZSet<OrderByValue>    │    │
 │  │                + subtree_key_count augmentation          │    │
 │  ├─────────────────────────────────────────────────────────┤    │
-│  │  ROW_NUMBER(): OrderStatisticsMultiset<(OrderByValue,   │    │
+│  │  ROW_NUMBER(): OrderStatisticsZSet<(OrderByValue,   │    │
 │  │                                         RowId)>         │    │
 │  │                (compound_key → 1)                        │    │
 │  └─────────────────────────────────────────────────────────┘    │
@@ -401,7 +401,7 @@ SELECT * FROM (
 **Architecture**:
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Rank State: OrderStatisticsMultiset                         │
+│  Rank State: OrderStatisticsZSet                         │
 │  (maintained incrementally, ranks NOT materialized)          │
 │                         │                                    │
 │                         ▼ rank_lookup(value) → O(log n)      │

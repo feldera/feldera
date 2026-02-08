@@ -20,7 +20,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 /**
- * Stateful percentile operator that maintains OrderStatisticsMultiset per key.
+ * Stateful percentile operator that maintains OrderStatisticsZSet per key.
  * Unlike the aggregate-based approach, this operator applies delta changes
  * incrementally (O(log n) per change) instead of rescanning all values.
  *

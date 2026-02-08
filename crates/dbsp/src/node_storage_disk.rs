@@ -1092,7 +1092,7 @@ const INDEX_ENTRY_SIZE: usize = 8 + 8 + 4; // 20 bytes
 /// File format version.
 const FORMAT_VERSION: u32 = 1;
 
-/// Magic number for file header: "OSML" (Order Statistics Multiset Leaf file)
+/// Magic number for file header: "OSML" (Order Statistics ZSet Leaf file)
 const MAGIC_FILE_HEADER: [u8; 4] = *b"OSML";
 
 /// Magic number for data blocks: "OSMD" (OSM Data block)

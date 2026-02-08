@@ -1,4 +1,4 @@
-//! Order Statistics Multiset - An augmented B+ tree for efficient rank/select operations.
+//! Order Statistics ZSet - An augmented B+ tree for efficient rank/select operations.
 //!
 //! This module provides a weighted multiset implementation optimized for:
 //! - O(log n) insertion with weight updates (positive or negative)
@@ -57,10 +57,10 @@ pub const DEFAULT_BRANCHING_FACTOR: usize = 64;
 /// Minimum branching factor to ensure tree properties.
 pub const MIN_BRANCHING_FACTOR: usize = 4;
 
-/// Type alias for OrderStatisticsMultiset storage.
+/// Type alias for OrderStatisticsZSet storage.
 ///
 /// This provides backward compatibility and convenience for the common case
-/// of using NodeStorage with OrderStatisticsMultiset node types.
+/// of using NodeStorage with OrderStatisticsZSet node types.
 pub type OsmNodeStorage<T> = NodeStorage<InternalNodeTyped<T>, LeafNode<T>>;
 
 /// A leaf node in the B+ tree, storing sorted (key, weight) pairs.
@@ -376,9 +376,9 @@ impl<T: Ord + Clone> Node<T> {
 ///
 /// # Example
 /// ```ignore
-/// use dbsp::algebra::OrderStatisticsMultiset;
+/// use dbsp::algebra::OrderStatisticsZSet;
 ///
-/// let mut tree = OrderStatisticsMultiset::new();
+/// let mut tree = OrderStatisticsZSet::new();
 /// tree.insert(10, 3);  // Insert key 10 with weight 3
 /// tree.insert(20, 2);  // Insert key 20 with weight 2
 /// tree.insert(10, -1); // Decrease weight of 10 to 2
@@ -389,7 +389,7 @@ impl<T: Ord + Clone> Node<T> {
 /// assert_eq!(tree.rank(&20), 2); // Two elements before 20
 /// ```
 #[derive(Debug, SizeOf)]
-pub struct OrderStatisticsMultiset<T: Ord + Clone> {
+pub struct OrderStatisticsZSet<T: Ord + Clone> {
     /// Node storage (separates internal nodes and leaves, supports disk spilling)
     storage: OsmNodeStorage<T>,
     /// Location of the root node (None if tree is empty)
@@ -407,7 +407,7 @@ pub struct OrderStatisticsMultiset<T: Ord + Clone> {
 }
 
 // Implement Clone manually since NodeStorage doesn't implement Clone
-impl<T> Clone for OrderStatisticsMultiset<T>
+impl<T> Clone for OrderStatisticsZSet<T>
 where
     T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
@@ -420,7 +420,7 @@ where
 }
 
 // Implement PartialEq manually to compare contents, not structure
-impl<T> PartialEq for OrderStatisticsMultiset<T>
+impl<T> PartialEq for OrderStatisticsZSet<T>
 where
     T: Ord
         + Clone
@@ -445,7 +445,7 @@ where
     }
 }
 
-impl<T> Eq for OrderStatisticsMultiset<T>
+impl<T> Eq for OrderStatisticsZSet<T>
 where
     T: Ord
         + Clone
@@ -461,7 +461,7 @@ where
 {
 }
 
-impl<T> PartialOrd for OrderStatisticsMultiset<T>
+impl<T> PartialOrd for OrderStatisticsZSet<T>
 where
     T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
@@ -471,7 +471,7 @@ where
     }
 }
 
-impl<T> Ord for OrderStatisticsMultiset<T>
+impl<T> Ord for OrderStatisticsZSet<T>
 where
     T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
@@ -502,11 +502,11 @@ where
     }
 }
 
-impl<T: Ord + Clone> IsNone for OrderStatisticsMultiset<T> {
-    type Inner = OrderStatisticsMultiset<T>;
+impl<T: Ord + Clone> IsNone for OrderStatisticsZSet<T> {
+    type Inner = OrderStatisticsZSet<T>;
 
     fn is_none(&self) -> bool {
-        false // OrderStatisticsMultiset is never "none"
+        false // OrderStatisticsZSet is never "none"
     }
 
     fn unwrap_or_self(&self) -> &Self::Inner {
@@ -518,7 +518,7 @@ impl<T: Ord + Clone> IsNone for OrderStatisticsMultiset<T> {
     }
 }
 
-impl<T> Hash for OrderStatisticsMultiset<T>
+impl<T> Hash for OrderStatisticsZSet<T>
 where
     T: Ord
         + Clone
@@ -542,7 +542,7 @@ where
     }
 }
 
-impl<T> Default for OrderStatisticsMultiset<T>
+impl<T> Default for OrderStatisticsZSet<T>
 where
     T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
@@ -552,7 +552,7 @@ where
     }
 }
 
-impl<T> OrderStatisticsMultiset<T>
+impl<T> OrderStatisticsZSet<T>
 where
     T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
@@ -1271,7 +1271,7 @@ where
     ///
     /// # Returns
     ///
-    /// A restored `OrderStatisticsMultiset`.
+    /// A restored `OrderStatisticsZSet`.
     pub fn restore(
         base: &crate::storage::backend::StoragePath,
         persistent_id: &str,
@@ -1449,7 +1449,7 @@ where
 
 /// Iterator over (key, weight) pairs in sorted order.
 struct OrderStatisticsIter<'a, T: Ord + Clone> {
-    tree: &'a OrderStatisticsMultiset<T>,
+    tree: &'a OrderStatisticsZSet<T>,
     current_leaf: Option<LeafLocation>,
     current_pos: usize,
 }
@@ -1509,7 +1509,7 @@ where
     serialize = "T: rkyv::Serialize<__S>",
     deserialize = "T: Archive, <T as Archive>::Archived: rkyv::Deserialize<T, __D>",
 ))]
-pub struct SerializableOrderStatisticsMultiset<T>
+pub struct SerializableOrderStatisticsZSet<T>
 where
     T: Archive,
 {
@@ -1520,7 +1520,7 @@ where
 }
 
 // Manual implementations of comparison traits for the archived type
-impl<T: Archive> PartialEq for ArchivedSerializableOrderStatisticsMultiset<T>
+impl<T: Archive> PartialEq for ArchivedSerializableOrderStatisticsZSet<T>
 where
     <T as Archive>::Archived: Ord,
 {
@@ -1529,12 +1529,12 @@ where
     }
 }
 
-impl<T: Archive> Eq for ArchivedSerializableOrderStatisticsMultiset<T> where
+impl<T: Archive> Eq for ArchivedSerializableOrderStatisticsZSet<T> where
     <T as Archive>::Archived: Ord
 {
 }
 
-impl<T: Archive> PartialOrd for ArchivedSerializableOrderStatisticsMultiset<T>
+impl<T: Archive> PartialOrd for ArchivedSerializableOrderStatisticsZSet<T>
 where
     <T as Archive>::Archived: Ord,
 {
@@ -1543,7 +1543,7 @@ where
     }
 }
 
-impl<T: Archive> Ord for ArchivedSerializableOrderStatisticsMultiset<T>
+impl<T: Archive> Ord for ArchivedSerializableOrderStatisticsZSet<T>
 where
     <T as Archive>::Archived: Ord,
 {
@@ -1555,12 +1555,12 @@ where
     }
 }
 
-impl<T> From<&OrderStatisticsMultiset<T>> for SerializableOrderStatisticsMultiset<T>
+impl<T> From<&OrderStatisticsZSet<T>> for SerializableOrderStatisticsZSet<T>
 where
     T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
-    fn from(tree: &OrderStatisticsMultiset<T>) -> Self {
+    fn from(tree: &OrderStatisticsZSet<T>) -> Self {
         Self {
             entries: tree.iter().map(|(k, w)| (k.clone(), w)).collect(),
             branching_factor: tree.max_leaf_entries as u32,
@@ -1568,38 +1568,38 @@ where
     }
 }
 
-impl<T> From<SerializableOrderStatisticsMultiset<T>> for OrderStatisticsMultiset<T>
+impl<T> From<SerializableOrderStatisticsZSet<T>> for OrderStatisticsZSet<T>
 where
     T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
 {
-    fn from(serialized: SerializableOrderStatisticsMultiset<T>) -> Self {
+    fn from(serialized: SerializableOrderStatisticsZSet<T>) -> Self {
         // Use O(n) bulk construction instead of O(n log n) repeated inserts
         Self::from_sorted_entries(serialized.entries, serialized.branching_factor as usize)
     }
 }
 
-// Implement rkyv traits for OrderStatisticsMultiset via SerializableOrderStatisticsMultiset
+// Implement rkyv traits for OrderStatisticsZSet via SerializableOrderStatisticsZSet
 //
-// We use SerializableOrderStatisticsMultiset as the archived form, which flattens
+// We use SerializableOrderStatisticsZSet as the archived form, which flattens
 // the B+ tree to a simple sorted vector of (key, weight) pairs. This enables
 // efficient serialization for spill-to-disk scenarios.
 //
 // Note: The Archive impl has minimal bounds (just T: Archive + Archived<T>: Ord)
-// because SerializableOrderStatisticsMultiset requires Ord on the archived type.
+// because SerializableOrderStatisticsZSet requires Ord on the archived type.
 // The Serialize and Deserialize impls have full bounds.
 
-impl<T> Archive for OrderStatisticsMultiset<T>
+impl<T> Archive for OrderStatisticsZSet<T>
 where
     T: Ord + Clone + Archive,
     <T as Archive>::Archived: Ord,
 {
-    type Archived = ArchivedSerializableOrderStatisticsMultiset<T>;
-    type Resolver = <SerializableOrderStatisticsMultiset<T> as Archive>::Resolver;
+    type Archived = ArchivedSerializableOrderStatisticsZSet<T>;
+    type Resolver = <SerializableOrderStatisticsZSet<T> as Archive>::Resolver;
 
     #[allow(clippy::unit_arg)]
     unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
-        // NOTE: This impl exists to make OrderStatisticsMultiset archivable.
+        // NOTE: This impl exists to make OrderStatisticsZSet archivable.
         // The actual conversion happens in Serialize::serialize.
         // We can't access storage.iter() here because we don't have the right bounds.
         // This is only called via serialize() which has the full bounds.
@@ -1607,32 +1607,32 @@ where
     }
 }
 
-impl<T, S> rkyv::Serialize<S> for OrderStatisticsMultiset<T>
+impl<T, S> rkyv::Serialize<S> for OrderStatisticsZSet<T>
 where
     T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
     <T as Archive>::Archived: Ord,
     S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer + ?Sized,
-    SerializableOrderStatisticsMultiset<T>: rkyv::Serialize<S>,
+    SerializableOrderStatisticsZSet<T>: rkyv::Serialize<S>,
 {
     fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        let serializable: SerializableOrderStatisticsMultiset<T> = self.into();
+        let serializable: SerializableOrderStatisticsZSet<T> = self.into();
         serializable.serialize(serializer)
     }
 }
 
-impl<T, D> rkyv::Deserialize<OrderStatisticsMultiset<T>, D>
-    for ArchivedSerializableOrderStatisticsMultiset<T>
+impl<T, D> rkyv::Deserialize<OrderStatisticsZSet<T>, D>
+    for ArchivedSerializableOrderStatisticsZSet<T>
 where
     T: Ord + Clone + Debug + SizeOf + Send + Sync + 'static + Archive + RkyvSerialize<Serializer>,
     Archived<T>: RkyvDeserialize<T, Deserializer>,
     <T as Archive>::Archived: Ord,
     D: rkyv::Fallible + ?Sized,
-    ArchivedSerializableOrderStatisticsMultiset<T>:
-        rkyv::Deserialize<SerializableOrderStatisticsMultiset<T>, D>,
+    ArchivedSerializableOrderStatisticsZSet<T>:
+        rkyv::Deserialize<SerializableOrderStatisticsZSet<T>, D>,
 {
-    fn deserialize(&self, deserializer: &mut D) -> Result<OrderStatisticsMultiset<T>, D::Error> {
-        let serializable: SerializableOrderStatisticsMultiset<T> =
+    fn deserialize(&self, deserializer: &mut D) -> Result<OrderStatisticsZSet<T>, D::Error> {
+        let serializable: SerializableOrderStatisticsZSet<T> =
             rkyv::Deserialize::deserialize(self, deserializer)?;
         Ok(serializable.into())
     }
@@ -1643,5 +1643,5 @@ where
 // O(num_leaves) checkpoint/restore via reference-based segment file management.
 
 #[cfg(test)]
-#[path = "order_statistics_multiset_tests.rs"]
+#[path = "order_statistics_zset_tests.rs"]
 mod tests;

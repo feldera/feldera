@@ -1,6 +1,6 @@
 # Storage in DBSP: Spine vs NodeStorage
 
-This document explains the relationship between DBSP's Spine storage system and the NodeStorage abstraction for OrderStatisticsMultiset.
+This document explains the relationship between DBSP's Spine storage system and the NodeStorage abstraction for OrderStatisticsZSet.
 
 ## DBSP's Incremental Computation Model
 
@@ -29,7 +29,7 @@ Different data structures need different storage abstractions:
 | Data Structure | Storage Abstraction | Used By |
 |----------------|---------------------|---------|
 | Sorted batches (immutable runs) | **Spine** | Traces, indexed collections |
-| B+ trees (mutable, augmented) | **NodeStorage** | OrderStatisticsMultiset |
+| B+ trees (mutable, augmented) | **NodeStorage** | OrderStatisticsZSet |
 
 ### Spine: Storage for Traces
 
@@ -50,10 +50,10 @@ Spine provides:
 
 ### NodeStorage: Storage for B+ Trees
 
-NodeStorage manages **OrderStatisticsMultiset** - mutable B+ trees with augmented subtree sums:
+NodeStorage manages **OrderStatisticsZSet** - mutable B+ trees with augmented subtree sums:
 
 ```rust
-pub struct OrderStatisticsMultiset<T> {
+pub struct OrderStatisticsZSet<T> {
     storage: NodeStorage<T>,  // Manages internal nodes + leaves
     root: Option<NodeLocation>,
     // ...
@@ -75,7 +75,7 @@ Input Delta ──► PercentileOperator ──► Output Delta
   (K, V, W)            │                (K, percentile)
                        ▼
               Persistent State:
-              Map<K, OrderStatisticsMultiset<V>>
+              Map<K, OrderStatisticsZSet<V>>
 ```
 
 For each `(key, value, weight)` in the input delta:

@@ -6,7 +6,7 @@ This document describes the generic disk-backed storage implementation for **B+ 
 
 The storage is designed for trees where **data is stored exclusively in leaves**, while internal nodes serve only as navigation/index structures. This is the classic B+ tree property, distinct from B-trees where internal nodes also contain data.
 
-The primary use case is `OrderStatisticsMultiset`, an augmented B+ tree used for O(log n) rank/select queries in percentile aggregation. The generic design enables reuse for other B+ tree variants like interval trees or segment trees.
+The primary use case is `OrderStatisticsZSet`, an augmented B+ tree used for O(log n) rank/select queries in percentile aggregation. The generic design enables reuse for other B+ tree variants like interval trees or segment trees.
 
 ## Architecture
 
@@ -27,7 +27,7 @@ Only leaves are spilled and evicted. Internal nodes are always pinned in memory.
 
 ```
 +--------------------------------------------------------------+
-|              OrderStatisticsMultiset<T>                       |
+|              OrderStatisticsZSet<T>                       |
 |  +--------------------------------------------------------+  |
 |  |        OsmNodeStorage<T> (type alias)                  |  |
 |  |    = NodeStorage<InternalNodeTyped<T>, LeafNode<T>>    |  |
@@ -466,7 +466,7 @@ Block-based format with 512-byte alignment and CRC32C checksums:
 +-----------------------------------------------------+
 | File Header (512 bytes)                              |
 |   checksum: u32 (CRC32C of bytes [4..512])          |
-|   magic: "OSML" (Order Statistics Multiset Leaf)     |
+|   magic: "OSML" (Order Statistics ZSet Leaf)     |
 |   version: u32 (= 1)                                |
 |   num_leaves: u64                                    |
 |   index_offset: u64                                  |
@@ -485,10 +485,10 @@ Block-based format with 512-byte alignment and CRC32C checksums:
 +-----------------------------------------------------+
 ```
 
-## OrderStatisticsMultiset Integration
+## OrderStatisticsZSet Integration
 
 ```rust
-pub struct OrderStatisticsMultiset<T> {
+pub struct OrderStatisticsZSet<T> {
     storage: OsmNodeStorage<T>,
     root: Option<NodeLocation>,
     first_leaf: Option<LeafLocation>,
@@ -559,7 +559,7 @@ The restore process is O(num_leaves), not O(num_entries):
 
 ### PercentileOperator Integration
 
-`PercentileOperator` maintains a `BTreeMap<K, OrderStatisticsMultiset<V>>` and a `BTreeMap<K, u64>` mapping keys to tree IDs. It implements the full `Operator` lifecycle including `clock_end()` for flush/evict and `checkpoint()` / `restore()` for fault tolerance.
+`PercentileOperator` maintains a `BTreeMap<K, OrderStatisticsZSet<V>>` and a `BTreeMap<K, u64>` mapping keys to tree IDs. It implements the full `Operator` lifecycle including `clock_end()` for flush/evict and `checkpoint()` / `restore()` for fault tolerance.
 
 **Runtime flush/evict lifecycle:**
 
@@ -604,7 +604,7 @@ fn restore(&mut self, base, persistent_id) {
     // Restore next_tree_id (prevents ID collisions after restore)
     for (key, tree_id) in archived_tree_ids {
         let tree_pid = format!("{}_t{}", persistent_id, tree_id);
-        let tree = OrderStatisticsMultiset::restore(
+        let tree = OrderStatisticsZSet::restore(
             base, &tree_pid, branching_factor, config
         )?;
         self.trees.insert(key, tree);
@@ -674,7 +674,7 @@ Requirements:
 | `node_storage.rs` | Core types, traits, config, in-memory operations. Includes `node_storage_disk.rs` via `include!()` |
 | `node_storage_disk.rs` | Disk I/O: flush, load, evict, checkpoint (save/restore), file format, Drop impl |
 | `node_storage_tests.rs` | 55+ tests covering all operations |
-| `order_statistics_multiset.rs` | `OrderStatisticsMultiset<T>`, `LeafNode<T>`, `InternalNodeTyped<T>` |
+| `order_statistics_zset.rs` | `OrderStatisticsZSet<T>`, `LeafNode<T>`, `InternalNodeTyped<T>` |
 
 ## Test Coverage
 

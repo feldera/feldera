@@ -15,9 +15,9 @@ pub use checked_int::CheckedInt;
 pub use floats::{F32, F64};
 pub use lattice::Lattice;
 pub use order::{PartialOrder, TotalOrder};
-pub use order_statistics::order_statistics_multiset::{
-    DEFAULT_BRANCHING_FACTOR, MIN_BRANCHING_FACTOR, OrderStatisticsMultiset,
-    SerializableOrderStatisticsMultiset,
+pub use order_statistics::order_statistics_zset::{
+    DEFAULT_BRANCHING_FACTOR, MIN_BRANCHING_FACTOR, OrderStatisticsZSet,
+    SerializableOrderStatisticsZSet,
 };
 pub use present::Present;
 pub use zset::{

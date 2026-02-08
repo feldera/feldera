@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
-    use crate::algebra::{DEFAULT_BRANCHING_FACTOR, OrderStatisticsMultiset, ZWeight};
+    use crate::algebra::{DEFAULT_BRANCHING_FACTOR, OrderStatisticsZSet, ZWeight};
     use crate::node_storage::NodeStorageConfig;
 
-    fn new_tree<T>() -> OrderStatisticsMultiset<T>
+    fn new_tree<T>() -> OrderStatisticsZSet<T>
     where
         T: crate::DBData,
     {
-        OrderStatisticsMultiset::with_config(
+        OrderStatisticsZSet::with_config(
             DEFAULT_BRANCHING_FACTOR,
             NodeStorageConfig::memory_only(),
         )
@@ -15,7 +15,7 @@ mod tests {
 
     #[test]
     fn test_empty_tree() {
-        let mut tree: OrderStatisticsMultiset<i32> = new_tree();
+        let mut tree: OrderStatisticsZSet<i32> = new_tree();
         assert_eq!(tree.total_weight(), 0);
         assert_eq!(tree.num_keys(), 0);
         assert!(tree.is_empty());
@@ -158,8 +158,8 @@ mod tests {
 
     #[test]
     fn test_bulk_load_empty() {
-        let mut tree: OrderStatisticsMultiset<i32> =
-            OrderStatisticsMultiset::from_sorted_entries(vec![], 64);
+        let mut tree: OrderStatisticsZSet<i32> =
+            OrderStatisticsZSet::from_sorted_entries(vec![], 64);
         assert!(tree.is_empty());
         assert_eq!(tree.num_keys(), 0);
         assert_eq!(tree.total_weight(), 0);
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_bulk_load_single() {
-        let mut tree = OrderStatisticsMultiset::from_sorted_entries(vec![(42, 5)], 64);
+        let mut tree = OrderStatisticsZSet::from_sorted_entries(vec![(42, 5)], 64);
         assert_eq!(tree.total_weight(), 5);
         assert_eq!(tree.num_keys(), 1);
         assert_eq!(tree.select_kth(0, true), Some(&42));
@@ -179,14 +179,14 @@ mod tests {
     #[test]
     fn test_bulk_load_matches_incremental() {
         // Build tree incrementally
-        let mut incremental: OrderStatisticsMultiset<i32> = new_tree();
+        let mut incremental: OrderStatisticsZSet<i32> = new_tree();
         for i in 0..1000 {
             incremental.insert(i, (i % 10) as ZWeight + 1);
         }
 
         // Build tree via bulk load
         let entries: Vec<_> = incremental.iter().map(|(k, w)| (*k, w)).collect();
-        let mut bulk = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+        let mut bulk = OrderStatisticsZSet::from_sorted_entries(entries, 64);
 
         // Verify equality
         assert_eq!(incremental.total_weight(), bulk.total_weight());
@@ -213,7 +213,7 @@ mod tests {
         for size in [1, 10, 63, 64, 65, 100, 127, 128, 129, 1000, 10000] {
             let entries: Vec<_> = (0..size).map(|i| (i as i32, 1)).collect();
 
-            let mut tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+            let mut tree = OrderStatisticsZSet::from_sorted_entries(entries, 64);
 
             assert_eq!(tree.num_keys(), size, "num_keys mismatch for size {size}");
             assert_eq!(
@@ -242,7 +242,7 @@ mod tests {
             .map(|i| (i * 2, i as ZWeight + 1)) // Even numbers with varying weights
             .collect();
 
-        let tree = OrderStatisticsMultiset::from_sorted_entries(entries.clone(), 32);
+        let tree = OrderStatisticsZSet::from_sorted_entries(entries.clone(), 32);
 
         let collected: Vec<_> = tree.iter().map(|(k, w)| (*k, w)).collect();
         assert_eq!(collected.len(), entries.len());
@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn test_bulk_load_with_varying_weights() {
         let entries = vec![(10, 3), (20, 2), (30, 5), (40, 1), (50, 4)];
-        let mut tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+        let mut tree = OrderStatisticsZSet::from_sorted_entries(entries, 64);
 
         assert_eq!(tree.total_weight(), 15); // 3+2+5+1+4
         assert_eq!(tree.num_keys(), 5);
@@ -282,7 +282,7 @@ mod tests {
     fn test_bulk_load_small_branching_factor() {
         // Use minimum branching factor to force multiple internal levels
         let entries: Vec<_> = (0..100).map(|i| (i, 1)).collect();
-        let mut tree = OrderStatisticsMultiset::from_sorted_entries(entries, 4);
+        let mut tree = OrderStatisticsZSet::from_sorted_entries(entries, 4);
 
         assert_eq!(tree.num_keys(), 100);
         assert_eq!(tree.total_weight(), 100);
@@ -296,7 +296,7 @@ mod tests {
     #[test]
     fn test_bulk_load_rank_queries() {
         let entries: Vec<_> = (0..100).map(|i| (i * 10, 1)).collect();
-        let mut tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+        let mut tree = OrderStatisticsZSet::from_sorted_entries(entries, 64);
 
         // rank(key) = sum of weights of keys < key
         assert_eq!(tree.rank(&0), 0); // No keys less than 0
@@ -334,7 +334,7 @@ mod tests {
     fn test_bulk_load_negative_weights() {
         // Bulk load with some negative weights (for incremental computation)
         let entries = vec![(10, 5), (20, -2), (30, 3)];
-        let mut tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+        let mut tree = OrderStatisticsZSet::from_sorted_entries(entries, 64);
 
         assert_eq!(tree.total_weight(), 6); // 5 + (-2) + 3
         assert_eq!(tree.num_keys(), 3);
@@ -351,7 +351,7 @@ mod tests {
     #[test]
     fn test_bulk_load_percentile_operations() {
         let entries: Vec<_> = (1..=100).map(|i| (i, 1)).collect();
-        let mut tree = OrderStatisticsMultiset::from_sorted_entries(entries, 64);
+        let mut tree = OrderStatisticsZSet::from_sorted_entries(entries, 64);
 
         // PERCENTILE_DISC
         assert_eq!(tree.select_percentile_disc(0.0, true), Some(&1));
@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn test_select_kth_after_flush_evict() {
         let (config, _backend) = test_config_with_storage(0);
-        let mut tree = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config);
+        let mut tree = OrderStatisticsZSet::with_config(DEFAULT_BRANCHING_FACTOR, config);
 
         // Insert enough data to have multiple leaves
         for i in 0..200 {
@@ -418,7 +418,7 @@ mod tests {
     #[test]
     fn test_insert_after_flush_evict() {
         let (config, _backend) = test_config_with_storage(0);
-        let mut tree = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config);
+        let mut tree = OrderStatisticsZSet::with_config(DEFAULT_BRANCHING_FACTOR, config);
 
         // Insert data
         for i in 0..100 {
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn test_flush_and_evict_wrapper() {
         let (config, _backend) = test_config_with_storage(0);
-        let mut tree = OrderStatisticsMultiset::with_config(DEFAULT_BRANCHING_FACTOR, config);
+        let mut tree = OrderStatisticsZSet::with_config(DEFAULT_BRANCHING_FACTOR, config);
 
         // Insert data
         for i in 0..100 {

@@ -789,7 +789,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     /** Implement percentile aggregates using the stateful DBSPPercentileOperator.
-     *  This operator maintains OrderStatisticsMultiset state per key for O(log n) incremental updates.
+     *  This operator maintains OrderStatisticsZSet state per key for O(log n) incremental updates.
      *  Multiple percentile aggregates are each compiled to a separate operator and then
      *  combined via join on the group key. */
     DBSPSimpleOperator implementPercentileAggregates(
@@ -960,6 +960,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         DBSPSimpleOperator result;
         DBSPAggregateList aggregates = null;
+        int[] aggFieldMapping = null;  // null = identity mapping; non-null for mixed percentile+regular
         if (aggregateCalls.isEmpty()) {
             // No aggregations: just apply distinct
             DBSPVariablePath var = localGroupAndInput.getKVRefType().var();
@@ -981,12 +982,67 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             call.getAggregation().getKind() == SqlKind.PERCENTILE_DISC);
 
             if (anyPercentile && !allPercentile) {
-                throw new UnsupportedException(
-                        "Mixing PERCENTILE_CONT/PERCENTILE_DISC with other aggregates is not supported. " +
-                        "Use separate GROUP BY queries.", node);
-            }
+                // Mixed case: partition calls into regular and percentile groups,
+                // compute each separately, then join on the group key.
+                List<AggregateCall> regularCalls = new ArrayList<>();
+                List<Integer> regularOrigIndices = new ArrayList<>();
+                List<AggregateCall> percentileCalls = new ArrayList<>();
+                List<Integer> percentileOrigIndices = new ArrayList<>();
 
-            if (allPercentile) {
+                for (int idx = 0; idx < aggregateCalls.size(); idx++) {
+                    AggregateCall call = aggregateCalls.get(idx);
+                    SqlKind kind = call.getAggregation().getKind();
+                    if (kind == SqlKind.PERCENTILE_CONT || kind == SqlKind.PERCENTILE_DISC) {
+                        percentileCalls.add(call);
+                        percentileOrigIndices.add(idx);
+                    } else {
+                        regularCalls.add(call);
+                        regularOrigIndices.add(idx);
+                    }
+                }
+
+                // Build a resultType for createAggregates with key fields + regular agg types
+                int groupCount = aggregate.getGroupCount();
+                DBSPType[] regularResultFields = new DBSPType[groupCount + regularCalls.size()];
+                for (int i = 0; i < groupCount; i++) {
+                    regularResultFields[i] = tuple.getFieldType(i);
+                }
+                for (int i = 0; i < regularCalls.size(); i++) {
+                    regularResultFields[groupCount + i] = aggTypes[regularOrigIndices.get(i)];
+                }
+                DBSPTypeTuple regularResultType = new DBSPTypeTuple(regularResultFields);
+
+                // Compute regular aggregates
+                DBSPAggregateList regularAggs = createAggregates(this.compiler(),
+                        aggregate, regularCalls, Linq.list(), regularResultType, inputRowType,
+                        groupCount, localKeys, true);
+                DBSPSimpleOperator regularResult = this.implementAggregateList(
+                        node, localGroupType, indexedInput.outputPort(), regularAggs);
+
+                // Compute percentile aggregates
+                DBSPType[] pctileAggTypes = new DBSPType[percentileCalls.size()];
+                for (int i = 0; i < percentileCalls.size(); i++) {
+                    pctileAggTypes[i] = aggTypes[percentileOrigIndices.get(i)];
+                }
+                DBSPSimpleOperator percentileResult = this.implementPercentileAggregates(
+                        node, aggregate, percentileCalls,
+                        indexedInput.outputPort(), localGroupType, inputRowType, pctileAggTypes);
+
+                // Join: result fields = (regular_0, ..., regular_n, pctile_0, ..., pctile_m)
+                result = combineTwoAggregates(
+                        node, localGroupType, regularResult, percentileResult, this::addOperator);
+
+                // Build permutation: maps from original SQL position to physical field index
+                // in the joined result (regular fields come first, then percentile fields)
+                aggFieldMapping = new int[aggregateCalls.size()];
+                for (int i = 0; i < regularOrigIndices.size(); i++) {
+                    aggFieldMapping[regularOrigIndices.get(i)] = i;
+                }
+                for (int i = 0; i < percentileOrigIndices.size(); i++) {
+                    aggFieldMapping[percentileOrigIndices.get(i)] = regularCalls.size() + i;
+                }
+                // aggregates stays null → skips empty-set-result (same as percentile-only path)
+            } else if (allPercentile) {
                 // Use the new stateful percentile operator
                 result = this.implementPercentileAggregates(node, aggregate, aggregateCalls,
                         indexedInput.outputPort(), localGroupType, inputRowType, aggTypes);
@@ -1039,7 +1095,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             flattenFields[i] = cast;
         }
         for (int i = 0; i < aggType.size(); i++) {
-            DBSPExpression flattenField = kv.field(1).deref().field(i).applyCloneIfNeeded();
+            int fieldIndex = (aggFieldMapping != null) ? aggFieldMapping[i] : i;
+            DBSPExpression flattenField = kv.field(1).deref().field(fieldIndex).applyCloneIfNeeded();
             // Here we correct from the type produced by the Folder (typeFromAggregate) to the
             // actual expected type aggType (which is the tuple of aggTypes).
             DBSPExpression cast = flattenField.cast(node, aggTypes[i], DBSPCastExpression.CastType.SqlUnsafe);

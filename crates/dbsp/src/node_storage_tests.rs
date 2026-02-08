@@ -11,7 +11,7 @@ mod tests {
         storage::buffer_cache::{BufferCache, CacheEntry},
     };
 
-    use crate::algebra::order_statistics::order_statistics_multiset::{
+    use crate::algebra::order_statistics::order_statistics_zset::{
         InternalNodeTyped, LeafNode, OsmNodeStorage,
     };
     use crate::node_storage::{

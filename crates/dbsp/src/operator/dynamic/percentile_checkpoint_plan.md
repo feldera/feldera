@@ -2,14 +2,14 @@
 
 ## Current State
 
-The `PercentileOperator` maintains per-key `OrderStatisticsMultiset` trees that can hold
+The `PercentileOperator` maintains per-key `OrderStatisticsZSet` trees that can hold
 **billions of entries**. Each tree uses `NodeStorage` which already supports spilling leaf
 nodes to disk. Checkpoint/restore is not yet implemented.
 
 ## Scope
 
 **This plan is designed for `NodeStorage` with B+ tree structures where domain data
-resides in leaf nodes.** This matches `OrderStatisticsMultiset`, where all `(value, weight)`
+resides in leaf nodes.** This matches `OrderStatisticsZSet`, where all `(value, weight)`
 pairs are stored in leaves.
 
 The core principle is: **checkpoint only leaves; reconstruct internal nodes on restore.**
@@ -43,7 +43,7 @@ for checkpoint would be wasteful. We should reference existing files like Spine 
 
 ## Data Structure Assumptions
 
-### OrderStatisticsMultiset is a B+ Tree
+### OrderStatisticsZSet is a B+ Tree
 
 ```rust
 // Internal nodes: navigation + derived aggregates
@@ -258,7 +258,7 @@ impl<I, L> Drop for NodeStorage<I, L> {
 
 2. **Optimized restore** (uses checkpoint file directly, no bulk reading):
    ```rust
-   impl<T: DBData> OrderStatisticsMultiset<T> {
+   impl<T: DBData> OrderStatisticsZSet<T> {
        /// Restore from checkpoint - O(num_leaves), not O(num_entries).
        ///
        /// This:
@@ -371,7 +371,7 @@ impl<K, V, Mode> Operator for PercentileOperator<K, V, Mode> {
         self.trees.clear();
         for (key, leaf_storage_meta) in committed.trees {
             // This reads leaves and rebuilds the entire tree via from_sorted_entries()
-            let tree = OrderStatisticsMultiset::restore(leaf_storage_meta)?;
+            let tree = OrderStatisticsZSet::restore(leaf_storage_meta)?;
             self.trees.insert(key, tree);
         }
 
@@ -383,12 +383,12 @@ impl<K, V, Mode> Operator for PercentileOperator<K, V, Mode> {
 }
 ```
 
-### Changes to OrderStatisticsMultiset
+### Changes to OrderStatisticsZSet
 
 Need methods for checkpoint/restore:
 
 ```rust
-impl<T: DBData> OrderStatisticsMultiset<T> {
+impl<T: DBData> OrderStatisticsZSet<T> {
     /// Get mutable access to the underlying NodeStorage (for checkpoint).
     pub fn storage_mut(&mut self) -> &mut OsmNodeStorage<T> {
         &mut self.storage
@@ -565,7 +565,7 @@ The key optimization: we rebuild internal nodes from `leaf_summaries` without
 reading leaf contents. For 1B entries with ~1M leaves, this is ~1000x faster.
 
 ```rust
-fn restore_optimized(committed: CommittedLeafStorage<K>) -> OrderStatisticsMultiset<K> {
+fn restore_optimized(committed: CommittedLeafStorage<K>) -> OrderStatisticsZSet<K> {
     let mut storage = NodeStorage::new();
 
     // 1. Point at checkpoint file - DON'T copy or read it
@@ -580,7 +580,7 @@ fn restore_optimized(committed: CommittedLeafStorage<K>) -> OrderStatisticsMulti
         &committed.leaf_summaries
     );
 
-    OrderStatisticsMultiset::from_storage(storage, committed.total_weight)
+    OrderStatisticsZSet::from_storage(storage, committed.total_weight)
 }
 ```
 
@@ -612,8 +612,8 @@ After restore, the checkpoint file IS the live spill file:
 | `NodeStorage` | Add `mark_all_leaves_evicted()`, `is_leaf_on_disk()` methods |
 | `NodeStorage` | Handle edge case: create spill file if none exists |
 | `NodeStorage` | Support in-place block overwrites for modified leaves |
-| `OrderStatisticsMultiset` | Add `storage_mut()`, `restore()`, `collect_leaf_summaries()` methods |
-| `OrderStatisticsMultiset` | Add `build_internal_nodes_from_summaries()`, `from_storage()` methods |
+| `OrderStatisticsZSet` | Add `storage_mut()`, `restore()`, `collect_leaf_summaries()` methods |
+| `OrderStatisticsZSet` | Add `build_internal_nodes_from_summaries()`, `from_storage()` methods |
 | `PercentileOperator` | Implement `checkpoint()`, `restore()` using above |
 | Spill file lifecycle | Checkpoint gets copy; runtime keeps local file; restore reuses checkpoint as spill file |
 
@@ -641,10 +641,10 @@ impl<I, L> NodeStorage<I, L> {
 }
 ```
 
-### OrderStatisticsMultiset Methods Detail
+### OrderStatisticsZSet Methods Detail
 
 ```rust
-impl<T: DBData> OrderStatisticsMultiset<T> {
+impl<T: DBData> OrderStatisticsZSet<T> {
     /// Collect leaf summaries for checkpoint (first_key, weight_sum per leaf).
     pub fn collect_leaf_summaries(&self) -> Vec<LeafSummary<T>>;
 
@@ -670,7 +670,7 @@ impl<T: DBData> OrderStatisticsMultiset<T> {
    - Verify `is_leaf_on_disk()` correctly identifies leaf states
    - Verify leaf_summaries collected correctly
 
-2. **Unit tests for OrderStatisticsMultiset restore:**
+2. **Unit tests for OrderStatisticsZSet restore:**
    - `build_internal_nodes_from_summaries()` produces correct tree structure
    - Verify separator keys match first_key from summaries
    - Verify subtree_sums match aggregated weight_sum

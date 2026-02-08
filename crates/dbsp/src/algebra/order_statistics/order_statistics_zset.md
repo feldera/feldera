@@ -1,6 +1,6 @@
-# Order Statistics Multiset for DBSP
+# Order Statistics ZSet for DBSP
 
-This document captures the requirements, research, and design decisions for implementing an order statistics multiset data structure suitable for incremental computation in DBSP.
+This document captures the requirements, research, and design decisions for implementing an order statistics zset data structure suitable for incremental computation in DBSP.
 
 ## Requirements
 
@@ -413,28 +413,28 @@ struct SerializedBPlusTree<T> {
 
 ## Implementation
 
-The augmented B+ tree has been implemented in `order_statistics_multiset.rs`. This section documents the actual implementation.
+The augmented B+ tree has been implemented in `order_statistics_zset.rs`. This section documents the actual implementation.
 
 ### Module Location
 
 ```
-crates/dbsp/src/algebra/order_statistics_multiset.rs
+crates/dbsp/src/algebra/order_statistics_zset.rs
 ```
 
 ### Public API
 
-#### `OrderStatisticsMultiset<T>`
+#### `OrderStatisticsZSet<T>`
 
 The main data structure - an augmented B+ tree for weighted multisets with O(log n) rank/select operations.
 
 ```rust
-use dbsp::algebra::OrderStatisticsMultiset;
+use dbsp::algebra::OrderStatisticsZSet;
 
 // Create with default branching factor (64)
-let mut tree = OrderStatisticsMultiset::new();
+let mut tree = OrderStatisticsZSet::new();
 
 // Or specify branching factor for tuning
-let mut tree = OrderStatisticsMultiset::with_branching_factor(128);
+let mut tree = OrderStatisticsZSet::with_branching_factor(128);
 ```
 
 #### Core Operations
@@ -494,7 +494,7 @@ Nodes are stored in a `Vec<Node<T>>` arena, enabling:
 - Simple index-based references
 
 ```rust
-pub struct OrderStatisticsMultiset<T> {
+pub struct OrderStatisticsZSet<T> {
     nodes: Vec<Node<T>>,         // Arena storage
     root: usize,                 // Root node index
     total_weight: ZWeight,       // Cached total
@@ -548,7 +548,7 @@ The implementation correctly handles negative weights throughout:
 4. **Zero weights**: Entries remain in tree (use `compact()` to remove)
 
 ```rust
-let mut tree = OrderStatisticsMultiset::new();
+let mut tree = OrderStatisticsZSet::new();
 tree.insert(10, 5);   // weight = 5
 tree.insert(10, -3);  // weight = 2 (5 + -3)
 tree.insert(10, -2);  // weight = 0 (logically absent)
@@ -575,19 +575,19 @@ The tree implements `serde::Serialize` and `serde::Deserialize` directly.
 
 #### rkyv Support
 
-For zero-copy serialization, use `SerializableOrderStatisticsMultiset`:
+For zero-copy serialization, use `SerializableOrderStatisticsZSet`:
 
 ```rust
 use dbsp::algebra::{
-    OrderStatisticsMultiset,
-    SerializableOrderStatisticsMultiset,
+    OrderStatisticsZSet,
+    SerializableOrderStatisticsZSet,
 };
 
 // Serialize: flatten to sorted entries
-let serialized: SerializableOrderStatisticsMultiset<i32> = (&tree).into();
+let serialized: SerializableOrderStatisticsZSet<i32> = (&tree).into();
 
 // Deserialize: rebuild tree from entries
-let restored: OrderStatisticsMultiset<i32> = serialized.into();
+let restored: OrderStatisticsZSet<i32> = serialized.into();
 ```
 
 The serialized form stores entries as a flat `Vec<(T, ZWeight)>`, enabling:
@@ -634,7 +634,7 @@ Smaller factors are better for:
 #### Basic Usage
 
 ```rust
-let mut tree = OrderStatisticsMultiset::new();
+let mut tree = OrderStatisticsZSet::new();
 
 // Insert elements with weights
 tree.insert("apple", 3);
@@ -653,7 +653,7 @@ assert_eq!(tree.rank(&"banana"), 3); // 3 elements before "banana"
 #### Incremental Updates (DBSP Pattern)
 
 ```rust
-let mut tree = OrderStatisticsMultiset::new();
+let mut tree = OrderStatisticsZSet::new();
 
 // Initial state
 tree.insert(100, 5);
@@ -670,7 +670,7 @@ assert_eq!(tree.total_weight(), 7); // 3 + 4 + 0
 #### Percentile Computation
 
 ```rust
-let mut tree = OrderStatisticsMultiset::new();
+let mut tree = OrderStatisticsZSet::new();
 for i in 1..=100 {
     tree.insert(i, 1);
 }
@@ -687,12 +687,12 @@ let (lower, upper, frac) = tree.select_percentile_bounds(0.5).unwrap();
 
 ```rust
 // Worker 1's partial aggregate
-let mut tree1 = OrderStatisticsMultiset::new();
+let mut tree1 = OrderStatisticsZSet::new();
 tree1.insert(10, 5);
 tree1.insert(30, 3);
 
 // Worker 2's partial aggregate
-let mut tree2 = OrderStatisticsMultiset::new();
+let mut tree2 = OrderStatisticsZSet::new();
 tree2.insert(20, 2);
 tree2.insert(30, 1);
 
@@ -742,7 +742,7 @@ The tree supports efficient O(num_leaves) checkpoint/restore for fault tolerance
 #### Checkpoint API
 
 ```rust
-impl<T> OrderStatisticsMultiset<T> {
+impl<T> OrderStatisticsZSet<T> {
     /// Collect leaf summaries for checkpoint metadata.
     pub fn collect_leaf_summaries(&self) -> Vec<LeafSummary<T>>;
 
