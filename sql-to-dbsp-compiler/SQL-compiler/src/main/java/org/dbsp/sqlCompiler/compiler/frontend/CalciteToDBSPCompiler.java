@@ -230,6 +230,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -788,10 +789,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return result;
     }
 
+    /** Key for grouping compatible percentile calls that can share a single operator.
+     *  Calls are compatible if they have the same ORDER BY column, direction, and mode. */
+    record PercentileGroupKey(int orderByFieldIndex, boolean ascending, boolean continuous) {}
+
     /** Implement percentile aggregates using the stateful DBSPPercentileOperator.
      *  This operator maintains OrderStatisticsZSet state per key for O(log n) incremental updates.
-     *  Multiple percentile aggregates are each compiled to a separate operator and then
-     *  combined via join on the group key. */
+     *  Compatible percentile calls (same ORDER BY column, direction, mode) are merged into a
+     *  single operator with one shared tree, eliminating redundant tree maintenance. */
     DBSPSimpleOperator implementPercentileAggregates(
             CalciteRelNode node,
             LogicalAggregate aggregate,
@@ -808,7 +813,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         List<RexNode> projects = project.getProjects();
 
-        List<DBSPSimpleOperator> operators = new ArrayList<>();
+        // Parse each call's properties and group compatible calls.
+        // Each entry: (groupKey, percentileValue, originalIndex)
+        record ParsedCall(PercentileGroupKey groupKey, double percentileValue, int origIndex) {}
+        List<ParsedCall> parsedCalls = new ArrayList<>();
 
         for (int i = 0; i < aggregateCalls.size(); i++) {
             AggregateCall call = aggregateCalls.get(i);
@@ -854,14 +862,43 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 throw new CompilationError("Invalid percentile field index: " + percentileFieldIndex, node);
             }
 
+            parsedCalls.add(new ParsedCall(
+                    new PercentileGroupKey(orderByFieldIndex, ascending, continuous),
+                    percentileValue, i));
+        }
+
+        // Group compatible calls by their PercentileGroupKey (preserving insertion order)
+        LinkedHashMap<PercentileGroupKey, List<ParsedCall>> groups = new LinkedHashMap<>();
+        for (ParsedCall pc : parsedCalls) {
+            groups.computeIfAbsent(pc.groupKey(), k -> new ArrayList<>()).add(pc);
+        }
+
+        // For each group, create ONE operator with all percentile values.
+        // Track the mapping from original call index to (groupOperatorIndex, positionInGroup)
+        // so we can emit fields in the correct order.
+        List<DBSPSimpleOperator> groupOperators = new ArrayList<>();
+        // Maps original call index -> (groupOperatorIndex, positionWithinGroup)
+        int[][] callMapping = new int[aggregateCalls.size()][2];
+
+        int groupOpIdx = 0;
+        for (Map.Entry<PercentileGroupKey, List<ParsedCall>> entry : groups.entrySet()) {
+            PercentileGroupKey gk = entry.getKey();
+            List<ParsedCall> calls = entry.getValue();
+
+            // Build the percentile values array
+            double[] percentileValues = new double[calls.size()];
+            for (int j = 0; j < calls.size(); j++) {
+                percentileValues[j] = calls.get(j).percentileValue();
+                callMapping[calls.get(j).origIndex()] = new int[]{groupOpIdx, j};
+            }
+
             // Create value extractor closure: (key_ref, value_ref) -> order_by_value
             DBSPTypeTupleBase kvRefType = indexedInput.getOutputIndexedZSetType().getKVRefType();
             DBSPVariablePath kvVar = kvRefType.var();
-            DBSPExpression orderByValue = kvVar.field(1).deref().field(orderByFieldIndex).applyCloneIfNeeded();
+            DBSPExpression orderByValue = kvVar.field(1).deref().field(gk.orderByFieldIndex()).applyCloneIfNeeded();
 
             // PERCENTILE_CONT always returns DOUBLE per SQL standard.
-            // Cast ORDER BY values to DOUBLE if not already DOUBLE.
-            if (continuous && !orderByValue.getType().is(DBSPTypeDouble.class)) {
+            if (gk.continuous() && !orderByValue.getType().is(DBSPTypeDouble.class)) {
                 DBSPType doubleType = new DBSPTypeDouble(
                         orderByValue.getNode(), orderByValue.getType().mayBeNull);
                 orderByValue = orderByValue.cast(node, doubleType,
@@ -870,27 +907,98 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             DBSPClosureExpression valueExtractor = orderByValue.closure(kvVar);
 
-            // Output type: IndexedZSet<Key, Tuple1<aggType[i]>>
-            // The Rust percentile_cont/disc methods always return Option<V>,
-            // so the output value type must be nullable regardless of SQL nullability.
-            // The downstream flatten step casts back to the expected SQL type.
-            // PERCENTILE_CONT always returns DOUBLE per SQL standard.
-            DBSPType outputValueType;
-            if (continuous) {
-                outputValueType = new DBSPTypeDouble(node, true);
-            } else {
-                outputValueType = aggTypes[i].withMayBeNull(true);
+            // Build output tuple type: TupN<Option<V1>, Option<V2>, ...>
+            // Each field corresponds to one percentile in this group.
+            DBSPType[] outputFieldTypes = new DBSPType[calls.size()];
+            for (int j = 0; j < calls.size(); j++) {
+                int origIdx = calls.get(j).origIndex();
+                if (gk.continuous()) {
+                    outputFieldTypes[j] = new DBSPTypeDouble(node, true);
+                } else {
+                    outputFieldTypes[j] = aggTypes[origIdx].withMayBeNull(true);
+                }
             }
-            DBSPTypeIndexedZSet outputType = makeIndexedZSet(groupKeyType, new DBSPTypeTuple(outputValueType));
+            DBSPTypeTuple outputValueTuple = new DBSPTypeTuple(outputFieldTypes);
+            DBSPTypeIndexedZSet outputType = makeIndexedZSet(groupKeyType, outputValueTuple);
 
             DBSPPercentileOperator percentileOp = new DBSPPercentileOperator(
-                    node, percentileValue, continuous, ascending,
+                    node, percentileValues, gk.continuous(), gk.ascending(),
                     valueExtractor, null, outputType, indexedInput);
             this.addOperator(percentileOp);
-            operators.add(percentileOp);
+            groupOperators.add(percentileOp);
+            groupOpIdx++;
         }
 
-        return combineAggregateList(node, groupKeyType, operators, this::addOperator);
+        // If there's only one group, its output tuple already contains all fields
+        // in the order they were added (which may differ from the original SQL order).
+        // We need to combine group operators and then permute fields to match original order.
+
+        // First, combine group operators (if multiple groups)
+        DBSPSimpleOperator combined = combineAggregateList(node, groupKeyType, groupOperators, this::addOperator);
+
+        // Now check if we need to permute fields to match the original SQL order.
+        // The combined output has fields in group-order: all fields from group 0, then group 1, etc.
+        // We need to map each original call index to the correct position in the combined output.
+        if (groups.size() == 1 && aggregateCalls.size() > 1) {
+            // Single group: output fields are in the order of calls within the group,
+            // which is already the insertion order (same as original SQL order).
+            // No permutation needed.
+            return combined;
+        }
+
+        if (groups.size() <= 1) {
+            return combined;
+        }
+
+        // Multiple groups: build a permutation map_index to reorder fields.
+        // The combined result has fields: [group0_field0, group0_field1, ..., group1_field0, ...]
+        // We need to map original index i to combined position.
+        // First compute the start offset of each group in the combined output.
+        int[] groupStartOffset = new int[groupOperators.size()];
+        int offset = 0;
+        for (Map.Entry<PercentileGroupKey, List<ParsedCall>> entry : groups.entrySet()) {
+            groupStartOffset[new ArrayList<>(groups.keySet()).indexOf(entry.getKey())] = offset;
+            offset += entry.getValue().size();
+        }
+
+        // Check if the natural order already matches the original order
+        boolean needsPermutation = false;
+        for (int i = 0; i < aggregateCalls.size(); i++) {
+            int combinedPos = groupStartOffset[callMapping[i][0]] + callMapping[i][1];
+            if (combinedPos != i) {
+                needsPermutation = true;
+                break;
+            }
+        }
+
+        if (!needsPermutation) {
+            return combined;
+        }
+
+        // Build a map_index to permute fields
+        DBSPTypeTupleBase kvRefType = combined.getOutputIndexedZSetType().getKVRefType();
+        DBSPVariablePath kv = kvRefType.var();
+        DBSPExpression[] permutedFields = new DBSPExpression[aggregateCalls.size()];
+        for (int i = 0; i < aggregateCalls.size(); i++) {
+            int combinedPos = groupStartOffset[callMapping[i][0]] + callMapping[i][1];
+            permutedFields[i] = kv.field(1).deref().field(combinedPos).applyCloneIfNeeded();
+        }
+        DBSPExpression key = kv.field(0).deref().applyCloneIfNeeded();
+        DBSPExpression permutedBody = new DBSPRawTupleExpression(key, new DBSPTupleExpression(permutedFields));
+        DBSPClosureExpression permuteClosure = permutedBody.closure(kv);
+
+        DBSPType[] permutedFieldTypes = new DBSPType[aggregateCalls.size()];
+        for (int i = 0; i < aggregateCalls.size(); i++) {
+            int combinedPos = groupStartOffset[callMapping[i][0]] + callMapping[i][1];
+            permutedFieldTypes[i] = combined.getOutputIndexedZSetType().elementType
+                    .to(DBSPTypeTuple.class).getFieldType(combinedPos);
+        }
+        DBSPTypeIndexedZSet permutedOutputType = makeIndexedZSet(groupKeyType, new DBSPTypeTuple(permutedFieldTypes));
+
+        DBSPMapIndexOperator permuteOp = new DBSPMapIndexOperator(
+                node, permuteClosure, permutedOutputType, combined.outputPort());
+        this.addOperator(permuteOp);
+        return permuteOp;
     }
 
     /** Implement an AggregateList using a {@link DBSPStreamAggregateOperator} operator */

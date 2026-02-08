@@ -23,7 +23,7 @@ mod tests {
         // PERCENTILE_CONT requires floating-point types (implements Interpolate)
         let (mut circuit, (input, output)) = Runtime::init_circuit(1, |circuit| {
             let (input, input_handle) = circuit.add_input_indexed_zset::<i32, F64>();
-            let output = input.percentile_cont_stateful(None, 0.5, true);
+            let output = input.percentile_cont_stateful(None, &[0.5], true, |r| r[0].clone());
             Ok((input_handle, output.output()))
         })
         .unwrap();
@@ -75,7 +75,7 @@ mod tests {
         // PERCENTILE_DISC works with any ordered type (no Interpolate required)
         let (mut circuit, (input, output)) = Runtime::init_circuit(1, |circuit| {
             let (input, input_handle) = circuit.add_input_indexed_zset::<i32, i32>();
-            let output = input.percentile_disc_stateful(None, 0.5, true);
+            let output = input.percentile_disc_stateful(None, &[0.5], true, |r| r[0].clone());
             Ok((input_handle, output.output()))
         })
         .unwrap();
@@ -97,7 +97,7 @@ mod tests {
     fn test_percentile_operator_multiple_keys() {
         let (mut circuit, (input, output)) = Runtime::init_circuit(1, |circuit| {
             let (input, input_handle) = circuit.add_input_indexed_zset::<i32, i32>();
-            let output = input.percentile_disc_stateful(None, 0.5, true);
+            let output = input.percentile_disc_stateful(None, &[0.5], true, |r| r[0].clone());
             Ok((input_handle, output.output()))
         })
         .unwrap();
@@ -123,7 +123,7 @@ mod tests {
         // Use F64 for PERCENTILE_CONT test
         let (mut circuit, (input, output)) = Runtime::init_circuit(1, |circuit| {
             let (input, input_handle) = circuit.add_input_indexed_zset::<i32, F64>();
-            let output = input.percentile_cont_stateful(None, 0.5, true);
+            let output = input.percentile_cont_stateful(None, &[0.5], true, |r| r[0].clone());
             Ok((input_handle, output.output()))
         })
         .unwrap();
@@ -155,7 +155,7 @@ mod tests {
         // Test that PERCENTILE_CONT correctly interpolates between values
         let (mut circuit, (input, output)) = Runtime::init_circuit(1, |circuit| {
             let (input, input_handle) = circuit.add_input_indexed_zset::<i32, F64>();
-            let output = input.percentile_cont_stateful(None, 0.5, true);
+            let output = input.percentile_cont_stateful(None, &[0.5], true, |r| r[0].clone());
             Ok((input_handle, output.output()))
         })
         .unwrap();
@@ -185,8 +185,6 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let checkpoint_dir = temp_dir.path();
 
-        // Create a PosixBackend for the temp directory so segment files
-        // can be written and later opened for restore.
         let backend: Arc<dyn crate::storage::backend::StorageBackend> =
             Arc::new(PosixBackend::new(
                 checkpoint_dir.to_path_buf(),
@@ -194,13 +192,11 @@ mod tests {
                 &feldera_types::config::FileBackendConfig::default(),
             ));
 
-        // Create operator directly with storage config that allows disk spilling
         let storage_config = NodeStorageConfig {
             enable_spill: true,
-
-            spill_threshold_bytes: 0, // Allow spilling immediately
-            target_segment_size: 64 * 1024 * 1024, // 64MB
-            spill_directory: None,    // Use backend's base directory
+            spill_threshold_bytes: 0,
+            target_segment_size: 64 * 1024 * 1024,
+            spill_directory: None,
             segment_path_prefix: String::new(),
             storage_backend: Some(backend),
             buffer_cache: None,
@@ -208,17 +204,13 @@ mod tests {
 
         let global_id = GlobalNodeId::child(&GlobalNodeId::root(), NodeId::new(42));
 
-        let mut op1: PercentileOperator<i32, F64, ContMode> = PercentileOperator {
-            trees: BTreeMap::new(),
-            tree_ids: BTreeMap::new(),
-            prev_output: BTreeMap::new(),
-            percentile: 0.5,
-            ascending: true,
-            storage_config: storage_config.clone(),
-            next_tree_id: 0,
-            global_id: global_id.clone(),
-            _mode: std::marker::PhantomData,
-        };
+        let build_output = |r: &[Option<F64>]| r[0].clone();
+
+        let mut op1 = PercentileOperator::<i32, F64, Option<F64>, ContMode, _>::new_cont(
+            vec![0.5], true, build_output.clone(),
+        );
+        op1.storage_config = storage_config.clone();
+        op1.global_id = global_id.clone();
 
         // Insert some data into the trees, each with unique segment_path_prefix
         let mut config1 = storage_config.clone();
@@ -257,17 +249,11 @@ mod tests {
             .expect("checkpoint should work");
 
         // Create a new operator with different initial values (to verify restore overwrites)
-        let mut op2: PercentileOperator<i32, F64, ContMode> = PercentileOperator {
-            trees: BTreeMap::new(),
-            tree_ids: BTreeMap::new(),
-            prev_output: BTreeMap::new(),
-            percentile: 0.0,  // Different from op1
-            ascending: false, // Different from op1
-            storage_config: storage_config.clone(),
-            next_tree_id: 0,
-            global_id: global_id.clone(),
-            _mode: std::marker::PhantomData,
-        };
+        let mut op2 = PercentileOperator::<i32, F64, Option<F64>, ContMode, _>::new_cont(
+            vec![0.0], false, build_output,
+        );
+        op2.storage_config = storage_config.clone();
+        op2.global_id = global_id.clone();
 
         // Restore using the Operator trait method
         op2.restore(&base, persistent_id)
@@ -280,12 +266,6 @@ mod tests {
 
         // verify next_tree_id is restored
         assert_eq!(op2.next_tree_id, 2, "next_tree_id should be restored");
-
-        // new trees after restore don't collide with restored trees
-        assert!(
-            op2.next_tree_id >= 2,
-            "next_tree_id should be >= 2 to avoid collision"
-        );
 
         // Verify tree_ids are restored
         assert_eq!(op2.tree_ids.len(), 2);
@@ -316,7 +296,7 @@ mod tests {
         assert_eq!(op2.prev_output.get(&2), Some(&Some(F64::new(150.0))));
 
         // Verify config
-        assert_eq!(op2.percentile, 0.5);
+        assert_eq!(op2.percentiles, vec![0.5]);
         assert!(op2.ascending);
     }
 
@@ -332,7 +312,6 @@ mod tests {
         // Create operator with a very low spill threshold to force flushing
         let storage_config = NodeStorageConfig {
             enable_spill: true,
-
             spill_threshold_bytes: 0, // Force flush on any data
             target_segment_size: 64 * 1024 * 1024,
             spill_directory: None,
@@ -343,17 +322,11 @@ mod tests {
 
         let global_id = GlobalNodeId::child(&GlobalNodeId::root(), NodeId::new(99));
 
-        let mut op: PercentileOperator<i32, F64, ContMode> = PercentileOperator {
-            trees: BTreeMap::new(),
-            tree_ids: BTreeMap::new(),
-            prev_output: BTreeMap::new(),
-            percentile: 0.5,
-            ascending: true,
-            storage_config: storage_config.clone(),
-            next_tree_id: 0,
-            global_id: global_id.clone(),
-            _mode: std::marker::PhantomData,
-        };
+        let mut op = PercentileOperator::<i32, F64, Option<F64>, ContMode, _>::new_cont(
+            vec![0.5], true, |r: &[Option<F64>]| r[0].clone(),
+        );
+        op.storage_config = storage_config.clone();
+        op.global_id = global_id.clone();
 
         // Insert data into trees directly
         let mut config1 = storage_config.clone();
@@ -378,17 +351,12 @@ mod tests {
         assert!(evicted_after > 0, "clock_end should trigger eviction");
 
         // Verify tree still works correctly after eviction
-        // (select_kth transparently reloads evicted leaves)
         let tree = op.trees.get_mut(&1).unwrap();
         assert_eq!(tree.select_kth(0, true), Some(&F64::new(0.0)));
         assert_eq!(tree.select_kth(199, true), Some(&F64::new(199.0)));
     }
 
     /// Circuit-level checkpoint/restore test for PERCENTILE_CONT.
-    ///
-    /// Runs 5 steps, checkpoints after step 2, kills the circuit,
-    /// restores from checkpoint, continues steps 3-5.
-    /// Verifies that outputs match a reference run without interruption.
     #[test]
     fn test_percentile_cont_circuit_checkpoint_restore() {
         use crate::circuit::{CircuitConfig, CircuitStorageConfig};
@@ -403,7 +371,7 @@ mod tests {
 
         fn constructor(circuit: &mut crate::RootCircuit) -> AnyResult<CR> {
             let (input, input_handle) = circuit.add_input_indexed_zset::<i32, F64>();
-            let output = input.percentile_cont_stateful(Some("pct_cont"), 0.5, true);
+            let output = input.percentile_cont_stateful(Some("pct_cont"), &[0.5], true, |r| r[0].clone());
             Ok((input_handle, output.output()))
         }
 
@@ -514,9 +482,6 @@ mod tests {
     }
 
     /// Circuit-level checkpoint/restore test for PERCENTILE_DISC.
-    ///
-    /// Same structure as the CONT test but uses integer values
-    /// and percentile_disc_stateful.
     #[test]
     fn test_percentile_disc_circuit_checkpoint_restore() {
         use crate::circuit::{CircuitConfig, CircuitStorageConfig};
@@ -531,7 +496,7 @@ mod tests {
 
         fn constructor(circuit: &mut crate::RootCircuit) -> AnyResult<CR> {
             let (input, input_handle) = circuit.add_input_indexed_zset::<i32, i32>();
-            let output = input.percentile_disc_stateful(Some("pct_disc"), 0.5, true);
+            let output = input.percentile_disc_stateful(Some("pct_disc"), &[0.5], true, |r| r[0].clone());
             Ok((input_handle, output.output()))
         }
 
@@ -633,5 +598,39 @@ mod tests {
                 i
             );
         }
+    }
+
+    /// Test multi-percentile: compute p25, p50, p75 from a single operator.
+    #[test]
+    fn test_multi_percentile_cont() {
+        let (mut circuit, (input, output)) = Runtime::init_circuit(1, |circuit| {
+            let (input, input_handle) = circuit.add_input_indexed_zset::<i32, F64>();
+            let output = input.percentile_cont_stateful(
+                None, &[0.25, 0.5, 0.75], true,
+                |r| Tup2(Tup2(r[0].clone(), r[1].clone()), r[2].clone()),
+            );
+            Ok((input_handle, output.output()))
+        })
+        .unwrap();
+
+        // [0, 10, 20, 30, 40] -> p25=10, p50=20, p75=30
+        input.append(&mut vec![
+            Tup2(1, Tup2(F64::new(0.0), 1)),
+            Tup2(1, Tup2(F64::new(10.0), 1)),
+            Tup2(1, Tup2(F64::new(20.0), 1)),
+            Tup2(1, Tup2(F64::new(30.0), 1)),
+            Tup2(1, Tup2(F64::new(40.0), 1)),
+        ]);
+        circuit.transaction().unwrap();
+
+        let result = output.consolidate();
+        let expected_val = Tup2(
+            Tup2(Some(F64::new(10.0)), Some(F64::new(20.0))),
+            Some(F64::new(30.0)),
+        );
+        assert_eq!(
+            result,
+            indexed_zset! { 1 => { expected_val => 1 } }
+        );
     }
 }

@@ -4165,6 +4165,7 @@ DBSP is a computational engine for **incremental computation** on changing datas
 - `src/dynamic/` - Dynamic typing system for runtime flexibility
 - `src/storage/` - Persistent storage backend
 - `src/time/` - Timestamp and ordering abstractions
+- `developer_guides/` - How-to guides for common implementation tasks (e.g., adding operator metrics)
 
 #### Key Components
 
