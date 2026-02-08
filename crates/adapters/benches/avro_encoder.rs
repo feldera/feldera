@@ -207,7 +207,9 @@ fn build_indexed_batch(data: &[BenchTestStruct]) -> Arc<dyn SerBatch> {
         .map(|v| Tup2(Tup2(BenchKeyStruct { id: v.id }, v.clone()), 1i64))
         .collect();
     let zset = OrdIndexedZSet::from_tuples((), tuples);
-    Arc::new(<SerBatchImpl<_, BenchKeyStruct, BenchTestStruct>>::new(zset))
+    Arc::new(<SerBatchImpl<_, BenchKeyStruct, BenchTestStruct>>::new(
+        zset,
+    ))
 }
 
 fn build_plain_batch(data: &[BenchTestStruct]) -> Arc<dyn SerBatch> {
@@ -276,9 +278,7 @@ fn bench_indexed_encode(c: &mut Criterion) {
                 let mut encoder = create_indexed_encoder(workers);
                 b.iter(|| {
                     encoder.consumer().batch_start(0);
-                    encoder
-                        .encode(batch.clone().arc_as_batch_reader())
-                        .unwrap();
+                    encoder.encode(batch.clone().arc_as_batch_reader()).unwrap();
                     encoder.consumer().batch_end();
                 });
             },
@@ -305,9 +305,7 @@ fn bench_indexed_encode_scaling(c: &mut Criterion) {
                     let mut encoder = create_indexed_encoder(workers);
                     b.iter(|| {
                         encoder.consumer().batch_start(0);
-                        encoder
-                            .encode(batch.clone().arc_as_batch_reader())
-                            .unwrap();
+                        encoder.encode(batch.clone().arc_as_batch_reader()).unwrap();
                         encoder.consumer().batch_end();
                     });
                 },
@@ -318,9 +316,5 @@ fn bench_indexed_encode_scaling(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_indexed_encode,
-    bench_indexed_encode_scaling,
-);
+criterion_group!(benches, bench_indexed_encode, bench_indexed_encode_scaling,);
 criterion_main!(benches);
