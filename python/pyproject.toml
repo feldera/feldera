@@ -37,6 +37,7 @@ Issues = "https://github.com/feldera/feldera/issues"
 
 [dependency-groups]
 dev = [
+    "psycopg2-binary>=2.9.9",
     "pytest-timeout>=2.3.1",
     "pytest-xdist>=3.8.0",
     "pytest>=8.3.5",

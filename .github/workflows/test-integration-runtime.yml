@@ -29,6 +29,20 @@ jobs:
       FELDERA_RUNTIME_VERSION: ${{ github.sha }}
     container:
       image: ghcr.io/feldera/feldera-dev:sha-db53e1302c944e29edd6d2af516fff7032b90e3b
+    services:
+      # Database for checking parity between PG and Feldera.
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --tmpfs /var/lib/postgresql/data:size=512M
     steps:
       - name: Show Kubernetes node
         if: always()
@@ -45,6 +59,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           FELDERA_TLS_INSECURE: true
+          INTEGRATION_TESTS_POSTGRES_URI: postgresql://postgres:password@postgres:5432/postgres
 
       - name: Python runtime_aggtest test
         if: ${{ vars.CI_DRY_RUN != 'true' && !contains(vars.CI_SKIP_JOBS, 'runtime-aggtest') }}
