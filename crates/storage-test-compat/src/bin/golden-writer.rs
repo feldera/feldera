@@ -16,7 +16,8 @@ use dbsp::storage::file::Factories;
 use feldera_types::config::{StorageConfig, StorageOptions};
 
 use storage_test_compat::{
-    buffer_cache, golden_row, golden_row_small, storage_base_and_path, GoldenRow, GoldenRowSmall,
+    buffer_cache, golden_aux, golden_row, golden_row_small, storage_base_and_path, GoldenRow,
+    GoldenRowSmall,
     DEFAULT_ROWS,
 };
 
@@ -94,7 +95,7 @@ where
         &StorageOptions::default(),
     )?;
 
-    let factories = Factories::<DynData, DynData>::new::<T, ()>();
+    let factories = Factories::<DynData, DynData>::new::<T, i64>();
     let parameters = Parameters::default().with_compression(compression);
     let mut writer = Writer1::new(
         &factories,
@@ -106,7 +107,7 @@ where
 
     for row in 0..rows {
         let key = row_builder(row);
-        let aux = ();
+        let aux = golden_aux(row);
         writer.write0((&key, &aux))?;
     }
 
