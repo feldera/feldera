@@ -254,7 +254,7 @@ pub struct AvroEncoderConfig {
     ///
     /// Avro encoder supports encoding multiple records in parallel. This configuration specifies
     /// the number of workers to run in parallel.
-    /// Default: 1
+    /// Default: 4
     #[serde(default = "default_encoder_workers")]
     pub workers: usize,
 }
@@ -276,5 +276,5 @@ impl Default for AvroEncoderConfig {
 }
 
 fn default_encoder_workers() -> usize {
-    8
+    4
 }
