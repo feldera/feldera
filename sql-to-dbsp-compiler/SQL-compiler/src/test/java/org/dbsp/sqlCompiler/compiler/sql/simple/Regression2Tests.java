@@ -226,4 +226,29 @@ public class Regression2Tests extends SqlIoTest {
             }
         });
     }
+
+    @Test
+    public void issue5520() {
+        this.q("""
+                SELECT EXP(10192);
+                 e
+                ---
+                 Infinity""");
+    }
+
+    @Test
+    public void issue5569() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(
+                id INT,
+                intt INT);
+                
+                CREATE MATERIALIZED VIEW v AS
+                SELECT id, intt FROM tbl
+                QUALIFY
+                ROW_NUMBER() OVER (ORDER BY intt DESC) <= 2 OR
+                RANK() OVER (ORDER BY intt DESC) <= 2 OR
+                DENSE_RANK() OVER (ORDER BY intt DESC) <= 2;""",
+                "Not yet implemented: Multiple RANK aggregates per window");
+    }
 }
