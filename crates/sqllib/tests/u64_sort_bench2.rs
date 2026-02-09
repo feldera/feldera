@@ -128,8 +128,8 @@ fn run_one_case(threads: usize, duration_secs: u64, batch_size: usize) -> String
                 }
                 match batch_rx.try_recv() {
                     Ok(mut payload) => {
-                        payload.tuples.sort_unstable();
-                        //dbsp::utils::unstable_sort(&mut payload.tuples);
+                        //payload.tuples.sort_unstable();
+                        dbsp::utils::unstable_sort(&mut payload.tuples);
                         records += payload.len as u64;
                         bytes += payload.len as u64 * 8;
                     }

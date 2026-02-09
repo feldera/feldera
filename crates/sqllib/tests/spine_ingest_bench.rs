@@ -133,7 +133,7 @@ where
     )
     .expect("storage config");
 
-    let mut config = CircuitConfig::with_workers(threads).with_storage(storage);
+    let mut config = CircuitConfig::with_workers(threads); //.with_storage(storage);
     config.dev_tweaks.merger = MERGER_TYPE;
 
     let (tx, rx) = mpsc::channel::<WorkerResult>();
@@ -162,32 +162,33 @@ where
                     std::thread::Builder::new()
                         .name(thread_name)
                         .spawn(move || {
-                    let mut next_log = Instant::now() + Duration::from_secs(10);
-                    loop {
-                        if stop.load(Ordering::Acquire) {
-                            break;
-                        }
-                        if log_queue && Instant::now() >= next_log {
-                            let batches = log_sender.len();
-                            let records = batches * batch_size;
-                            eprintln!("buffered_records={records}");
-                            next_log += Duration::from_secs(10);
-                        }
-                        let mut payload = generate_batch(batch_size, input_size, &mut rng_state);
-                        loop {
-                            if stop.load(Ordering::Acquire) {
-                                return;
-                            }
-                            match batch_tx.try_send(payload) {
-                                Ok(()) => break,
-                                Err(TrySendError::Full(p)) => {
-                                    payload = p;
-                                    //std::thread::yield_now();
+                            let mut next_log = Instant::now() + Duration::from_secs(10);
+                            loop {
+                                if stop.load(Ordering::Acquire) {
+                                    break;
                                 }
-                                Err(TrySendError::Disconnected(_)) => return,
+                                if log_queue && Instant::now() >= next_log {
+                                    let batches = log_sender.len();
+                                    let records = batches * batch_size;
+                                    eprintln!("buffered_records={records}");
+                                    next_log += Duration::from_secs(10);
+                                }
+                                let mut payload =
+                                    generate_batch(batch_size, input_size, &mut rng_state);
+                                loop {
+                                    if stop.load(Ordering::Acquire) {
+                                        return;
+                                    }
+                                    match batch_tx.try_send(payload) {
+                                        Ok(()) => break,
+                                        Err(TrySendError::Full(p)) => {
+                                            payload = p;
+                                            //std::thread::yield_now();
+                                        }
+                                        Err(TrySendError::Disconnected(_)) => return,
+                                    }
+                                }
                             }
-                        }
-                    }
                         })
                         .expect("spawn b-producer thread"),
                 );
