@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
-use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
@@ -917,8 +916,4 @@ pub struct OutputCollectionHandles {
     /// Incremented every time an output connector is attached to this stream; decremented when
     /// the output connector is detached.
     pub enable_count: Arc<AtomicUsize>,
-
-    /// In a multihost pipeline, this is the range of workers that gathers the
-    /// output collection's data.  In a single-host pipeline, this is `None`.
-    pub workers: Option<Range<usize>>,
 }
