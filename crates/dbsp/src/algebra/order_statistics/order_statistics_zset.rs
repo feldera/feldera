@@ -224,7 +224,7 @@ impl<T: Ord + Clone> InternalNodeTyped<T> {
     }
 
     /// Find which child contains the given key
-    fn find_child(&self, key: &T) -> usize {
+    pub(crate) fn find_child(&self, key: &T) -> usize {
         match self.keys.binary_search(key) {
             Ok(pos) => pos + 1, // Key found, go to right child
             Err(pos) => pos,    // Key not found, pos is insertion point
@@ -1102,6 +1102,35 @@ where
     /// This is useful for disk spilling operations.
     pub fn storage_mut(&mut self) -> &mut OsmNodeStorage<T> {
         &mut self.storage
+    }
+
+    /// Get the root node location.
+    pub fn root(&self) -> Option<NodeLocation> {
+        self.root
+    }
+
+    /// Get the total number of leaf slots in the tree (including evicted).
+    pub fn total_leaves(&self) -> usize {
+        self.storage.leaves_len()
+    }
+
+    /// Get a raw pointer to the internal storage for read-only parallel access.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the tree is not mutated while any code
+    /// dereferences the returned pointer. This is used by `ReadOnlyTreeView`
+    /// for parallel routing.
+    pub fn storage_ptr(&self) -> *const OsmNodeStorage<T> {
+        &self.storage as *const OsmNodeStorage<T>
+    }
+
+    /// Inject a prefetched leaf into the tree without going through disk load.
+    ///
+    /// This is used by parallel routing to inject leaves that were prefetched
+    /// by worker threads. If the leaf is already in memory, this is a no-op.
+    pub fn inject_prefetched_leaf(&mut self, leaf_id: usize, leaf: LeafNode<T>) {
+        self.storage.inject_prefetched_leaf(leaf_id, leaf);
     }
 
     /// Reload all evicted leaves from disk into memory.

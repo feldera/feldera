@@ -708,4 +708,138 @@ mod tests {
             indexed_zset! { 1 => { old_val => -1, new_val => 1 } }
         );
     }
+
+    /// Test percentile operator with 2 workers to exercise parallel routing paths.
+    ///
+    /// With 2 workers, `ParallelRouting::new()` returns `Some(...)`, and the
+    /// operator uses `process_delta_with_partition` + exchange-based parallel routing
+    /// when a single key has >= 256 entries. We test both:
+    /// 1. Small batches (below threshold, sequential path)
+    /// 2. Large batch (above threshold, parallel routing path)
+    #[test]
+    fn test_percentile_cont_multi_worker() {
+        let (mut circuit, (input, output)) = Runtime::init_circuit(2, |circuit| {
+            let (input, input_handle) = circuit.add_input_indexed_zset::<i32, F64>();
+            let output = input.percentile_cont_stateful(None, &[0.5], true, |r| r[0].clone());
+            Ok((input_handle, output.output()))
+        })
+        .unwrap();
+
+        // Step 1: Small batch (below parallel threshold, sequential path)
+        input.append(&mut vec![
+            Tup2(1, Tup2(F64::new(10.0), 1)),
+            Tup2(1, Tup2(F64::new(20.0), 1)),
+            Tup2(1, Tup2(F64::new(30.0), 1)),
+        ]);
+        circuit.transaction().unwrap();
+
+        let result = output.consolidate();
+        // Median of [10, 20, 30] = 20.0
+        assert_eq!(
+            result,
+            indexed_zset! { 1 => { Some(F64::new(20.0)) => 1 } }
+        );
+
+        // Step 2: Large batch (above parallel routing threshold of 256)
+        // Insert 300 values for a single key to trigger parallel routing
+        let mut batch: Vec<Tup2<i32, Tup2<F64, i64>>> = (0..300)
+            .map(|i| Tup2(1, Tup2(F64::new(100.0 + i as f64), 1)))
+            .collect();
+        input.append(&mut batch);
+        circuit.transaction().unwrap();
+
+        let result = output.consolidate();
+        // Now tree has [10, 20, 30, 100..399] = 303 values
+        // Median = value at position 151 (0-indexed) = 151st value
+        // Sorted: 10, 20, 30, 100, 101, ..., 399
+        // Position 151 (0-based) = 148.0 (10, 20, 30 are first 3, then 100+145=248? Let's compute)
+        // With 303 elements, p50 continuous: target_rank = 0.5 * (303-1) = 151.0
+        // Element at rank 151 (0-indexed): [10, 20, 30, 100, 101, ..., 399]
+        // Rank 0=10, 1=20, 2=30, 3=100, 4=101, ... rank k+3 = 100+(k) for k>=0
+        // Rank 151: 151-3 = 148, so value = 100+148 = 248
+        // Previous output was 20.0, so delta is -20.0, +248.0
+        assert_eq!(
+            result,
+            indexed_zset! { 1 => { Some(F64::new(20.0)) => -1, Some(F64::new(248.0)) => 1 } }
+        );
+
+        // Step 3: Delete some values - verify incremental update still works
+        let mut deletes: Vec<Tup2<i32, Tup2<F64, i64>>> = (0..100)
+            .map(|i| Tup2(1, Tup2(F64::new(100.0 + i as f64), -1)))
+            .collect();
+        input.append(&mut deletes);
+        circuit.transaction().unwrap();
+
+        let result = output.consolidate();
+        // Tree now has [10, 20, 30, 200..399] = 203 values
+        // target_rank = 0.5 * (203-1) = 101.0
+        // Rank 0=10, 1=20, 2=30, 3=200, 4=201, ... rank k+3 = 200+k for k>=0
+        // Rank 101: 101-3=98, value = 200+98 = 298
+        assert_eq!(
+            result,
+            indexed_zset! { 1 => { Some(F64::new(248.0)) => -1, Some(F64::new(298.0)) => 1 } }
+        );
+    }
+
+    /// Test percentile DISC with 2 workers.
+    #[test]
+    fn test_percentile_disc_multi_worker() {
+        let (mut circuit, (input, output)) = Runtime::init_circuit(2, |circuit| {
+            let (input, input_handle) = circuit.add_input_indexed_zset::<i32, F64>();
+            let output = input.percentile_disc_stateful(None, &[0.5], true, |r| r[0].clone());
+            Ok((input_handle, output.output()))
+        })
+        .unwrap();
+
+        // Insert a large batch for a single key
+        let mut batch: Vec<Tup2<i32, Tup2<F64, i64>>> = (0..300)
+            .map(|i| Tup2(1, Tup2(F64::new(i as f64), 1)))
+            .collect();
+        input.append(&mut batch);
+        circuit.transaction().unwrap();
+
+        let result = output.consolidate();
+        // DISC p50 of [0..299] with 300 elements
+        // target_rank = ceil(0.5 * 300) - 1 = 150 - 1 = 149
+        assert_eq!(
+            result,
+            indexed_zset! { 1 => { Some(F64::new(149.0)) => 1 } }
+        );
+    }
+
+    /// Test multi-key scenario with parallel routing (2 workers).
+    /// Only one key at a time gets parallel routing; others are sequential.
+    #[test]
+    fn test_percentile_multi_key_multi_worker() {
+        let (mut circuit, (input, output)) = Runtime::init_circuit(2, |circuit| {
+            let (input, input_handle) = circuit.add_input_indexed_zset::<i32, F64>();
+            let output = input.percentile_cont_stateful(None, &[0.5], true, |r| r[0].clone());
+            Ok((input_handle, output.output()))
+        })
+        .unwrap();
+
+        // Insert large batch for key 1 and small batch for key 2
+        let mut batch: Vec<Tup2<i32, Tup2<F64, i64>>> = Vec::new();
+        // Key 1: 300 values (triggers parallel routing)
+        for i in 0..300 {
+            batch.push(Tup2(1, Tup2(F64::new(i as f64), 1)));
+        }
+        // Key 2: 5 values (sequential)
+        for i in 0..5 {
+            batch.push(Tup2(2, Tup2(F64::new(i as f64 * 10.0), 1)));
+        }
+        input.append(&mut batch);
+        circuit.transaction().unwrap();
+
+        let result = output.consolidate();
+        // Key 1: 300 values [0..299], median = 0.5*(300-1)=149.5
+        // Key 2: [0, 10, 20, 30, 40], median = 20.0
+        assert_eq!(
+            result,
+            indexed_zset! {
+                1 => { Some(F64::new(149.5)) => 1 },
+                2 => { Some(F64::new(20.0)) => 1 }
+            }
+        );
+    }
 }

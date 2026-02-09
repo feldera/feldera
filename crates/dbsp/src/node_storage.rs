@@ -1583,6 +1583,29 @@ where
             .filter(|(_, n)| n.is_dirty())
             .map(|(i, _)| i)
     }
+
+    /// Get the total number of leaf slots (including evicted).
+    #[inline]
+    pub fn leaves_len(&self) -> usize {
+        self.leaves.len()
+    }
+
+    /// Inject a prefetched leaf into a slot that is currently evicted.
+    ///
+    /// This replaces an `Evicted` leaf slot with a `Present` leaf without
+    /// going through the normal disk load path. Used by parallel routing
+    /// to inject leaves that were prefetched by worker threads.
+    ///
+    /// Does nothing if the leaf is already present in memory.
+    pub fn inject_prefetched_leaf(&mut self, leaf_id: usize, leaf: L) {
+        if leaf_id < self.leaves.len() && self.leaves[leaf_id].is_evicted() {
+            let leaf_size = Self::estimate_leaf_size(&leaf);
+            self.leaves[leaf_id] = LeafSlot::Present(leaf);
+            self.stats.memory_bytes += leaf_size;
+            self.stats.evicted_leaf_count = self.stats.evicted_leaf_count.saturating_sub(1);
+            // Don't mark as dirty - the leaf was just loaded from disk
+        }
+    }
 }
 
 impl<I, L> Default for NodeStorage<I, L>

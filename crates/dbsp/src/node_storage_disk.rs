@@ -600,6 +600,63 @@ where
         Ok(count)
     }
 
+    /// Read an evicted leaf from disk without modifying the tree state.
+    ///
+    /// This is a read-only version of `load_leaf_from_disk` used by parallel
+    /// routing workers. It reads the leaf data from disk and deserializes it
+    /// but does NOT modify the `LeafSlot` or update any statistics.
+    ///
+    /// Returns `None` if the leaf is not evicted (already in memory) or has
+    /// no disk location. Returns `Some(leaf)` with the deserialized leaf data.
+    ///
+    /// # Safety
+    ///
+    /// This method only reads via `FileReader::read_block()` which is `Send + Sync`.
+    /// It does not modify any state, making it safe to call via a raw pointer
+    /// from worker threads while the owner doesn't mutate the tree.
+    pub fn read_leaf_readonly(&self, leaf_id: usize) -> Option<L> {
+        // Only read evicted leaves
+        if leaf_id >= self.leaves.len() || !self.leaves[leaf_id].is_evicted() {
+            return None;
+        }
+
+        // Find disk location
+        let disk_loc = self.leaf_disk_locations.get(&leaf_id)?;
+
+        // Find the segment containing this leaf
+        let segment = self
+            .segments
+            .iter()
+            .find(|s| s.id == disk_loc.segment_id)?;
+
+        // Get the FileReader from the segment
+        let reader = segment.reader.as_ref()?;
+
+        // Read the data block from disk
+        let block_data = reader
+            .read_block(BlockLocation {
+                offset: disk_loc.offset,
+                size: disk_loc.size as usize,
+            })
+            .ok()?;
+
+        // Verify and parse the data block
+        let (read_leaf_id, data_len) = verify_data_block_header(&block_data).ok()?;
+        if read_leaf_id != leaf_id as u64 {
+            return None;
+        }
+
+        // Extract and deserialize the leaf data
+        let data_start = DATA_BLOCK_HEADER_SIZE;
+        let data_end = data_start + data_len as usize;
+        if data_end > block_data.len() {
+            return None;
+        }
+
+        let leaf_data = &block_data[data_start..data_end];
+        deserialize_leaf::<L>(leaf_data).ok()
+    }
+
     // =========================================================================
     // Checkpoint Methods
     // =========================================================================
