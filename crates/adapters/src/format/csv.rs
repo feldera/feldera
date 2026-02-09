@@ -17,7 +17,7 @@ use feldera_types::{
 use serde::Deserialize;
 use serde_json::json;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use std::{borrow::Cow, mem::take};
+use std::{borrow::Cow, mem::take, sync::Arc};
 
 pub(crate) mod deserializer;
 use crate::catalog::{InputCollectionHandle, SerBatchReader};
@@ -318,7 +318,7 @@ impl Encoder for CsvEncoder {
         self.output_consumer.as_mut()
     }
 
-    fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
+    fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
         let mut buffer = take(&mut self.buffer);
         //let mut writer = self.builder.from_writer(buffer);
         let mut num_records = 0;

@@ -1005,9 +1005,10 @@ public class ConvertletTable extends ReflectiveConvertletTable {
         return cx.getRexBuilder().makeCall(call.getParserPosition(), returnType, fun, exprs);
     }
 
+    // Modified to take a FelderaSqlWindowTableFunction
     public RexNode convertWindowFunction(
             SqlRexContext cx,
-            SqlWindowTableFunction fun,
+            FelderaSqlWindowTableFunction fun,
             SqlCall call) {
         // The first operand of window function is actually a query, skip that.
         final List<SqlNode> operands = Util.skip(call.getOperandList());

@@ -49,7 +49,6 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
     let archived_name = format_ident!("Archived{}", name);
     let archived_sparse_name = format_ident!("Archived{}Sparse", name);
     let archived_dense_name = format_ident!("Archived{}Dense", name);
-    let archived_v3_name = format_ident!("Archived{}V3", name);
     let resolver_name = format_ident!("{}Resolver", name);
     let sparse_data_name = format_ident!("{}SparseData", name);
     let sparse_resolver_name = format_ident!("{}SparseResolver", name);
@@ -245,33 +244,6 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             fn unwrap_or_self(&self) -> &Self::Inner { self }
 
             fn from_inner(inner: Self::Inner) -> Self { inner }
-        }
-    };
-
-    let v3_archived_struct = quote! {
-        pub struct #archived_v3_name<#(#generics),*>
-        where
-            #(#generics: ::rkyv::Archive,)*
-        {
-            #(pub #fields: ::rkyv::Archived<#generics>),*
-        }
-    };
-
-    let v3_deserialize_impl = quote! {
-        impl<D, #(#generics),*> ::rkyv::Deserialize<#name<#(#generics),*>, D>
-            for #archived_v3_name<#(#generics),*>
-        where
-            D: ::rkyv::Fallible + ?Sized,
-            #(#generics: ::rkyv::Archive,)*
-            #(::rkyv::Archived<#generics>: ::rkyv::Deserialize<#generics, D>,)*
-        {
-            #[inline]
-            fn deserialize(
-                &self,
-                deserializer: &mut D,
-            ) -> Result<#name<#(#generics),*>, D::Error> {
-                Ok(#name( #(self.#fields.deserialize(deserializer)?),* ))
-            }
         }
     };
 
@@ -939,22 +911,6 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         {
             #[inline]
             fn deserialize(&self, deserializer: &mut D) -> Result<#name<#(#generics),*>, D::Error> {
-                let version = (deserializer as &mut dyn ::core::any::Any)
-                    .downcast_mut::<::dbsp::storage::file::Deserializer>()
-                    .map(|deserializer| deserializer.version())
-                    .expect("Deserializer must be of type dbsp::storage::file::Deserializer for version tracking support");
-                const LAST_LEGACY_TUPLE_VERSION: u32 = 3;
-                if version <= LAST_LEGACY_TUPLE_VERSION {
-                    // SAFETY: Before V4 files store tuples in the naive (standard rkyv) form that
-                    // does not have a bitfield to optimize None values.
-                    let legacy = unsafe {
-                        &*(self as *const _ as *const #archived_v3_name<#(#generics),*>)
-                    };
-                    return <#archived_v3_name<#(#generics),*> as ::rkyv::Deserialize<
-                        #name<#(#generics),*>,
-                        D,
-                    >>::deserialize(legacy, deserializer);
-                }
                 match self.format {
                     #format_ty::Sparse => {
                         let sparse = self.sparse();
@@ -998,8 +954,6 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     } else {
         quote! {
-            #v3_archived_struct
-            #v3_deserialize_impl
             #choose_format_impl
             #rkyv_impls
         }

@@ -49,7 +49,7 @@ use std::{
     sync::Arc,
 };
 use thiserror::Error as ThisError;
-use tracing::{info, warn};
+use tracing::info;
 
 mod bulk_rows;
 pub use bulk_rows::BulkRows;
@@ -1539,23 +1539,16 @@ where
             BlockLocation::new(file_size - 512, 512).unwrap(),
             &stats,
         )?;
-        let has_compatible_bloom_filter = match file_trailer.version {
-            1 => {
-                // Old, incompatible version.
-                None
+
+        // v4/v5 isn't backwards compatible. do not attempt to support
+        // older formats.
+        if file_trailer.version < VERSION_NUMBER {
+            return Err(CorruptionError::InvalidVersion {
+                version: file_trailer.version,
+                expected_version: VERSION_NUMBER,
             }
-            2 => {
-                // Version before [fastbloom] crate was upgraded to one with an incompatible format.
-                warn!("{}: reading old format storage file, performance may be reduced due to incompatible Bloom filters", file.path());
-                Some(false)
-            }
-            3..=VERSION_NUMBER => Some(true),
-            _ => None,
+            .into());
         }
-        .ok_or_else(|| CorruptionError::InvalidVersion {
-            version: file_trailer.version,
-            expected_version: VERSION_NUMBER,
-        })?;
 
         if file_trailer.compatible_features != 0 {
             info!(
@@ -1604,7 +1597,7 @@ where
 
         let bloom_filter = match bloom_filter {
             Some(bloom_filter) => Some(bloom_filter),
-            None if has_compatible_bloom_filter && file_trailer.filter_offset != 0 => Some(
+            None if file_trailer.filter_offset != 0 => Some(
                 FilterBlock::new(
                     &*file,
                     BlockLocation::new(

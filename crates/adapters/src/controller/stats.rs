@@ -1720,7 +1720,7 @@ impl WatermarkTrackerInner {
                 // a chance to complete; otherwise we risk always evicting all watermarks before the complete
                 // and never reporting any completed watermarks.
                 if self.watermark_with_metadata_list.len() >= MAX_TRACKED_WATERMARKS {
-                    break;
+                    continue;
                 }
 
                 self.watermark_with_metadata_list
@@ -1731,7 +1731,7 @@ impl WatermarkTrackerInner {
                     });
             } else {
                 if self.watermark_list.len() >= MAX_TRACKED_WATERMARKS {
-                    break;
+                    continue;
                 }
                 self.watermark_list.push_back(WatermarkListEntry {
                     watermark,

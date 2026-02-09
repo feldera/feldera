@@ -10,7 +10,7 @@
     "license": {
       "name": "MIT OR Apache-2.0"
     },
-    "version": "0.238.0"
+    "version": "0.242.0"
   },
   "paths": {
     "/config/authentication": {
@@ -7201,13 +7201,21 @@
               "max_batch_size": {
                 "type": "integer",
                 "format": "int64",
-                "description": "Maximum batch size, in records.\n\nThis is the maximum number of records to process in one batch through\nthe circuit.  The time and space cost of processing a batch is\nasymptotically superlinear in the size of the batch, but very small\nbatches are less efficient due to constant factors.\n\nThis should usually be less than `max_queued_records`, to give the\nconnector a round-trip time to restart and refill the buffer while\nbatches are being processed.\n\nSome input adapters might not honor this setting.\n\nThe default is 10,000.",
+                "description": "Maximum number of records from this connector to process in a single batch.\n\nWhen set, this caps how many records are taken from the connector’s input\nbuffer and pushed through the circuit at once.\n\nThis is typically configured lower than `max_queued_records` to allow the\nconnector time to restart and refill its buffer while a batch is being\nprocessed.\n\nNot all input adapters honor this limit.\n\nIf this is not set, the batch size is derived from `max_worker_batch_size`.",
+                "nullable": true,
                 "minimum": 0
               },
               "max_queued_records": {
                 "type": "integer",
                 "format": "int64",
                 "description": "Backpressure threshold.\n\nMaximal number of records queued by the endpoint before the endpoint\nis paused by the backpressure mechanism.\n\nFor input endpoints, this setting bounds the number of records that have\nbeen received from the input transport but haven't yet been consumed by\nthe circuit since the circuit, since the circuit is still busy processing\nprevious inputs.\n\nFor output endpoints, this setting bounds the number of records that have\nbeen produced by the circuit but not yet sent via the output transport endpoint\nnor stored in the output buffer (see `enable_output_buffer`).\n\nNote that this is not a hard bound: there can be a small delay between\nthe backpressure mechanism is triggered and the endpoint is paused, during\nwhich more data may be queued.\n\nThe default is 1 million.",
+                "minimum": 0
+              },
+              "max_worker_batch_size": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Maximum number of records processed per batch, per worker thread.\n\nWhen `max_batch_size` is not set, this setting is used to cap\nthe number of records that can be taken from the connector’s input\nbuffer and pushed through the circuit at once.  The effective batch size is computed as:\n`max_worker_batch_size × workers`.\n\nThis provides an alternative to `max_batch_size` that automatically adjusts batch\nsize as the number of worker threads changes to maintain constant amount of\nwork per worker per batch.\n\nDefaults to 10,000 records per worker.",
+                "nullable": true,
                 "minimum": 0
               },
               "paused": {

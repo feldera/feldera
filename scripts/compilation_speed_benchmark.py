@@ -11,10 +11,11 @@
 # comments or inside queries.
 
 
+import argparse
 import os
 import time
+
 import requests
-import argparse
 
 # File locations
 SCRIPT_DIR = os.path.join(os.path.dirname(__file__))
@@ -28,7 +29,7 @@ def main():
     parser.add_argument(
         "--api-url",
         required=True,
-        help="Feldera REST API URL (e.g., http://localhost:8080 or https://sandbox-staging.feldera.com",
+        help="Feldera REST API URL (e.g., http://localhost:8080)",
     )
     parser.add_argument(
         "--with-bearer-token", required=False, help="Authorization Bearer token"

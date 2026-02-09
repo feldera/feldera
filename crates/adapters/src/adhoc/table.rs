@@ -4,7 +4,6 @@ use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::{Arc, Weak};
 
-use crate::catalog::SyncSerBatchReader;
 use crate::controller::{ConsistentSnapshot, ControllerInner};
 use crate::transport::adhoc::AdHocInputEndpoint;
 use crate::{DeCollectionHandle, RecordFormat, TransportInputEndpoint};
@@ -28,9 +27,9 @@ use datafusion::physical_plan::stream::{
 use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
 };
+use feldera_adapterlib::catalog::SerBatchReader;
 use feldera_types::config::{
-    ConnectorConfig, FormatConfig, InputEndpointConfig, TransportConfig, default_max_batch_size,
-    default_max_queued_records,
+    ConnectorConfig, FormatConfig, InputEndpointConfig, TransportConfig, default_max_queued_records,
 };
 use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::serde_with_context::serde_config::{
@@ -287,7 +286,8 @@ impl DataSink for AdHocTableSink {
                 }),
                 index: None,
                 output_buffer_config: Default::default(),
-                max_batch_size: default_max_batch_size(),
+                max_batch_size: None,
+                max_worker_batch_size: None,
                 max_queued_records: default_max_queued_records(),
                 paused: false,
                 labels: vec![],
@@ -332,7 +332,7 @@ struct AdHocQueryExecution {
     indexed: bool,
     table_schema: Arc<Schema>,
     projected_schema: Arc<Schema>,
-    readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
+    readers: Option<Vec<Arc<dyn SerBatchReader>>>,
     projection: Option<Vec<usize>>,
     plan_properties: PlanProperties,
     children: Vec<Arc<dyn ExecutionPlan>>,
@@ -346,7 +346,7 @@ impl AdHocQueryExecution {
         indexed: bool,
         table_schema: Arc<Schema>,
         projected_schema: Arc<Schema>,
-        readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
+        readers: Option<Vec<Arc<dyn SerBatchReader>>>,
         projection: Option<&Vec<usize>>,
     ) -> Self {
         // TODO: we could do much better here by encoding our data partitioning schema

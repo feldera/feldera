@@ -149,7 +149,7 @@ mod validate;
 
 use crate::adhoc::table::AdHocTable;
 use crate::adhoc::{create_session_context, execute_sql};
-use crate::catalog::{SerBatchReader, SerTrace, SyncSerBatchReader};
+use crate::catalog::{SerBatchReader, SerTrace};
 use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::{get_input_format, get_output_format};
 use crate::integrated::create_integrated_input_endpoint;
@@ -159,7 +159,8 @@ pub use feldera_types::config::{
     RuntimeConfig, TransportConfig,
 };
 use feldera_types::config::{
-    FileBackendConfig, FtConfig, FtModel, OutputBufferConfig, StorageBackendConfig, SyncConfig,
+    DEFAULT_MAX_WORKER_BATCH_SIZE, FileBackendConfig, FtConfig, FtModel, OutputBufferConfig,
+    StorageBackendConfig, SyncConfig,
 };
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
@@ -2579,7 +2580,7 @@ impl CircuitThread {
         // in the circuit thread will directly delay the start of the next step,
         // so drop them in a separate thread.
         TOKIO.spawn_blocking(move || {
-            let _ = old_snapshot;
+            let _ = std::hint::black_box(old_snapshot);
         });
     }
 
@@ -4180,7 +4181,7 @@ impl Drop for StatisticsThread {
 /// that is equal to the number of input records fully processed by
 /// DBSP before emitting this batch of outputs or `None` if the circuit is
 /// executing a transaction.  The label increases monotonically over time.
-type BatchQueue = SegQueue<(Step, Option<Arc<dyn SyncSerBatchReader>>, Option<u64>)>;
+type BatchQueue = SegQueue<(Step, Option<Arc<dyn SerBatchReader>>, Option<u64>)>;
 
 /// State tracked by the controller for each output endpoint.
 struct OutputEndpointDescr {
@@ -4346,7 +4347,7 @@ impl OutputBuffer {
     /// before this batch was produced or `None` if the circuit is executing a transaction.
     fn insert(
         &mut self,
-        batch: Option<Arc<dyn SyncSerBatchReader>>,
+        batch: Option<Arc<dyn SerBatchReader>>,
         step: Step,
         processed_records: Option<u64>,
     ) {
@@ -4406,7 +4407,7 @@ impl OutputBuffer {
     }
 }
 
-pub type ConsistentSnapshot = Arc<BTreeMap<SqlIdentifier, Vec<Arc<dyn SyncSerBatchReader>>>>;
+pub type ConsistentSnapshot = Arc<BTreeMap<SqlIdentifier, Vec<Arc<dyn SerBatchReader>>>>;
 
 /// Current state of transaction processing.
 #[derive(Default, Debug, Clone, PartialEq, Eq, Copy)]
@@ -4786,6 +4787,8 @@ pub struct ControllerInner {
     // The mutex is acquired from async context by actix and
     // from the sync context by the circuit thread.
     transaction_info: Mutex<TransactionInfo>,
+
+    /// Workers local to this host.
     workers: Range<usize>,
 
     /// Current transaction number.
@@ -4944,6 +4947,32 @@ impl ControllerInner {
             command_receiver,
             controller,
         ))
+    }
+
+    /// Compute max_batch_size for a connector.
+    ///
+    /// `max_batch_size` is a (soft) bound on the number of records ingested in one step from
+    /// the connector.
+    ///
+    /// If the connector config specifies a `max_batch_size`, it is used as is.
+    ///
+    /// Otherwise, `max_batch_size` is computed as the number of workers times `config.max_worker_batch_size` (if specified)
+    /// or `DEFAULT_MAX_WORKER_BATCH_SIZE` otherwise.
+    pub fn max_connector_batch_size(&self, connector_config: &ConnectorConfig) -> usize {
+        if let Some(max_batch_size) = connector_config.max_batch_size {
+            return max_batch_size as usize;
+        };
+
+        let num_local_workers = std::cmp::max(self.workers.len(), 1);
+
+        let max_worker_batch_size =
+            if let Some(max_worker_batch_size) = connector_config.max_worker_batch_size {
+                max_worker_batch_size as usize
+            } else {
+                DEFAULT_MAX_WORKER_BATCH_SIZE as usize
+            };
+
+        max_worker_batch_size * num_local_workers
     }
 
     fn last_checkpoint(&self) -> LastCheckpoint {
@@ -5490,7 +5519,7 @@ impl ControllerInner {
     }
 
     fn push_batch_to_encoder(
-        batch: &dyn SerBatchReader,
+        batch: Arc<dyn SerBatchReader>,
         endpoint_id: EndpointId,
         endpoint_name: &str,
         encoder: &mut dyn Encoder,
@@ -5537,7 +5566,7 @@ impl ControllerInner {
                 // so we convert the spine to a snapshot to avoid wasting CPU, I/O, and memory on
                 // background merging.
                 Self::push_batch_to_encoder(
-                    output_buffer.take_buffer().unwrap().snapshot().as_ref(),
+                    output_buffer.take_buffer().unwrap().snapshot(),
                     endpoint_id,
                     &endpoint_name,
                     encoder.as_mut(),
@@ -5578,7 +5607,7 @@ impl ControllerInner {
                 } else {
                     if let Some(data) = data {
                         Self::push_batch_to_encoder(
-                            data.as_ref(),
+                            data,
                             endpoint_id,
                             &endpoint_name,
                             encoder.as_mut(),
@@ -6224,11 +6253,13 @@ impl InputProbe {
         connector_config: &ConnectorConfig,
         controller: Arc<ControllerInner>,
     ) -> Self {
+        let max_batch_size = controller.max_connector_batch_size(connector_config);
+
         Self {
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
             controller,
-            max_batch_size: connector_config.max_batch_size as usize,
+            max_batch_size,
             transaction_in_progress: AtomicBool::new(false),
         }
     }

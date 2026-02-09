@@ -17,7 +17,7 @@ use crate::{
     DBData, DBWeight,
     algebra::{AddAssignByRef, HasZero, MonoidValue},
     dynamic::{DataTrait, DowncastTrait, DynVec, Erase, LeanVec, WeightTrait},
-    utils::{Tup2, assume, unstable_sort_by},
+    utils::{Tup2, assume},
 };
 use std::{
     marker::PhantomData,
@@ -36,7 +36,9 @@ where
         return;
     }
 
-    unstable_sort_by(vec.as_mut_slice(), |(key1, _), (key2, _)| key1.cmp(key2));
+    vec.as_mut_slice()
+        .sort_unstable_by(|(key1, _), (key2, _)| key1.cmp(key2));
+
     // TODO: Combine the `.dedup_by()` and `.retain()` calls together
     vec.dedup_by(|(key1, data1), (key2, data2)| {
         if key1 == key2 {
@@ -63,9 +65,9 @@ where
         return;
     }
 
-    unstable_sort_by(vec.as_mut_slice(), |Tup2(key1, _), Tup2(key2, _)| {
-        key1.cmp(key2)
-    });
+    vec.as_mut_slice()
+        .sort_unstable_by(|Tup2(key1, _), Tup2(key2, _)| key1.cmp(key2));
+
     // TODO: Combine the `.dedup_by()` and `.retain()` calls together
     vec.dedup_by(|Tup2(key1, data1), Tup2(key2, data2)| {
         if key1 == key2 {
@@ -93,9 +95,8 @@ where
         return;
     }
 
-    unstable_sort_by(&mut vec[offset..], |Tup2(key1, _), Tup2(key2, _)| {
-        key1.cmp(key2)
-    });
+    vec[offset..].sort_unstable_by(|Tup2(key1, _), Tup2(key2, _)| key1.cmp(key2));
+
     vec.dedup_by_starting_at(offset, |Tup2(key1, data1), Tup2(key2, data2)| {
         if key1 == key2 {
             data2.add_assign_by_ref(&replace(data1, R::zero()));
@@ -128,9 +129,8 @@ where
     }
 
     // Ideally we'd combine the sorting and value merging portions
-    // This line right here is literally the hottest code within the entirety of the
-    // program. It makes up 90% of the work done while joining or merging anything
-    unstable_sort_by(slice, |Tup2(key1, _), Tup2(key2, _)| key1.cmp(key2));
+    slice.sort_unstable_by(|Tup2(key1, _), Tup2(key2, _)| key1.cmp(key2));
+
     consolidate_slice_inner(
         slice,
         |Tup2(key1, _), Tup2(key2, _)| key1 == key2,
@@ -220,8 +220,6 @@ where
     }
 
     // Ideally we'd combine the sorting and value merging portions
-    // This line right here is literally the hottest code within the entirety of the
-    // program. It makes up 90% of the work done while joining or merging anything
     quicksort::quicksort(&mut keys[offset..], &mut diffs[offset..]);
 
     // Deduplicate all difference values
@@ -250,9 +248,6 @@ where
     }
 
     // Ideally we'd combine the sorting and value merging portions
-    // These lines right here are literally the hottest code within the entirety of
-    // the program. They make up 90% of the work done while joining or merging
-    // anything
     quicksort::quicksort(keys, diffs);
 
     // Safety: the keys & diffs slices are the same length and are non-empty

@@ -3,6 +3,7 @@ use crate::catalog::{InputCollectionHandle, SerBatchReaderHandle};
 use crate::{Catalog, ControllerError, catalog::OutputCollectionHandles};
 use dbsp::circuit::Layout;
 use dbsp::circuit::circuit_builder::CircuitBase;
+use dbsp::dynamic::DynData;
 use dbsp::trace::spine_async::WithSnapshot;
 use dbsp::typed_batch::TypedBatch;
 use dbsp::utils::Tup1;
@@ -101,7 +102,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -138,7 +139,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -178,7 +179,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -215,7 +216,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -372,7 +373,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -399,7 +400,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -458,7 +459,7 @@ impl Catalog {
             + Debug
             + Send
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
@@ -478,7 +479,7 @@ impl Catalog {
             + Debug
             + Send
             + 'static,
-        Z: ZSet + Debug + Send + Sync,
+        Z: ZSet<DynK = DynData> + Debug + Send + Sync,
         Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {

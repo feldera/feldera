@@ -117,6 +117,15 @@ pub fn golden_file_directory() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden-files")
 }
 
+pub fn golden_aux(row: usize) -> i64 {
+    // Splitmix64
+    let mut x = (row as u64).wrapping_add(0x9E37_79B9_7F4A_7C15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^= x >> 31;
+    i64::from_le_bytes(x.to_le_bytes())
+}
+
 pub fn storage_base_and_path(output: &Path) -> (PathBuf, StoragePath) {
     let base = output
         .parent()
@@ -390,7 +399,7 @@ mod tests {
     use std::io;
 
     use super::{
-        buffer_cache, golden_file_directory, golden_row, golden_row_small, GoldenRow,
+        buffer_cache, golden_aux, golden_file_directory, golden_row, golden_row_small, GoldenRow,
         GoldenRowSmall,
     };
     use dbsp::dynamic::{DynData, Erase};
@@ -404,10 +413,11 @@ mod tests {
         storage_backend: &dyn StorageBackend,
         storage_path: StoragePath,
         row_builder: fn(usize) -> T,
+        aux_builder: fn(usize) -> i64,
     ) where
         T: DBData + Default + Erase<DynData>,
     {
-        let factories = Factories::<DynData, DynData>::new::<T, ()>();
+        let factories = Factories::<DynData, DynData>::new::<T, i64>();
         let reader: Reader<(&'static DynData, &'static DynData, ())> = Reader::open(
             &[&factories.any_factories()],
             buffer_cache,
@@ -419,14 +429,14 @@ mod tests {
         let n_rows = reader.n_rows(0) as usize;
         let mut bulk = reader.bulk_rows().unwrap();
         let mut tmp_key = T::default();
-        let mut tmp_aux = ();
+        let mut tmp_aux = 0i64;
         let (tmp_key, tmp_aux): (&mut DynData, &mut DynData) =
             (tmp_key.erase_mut(), tmp_aux.erase_mut());
 
         for row in 0..n_rows {
             bulk.wait().unwrap();
             let mut expected_key = row_builder(row);
-            let mut expected_aux = ();
+            let mut expected_aux = aux_builder(row);
             assert_eq!(
                 unsafe { bulk.item((tmp_key, tmp_aux)) },
                 Some((expected_key.erase_mut(), expected_aux.erase_mut()))
@@ -467,9 +477,14 @@ mod tests {
             let is_small = file_name.contains("-small");
             let storage_path = StoragePath::from(file_name);
             if is_small {
-                validate_rows::<GoldenRowSmall>(&*storage_backend, storage_path, golden_row_small);
+                validate_rows::<GoldenRowSmall>(
+                    &*storage_backend,
+                    storage_path,
+                    golden_row_small,
+                    golden_aux,
+                );
             } else {
-                validate_rows::<GoldenRow>(&*storage_backend, storage_path, golden_row);
+                validate_rows::<GoldenRow>(&*storage_backend, storage_path, golden_row, golden_aux);
             }
         }
 

@@ -42,6 +42,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVoidLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
@@ -648,6 +649,15 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         this.pop(expression);
         DBSPExpression result = DBSPNullLiteral.INSTANCE;
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPVoidLiteral expression) {
+        this.push(expression);
+        this.pop(expression);
+        DBSPExpression result = DBSPVoidLiteral.INSTANCE;
         this.map(expression, result);
         return VisitDecision.STOP;
     }

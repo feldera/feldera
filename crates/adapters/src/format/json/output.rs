@@ -17,6 +17,7 @@ use serde::Deserialize;
 use serde_json::json;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::{borrow::Cow, io::Write, mem::take};
 
 /// JSON format encoder.
@@ -230,7 +231,7 @@ impl Encoder for JsonEncoder {
         self.output_consumer.as_mut()
     }
 
-    fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
+    fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
         let mut buffer = take(&mut self.buffer);
         let mut key_buffer = take(&mut self.key_buffer);
 
@@ -672,9 +673,9 @@ mod test {
                 Arc::new(<SerBatchImpl<_, TestStruct, ()>>::new(zset)) as Arc<dyn SerBatch>
             })
             .collect::<Vec<_>>();
-        for (step, zset) in zsets.iter().enumerate() {
+        for (step, zset) in zsets.into_iter().enumerate() {
             encoder.consumer().batch_start(step as u64);
-            encoder.encode(zset.as_batch_reader()).unwrap();
+            encoder.encode(zset.arc_as_batch_reader()).unwrap();
             encoder.consumer().batch_end();
         }
 
@@ -861,7 +862,9 @@ mod test {
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 
         let err = encoder
-            .encode(&SerBatchImpl::<_, TestStruct, ()>::new(zset) as &dyn SerBatchReader)
+            .encode(
+                Arc::new(SerBatchImpl::<_, TestStruct, ()>::new(zset)) as Arc<dyn SerBatchReader>
+            )
             .unwrap_err();
         assert_eq!(
             format!("{err}"),
@@ -897,7 +900,9 @@ mod test {
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 
         encoder
-            .encode(&SerBatchImpl::<_, TestStruct, ()>::new(zset) as &dyn SerBatchReader)
+            .encode(
+                Arc::new(SerBatchImpl::<_, TestStruct, ()>::new(zset)) as Arc<dyn SerBatchReader>
+            )
             .unwrap();
 
         let actual_output = consumer_data
@@ -968,7 +973,9 @@ mod test {
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 
         encoder
-            .encode(&SerBatchImpl::<_, TestStruct, ()>::new(zset) as &dyn SerBatchReader)
+            .encode(
+                Arc::new(SerBatchImpl::<_, TestStruct, ()>::new(zset)) as Arc<dyn SerBatchReader>
+            )
             .unwrap();
 
         let actual_output = consumer_data
