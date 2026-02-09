@@ -4541,7 +4541,8 @@ circuit.recursive(|child| {
 
 **Order Statistics** (`algebra/order_statistics/`):
 - **OrderStatisticsZSet**: Augmented B+ tree for O(log n) update/rank/select queries used by percentile aggregates
-- See design docs: `order_statistics_zset.md`, `order_statistics_sql_functions.md`, `order_statistics_bulk_load_plan.md`, `order_statistics_node_storage_plan.md`, `order_statistics_storage_vs_spine.md`
+- **Parallel Routing** (`parallel_routing.rs`): Exchange-based distribution of tree routing, leaf prefetching, and entry sorting across idle DBSP workers for large batches
+- See design docs: `order_statistics_zset.md`, `order_statistics_sql_functions.md`, `order_statistics_bulk_load_plan.md`, `order_statistics_node_storage_plan.md`, `order_statistics_storage_vs_spine.md`, `order_statistics_parallelism.md`
 
 ### **Dynamic vs Static APIs**
 
@@ -5141,7 +5142,7 @@ Most operators use **key lookup** or **cursor scan** patterns that work efficien
 
 ### Order Statistics Operator
 
-**`percentile_op.rs`** - Implements PERCENTILE_CONT and PERCENTILE_DISC SQL functions with O(log n) incremental updates. Maintains per-key `OrderStatisticsZSet` (augmented B+ tree) state that supports O(log n) select queries ("what's the k-th element?"). This is the **only** DBSP operator requiring true O(log n) position-based data structure support — all other operators use key-based lookups, sequential iteration, or accumulation patterns.
+**`percentile_op.rs`** - Implements PERCENTILE_CONT and PERCENTILE_DISC SQL functions with O(log n) incremental updates. Maintains per-key `OrderStatisticsZSet` (augmented B+ tree) state that supports O(log n) select queries ("what's the k-th element?"). This is the **only** DBSP operator requiring true O(log n) position-based data structure support — all other operators use key-based lookups, sequential iteration, or accumulation patterns. When running with multiple workers, uses Exchange-based parallel routing to distribute tree routing, leaf prefetching, and entry sorting across idle workers (see `algebra/order_statistics/order_statistics_parallelism.md`).
 <!-- SECTION:crates/dbsp/src/operator/dynamic/CLAUDE.md END -->
 
 ---

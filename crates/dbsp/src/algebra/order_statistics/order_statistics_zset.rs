@@ -1114,6 +1114,11 @@ where
         self.storage.leaves_len()
     }
 
+    /// Get the maximum number of entries per leaf node.
+    pub fn max_leaf_entries(&self) -> usize {
+        self.max_leaf_entries
+    }
+
     /// Get a raw pointer to the internal storage for read-only parallel access.
     ///
     /// # Safety
@@ -1164,6 +1169,266 @@ where
     /// Number of leaves currently evicted to disk.
     pub fn evicted_leaf_count(&self) -> usize {
         self.storage.evicted_leaf_count()
+    }
+
+    /// Reconcile parallel write results from workers.
+    ///
+    /// Called by the owner after gathering `LeafWriteResult`s from all workers.
+    /// Workers have already:
+    /// 1. Cloned leaves, merged entries, handled splits
+    /// 2. Written modified original leaves to disk as segment files
+    ///
+    /// The owner:
+    /// 1. Registers worker segment files
+    /// 2. Replaces in-memory leaves with Evicted slots
+    /// 3. Allocates IDs for split leaves and places them in storage
+    /// 4. Updates internal nodes for splits
+    /// 5. Recalculates subtree sums
+    /// 6. Updates total_weight and num_keys
+    pub(crate) fn reconcile_parallel_writes(
+        &mut self,
+        results: Vec<crate::algebra::order_statistics::parallel_routing::LeafWriteResult<T>>,
+    ) {
+        use crate::algebra::order_statistics::parallel_routing::SplitLeafInfo;
+
+        let mut total_weight_delta: ZWeight = 0;
+        let mut total_key_count_delta: i64 = 0;
+        let mut all_splits: Vec<SplitLeafInfo<T>> = Vec::new();
+
+        for result in results {
+            total_weight_delta += result.total_weight_delta;
+            total_key_count_delta += result.total_key_count_delta;
+
+            // 1. Register worker segment files
+            if let Some(segment) = result.segment {
+                self.storage.register_worker_segment(
+                    segment.segment_id,
+                    segment.path,
+                    segment.reader,
+                    segment.leaf_index,
+                    segment.file_size,
+                );
+            }
+
+            // 2. Replace in-memory leaves with Evicted slots
+            for disk_leaf in &result.disk_leaves {
+                self.storage.replace_leaf_with_evicted(
+                    disk_leaf.leaf_id,
+                    disk_leaf.cached_summary.clone(),
+                );
+            }
+
+            // 3. Collect split leaves for processing
+            all_splits.extend(result.split_leaves);
+        }
+
+        // 4. Process split leaves: allocate IDs, set up next_leaf chains, update internal nodes
+        // Group splits by original_leaf_id to maintain order
+        let mut splits_by_original: std::collections::HashMap<usize, Vec<SplitLeafInfo<T>>> =
+            std::collections::HashMap::new();
+        for split in all_splits {
+            splits_by_original
+                .entry(split.original_leaf_id)
+                .or_default()
+                .push(split);
+        }
+
+        // For each original leaf that was split
+        for (original_leaf_id, splits) in &splits_by_original {
+            let original_leaf_loc = LeafLocation::new(*original_leaf_id);
+
+            // Get the original leaf's next_leaf (from the evicted summary — we can't read it
+            // from the evicted slot. But we recorded it in the split leaf chain:
+            // the last split leaf inherited the original's next_leaf)
+            // Since the worker set up the chain: modified_leaf → split[0] → split[1] → ... → original_next,
+            // the last split has the original next_leaf already.
+
+            // Allocate IDs for each split leaf
+            let mut split_locs: Vec<LeafLocation> = Vec::new();
+            for split in splits {
+                let loc = self.storage.alloc_leaf(split.leaf.clone());
+                let leaf_loc = loc.as_leaf().expect("alloc_leaf returns Leaf location");
+                split_locs.push(leaf_loc);
+            }
+
+            // Set up next_leaf chain: original → split[0] → split[1] → ... → last_split (has original's next)
+            // The modified original leaf is now on disk (Evicted). We can't set its next_leaf
+            // directly. Instead, we need to reload it, set next_leaf, and re-evict or mark dirty.
+            // However, the leaf data on disk already has the correct entries but wrong next_leaf.
+            // For correctness, we need to reload, fix next_leaf, and mark dirty.
+            if !split_locs.is_empty() {
+                // Reload the original leaf to fix its next_leaf
+                self.storage
+                    .load_leaf_from_disk(original_leaf_loc)
+                    .expect("Failed to reload leaf for next_leaf fix");
+                let original_leaf_mut = self.storage.get_leaf_mut(original_leaf_loc);
+                original_leaf_mut.next_leaf = Some(split_locs[0]);
+
+                // Chain split leaves together
+                for i in 0..split_locs.len() - 1 {
+                    self.storage.get_leaf_mut(split_locs[i]).next_leaf = Some(split_locs[i + 1]);
+                }
+                // Last split leaf already has the correct next_leaf (inherited from original)
+
+                // Insert split children into parent internal nodes
+                for (i, split) in splits.iter().enumerate() {
+                    let new_child_loc = NodeLocation::Leaf(split_locs[i]);
+                    self.insert_split_child(split.split_key.clone(), new_child_loc);
+                }
+            }
+        }
+
+        // 5. Recalculate all subtree sums (needed even without splits,
+        // because leaf weights changed from merging entries)
+        self.recalculate_all_subtree_sums();
+
+        // 6. Update totals
+        self.total_weight += total_weight_delta;
+        self.num_keys = (self.num_keys as i64 + total_key_count_delta) as usize;
+    }
+
+    /// Insert a new child node resulting from a leaf split.
+    ///
+    /// Navigates from root to find the parent internal node of the split key,
+    /// inserts the new child, and handles cascading internal splits.
+    fn insert_split_child(&mut self, split_key: T, new_child_loc: NodeLocation) {
+        let root = match self.root {
+            Some(r) => r,
+            None => return,
+        };
+
+        // If root is a leaf, we need to create a new root
+        if root.is_leaf() {
+            let mut new_root = InternalNodeTyped::with_capacity(self.max_internal_children);
+            new_root.children.push(root);
+            new_root.children.push(new_child_loc);
+            new_root.keys.push(split_key);
+            new_root.subtree_sums.push(0); // Will be recalculated
+            new_root.subtree_sums.push(0);
+
+            let new_root_level = 1;
+            let new_root_loc = self.storage.alloc_internal(new_root, new_root_level);
+            self.root = Some(new_root_loc);
+            return;
+        }
+
+        // Navigate to find the parent and insert
+        let split = self.insert_split_child_recursive(root, &split_key, new_child_loc);
+
+        // Handle root split
+        if let Some((promoted_key, new_right_loc)) = split {
+            let mut new_root = InternalNodeTyped::with_capacity(self.max_internal_children);
+            new_root.children.push(root);
+            new_root.children.push(new_right_loc);
+            new_root.keys.push(promoted_key);
+            new_root.subtree_sums.push(0); // Will be recalculated
+            new_root.subtree_sums.push(0);
+
+            let new_root_level = root.level().saturating_add(1);
+            let new_root_loc = self.storage.alloc_internal(new_root, new_root_level);
+            self.root = Some(new_root_loc);
+        }
+    }
+
+    /// Recursive helper for insert_split_child.
+    /// Returns Some((promoted_key, new_right_loc)) if this internal node split.
+    fn insert_split_child_recursive(
+        &mut self,
+        loc: NodeLocation,
+        split_key: &T,
+        new_child_loc: NodeLocation,
+    ) -> Option<(T, NodeLocation)> {
+        match loc {
+            NodeLocation::Internal { id, level } => {
+                let internal = self.storage.get_internal(id);
+                let child_idx = internal.find_child(split_key);
+
+                // Check if the child at child_idx is the parent of the new split
+                let child_loc = internal.children[child_idx];
+                if child_loc.is_leaf() || child_loc.level() + 1 == new_child_loc.level() {
+                    // This is the parent — insert new child here
+                    let internal = self.storage.get_internal_mut(id);
+                    internal.keys.insert(child_idx, split_key.clone());
+                    internal.children.insert(child_idx + 1, new_child_loc);
+                    internal.subtree_sums.insert(child_idx + 1, 0); // Will be recalculated
+
+                    if internal.needs_split(self.max_internal_children) {
+                        let (promoted, right) = internal.split();
+                        let right_loc = self.storage.alloc_internal(right, level);
+                        return Some((promoted, right_loc));
+                    }
+                    return None;
+                }
+
+                // Recurse deeper
+                let split = self.insert_split_child_recursive(child_loc, split_key, new_child_loc);
+
+                if let Some((promoted_key, new_right)) = split {
+                    // Child split — insert promoted key here
+                    let internal = self.storage.get_internal_mut(id);
+                    let insert_pos = internal.find_child(&promoted_key);
+                    internal.keys.insert(insert_pos, promoted_key.clone());
+                    internal.children.insert(insert_pos + 1, new_right);
+                    internal.subtree_sums.insert(insert_pos + 1, 0);
+
+                    if internal.needs_split(self.max_internal_children) {
+                        let (promoted, right) = internal.split();
+                        let right_loc = self.storage.alloc_internal(right, level);
+                        return Some((promoted, right_loc));
+                    }
+                }
+
+                None
+            }
+            NodeLocation::Leaf(_) => {
+                // Should not reach here — the caller handles leaf parents
+                None
+            }
+        }
+    }
+
+    /// Recalculate all subtree weight sums bottom-up.
+    ///
+    /// This is called after structural changes (splits) to ensure
+    /// all internal node subtree_sums are correct. For evicted leaves,
+    /// uses the CachedLeafSummary.weight_sum (no disk read needed).
+    fn recalculate_all_subtree_sums(&mut self) {
+        if let Some(root) = self.root {
+            self.recalculate_subtree_sums_recursive(root);
+        }
+    }
+
+    /// Recursive subtree sum recalculation.
+    /// Returns the total weight of the subtree rooted at `loc`.
+    fn recalculate_subtree_sums_recursive(&mut self, loc: NodeLocation) -> ZWeight {
+        match loc {
+            NodeLocation::Leaf(leaf_loc) => self.leaf_weight_for_subtree_sum(leaf_loc),
+            NodeLocation::Internal { id, .. } => {
+                let num_children = self.storage.get_internal(id).children.len();
+                let children: Vec<NodeLocation> =
+                    self.storage.get_internal(id).children.clone();
+
+                let mut sums = Vec::with_capacity(num_children);
+                for child_loc in children {
+                    sums.push(self.recalculate_subtree_sums_recursive(child_loc));
+                }
+
+                let internal = self.storage.get_internal_mut(id);
+                internal.subtree_sums = sums;
+                internal.total_weight()
+            }
+        }
+    }
+
+    /// Get a leaf's total weight for subtree sum calculation.
+    /// Uses CachedLeafSummary for evicted leaves (no disk I/O).
+    fn leaf_weight_for_subtree_sum(&self, leaf_loc: LeafLocation) -> ZWeight {
+        use crate::node_storage::LeafSlot;
+        match self.storage.leaf_slot(leaf_loc.id) {
+            Some(LeafSlot::Present(leaf)) => leaf.total_weight(),
+            Some(LeafSlot::Evicted(summary)) => summary.weight_sum,
+            None => 0,
+        }
     }
 
     /// Merge another multiset into this one.

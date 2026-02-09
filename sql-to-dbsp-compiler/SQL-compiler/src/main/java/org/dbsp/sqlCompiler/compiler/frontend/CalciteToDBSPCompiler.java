@@ -1097,6 +1097,28 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     call -> call.getAggregation().getKind() == SqlKind.PERCENTILE_CONT ||
                             call.getAggregation().getKind() == SqlKind.PERCENTILE_DISC);
 
+            // Percentile aggregates can always produce NULL (empty group/table),
+            // regardless of input nullability.  Override Calcite's type inference
+            // which may mark the result as NOT NULL when the input is NOT NULL.
+            if (anyPercentile) {
+                for (int idx = 0; idx < aggregateCalls.size(); idx++) {
+                    SqlKind kind = aggregateCalls.get(idx).getAggregation().getKind();
+                    if (kind == SqlKind.PERCENTILE_CONT || kind == SqlKind.PERCENTILE_DISC) {
+                        aggTypes[idx] = aggTypes[idx].withMayBeNull(true);
+                    }
+                }
+                aggType = new DBSPTypeTuple(aggTypes);
+                // Rebuild the full row tuple with updated nullable aggregate types
+                DBSPType[] updatedFields = new DBSPType[tuple.size()];
+                for (int i = 0; i < aggregate.getGroupCount(); i++) {
+                    updatedFields[i] = tuple.getFieldType(i);
+                }
+                for (int i = 0; i < aggTypes.length; i++) {
+                    updatedFields[aggregate.getGroupCount() + i] = aggTypes[i];
+                }
+                tuple = new DBSPTypeTuple(updatedFields);
+            }
+
             if (anyPercentile && !allPercentile) {
                 // Mixed case: partition calls into regular and percentile groups,
                 // compute each separately, then join on the group key.
@@ -1243,6 +1265,29 @@ public class CalciteToDBSPCompiler extends RelVisitor
     void visitAggregate(LogicalAggregate aggregate) {
         IntermediateRel node = CalciteObject.create(aggregate);
         DBSPType type = this.convertType(node.getPositionRange(), aggregate.getRowType(), false);
+
+        // Percentile aggregates can always produce NULL (empty group/table),
+        // regardless of input nullability.  Fix the expected output type to reflect this.
+        List<AggregateCall> aggCalls = aggregate.getAggCallList();
+        boolean anyPercentile = aggCalls.stream().anyMatch(
+                call -> call.getAggregation().getKind() == SqlKind.PERCENTILE_CONT ||
+                        call.getAggregation().getKind() == SqlKind.PERCENTILE_DISC);
+        if (anyPercentile) {
+            DBSPTypeTuple typeTuple = type.to(DBSPTypeTuple.class);
+            DBSPType[] fields = new DBSPType[typeTuple.size()];
+            for (int i = 0; i < typeTuple.size(); i++) {
+                fields[i] = typeTuple.getFieldType(i);
+            }
+            int groupCount = aggregate.getGroupCount();
+            for (int i = 0; i < aggCalls.size(); i++) {
+                SqlKind kind = aggCalls.get(i).getAggregation().getKind();
+                if (kind == SqlKind.PERCENTILE_CONT || kind == SqlKind.PERCENTILE_DISC) {
+                    fields[groupCount + i] = fields[groupCount + i].withMayBeNull(true);
+                }
+            }
+            type = new DBSPTypeTuple(fields);
+        }
+
         List<ImmutableBitSet> plan = this.planGroups(
                 aggregate.getGroupSet(), aggregate.getGroupSets());
 
@@ -3347,13 +3392,53 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPSimpleOperator o;
         DBSPTypeStruct struct = view.getRowTypeAsStruct(this.compiler().typeCompiler)
                 .rename(view.relationName);
+
+        // The circuit may have adjusted field nullability (e.g. percentile aggregates
+        // always produce nullable output even when Calcite infers NOT NULL).
+        // Reconcile the struct's field types with the actual circuit output types.
+        DBSPTypeZSet actualOutputType = op.getOutputZSetType();
+        DBSPType actualElem = actualOutputType.getElementType();
+        if (actualElem.is(DBSPTypeArray.class))
+            actualElem = actualElem.to(DBSPTypeArray.class).getElementType();
+        DBSPTypeTupleBase actualTuple = actualElem.to(DBSPTypeTupleBase.class);
+        if (actualTuple.size() == struct.fields.size()) {
+            List<DBSPTypeStruct.Field> adjustedFields = new ArrayList<>();
+            boolean changed = false;
+            int idx = 0;
+            for (DBSPTypeStruct.Field f : struct.fields.values()) {
+                DBSPType circuitFieldType = actualTuple.getFieldType(idx);
+                if (circuitFieldType.mayBeNull && !f.type.mayBeNull) {
+                    adjustedFields.add(new DBSPTypeStruct.Field(
+                            f.getNode(), f.name, f.index, f.type.withMayBeNull(true)));
+                    changed = true;
+                } else {
+                    adjustedFields.add(f);
+                }
+                idx++;
+            }
+            if (changed) {
+                struct = new DBSPTypeStruct(struct.getNode(), struct.name, adjustedFields, struct.mayBeNull);
+            }
+        }
+
         List<ViewColumnMetadata> columnMetadata = new ArrayList<>();
         // Synthesize the metadata for the view's columns.
+        int colIdx = 0;
         for (RelColumnMetadata meta: view.columns) {
             InputColumnMetadata colMeta = this.convertMetadata(meta);
+            DBSPType colType = colMeta.type;
+            // Adjust nullability to match the struct (which was reconciled with the circuit output)
+            if (colIdx < struct.fields.size()) {
+                DBSPTypeStruct.Field structField = struct.fields.values().stream()
+                        .skip(colIdx).findFirst().orElse(null);
+                if (structField != null && structField.type.mayBeNull && !colType.mayBeNull) {
+                    colType = colType.withMayBeNull(true);
+                }
+            }
             ViewColumnMetadata cm = new ViewColumnMetadata(meta.getNode(), view.relationName,
-                        meta.getName(), colMeta.type, colMeta.lateness);
+                        meta.getName(), colType, colMeta.lateness);
             columnMetadata.add(cm);
+            colIdx++;
         }
 
         int emitFinalIndex = view.emitFinalColumn();

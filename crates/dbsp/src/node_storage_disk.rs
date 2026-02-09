@@ -12,7 +12,7 @@
 /// This is similar to `rkyv::to_bytes` but uses DBSP's serializer types
 /// (FBuf-backed with 64KB scratch space) for compatibility with the rest
 /// of the DBSP storage layer.
-fn serialize_to_bytes<T>(value: &T) -> Result<FBuf, FileFormatError>
+pub(crate) fn serialize_to_bytes<T>(value: &T) -> Result<FBuf, FileFormatError>
 where
     T: Archive + RkyvSerialize<Serializer>,
 {
@@ -37,6 +37,130 @@ where
     // Extract the bytes from the serializer
     let fbuf = serializer.into_serializer().into_inner();
     Ok(fbuf)
+}
+
+/// Write a set of serialized leaf blocks to a new segment file.
+///
+/// This is the core segment writing logic extracted from `flush_dirty_to_disk()`
+/// for reuse by parallel routing workers. Each call creates a new immutable
+/// segment file containing the provided leaves.
+///
+/// # Arguments
+///
+/// * `backend` - Storage backend for file I/O
+/// * `path` - Path for the new segment file
+/// * `leaf_blocks` - Pre-serialized leaf data: `(leaf_id, serialized_bytes)`
+///
+/// # Returns
+///
+/// `(FileReader, leaf_index, file_size)` where leaf_index maps leaf_id → (offset, size).
+pub(crate) fn write_leaves_to_segment(
+    backend: &Arc<dyn StorageBackend>,
+    path: &StoragePath,
+    leaf_blocks: &[(usize, FBuf)],
+) -> Result<(Arc<dyn FileReader>, std::collections::HashMap<usize, (u64, u32)>, u64), FileFormatError> {
+    if leaf_blocks.is_empty() {
+        return Err(FileFormatError::Io("No leaves to write".to_string()));
+    }
+
+    // Create file writer
+    let mut writer = backend.create_named(path)
+        .map_err(|e| FileFormatError::Io(format!("Failed to create segment file: {}", e)))?;
+
+    // Worker segments use placeholder header stats (entries/weight tracked elsewhere)
+
+    // Write placeholder header
+    let mut all_blocks: Vec<FBuf> = Vec::new();
+    let mut leaf_index: std::collections::HashMap<usize, (u64, u32)> = std::collections::HashMap::new();
+
+    // Reserve space for header
+    let mut header_buf = FBuf::with_capacity(FILE_HEADER_SIZE);
+    header_buf.resize(FILE_HEADER_SIZE, 0);
+    all_blocks.push(header_buf);
+
+    let mut current_offset = FILE_HEADER_SIZE as u64;
+
+    // Write each leaf as a data block
+    for &(leaf_id, ref serialized) in leaf_blocks {
+        let data_size = DATA_BLOCK_HEADER_SIZE + serialized.len();
+        let block_size = align_to_block(data_size);
+
+        let mut block = FBuf::with_capacity(block_size);
+        block.resize(block_size, 0);
+
+        // Write data block header
+        let header = create_data_block_header(leaf_id as u64, serialized.len() as u64);
+        block[..DATA_BLOCK_HEADER_SIZE].copy_from_slice(&header);
+
+        // Write serialized data
+        block[DATA_BLOCK_HEADER_SIZE..DATA_BLOCK_HEADER_SIZE + serialized.len()]
+            .copy_from_slice(serialized);
+
+        // Compute and set checksum
+        set_block_checksum(&mut block);
+
+        // Record location in index
+        leaf_index.insert(leaf_id, (current_offset, block_size as u32));
+        current_offset += block_size as u64;
+
+        all_blocks.push(block);
+    }
+
+    // Create index block
+    let index_offset = current_offset;
+    let num_entries = leaf_blocks.len();
+    let entries_size = num_entries * INDEX_ENTRY_SIZE;
+    let index_content_size = 16 + entries_size;
+    let index_block_size = align_to_block(index_content_size);
+
+    let mut index_block = FBuf::with_capacity(index_block_size);
+    index_block.resize(index_block_size, 0);
+
+    // Write index block header
+    index_block[4..8].copy_from_slice(&MAGIC_INDEX_BLOCK);
+    index_block[8..16].copy_from_slice(&(num_entries as u64).to_le_bytes());
+
+    // Write index entries (sorted by leaf_id for consistency)
+    let mut sorted_ids: Vec<usize> = leaf_blocks.iter().map(|(id, _)| *id).collect();
+    sorted_ids.sort();
+    for (i, &id) in sorted_ids.iter().enumerate() {
+        if let Some(&(offset, size)) = leaf_index.get(&id) {
+            let start = 16 + i * INDEX_ENTRY_SIZE;
+            let entry = IndexEntry {
+                leaf_id: id as u64,
+                location: FileBlockLocation { offset, size },
+            };
+            let entry_bytes = entry.to_bytes();
+            index_block[start..start + INDEX_ENTRY_SIZE].copy_from_slice(&entry_bytes);
+        }
+    }
+
+    // Compute and set checksum for index block
+    set_block_checksum(&mut index_block);
+    all_blocks.push(index_block);
+
+    // Write file header
+    let file_size = current_offset + index_block_size as u64;
+    let header = FileHeader {
+        num_leaves: num_entries as u64,
+        index_offset,
+        total_entries: 0,
+        total_weight: 0,
+    };
+    let header_bytes = header.to_bytes();
+    all_blocks[0][..FILE_HEADER_SIZE].copy_from_slice(&header_bytes);
+
+    // Write all blocks to the file
+    for block in all_blocks {
+        writer.write_block(block)
+            .map_err(|e| FileFormatError::Io(format!("Failed to write block: {}", e)))?;
+    }
+
+    // Complete the file
+    let reader = writer.complete()
+        .map_err(|e| FileFormatError::Io(format!("Failed to complete segment file: {}", e)))?;
+
+    Ok((reader, leaf_index, file_size))
 }
 
 /// Convert a `StoragePath` to a filesystem `PathBuf`.

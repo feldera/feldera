@@ -1606,6 +1606,92 @@ where
             // Don't mark as dirty - the leaf was just loaded from disk
         }
     }
+
+    /// Replace a leaf slot with an Evicted summary.
+    ///
+    /// Used by parallel routing reconciliation: workers write leaves to disk,
+    /// then the owner replaces the in-memory leaf with an Evicted slot
+    /// pointing to the worker's segment file.
+    ///
+    /// Does nothing if the leaf ID is out of range.
+    pub fn replace_leaf_with_evicted(&mut self, leaf_id: usize, summary: CachedLeafSummary) {
+        if leaf_id < self.leaves.len() {
+            // Track memory freed if leaf was in memory
+            if let Some(leaf) = self.leaves[leaf_id].as_present() {
+                let leaf_size = Self::estimate_leaf_size(leaf);
+                self.stats.memory_bytes = self.stats.memory_bytes.saturating_sub(leaf_size);
+            }
+            self.leaves[leaf_id] = LeafSlot::Evicted(summary);
+            // Remove from dirty set since it's now on disk
+            self.dirty_leaves.remove(&leaf_id);
+            self.stats.evicted_leaf_count += 1;
+        }
+    }
+
+    /// Register a worker's segment file and update disk location tracking.
+    ///
+    /// Used by parallel routing reconciliation: each worker writes a segment
+    /// file, and the owner registers it to enable future disk reads.
+    pub fn register_worker_segment(
+        &mut self,
+        segment_id: SegmentId,
+        path: StoragePath,
+        reader: Arc<dyn FileReader>,
+        leaf_index: std::collections::HashMap<usize, (u64, u32)>,
+        file_size: u64,
+    ) {
+        // Update leaf_disk_locations
+        for (&leaf_id, &(offset, size)) in &leaf_index {
+            self.leaf_disk_locations.insert(
+                leaf_id,
+                LeafDiskLocation::new(segment_id, offset, size),
+            );
+        }
+
+        // Create and store segment metadata
+        let mut segment = SegmentMetadata::with_reader(segment_id, path, reader);
+        segment.leaf_index = leaf_index;
+        segment.size_bytes = file_size;
+        segment.leaf_count = segment.leaf_index.len();
+        self.segments.push(segment);
+
+        // Update next_segment_id
+        if segment_id.0 >= self.next_segment_id {
+            self.next_segment_id = segment_id.0 + 1;
+        }
+    }
+
+    /// Allocate the next segment ID.
+    ///
+    /// Returns a unique segment ID and advances the counter. Used by the
+    /// owner to pre-allocate segment IDs for workers before scatter.
+    pub fn allocate_segment_id(&mut self) -> SegmentId {
+        let id = SegmentId::new(self.next_segment_id);
+        self.next_segment_id += 1;
+        id
+    }
+
+    /// Get the storage backend from config, falling back to Runtime.
+    pub fn get_storage_backend(&self) -> Option<Arc<dyn StorageBackend>> {
+        self.config.storage_backend.clone()
+            .or_else(|| crate::circuit::Runtime::storage_backend().ok())
+    }
+
+    /// Get the segment path prefix.
+    pub fn segment_path_prefix(&self) -> &str {
+        &self.config.segment_path_prefix
+    }
+
+    /// Get the spill directory.
+    pub fn spill_directory(&self) -> Option<&StoragePath> {
+        self.config.spill_directory.as_ref()
+    }
+
+    /// Direct access to leaf slots (for parallel routing reconciliation).
+    pub(crate) fn leaf_slot(&self, leaf_id: usize) -> Option<&LeafSlot<L>> {
+        self.leaves.get(leaf_id)
+    }
+
 }
 
 impl<I, L> Default for NodeStorage<I, L>

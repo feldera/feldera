@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
 
-    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use crate::{
@@ -14,7 +13,7 @@ mod tests {
         node_storage::NodeStorageConfig,
         operator::dynamic::percentile_op::{PercentileOperator, PercentileResult},
         trace::{BatchReader},
-        utils::{Tup2},
+        utils::{Tup0, Tup2},
     };
     use feldera_storage::{FileCommitter, StoragePath};
 
@@ -805,6 +804,171 @@ mod tests {
             result,
             indexed_zset! { 1 => { Some(F64::new(149.0)) => 1 } }
         );
+    }
+
+    /// Test PERCENTILE_CONT with Tup0 key (no GROUP BY) and 2 workers.
+    ///
+    /// This exercises the unsharded single-key path where:
+    /// - Shard is skipped (input stays round-robin distributed)
+    /// - Worker 0 owns the tree; all workers participate in Exchange barriers
+    /// - Each worker routes its own local entries via the shared tree view
+    #[test]
+    fn test_percentile_cont_tup0_multi_worker() {
+        let (mut circuit, (input, output)) = Runtime::init_circuit(2, |circuit| {
+            let (input, input_handle) = circuit.add_input_indexed_zset::<Tup0, F64>();
+            let output = input.percentile_cont_stateful(None, &[0.5], true, |r| r[0].clone());
+            Ok((input_handle, output.output()))
+        })
+        .unwrap();
+
+        // Step 1: Small batch
+        input.append(&mut vec![
+            Tup2(Tup0(), Tup2(F64::new(10.0), 1)),
+            Tup2(Tup0(), Tup2(F64::new(20.0), 1)),
+            Tup2(Tup0(), Tup2(F64::new(30.0), 1)),
+        ]);
+        circuit.transaction().unwrap();
+
+        let result = output.consolidate();
+        assert_eq!(
+            result,
+            indexed_zset! { Tup0() => { Some(F64::new(20.0)) => 1 } }
+        );
+
+        // Step 2: Add more values
+        input.append(&mut vec![
+            Tup2(Tup0(), Tup2(F64::new(40.0), 1)),
+            Tup2(Tup0(), Tup2(F64::new(50.0), 1)),
+        ]);
+        circuit.transaction().unwrap();
+
+        let result = output.consolidate();
+        assert_eq!(
+            result,
+            indexed_zset! { Tup0() => { Some(F64::new(20.0)) => -1, Some(F64::new(30.0)) => 1 } }
+        );
+
+        // Step 3: Delete a value
+        input.append(&mut vec![Tup2(Tup0(), Tup2(F64::new(30.0), -1))]);
+        circuit.transaction().unwrap();
+
+        let result = output.consolidate();
+        // [10, 20, 40, 50]: p50 continuous, pos = 0.5*(4-1) = 1.5
+        // lower=20, upper=40, fraction=0.5 -> 30.0
+        assert_eq!(
+            result,
+            indexed_zset! { Tup0() => { Some(F64::new(30.0)) => -1, Some(F64::new(30.0)) => 1 } }
+        );
+    }
+
+    /// Test PERCENTILE_CONT with Tup0 key and 2 workers with a large batch.
+    ///
+    /// With enough entries, the tree should have internal nodes and the
+    /// parallel routing distributes leaf routing across workers.
+    #[test]
+    fn test_percentile_cont_tup0_large_batch() {
+        let (mut circuit, (input, output)) = Runtime::init_circuit(2, |circuit| {
+            let (input, input_handle) = circuit.add_input_indexed_zset::<Tup0, F64>();
+            let output = input.percentile_cont_stateful(None, &[0.5], true, |r| r[0].clone());
+            Ok((input_handle, output.output()))
+        })
+        .unwrap();
+
+        // Insert 1000 entries
+        let mut batch: Vec<Tup2<Tup0, Tup2<F64, i64>>> = (0..1000)
+            .map(|i| Tup2(Tup0(), Tup2(F64::new(i as f64), 1)))
+            .collect();
+        input.append(&mut batch);
+        circuit.transaction().unwrap();
+
+        let result = output.consolidate();
+        // Median of [0..999]: target_rank = 0.5 * 999 = 499.5
+        // lower=499, upper=500, fraction=0.5 -> 499.5
+        assert_eq!(
+            result,
+            indexed_zset! { Tup0() => { Some(F64::new(499.5)) => 1 } }
+        );
+
+        // Step 2: Delete first 500, add 500 more
+        let mut deletes: Vec<Tup2<Tup0, Tup2<F64, i64>>> = (0..500)
+            .map(|i| Tup2(Tup0(), Tup2(F64::new(i as f64), -1)))
+            .collect();
+        let mut inserts: Vec<Tup2<Tup0, Tup2<F64, i64>>> = (1000..1500)
+            .map(|i| Tup2(Tup0(), Tup2(F64::new(i as f64), 1)))
+            .collect();
+        deletes.append(&mut inserts);
+        input.append(&mut deletes);
+        circuit.transaction().unwrap();
+
+        let result = output.consolidate();
+        // Now [500..1499], 1000 values, target_rank = 0.5 * 999 = 499.5
+        // Rank 499 = 999, Rank 500 = 1000, fraction=0.5 -> 999.5
+        assert_eq!(
+            result,
+            indexed_zset! { Tup0() => { Some(F64::new(499.5)) => -1, Some(F64::new(999.5)) => 1 } }
+        );
+    }
+
+    /// Verify that 1-worker and 2-worker produce identical results for Tup0 key.
+    #[test]
+    fn test_percentile_cont_tup0_1_vs_2_workers() {
+        let steps: Vec<Vec<Tup2<Tup0, Tup2<F64, i64>>>> = vec![
+            // Step 1: insert 100 values
+            (0..100).map(|i| Tup2(Tup0(), Tup2(F64::new(i as f64), 1))).collect(),
+            // Step 2: delete 20, add 50
+            {
+                let mut v: Vec<_> = (0..20).map(|i| Tup2(Tup0(), Tup2(F64::new(i as f64), -1))).collect();
+                v.extend((100..150).map(|i| Tup2(Tup0(), Tup2(F64::new(i as f64), 1))));
+                v
+            },
+            // Step 3: delete 30 more
+            (20..50).map(|i| Tup2(Tup0(), Tup2(F64::new(i as f64), -1))).collect(),
+            // Step 4: insert with weights > 1
+            vec![Tup2(Tup0(), Tup2(F64::new(200.0), 3))],
+        ];
+
+        // Run with 1 worker
+        let outputs_1 = {
+            let (mut circuit, (input, output)) = Runtime::init_circuit(1, |circuit| {
+                let (input, input_handle) = circuit.add_input_indexed_zset::<Tup0, F64>();
+                let output = input.percentile_cont_stateful(None, &[0.5], true, |r| r[0].clone());
+                Ok((input_handle, output.output()))
+            }).unwrap();
+            let mut outputs = Vec::new();
+            for step_data in &steps {
+                input.append(&mut step_data.clone());
+                circuit.transaction().unwrap();
+                outputs.push(output.consolidate());
+            }
+            circuit.kill().unwrap();
+            outputs
+        };
+
+        // Run with 2 workers
+        let outputs_2 = {
+            let (mut circuit, (input, output)) = Runtime::init_circuit(2, |circuit| {
+                let (input, input_handle) = circuit.add_input_indexed_zset::<Tup0, F64>();
+                let output = input.percentile_cont_stateful(None, &[0.5], true, |r| r[0].clone());
+                Ok((input_handle, output.output()))
+            }).unwrap();
+            let mut outputs = Vec::new();
+            for step_data in &steps {
+                input.append(&mut step_data.clone());
+                circuit.transaction().unwrap();
+                outputs.push(output.consolidate());
+            }
+            circuit.kill().unwrap();
+            outputs
+        };
+
+        // Verify identical results
+        for (i, (out_1, out_2)) in outputs_1.iter().zip(outputs_2.iter()).enumerate() {
+            assert_eq!(
+                out_1, out_2,
+                "1-worker vs 2-worker output mismatch at step {} (0-indexed)",
+                i
+            );
+        }
     }
 
     /// Test multi-key scenario with parallel routing (2 workers).

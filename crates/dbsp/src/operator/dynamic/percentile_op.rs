@@ -48,6 +48,7 @@
 //! );
 //! ```
 
+use std::any::TypeId;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ops::Neg;
@@ -76,7 +77,7 @@ use crate::{
     storage::file::{Deserializer, to_bytes},
     trace::{BatchReader, Cursor},
     typed_batch::{BatchReader as TypedBatchReader, OrdIndexedZSet, TypedBatch},
-    utils::{IsNone, Tup2},
+    utils::{IsNone, Tup0, Tup2},
 };
 use feldera_storage::{FileCommitter, StoragePath};
 
@@ -620,38 +621,25 @@ where
     changed_keys
 }
 
-/// Process the input delta batch with partitioning for parallel routing.
+
+/// Collect all entries from a delta for unsharded single-key processing.
 ///
-/// Like `process_delta`, but collects entries for keys with large batches
-/// instead of inserting them immediately. Returns:
-/// - Changed keys (all keys, including deferred ones)
-/// - Deferred entries by key (only keys with >= threshold entries AND
-///   existing trees with internal nodes)
-fn process_delta_with_partition<K, V>(
+/// Each worker calls this with its own local delta (round-robin distributed).
+/// Returns entries as a flat Vec for the parallel routing step.
+fn collect_entries_for_single_key<K, V>(
     delta: &OrdIndexedZSet<K, V>,
-    trees: &mut BTreeMap<K, OrderStatisticsZSet<V>>,
-    tree_ids: &mut BTreeMap<K, u64>,
-    next_tree_id: &mut u64,
-    storage_config: &NodeStorageConfig,
-    parallel_threshold: usize,
-) -> (Vec<K>, BTreeMap<K, Vec<(V, ZWeight)>>)
+) -> Vec<(V, ZWeight)>
 where
     K: DBData,
     <K as crate::storage::file::Deserializable>::ArchivedDeser: Ord,
     V: DBData + IsNone,
-    <V as Archive>::Archived: Ord,
 {
-    let mut changed_keys: Vec<K> = Vec::new();
-    let mut deferred: BTreeMap<K, Vec<(V, ZWeight)>> = BTreeMap::new();
+    let mut entries: Vec<(V, ZWeight)> = Vec::new();
 
     let inner = delta.inner();
     let mut cursor = inner.cursor();
 
     while cursor.key_valid() {
-        let key: K = unsafe { cursor.key().downcast::<K>().clone() };
-
-        // Collect all entries for this key first
-        let mut entries: Vec<(V, ZWeight)> = Vec::new();
         while cursor.val_valid() {
             let value: V = unsafe { cursor.val().downcast::<V>().clone() };
 
@@ -671,42 +659,10 @@ where
 
             cursor.step_val();
         }
-
-        // Ensure tree exists
-        let nti = &mut *next_tree_id;
-        let tids = &mut *tree_ids;
-        let sc = &*storage_config;
-        let tree = trees.entry(key.clone()).or_insert_with(|| {
-            let tree_id = *nti;
-            let mut config = sc.clone();
-            config.segment_path_prefix = format!("t{}_", tree_id);
-            *nti += 1;
-            tids.insert(key.clone(), tree_id);
-            OrderStatisticsZSet::with_config(DEFAULT_BRANCHING_FACTOR, config)
-        });
-
-        // Check if this key qualifies for parallel routing
-        let should_defer = entries.len() >= parallel_threshold
-            && tree.root().map_or(false, |r| !r.is_leaf());
-
-        if should_defer {
-            // Defer entries for parallel routing
-            deferred.insert(key.clone(), entries);
-        } else {
-            // Insert entries sequentially
-            for (val, weight) in entries {
-                tree.insert(val, weight);
-            }
-            if tree.should_flush() {
-                let _ = tree.flush_and_evict();
-            }
-        }
-
-        changed_keys.push(key);
         cursor.step_key();
     }
 
-    (changed_keys, deferred)
+    entries
 }
 
 /// Emit output deltas by comparing new output with previous output for each changed key.
@@ -767,6 +723,128 @@ where
 }
 
 // =============================================================================
+// Parallel routing dispatch methods
+// =============================================================================
+
+impl<K, V, O, F> PercentileOperator<K, V, O, F>
+where
+    K: DBData,
+    <K as crate::storage::file::Deserializable>::ArchivedDeser: Ord,
+    V: DBData + IsNone,
+    <V as Archive>::Archived: Ord,
+    O: DBData,
+    <O as Archive>::Archived: Ord,
+    F: Fn(&[PercentileResult<V>]) -> O + Clone + Send + 'static,
+{
+    /// Evaluate for unsharded single-key case (Tup0, no GROUP BY).
+    ///
+    /// Each worker has ~1/N entries from round-robin distribution.
+    /// Tree ownership is always worker 0 for Tup0.
+    /// All workers participate in the 2 Exchange rounds (redistribute + gather).
+    ///
+    /// When the tree has internal nodes, workers route their local entries to
+    /// leaf buckets using the shared tree view. When the tree is just a leaf
+    /// or empty (bootstrap), the owner publishes the tree view anyway —
+    /// entries that can't be routed (deep_route returns None) are sent directly
+    /// to the owner via the redistribute exchange as leaf_id 0.
+    async fn eval_unsharded_single_key(
+        &mut self,
+        delta: &OrdIndexedZSet<K, V>,
+    ) -> Vec<K> {
+        let worker_index = Runtime::worker_index();
+
+        // Collect all local entries from this worker's delta portion.
+        let local_entries = collect_entries_for_single_key(delta);
+        let has_local_entries = !local_entries.is_empty();
+
+        // Tree owner for Tup0 is always worker 0 (deterministic).
+        let tree_owner_index = 0;
+        let is_tree_owner = worker_index == tree_owner_index;
+
+        // For Tup0, there's only one possible key.
+        let tup0_key: K = unsafe {
+            // SAFETY: We only call this when TypeId::of::<K>() == TypeId::of::<Tup0>().
+            // Tup0 is zero-sized, so transmuting default-constructed Tup0 to K is safe.
+            let tup0 = Tup0();
+            std::ptr::read(&tup0 as *const Tup0 as *const K)
+        };
+
+        // Ensure tree exists on the owner
+        if is_tree_owner {
+            let nti = &mut self.next_tree_id;
+            let tids = &mut self.tree_ids;
+            let sc = &self.storage_config;
+            self.trees.entry(tup0_key.clone()).or_insert_with(|| {
+                let tree_id = *nti;
+                let mut config = sc.clone();
+                config.segment_path_prefix = format!("t{}_", tree_id);
+                *nti += 1;
+                tids.insert(tup0_key.clone(), tree_id);
+                OrderStatisticsZSet::with_config(DEFAULT_BRANCHING_FACTOR, config)
+            });
+        }
+
+        // Always use parallel_step. The tree owner publishes the tree view.
+        // Workers route entries via deep_route. If the tree is a leaf/empty,
+        // deep_route returns None and entries are unrouted — the parallel_step
+        // sends unrouted entries to the owner. The owner inserts them.
+        let routing = self.parallel_routing.as_mut().unwrap();
+        let tree = if is_tree_owner {
+            self.trees.get_mut(&tup0_key)
+        } else {
+            None
+        };
+        let _ = routing.parallel_step(tree, local_entries).await;
+
+        // Flush if needed
+        if is_tree_owner {
+            if let Some(tree) = self.trees.get_mut(&tup0_key) {
+                if tree.should_flush() {
+                    let _ = tree.flush_and_evict();
+                }
+            }
+        }
+
+        // Only the tree owner reports changed keys and computes output.
+        if is_tree_owner && (has_local_entries || !self.trees.get(&tup0_key).map_or(true, |t| t.is_empty())) {
+            vec![tup0_key]
+        } else {
+            // Non-owners produce empty output (the owner handles all deltas)
+            vec![]
+        }
+    }
+
+    /// Evaluate for sharded multi-key case.
+    ///
+    /// Data is pre-sharded by key hash so each worker has distinct keys.
+    /// No parallel routing is used here — it only benefits single-key
+    /// (Tup0) queries where all data lands on one worker. For multi-key
+    /// queries, each worker already has ~1/N keys, so sequential processing
+    /// is efficient. All workers must still participate in the Exchange
+    /// barriers (empty payloads) to prevent deadlock.
+    async fn eval_sharded_with_parallel(
+        &mut self,
+        delta: &OrdIndexedZSet<K, V>,
+    ) -> Vec<K> {
+        // Process all entries sequentially (each worker has its own keys).
+        let changed_keys = process_delta(
+            delta,
+            &mut self.trees,
+            &mut self.tree_ids,
+            &mut self.next_tree_id,
+            &self.storage_config,
+        );
+
+        // All workers must participate in the Exchange barriers.
+        // Worker 0 publishes empty step data as coordinator.
+        let routing = self.parallel_routing.as_mut().unwrap();
+        let _ = routing.parallel_step(None, vec![]).await;
+
+        changed_keys
+    }
+}
+
+// =============================================================================
 // UnaryOperator implementation (unified CONT + DISC)
 // =============================================================================
 
@@ -784,59 +862,18 @@ where
     async fn eval(&mut self, delta: &OrdIndexedZSet<K, V>) -> OrdIndexedZSet<K, O> {
         self.input_batch_stats.add_batch(delta.inner().len());
 
-        // Use partitioned processing when parallel routing is available.
-        // All workers participate in the exchange, even with empty data.
-        let changed_keys = if self.parallel_routing.is_some() {
-            let threshold = ParallelRouting::<V>::threshold();
-            let (changed_keys, deferred) = process_delta_with_partition(
-                delta,
-                &mut self.trees,
-                &mut self.tree_ids,
-                &mut self.next_tree_id,
-                &self.storage_config,
-                threshold,
-            );
+        let is_tup0 = TypeId::of::<K>() == TypeId::of::<Tup0>();
 
-            // Pick at most one key for parallel routing (the first large key).
-            // Remaining deferred keys are inserted sequentially.
-            let mut parallel_key: Option<K> = None;
-            let mut parallel_entries: Vec<(V, ZWeight)> = Vec::new();
-
-            for (key, entries) in deferred {
-                if parallel_key.is_none() {
-                    parallel_key = Some(key);
-                    parallel_entries = entries;
-                } else {
-                    // Insert remaining deferred keys sequentially
-                    if let Some(tree) = self.trees.get_mut(&key) {
-                        for (val, weight) in entries {
-                            tree.insert(val, weight);
-                        }
-                        if tree.should_flush() {
-                            let _ = tree.flush_and_evict();
-                        }
-                    }
-                }
-            }
-
-            // All workers participate in the exchange round
-            let routing = self.parallel_routing.as_ref().unwrap();
-            let tree = parallel_key
-                .as_ref()
-                .and_then(|k| self.trees.get_mut(k));
-            let _ = routing.parallel_step(tree, parallel_entries).await;
-
-            // Flush the parallel-inserted tree if needed
-            if let Some(key) = &parallel_key {
-                if let Some(tree) = self.trees.get_mut(key) {
-                    if tree.should_flush() {
-                        let _ = tree.flush_and_evict();
-                    }
-                }
-            }
-
-            changed_keys
+        // Dispatch based on key type and parallel routing availability.
+        let changed_keys = if is_tup0 && self.parallel_routing.is_some() {
+            // Unsharded single-key case: each worker has ~1/N entries from
+            // round-robin distribution (shard was skipped in percentile.rs).
+            self.eval_unsharded_single_key(delta).await
+        } else if self.parallel_routing.is_some() {
+            // Sharded multi-key case: data is pre-sharded by key hash.
+            self.eval_sharded_with_parallel(delta).await
         } else {
+            // Single worker: process everything sequentially.
             process_delta(
                 delta,
                 &mut self.trees,

@@ -460,4 +460,204 @@ mod tests {
         assert!(freed > 0, "Should free some bytes");
         assert_eq!(tree.evicted_leaf_count(), evicted);
     }
+
+    /// Test reconcile_parallel_writes with split leaves only (no disk writes).
+    /// Builds a tree with a small branching factor, then simulates what a worker
+    /// would produce: split leaves that need to be inserted.
+    #[test]
+    fn test_reconcile_with_splits() {
+        use crate::algebra::order_statistics::parallel_routing::{
+            LeafWriteResult, SplitLeafInfo,
+        };
+        use crate::algebra::order_statistics::order_statistics_zset::LeafNode;
+        use crate::node_storage::LeafLocation;
+
+        // Use small branching factor for easy splitting
+        let bf = 4;
+        let mut tree: OrderStatisticsZSet<i32> = OrderStatisticsZSet::with_config(
+            bf,
+            NodeStorageConfig::memory_only(),
+        );
+
+        // Insert initial data to build a multi-level tree
+        for i in 0..20 {
+            tree.insert(i * 10, 1);
+        }
+
+        let initial_weight = tree.total_weight();
+        let initial_keys = tree.num_keys();
+
+        // Find the first leaf and its next_leaf
+        let first_leaf_id = 0; // First leaf is always ID 0
+        let first_leaf = tree.storage().get_leaf(LeafLocation::new(first_leaf_id));
+        let original_next = first_leaf.next_leaf;
+
+        // Create a split leaf that should be inserted after leaf 0
+        // The split key must be > all keys in leaf 0 and < keys in the next leaf
+        let split_key = first_leaf.entries.last().unwrap().0 + 5;
+        let split_leaf = LeafNode {
+            entries: vec![
+                (split_key, 2),
+                (split_key + 1, 3),
+            ],
+            next_leaf: original_next, // Inherits original's next_leaf
+        };
+
+        let result = LeafWriteResult {
+            disk_leaves: Vec::new(),
+            split_leaves: vec![SplitLeafInfo {
+                original_leaf_id: first_leaf_id,
+                split_key,
+                leaf: split_leaf,
+            }],
+            segment: None,
+            total_weight_delta: 5, // 2 + 3
+            total_key_count_delta: 2,
+        };
+
+        tree.reconcile_parallel_writes(vec![result]);
+
+        // Verify totals
+        assert_eq!(tree.total_weight(), initial_weight + 5);
+        assert_eq!(tree.num_keys(), initial_keys + 2);
+
+        // Verify the new keys are findable via select
+        // The split keys should appear in sorted order among all entries
+        let all_entries: Vec<(i32, ZWeight)> = tree.iter().map(|(k, w)| (*k, w)).collect();
+        assert!(all_entries.contains(&(split_key, 2)));
+        assert!(all_entries.contains(&(split_key + 1, 3)));
+
+        // Verify sorted order
+        for i in 1..all_entries.len() {
+            assert!(all_entries[i - 1].0 < all_entries[i].0,
+                "Entries not sorted at position {}: {:?} >= {:?}",
+                i, all_entries[i - 1], all_entries[i]);
+        }
+
+        // Verify select_kth still works
+        assert_eq!(tree.select_kth(0, true), Some(&0));
+    }
+
+    /// Comparison test: sequential insert vs reconcile should produce
+    /// identical tree contents when inserting the same data.
+    #[test]
+    fn test_reconcile_vs_sequential() {
+        use crate::algebra::order_statistics::parallel_routing::{
+            LeafWriteResult, SplitLeafInfo, merge_and_split,
+        };
+        use crate::node_storage::LeafLocation;
+
+        let bf = 4;
+
+        // Build reference tree with all entries via sequential insert
+        let mut sequential_tree: OrderStatisticsZSet<i32> = OrderStatisticsZSet::with_config(
+            bf,
+            NodeStorageConfig::memory_only(),
+        );
+        // Phase 1: base entries
+        for i in 0..20 {
+            sequential_tree.insert(i * 10, 1);
+        }
+        // Phase 2: additional entries
+        let additional: Vec<(i32, ZWeight)> = (0..15).map(|i| (i * 10 + 5, 2)).collect();
+        for &(k, w) in &additional {
+            sequential_tree.insert(k, w);
+        }
+
+        // Build reconcile tree: insert only base, then reconcile the additional
+        let mut reconcile_tree: OrderStatisticsZSet<i32> = OrderStatisticsZSet::with_config(
+            bf,
+            NodeStorageConfig::memory_only(),
+        );
+        for i in 0..20 {
+            reconcile_tree.insert(i * 10, 1);
+        }
+
+        // Route additional entries to leaves and merge/split manually
+        // (simulating what parallel workers would do)
+        let max_leaf_entries = reconcile_tree.max_leaf_entries();
+        let mut leaf_buckets: std::collections::HashMap<usize, Vec<(i32, ZWeight)>> =
+            std::collections::HashMap::new();
+
+        // Route each entry to the correct leaf
+        for &(key, weight) in &additional {
+            // Find which leaf this entry belongs to by walking the tree
+            let leaf_id = find_leaf_for_key(&reconcile_tree, &key);
+            leaf_buckets.entry(leaf_id).or_default().push((key, weight));
+        }
+
+        // For each leaf bucket, do merge_and_split
+        let mut split_leaves = Vec::new();
+        let mut total_weight_delta: ZWeight = 0;
+        let mut total_key_count_delta: i64 = 0;
+
+        for (leaf_id, mut entries) in leaf_buckets {
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            let leaf = reconcile_tree.storage().get_leaf(LeafLocation::new(leaf_id));
+            let (modified, splits, wd, kd) = merge_and_split(leaf, &entries, max_leaf_entries);
+            total_weight_delta += wd;
+            total_key_count_delta += kd;
+
+            // Replace the leaf in-place with the merged version (simulating what a worker
+            // would do: merge entries then write to disk. Since we're in-memory, just replace.)
+            *reconcile_tree.storage_mut().get_leaf_mut(LeafLocation::new(leaf_id)) = modified;
+
+            for (split_key, split_leaf) in splits {
+                split_leaves.push(SplitLeafInfo {
+                    original_leaf_id: leaf_id,
+                    split_key,
+                    leaf: split_leaf,
+                });
+            }
+        }
+
+        // Construct a LeafWriteResult with only splits (leaves already updated in-place)
+        let result = LeafWriteResult {
+            disk_leaves: Vec::new(),
+            split_leaves,
+            segment: None,
+            total_weight_delta,
+            total_key_count_delta,
+        };
+
+        reconcile_tree.reconcile_parallel_writes(vec![result]);
+
+        // Compare: both trees should have identical contents
+        let seq_entries: Vec<(i32, ZWeight)> = sequential_tree.iter().map(|(k, w)| (*k, w)).collect();
+        let rec_entries: Vec<(i32, ZWeight)> = reconcile_tree.iter().map(|(k, w)| (*k, w)).collect();
+
+        assert_eq!(seq_entries, rec_entries,
+            "Sequential and reconcile trees have different contents");
+        assert_eq!(sequential_tree.total_weight(), reconcile_tree.total_weight(),
+            "Total weights differ");
+        assert_eq!(sequential_tree.num_keys(), reconcile_tree.num_keys(),
+            "Key counts differ");
+
+        // Verify select_kth works on reconciled tree
+        for i in 0..reconcile_tree.total_weight() {
+            let seq_val = sequential_tree.select_kth(i, true);
+            let rec_val = reconcile_tree.select_kth(i, true);
+            assert_eq!(seq_val, rec_val,
+                "select_kth({}) differs: seq={:?} rec={:?}", i, seq_val, rec_val);
+        }
+    }
+
+    /// Helper: find which leaf a key would be routed to.
+    fn find_leaf_for_key<T: crate::DBData>(tree: &OrderStatisticsZSet<T>, key: &T) -> usize {
+        use crate::node_storage::NodeLocation;
+
+        let mut loc = tree.root().expect("tree has root");
+        loop {
+            match loc {
+                NodeLocation::Internal { id, .. } => {
+                    let node = tree.storage().get_internal(id);
+                    let child_idx = node.find_child(key);
+                    loc = node.children[child_idx];
+                }
+                NodeLocation::Leaf(leaf_loc) => {
+                    return leaf_loc.id;
+                }
+            }
+        }
+    }
 }

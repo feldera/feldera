@@ -6,15 +6,32 @@
 //! The percentile methods use a dedicated `PercentileOperator` that maintains
 //! `OrderStatisticsZSet` state per key across steps, enabling O(log n)
 //! incremental updates per change instead of O(n) per-step rescanning.
+//!
+//! # Sharding Strategy
+//!
+//! For multi-key GROUP BY queries, data is sharded by key hash so all values
+//! for a key land on the same worker. For no-GROUP-BY queries (key = `Tup0`),
+//! sharding is skipped because all data would concentrate on one worker.
+//! Instead, data stays round-robin distributed and the parallel routing
+//! inside the percentile operator handles coordination.
+
+use std::any::TypeId;
 
 use crate::{
     Circuit, DBData, Stream,
     operator::dynamic::percentile_op::{Interpolate, PercentileOperator, PercentileResult},
     storage::file::Deserializable,
     typed_batch::OrdIndexedZSet,
-    utils::IsNone,
+    utils::{IsNone, Tup0},
 };
 use rkyv::Archive;
+
+/// Check if key type K is Tup0 (no GROUP BY).
+/// K: DBData implies K: 'static, so TypeId::of::<K>() works.
+/// The compiler monomorphizes and eliminates the branch.
+fn is_tup0_key<K: 'static>() -> bool {
+    TypeId::of::<K>() == TypeId::of::<Tup0>()
+}
 
 // =============================================================================
 // Unified percentile methods (supports mixed CONT/DISC from a single tree)
@@ -34,8 +51,9 @@ where
     /// from a single tree. The `build_output` closure receives `&[PercentileResult<V>]`
     /// and must call `cont_interpolate()` or `disc_value()` as appropriate.
     ///
-    /// This method automatically shards the input by key to ensure all values for
-    /// a key are processed by the same worker in multi-threaded execution.
+    /// For multi-key queries, automatically shards the input by key.
+    /// For no-GROUP-BY queries (Tup0 key), skips sharding to keep round-robin
+    /// distribution across workers.
     ///
     /// # Arguments
     /// - `persistent_id`: Optional identifier for checkpoint/restore
@@ -57,13 +75,17 @@ where
         <O as Archive>::Archived: Ord,
         F: Fn(&[PercentileResult<V>]) -> O + Clone + Send + 'static,
     {
-        let sharded = self.shard();
+        let input = if is_tup0_key::<K>() {
+            self.clone() // skip shard — keep round-robin distribution
+        } else {
+            self.shard() // multi-key — shard by key hash
+        };
         let operator = PercentileOperator::new(
             percentiles.to_vec(), is_continuous.to_vec(), ascending, build_output,
         );
-        sharded
+        input
             .circuit()
-            .add_unary_operator(operator, &sharded)
+            .add_unary_operator(operator, &input)
             .set_persistent_id(persistent_id)
     }
 }
@@ -85,8 +107,9 @@ where
     /// Returns the linearly interpolated values at the specified percentile positions.
     /// NULL values in the input are automatically excluded from the calculation.
     ///
-    /// This method automatically shards the input by key to ensure all values for
-    /// a key are processed by the same worker in multi-threaded execution.
+    /// For multi-key queries, automatically shards the input by key.
+    /// For no-GROUP-BY queries (Tup0 key), skips sharding to keep round-robin
+    /// distribution across workers.
     ///
     /// # Arguments
     /// - `persistent_id`: Optional identifier for checkpoint/restore
@@ -106,7 +129,11 @@ where
         <O as Archive>::Archived: Ord,
         F: Fn(&[Option<V>]) -> O + Clone + Send + 'static,
     {
-        let sharded = self.shard();
+        let input = if is_tup0_key::<K>() {
+            self.clone()
+        } else {
+            self.shard()
+        };
         let is_continuous: Vec<bool> = vec![true; percentiles.len()];
         let build_output_wrapper = move |results: &[PercentileResult<V>]| {
             let interpolated: Vec<Option<V>> = results.iter().map(|r| {
@@ -123,9 +150,9 @@ where
         let operator = PercentileOperator::new(
             percentiles.to_vec(), is_continuous, ascending, build_output_wrapper,
         );
-        sharded
+        input
             .circuit()
-            .add_unary_operator(operator, &sharded)
+            .add_unary_operator(operator, &input)
             .set_persistent_id(persistent_id)
     }
 
@@ -153,8 +180,9 @@ where
     /// Returns actual values from the set (no interpolation).
     /// NULL values in the input are automatically excluded from the calculation.
     ///
-    /// This method automatically shards the input by key to ensure all values for
-    /// a key are processed by the same worker in multi-threaded execution.
+    /// For multi-key queries, automatically shards the input by key.
+    /// For no-GROUP-BY queries (Tup0 key), skips sharding to keep round-robin
+    /// distribution across workers.
     ///
     /// # Arguments
     /// - `persistent_id`: Optional identifier for checkpoint/restore
@@ -174,7 +202,11 @@ where
         <O as Archive>::Archived: Ord,
         F: Fn(&[Option<V>]) -> O + Clone + Send + 'static,
     {
-        let sharded = self.shard();
+        let input = if is_tup0_key::<K>() {
+            self.clone()
+        } else {
+            self.shard()
+        };
         let is_continuous: Vec<bool> = vec![false; percentiles.len()];
         let build_output_wrapper = move |results: &[PercentileResult<V>]| {
             let discrete: Vec<Option<V>> = results.iter().map(|r| {
@@ -188,9 +220,9 @@ where
         let operator = PercentileOperator::new(
             percentiles.to_vec(), is_continuous, ascending, build_output_wrapper,
         );
-        sharded
+        input
             .circuit()
-            .add_unary_operator(operator, &sharded)
+            .add_unary_operator(operator, &input)
             .set_persistent_id(persistent_id)
     }
 }

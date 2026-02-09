@@ -551,4 +551,46 @@ public class IncrementalPercentileTests extends SqlIoTest {
                 ---------------------------------------------------
                  1   | 5   | 10  | 100   | 30  | 20      | 1""");
     }
+
+    /** Test PERCENTILE_CONT with NOT NULL input column.
+     *  When all rows are deleted, the result should be NULL, not a panic.
+     *  Regression test for: "NULL value should be impossible here" panic. */
+    @Test
+    public void testPercentileNotNullInputEmpty() {
+        var ccs = this.getCCS("""
+                CREATE TABLE data_table (
+                    id INT NOT NULL PRIMARY KEY,
+                    val DOUBLE NOT NULL
+                );
+
+                CREATE VIEW percentile_view AS SELECT
+                    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY val) AS p25,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY val) AS p50,
+                    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY val) AS p75
+                FROM data_table;
+                """);
+
+        // Insert some data
+        ccs.step("""
+                INSERT INTO data_table VALUES (1, 10.0), (2, 20.0), (3, 30.0), (4, 40.0)""", """
+                 p25  | p50  | p75  | weight
+                --------------------------------
+                 17.5 | 25   | 32.5 | 1""");
+
+        // Delete all data — retract old value, emit NULL for empty table
+        ccs.step("""
+                REMOVE FROM data_table VALUES (1, 10.0), (2, 20.0), (3, 30.0), (4, 40.0)""", """
+                 p25    | p50    | p75    | weight
+                ------------------------------------------
+                 17.5   | 25     | 32.5   | -1
+                 NULL   | NULL   | NULL   | 1""");
+
+        // Re-insert data — retract NULL, emit new values
+        ccs.step("""
+                INSERT INTO data_table VALUES (5, 100.0), (6, 200.0)""", """
+                 p25    | p50    | p75    | weight
+                ------------------------------------------
+                 NULL   | NULL   | NULL   | -1
+                 125    | 150    | 175    | 1""");
+    }
 }
