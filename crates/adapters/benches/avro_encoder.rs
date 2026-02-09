@@ -1,6 +1,6 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use dbsp::OrdIndexedZSet;
 use dbsp::utils::Tup2;
-use dbsp::{OrdIndexedZSet, OrdZSet};
 use dbsp_adapters::format::avro::output::AvroEncoder;
 use dbsp_adapters::static_compile::seroutput::SerBatchImpl;
 use dbsp_adapters::{Encoder, OutputConsumer, SerBatch};
@@ -65,19 +65,6 @@ impl BenchTestStruct {
             materialized: false,
             properties: BTreeMap::new(),
         }
-    }
-
-    fn avro_schema() -> &'static str {
-        r#"{
-            "type": "record",
-            "name": "BenchTestStruct",
-            "fields": [
-                { "name": "id", "type": "long" },
-                { "name": "b", "type": "boolean" },
-                { "name": "i", "type": ["null", "long"] },
-                { "name": "s", "type": "string" }
-            ]
-        }"#
     }
 }
 
@@ -212,15 +199,9 @@ fn build_indexed_batch(data: &[BenchTestStruct]) -> Arc<dyn SerBatch> {
     ))
 }
 
-fn build_plain_batch(data: &[BenchTestStruct]) -> Arc<dyn SerBatch> {
-    let tuples: Vec<_> = data.iter().map(|v| Tup2(v.clone(), 1i64)).collect();
-    let zset = OrdZSet::from_keys((), tuples);
-    Arc::new(<SerBatchImpl<_, BenchTestStruct, ()>>::new(zset))
-}
-
-fn create_indexed_encoder(workers: usize) -> AvroEncoder {
+fn create_indexed_encoder(threads: usize) -> AvroEncoder {
     let config = AvroEncoderConfig {
-        workers,
+        threads,
         update_format: AvroUpdateFormat::Raw,
         skip_schema_id: true,
         ..Default::default()
@@ -229,26 +210,6 @@ fn create_indexed_encoder(workers: usize) -> AvroEncoder {
     AvroEncoder::create(
         "bench_endpoint",
         &Some(BenchKeyStruct::relation_schema()),
-        &BenchTestStruct::relation_schema(),
-        Box::new(consumer),
-        config,
-        None,
-    )
-    .unwrap()
-}
-
-fn create_plain_encoder(workers: usize) -> AvroEncoder {
-    let config = AvroEncoderConfig {
-        workers,
-        schema: Some(BenchTestStruct::avro_schema().to_string()),
-        update_format: AvroUpdateFormat::Raw,
-        skip_schema_id: true,
-        ..Default::default()
-    };
-    let consumer = BenchOutputConsumer::new();
-    AvroEncoder::create(
-        "bench_endpoint",
-        &None,
         &BenchTestStruct::relation_schema(),
         Box::new(consumer),
         config,
