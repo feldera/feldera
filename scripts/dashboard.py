@@ -112,6 +112,10 @@ def aggregate_metric(df: pd.DataFrame, metric_key: str) -> pd.DataFrame:
 
 
 def extract_program_sql(program_df: pd.DataFrame) -> str:
+    """
+    Get program that was ran from results CSV, identify
+    variable parts for display.
+    """
     if "program_sql" not in program_df.columns:
         return "No SQL available in CSV."
     df = program_df.copy()
@@ -150,6 +154,11 @@ def tokenize_sql(sql: str) -> list[str]:
 def parameterize_sql(
     first_sql: str, last_sql: str, placeholder: str = "$VARIABLE"
 ) -> str:
+    """
+    When we have programs with changing parameters in the CSV (e.g.,
+    change the ingest size), we replace this with `placeholder` in
+    the program that is displayed in the UI.
+    """
     first_tokens = tokenize_sql(first_sql)
     last_tokens = tokenize_sql(last_sql)
 
@@ -172,6 +181,10 @@ def parameterize_sql(
 def payload_values_for_program(
     program_df: pd.DataFrame,
 ) -> tuple[list[float], list[str]]:
+    """
+    Given a dataset of measured values, construct labels for it to
+    display on the graphs.
+    """
     if "payload_bytes" in program_df.columns:
         values = program_df["payload_bytes"].dropna().sort_values().unique().tolist()
         labels = [format_bytes_binary(v) for v in values]
@@ -205,6 +218,9 @@ def build_write_barplot(
     primary_label: str,
     compare_label: str | None = None,
 ) -> go.Figure | None:
+    """
+    Create a Barchart for two result-sets (to compare two different versions).
+    """
     if (
         "storage_value" not in primary_df.columns
         or "duration_s" not in primary_df.columns

@@ -56,7 +56,11 @@ def default_payload_bytes(program: str) -> list[int]:
     return DEFAULT_PAYLOAD_BYTES
 
 
-def parse_csv_ints(value: str, label: str) -> list[int]:
+def parse_positive_csv_ints(value: str, label: str) -> list[int]:
+    """
+    Parses a list of positive integers provided as a string
+    e.g., to turn CLI arguments like --threads 1,2,3 into [1,2,3]
+    """
     items = [item.strip() for item in value.split(",") if item.strip()]
     if not items:
         raise argparse.ArgumentTypeError(f"{label} list cannot be empty")
@@ -77,6 +81,10 @@ def parse_csv_ints(value: str, label: str) -> list[int]:
 def normalize_payload_bytes(
     program: str, payload_bytes: list[int], payload_arg_provided: bool
 ) -> list[int]:
+    """
+    Validate payload bytes for all programs and return it as a list.
+    The u64 program can not have payloads bigger than 8 bytes.
+    """
     if program == "u64":
         if payload_arg_provided and any(size != 8 for size in payload_bytes):
             raise SystemExit(
@@ -146,6 +154,7 @@ def make_sql(program: str, datagen_workers: int, payload_bytes: int) -> str:
 
 
 def parse_bench_output(output: str) -> Dict[str, Any]:
+    "Find json payload in fda bench output and parse it."
     lines = [line for line in output.splitlines() if line.strip()]
     for idx, line in enumerate(lines):
         if line.lstrip().startswith("{"):
@@ -166,17 +175,17 @@ def check_mem_bw_requirements() -> None:
         raise SystemExit(
             f"{MEM_BW_TOOL} not found in PATH. Install AMDuProfPcm and add it to PATH."
         )
-    if not is_module_loaded("amd_uncore"):
+    if not is_kernel_module_loaded("amd_uncore"):
         raise SystemExit(
             "Kernel module amd_uncore is not loaded. Run: sudo modprobe amd_uncore"
         )
-    perf_val = read_sysctl_value("/proc/sys/kernel/perf_event_paranoid")
+    perf_val = read_file_to_string("/proc/sys/kernel/perf_event_paranoid")
     if perf_val != "0":
         raise SystemExit(
             "kernel.perf_event_paranoid must be 0 for AMDuProfPcm. "
             "Run: sudo sysctl -w kernel.perf_event_paranoid=0"
         )
-    nmi_watchdog = read_sysctl_value("/proc/sys/kernel/nmi_watchdog")
+    nmi_watchdog = read_file_to_string("/proc/sys/kernel/nmi_watchdog")
     if nmi_watchdog != "0":
         raise SystemExit(
             "kernel.nmi_watchdog must be 0 for AMDuProfPcm. "
@@ -196,7 +205,7 @@ def is_amd_cpu() -> bool:
     return False
 
 
-def is_module_loaded(name: str) -> bool:
+def is_kernel_module_loaded(name: str) -> bool:
     try:
         with open("/proc/modules", encoding="utf-8") as file_obj:
             for line in file_obj:
@@ -207,7 +216,7 @@ def is_module_loaded(name: str) -> bool:
     return False
 
 
-def read_sysctl_value(path: str) -> str:
+def read_file_to_string(path: str) -> str:
     try:
         with open(path, encoding="utf-8") as file_obj:
             return file_obj.read().strip()
@@ -237,6 +246,7 @@ def stop_mem_bw_monitor(proc: subprocess.Popen[str]) -> tuple[str, int | None]:
 
 
 def parse_mem_bw_csv(path: str) -> tuple[Dict[str, Any], str]:
+    "Parse the numbers returned by AmdUProf, see `start_mem_bw_monitor`"
     try:
         raw_text = open(path, encoding="utf-8", errors="replace").read()
     except OSError as exc:
@@ -323,6 +333,7 @@ def parse_mem_bw_csv(path: str) -> tuple[Dict[str, Any], str]:
 
 
 def parse_float(value: Any) -> float | None:
+    "Parse numbers and return as a float, return None in case it's not a number"
     if value is None:
         return None
     if isinstance(value, (int, float)):
@@ -410,6 +421,7 @@ def extract_metrics(payload: Dict[str, Any], pipeline_name: str) -> Dict[str, An
 
 
 def open_csv(path: str, fieldnames: Iterable[str]) -> Tuple[csv.DictWriter, Any]:
+    "Open CSV file in append mode"
     is_new = not os.path.exists(path)
     file_obj = open(path, "a", newline="", encoding="utf-8")
     writer = csv.DictWriter(file_obj, fieldnames=fieldnames)
@@ -435,6 +447,7 @@ def resolve_platform_version(pipeline: Any) -> str:
 
 
 def parse_semver_build_suffix(value: str) -> str:
+    "Parse --version-suffix CLI argument"
     raw = value.strip()
     if not raw:
         raise argparse.ArgumentTypeError("--version-suffix cannot be empty")
@@ -453,6 +466,7 @@ def parse_semver_build_suffix(value: str) -> str:
 
 
 def apply_semver_build_suffix(version: str, suffix: str | None) -> str:
+    "Adds a `suffix` to version: `v2.3.1` -> `v2.3.1+suffix`"
     if not suffix:
         return version
     if "+" in version:
@@ -529,10 +543,12 @@ def main() -> int:
 
     client = None if dry_run else FelderaClient()
     worker_counts = (
-        parse_csv_ints(args.workers, "workers") if args.workers else WORKER_COUNTS
+        parse_positive_csv_ints(args.workers, "workers")
+        if args.workers
+        else WORKER_COUNTS
     )
     payload_bytes_list = (
-        parse_csv_ints(args.payload_bytes, "payload-bytes")
+        parse_positive_csv_ints(args.payload_bytes, "payload-bytes")
         if args.payload_bytes
         else default_payload_bytes(program)
     )
