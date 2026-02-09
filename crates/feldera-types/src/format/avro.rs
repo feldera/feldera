@@ -250,13 +250,13 @@ pub struct AvroEncoderConfig {
     #[serde(flatten)]
     pub registry_config: AvroSchemaRegistryConfig,
 
-    /// The number of workers to use during encoding.
+    /// The number of threads to use during encoding.
     ///
     /// Avro encoder supports encoding multiple records in parallel. This configuration specifies
-    /// the number of workers to run in parallel.
+    /// the number of threads to run in parallel.
     /// Default: 4
-    #[serde(default = "default_encoder_workers")]
-    pub workers: usize,
+    #[serde(default = "default_encoder_threads")]
+    pub threads: usize,
 }
 
 impl Default for AvroEncoderConfig {
@@ -270,11 +270,11 @@ impl Default for AvroEncoderConfig {
             subject_name_strategy: Default::default(),
             skip_schema_id: Default::default(),
             registry_config: Default::default(),
-            workers: default_encoder_workers(),
+            threads: default_encoder_threads(),
         }
     }
 }
 
-fn default_encoder_workers() -> usize {
+fn default_encoder_threads() -> usize {
     4
 }

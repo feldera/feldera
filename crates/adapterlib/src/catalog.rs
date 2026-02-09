@@ -283,7 +283,7 @@ pub trait SerBatchReader: 'static + Send + Sync {
 
     fn keys_factory(&self) -> &'static dyn Factory<DynVec<DynData>>;
 
-    fn data_factory(&self) -> &'static dyn Factory<DynData>;
+    fn key_factory(&self) -> &'static dyn Factory<DynData>;
 
     fn sample_keys(&self, sample_size: usize, sample: &mut DynVec<DynData>);
 
@@ -407,14 +407,14 @@ impl SplitCursorBuilder {
 
             // Clone the actual key the cursor landed on.
             cursor.get_key().map(|s| {
-                let mut key = batch.data_factory().default_box();
+                let mut key = batch.key_factory().default_box();
                 s.clone_to(key.as_mut());
                 key
             })
         }?;
 
         let end_key = end_bound.map(|e| {
-            let mut key = batch.data_factory().default_box();
+            let mut key = batch.key_factory().default_box();
             e.clone_to(key.as_mut());
             key
         });

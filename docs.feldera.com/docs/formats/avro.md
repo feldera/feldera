@@ -112,6 +112,7 @@ either `registry_urls` or `schema` properties must be specified.
 | `registry_username`           | string          | | Username used to authenticate with the registry.Requires `registry_urls` to be set. This option is mutually exclusive with token-based authentication (see `registry_authorization_token`).|
 | `registry_password`           | string          | | Password used to authenticate with the registry. Requires `registry_urls` to be set.|
 | `registry_authorization_token`| string          | | Token used to authenticate with the registry. Requires `registry_urls` to be set. This option is mutually exclusive with password-based authentication (see `registry_username` and `registry_password`).|
+| `threads`                     | integer         | `4` | Number of parallel worker threads used to encode messages. **Only supported with [indexed outputs](/connectors/unique_keys).** |
 
 ### Examples
 

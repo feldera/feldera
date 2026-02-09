@@ -476,7 +476,7 @@ where
         self.batch.inner().factories().keys_factory()
     }
 
-    fn data_factory(&self) -> &'static dyn Factory<DynData> {
+    fn key_factory(&self) -> &'static dyn Factory<DynData> {
         self.batch.inner().factories().key_factory()
     }
 

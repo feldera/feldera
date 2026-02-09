@@ -106,10 +106,10 @@ impl OutputFormat for AvroOutputFormat {
             _ => None,
         };
 
-        if avro_config.workers == 0 {
+        if avro_config.threads == 0 {
             return Err(ControllerError::invalid_encoder_configuration(
                 endpoint_name,
-                "the 'workers' configuration must be greater than zero",
+                "the 'threads' configuration must be greater than zero",
             ));
         }
 
@@ -394,8 +394,8 @@ pub struct AvroEncoder {
     /// The thread pool for parallel encoding.
     pool: Option<ThreadPool>,
 
-    /// The number of workers to run in parallel.
-    workers: usize,
+    /// The number of worker threads to run in parallel.
+    threads: usize,
 }
 
 /// `true` - this config will create messages with key and value components.
@@ -715,7 +715,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
             cdc_field: config.cdc_field,
             value_avro_schema_with_cdc,
             pool: None,
-            workers: config.workers,
+            threads: config.threads,
         })
     }
 
@@ -812,12 +812,12 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
     fn encode_indexed(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
         let pool = self
             .pool
-            .get_or_insert_with(|| ThreadPool::new(self.workers));
+            .get_or_insert_with(|| ThreadPool::new(self.threads));
 
-        let (tx, rx) = crossbeam::channel::bounded(self.workers);
+        let (tx, rx) = crossbeam::channel::bounded(self.threads);
 
         let mut bounds = batch.keys_factory().default_box();
-        batch.partition_keys(self.workers, &mut *bounds);
+        batch.partition_keys(self.threads, &mut *bounds);
 
         for i in 0..=bounds.len() {
             let Some(cursor_builder) =
