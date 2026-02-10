@@ -104,16 +104,13 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     runtime_aggtest/aggregate_tests2/test_{charn_argmax,date_arg_max,interval_arg_max,time_arg_max,timestamp_arg_max}.py|
                     runtime_aggtest/aggregate_tests3/test_{binary_arg_max,empty_set,un_int_arg_max,varbinary_arg_max}.py|
                     runtime_aggtest/aggregate_tests4/test_{array_arg_max,map_arg_max,uuid,varchar_argmax,varcharn_argmax}.py|
-                    runtime_aggtest/aggregate_tests6/test_interval_mths_argmax.py
-                    """, true),
-            new Func(SqlStdOperatorTable.ARG_MIN, "ARG_MIN", SqlLibrary.STANDARD, "aggregates#arg_min",
-                    """
+                    runtime_aggtest/aggregate_tests6/test_interval_mths_argmax.py""", true),
+            new Func(SqlStdOperatorTable.ARG_MIN, "ARG_MIN", SqlLibrary.STANDARD, "aggregates#arg_min", """
                     runtime_aggtest/aggregate_tests/test_{arg_min,decimal_arg_min,empty_set,row_arg_min}.py|
                     runtime_aggtest/aggregate_tests2/test_{charn_argmin,date_arg_min,interval_arg_min,time_arg_min,timestamp_arg_min}.py|
                     runtime_aggtest/aggregate_tests3/test_{binary_arg_min,empty_set,un_int_arg_min,varbinary_arg_min}.py|
                     runtime_aggtest/aggregate_tests4/test_{array_arg_min,map_arg_min,uuid,varchar_argmin,varcharn_argmin}.py|
-                    runtime_aggtest/aggregate_tests6/test_interval_mths_argmin.py
-                    """, true),
+                    runtime_aggtest/aggregate_tests6/test_interval_mths_argmin.py""", true),
             new Func(SqlStdOperatorTable.BIT_AND, "BIT_AND", SqlLibrary.STANDARD, "aggregates#bit_and",
                     "runtime_aggtest/aggregate_tests/test_bit_and.py", true),
             new Func(SqlStdOperatorTable.BIT_OR, "BIT_OR", SqlLibrary.STANDARD, "aggregates#bit_or",
@@ -121,69 +118,55 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.BIT_XOR, "BIT_XOR", SqlLibrary.STANDARD, "aggregates#bit_xor",
                     "runtime_aggtest/aggregate_tests/test_bit_xor.py", true),
             new Func(SqlStdOperatorTable.COUNT, "COUNT", SqlLibrary.STANDARD,
-                    "aggregates#count,aggregates#countstar,aggregates#window-count,aggregates#window-countstar",
-                    """
+                    "aggregates#count,aggregates#countstar,aggregates#window-count,aggregates#window-countstar", """
                     runtime_aggtest/aggregate_tests/test_{count,count_col,decimal_count,decimal_count_col,row_count_col,empty_set}.py|
                     runtime_aggtest/aggregate_tests2/test_{charn_count,charn_count_col,date_count,date_count_col,interval_count,interval_count_col,time_count,time_count_col,timestamp_count,timestamp_count_col}.py|
                     runtime_aggtest/aggregate_tests3/test_{binary_count,binary_count_col,un_int_count,un_int_count_col,un_int_countif,varbinary_count,varbinary_count_col,empty_set}.py|
                     runtime_aggtest/aggregate_tests4/test_{array_count,array_count_col,map_count,map_count_col,varchar_count,varchar_count_col,varcharn_count,varcharn_count_col}.py|
-                    runtime_aggtest/aggregate_tests6/test_{interval_count_mths,interval_count_col_mths}.py
-                    """, true),
-            new Func(SqlStdOperatorTable.EVERY, "EVERY", SqlLibrary.STANDARD, "aggregates#every",
-                    """
+                    runtime_aggtest/aggregate_tests6/test_{interval_count_mths,interval_count_col_mths}.py""", true),
+            new Func(SqlStdOperatorTable.EVERY, "EVERY", SqlLibrary.STANDARD, "aggregates#every", """
                     runtime_aggtest/aggregate_tests/test_{every,decimal_every,row_every,empty_set}.py|
                     runtime_aggtest/aggregate_tests2/test_{charn_every,date_every,interval_every,time_every,timestamp_every}.py|
                     runtime_aggtest/aggregate_tests3/test_{binary_every,un_int_every,varbinary_every,empty_set}.py|
                     runtime_aggtest/aggregate_tests4/test_{array_every,map_every,varchar_every,varcharn_every}.py|
-                    runtime_aggtest/aggregate_tests6/test_{interval_mths_every}.py
-                    """, true),
+                    runtime_aggtest/aggregate_tests6/test_{interval_mths_every}.py""", true),
             new Func(SqlStdOperatorTable.MAX, "MAX", SqlLibrary.STANDARD, "aggregates#max,aggregates#window-max",
                 """
                 runtime_aggtest/aggregate_tests/test_{decimal_max,float_max,max,row_max,empty_set}.py|
                 runtime_aggtest/aggregate_tests2/test_{interval_max,date_max,timestamp_max,charn_max,time_max}.py|
                 runtime_aggtest/aggregate_tests3/test_{binary_max,un_int_max,varbinary_max}.py|
                 runtime_aggtest/aggregate_tests4/test_{array_max,map_max,varchar_max,varcharn_max}.py|
-                runtime_aggtest/aggregate_tests6/test_{interval_mths_max}.py
-                """, true),
+                runtime_aggtest/aggregate_tests6/test_{interval_mths_max}.py""", true),
             new Func(SqlStdOperatorTable.MIN, "MIN", SqlLibrary.STANDARD, "aggregates#min,aggregates#window-min",
                 """
                 runtime_aggtest/aggregate_tests/test_{decimal_min,float_min,min,row_min,empty_set}.py|
                 runtime_aggtest/aggregate_tests2/test_{charn_min,time_min,date_min,timestamp_min,interval_min}.py|
                 runtime_aggtest/aggregate_tests3/test_{binary_min,un_int_min,varbinary_min}.py|
                 runtime_aggtest/aggregate_tests4/test_{array_min,map_min,varchar_min,varcharn_min}.py|
-                runtime_aggtest/aggregate_tests6/test_interval_mths_min.py
-                """, true),
+                runtime_aggtest/aggregate_tests6/test_interval_mths_min.py""", true),
             new Func(SqlStdOperatorTable.SINGLE_VALUE, "SINGLE", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlStdOperatorTable.SOME, "SOME", SqlLibrary.STANDARD, "aggregates#some",
-                """
+            new Func(SqlStdOperatorTable.SOME, "SOME", SqlLibrary.STANDARD, "aggregates#some", """
                 runtime_aggtest/aggregate_tests/test_{decimal_some,some,row_some,empty_set}.py|
                 runtime_aggtest/aggregate_tests2/test_{charn_some,time_some,date_some,timestamp_some,interval_some}.py|
                 runtime_aggtest/aggregate_tests3/test_{binary_some,un_int_some,varbinary_some,empty_set}.py|
                 runtime_aggtest/aggregate_tests4/test_{array_some,map_some,varchar_some,varcharn_some}.py|
-                runtime_aggtest/aggregate_tests6/test_interval_mths_some.py
-                """, true),
-            new Func(SqlStdOperatorTable.SUM, "SUM", SqlLibrary.STANDARD, "aggregates#sum,aggregates#window-sum",
-                """
+                runtime_aggtest/aggregate_tests6/test_interval_mths_some.py""", true),
+            new Func(SqlStdOperatorTable.SUM, "SUM", SqlLibrary.STANDARD, "aggregates#sum,aggregates#window-sum", """
                 runtime_aggtest/aggregate_tests/test_{decimal_sum,sum,empty_set}.py|
                 runtime_aggtest/aggregate_tests3/test_un_int_sum.py|
-                runtime_aggtest/negative_tests/test_agg_arithmetic.py
-                """, true),
+                runtime_aggtest/negative_tests/test_agg_arithmetic.py""", true),
             new Func(SqlStdOperatorTable.SUM0, "SUM", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, true),
-            new Func(SqlStdOperatorTable.STDDEV, "STDDEV", SqlLibrary.STANDARD, "aggregates#stddev",
-                """
+            new Func(SqlStdOperatorTable.STDDEV, "STDDEV", SqlLibrary.STANDARD, "aggregates#stddev", """
                 runtime_aggtest/aggregate_tests/test_{stddev_samp,decimal_stddev_samp,empty_set}.py|
-                runtime_aggtest/aggregate_tests3/test_un_int_stddev.py
-                """, true),
+                runtime_aggtest/aggregate_tests3/test_un_int_stddev.py""", true),
             new Func(SqlStdOperatorTable.STDDEV_POP, "STDDEV_POP", SqlLibrary.STANDARD, "aggregates#stddev_pop",
                 """
                 runtime_aggtest/aggregate_tests/test_{stddev_pop,decimal_stddev_pop,empty_set}.py|
-                runtime_aggtest/aggregate_tests3/test_un_int_stddev_pop.py
-                """, true),
+                runtime_aggtest/aggregate_tests3/test_un_int_stddev_pop.py""", true),
             new Func(SqlStdOperatorTable.STDDEV_SAMP, "STDDEV_SAMP", SqlLibrary.STANDARD, "aggregates#stddev_samp",
                 """
                 runtime_aggtest/aggregate_tests/test_{stddev_samp,decimal_stddev_samp,empty_set}.py|
-                runtime_aggtest/aggregate_tests3/test_un_int_stddev.py
-                """, true),
+                runtime_aggtest/aggregate_tests3/test_un_int_stddev.py""", true),
             // window
             new Func(SqlStdOperatorTable.DENSE_RANK, "DENSE_RANK", SqlLibrary.STANDARD, "aggregates#dense_rank", FunctionDocumentation.NO_FILE, true),
             new Func(SqlStdOperatorTable.LAG, "LAG", SqlLibrary.STANDARD, "aggregates#lag", FunctionDocumentation.NO_FILE, true),

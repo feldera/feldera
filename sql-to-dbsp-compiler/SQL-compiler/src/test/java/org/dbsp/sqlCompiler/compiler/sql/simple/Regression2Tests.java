@@ -251,4 +251,14 @@ public class Regression2Tests extends SqlIoTest {
                 DENSE_RANK() OVER (ORDER BY intt DESC) <= 2;""",
                 "Not yet implemented: Multiple RANK aggregates per window");
     }
+
+    @Test
+    public void issue5593() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(str VARCHAR);
+                
+                CREATE VIEW v AS SELECT
+                str SIMILAR TO '(abc|def)%' AS str
+                FROM tbl;""", "Function 'SIMILAR TO' not yet implemented");
+    }
 }
