@@ -61,7 +61,9 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         deadline = start + timeout_s
         last = None
         while time.time() < deadline:
-            p = pipeline.client.get_pipeline(pipeline.name, PipelineFieldSelector.STATUS)
+            p = pipeline.client.get_pipeline(
+                pipeline.name, PipelineFieldSelector.STATUS
+            )
             status = p.deployment_status
             desired = p.deployment_desired_status
             error_msg = (p.deployment_error or {}).get("message", "")
