@@ -1618,9 +1618,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     this.ensureString(ops, 2);
                 return compileFunction("array_to_string", node, type, ops, 2, 3);
             }
-            case LIKE:
+            case LIKE: {
                 // ILIKE will also match LIKE in Calcite, it's just a special case for case-insensitive matching
-            case SIMILAR: {
                 validateArgCount(node, operationName, ops.size(), 2, 3);
                 for (int i = 0; i < ops.size(); i++)
                     // Calcite does not enforce the type of the arguments, why?

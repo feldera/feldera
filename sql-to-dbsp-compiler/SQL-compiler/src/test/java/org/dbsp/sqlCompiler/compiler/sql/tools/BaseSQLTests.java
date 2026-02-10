@@ -164,6 +164,7 @@ public class BaseSQLTests {
     }
 
     public void statementsFailingInCompilation(String statements, String substring) {
+        Utilities.enforce(!substring.isEmpty());
         this.statementsFailingInCompilation(statements, substring, false);
     }
 
