@@ -513,6 +513,7 @@ mod tests {
             segment: None,
             total_weight_delta: 5, // 2 + 3
             total_key_count_delta: 2,
+            unrouted_entries: vec![],
         };
 
         tree.reconcile_parallel_writes(vec![result]);
@@ -618,6 +619,7 @@ mod tests {
             segment: None,
             total_weight_delta,
             total_key_count_delta,
+            unrouted_entries: vec![],
         };
 
         reconcile_tree.reconcile_parallel_writes(vec![result]);

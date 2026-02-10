@@ -1,19 +1,23 @@
-//! Exchange-based parallel routing for OrderStatisticsZSet batch insertion.
+//! Shared-memory parallel routing for OrderStatisticsZSet batch insertion.
 //!
-//! When the percentile operator receives a large batch of entries for a single key,
-//! parallel routing distributes the work across idle DBSP workers using the Exchange
-//! primitive. Workers help with:
-//! - Routing entries from root to leaf (determining which leaf each entry belongs to)
-//! - Cloning leaves, merging entries, handling splits, and writing to disk
-//! - Pre-sorting entries per leaf for cache-friendly insertion
+//! When the percentile operator runs with multiple DBSP workers and a single key
+//! (no GROUP BY, key = `Tup0`), parallel routing distributes tree work across
+//! idle workers using shared memory and barriers instead of Exchange.
 //!
 //! # Architecture
 //!
-//! The owner publishes a shared tree view via `SharedPercentileState` (lock-free
-//! shared memory in `runtime.local_store()`). Workers read the tree view without
-//! an Exchange round, then two Exchange rounds coordinate the remaining work:
-//! 1. **Redistribute**: Workers exchange routed leaf buckets by leaf range
-//! 2. **Gather**: Workers send merge/write results back to owner
+//! The owner publishes a shared tree view and separator keys via
+//! `SharedPercentileState` (lock-free shared memory in `runtime.local_store()`).
+//! Workers partition their sorted local entries by value range (using binary
+//! search on separator keys), then exchange entries through shared-memory slots
+//! with barrier synchronization — no Exchange cloning or retry loops.
+//!
+//! 1. **Publish**: Owner publishes tree view + separator keys via shared memory
+//! 2. **Partition**: Workers binary-search entries into per-worker slices
+//! 3. **Redistribute**: Shared-memory slots + barrier (replaces Exchange)
+//! 4. **Merge**: Workers clone leaves, merge entries, write to disk
+//! 5. **Gather**: Shared-memory slots + barrier (replaces Exchange)
+//! 6. **Reconcile**: Owner integrates worker results
 //!
 //! Workers read the owner's tree structure in place via a raw pointer
 //! (`ReadOnlyTreeView`). The owner does not mutate the tree during routing.
@@ -24,7 +28,7 @@
 //! since the owner must allocate their leaf IDs.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use rkyv::{Archive, Serialize as RkyvSerialize};
@@ -38,7 +42,6 @@ use crate::node_storage::{
     CachedLeafSummary, LeafLocation, NodeLocation, SegmentId,
 };
 use crate::node_storage::serialize_to_bytes;
-use crate::operator::communication::Exchange;
 use crate::storage::backend::{FileReader, StorageBackend, StoragePath};
 use crate::storage::file::Serializer;
 use crate::{circuit_cache_key, DBData, Runtime, SchedulerError};
@@ -69,6 +72,7 @@ pub(crate) struct ReadOnlyTreeView<V> {
 unsafe impl<V: Send> Send for ReadOnlyTreeView<V> {}
 unsafe impl<V: Send> Sync for ReadOnlyTreeView<V> {}
 
+#[allow(dead_code)]
 impl<V: DBData> ReadOnlyTreeView<V> {
     /// Create from an existing tree. Just stores a raw pointer.
     fn from_tree(tree: &OrderStatisticsZSet<V>) -> Self {
@@ -135,6 +139,91 @@ impl<V: DBData> ReadOnlyTreeView<V> {
 }
 
 // =============================================================================
+// AsyncBarrier: generation-based async barrier for worker synchronization
+// =============================================================================
+
+/// Async-friendly barrier using generation counter + Notify.
+///
+/// All workers call `wait()` each step. The last to arrive bumps the
+/// generation and wakes all waiters. Workers register the Notify future
+/// BEFORE checking the generation to avoid TOCTOU races.
+struct AsyncBarrier {
+    count: AtomicUsize,
+    generation: AtomicU64,
+    total: usize,
+    notify: Notify,
+}
+
+impl AsyncBarrier {
+    fn new(total: usize) -> Self {
+        Self {
+            count: AtomicUsize::new(0),
+            generation: AtomicU64::new(0),
+            total,
+            notify: Notify::new(),
+        }
+    }
+
+    async fn wait(&self) {
+        let my_gen = self.generation.load(Ordering::Acquire);
+        let prev = self.count.fetch_add(1, Ordering::AcqRel);
+        if prev + 1 == self.total {
+            // Last to arrive: reset counter, advance generation, wake all.
+            self.count.store(0, Ordering::Release);
+            self.generation.fetch_add(1, Ordering::Release);
+            self.notify.notify_waiters();
+        } else {
+            // Wait for generation to advance.
+            loop {
+                let notified = self.notify.notified();
+                if self.generation.load(Ordering::Acquire) > my_gen {
+                    return;
+                }
+                notified.await;
+            }
+        }
+    }
+}
+
+// =============================================================================
+// SharedExchangeSlots: shared-memory inter-worker data exchange
+// =============================================================================
+
+/// Shared-memory slots replacing Exchange for inter-worker communication.
+///
+/// Workers write to slots indexed by [sender][receiver], hit a barrier,
+/// then read from slots indexed by [sender][my_index]. This eliminates
+/// Exchange's CAS retry loops, payload cloning, and notification overhead.
+struct SharedExchangeSlots<V> {
+    /// Redistribute slots: `slots[sender][receiver]` = entries for receiver from sender.
+    redistribute_slots: Vec<Vec<Mutex<Option<Vec<(V, ZWeight)>>>>>,
+    /// Gather slots: `slots[sender]` = LeafWriteResult from that worker.
+    gather_slots: Vec<Mutex<Option<LeafWriteResult<V>>>>,
+    /// Barrier after redistribute writes (ensures all writers done before reads).
+    redistribute_barrier: AsyncBarrier,
+    /// Barrier after gather writes (ensures all writers done before owner reads).
+    gather_barrier: AsyncBarrier,
+}
+
+impl<V: Clone + Send + 'static> SharedExchangeSlots<V> {
+    fn new(num_workers: usize) -> Self {
+        let redistribute_slots = (0..num_workers)
+            .map(|_| (0..num_workers).map(|_| Mutex::new(None)).collect())
+            .collect();
+        let gather_slots = (0..num_workers).map(|_| Mutex::new(None)).collect();
+        Self {
+            redistribute_slots,
+            gather_slots,
+            redistribute_barrier: AsyncBarrier::new(num_workers),
+            gather_barrier: AsyncBarrier::new(num_workers),
+        }
+    }
+}
+
+// Cache key for SharedExchangeSlots in runtime.local_store()
+circuit_cache_key!(local SharedExchangeSlotsId<V>(usize => Arc<SharedExchangeSlots<V>>));
+
+// =============================================================================
 // SharedPercentileState: Shared-memory tree view publication
 // =============================================================================
 
@@ -142,6 +231,10 @@ impl<V: DBData> ReadOnlyTreeView<V> {
 pub(crate) struct StepData<V> {
     /// Shared read-only view of the owner's tree.
     pub(crate) tree_view: Arc<ReadOnlyTreeView<V>>,
+    /// Separator keys defining worker leaf-range boundaries.
+    /// `separator_keys[i]` is the first key of the first leaf owned by worker `i+1`.
+    /// Workers binary-search their sorted entries on these to partition by destination.
+    pub(crate) separator_keys: Vec<V>,
     /// Worker index of the tree owner.
     pub(crate) owner_index: usize,
     /// Storage backend for workers to write segment files.
@@ -158,11 +251,11 @@ pub(crate) struct StepData<V> {
 unsafe impl<V: Send> Send for StepData<V> {}
 unsafe impl<V: Send> Sync for StepData<V> {}
 
-/// Shared-memory publication mechanism replacing the scatter Exchange.
+/// Shared-memory publication mechanism for step data.
 ///
 /// All workers in the same runtime share the same `Arc<SharedPercentileState>`
 /// via `runtime.local_store()`. The owner publishes tree view data, and workers
-/// spin on a generation counter to read it.
+/// wait on a generation counter to read it.
 pub(crate) struct SharedPercentileState<V> {
     /// Published step data (set by owner, read by workers).
     step_data: Mutex<Option<Arc<StepData<V>>>>,
@@ -189,7 +282,6 @@ impl<V> SharedPercentileState<V> {
     }
 
     /// Publish empty step data (called by coordinator when no owner exists).
-    /// This prevents workers from hanging in wait_and_read.
     fn publish_none(&self) {
         *self.step_data.lock().unwrap() = None;
         self.generation.fetch_add(1, Ordering::Release);
@@ -216,23 +308,8 @@ impl<V> SharedPercentileState<V> {
 circuit_cache_key!(local SharedPercentileStateId<V>(usize => Arc<SharedPercentileState<V>>));
 
 // =============================================================================
-// Exchange Payload Types
+// Payload Types (for gather phase)
 // =============================================================================
-
-/// A bucket of entries destined for a specific leaf.
-#[derive(Clone)]
-pub(crate) struct LeafBucket<V> {
-    leaf_id: usize,
-    /// Entries sorted by value within this bucket.
-    entries: Vec<(V, ZWeight)>,
-}
-
-/// Payload for the redistribute exchange (all-to-all leaf bucket exchange).
-#[derive(Clone)]
-pub(crate) struct RedistributePayload<V> {
-    /// Leaf buckets destined for this receiver's leaf range.
-    buckets: Vec<LeafBucket<V>>,
-}
 
 /// Per-leaf disk metadata for leaves written to disk by workers.
 #[derive(Clone)]
@@ -275,13 +352,22 @@ pub(crate) struct LeafWriteResult<V> {
     pub(crate) total_weight_delta: ZWeight,
     /// Total key count delta across all processed leaves.
     pub(crate) total_key_count_delta: i64,
+    /// Unrouted entries that deep_route couldn't handle (bootstrap/edge case).
+    /// Owner inserts these sequentially after reconciliation.
+    pub(crate) unrouted_entries: Vec<(V, ZWeight)>,
 }
 
-/// Payload for the gather exchange (workers → owner).
-#[derive(Clone)]
-pub(crate) struct GatherPayload<V> {
-    /// Merge + write results from this worker.
-    result: LeafWriteResult<V>,
+impl<V> LeafWriteResult<V> {
+    fn empty() -> Self {
+        Self {
+            disk_leaves: vec![],
+            split_leaves: vec![],
+            segment: None,
+            total_weight_delta: 0,
+            total_key_count_delta: 0,
+            unrouted_entries: vec![],
+        }
+    }
 }
 
 // =============================================================================
@@ -342,11 +428,7 @@ pub(crate) fn merge_and_split<V: DBData>(
         j += 1;
     }
 
-    // Check for duplicate keys from new entries that were consecutive
-    // (entries should be sorted, but multiple entries for the same new key
-    // within the entries vector need to be combined)
-    // Note: The entries coming from route_entries_to_buckets may have
-    // duplicate keys that were in different chunks. Consolidate them.
+    // Consolidate consecutive duplicate keys from new entries
     let mut consolidated: Vec<(V, ZWeight)> = Vec::with_capacity(merged.len());
     for (val, weight) in merged {
         if let Some(last) = consolidated.last_mut() {
@@ -357,10 +439,6 @@ pub(crate) fn merge_and_split<V: DBData>(
         }
         consolidated.push((val, weight));
     }
-    // Adjust key_count_delta: we overcounted if entries had duplicate keys
-    // that weren't in the original leaf. The actual key count is len(consolidated) - len(leaf.entries)
-    // but some original entries may have been merged with new ones.
-    // Simpler: just compute directly.
     let original_keys = leaf.entries.len();
     let key_count_delta = consolidated.len() as i64 - original_keys as i64;
 
@@ -380,18 +458,9 @@ pub(crate) fn merge_and_split<V: DBData>(
             entries: right_entries,
             next_leaf: result_leaf.next_leaf.take(),
         };
-        // result_leaf.next_leaf is now None; owner will set it
 
         splits.push((split_key, right_leaf));
     }
-
-    // If there were splits, the last split should inherit the original next_leaf.
-    // The first split gets next_leaf from the second split, etc.
-    // We built them so the first split has the original next_leaf (taken from result_leaf),
-    // and result_leaf has None. But we need a chain:
-    //   result_leaf → split[0] → split[1] → ... → original_next_leaf
-    // Currently: result_leaf.next_leaf = None, splits[last].next_leaf = original_next_leaf
-    // The owner will fix up next_leaf pointers after allocating IDs.
 
     (result_leaf, splits, weight_delta, key_count_delta)
 }
@@ -418,7 +487,7 @@ pub(crate) fn build_cached_summary<V: DBData + Archive + RkyvSerialize<Serialize
 }
 
 // =============================================================================
-// Route entries to leaf buckets
+// Route entries to leaf buckets (used in Phase 4 per-worker routing)
 // =============================================================================
 
 /// Route entries to leaf-id-keyed buckets using the tree view.
@@ -443,6 +512,7 @@ fn route_entries_to_buckets<V: DBData>(
 }
 
 /// Map a leaf_id to a worker index using contiguous range assignment.
+#[cfg(test)]
 fn leaf_owner(leaf_id: usize, total_leaves: usize, num_workers: usize) -> usize {
     if total_leaves == 0 || num_workers == 0 {
         return 0;
@@ -452,26 +522,96 @@ fn leaf_owner(leaf_id: usize, total_leaves: usize, num_workers: usize) -> usize 
 }
 
 // =============================================================================
-// ParallelRouting: Exchange infrastructure for percentile operator
+// Separator key extraction and entry partitioning
 // =============================================================================
 
-/// Exchange infrastructure for parallel routing within the percentile operator.
+/// Extract worker boundary separator keys from the tree.
+///
+/// Returns `num_workers - 1` keys (or fewer if the tree has fewer leaves than
+/// workers). `boundaries[i]` is the first key of the first leaf in worker
+/// `i+1`'s range. Workers binary-search their sorted entries on these keys
+/// to partition entries by destination worker.
+///
+/// Cost: reads at most `num_workers - 1` leaves (from disk if evicted).
+fn extract_worker_boundaries<V: DBData>(
+    tree: &OrderStatisticsZSet<V>,
+    num_workers: usize,
+) -> Vec<V> {
+    let total_leaves = tree.total_leaves();
+    if total_leaves <= 1 || num_workers <= 1 {
+        return vec![];
+    }
+    let leaves_per_worker = (total_leaves + num_workers - 1) / num_workers;
+    let mut boundaries = Vec::with_capacity(num_workers - 1);
+    let storage = tree.storage();
+
+    for w in 1..num_workers {
+        let boundary_leaf_id = leaves_per_worker * w;
+        if boundary_leaf_id >= total_leaves {
+            break;
+        }
+        let loc = LeafLocation::new(boundary_leaf_id);
+        let first_key = if storage.is_leaf_evicted(loc) {
+            storage
+                .read_leaf_readonly(boundary_leaf_id)
+                .and_then(|leaf| leaf.entries.first().map(|(k, _)| k.clone()))
+        } else {
+            storage.get_leaf(loc).entries.first().map(|(k, _)| k.clone())
+        };
+        if let Some(key) = first_key {
+            boundaries.push(key);
+        }
+    }
+    boundaries
+}
+
+/// Partition entries into per-worker Vecs using binary search on separator keys.
+///
+/// Entries must be sorted by value. Returns a Vec of `num_workers` Vecs,
+/// where `result[w]` contains entries destined for worker `w`.
+///
+/// Cost: O(entries × log(num_workers)) — one binary search per entry on
+/// at most `num_workers - 1` separator keys, vs O(entries × tree_height)
+/// for per-entry deep_route.
+fn partition_entries_to_workers<V: Ord + Clone>(
+    entries: Vec<(V, ZWeight)>,
+    separator_keys: &[V],
+    num_workers: usize,
+) -> Vec<Vec<(V, ZWeight)>> {
+    if separator_keys.is_empty() {
+        // No boundaries: all entries go to worker 0
+        let mut result = vec![vec![]; num_workers];
+        result[0] = entries;
+        return result;
+    }
+
+    let mut result: Vec<Vec<(V, ZWeight)>> = (0..num_workers).map(|_| Vec::new()).collect();
+    for entry in entries {
+        // partition_point returns first index where separator > entry.0,
+        // which equals the number of separators <= entry.0 = destination worker.
+        let worker = separator_keys.partition_point(|sep| sep <= &entry.0);
+        let worker = worker.min(num_workers - 1);
+        result[worker].push(entry);
+    }
+    result
+}
+
+// =============================================================================
+// ParallelRouting: Shared-memory parallel routing for percentile operator
+// =============================================================================
+
+/// Shared-memory parallel routing within the percentile operator.
 ///
 /// Created during operator construction when `Runtime::num_workers() > 1`.
-/// Uses shared-memory tree view publication + two `Exchange` instances for
-/// redistribute/gather phases.
+/// Uses shared-memory tree view publication + shared-memory slots with
+/// barrier synchronization for redistribute/gather phases.
 ///
-/// All workers participate in all exchanges during every `eval()` call,
-/// even if they have no data. Empty exchanges have ~6-30 μs overhead.
+/// All workers participate in all barriers during every `eval()` call,
+/// even if they have no data.
 pub(crate) struct ParallelRouting<V: Ord + Clone + Send + 'static> {
     shared_state: Arc<SharedPercentileState<V>>,
+    shared_slots: Arc<SharedExchangeSlots<V>>,
     last_generation: u64,
-    redistribute_exchange: Arc<Exchange<RedistributePayload<V>>>,
-    gather_exchange: Arc<Exchange<GatherPayload<V>>>,
-    redistribute_notify_send: Arc<Notify>,
-    redistribute_notify_recv: Arc<Notify>,
-    gather_notify_send: Arc<Notify>,
-    gather_notify_recv: Arc<Notify>,
     num_workers: usize,
     worker_index: usize,
 }
@@ -493,68 +633,25 @@ where
         let worker_index = Runtime::worker_index();
 
         // Get or create the shared state via local_store (all workers share same Arc)
-        let exchange_id = runtime.sequence_next();
+        let state_id = runtime.sequence_next();
         let shared_state = runtime
             .local_store()
-            .entry(SharedPercentileStateId::<V>::new(exchange_id))
+            .entry(SharedPercentileStateId::<V>::new(state_id))
             .or_insert_with(|| Arc::new(SharedPercentileState::new()))
             .clone();
 
-        // Create 2 exchanges with panicking serialize/deserialize
-        // (solo-only: local mailboxes pass T directly, no serialization)
-        let redistribute_exchange = Exchange::with_runtime(
-            &runtime,
-            runtime.sequence_next(),
-            Box::new(|_| {
-                panic!("redistribute: serialization not supported for local-only exchange")
-            }),
-            Box::new(|_| {
-                panic!("redistribute: deserialization not supported for local-only exchange")
-            }),
-        );
-
-        let gather_exchange = Exchange::with_runtime(
-            &runtime,
-            runtime.sequence_next(),
-            Box::new(|_| panic!("gather: serialization not supported for local-only exchange")),
-            Box::new(|_| panic!("gather: deserialization not supported for local-only exchange")),
-        );
-
-        // Create Notify pairs for each exchange
-        let redistribute_notify_send = Arc::new(Notify::new());
-        let redistribute_notify_recv = Arc::new(Notify::new());
-        let gather_notify_send = Arc::new(Notify::new());
-        let gather_notify_recv = Arc::new(Notify::new());
-
-        // Register callbacks
-        {
-            let ns = redistribute_notify_send.clone();
-            redistribute_exchange
-                .register_sender_callback(worker_index, move || ns.notify_one());
-        }
-        {
-            let nr = redistribute_notify_recv.clone();
-            redistribute_exchange
-                .register_receiver_callback(worker_index, move || nr.notify_one());
-        }
-        {
-            let ns = gather_notify_send.clone();
-            gather_exchange.register_sender_callback(worker_index, move || ns.notify_one());
-        }
-        {
-            let nr = gather_notify_recv.clone();
-            gather_exchange.register_receiver_callback(worker_index, move || nr.notify_one());
-        }
+        // Get or create the shared exchange slots
+        let slots_id = runtime.sequence_next();
+        let shared_slots = runtime
+            .local_store()
+            .entry(SharedExchangeSlotsId::<V>::new(slots_id))
+            .or_insert_with(|| Arc::new(SharedExchangeSlots::new(num_workers)))
+            .clone();
 
         Some(Self {
             shared_state,
+            shared_slots,
             last_generation: 0,
-            redistribute_exchange,
-            gather_exchange,
-            redistribute_notify_send,
-            redistribute_notify_recv,
-            gather_notify_send,
-            gather_notify_recv,
             num_workers,
             worker_index,
         })
@@ -568,11 +665,6 @@ where
     /// In the unsharded case (Tup0 key), each worker provides its own
     /// `local_entries` from round-robin distribution, and only the tree owner
     /// provides `tree`.
-    ///
-    /// # Arguments
-    ///
-    /// * `tree` - The owner's tree (Some for owner, None for non-owners)
-    /// * `local_entries` - Each worker's local entries to route
     pub async fn parallel_step(
         &mut self,
         mut tree: Option<&mut OrderStatisticsZSet<V>>,
@@ -583,25 +675,30 @@ where
         let is_owner = tree.is_some();
 
         // =====================================================================
-        // Phase 1: Owner publishes tree view to shared_state (no Exchange)
+        // Phase 1: Owner publishes tree view + separator keys (no Exchange)
         // =====================================================================
 
         if is_owner {
-            let tree_ref = tree.as_deref_mut().unwrap();
+            // Use a single &mut reborrow for both immutable reads and mutable ops.
+            // Immutable reads happen first (from_tree, extract_worker_boundaries, etc.)
+            // then mutable allocate_segment_id. All return owned values, so no
+            // outstanding borrows remain after each statement.
+            let t = tree.as_deref_mut().unwrap();
 
-            // Read tree info (immutable access)
-            let tree_view = Arc::new(ReadOnlyTreeView::from_tree(tree_ref));
-            let storage_backend = tree_ref.storage().get_storage_backend();
-            let segment_path_prefix = tree_ref.storage().segment_path_prefix().to_string();
-            let spill_directory = tree_ref.storage().spill_directory().cloned();
+            let tree_view = Arc::new(ReadOnlyTreeView::from_tree(t));
+            let separator_keys = extract_worker_boundaries(t, num_workers);
+            let storage_backend = t.storage().get_storage_backend();
+            let segment_path_prefix = t.storage().segment_path_prefix().to_string();
+            let spill_directory = t.storage().spill_directory().cloned();
 
-            // Pre-allocate segment IDs for each worker (mutable access)
+            // Pre-allocate segment IDs (mutable access — all prior borrows released)
             let worker_segment_ids: Vec<SegmentId> = (0..num_workers)
-                .map(|_| tree_ref.storage_mut().allocate_segment_id())
+                .map(|_| t.storage_mut().allocate_segment_id())
                 .collect();
 
             self.shared_state.publish(StepData {
                 tree_view,
+                separator_keys,
                 owner_index: worker_index,
                 storage_backend,
                 worker_segment_ids,
@@ -609,14 +706,11 @@ where
                 spill_directory,
             });
         } else if worker_index == 0 {
-            // Worker 0 is the designated coordinator. When worker 0 is NOT the
-            // owner, publish None so workers don't hang waiting for step data.
-            // This happens in the sharded multi-key case where no key qualifies
-            // for parallel routing.
+            // Worker 0 is coordinator. Publish None so workers don't hang.
             self.shared_state.publish_none();
         }
 
-        // All workers wait for the publication
+        // All workers wait for publication
         let (new_gen, step_data) = self
             .shared_state
             .wait_and_read(self.last_generation)
@@ -624,283 +718,225 @@ where
         self.last_generation = new_gen;
 
         // =====================================================================
-        // Phase 2: Route local_entries to leaf buckets (parallel, each worker)
+        // Phase 2: Partition entries by worker boundaries (binary search)
         // =====================================================================
 
-        // Only route entries to leaves if a storage backend is available.
-        // Without a storage backend, workers can't write merged leaves to disk,
-        // so reconcile_parallel_writes would fail. Instead, all entries go to
-        // the owner as unrouted for sequential insertion.
-        let has_storage = step_data
-            .as_ref()
-            .map_or(false, |d| d.storage_backend.is_some());
-
-        let (leaf_map, unrouted, owner_index, total_leaves, tree_view_ref) =
-            if let Some(ref data) = step_data {
-                if has_storage {
-                    let view = &data.tree_view;
-                    let (leaf_map, unrouted) = route_entries_to_buckets(local_entries, view);
-                    (leaf_map, unrouted, data.owner_index, view.total_leaves(), Some(data.clone()))
-                } else {
-                    // No storage backend: skip leaf routing, send all to owner
-                    (HashMap::new(), local_entries, data.owner_index, 0, Some(data.clone()))
-                }
+        let (per_worker_entries, _owner_index) = if let Some(ref data) = step_data {
+            let has_storage = data.storage_backend.is_some();
+            if has_storage && !data.separator_keys.is_empty() {
+                // Normal case: partition by separator keys
+                let parts = partition_entries_to_workers(
+                    local_entries,
+                    &data.separator_keys,
+                    num_workers,
+                );
+                (parts, data.owner_index)
             } else {
-                (HashMap::new(), local_entries, 0, 0, None)
-            };
-
-        // =====================================================================
-        // Phase 3: Redistribute (all-to-all by leaf range)
-        // =====================================================================
-
-        let mut outgoing: Vec<Vec<LeafBucket<V>>> = vec![vec![]; num_workers];
-        for (leaf_id, entries) in leaf_map {
-            let dest = leaf_owner(leaf_id, total_leaves, num_workers);
-            outgoing[dest].push(LeafBucket {
-                leaf_id,
-                entries,
-            });
-        }
-
-        // Unrouted entries (from bootstrap when tree is a leaf or empty) go to
-        // the tree owner as a special bucket with leaf_id = usize::MAX.
-        // The owner inserts these sequentially after reconciliation.
-        if !unrouted.is_empty() {
-            outgoing[owner_index].push(LeafBucket {
-                leaf_id: usize::MAX, // sentinel: owner inserts these sequentially
-                entries: unrouted,
-            });
-        }
-
-        let redistribute_payloads: Vec<RedistributePayload<V>> = outgoing
-            .into_iter()
-            .map(|buckets| RedistributePayload { buckets })
-            .collect();
-
-        while !self.redistribute_exchange.try_send_all(
-            worker_index,
-            &mut redistribute_payloads.iter().cloned(),
-        ) {
-            if Runtime::kill_in_progress() {
-                return Err(SchedulerError::Killed);
-            }
-            self.redistribute_notify_send.notified().await;
-        }
-
-        // Receive and merge buckets from all workers.
-        // Separate sentinel buckets (leaf_id == usize::MAX) from real buckets.
-        let mut my_buckets: HashMap<usize, Vec<(V, ZWeight)>> = HashMap::new();
-        let mut unrouted_for_owner: Vec<(V, ZWeight)> = Vec::new();
-        while !self
-            .redistribute_exchange
-            .try_receive_all(worker_index, |payload| {
-                for bucket in payload.buckets {
-                    if bucket.leaf_id == usize::MAX {
-                        // Sentinel: unrouted entries for sequential insertion
-                        unrouted_for_owner.extend(bucket.entries);
-                    } else {
-                        my_buckets
-                            .entry(bucket.leaf_id)
-                            .or_default()
-                            .extend(bucket.entries);
-                    }
-                }
-            })
-        {
-            if Runtime::kill_in_progress() {
-                return Err(SchedulerError::Killed);
-            }
-            self.redistribute_notify_recv.notified().await;
-        }
-
-        // =====================================================================
-        // Phase 4: Clone + Merge + Split + Write (per-worker)
-        // =====================================================================
-
-        let (storage_backend, worker_segment_ids, segment_path_prefix, spill_directory) =
-            if let Some(ref data) = tree_view_ref {
-                (
-                    data.storage_backend.clone(),
-                    data.worker_segment_ids.clone(),
-                    data.segment_path_prefix.clone(),
-                    data.spill_directory.clone(),
-                )
-            } else {
-                (None, vec![], String::new(), None)
-            };
-
-        let leaf_write_result = if let Some(ref data) = tree_view_ref {
-            let view = &data.tree_view;
-            let max_leaf = view.max_leaf_entries();
-            let my_segment_id = if worker_index < worker_segment_ids.len() {
-                worker_segment_ids[worker_index]
-            } else {
-                SegmentId::new(0)
-            };
-
-            // Process leaves in ID order
-            let mut sorted_leaves: Vec<(usize, Vec<(V, ZWeight)>)> =
-                my_buckets.into_iter().collect();
-            sorted_leaves.sort_by_key(|(leaf_id, _)| *leaf_id);
-
-            let mut disk_leaves: Vec<DiskLeafInfo> = Vec::new();
-            let mut split_leaves_all: Vec<SplitLeafInfo<V>> = Vec::new();
-            let mut leaves_to_write: Vec<(usize, crate::storage::buffer_cache::FBuf)> = Vec::new();
-            let mut total_weight_delta: ZWeight = 0;
-            let mut total_key_count_delta: i64 = 0;
-
-            for (leaf_id, mut entries) in sorted_leaves {
-                // Sort entries by value for two-pointer merge
-                entries.sort_by(|(a, _), (b, _)| a.cmp(b));
-
-                // Clone the leaf from the tree
-                let original_leaf = view.get_leaf_clone(leaf_id);
-
-                // Merge entries and handle splits
-                let (modified_leaf, splits, weight_delta, key_delta) =
-                    merge_and_split(&original_leaf, &entries, max_leaf);
-
-                total_weight_delta += weight_delta;
-                total_key_count_delta += key_delta;
-
-                // Serialize the modified leaf for disk writing
-                let serialized = serialize_to_bytes(&modified_leaf)
-                    .expect("Failed to serialize merged leaf");
-                leaves_to_write.push((leaf_id, serialized));
-
-                // Build summary for evicted slot
-                let summary = build_cached_summary(&modified_leaf);
-
-                disk_leaves.push(DiskLeafInfo {
-                    leaf_id,
-                    cached_summary: summary,
-                });
-
-                // Record split leaves
-                for (split_key, split_leaf) in splits {
-                    split_leaves_all.push(SplitLeafInfo {
-                        original_leaf_id: leaf_id,
-                        split_key,
-                        leaf: split_leaf,
-                    });
-                }
-            }
-
-            // Write leaves to disk if we have a storage backend and leaves to write
-            let segment_info = if !leaves_to_write.is_empty() {
-                if let Some(ref backend) = storage_backend {
-                    let filename = format!(
-                        "{}segment_{}.dat",
-                        segment_path_prefix,
-                        my_segment_id.value()
-                    );
-                    let path = if let Some(ref dir) = spill_directory {
-                        dir.child(filename.as_str())
-                    } else {
-                        StoragePath::from(filename.as_str())
-                    };
-
-                    match crate::node_storage::write_leaves_to_segment(
-                        backend,
-                        &path,
-                        &leaves_to_write,
-                    ) {
-                        Ok((reader, leaf_index, file_size)) => Some(WorkerSegmentInfo {
-                            segment_id: my_segment_id,
-                            reader,
-                            leaf_index,
-                            file_size,
-                            path,
-                        }),
-                        Err(_) => {
-                            // If disk write fails, fall back to no segment
-                            // The owner will need to handle this gracefully
-                            None
-                        }
-                    }
-                } else {
-                    // No storage backend — can't write to disk
-                    None
-                }
-            } else {
-                None
-            };
-
-            LeafWriteResult {
-                disk_leaves,
-                split_leaves: split_leaves_all,
-                segment: segment_info,
-                total_weight_delta,
-                total_key_count_delta,
+                // No storage or no separator keys (bootstrap): all to owner
+                let mut parts = vec![vec![]; num_workers];
+                parts[data.owner_index] = local_entries;
+                (parts, data.owner_index)
             }
         } else {
-            // Worker had no tree view — empty result
-            LeafWriteResult {
-                disk_leaves: vec![],
-                split_leaves: vec![],
-                segment: None,
-                total_weight_delta: 0,
-                total_key_count_delta: 0,
-            }
+            // No step data (multi-key barrier-only): all to worker 0
+            let mut parts = vec![vec![]; num_workers];
+            parts[0] = local_entries;
+            (parts, 0)
         };
 
         // =====================================================================
-        // Phase 5: Gather (workers → owner)
+        // Phase 3: Redistribute via shared-memory slots + barrier
         // =====================================================================
 
-        let mut gather_payloads: Vec<GatherPayload<V>> = (0..num_workers)
-            .map(|_| GatherPayload {
-                result: LeafWriteResult {
-                    disk_leaves: vec![],
-                    split_leaves: vec![],
-                    segment: None,
-                    total_weight_delta: 0,
-                    total_key_count_delta: 0,
-                },
-            })
-            .collect();
-        gather_payloads[owner_index] = GatherPayload {
-            result: leaf_write_result,
-        };
-
-        while !self
-            .gather_exchange
-            .try_send_all(worker_index, &mut gather_payloads.iter().cloned())
-        {
-            if Runtime::kill_in_progress() {
-                return Err(SchedulerError::Killed);
-            }
-            self.gather_notify_send.notified().await;
+        // Write per-destination entries to shared slots
+        for (dest, entries) in per_worker_entries.into_iter().enumerate() {
+            *self.shared_slots.redistribute_slots[worker_index][dest]
+                .lock()
+                .unwrap() = Some(entries);
         }
 
-        let mut all_results: Vec<LeafWriteResult<V>> = Vec::new();
-        while !self
-            .gather_exchange
-            .try_receive_all(worker_index, |payload| {
-                all_results.push(payload.result);
-            })
-        {
-            if Runtime::kill_in_progress() {
-                return Err(SchedulerError::Killed);
+        // Wait for all workers to finish writing
+        self.shared_slots.redistribute_barrier.wait().await;
+
+        if Runtime::kill_in_progress() {
+            return Err(SchedulerError::Killed);
+        }
+
+        // Read entries from all senders for this worker
+        let mut my_entries: Vec<(V, ZWeight)> = Vec::new();
+        for sender in 0..num_workers {
+            if let Some(entries) = self.shared_slots.redistribute_slots[sender][worker_index]
+                .lock()
+                .unwrap()
+                .take()
+            {
+                my_entries.extend(entries);
             }
-            self.gather_notify_recv.notified().await;
+        }
+
+        // =====================================================================
+        // Phase 4: Route to leaf buckets, clone + merge + split + write
+        // =====================================================================
+
+        let step_data_ref = step_data.clone();
+
+        let leaf_write_result = if let Some(ref data) = step_data_ref {
+            let has_storage = data.storage_backend.is_some();
+            if has_storage && !my_entries.is_empty() {
+                let view = &data.tree_view;
+                let max_leaf = view.max_leaf_entries();
+
+                // Route entries to individual leaf buckets
+                let (leaf_map, unrouted) = route_entries_to_buckets(my_entries, view);
+
+                let my_segment_id = if worker_index < data.worker_segment_ids.len() {
+                    data.worker_segment_ids[worker_index]
+                } else {
+                    SegmentId::new(0)
+                };
+
+                // Process leaves in ID order
+                let mut sorted_leaves: Vec<(usize, Vec<(V, ZWeight)>)> =
+                    leaf_map.into_iter().collect();
+                sorted_leaves.sort_by_key(|(leaf_id, _)| *leaf_id);
+
+                let mut disk_leaves: Vec<DiskLeafInfo> = Vec::new();
+                let mut split_leaves_all: Vec<SplitLeafInfo<V>> = Vec::new();
+                let mut leaves_to_write: Vec<(usize, crate::storage::buffer_cache::FBuf)> =
+                    Vec::new();
+                let mut total_weight_delta: ZWeight = 0;
+                let mut total_key_count_delta: i64 = 0;
+
+                for (leaf_id, mut entries) in sorted_leaves {
+                    entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+                    let original_leaf = view.get_leaf_clone(leaf_id);
+                    let (modified_leaf, splits, weight_delta, key_delta) =
+                        merge_and_split(&original_leaf, &entries, max_leaf);
+
+                    total_weight_delta += weight_delta;
+                    total_key_count_delta += key_delta;
+
+                    let serialized = serialize_to_bytes(&modified_leaf)
+                        .expect("Failed to serialize merged leaf");
+                    leaves_to_write.push((leaf_id, serialized));
+
+                    let summary = build_cached_summary(&modified_leaf);
+                    disk_leaves.push(DiskLeafInfo {
+                        leaf_id,
+                        cached_summary: summary,
+                    });
+
+                    for (split_key, split_leaf) in splits {
+                        split_leaves_all.push(SplitLeafInfo {
+                            original_leaf_id: leaf_id,
+                            split_key,
+                            leaf: split_leaf,
+                        });
+                    }
+                }
+
+                // Write leaves to disk
+                let segment_info = if !leaves_to_write.is_empty() {
+                    if let Some(ref backend) = data.storage_backend {
+                        let filename = format!(
+                            "{}segment_{}.dat",
+                            data.segment_path_prefix,
+                            my_segment_id.value()
+                        );
+                        let path = if let Some(ref dir) = data.spill_directory {
+                            dir.child(filename.as_str())
+                        } else {
+                            StoragePath::from(filename.as_str())
+                        };
+
+                        match crate::node_storage::write_leaves_to_segment(
+                            backend,
+                            &path,
+                            &leaves_to_write,
+                        ) {
+                            Ok((reader, leaf_index, file_size)) => Some(WorkerSegmentInfo {
+                                segment_id: my_segment_id,
+                                reader,
+                                leaf_index,
+                                file_size,
+                                path,
+                            }),
+                            Err(_) => None,
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                LeafWriteResult {
+                    disk_leaves,
+                    split_leaves: split_leaves_all,
+                    segment: segment_info,
+                    total_weight_delta,
+                    total_key_count_delta,
+                    unrouted_entries: unrouted,
+                }
+            } else if !my_entries.is_empty() {
+                // No storage or no tree view: treat all as unrouted
+                LeafWriteResult {
+                    unrouted_entries: my_entries,
+                    ..LeafWriteResult::empty()
+                }
+            } else {
+                LeafWriteResult::empty()
+            }
+        } else {
+            // No step data — pass through with any entries as unrouted
+            LeafWriteResult {
+                unrouted_entries: my_entries,
+                ..LeafWriteResult::empty()
+            }
+        };
+
+        // =====================================================================
+        // Phase 5: Gather via shared-memory slots + barrier
+        // =====================================================================
+
+        *self.shared_slots.gather_slots[worker_index].lock().unwrap() = Some(leaf_write_result);
+
+        self.shared_slots.gather_barrier.wait().await;
+
+        if Runtime::kill_in_progress() {
+            return Err(SchedulerError::Killed);
         }
 
         // =====================================================================
         // Phase 6: Owner reconciliation
         // =====================================================================
 
-        // Drop the tree_view reference before mutating the tree
-        drop(tree_view_ref);
+        drop(step_data_ref);
         drop(step_data);
 
         if let Some(tree) = tree {
-            // Reconcile parallel leaf writes
-            tree.reconcile_parallel_writes(all_results);
+            // Read all gather results
+            let mut all_results: Vec<LeafWriteResult<V>> = Vec::new();
+            let mut all_unrouted: Vec<(V, ZWeight)> = Vec::new();
+            for sender in 0..num_workers {
+                if let Some(result) = self.shared_slots.gather_slots[sender]
+                    .lock()
+                    .unwrap()
+                    .take()
+                {
+                    all_unrouted.extend(result.unrouted_entries.clone());
+                    all_results.push(result);
+                }
+            }
 
-            // Insert unrouted entries sequentially (from bootstrap when tree
-            // was a leaf/empty and deep_route returned None).
-            for (val, weight) in unrouted_for_owner {
+            // Reconcile parallel leaf writes (only if there were disk leaves)
+            let has_disk_work = all_results.iter().any(|r| !r.disk_leaves.is_empty());
+            if has_disk_work {
+                tree.reconcile_parallel_writes(all_results);
+            }
+
+            // Insert unrouted entries sequentially
+            for (val, weight) in all_unrouted {
                 tree.insert(val, weight);
             }
         }
@@ -1171,5 +1207,110 @@ mod tests {
         assert!(splits.len() >= 2);
         assert_eq!(weight_delta, 10);
         assert_eq!(key_delta, 10);
+    }
+
+    #[test]
+    fn test_extract_worker_boundaries() {
+        let config = NodeStorageConfig::default();
+        let mut tree: OrderStatisticsZSet<F64> =
+            OrderStatisticsZSet::with_config(64, config);
+
+        // Insert enough values to create many leaves
+        for i in 0..500 {
+            tree.insert(F64::new(i as f64), 1);
+        }
+
+        let boundaries = extract_worker_boundaries(&tree, 4);
+
+        // Should have 3 boundaries for 4 workers
+        assert!(!boundaries.is_empty());
+        assert!(boundaries.len() <= 3);
+
+        // Boundaries should be sorted
+        for i in 1..boundaries.len() {
+            assert!(boundaries[i - 1] < boundaries[i]);
+        }
+    }
+
+    #[test]
+    fn test_extract_worker_boundaries_small_tree() {
+        let config = NodeStorageConfig::default();
+        let mut tree: OrderStatisticsZSet<F64> =
+            OrderStatisticsZSet::with_config(64, config);
+
+        // Single leaf - no boundaries
+        for i in 0..5 {
+            tree.insert(F64::new(i as f64), 1);
+        }
+
+        let boundaries = extract_worker_boundaries(&tree, 4);
+        assert!(boundaries.is_empty());
+    }
+
+    #[test]
+    fn test_partition_entries_to_workers() {
+        let separator_keys = vec![F64::new(25.0), F64::new(50.0), F64::new(75.0)];
+
+        let entries: Vec<(F64, ZWeight)> = (0..100)
+            .map(|i| (F64::new(i as f64), 1))
+            .collect();
+
+        let partitions = partition_entries_to_workers(entries, &separator_keys, 4);
+
+        assert_eq!(partitions.len(), 4);
+        // Worker 0: values < 25.0 → 25 entries (0..25)
+        assert_eq!(partitions[0].len(), 25);
+        // Worker 1: values 25.0..50.0 → 25 entries
+        assert_eq!(partitions[1].len(), 25);
+        // Worker 2: values 50.0..75.0 → 25 entries
+        assert_eq!(partitions[2].len(), 25);
+        // Worker 3: values >= 75.0 → 25 entries
+        assert_eq!(partitions[3].len(), 25);
+
+        // Verify partition correctness
+        for &(ref v, _) in &partitions[0] {
+            assert!(*v < F64::new(25.0));
+        }
+        for &(ref v, _) in &partitions[1] {
+            assert!(*v >= F64::new(25.0) && *v < F64::new(50.0));
+        }
+    }
+
+    #[test]
+    fn test_partition_entries_no_separators() {
+        let entries: Vec<(F64, ZWeight)> = (0..50)
+            .map(|i| (F64::new(i as f64), 1))
+            .collect();
+
+        let partitions = partition_entries_to_workers(entries, &[], 4);
+
+        assert_eq!(partitions.len(), 4);
+        assert_eq!(partitions[0].len(), 50); // All to worker 0
+        assert_eq!(partitions[1].len(), 0);
+        assert_eq!(partitions[2].len(), 0);
+        assert_eq!(partitions[3].len(), 0);
+    }
+
+    #[test]
+    fn test_partition_entries_empty() {
+        let separator_keys = vec![F64::new(50.0)];
+        let entries: Vec<(F64, ZWeight)> = vec![];
+
+        let partitions = partition_entries_to_workers(entries, &separator_keys, 2);
+
+        assert_eq!(partitions.len(), 2);
+        assert!(partitions[0].is_empty());
+        assert!(partitions[1].is_empty());
+    }
+
+    #[test]
+    fn test_async_barrier() {
+        // Test barrier with a single "worker" (total=1): should pass immediately
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let barrier = AsyncBarrier::new(1);
+            barrier.wait().await;
+            barrier.wait().await; // Second wait should also work (generation advances)
+        });
     }
 }

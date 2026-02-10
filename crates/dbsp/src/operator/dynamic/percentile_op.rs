@@ -740,13 +740,12 @@ where
     ///
     /// Each worker has ~1/N entries from round-robin distribution.
     /// Tree ownership is always worker 0 for Tup0.
-    /// All workers participate in the 2 Exchange rounds (redistribute + gather).
+    /// All workers participate in shared-memory redistribute + gather barriers.
     ///
-    /// When the tree has internal nodes, workers route their local entries to
-    /// leaf buckets using the shared tree view. When the tree is just a leaf
-    /// or empty (bootstrap), the owner publishes the tree view anyway —
-    /// entries that can't be routed (deep_route returns None) are sent directly
-    /// to the owner via the redistribute exchange as leaf_id 0.
+    /// Workers partition entries by value range (binary search on separator
+    /// keys), exchange via shared-memory slots, then process assigned leaf
+    /// ranges in parallel. Bootstrap (tree is leaf/empty) degrades to
+    /// sequential insertion on the owner.
     async fn eval_unsharded_single_key(
         &mut self,
         delta: &OrdIndexedZSet<K, V>,
