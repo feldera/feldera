@@ -1,9 +1,11 @@
-from feldera.enums import BootstrapPolicy, PipelineStatus
+import time
+from feldera.enums import BootstrapPolicy, PipelineFieldSelector, PipelineStatus
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT, enterprise_only
 from .helper import (
     gen_pipeline_name,
+    wait_for_deployment_status,
 )
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
@@ -47,6 +49,36 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     """
     pipeline.modify(sql=sql)
 
+    def wait_for_start_observed_and_error_cleared(timeout_s: float = 30.0):
+        """
+        After issuing start(wait=False), wait until backend actually picks up the
+        start request and clears stale deployment_error from the previous failed start.
+        """
+        print(
+            f"Waiting up to {timeout_s} seconds for start transition to be observed and deployment_error to clear"
+        )
+        start = time.time()
+        deadline = start + timeout_s
+        last = None
+        while time.time() < deadline:
+            p = pipeline.client.get_pipeline(pipeline.name, PipelineFieldSelector.STATUS)
+            status = p.deployment_status
+            desired = p.deployment_desired_status
+            error_msg = (p.deployment_error or {}).get("message", "")
+            snap = (status, desired, error_msg)
+            if snap != last:
+                print(
+                    f"After {time.time() - start:.1f} seconds: status={status} desired={desired} error={error_msg!r}"
+                )
+            last = snap
+            if status != "Stopped" and error_msg == "":
+                return
+            time.sleep(0.1)
+        raise TimeoutError(
+            "Timed out waiting for start transition and deployment_error clearing "
+            f"(last={last})"
+        )
+
     try:
         pipeline.start(bootstrap_policy=BootstrapPolicy.REJECT)
         # If we reach here, the pipeline started successfully when it should have failed
@@ -55,6 +87,18 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         )
     except Exception as e:
         print(f"Expected exception caught: {e}")
+        # Reject triggers async stopping.
+        # This only guarantees deployment_status is Stopped
+        wait_for_deployment_status(pipeline_name, "Stopped", 30)
+
+        # Kick one non-blocking ALLOW start so backend transitions out of stale
+        # rejected-stop state and clears deployment_error on provisioning transition.
+        print("Issuing non-blocking allow start to clear stale startup error state")
+        pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW, wait=False)
+        wait_for_start_observed_and_error_cleared(60)
+        print("Stopping temporary run to return to clean stopped baseline")
+        pipeline.stop(force=True)
+        wait_for_deployment_status(pipeline_name, "Stopped", 30)
         pass
 
     print("Starting pipeline with bootstrap_policy='allow'")
