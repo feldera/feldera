@@ -113,7 +113,11 @@ public class PartiallyMonotoneTuple
     }
 
     public IMaybeMonotoneType getField(int index) {
-        return this.fields.get(index);
+        IMaybeMonotoneType result = this.fields.get(index);
+        if (this.mayBeNull)
+            // Have to adjust nullability if tuple is nullable
+            result = result.withMaybeNull(this.mayBeNull);
+        return result;
     }
 
     /** Given an index in the original type, return an index into a type
