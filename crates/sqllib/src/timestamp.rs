@@ -63,18 +63,8 @@ where
     D: ::rkyv::Fallible + ::core::any::Any,
 {
     fn deserialize(&self, deserializer: &mut D) -> Result<Timestamp, D::Error> {
-        // The internal representation of Timestamps changed from version 4 of the storage format
-        const MILLISECOND_VERSION: u32 = 4;
-        let version = (deserializer as &mut dyn ::core::any::Any)
-            .downcast_mut::<::dbsp::storage::file::Deserializer>()
-            .map(|deserializer| deserializer.version())
-            .expect("Deserializer must be of type dbsp::storage::file::Deserializer");
         let value: i64 = self.microseconds.deserialize(deserializer)?;
-        if version <= MILLISECOND_VERSION {
-            Ok(Timestamp::from_milliseconds(value))
-        } else {
-            Ok(Timestamp::from_microseconds(value))
-        }
+        Ok(Timestamp::from_microseconds(value))
     }
 }
 
