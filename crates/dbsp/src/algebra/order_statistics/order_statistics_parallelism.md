@@ -1,67 +1,67 @@
-# Parallel Routing for Percentile Operator
+# Virtual Shard Routing for Percentile Operator
 
 ## Problem
 
 The percentile operator maintains one `OrderStatisticsZSet` per GROUP BY key. When running with multiple DBSP workers, two cases arise:
 
-1. **Multi-key (GROUP BY)**: `.shard()` distributes keys across workers by hash. Each worker owns different keys, so work distributes naturally. No intra-key parallelism is needed.
+1. **Multi-key (GROUP BY)**: `.shard()` distributes keys across workers by hash. Each worker owns different keys, so work distributes naturally. No intra-key parallelism is needed. Workers participate in empty barriers for synchronization only.
 
 2. **Single-key (no GROUP BY, key = `Tup0`)**: All data belongs to one key. A naive `.shard()` would concentrate ALL data on one worker (since `hash(Tup0)` is constant), leaving N−1 workers idle during tree updates. When a large batch arrives, the single owner worker does all routing, disk I/O, and insertion sequentially.
 
-## Solution Overview
+## Solution: Virtual Shard Routing
 
-The parallel routing system addresses both cases with shared-memory barriers and slot-based inter-worker communication (no Exchange):
+The virtual shard routing system distributes leaf-level tree work across workers using a barrier-based 4-phase protocol with shared-memory communication (no Exchange). One logical B+ tree is maintained by a single owner (worker 0), while workers are assigned contiguous ranges of leaves to mutate in parallel.
 
-### Single-Key (Tup0) — The Primary Optimization Target
+Skip `.shard()` entirely for Tup0. The tree owner publishes a `ReadOnlyTreeView` and leaf-range assignments via shared memory. Each worker independently routes its own sorted entries through the tree's internal nodes using `route_sorted_entry_ranges()` + `leaf_owner()`, deposits per-target slices into 2D shared-memory redistribute slots, then collects entries from its column after a barrier. Workers mutate their assigned leaves locally and report modified leaf data back so the owner's tree stays consistent for percentile computation.
 
-Skip `.shard()` entirely. Input stays round-robin distributed across workers (~1/N entries per worker). The tree owner publishes a `ReadOnlyTreeView` and separator keys via shared memory. Workers binary-search their sorted entries to partition by destination worker, exchange entries through shared-memory slots with barrier synchronization, merge entries into cloned leaves, and send results back to the owner.
-
-**Before** (Exchange-based): 2 Exchange barriers per step (CAS retry loops, payload cloning)
-**After** (shared-memory): 2 `AsyncBarrier` waits per step (generation counter + Notify, zero cloning)
-
-### Multi-Key (GROUP BY) — Barrier Synchronization Only
-
-`.shard()` distributes keys across workers. Each worker processes its own keys sequentially (no benefit from intra-key parallelism since keys are already distributed). Workers still participate in the 2 barriers with empty payloads to maintain synchronization.
+- **Bootstrap** (empty tree): Workers pass entries as unprocessed; owner bulk-loads via `bulk_load_sorted()` in O(N).
+- **Steady-state** (tree has internal nodes): Each worker routes its own sorted entries to target workers via tree traversal and 2D redistribute slots. Workers merge received entries into cloned leaves, report modifications back to the owner.
+- **Cascade rebalancing**: After each step, per-worker entry counts are stored. Before the next step, a deterministic cascade algorithm shifts leaf-range boundaries to balance work across workers.
 
 ## Architecture
 
-### Single-Key Data Flow (Tup0, no GROUP BY)
+### Data Flow (Tup0, no GROUP BY)
 
 ```
-Input (round-robin: each worker has ~1/N entries)
+Input (round-robin: each worker has ~1/N entries, sorted from cursor)
     │
-    ├── Phase 1: Owner publishes tree view + separator keys via SharedPercentileState
-    │   (shared memory in runtime.local_store(), no Exchange)
+    ├── Phase 1: Publish (owner only)
+    │   Owner publishes VirtualShardStepData via VirtualShardState:
+    │   tree view, leaf ranges, storage config, previous entry counts.
+    │   Leaf ranges computed via cascade rebalancing or even distribution.
+    │   All workers wait and read the published data.
     │
-    ├── Phase 2: Each worker partitions its local entries by worker destination
-    │   using binary search on separator keys — O(entries × log(num_workers))
+    ├── Phase 2: Partition + Redistribute (all workers, parallel)
+    │   Each worker independently routes its sorted local entries through
+    │   the tree's internal nodes via route_sorted_entry_ranges(), maps
+    │   each (leaf_id, start, end) range to a target worker via
+    │   leaf_owner(), and deposits per-target slices into
+    │   redistribute_slots[my_index][target].
+    │   Bootstrap (no tree / leaf-only root): all entries to owner.
+    │   ═══ Barrier 1 ═══
+    │   Each worker collects entries from its column:
+    │   redistribute_slots[sender][my_index] for all senders.
+    │   Sorts the concatenated result (TimSort merges W sorted runs
+    │   in O(D log W)).
+    │   ═══ Barrier 2 ═══
     │
-    ├── Phase 3 ─── Shared-Memory Redistribute + AsyncBarrier ────────
-    │   Workers write entries to slots[sender][receiver], hit barrier,
-    │   then read from slots[sender][my_index]. Zero cloning.
+    ├── Phase 3: Local Mutation (all workers, parallel)
+    │   Each worker processes its collected entries.
+    │   Clones owned leaves from tree via ReadOnlyTreeView.
+    │   Merges entries via two-pointer sorted merge, handles splits.
+    │   Generates WorkerReport: weight_deltas, key_count_deltas,
+    │   splits, modified_leaves, entries_processed.
+    │   Bootstrap (no tree): entries returned as unprocessed.
+    │   ═══ Barrier 3 ═══
     │
-    ├── Phase 4: Each worker: route to leaf buckets via deep_route(),
-    │   clone leaves, merge entries, split if oversized, write to disk
-    │
-    ├── Phase 5 ─── Shared-Memory Gather + AsyncBarrier ──────────────
-    │   Workers write LeafWriteResult to slots[my_index], hit barrier,
-    │   owner reads from all slots. Zero cloning.
-    │
-    └── Phase 6: Owner reconciles: register segments, set Evicted slots,
-        allocate split leaf IDs, update internal nodes, recalc sums.
-        Insert any unrouted entries sequentially.
-```
-
-### Multi-Key Data Flow (GROUP BY)
-
-```
-Input → .shard() (distributed by key hash, each worker has ~1/N keys)
-    │
-    ├── Each worker: process_delta() inserts entries sequentially
-    │   into its own per-key trees
-    │
-    └── All workers participate in empty Redistribute + Gather barriers
-        (barrier synchronization, no data transferred)
+    └── Phase 4: Reconcile (owner only)
+        Owner reads all WorkerReports:
+        - Applies modified leaves back to tree via replace_leaf_data()
+        - Processes splits: allocate leaf IDs, update internal nodes
+        - Updates weight/key-count totals from deltas
+        - Recalculates subtree sums
+        - Bootstrap: bulk_load_sorted() from unprocessed entries
+        - Stores entry counts for next step's cascade rebalancing
 ```
 
 ### Eval Dispatch Logic
@@ -70,7 +70,7 @@ The operator dispatches at `eval()` time based on key type and worker count:
 
 ```
 if K == Tup0 && num_workers > 1:
-    eval_unsharded_single_key()    // round-robin input, parallel routing
+    eval_unsharded_single_key()    // round-robin input, virtual shard routing
 else if num_workers > 1:
     eval_sharded_with_parallel()   // sharded input, sequential insert, empty barriers
 else:
@@ -99,22 +99,7 @@ This applies to all three public methods: `percentile()`, `percentile_cont()`, `
 
 **Why skip shard for Tup0**: `shard()` distributes by `hash(key) % num_workers`. Since `Tup0` is a zero-sized type with a constant hash, ALL data would land on one worker — exactly the bottleneck we're trying to avoid. Skipping shard keeps the default round-robin distribution from the input adapter, giving each worker ~1/N entries.
 
-## Shared-Memory Inter-Worker Communication
-
-### SharedExchangeSlots (replaces Exchange)
-
-```rust
-struct SharedExchangeSlots<V> {
-    redistribute_slots: Vec<Vec<Mutex<Option<Vec<(V, ZWeight)>>>>>,  // [sender][receiver]
-    gather_slots: Vec<Mutex<Option<LeafWriteResult<V>>>>,            // [sender]
-    redistribute_barrier: AsyncBarrier,
-    gather_barrier: AsyncBarrier,
-}
-```
-
-Workers write to slots indexed by `[my_index][destination]`, hit a barrier, then read from slots indexed by `[sender][my_index]`. The `take()` pattern ensures each payload is consumed exactly once.
-
-**vs Exchange**: Exchange uses CAS retry loops with backoff, mutex-protected mailboxes, and `.iter().cloned()` on payloads (cloning entire `Vec<(V, ZWeight)>` per worker). SharedExchangeSlots uses direct `Mutex<Option<T>>` with `take()` — zero cloning, no retries.
+## Shared-Memory Infrastructure
 
 ### AsyncBarrier
 
@@ -129,60 +114,7 @@ struct AsyncBarrier {
 
 Generation-based async barrier. The last worker to arrive resets the counter, bumps the generation, and wakes all waiters. Waiters register the `Notify` future BEFORE checking the generation to prevent TOCTOU races.
 
-### SharedPercentileState (tree view publication)
-
-```rust
-struct SharedPercentileState<V> {
-    step_data: Mutex<Option<Arc<StepData<V>>>>,
-    generation: AtomicU64,
-    notify: tokio::sync::Notify,
-}
-
-struct StepData<V> {
-    tree_view: Arc<ReadOnlyTreeView<V>>,
-    separator_keys: Vec<V>,            // NEW: worker boundary keys for binary search
-    owner_index: usize,
-    storage_backend: Option<Arc<dyn StorageBackend>>,
-    worker_segment_ids: Vec<SegmentId>,
-    segment_path_prefix: String,
-    spill_directory: Option<StoragePath>,
-}
-```
-
-All workers in the same runtime share the same `Arc<SharedPercentileState>` via `runtime.local_store()` using the `circuit_cache_key!` macro.
-
-**Publication protocol**:
-1. Owner: `step_data.lock().replace(data); generation.fetch_add(1, Release); notify.notify_waiters();`
-2. Workers: register `notified()` future, then check `generation.load(Acquire) > last_gen` — if already bumped, read immediately; otherwise `notified.await`.
-3. The redistribute barrier guarantees all workers finish reading before the owner mutates the tree.
-
-**Coordinator role**: Worker 0 acts as coordinator. When worker 0 is NOT the tree owner (multi-key case where nobody has a tree), it calls `publish_none()` so workers don't hang waiting for step data.
-
-**TOCTOU safety**: The `Notify` future is registered BEFORE checking the generation counter. This prevents a race where the notification fires between the check and the await, which would cause the worker to wait indefinitely.
-
-## Separator Keys and Binary Search Partitioning
-
-### Separator Key Extraction
-
-The owner reads the first key of boundary leaves to define worker value-range partitions:
-
-```rust
-fn extract_worker_boundaries(tree, num_workers) -> Vec<V>
-```
-
-For W workers and L total leaves, `leaves_per_worker = ceil(L / W)`. Boundary leaf IDs are `leaves_per_worker * w` for `w = 1..W`. Each boundary leaf's first key becomes a separator. Reads at most `W-1` leaves (from disk if evicted).
-
-### Entry Partitioning
-
-```rust
-fn partition_entries_to_workers(entries, separator_keys, num_workers) -> Vec<Vec<(V, ZWeight)>>
-```
-
-Each entry is assigned to a worker via `partition_point(|sep| sep <= &entry.0)` — a binary search on `W-1` separator keys.
-
-**Cost**: O(entries × log(W)) per worker, vs O(entries × tree_height) for per-entry `deep_route()`. For a tree with height 4 and 7 workers, this is O(entries × 3) vs O(entries × 4), a modest improvement. But the real win is that partitioning happens BEFORE the shared-memory exchange — each worker partitions its own entries in parallel, eliminating the need for all-to-all leaf-bucket redistribution.
-
-## ReadOnlyTreeView
+### ReadOnlyTreeView
 
 ```rust
 struct ReadOnlyTreeView<V> {
@@ -195,132 +127,212 @@ struct ReadOnlyTreeView<V> {
 
 Workers read the owner's actual tree via raw pointer. No internal nodes are copied. Internal nodes are always in memory; evicted leaves are read from segment files via `read_leaf_readonly()` (Send + Sync) without modifying the tree's `LeafSlot` state. Workers clone leaves for merge operations via `get_leaf_clone()`.
 
-**`deep_route()` behavior**: Traverses internal nodes to find the target leaf ID. Returns `None` when the root is a leaf (no internal nodes to route through) or the tree is empty. This causes entries to be treated as "unrouted" and sent to the owner via `LeafWriteResult.unrouted_entries`.
-
 **Safety contract**: The owner must not mutate the tree between creating the view (before publish) and consuming all gather results (before reconciliation).
 
-## ParallelRouting Infrastructure
+### VirtualShardState (shared across workers)
 
-Created during `PercentileOperator::new()` when `num_workers > 1`. Holds:
-- 1 `Arc<SharedPercentileState>` (shared via `runtime.local_store()`)
-- 1 `Arc<SharedExchangeSlots>` (shared via `runtime.local_store()`)
-- `last_generation` counter for tracking shared state publications
-- Worker identity (index, total count)
+```rust
+struct VirtualShardState<V: 'static> {
+    step_data: Mutex<Option<Arc<VirtualShardStepData<V>>>>,
+    generation: AtomicU64,
+    notify: Notify,
+    redistribute_slots: Vec<Vec<Mutex<Option<Vec<(V, ZWeight)>>>>>,  // [sender][receiver] 2D matrix
+    report_slots: Vec<Mutex<Option<WorkerReport<V>>>>,               // mutation reports per worker
+    prev_entry_counts: Mutex<Vec<usize>>,                            // for cascade rebalancing
+    prev_leaf_ranges: Mutex<Vec<(usize, usize)>>,                    // leaf boundaries per worker
+    barrier_1: AsyncBarrier,
+    barrier_2: AsyncBarrier,
+    barrier_3: AsyncBarrier,
+    num_workers: usize,
+}
+```
 
-### Unrouted Entries
+All workers share the same `Arc<VirtualShardState>` via `runtime.local_store()` using the `circuit_cache_key!` macro. The `redistribute_slots` is an N×N matrix (same pattern as `SharedExchangeSlots` used by the Exchange-based `ParallelRouting`): each worker writes to its row `redistribute_slots[my_index][target]` and reads from its column `redistribute_slots[sender][my_index]`.
 
-When `deep_route()` returns `None` (tree is a leaf, tree is empty, or no storage backend), entries are collected in `LeafWriteResult.unrouted_entries` and propagated back to the owner via the gather phase. The owner inserts these sequentially after reconciliation. This handles:
-- **Bootstrap**: Tree starts as a single leaf, grows internal nodes over subsequent steps.
-- **No storage backend**: Workers can't write merged leaves to disk, so all entries bypass the parallel merge and go directly to the owner.
+**Publication protocol**:
+1. Owner: `step_data.lock().replace(data); generation.fetch_add(1, Release); notify.notify_waiters();`
+2. Workers: register `notified()` future, then check `generation.load(Acquire) > last_gen` — if already bumped, read immediately; otherwise `notified.await`.
+3. Barrier 1 guarantees all workers finish writing their redistribute slots before any worker reads.
 
-## Protocol Phases (Single-Key Path)
+### VirtualShardStepData (published per step)
 
-### Phase 1: Publish Tree View + Separator Keys (owner only, no barrier)
+```rust
+struct VirtualShardStepData<V> {
+    tree_view: Arc<ReadOnlyTreeView<V>>,
+    owner_index: usize,
+    worker_leaf_ranges: Vec<(usize, usize)>,   // (first_leaf_id, exclusive_end) per worker
+    prev_entry_counts: Vec<usize>,
+    storage_backend: Option<Arc<dyn StorageBackend>>,
+    segment_path_prefix: String,
+    spill_directory: Option<StoragePath>,
+}
+```
 
-The tree owner publishes `StepData` containing the `ReadOnlyTreeView`, separator keys, storage backend, pre-allocated segment IDs, and segment path info to `SharedPercentileState`. If no owner exists (multi-key barrier-only path), worker 0 publishes `None`.
+### VirtualShardRouting (per-worker state)
 
-### Phase 2: Partition by Separator Keys (all workers, parallel)
+```rust
+struct VirtualShardRouting<V: DBData> {
+    shared: Arc<VirtualShardState<V>>,
+    pub leaf_storage: WorkerLeafStorage<V>,   // per-worker sparse leaf storage
+    last_generation: u64,
+    num_workers: usize,
+    worker_index: usize,
+    prev_entries_processed: usize,
+}
+```
 
-Each worker reads the shared separator keys and partitions its local entries using binary search. Entries with value < `separator_keys[0]` go to worker 0, entries with value in `[separator_keys[i-1], separator_keys[i])` go to worker `i`, etc. When no separator keys exist (bootstrap/no storage), all entries go to the owner.
+Created during `PercentileOperator::new()` when `num_workers > 1`.
 
-Cost: O(local_entries × log(num_workers)) per worker.
+## WorkerLeafStorage
 
-### Phase 3: Redistribute (shared-memory slots + AsyncBarrier)
+Per-worker sparse leaf storage for owned leaf ranges (`worker_leaf_storage.rs`). Each worker independently manages its leaves:
 
-Each worker writes its per-destination entry Vecs to `redistribute_slots[my_index][dest]`, then all workers hit the `redistribute_barrier`. After the barrier, each worker reads from `redistribute_slots[sender][my_index]` for all senders, consuming entries via `.take()`.
+```rust
+struct WorkerLeafStorage<V> {
+    leaves: HashMap<usize, WorkerLeafSlot<V>>,    // leaf_id → Present | Evicted
+    dirty_leaves: HashSet<usize>,
+    segments: Vec<SegmentMetadata>,
+    leaf_disk_locations: HashMap<usize, LeafDiskLocation>,
+    // ... storage backend config
+}
+```
 
-### Phase 4: Route + Clone + Merge + Split + Write (per-worker)
+- `WorkerLeafSlot::Present(LeafNode<V>)` — leaf data in memory
+- `WorkerLeafSlot::Evicted(CachedLeafSummary)` — on disk, summary cached
 
-Each worker now has entries destined for its leaf range. It routes entries to individual leaf buckets via `deep_route()` on the shared tree view, then processes each leaf:
-1. **Sort** entries within each leaf bucket by value
-2. **Clone** each leaf via `get_leaf_clone()` (loads evicted leaves from disk)
-3. **Merge** entries into the cloned leaf using O(K+M) two-pointer sorted merge via `merge_and_split()`
-4. **Split** oversized leaves (entries > `max_leaf_entries`) into chunks
-5. **Write** modified original leaves to a new segment file via `write_leaves_to_segment()`
-6. **Build** `CachedLeafSummary` for each disk-written leaf (for Evicted slot without disk I/O)
+Workers can flush dirty leaves to disk and evict clean leaves independently.
 
-Entries where `deep_route()` returns `None` are collected as unrouted.
+**Lifecycle**: `WorkerLeafStorage` is cleared at `clock_end()` each step. Leaf data is temporary — the owner's tree is the source of truth.
 
-Split leaves are NOT written to disk — they're sent in-memory because the owner must allocate their leaf IDs.
+## WorkerReport
 
-### Phase 5: Gather (shared-memory slots + AsyncBarrier)
+Workers report mutation results back to the owner:
 
-Workers write their `LeafWriteResult` to `gather_slots[my_index]`, then all workers hit the `gather_barrier`. The owner reads from all slots after the barrier.
+```rust
+struct WorkerReport<V> {
+    weight_deltas: Vec<(usize, ZWeight)>,           // per-leaf weight changes
+    key_count_deltas: Vec<(usize, i64)>,             // per-leaf key count changes
+    splits: Vec<WorkerSplitInfo<V>>,                 // split leaf data
+    total_weight_delta: ZWeight,
+    total_key_count_delta: i64,
+    entries_processed: usize,                        // for cascade rebalancing
+    unprocessed_entries: Vec<(V, ZWeight)>,           // bootstrap: workers can't route
+    modified_leaves: Vec<(usize, LeafNode<V>)>,      // leaf data to replace in owner's tree
+}
+```
 
-### Phase 6: Owner Reconciliation
+The `modified_leaves` field is critical: after workers mutate cloned leaves, the owner replaces its stale leaf data via `NodeStorage::replace_leaf_data()` so the tree is consistent for subsequent percentile computation (select queries).
 
-The owner reads `LeafWriteResult`s from all workers and calls `reconcile_parallel_writes()`:
-1. **Register worker segments**: Add each worker's segment file to the tree's segment list
-2. **Set Evicted slots**: Replace in-memory leaves with `LeafSlot::Evicted(CachedLeafSummary)`
-3. **Process split leaves**: Allocate leaf IDs, set up `next_leaf` chains, reload original leaf to fix its `next_leaf` pointer
-4. **Update internal nodes**: Insert new children for split leaves, handle cascading internal splits
-5. **Recalculate subtree sums**: Single bottom-up pass using `CachedLeafSummary.weight_sum` for evicted leaves
-6. **Update totals**: Accumulate weight and key count deltas
+## Protocol Phases (Detail)
 
-After reconciliation, any unrouted entries are inserted sequentially into the tree.
+### Phase 1: Publish + Rebalance (owner, then all workers via Barrier 1)
+
+The owner computes leaf ranges for each worker and publishes `VirtualShardStepData`. Leaf ranges are computed by the owner:
+
+1. **First step or empty tree**: `even_leaf_ranges()` distributes leaves evenly across workers.
+2. **Subsequent steps with previous ranges**: Cascade rebalancing from previous step's entry counts via `compute_cascade_transfers()` + `apply_cascade_to_ranges()`. Falls back to even ranges if no transfers are needed.
+
+The computed ranges are stored in `prev_leaf_ranges` for next step's rebalancing and published in `worker_leaf_ranges`. All workers wait for publication and configure their `WorkerLeafStorage` with storage backend info, then proceed to Phase 2 partitioning.
+
+**Note**: The published `worker_leaf_ranges` are available to workers but Phase 2 routing currently uses even distribution (`leaf_owner()`: `leaf_id / leaves_per_worker`) rather than the cascade-rebalanced ranges. The cascade ranges will be used for routing once the routing is extended to consult them.
+
+### Phase 2: Partition + Redistribute (all workers, parallel)
+
+Each worker independently routes its own sorted `local_entries` through the tree's internal nodes via `route_sorted_entry_ranges()`, producing `(leaf_id, start, end)` ranges. Each range is mapped to a target worker via `leaf_owner(leaf_id, total_leaves, num_workers)` (even distribution: `leaf_id / leaves_per_worker`). Per-target entry slices are deposited into `redistribute_slots[my_index][target]`.
+
+When the tree is empty (bootstrap) or has no internal nodes (root is a leaf), no routing is possible — all entries go to `redistribute_slots[my_index][owner_index]`.
+
+After Barrier 1, each worker collects entries from its column: `redistribute_slots[sender][my_index]` for all senders, concatenates them, and sorts. Since each sender's entries are already sorted (contiguous slices from tree routing of sorted cursor output), TimSort detects W sorted runs and merges them in O(D log W).
+
+After Barrier 2, the redistribute slots have been consumed and workers proceed to local mutation.
+
+This distributed partitioning eliminates the previous bottleneck where the owner alone collected, sorted, routed, and re-distributed all entries from every worker.
+
+### Phase 3: Local Mutation (all workers, then Barrier 3)
+
+Each worker:
+1. Uses the sorted entries collected from its redistribute column after Phase 2
+2. Clones owned leaves from the tree via `ReadOnlyTreeView::get_leaf_clone()`
+3. Merges entries into cloned leaves via two-pointer sorted merge (`merge_and_split()`)
+4. Handles splits for oversized leaves (entries > `max_leaf_entries`)
+5. Records modified leaves, weight/key-count deltas, and split info in `WorkerReport`
+6. Publishes report to `report_slots[my_index]`
+
+**Bootstrap case**: When the tree has no internal nodes (root is None or a leaf), workers cannot route entries to leaves. Entries are passed back as `unprocessed_entries` in the report. The owner handles them during reconciliation.
+
+**Sorted invariant**: ZSet cursors iterate values in sorted order. `collect_entries_for_single_key()` in `percentile_op.rs` produces sorted entries. This invariant enables O(K+M) two-pointer merge at each leaf (entries are a contiguous sorted slice from routing) and O(N) bulk-load during bootstrap.
+
+### Phase 4: Reconcile (owner only)
+
+The owner reads all `WorkerReport`s and:
+1. **Apply modified leaves**: Replaces stale leaf data in the tree via `replace_leaf_data()`. This is essential because the owner's tree still has the pre-mutation leaf data, and accurate leaf data is needed for percentile select queries.
+2. **Process splits**: Allocates new leaf IDs, calls `insert_split_child()` to update internal nodes and `next_leaf` chains.
+3. **Update totals**: Applies `update_weight_delta()` and `update_key_count_delta()` to the tree.
+4. **Recalculate sums**: Single bottom-up pass via `recalculate_all_subtree_sums()`.
+5. **Handle bootstrap**: Sort-merge unprocessed entries from all workers via TimSort — O(N log W). Consolidate consecutive duplicate keys — O(N). Call `bulk_load_sorted()` — O(N). Total: O(N) vs O(N log N) sequential inserts.
+6. **Store entry counts**: Per-worker `entries_processed` values are stored for next step's cascade rebalancing.
+
+## Cascade Rebalancing
+
+Deterministic algorithm to redistribute leaf ranges based on workload from the previous step. Currently computed by the owner during Phase 1 publication.
+
+```rust
+fn compute_cascade_transfers(entry_counts: &[usize], total_leaves: usize)
+    -> Vec<(usize, usize, usize)>  // (from_worker, to_worker, num_leaves)
+```
+
+**Algorithm**:
+1. Compute `target = total_entries / num_workers`
+2. Compute each worker's surplus = `own_count - target` (positive = excess, negative = deficit)
+3. Sweep left-to-right: each pair (i, i+1) transfers `min(surplus_i, deficit_{i+1})` leaves
+4. Leaf transfers are proportional to entry-count imbalance
+
+Entry count is the right balancing metric because it predicts computational work (tree navigation + leaf mutation + IO) better than subtree size or leaf count.
+
+```rust
+fn even_leaf_ranges(total_leaves: usize, num_workers: usize) -> Vec<(usize, usize)>
+```
+
+Computes balanced initial leaf ranges (used on first step before entry counts are available). Returns `Vec<(start, exclusive_end)>` tuples.
+
+```rust
+fn apply_cascade_to_ranges(
+    current_ranges: &[(usize, usize)],
+    transfers: &[(usize, usize, usize)],
+    total_leaves: usize,
+) -> Vec<(usize, usize)>
+```
+
+Applies cascade transfers to produce updated leaf ranges for the next step.
 
 ## Activation and Degradation
 
 | Scenario | Behavior |
 |----------|----------|
-| `num_workers == 1` | `ParallelRouting` is `None`; all inserts sequential |
-| Tup0, `num_workers > 1`, tree has internal nodes, storage backend exists | Full parallel routing (phases 1–6) |
-| Tup0, `num_workers > 1`, tree is leaf/empty | All entries unrouted → owner inserts sequentially (bootstrap) |
-| Tup0, `num_workers > 1`, no storage backend | All entries unrouted → owner inserts sequentially (in-memory only) |
-| Multi-key, `num_workers > 1` | Sequential per-key insert + empty barriers |
+| `num_workers == 1` | No routing; all inserts sequential |
+| Tup0, `num_workers > 1`, tree has internal nodes | Full 4-phase virtual shard protocol with cascade rebalancing |
+| Tup0, `num_workers > 1`, tree is leaf/empty | Bootstrap: all entries unprocessed → owner `bulk_load_sorted()` in O(N) |
+| Multi-key, `num_workers > 1` | Sequential per-key insert + empty barriers for synchronization |
 
-The protocol degrades gracefully. When the tree is small (leaf root) or has no storage backend, entries are collected as unrouted and flow to the owner for sequential insertion. The barrier overhead is minimal (~2–10 μs per step for `AsyncBarrier` vs ~6–30 μs for Exchange).
-
-## Known Bottleneck: Bootstrap (Empty Tree)
-
-The parallel routing cannot distribute work when the tree is empty or has only a leaf root, because there are no internal nodes for `deep_route()` to traverse and no separator keys to partition on. **All entries become unrouted and the owner inserts them one by one.**
-
-This is the dominant cost in workloads that load a large initial batch (e.g., the 200K-row spill test). The first step inserts all rows sequentially on the owner at O(N log N) cost, while N−1 workers sit idle at the barrier. Subsequent steps (with smaller deltas) benefit from parallel routing because the tree now has internal nodes, but they contribute a fraction of total runtime.
-
-### Impact Analysis (200K rows, 7 workers)
-
-```
-Phase 1 (initial load): Tree empty → all 200K entries unrouted → owner inserts sequentially
-  Cost: O(200K × log(200K)) ≈ 200K × 18 ≈ 3.6M tree operations, fully serial
-  Workers 1-6: idle at barrier for ~1.4s
-
-Phases 2-6 (updates/deletes): Tree has internal nodes → parallel routing activates
-  Cost: distributed across workers, but each phase ≤ 100K entries
-  Total: modest fraction of Phase 1 cost
-```
-
-### Proposed Fix: Parallel Sort + Bulk Build
-
-For the bootstrap case (empty/leaf tree), replace sequential insertion with:
-
-1. **Parallel sort**: Each worker sorts its local ~N/W entries — O((N/W) log(N/W)) per worker, runs concurrently
-2. **Gather sorted chunks**: Workers send sorted Vecs to owner via shared-memory slots
-3. **K-way merge**: Owner merges W sorted chunks into one sorted stream — O(N log W)
-4. **Bulk build**: Owner calls `from_sorted_entries()` to construct the tree — O(N)
-
-**Total**: O((N/W) log(N/W)) parallel + O(N log W + N) serial
-**vs current**: O(N log N) fully serial
-
-For 200K entries and 7 workers: ~4× improvement (parallel sort at 28K/worker + linear merge + linear build vs 200K sequential inserts with O(log N) each).
-
-Detection: `separator_keys.is_empty()` already identifies the bootstrap case. The fix adds a pre-sort + bulk-build path before falling back to unrouted sequential insertion.
+The protocol degrades gracefully. The barrier overhead is minimal (~2–10 μs per step for `AsyncBarrier`).
 
 ## Files
 
 | File | Role |
 |------|------|
-| `algebra/order_statistics/parallel_routing.rs` | `SharedPercentileState`, `SharedExchangeSlots`, `AsyncBarrier`, `ReadOnlyTreeView`, `ParallelRouting`, `merge_and_split()`, `extract_worker_boundaries()`, `partition_entries_to_workers()`, routing logic |
-| `operator/percentile.rs` | `is_tup0_key()`, shard-skip logic for Tup0 in `percentile()`, `percentile_cont()`, `percentile_disc()` |
-| `operator/dynamic/percentile_op.rs` | `eval_unsharded_single_key()`, `eval_sharded_with_parallel()`, `collect_entries_for_single_key()`, eval dispatch |
-| `node_storage.rs` | `replace_leaf_with_evicted()`, `register_worker_segment()`, `write_leaves_to_segment()`, `serialize_to_bytes()` |
+| `algebra/order_statistics/parallel_routing.rs` | `VirtualShardState`, `VirtualShardRouting`, `VirtualShardStepData`, `AsyncBarrier`, `ReadOnlyTreeView`, `compute_cascade_transfers()`, `apply_cascade_to_ranges()`, `even_leaf_ranges()`, `merge_and_split()`, `route_sorted_entry_ranges()`, `batch_route_collect_ranges()`, `leaf_owner()`, `extract_worker_boundaries()`, `partition_entries_to_workers()` |
+| `algebra/order_statistics/worker_leaf_storage.rs` | `WorkerLeafStorage`, `WorkerLeafSlot`, `WorkerReport`, `WorkerSplitInfo`, `LeafTransferData` |
+| `algebra/order_statistics/order_statistics_zset.rs` | `bulk_load_sorted()`, `reconcile_parallel_writes()`, `insert_split_child()`, `recalculate_all_subtree_sums()`, `update_weight_delta()`, `update_key_count_delta()` |
+| `operator/percentile.rs` | `is_tup0_key()`, shard-skip logic for Tup0 |
+| `operator/dynamic/percentile_op.rs` | `eval_unsharded_single_key()`, `eval_sharded_with_parallel()`, eval dispatch, `virtual_shard` field |
+| `node_storage.rs` | `replace_leaf_data()`, `replace_leaf_with_evicted()`, `register_worker_segment()`, `write_leaves_to_segment()`, `serialize_to_bytes()` |
 | `node_storage_disk.rs` | `read_leaf_readonly()` |
-| `order_statistics_zset.rs` | `reconcile_parallel_writes()`, `from_sorted_entries()`, `insert_split_child()`, `recalculate_all_subtree_sums()`, accessor methods |
 
 ## Limitations
 
-- **Solo-only**: Raw pointer sharing requires same address space. Multi-host Exchange would need serialized tree snapshots instead of raw pointers.
-- **No intra-key parallelism for multi-key**: When multiple distinct keys are sharded across workers, the tree for each key is updated sequentially on its owning worker. Only the Tup0 (single-key) case benefits from parallel leaf routing.
-- **Storage backend required for parallel merge**: Without a storage backend, workers can't write merged leaves to disk. The protocol degrades to collecting all entries at the owner for sequential insertion. Parallel leaf merge only activates when the tree has both internal nodes and a storage backend.
-- **Split leaves in-memory**: Split leaves can't be written to disk by workers because they need owner-allocated leaf IDs. Large splits send data in-memory.
-- **Owner reconciliation is sequential**: Internal node updates (for splits) and subtree sum recalculation run on the owner only.
-- **Bootstrap is sequential**: The first step with a large batch into an empty tree cannot use parallel routing — see "Known Bottleneck" above.
+- **Solo-only**: Raw pointer sharing requires same address space. Multi-host deployment would need serialized tree snapshots instead of raw pointers.
+- **No intra-key parallelism for multi-key**: When multiple distinct keys are sharded across workers, each key's tree is updated sequentially on its owning worker. Only the Tup0 (single-key) case benefits from virtual shard routing.
+- **Owner reconciliation is sequential**: Internal node updates (for splits) and subtree sum recalculation run on the owner only. Workers only help with leaf-level mutation.
+- **Modified leaves sent in-memory**: Workers report modified leaf data back to the owner via `WorkerReport.modified_leaves`. For very large leaves this adds memory pressure.
+- **Split leaves need owner allocation**: Split leaves can't be written to disk by workers because they need owner-allocated leaf IDs. Split leaf data is sent in-memory.
+- **WorkerLeafStorage is ephemeral**: Cleared at `clock_end()` each step. Workers don't persistently own leaves across steps — leaf ownership is logical via ranges, physical data comes from the owner's tree each step.

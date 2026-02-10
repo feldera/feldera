@@ -1628,6 +1628,29 @@ where
         }
     }
 
+    /// Replace a leaf's data in-place, handling both present and evicted states.
+    ///
+    /// If the leaf is currently present, replaces its data directly.
+    /// If evicted, replaces the evicted slot with a present leaf.
+    /// Used by virtual shard reconciliation when workers send modified leaf data back.
+    pub fn replace_leaf_data(&mut self, leaf_id: usize, new_leaf: L) {
+        if leaf_id < self.leaves.len() {
+            let was_evicted = self.leaves[leaf_id].is_evicted();
+            if was_evicted {
+                self.stats.evicted_leaf_count = self.stats.evicted_leaf_count.saturating_sub(1);
+            }
+            let new_size = Self::estimate_leaf_size(&new_leaf);
+            // Track old memory
+            if let Some(old_leaf) = self.leaves[leaf_id].as_present() {
+                let old_size = Self::estimate_leaf_size(old_leaf);
+                self.stats.memory_bytes = self.stats.memory_bytes.saturating_sub(old_size);
+            }
+            self.leaves[leaf_id] = LeafSlot::Present(new_leaf);
+            self.stats.memory_bytes += new_size;
+            self.mark_leaf_dirty(leaf_id);
+        }
+    }
+
     /// Register a worker's segment file and update disk location tracking.
     ///
     /// Used by parallel routing reconciliation: each worker writes a segment

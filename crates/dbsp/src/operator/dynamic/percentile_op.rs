@@ -81,7 +81,7 @@ use crate::{
 };
 use feldera_storage::{FileCommitter, StoragePath};
 
-use crate::algebra::order_statistics::parallel_routing::ParallelRouting;
+use crate::algebra::order_statistics::parallel_routing::{ParallelRouting, VirtualShardRouting};
 
 use super::super::require_persistent_id;
 
@@ -296,6 +296,8 @@ where
 
     /// Exchange-based parallel routing infrastructure (None if single-threaded).
     parallel_routing: Option<ParallelRouting<V>>,
+    /// Virtual shard routing infrastructure (None if single-threaded).
+    virtual_shard: Option<VirtualShardRouting<V>>,
 }
 
 impl<K, V, O, F> SizeOf for PercentileOperator<K, V, O, F>
@@ -333,6 +335,7 @@ where
         assert_eq!(percentiles.len(), is_continuous.len(),
             "percentiles and is_continuous must have the same length");
         let parallel_routing = ParallelRouting::new();
+        let virtual_shard = VirtualShardRouting::new();
         Self {
             trees: BTreeMap::new(),
             tree_ids: BTreeMap::new(),
@@ -347,6 +350,7 @@ where
             input_batch_stats: BatchSizeStats::new(),
             output_batch_stats: BatchSizeStats::new(),
             parallel_routing,
+            virtual_shard,
         }
     }
 }
@@ -418,6 +422,10 @@ where
                     tracing::warn!("PercentileOperator: flush_and_evict failed: {}", e);
                 }
             }
+        }
+        // Clear worker leaf storage (non-owner workers hold temporary leaf copies)
+        if let Some(ref mut vs) = self.virtual_shard {
+            vs.leaf_storage.clear();
         }
     }
 
@@ -783,17 +791,18 @@ where
             });
         }
 
-        // Always use parallel_step. The tree owner publishes the tree view.
-        // Workers route entries via deep_route. If the tree is a leaf/empty,
-        // deep_route returns None and entries are unrouted — the parallel_step
-        // sends unrouted entries to the owner. The owner inserts them.
-        let routing = self.parallel_routing.as_mut().unwrap();
+        // Use virtual shard routing if available, otherwise fall back to Exchange-based.
         let tree = if is_tree_owner {
             self.trees.get_mut(&tup0_key)
         } else {
             None
         };
-        let _ = routing.parallel_step(tree, local_entries).await;
+        if let Some(ref mut vs) = self.virtual_shard {
+            let _ = vs.virtual_shard_step(tree, local_entries).await;
+        } else {
+            let routing = self.parallel_routing.as_mut().unwrap();
+            let _ = routing.parallel_step(tree, local_entries).await;
+        }
 
         // Flush if needed
         if is_tree_owner {
@@ -864,11 +873,12 @@ where
         let is_tup0 = TypeId::of::<K>() == TypeId::of::<Tup0>();
 
         // Dispatch based on key type and parallel routing availability.
-        let changed_keys = if is_tup0 && self.parallel_routing.is_some() {
+        let has_multi_worker = self.virtual_shard.is_some() || self.parallel_routing.is_some();
+        let changed_keys = if is_tup0 && has_multi_worker {
             // Unsharded single-key case: each worker has ~1/N entries from
             // round-robin distribution (shard was skipped in percentile.rs).
             self.eval_unsharded_single_key(delta).await
-        } else if self.parallel_routing.is_some() {
+        } else if has_multi_worker {
             // Sharded multi-key case: data is pre-sharded by key hash.
             self.eval_sharded_with_parallel(delta).await
         } else {

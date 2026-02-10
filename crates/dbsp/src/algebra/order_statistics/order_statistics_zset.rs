@@ -718,6 +718,119 @@ where
         }
     }
 
+    /// Build tree from sorted, consolidated entries on an empty tree.
+    ///
+    /// Unlike `from_sorted_entries`, this operates on `self` — preserving the
+    /// existing `OsmNodeStorage` configuration (storage backend, spill directory,
+    /// segment path prefix). Use this for bootstrap bulk loading where the tree
+    /// is empty but already configured for spill-to-disk.
+    ///
+    /// # Requirements
+    /// - Tree must be empty (`self.root.is_none()`)
+    /// - Entries must be sorted by key (ascending)
+    /// - Entries must be consolidated (no duplicate keys)
+    /// - Zero-weight entries are filtered out automatically
+    ///
+    /// # Complexity
+    /// O(N) where N = entries.len()
+    pub fn bulk_load_sorted(&mut self, entries: Vec<(T, ZWeight)>) {
+        assert!(self.root.is_none(), "bulk_load_sorted requires empty tree");
+
+        // Filter zero-weight entries
+        let entries: Vec<(T, ZWeight)> = entries.into_iter().filter(|(_, w)| *w != 0).collect();
+
+        if entries.is_empty() {
+            return;
+        }
+
+        debug_assert!(
+            entries.windows(2).all(|w| w[0].0 <= w[1].0),
+            "entries must be sorted by key"
+        );
+
+        let num_keys = entries.len();
+        let total_weight: ZWeight = entries.iter().map(|(_, w)| *w).sum();
+        let b = self.max_leaf_entries;
+
+        // Phase 1: Build leaf nodes in existing storage
+        let mut leaf_locations: Vec<LeafLocation> = Vec::new();
+        let mut leaf_weights: Vec<ZWeight> = Vec::new();
+
+        for chunk in entries.chunks(b) {
+            let leaf = LeafNode {
+                entries: chunk.to_vec(),
+                next_leaf: None,
+            };
+            leaf_weights.push(leaf.total_weight());
+            let loc = self.storage.alloc_leaf(leaf);
+            let leaf_loc = loc.as_leaf().expect("alloc_leaf returns Leaf location");
+            leaf_locations.push(leaf_loc);
+        }
+
+        // Link leaves together
+        for i in 0..leaf_locations.len().saturating_sub(1) {
+            let current_loc = leaf_locations[i];
+            let next_loc = leaf_locations[i + 1];
+            self.storage.get_leaf_mut(current_loc).next_leaf = Some(next_loc);
+        }
+
+        self.first_leaf = Some(leaf_locations[0]);
+
+        // If there's only one leaf, it becomes the root
+        if leaf_locations.len() == 1 {
+            self.root = Some(NodeLocation::Leaf(leaf_locations[0]));
+            self.total_weight = total_weight;
+            self.num_keys = num_keys;
+            return;
+        }
+
+        // Phase 2: Build internal layers bottom-up
+        let mut current_level_locs: Vec<NodeLocation> =
+            leaf_locations.into_iter().map(NodeLocation::Leaf).collect();
+        let mut current_level_weights = leaf_weights;
+        let mut current_level: u8 = 1;
+
+        while current_level_locs.len() > 1 {
+            let mut next_level_locs = Vec::new();
+            let mut next_level_weights = Vec::new();
+
+            let mut i = 0;
+            while i < current_level_locs.len() {
+                let chunk_end = (i + b).min(current_level_locs.len());
+                let chunk_locs = &current_level_locs[i..chunk_end];
+                let chunk_weights = &current_level_weights[i..chunk_end];
+
+                let mut keys = Vec::with_capacity(chunk_locs.len().saturating_sub(1));
+                for &child_loc in &chunk_locs[1..] {
+                    let first_key =
+                        Self::get_first_key_from_storage(&self.storage, child_loc);
+                    keys.push(first_key);
+                }
+
+                let internal = InternalNodeTyped {
+                    keys,
+                    children: chunk_locs.to_vec(),
+                    subtree_sums: chunk_weights.to_vec(),
+                };
+
+                let internal_weight = internal.total_weight();
+                next_level_weights.push(internal_weight);
+                let internal_loc = self.storage.alloc_internal(internal, current_level);
+                next_level_locs.push(internal_loc);
+
+                i = chunk_end;
+            }
+
+            current_level_locs = next_level_locs;
+            current_level_weights = next_level_weights;
+            current_level = current_level.saturating_add(1);
+        }
+
+        self.root = Some(current_level_locs[0]);
+        self.total_weight = total_weight;
+        self.num_keys = num_keys;
+    }
+
     /// Helper to get the first key from a node (for building separator keys).
     /// This recursively descends to the leftmost leaf to find the minimum key.
     fn get_first_key_from_storage(storage: &OsmNodeStorage<T>, loc: NodeLocation) -> T {
@@ -746,6 +859,18 @@ where
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.total_weight <= 0
+    }
+
+    /// Apply a weight delta to the total weight. Used by parallel routing.
+    #[inline]
+    pub(crate) fn update_weight_delta(&mut self, delta: ZWeight) {
+        self.total_weight += delta;
+    }
+
+    /// Apply a key count delta to the number of distinct keys. Used by parallel routing.
+    #[inline]
+    pub(crate) fn update_key_count_delta(&mut self, delta: i64) {
+        self.num_keys = (self.num_keys as i64 + delta) as usize;
     }
 
     /// Insert a key with the given weight delta.
@@ -1291,7 +1416,7 @@ where
     ///
     /// Navigates from root to find the parent internal node of the split key,
     /// inserts the new child, and handles cascading internal splits.
-    fn insert_split_child(&mut self, split_key: T, new_child_loc: NodeLocation) {
+    pub(crate) fn insert_split_child(&mut self, split_key: T, new_child_loc: NodeLocation) {
         let root = match self.root {
             Some(r) => r,
             None => return,
@@ -1392,7 +1517,7 @@ where
     /// This is called after structural changes (splits) to ensure
     /// all internal node subtree_sums are correct. For evicted leaves,
     /// uses the CachedLeafSummary.weight_sum (no disk read needed).
-    fn recalculate_all_subtree_sums(&mut self) {
+    pub(crate) fn recalculate_all_subtree_sums(&mut self) {
         if let Some(root) = self.root {
             self.recalculate_subtree_sums_recursive(root);
         }
