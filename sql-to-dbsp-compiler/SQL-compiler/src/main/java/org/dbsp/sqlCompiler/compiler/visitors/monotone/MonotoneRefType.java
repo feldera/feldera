@@ -20,7 +20,9 @@ public class MonotoneRefType
 
     @Override
     public IMaybeMonotoneType withMaybeNull(boolean maybeNull) {
-        throw new UnsupportedException(this.type.getNode());
+        if (maybeNull)
+            throw new UnsupportedException(this.type.getNode());
+        return this;
     }
 
     @Override
