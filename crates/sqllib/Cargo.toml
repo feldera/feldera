@@ -56,3 +56,4 @@ derive_more = { version = "1.0", features = ["not"] }
 proptest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 size-of = { workspace = true }
+crossbeam = { workspace = true }
