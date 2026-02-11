@@ -10,7 +10,7 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use arrow::array::UInt64Array;
+use arrow::array::{ArrayBuilder, UInt64Array, UInt64Builder};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use crossbeam::channel::{TryRecvError, TrySendError, bounded};
@@ -26,6 +26,8 @@ const PRODUCERS_PER_CONSUMER: usize = 8;
 const MAX_BUFFERED_RECORDS: usize = 500_000_000;
 const DEFAULT_INPUT_SIZE_BYTES: usize = 16;
 const RECORD_BYTES: u64 = 16;
+const MERGE_INPUT_BATCH_ROWS: usize = 32_768;
+const MERGE_OUTPUT_BATCH_ROWS: usize = 32_768;
 
 const MAX_LEVELS: usize = 9;
 
@@ -39,7 +41,7 @@ struct WorkerResult {
 #[derive(Clone)]
 enum BatchStorage {
     InMemory(RecordBatch),
-    OnDisk { path: PathBuf, len: usize },
+    OnDisk { path: PathBuf },
 }
 
 #[derive(Clone)]
@@ -49,40 +51,13 @@ struct ArrowBatch {
 }
 
 impl ArrowBatch {
-    fn from_sorted_values(values: Vec<u64>) -> Result<Self> {
-        let weights = vec![1u64; values.len()];
+    fn from_sorted_pairs(pairs: Vec<(u64, u64)>) -> Result<Self> {
+        let (values, weights) = pairs.into_iter().unzip();
         let batch = record_batch_from_vectors(values, weights)?;
         let len = batch.num_rows();
         Ok(Self {
             storage: BatchStorage::InMemory(batch),
             len,
-        })
-    }
-
-    fn from_vectors(values: Vec<u64>, weights: Vec<u64>) -> Result<Self> {
-        let batch = record_batch_from_vectors(values, weights)?;
-        let len = batch.num_rows();
-        Ok(Self {
-            storage: BatchStorage::InMemory(batch),
-            len,
-        })
-    }
-
-    fn persist(self, storage_dir: &Path, id: u64) -> Result<Self> {
-        let path = storage_dir.join(format!("batch_{id}.parquet"));
-        let record_batch = match self.storage {
-            BatchStorage::InMemory(batch) => batch,
-            BatchStorage::OnDisk { .. } => {
-                return Ok(self);
-            }
-        };
-        write_parquet(&path, &record_batch)?;
-        Ok(Self {
-            storage: BatchStorage::OnDisk {
-                path,
-                len: record_batch.num_rows(),
-            },
-            len: record_batch.num_rows(),
         })
     }
 
@@ -94,10 +69,13 @@ impl ArrowBatch {
         self.len == 0
     }
 
-    fn to_vectors(&self) -> Result<(Vec<u64>, Vec<u64>)> {
+    fn reader(&self) -> Result<Box<dyn ArrowBatchReader>> {
         match &self.storage {
-            BatchStorage::InMemory(batch) => record_batch_to_vectors(batch),
-            BatchStorage::OnDisk { path, .. } => read_parquet(path),
+            BatchStorage::InMemory(batch) => Ok(Box::new(MemoryBatchReader {
+                batch: batch.clone(),
+                done: false,
+            })),
+            BatchStorage::OnDisk { path, .. } => Ok(Box::new(ParquetBatchReader::new(path)?)),
         }
     }
 }
@@ -120,68 +98,119 @@ fn record_batch_from_vectors(values: Vec<u64>, weights: Vec<u64>) -> Result<Reco
     Ok(batch)
 }
 
-fn record_batch_to_vectors(batch: &RecordBatch) -> Result<(Vec<u64>, Vec<u64>)> {
-    let values = batch
-        .column(0)
-        .as_any()
-        .downcast_ref::<UInt64Array>()
-        .context("value column")?;
-    let weights = batch
-        .column(1)
-        .as_any()
-        .downcast_ref::<UInt64Array>()
-        .context("weight column")?;
-    let values_vec = values.iter().map(|v| v.unwrap_or(0)).collect();
-    let weights_vec = weights.iter().map(|v| v.unwrap_or(0)).collect();
-    Ok((values_vec, weights_vec))
+trait ArrowBatchReader: Send {
+    fn next_batch(&mut self) -> Result<Option<RecordBatch>>;
 }
 
-fn write_parquet(path: &Path, batch: &RecordBatch) -> Result<()> {
-    let file = std::fs::File::create(path).context("create parquet file")?;
-    let props = WriterProperties::builder()
-        .set_compression(Compression::UNCOMPRESSED)
-        .build();
-    let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))
-        .context("create parquet writer")?;
-    writer.write(batch).context("write parquet batch")?;
-    writer.close().context("close parquet writer")?;
-    Ok(())
+struct MemoryBatchReader {
+    batch: RecordBatch,
+    done: bool,
 }
 
-fn read_parquet(path: &Path) -> Result<(Vec<u64>, Vec<u64>)> {
-    let file = std::fs::File::open(path).context("open parquet file")?;
-    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
-        .context("parquet reader builder")?;
-    let mut reader = builder.build().context("build parquet reader")?;
-    let mut values = Vec::new();
-    let mut weights = Vec::new();
-    while let Some(batch) = reader.next() {
-        let batch = batch.context("read parquet batch")?;
-        let (mut v, mut w) = record_batch_to_vectors(&batch)?;
-        values.append(&mut v);
-        weights.append(&mut w);
+impl ArrowBatchReader for MemoryBatchReader {
+    fn next_batch(&mut self) -> Result<Option<RecordBatch>> {
+        if self.done {
+            Ok(None)
+        } else {
+            self.done = true;
+            Ok(Some(self.batch.clone()))
+        }
     }
-    Ok((values, weights))
+}
+
+struct ParquetBatchReader {
+    reader: parquet::arrow::arrow_reader::ParquetRecordBatchReader,
+}
+
+impl ParquetBatchReader {
+    fn new(path: &Path) -> Result<Self> {
+        let file = std::fs::File::open(path).context("open parquet file")?;
+        let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+            .context("parquet reader builder")?;
+        let reader = builder
+            .with_batch_size(MERGE_INPUT_BATCH_ROWS)
+            .build()
+            .context("build parquet reader")?;
+        Ok(Self { reader })
+    }
+}
+
+impl ArrowBatchReader for ParquetBatchReader {
+    fn next_batch(&mut self) -> Result<Option<RecordBatch>> {
+        match self.reader.next() {
+            Some(batch) => Ok(Some(batch.context("read parquet batch")?)),
+            None => Ok(None),
+        }
+    }
 }
 
 struct BatchCursor {
-    values: Vec<u64>,
-    weights: Vec<u64>,
-    index: usize,
+    reader: Box<dyn ArrowBatchReader>,
+    batch: Option<RecordBatch>,
+    row: usize,
+    values: Option<Arc<UInt64Array>>,
+    weights: Option<Arc<UInt64Array>>,
 }
 
 impl BatchCursor {
+    fn new(reader: Box<dyn ArrowBatchReader>) -> Result<Self> {
+        let mut cursor = Self {
+            reader,
+            batch: None,
+            row: 0,
+            values: None,
+            weights: None,
+        };
+        cursor.load_next_batch()?;
+        Ok(cursor)
+    }
+
+    fn load_next_batch(&mut self) -> Result<bool> {
+        let batch = self.reader.next_batch()?;
+        if let Some(batch) = batch {
+            let values = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .context("value column")?
+                .clone();
+            let weights = batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .context("weight column")?
+                .clone();
+            self.row = 0;
+            self.values = Some(Arc::new(values));
+            self.weights = Some(Arc::new(weights));
+            self.batch = Some(batch);
+            Ok(true)
+        } else {
+            self.batch = None;
+            self.values = None;
+            self.weights = None;
+            Ok(false)
+        }
+    }
+
     fn current(&self) -> Option<(u64, u64)> {
-        if self.index < self.values.len() {
-            Some((self.values[self.index], self.weights[self.index]))
+        let values = self.values.as_ref()?;
+        let weights = self.weights.as_ref()?;
+        if self.row < values.len() {
+            Some((values.value(self.row), weights.value(self.row)))
         } else {
             None
         }
     }
 
-    fn advance(&mut self) -> bool {
-        self.index += 1;
-        self.index < self.values.len()
+    fn advance(&mut self) -> Result<bool> {
+        self.row += 1;
+        if let Some(values) = &self.values {
+            if self.row < values.len() {
+                return Ok(true);
+            }
+        }
+        self.load_next_batch()
     }
 }
 
@@ -206,16 +235,16 @@ impl PartialOrd for HeapItem {
     }
 }
 
-fn merge_batches(storage_dir: &Path, file_id: u64, batches: Vec<Arc<ArrowBatch>>) -> Result<Arc<ArrowBatch>> {
+fn merge_batches(
+    storage_dir: &Path,
+    file_id: u64,
+    batches: Vec<Arc<ArrowBatch>>,
+) -> Result<Arc<ArrowBatch>> {
     assert!(!batches.is_empty());
     let mut cursors = Vec::with_capacity(batches.len());
     for batch in batches {
-        let (values, weights) = batch.to_vectors()?;
-        cursors.push(BatchCursor {
-            values,
-            weights,
-            index: 0,
-        });
+        let reader = batch.reader()?;
+        cursors.push(BatchCursor::new(reader)?);
     }
 
     let mut heap = BinaryHeap::new();
@@ -229,14 +258,23 @@ fn merge_batches(storage_dir: &Path, file_id: u64, batches: Vec<Arc<ArrowBatch>>
         }
     }
 
-    let mut out_values = Vec::new();
-    let mut out_weights = Vec::new();
+    let path = storage_dir.join(format!("batch_{file_id}.parquet"));
+    let file = std::fs::File::create(&path).context("create parquet file")?;
+    let props = WriterProperties::builder()
+        .set_compression(Compression::UNCOMPRESSED)
+        .build();
+    let mut writer = ArrowWriter::try_new(file, schema(), Some(props))
+        .context("create parquet writer")?;
+
+    let mut out_values = UInt64Builder::with_capacity(MERGE_OUTPUT_BATCH_ROWS);
+    let mut out_weights = UInt64Builder::with_capacity(MERGE_OUTPUT_BATCH_ROWS);
+    let mut total_rows: usize = 0;
 
     while let Some(std::cmp::Reverse(item)) = heap.pop() {
-        let mut current_value = item.value;
+        let current_value = item.value;
         let mut weight_sum = item.weight;
 
-        if cursors[item.cursor].advance() {
+        if cursors[item.cursor].advance()? {
             if let Some((value, weight)) = cursors[item.cursor].current() {
                 heap.push(std::cmp::Reverse(HeapItem {
                     value,
@@ -252,7 +290,7 @@ fn merge_batches(storage_dir: &Path, file_id: u64, batches: Vec<Arc<ArrowBatch>>
             }
             let next = heap.pop().expect("peeked element").0;
             weight_sum = weight_sum.saturating_add(next.weight);
-            if cursors[next.cursor].advance() {
+            if cursors[next.cursor].advance()? {
                 if let Some((value, weight)) = cursors[next.cursor].current() {
                     heap.push(std::cmp::Reverse(HeapItem {
                         value,
@@ -263,13 +301,39 @@ fn merge_batches(storage_dir: &Path, file_id: u64, batches: Vec<Arc<ArrowBatch>>
             }
         }
 
-        out_values.push(current_value);
-        out_weights.push(weight_sum);
+        out_values.append_value(current_value);
+        out_weights.append_value(weight_sum);
+        total_rows += 1;
+
+        if out_values.len() >= MERGE_OUTPUT_BATCH_ROWS {
+            let batch = RecordBatch::try_new(
+                schema(),
+                vec![
+                    Arc::new(out_values.finish()),
+                    Arc::new(out_weights.finish()),
+                ],
+            )
+            .context("build output record batch")?;
+            writer.write(&batch).context("write parquet batch")?;
+            out_values = UInt64Builder::with_capacity(MERGE_OUTPUT_BATCH_ROWS);
+            out_weights = UInt64Builder::with_capacity(MERGE_OUTPUT_BATCH_ROWS);
+        }
     }
 
-    let merged = ArrowBatch::from_vectors(out_values, out_weights)?;
-    let persisted = merged.persist(storage_dir, file_id)?;
-    Ok(Arc::new(persisted))
+    if out_values.len() > 0 {
+        let batch = RecordBatch::try_new(
+            schema(),
+            vec![Arc::new(out_values.finish()), Arc::new(out_weights.finish())],
+        )
+        .context("build final record batch")?;
+        writer.write(&batch).context("write final parquet batch")?;
+    }
+    writer.close().context("close parquet writer")?;
+
+    Ok(Arc::new(ArrowBatch {
+        storage: BatchStorage::OnDisk { path },
+        len: total_rows,
+    }))
 }
 
 struct Slot {
@@ -311,11 +375,6 @@ impl Slot {
         }
     }
 
-    fn all_batches(&self) -> impl Iterator<Item = &Arc<ArrowBatch>> {
-        self.loose_batches
-            .iter()
-            .chain(self.merging_batches.iter().flatten())
-    }
 }
 
 struct SharedState {
@@ -459,7 +518,7 @@ impl AsyncMerger {
         state.add_batch(batch);
         self.wake.notify_one();
         if state.should_apply_backpressure() {
-            let mut state = self
+            let state = self
                 .no_backpressure
                 .wait_while(state, |s| !s.should_relieve_backpressure())
                 .unwrap();
@@ -534,20 +593,20 @@ impl Drop for ArrowSpine {
 }
 
 struct BatchPayload {
-    values: Vec<u64>,
+    pairs: Vec<(u64, u64)>,
     len: usize,
 }
 
 fn generate_batch_u64(batch_size: usize, rng: &mut u64) -> BatchPayload {
-    let mut values = Vec::with_capacity(batch_size);
+    let mut pairs = Vec::with_capacity(batch_size);
     for _ in 0..batch_size {
         *rng ^= *rng << 13;
         *rng ^= *rng >> 7;
         *rng ^= *rng << 17;
-        values.push(*rng);
+        pairs.push((*rng, 1u64));
     }
     BatchPayload {
-        values,
+        pairs,
         len: batch_size,
     }
 }
@@ -684,7 +743,7 @@ fn run_one_case(
                     );
                 }
 
-                let mut spine = ArrowSpine::new(worker_storage);
+                let spine = ArrowSpine::new(worker_storage);
 
                 while batch_rx.len() < capacity_batches {
                     std::thread::yield_now();
@@ -706,8 +765,8 @@ fn run_one_case(
                     }
                     match batch_rx.try_recv() {
                         Ok(mut payload) => {
-                            payload.values.sort_unstable();
-                            let batch = ArrowBatch::from_sorted_values(payload.values)
+                            payload.pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+                            let batch = ArrowBatch::from_sorted_pairs(payload.pairs)
                                 .expect("arrow batch");
                             spine.insert(batch);
                             records += payload.len as u64;
