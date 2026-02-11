@@ -38,8 +38,14 @@ pub struct SqlIdentifier {
 
 impl SqlIdentifier {
     pub fn new<S: AsRef<str>>(name: S, case_sensitive: bool) -> Self {
+        let name = if case_sensitive {
+            name.as_ref().to_string()
+        } else {
+            name.as_ref().to_lowercase()
+        };
+
         Self {
-            name: name.as_ref().to_string(),
+            name,
             case_sensitive,
         }
     }
