@@ -880,6 +880,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrow-spine-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow",
+ "crossbeam",
+ "parquet",
+ "tempfile",
+]
+
+[[package]]
 name = "arrow-string"
 version = "55.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
