@@ -46,6 +46,11 @@ public class FelderaSqlTumbleTableFunction extends FelderaSqlWindowTableFunction
                 "table#tumble", FunctionDocumentation.NO_FILE);
     }
 
+    @Override
+    public String functionName() {
+        return "TUMBLE";
+    }
+
     /** Operand type checker for TUMBLE. */
     private static class OperandMetadataImpl extends AbstractOperandMetadata {
         OperandMetadataImpl() {
