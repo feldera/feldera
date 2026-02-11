@@ -375,7 +375,9 @@ fn plain_text_fields() -> impl for<'writer> tracing_subscriber::fmt::FormatField
             "tenant" => {
                 write!(writer, " tenant={value:?}")?;
             }
-            _ => {}
+            _ => {
+                write!(writer, "{field}={value:?}")?;
+            }
         }
         Ok(())
     })
