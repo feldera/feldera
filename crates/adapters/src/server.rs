@@ -60,7 +60,9 @@ use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
 use feldera_types::constants::STATUS_FILE;
-use feldera_types::coordination::{AdHocScan, CoordinationActivate, Labels, Step, StepRequest};
+use feldera_types::coordination::{
+    AdHocScan, CoordinationActivate, CoordinationStatus, Labels, RestartArgs, Step, StepRequest,
+};
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::query_params::{
     ActivateParams, MetricsFormat, MetricsParameters, SamplyProfileGetParams, SamplyProfileParams,
@@ -268,7 +270,15 @@ pub(crate) struct ServerState {
     samply_state: Arc<Mutex<SamplyState>>,
 
     /// Deployment ID.
+    ///
+    /// This comes from [ServerArgs].  It remains unchanged across automatic
+    /// restarts.
     deployment_id: Uuid,
+
+    /// Incarnation UUID.
+    ///
+    /// This is randomly generated each time the process starts.
+    incarnation_uuid: Uuid,
 
     metadata: String,
 
@@ -323,6 +333,7 @@ impl ServerState {
             samply_state: Default::default(),
             coordination_activate: Default::default(),
             leases: Default::default(),
+            incarnation_uuid: Uuid::now_v7(),
         }
     }
 
@@ -1078,7 +1089,7 @@ fn do_bootstrap(
     }
 
     let mut activation_warning = LongOperationWarning::new(Duration::from_secs(1));
-    let controller_init = loop {
+    let mut controller_init = loop {
         match state.desired_status() {
             RuntimeDesiredStatus::Unavailable => unreachable!(),
             RuntimeDesiredStatus::Coordination => {
@@ -1149,6 +1160,7 @@ fn do_bootstrap(
         }
     }?;
 
+    controller_init.set_incarnation_uuid(state.incarnation_uuid);
     let controller = controller_init.init(
         Some((**state).clone()),
         circuit_factory,
@@ -1235,6 +1247,7 @@ where
         .service(coordination_adhoc_lease)
         .service(coordination_adhoc_scan)
         .service(coordination_labels_incomplete)
+        .service(coordination_restart)
 }
 
 /// Implements `/start`, `/pause`, `/activate`:
@@ -2336,7 +2349,13 @@ async fn coordination_status(state: WebData<ServerState>) -> Result<HttpResponse
                 notify.await;
             },
         };
-        Some((status.clone(), (state, Some(status))))
+        Some((
+            CoordinationStatus {
+                incarnation_uuid: state.incarnation_uuid,
+                status: status.clone(),
+            },
+            (state, Some(status)),
+        ))
     });
     Ok(
         HttpResponseBuilder::new(StatusCode::OK).streaming(stream.map(|value| {
@@ -2579,6 +2598,32 @@ async fn coordination_labels_incomplete(
     Ok(HttpResponse::Ok()
         .content_type("application/x-ndjson")
         .streaming(response_stream))
+}
+
+#[post("/coordination/restart")]
+async fn coordination_restart(
+    state: WebData<ServerState>,
+    args: web::Json<RestartArgs>,
+) -> Result<HttpResponse, PipelineError> {
+    if state.incarnation_uuid != args.incarnation_uuid {
+        return Err(PipelineError::IncarnationUuidMismatch {
+            requested: args.incarnation_uuid,
+            expected: state.incarnation_uuid,
+        });
+    }
+
+    tokio::spawn(async move {
+        // Sleep for a second to allow the successful reply to (usually)
+        // propagate to the requester.
+        sleep(Duration::from_secs(1)).await;
+
+        // Exit the process with a special code to tell the supervisor to
+        // restart us.
+        std::process::exit(55);
+    });
+
+    info!("restarting pipeline due to coordinator request");
+    Ok(HttpResponse::Accepted().json("Pipeline is restarting"))
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
