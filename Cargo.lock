@@ -5062,6 +5062,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "chrono",
+ "crossbeam",
  "dbsp",
  "derive_more 1.0.0",
  "feldera-fxp",

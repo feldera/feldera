@@ -341,24 +341,32 @@ impl SharedDeserializeRegistry for Deserializer {
 
 /// Creates an instance of [Serializer] that will serialize to `serializer` and
 /// passes it to `f`. Returns a tuple of the `FBuf` from the [Serializer] and
-/// the return value of `f`.
+/// the [`DbspScratch`] and return value of `f`.
 ///
 /// This is useful because it reuses the scratch space from one serializer to
 /// the next, which is valuable because it saves an allocation and free per
 /// serialization.
-pub fn with_serializer<F, R>(serializer: FBufSerializer<FBuf>, f: F) -> (FBuf, R)
+pub fn with_serializer<F, R>(mut serializer: Serializer, f: F) -> (FBuf, DbspScratch, R)
 where
     F: FnOnce(&mut Serializer) -> R,
 {
-    thread_local! {
-        static SCRATCH: RefCell<Option<DbspScratch>> = RefCell::new(Some(Default::default()));
-    }
-
-    let mut serializer = Serializer::new(serializer, SCRATCH.take().unwrap(), Default::default());
     let result = f(&mut serializer);
     let (serializer, scratch, _shared) = serializer.into_components();
+    (serializer.into_inner(), scratch, result)
+}
+
+thread_local! {
+    static SCRATCH: RefCell<Option<DbspScratch>> = RefCell::new(Some(Default::default()));
+}
+
+/// Removes and returns this thread's shared serializer scratch object.
+pub(crate) fn take_serializer_scratch() -> DbspScratch {
+    SCRATCH.take().unwrap_or_default()
+}
+
+/// Returns `scratch` to this thread's shared serializer scratch object.
+pub(crate) fn replace_serializer_scratch(scratch: DbspScratch) {
     SCRATCH.replace(Some(scratch));
-    (serializer.into_inner(), result)
 }
 
 /// Serializes the given value and returns the resulting bytes.
@@ -369,9 +377,14 @@ pub fn to_bytes<T>(value: &T) -> Result<FBuf, <Serializer as Fallible>::Error>
 where
     T: Serialize<Serializer>,
 {
-    let (bytes, result) = with_serializer(FBufSerializer::default(), |serializer| {
-        serializer.serialize_value(value)
-    });
+    let serializer = Serializer::new(
+        FBufSerializer::default(),
+        take_serializer_scratch(),
+        Default::default(),
+    );
+    let (bytes, scratch, result) =
+        with_serializer(serializer, |serializer| serializer.serialize_value(value));
+    replace_serializer_scratch(scratch);
     result?;
     Ok(bytes)
 }
@@ -384,9 +397,14 @@ pub fn to_bytes_dyn<T>(value: &T) -> Result<FBuf, <Serializer as Fallible>::Erro
 where
     T: ArchivedDBData,
 {
-    let (bytes, result) = with_serializer(FBufSerializer::default(), |serializer| {
-        serializer.serialize_value(value)
-    });
+    let serializer = Serializer::new(
+        FBufSerializer::default(),
+        take_serializer_scratch(),
+        Default::default(),
+    );
+    let (bytes, scratch, result) =
+        with_serializer(serializer, |serializer| serializer.serialize_value(value));
+    replace_serializer_scratch(scratch);
     result?;
     Ok(bytes)
 }
