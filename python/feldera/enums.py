@@ -27,6 +27,11 @@ class CompilationProfile(Enum):
     The optimized compilation profile, the default for this API.
     """
 
+    OPTIMIZED_SYMBOLS = "optimized_symbols"
+    """
+    The optimized symbols compilation profile, good for profiling and debugging.
+    """
+
 
 class BuildMode(Enum):
     CREATE = 1
