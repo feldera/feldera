@@ -1205,6 +1205,26 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         return FelderaConfig(resp)
 
+    def create_api_key(self, name: str) -> dict:
+        """
+        Create a new API key with the specified name.
+
+        The generated API key is returned in the response and cannot be retrieved
+        again later, so store it securely.
+
+        :param name: The API key name to create.
+        :returns: A dict with keys: `id` (UUID string), `name`, and `api_key`.
+        :raises FelderaAPIError: If a key with the same name already exists.
+        """
+
+        if not name:
+            raise ValueError("API key name must be a non-empty string")
+
+        return self.http.post(
+            path="/api_keys",
+            body={"name": name},
+        )
+
     def get_pipeline_support_bundle(
         self, pipeline_name: str, params: Optional[Dict[str, Any]] = None
     ) -> bytes:

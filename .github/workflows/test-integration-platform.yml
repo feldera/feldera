@@ -230,3 +230,58 @@ jobs:
           OIDC_TEST_CLIENT_SECRET: ${{ secrets.OIDC_TEST_CLIENT_SECRET }}
           OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
           OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
+
+      - name: Download fda binary
+        uses: actions/download-artifact@v4
+        with:
+          name: feldera-binaries-${{ matrix.target }}
+          path: build
+
+      # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
+      - name: Make fda binary executable
+        run: chmod +x ./build/fda
+
+      - name: Create API key for CLI tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_KEY=$(uv run --locked python - <<'PY'
+          import os
+          import uuid
+          from feldera import FelderaClient
+          from feldera.testutils_oidc import get_oidc_test_helper
+
+          host = os.environ.get("FELDERA_HOST", "http://localhost:8080")
+          name = f"ci-fda-cli-{os.environ.get('GITHUB_RUN_ID', 'local')}-{uuid.uuid4().hex[:8]}"
+
+          token = None
+          if os.environ.get("OIDC_TEST_ISSUER") and os.environ.get("OIDC_TEST_CLIENT_ID"):
+              helper = get_oidc_test_helper()
+              if helper is not None:
+                  token = helper.obtain_access_token()
+
+          client = FelderaClient(url=host, api_key=token)
+          resp = client.create_api_key(name)
+          print(resp["api_key"])
+          PY
+          )
+          echo "FELDERA_API_KEY=$API_KEY" >> "$GITHUB_ENV"
+        working-directory: python
+        env:
+          FELDERA_HOST: http://localhost:8080
+          PYTHONPATH: ${{ github.workspace }}/python
+          # OIDC environment variables for authentication (if configured)
+          OIDC_TEST_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
+          OIDC_TEST_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
+          OIDC_TEST_CLIENT_SECRET: ${{ secrets.OIDC_TEST_CLIENT_SECRET }}
+          OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
+          OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
+
+      - name: Run fda CLI tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: bash test.bash
+        working-directory: crates/fda
+        env:
+          FELDERA_HOST: http://localhost:8080
+          FDA_BINARY: ${{ github.workspace }}/build/fda
