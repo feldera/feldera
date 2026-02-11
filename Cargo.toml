@@ -30,6 +30,7 @@ members = [
   "crates/ir",
   "crates/fxp",
   "crates/storage-test-compat",
+  "benchmark/arrow_spine_bench",
 ]
 exclude = [
   "sql-to-dbsp-compiler/temp",

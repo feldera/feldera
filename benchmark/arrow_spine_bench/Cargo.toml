@@ -1,0 +1,11 @@
+[package]
+name = "arrow-spine-bench"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arrow = "55"
+parquet = "55"
+crossbeam = "0.8"
+tempfile = "3"
+anyhow = "1"
