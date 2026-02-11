@@ -153,8 +153,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                 runtime_aggtest/aggregate_tests6/test_interval_mths_some.py""", true),
             new Func(SqlStdOperatorTable.SUM, "SUM", SqlLibrary.STANDARD, "aggregates#sum,aggregates#window-sum", """
                 runtime_aggtest/aggregate_tests/test_{decimal_sum,sum,empty_set}.py|
-                runtime_aggtest/aggregate_tests3/test_un_int_sum.py|
-                runtime_aggtest/negative_tests/test_agg_arithmetic.py""", true),
+                runtime_aggtest/aggregate_tests3/test_un_int_sum.py""", true),
             new Func(SqlStdOperatorTable.SUM0, "SUM", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, true),
             new Func(SqlStdOperatorTable.STDDEV, "STDDEV", SqlLibrary.STANDARD, "aggregates#stddev", """
                 runtime_aggtest/aggregate_tests/test_{stddev_samp,decimal_stddev_samp,empty_set}.py|

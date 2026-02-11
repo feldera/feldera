@@ -47,6 +47,11 @@ public class FelderaSqlHopTableFunction extends FelderaSqlWindowTableFunction {
                 "table#hop", FunctionDocumentation.NO_FILE);
     }
 
+    @Override
+    public String functionName() {
+        return "HOP";
+    }
+
     /**
      * Operand type checker for HOP.
      */
