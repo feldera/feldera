@@ -2080,7 +2080,7 @@ fn test_external_controller_status_serialization() {
         }))
         .unwrap();
 
-        let mut status = ControllerStatus::new(config, 998500, None);
+        let mut status = ControllerStatus::new(config, 998500, None, Uuid::nil());
 
         // Configure global metrics using available public API
         status.set_state(PipelineState::Paused);
