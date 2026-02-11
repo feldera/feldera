@@ -40,6 +40,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -52,6 +53,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -278,6 +280,29 @@ public class Lineage extends CircuitVisitor {
         }
     }
 
+    /** Column compared against a literal, to distinctify comparisons */
+    record ColumnCompared(TableColumn col, DBSPOpcode opcode, DBSPLiteral constant) {
+        @Override
+        public boolean equals(Object o) {
+            if (o == null || getClass() != o.getClass()) return false;
+
+            ColumnCompared that = (ColumnCompared) o;
+            return this.col.equals(that.col) && this.constant.sameValue(that.constant);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = this.col.hashCode();
+            result = 31 * result + this.constant.hashCode();
+            return result;
+        }
+
+        @Override
+        public String toString() {
+            return "[ " + this.col + " " + opcode + " " + constant.toSqlString() + " ]";
+        }
+    }
+
     final Map<OutputPort, ValueSource> lineage;
 
     public Lineage(DBSPCompiler compiler) {
@@ -407,6 +432,10 @@ public class Lineage extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPFilterOperator node) {
+        ValueSource value = this.borrow(node.input());
+        InnerLineage inner = new InnerLineage(this.compiler);
+        var map = this.initialValues(node.getClosureFunction(), value);
+        inner.analyze(node.getClosureFunction(), map);
         this.copy(node);
     }
 
@@ -455,7 +484,7 @@ public class Lineage extends CircuitVisitor {
             for (int index : flatmap.leftInputIndexes)
                 resultColumns.add(inputTuple.field(index));
             if (flatmap.rightProjections != null) {
-                for (DBSPClosureExpression clo : flatmap.rightProjections)
+                for (DBSPClosureExpression ignored : flatmap.rightProjections)
                     resultColumns.add(Unknown.INSTANCE);
             } else {
                 final DBSPType collectionElementType = flatmap.getCollectionElementType();
@@ -539,6 +568,7 @@ public class Lineage extends CircuitVisitor {
     }
 
     Set<ColumnSet> emitted = new HashSet<>();
+    Set<ColumnCompared> compared = new HashSet<>();
 
     @Override
     public void postorder(DBSPJoinBaseOperator node) {
@@ -617,7 +647,7 @@ public class Lineage extends CircuitVisitor {
     }
 
     /** Computes lineage of an expression by tracking where each field of the expression is coming from. */
-    public static class InnerLineage extends SymbolicInterpreter<ValueSource> {
+    public class InnerLineage extends SymbolicInterpreter<ValueSource> {
         final ResolveReferences resolver;
 
         public InnerLineage(DBSPCompiler compiler) {
@@ -643,6 +673,7 @@ public class Lineage extends CircuitVisitor {
 
         @Override
         public void postorder(DBSPExpression expression) {
+            super.postorder(expression);
             this.setUnknown(expression);
         }
 
@@ -689,11 +720,45 @@ public class Lineage extends CircuitVisitor {
         }
 
         @Override
+        public void postorder(DBSPBinaryExpression expression) {
+            if (expression.opcode.isComparison()) {
+                ValueSource left = this.get(expression.left);
+                ValueSource right = this.get(expression.right);
+                if (!left.isBottom() && !right.isBottom()) {
+                    if (right.is(Constant.class)) {
+                        ValueSource tmp = right;
+                        right = left;
+                        left = tmp;
+                    }
+                    if (left.is(Constant.class) && right.is(Atom.class)) {
+                        Constant c = left.to(Constant.class);
+                        @SuppressWarnings("unchecked")
+                        Atom<ColumnSet> atom = (Atom<ColumnSet>) right;
+                        if (c.value.is(DBSPLiteral.class)) {
+                            for (TableColumn col : atom.value.set) {
+                                ColumnCompared compared = new ColumnCompared(
+                                        col, expression.opcode, c.value.to(DBSPLiteral.class));
+                                if (Lineage.this.compared.contains(compared))
+                                    continue;
+                                Lineage.this.compared.add(compared);
+                                System.out.println("[Compared:] " + compared);
+                            }
+                        }
+                    }
+                }
+            } else {
+                super.postorder(expression);
+            }
+            this.setUnknown(expression);
+        }
+
+        @Override
         public VisitDecision preorder(DBSPLetExpression node) {
             super.preorder(node);
             // This one is done in preorder
             node.initializer.accept(this);
             ValueSource initializer = this.get(node.initializer);
+            this.set(node.variable, initializer);
             // Effects of initializer should be visible while processing consumer
             node.consumer.accept(this);
             ValueSource consumer = this.get(node.consumer);
@@ -849,3 +914,4 @@ public class Lineage extends CircuitVisitor {
         }
     }
 }
+
