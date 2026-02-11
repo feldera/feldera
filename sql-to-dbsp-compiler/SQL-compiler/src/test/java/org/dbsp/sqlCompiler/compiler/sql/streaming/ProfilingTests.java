@@ -382,7 +382,7 @@ public class ProfilingTests extends StreamingTestBase {
                 SELECT t.*
                 FROM transaction as t JOIN feedback as f
                 ON t.id = f.id
-                WHERE t.unix_time >= f.unix_time - 3600 * 24 * 7 ;
+                WHERE t.unix_time >= f.unix_time - 3600 * 24 * 7;
                 """;
 
         String main = this.createMain("""

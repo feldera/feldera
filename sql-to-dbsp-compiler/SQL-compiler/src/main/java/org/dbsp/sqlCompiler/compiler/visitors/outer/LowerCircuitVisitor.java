@@ -269,7 +269,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPStreamAggregateOperator node) {
         if (node.function != null) {
-            // OrderBy
+            // OrderBy implemented as an aggregate
             super.postorder(node);
             return;
         }
@@ -284,7 +284,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPAggregateOperator node) {
         if (node.function != null) {
-            // OrderBy
+            // OrderBy implemented as an aggregate
             super.postorder(node);
             return;
         }

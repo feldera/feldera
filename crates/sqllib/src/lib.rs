@@ -1335,6 +1335,22 @@ where
     }
 }
 
+// Semigroup for the an aggregate which computes nothing
+// Useful when the compiler removes all aggregates from an aggregate operator
+// (This is currently never used, because the compiler generates a linear aggregate
+// for this case)
+#[derive(Clone)]
+#[doc(hidden)]
+pub struct EmptySemigroup;
+
+#[doc(hidden)]
+impl Semigroup<Tup0> for EmptySemigroup {
+    #[doc(hidden)]
+    fn combine(_left: &Tup0, _right: &Tup0) -> Tup0 {
+        Tup0::new()
+    }
+}
+
 /// A lazily initialized static value, where the initialized can be a capturing
 /// closure.
 ///

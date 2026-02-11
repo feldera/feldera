@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
@@ -240,6 +241,29 @@ public class ExpandAggregates extends Passes {
                 return;
             }
             OutputPort i = this.mapped(operator.input());
+
+            if (operator.aggregateList.isEmpty()) {
+                // Implement as a linear aggregate, since it's more efficient
+                DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(operator.getRelNode(), i);
+                this.addOperator(diff);
+                LinearAggregate linear = operator.aggregateList.asLinear(this.compiler);
+                DBSPSimpleOperator aggOp = new DBSPAggregateLinearPostprocessOperator(
+                        operator.getRelNode(), operator.getOutputIndexedZSetType(),
+                        linear.map, linear.postProcess, diff.outputPort());
+                this.addOperator(aggOp);
+                DBSPSimpleOperator result = new DBSPIntegrateOperator(operator.getRelNode(), aggOp.outputPort());
+                this.map(operator, result);
+                /*
+                Alternative implementation using a non-linear aggregate which does nothing.
+
+                DBSPFold fold = operator.aggregateList.asFold(this.compiler);
+                DBSPSimpleOperator aggOp = new DBSPStreamAggregateOperator(
+                        operator.getRelNode(), operator.getOutputIndexedZSetType(), fold, null, i);
+                this.map(operator, aggOp);
+                 */
+                return;
+            }
+
             DBSPTypeIndexedZSet inputType = i.getOutputIndexedZSetType();
             boolean appendOnly = this.isAppendOnly.test(operator.input());
 

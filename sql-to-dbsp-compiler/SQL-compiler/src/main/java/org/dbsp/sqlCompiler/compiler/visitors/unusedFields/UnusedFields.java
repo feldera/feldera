@@ -18,7 +18,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Conditional;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.DeadCode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeMaps;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjections;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Repeat;
@@ -55,7 +55,7 @@ public class UnusedFields extends Passes {
 
                 Graph graph0 = new Graph(compiler);
                 this.add(graph0);
-                this.add(new OptimizeMaps(compiler, true, graph0.getGraphs(), mapOperators));
+                this.add(new OptimizeProjections(compiler, true, graph0.getGraphs(), mapOperators));
                 this.add(new DeadCode(compiler, true));
 
                 Graph graph = new Graph(compiler);

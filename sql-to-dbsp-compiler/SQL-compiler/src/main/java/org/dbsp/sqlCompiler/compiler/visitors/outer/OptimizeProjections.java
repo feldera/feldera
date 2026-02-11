@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
@@ -22,6 +23,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -41,9 +43,13 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Substitution;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUnusedFields;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -54,7 +60,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
@@ -64,15 +72,16 @@ import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
-/** Optimizes patterns containing Map operators. */
-public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
+/** Optimizes projections (Map or MapIndex) following various other operators. */
+public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
     /** If true only optimize projections after joins */
     final boolean onlyProjections;
     final AnalyzedSet<DBSPOperator> operatorsAnalyzed;
 
-    public OptimizeMaps(DBSPCompiler compiler, boolean onlyProjections,
-                        CircuitGraphs graphs, AnalyzedSet<DBSPOperator> operatorsAnalyzed) {
+    public OptimizeProjections(DBSPCompiler compiler, boolean onlyProjections,
+                               CircuitGraphs graphs, AnalyzedSet<DBSPOperator> operatorsAnalyzed) {
         super(compiler, graphs, false);
         this.onlyProjections = onlyProjections;
         this.operatorsAnalyzed = operatorsAnalyzed;
@@ -174,6 +183,21 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                     .withInputs(newSources, true)
                     .to(DBSPSimpleOperator.class);
             this.map(operator, result, operator != result);
+            return;
+        } else if (source.node().is(DBSPStreamAggregateOperator.class)) {
+            DBSPStreamAggregateOperator aggregate = source.node().to(DBSPStreamAggregateOperator.class);
+            Logger.INSTANCE.belowLevel(this, 2)
+                    .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
+                    .newline();
+            Projection projection = new Projection(this.compiler(), true, true);
+            projection.apply(operator.getFunction());
+            if (!projection.isProjection || aggregate.aggregateList == null) {
+                super.postorder(operator);
+                return;
+            }
+            boolean replaced = this.processAggregate(aggregate, operator);
+            if (!replaced)
+                super.postorder(operator);
             return;
         } else {
             Projection projection = new Projection(this.compiler());
@@ -391,6 +415,73 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
         super.postorder(operator);
     }
 
+    /** Process an aggregate followed by a MapIndex operator; return 'true' if the operators
+     * required changes, false if they are unchanged.  When the operator requires change,
+     * it is inserted in the circuit and map is remapped to the new operator. */
+    boolean processAggregate(DBSPStreamAggregateOperator aggregate, DBSPMapIndexOperator map) {
+        FindUnusedFields unused = new FindUnusedFields(this.compiler);
+        DBSPClosureExpression function = map.getClosureFunction();
+        Utilities.enforce(function.parameters.length == 1);
+        unused.findUnusedFields(function);
+        FieldUseMap useMap = unused.parameterFieldMap.get(function.parameters[0]);
+        FieldUseMap valueUse = useMap.field(1);
+        DBSPTypeIndexedZSet ix = aggregate.getOutputIndexedZSetType();
+
+        if (valueUse.hasUnusedFields(1)) {
+            List<Integer> usedFields = valueUse.deref().getUsedFields();
+            // We must determine whether we can remove any aggregates from the aggregate list.
+            // An aggregate can be removed if none of the fields it is producing are needed.
+            final List<IAggregate> used = new ArrayList<>();
+            {
+                int index = 0;
+                for (IAggregate agg : Objects.requireNonNull(aggregate.aggregateList).aggregates) {
+                    if (usedFields.contains(index))
+                        used.add(agg);
+                    index++;
+                }
+            }
+            if (used.size() < aggregate.aggregateList.aggregates.size()) {
+                // Build a new aggregate which only generates the used fields
+                DBSPAggregateList list = new DBSPAggregateList(
+                        aggregate.aggregateList.getNode(), aggregate.aggregateList.rowVar, used);
+                DBSPType elementType = list.getType().to(DBSPTypeFunction.class).resultType;
+                DBSPStreamAggregateOperator newAggregate = new DBSPStreamAggregateOperator(
+                        aggregate.getRelNode(), new DBSPTypeIndexedZSet(ix.getNode(), ix.keyType, elementType),
+                        null, list, aggregate.input());
+                this.addOperator(newAggregate);
+
+                // Synthesize a MapIndex after the aggregate which fills the removed spaces with the
+                // "zeros" from the removed aggregates
+                DBSPVariablePath var = newAggregate.getOutputIndexedZSetType().getKVRefType().var();
+                int index = 0;
+                int newAggregateIndex = 0;
+                final List<DBSPExpression> fields = new ArrayList<>();
+                for (IAggregate agg : Objects.requireNonNull(aggregate.aggregateList).aggregates) {
+                    if (usedFields.contains(index)) {
+                        fields.add(var.field(1).deref().field(newAggregateIndex));
+                        newAggregateIndex++;
+                    } else {
+                        fields.add(agg.getEmptySetResult());
+                    }
+                    index++;
+                }
+
+                DBSPClosureExpression closure = new DBSPRawTupleExpression(
+                        new DBSPTupleExpression(DBSPTypeTuple.flatten(var.field(0).deref()), false),
+                        new DBSPTupleExpression(fields, false))
+                        .closure(var);
+                DBSPMapIndexOperator filler = new DBSPMapIndexOperator(map.getRelNode(), closure, newAggregate.outputPort());
+                this.addOperator(filler);
+
+                DBSPSimpleOperator rewritten = map.withInputs(Linq.list(filler.outputPort()), false)
+                        .to(DBSPSimpleOperator.class);
+                this.map(map, rewritten);
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public void postorder(DBSPMapOperator operator) {
         if (this.done(operator)) {
@@ -455,7 +546,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 return;
             }
         } else if (source.node().is(DBSPFlatMapOperator.class)
-                && operator.getFunction().is(DBSPClosureExpression.class)) {
+                && operator.getFunction().is(DBSPClosureExpression.class) && inputFanout == 1) {
             DBSPFlatmap sourceFlatmap = source.simpleNode().getFunction().as(DBSPFlatmap.class);
             var shuffle = DetectShuffle.analyze(this.compiler, operator.getClosureFunction());
             if (sourceFlatmap != null && shuffle != null) {
@@ -535,7 +626,29 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                     .to(DBSPSimpleOperator.class);
             this.map(operator, result, operator != result);
             return;
+        } else if (source.node().is(DBSPAggregateZeroOperator.class) && inputFanout == 1) {
+            Logger.INSTANCE.belowLevel(this, 2)
+                    .appendSupplier(() -> source.simpleNode().operation + " -> Map")
+                    .newline();
+            Projection projection = new Projection(this.compiler(), true, true);
+            projection.apply(operator.getFunction());
+            if (!projection.isProjection) {
+                super.postorder(operator);
+                return;
+            }
+            DBSPAggregateZeroOperator zero = source.node().to(DBSPAggregateZeroOperator.class);
+            DBSPSimpleOperator newProjection = operator
+                    .withInputs(Linq.list(zero.input()), true).to(DBSPSimpleOperator.class);
+            this.addOperator(newProjection);
+            DBSPExpression newZero = operator.getClosureFunction()
+                    .call(zero.getFunction().borrow())
+                    .reduce(this.compiler);
+            DBSPAggregateZeroOperator result = new DBSPAggregateZeroOperator(
+                    zero.getRelNode(), newZero, newProjection.outputPort());
+            this.map(operator, result);
+            return;
         }
+
         if (source.node().is(DBSPAntiJoinOperator.class) || source.node().is(DBSPStreamAntiJoinOperator.class)) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
@@ -543,7 +656,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             DBSPBinaryOperator join = source.node().to(DBSPBinaryOperator.class);
             Projection projection = new Projection(this.compiler());
             projection.apply(operator.getFunction());
-            if (projection.isProjection) {
+            if (projection.isProjection && inputFanout == 1) {
                 OutputPort left = join.left();
                 OutputPort right = join.right();
 
