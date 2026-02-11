@@ -396,7 +396,7 @@ class TstAccumulator:
             )
 
     def run_expected_failures(self, pipeline_name_prefix: str):
-        """Loop through each view that is expected to fail in a separate pipeline"""
+        """Loop through each view that is expected to fail and run it in a separate pipeline"""
         # Only use passing tables when testing views
         passing_tables = self.filter_by_expected_error(self.tables, should_fail=False)
         failing_views = self.filter_by_expected_error(self.views, should_fail=True)

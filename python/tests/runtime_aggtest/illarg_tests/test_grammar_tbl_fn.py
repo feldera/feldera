@@ -502,3 +502,77 @@ class illarg_over_illegal(TstView):
                       FROM illegal_tbl
                       GROUP BY GROUPING SETS (str + 1)"""
         self.expected_error = "Window 'intt' not found"
+
+
+# QUALIFY
+class illarg_qualify_top_k_legal(TstView):
+    def __init__(self):
+        self.data = [{"id": 0, "intt": -12}, {"id": 1, "intt": -1}]
+        self.sql = """CREATE MATERIALIZED VIEW qualify_top_k_legal AS SELECT
+                      id, intt
+                      FROM illegal_tbl
+                      QUALIFY
+                      ROW_NUMBER() OVER (ORDER BY intt DESC) <= 2"""
+
+
+# Negative Test
+class illarg_qualify_top_k_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW qualify_top_k_illegal AS SELECT
+                      id, intt
+                      FROM illegal_tbl
+                      QUALIFY
+                      ROW_NUMBER() OVER (ORDER BY intt DESC) <= 2 OR
+                      RANK() OVER (ORDER BY intt DESC) <= 2 OR
+                      DENSE_RANK() OVER (ORDER BY intt DESC) <= 2"""
+        self.expected_error = "Not yet implemented"
+
+
+# IS TRUE/IS FALSE/IS NOT TRUE/IS NOT FALSE
+class illarg_is_true_false_legal(TstView):
+    def __init__(self):
+        self.data = [{"booll": True, "booll1": False, "booll2": False, "booll3": True}]
+        self.sql = """CREATE MATERIALIZED VIEW is_true_legal AS SELECT
+                      booll IS TRUE AS booll,
+                      booll IS NOT TRUE AS booll1,
+                      booll IS FALSE AS booll2,
+                      booll IS NOT FALSE AS booll3
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Tests
+class illarg_is_true_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW is_true_illegal AS SELECT
+                      udt IS TRUE AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = " Cannot apply 'IS TRUE' to arguments of type"
+
+
+class illarg_is_false_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW is_false_illegal AS SELECT
+                      intt IS FALSE AS intt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = " Cannot apply 'IS FALSE' to arguments of type"
+
+
+class illarg_is_not_true_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW is_not_true_illegal AS SELECT
+                      udt IS NOT TRUE AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = " Cannot apply 'IS NOT TRUE' to arguments of type"
+
+
+class illarg_is_not_false_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW is_not_false_illegal AS SELECT
+                      intt IS NOT FALSE AS intt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = " Cannot apply 'IS NOT FALSE' to arguments of type"

@@ -1558,3 +1558,63 @@ class illarg_is_not_unknown_illegal(TstView):
                       FROM illegal_tbl
                       WHERE id = 2"""
         self.expected_error = " Cannot apply 'IS NOT UNKNOWN' to arguments of type"
+
+
+# OVERLAPS
+class illarg_overlaps_legal_timestamp(TstView):
+    def __init__(self):
+        self.data = [{"res": True}]
+        self.sql = """CREATE MATERIALIZED VIEW overlaps_legal_timestamp AS SELECT
+                      (tmestmp, tmestmp)
+                      OVERLAPS
+                      (TIMESTAMP '2020-06-21 14:23:44.123654',
+                       TIMESTAMP '2020-06-21 14:23:44.123654') AS res
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_overlaps_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW overlaps_illegal AS SELECT
+                      (datee)
+                      OVERLAPS
+                      (DATE '2020-06-21') AS res
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'OVERLAPS' to arguments of type"
+
+
+class illarg_interval_overlap_illegal(TstView):
+    def __init__(self):
+        self.data = []
+        self.sql = """CREATE LOCAL VIEW ats_minus_ts AS SELECT
+                      (tmestmp - TIMESTAMP'2018-06-21 14:23:44')YEAR AS interval_yr
+                      FROM illegal_tbl
+                      WHERE id = 0;
+
+                      CREATE MATERIALIZED VIEW interval_overlap_illegal AS SELECT
+                      (interval_yr, interval_yr)
+                      OVERLAPS
+                      (INTERVAL '2' YEAR, INTERVAL '2' YEAR) AS res
+                      FROM ats_minus_ts"""
+        self.expected_error = "Cannot apply 'OVERLAPS' to arguments of type"
+
+
+# CONTAINS
+class illarg_contains_legal(TstView):
+    def __init__(self):
+        self.data = [{"datee": True}]
+        self.sql = """CREATE MATERIALIZED VIEW contains_legal AS SELECT
+                      (datee, datee + INTERVAL '1' DAY) CONTAINS datee as datee
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+class illarg_contains_illegal_timestamp(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW contains_illegal_timestamp AS SELECT
+                      tmestmp CONTAINS TIMESTAMP '2020-06-21 14:23:44.123654' AS res
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'CONTAINS' to arguments of type"
