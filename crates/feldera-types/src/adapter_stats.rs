@@ -55,7 +55,7 @@ pub struct EndpointErrorStats<T> {
 }
 
 /// Schema definition for endpoint config that only includes the stream field.
-#[derive(Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct ShortEndpointConfig {
     /// The name of the stream.
     pub stream: String,
@@ -140,7 +140,7 @@ pub struct ExternalCompletedWatermark {
 }
 
 /// Performance metrics for an input endpoint.
-#[derive(Default, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Default, Deserialize, Serialize, ToSchema)]
 #[schema(as = InputEndpointMetrics)]
 pub struct ExternalInputEndpointMetrics {
     /// Total bytes pushed to the endpoint since it was created.
@@ -160,7 +160,7 @@ pub struct ExternalInputEndpointMetrics {
 }
 
 /// Input endpoint status information.
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[schema(as = InputEndpointStatus)]
 pub struct ExternalInputEndpointStatus {
     /// Endpoint name.
@@ -182,7 +182,7 @@ pub struct ExternalInputEndpointStatus {
 }
 
 /// Performance metrics for an output endpoint.
-#[derive(Default, Deserialize, Serialize, ToSchema, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Default, Deserialize, Serialize, ToSchema, PartialEq, Eq, PartialOrd, Ord)]
 #[schema(as = OutputEndpointMetrics)]
 pub struct ExternalOutputEndpointMetrics {
     /// Records sent on the underlying transport.
@@ -208,7 +208,7 @@ pub struct ExternalOutputEndpointMetrics {
 }
 
 /// Output endpoint status information.
-#[derive(Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[schema(as = OutputEndpointStatus)]
 pub struct ExternalOutputEndpointStatus {
     /// Endpoint name.
@@ -223,7 +223,7 @@ pub struct ExternalOutputEndpointStatus {
 }
 
 /// Global controller metrics.
-#[derive(Default, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, Serialize, Deserialize, ToSchema)]
 #[schema(as = GlobalControllerMetrics)]
 pub struct ExternalGlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
@@ -313,7 +313,7 @@ pub struct ExternalGlobalControllerMetrics {
 /// atomics and mutexes lives in the adapters crate, which uses ExternalControllerStatus to
 /// register this OpenAPI schema, making it available to pipeline-manager
 /// without requiring a direct dependency on the adapters crate.
-#[derive(Deserialize, Serialize, ToSchema, Default)]
+#[derive(Debug, Deserialize, Serialize, ToSchema, Default)]
 #[schema(as = ControllerStatus)]
 pub struct ExternalControllerStatus {
     /// Global controller metrics.

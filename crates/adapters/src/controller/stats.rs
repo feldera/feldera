@@ -265,7 +265,11 @@ pub struct GlobalControllerMetrics {
 }
 
 impl GlobalControllerMetrics {
-    fn new(processed_records: u64, initial_start_time: Option<DateTime<Utc>>) -> Self {
+    fn new(
+        processed_records: u64,
+        initial_start_time: Option<DateTime<Utc>>,
+        incarnation_uuid: Uuid,
+    ) -> Self {
         let start_time = Utc::now();
         let initial_start_time = initial_start_time.unwrap_or(start_time);
         Self {
@@ -275,7 +279,7 @@ impl GlobalControllerMetrics {
             transaction_status: Atomic::new(TransactionStatus::NoTransaction),
             transaction_initiators: Mutex::new(TransactionInitiators::default()),
             start_time,
-            incarnation_uuid: Uuid::now_v7(),
+            incarnation_uuid,
             initial_start_time,
             storage_bytes: AtomicU64::new(0),
             storage_mb_secs: AtomicU64::new(0),
@@ -423,12 +427,17 @@ impl ControllerStatus {
         pipeline_config: PipelineConfig,
         processed_records: u64,
         initial_start_time: Option<DateTime<Utc>>,
+        incarnation_uuid: Uuid,
     ) -> Self {
         let (time_series_notifier, _) = broadcast::channel(1024); // Buffer for up to 1024 time series updates
         let (completion_notifier, _) = watch::channel(Completion::default());
         Self {
             pipeline_config,
-            global_metrics: GlobalControllerMetrics::new(processed_records, initial_start_time),
+            global_metrics: GlobalControllerMetrics::new(
+                processed_records,
+                initial_start_time,
+                incarnation_uuid,
+            ),
             time_series: Mutex::new(VecDeque::with_capacity(60)),
             time_series_notifier,
             completion_notifier,

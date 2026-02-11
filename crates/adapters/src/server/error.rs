@@ -59,6 +59,7 @@ use std::{
 };
 use tracing::{Level, error, warn};
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 pub const MAX_REPORTED_PARSE_ERRORS: usize = 1_000;
 
@@ -182,6 +183,12 @@ pub enum PipelineError {
     Suspended,
     InvalidActivateStatus(RuntimeDesiredStatus),
     InvalidTransition(&'static str, RuntimeDesiredStatus),
+    IncarnationUuidMismatch {
+        /// The UUID in the request.
+        requested: Uuid,
+        /// The incarnation UUID of the running pipeline.
+        expected: Uuid,
+    },
 }
 
 impl From<ControllerError> for PipelineError {
@@ -294,6 +301,7 @@ impl Display for PipelineError {
             Self::InvalidTransition(transition, status) => {
                 write!(f, "Cannot execute {transition} transition starting from {status:?}")
             }
+            Self::IncarnationUuidMismatch { requested, expected } => write!(f, "Incarnation UUID mismatch ({requested} in request, expected {expected})")
         }
     }
 }
@@ -316,6 +324,7 @@ impl DetailedError for PipelineError {
             Self::Suspended => Cow::from("Suspended"),
             Self::InvalidActivateStatus(_) => Cow::from("InvalidActivateStatus"),
             Self::InvalidTransition(_, _) => Cow::from("InvalidTransition"),
+            Self::IncarnationUuidMismatch { .. } => Cow::from("IncarnationUuidMismatch"),
         }
     }
 
@@ -349,6 +358,7 @@ impl ResponseError for PipelineError {
             Self::Suspended => StatusCode::SERVICE_UNAVAILABLE,
             Self::InvalidActivateStatus(_) => StatusCode::BAD_REQUEST,
             Self::InvalidTransition(_, _) => StatusCode::BAD_REQUEST,
+            Self::IncarnationUuidMismatch { .. } => StatusCode::BAD_REQUEST,
         }
     }
 
