@@ -14,21 +14,29 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVoidLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import java.util.List;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
+
 /** Description of a list of aggregations. */
 public final class DBSPAggregateList extends DBSPNode
         implements IDBSPInnerNode, IDBSPDeclaration // Declares the row variable
 {
     public final DBSPVariablePath rowVar;
-    /** Component aggregates, must all be compatible */
+    /** Component aggregates, must all be compatible. Could be empty! */
     public final List<IAggregate> aggregates;
     // Cache here the result of aggregation on the empty set
     final DBSPExpression emptySetResult;
@@ -36,7 +44,6 @@ public final class DBSPAggregateList extends DBSPNode
     public DBSPAggregateList(CalciteObject node, DBSPVariablePath rowVar,
                              List<IAggregate> aggregates) {
         super(node);
-        Utilities.enforce(!aggregates.isEmpty());
         this.rowVar = rowVar;
         this.aggregates = aggregates;
         this.emptySetResult = new DBSPTupleExpression(node, Linq.map(aggregates, IAggregate::getEmptySetResult));
@@ -77,16 +84,36 @@ public final class DBSPAggregateList extends DBSPNode
     }
 
     IAggregate combine(DBSPCompiler compiler) {
-        Utilities.enforce(!this.aggregates.isEmpty());
-        return this.aggregates.get(0).combine(this.getNode(), compiler, this.rowVar, this.aggregates);
+        IAggregate first = this.aggregates.get(0);
+        return first.combine(this.getNode(), compiler, this.rowVar, this.aggregates);
     }
 
     public DBSPFold asFold(DBSPCompiler compiler) {
+        if (this.aggregates.isEmpty()) {
+            DBSPVariablePath accumulator = DBSPTypeTuple.EMPTY.ref(true).var();
+            DBSPVariablePath var = DBSPTypeTuple.EMPTY.var();
+            DBSPVariablePath weight = DBSPTypeWeight.INSTANCE.var();
+            DBSPTypeUser semigroup = new DBSPTypeUser(node, USER, "UnimplementedSemigroup",
+                    false, DBSPTypeAny.getDefault());
+            return new DBSPFold(CalciteObject.EMPTY, semigroup,
+                    new DBSPTupleExpression(),
+                    DBSPVoidLiteral.INSTANCE.closure(accumulator, this.rowVar, weight),
+                    new DBSPTupleExpression().closure(var));
+        }
         NonLinearAggregate combined = this.combine(compiler).to(NonLinearAggregate.class);
         return combined.asFold();
     }
 
     public LinearAggregate asLinear(DBSPCompiler compiler) {
+        if (this.aggregates.isEmpty()) {
+            DBSPExpression one = DBSPTypeInteger.getType(CalciteObject.EMPTY, INT64, false).getOne();
+            DBSPVariablePath var = one.getType().var();
+            // Implement like count
+            return new LinearAggregate(CalciteObject.EMPTY,
+                    one.closure(this.rowVar),
+                    new DBSPTupleExpression().closure(var),
+                    one.getType().withMayBeNull(true).none());
+        }
         return this.combine(compiler).to(LinearAggregate.class);
     }
 

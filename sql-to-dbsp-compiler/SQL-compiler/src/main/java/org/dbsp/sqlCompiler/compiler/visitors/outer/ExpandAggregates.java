@@ -240,6 +240,21 @@ public class ExpandAggregates extends Passes {
                 return;
             }
             OutputPort i = this.mapped(operator.input());
+
+            if (operator.aggregateList.isEmpty()) {
+                // Implement as a linear aggregate, since it's more efficient
+                DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(operator.getRelNode(), i);
+                this.addOperator(diff);
+                LinearAggregate linear = operator.aggregateList.asLinear(this.compiler);
+                DBSPSimpleOperator aggOp = new DBSPAggregateLinearPostprocessOperator(
+                        operator.getRelNode(), operator.getOutputIndexedZSetType(),
+                        linear.map, linear.postProcess, diff.outputPort());
+                this.addOperator(aggOp);
+                DBSPSimpleOperator result = new DBSPIntegrateOperator(operator.getRelNode(), aggOp.outputPort());
+                this.map(operator, result);
+                return;
+            }
+
             DBSPTypeIndexedZSet inputType = i.getOutputIndexedZSetType();
             boolean appendOnly = this.isAppendOnly.test(operator.input());
 
