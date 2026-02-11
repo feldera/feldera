@@ -70,6 +70,7 @@ aws-sdk-s3 = { version = "1.122.0", default-features = false, features = [
   "default-https-client",
   "rt-tokio",
   "sigv4a",
+  "behavior-version-latest"
 ] }
 aws-types = "1.1.7"
 backoff = "0.4.0"
