@@ -3,9 +3,8 @@ use std::collections::{BinaryHeap, VecDeque};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Arc, Barrier, Condvar, Mutex,
     atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering},
-    mpsc,
+    mpsc, Arc, Barrier, Condvar, Mutex,
 };
 use std::time::{Duration, Instant};
 
@@ -13,9 +12,9 @@ use anyhow::{Context, Result};
 use arrow::array::{ArrayBuilder, UInt64Array, UInt64Builder};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
-use crossbeam::channel::{TryRecvError, TrySendError, bounded};
-use parquet::arrow::ArrowWriter;
+use crossbeam::channel::{bounded, TryRecvError, TrySendError};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use parquet::arrow::ArrowWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 
@@ -24,8 +23,8 @@ const DEFAULT_BATCH_SIZE: usize = 10_000;
 const DEFAULT_DURATION_SECS: u64 = 120;
 const PRODUCERS_PER_CONSUMER: usize = 8;
 const MAX_BUFFERED_RECORDS: usize = 500_000_000;
-const DEFAULT_INPUT_SIZE_BYTES: usize = 16;
-const RECORD_BYTES: u64 = 16;
+const DEFAULT_INPUT_SIZE_BYTES: usize = 8;
+const RECORD_BYTES: u64 = 8;
 const MERGE_INPUT_BATCH_ROWS: usize = 32_768;
 const MERGE_OUTPUT_BATCH_ROWS: usize = 32_768;
 
@@ -125,8 +124,8 @@ struct ParquetBatchReader {
 impl ParquetBatchReader {
     fn new(path: &Path) -> Result<Self> {
         let file = std::fs::File::open(path).context("open parquet file")?;
-        let builder = ParquetRecordBatchReaderBuilder::try_new(file)
-            .context("parquet reader builder")?;
+        let builder =
+            ParquetRecordBatchReaderBuilder::try_new(file).context("parquet reader builder")?;
         let reader = builder
             .with_batch_size(MERGE_INPUT_BATCH_ROWS)
             .build()
@@ -261,10 +260,10 @@ fn merge_batches(
     let path = storage_dir.join(format!("batch_{file_id}.parquet"));
     let file = std::fs::File::create(&path).context("create parquet file")?;
     let props = WriterProperties::builder()
-        .set_compression(Compression::UNCOMPRESSED)
+        .set_compression(Compression::SNAPPY)
         .build();
-    let mut writer = ArrowWriter::try_new(file, schema(), Some(props))
-        .context("create parquet writer")?;
+    let mut writer =
+        ArrowWriter::try_new(file, schema(), Some(props)).context("create parquet writer")?;
 
     let mut out_values = UInt64Builder::with_capacity(MERGE_OUTPUT_BATCH_ROWS);
     let mut out_weights = UInt64Builder::with_capacity(MERGE_OUTPUT_BATCH_ROWS);
@@ -323,7 +322,10 @@ fn merge_batches(
     if out_values.len() > 0 {
         let batch = RecordBatch::try_new(
             schema(),
-            vec![Arc::new(out_values.finish()), Arc::new(out_weights.finish())],
+            vec![
+                Arc::new(out_values.finish()),
+                Arc::new(out_weights.finish()),
+            ],
         )
         .context("build final record batch")?;
         writer.write(&batch).context("write final parquet batch")?;
@@ -374,7 +376,6 @@ impl Slot {
             None
         }
     }
-
 }
 
 struct SharedState {
@@ -491,7 +492,8 @@ impl AsyncMerger {
                     }
                 };
                 let elapsed = start.elapsed();
-                thread_merged_bytes.fetch_add(input_records * RECORD_BYTES, AtomicOrdering::Relaxed);
+                thread_merged_bytes
+                    .fetch_add(input_records * RECORD_BYTES, AtomicOrdering::Relaxed);
                 thread_merged_nanos.fetch_add(elapsed.as_nanos() as u64, AtomicOrdering::Relaxed);
 
                 let mut state = thread_state.lock().unwrap();
@@ -615,8 +617,14 @@ fn prepare_storage_path(path: &str) -> String {
     let trimmed = path.trim();
     assert!(!trimmed.is_empty(), "STORAGE_PATH must not be empty");
     let storage_path = Path::new(trimmed);
-    assert!(storage_path != Path::new("/"), "refusing to remove root directory");
-    assert!(storage_path != Path::new("."), "refusing to remove current directory");
+    assert!(
+        storage_path != Path::new("/"),
+        "refusing to remove root directory"
+    );
+    assert!(
+        storage_path != Path::new("."),
+        "refusing to remove current directory"
+    );
 
     if storage_path.exists() {
         std::fs::remove_dir_all(storage_path).expect("clear storage dir");
@@ -691,108 +699,113 @@ fn run_one_case(
         let worker_storage = PathBuf::from(&storage_path).join(format!("worker_{worker_index}"));
         std::fs::create_dir_all(&worker_storage).expect("worker storage dir");
 
-        worker_handles.push(std::thread::Builder::new()
-            .name(format!("spine-worker-{worker_index}"))
-            .spawn(move || {
-                let stop = Arc::new(AtomicBool::new(false));
-                let capacity_batches = std::cmp::max(1, MAX_BUFFERED_RECORDS / batch_size);
-                let (batch_tx, batch_rx) = bounded::<BatchPayload>(capacity_batches);
+        worker_handles.push(
+            std::thread::Builder::new()
+                .name(format!("spine-worker-{worker_index}"))
+                .spawn(move || {
+                    let stop = Arc::new(AtomicBool::new(false));
+                    let capacity_batches = std::cmp::max(1, MAX_BUFFERED_RECORDS / batch_size);
+                    let (batch_tx, batch_rx) = bounded::<BatchPayload>(capacity_batches);
 
-                let mut producers = Vec::with_capacity(PRODUCERS_PER_CONSUMER);
-                for producer_idx in 0..PRODUCERS_PER_CONSUMER {
-                    let stop = stop.clone();
-                    let batch_tx = batch_tx.clone();
-                    let log_queue = worker_index == 0 && producer_idx == 0;
-                    let log_sender = batch_tx.clone();
-                    let mut rng_state = (worker_index as u64)
-                        .wrapping_mul(0x9e37_79b9_7f4a_7c15)
-                        .wrapping_add(producer_idx as u64 + 1);
-                    let thread_name = format!("b-producer-{worker_index}-{producer_idx}");
-                    producers.push(
-                        std::thread::Builder::new()
-                            .name(thread_name)
-                            .spawn(move || {
-                                let mut next_log = Instant::now() + Duration::from_secs(10);
-                                loop {
-                                    if stop.load(AtomicOrdering::Acquire) {
-                                        break;
-                                    }
-                                    if log_queue && Instant::now() >= next_log {
-                                        let batches = log_sender.len();
-                                        let records = batches * batch_size;
-                                        eprintln!("buffered_records={records}");
-                                        next_log += Duration::from_secs(10);
-                                    }
-                                    let payload = generate_batch_u64(batch_size, &mut rng_state);
-                                    let mut payload = payload;
+                    let mut producers = Vec::with_capacity(PRODUCERS_PER_CONSUMER);
+                    for producer_idx in 0..PRODUCERS_PER_CONSUMER {
+                        let stop = stop.clone();
+                        let batch_tx = batch_tx.clone();
+                        let log_queue = worker_index == 0 && producer_idx == 0;
+                        let log_sender = batch_tx.clone();
+                        let mut rng_state = (worker_index as u64)
+                            .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                            .wrapping_add(producer_idx as u64 + 1);
+                        let thread_name = format!("b-producer-{worker_index}-{producer_idx}");
+                        producers.push(
+                            std::thread::Builder::new()
+                                .name(thread_name)
+                                .spawn(move || {
+                                    let mut next_log = Instant::now() + Duration::from_secs(10);
                                     loop {
                                         if stop.load(AtomicOrdering::Acquire) {
-                                            return;
+                                            break;
                                         }
-                                        match batch_tx.try_send(payload) {
-                                            Ok(()) => break,
-                                            Err(TrySendError::Full(p)) => {
-                                                payload = p;
+                                        if log_queue && Instant::now() >= next_log {
+                                            let batches = log_sender.len();
+                                            let records = batches * batch_size;
+                                            eprintln!("buffered_records={records}");
+                                            next_log += Duration::from_secs(10);
+                                        }
+                                        let payload =
+                                            generate_batch_u64(batch_size, &mut rng_state);
+                                        let mut payload = payload;
+                                        loop {
+                                            if stop.load(AtomicOrdering::Acquire) {
+                                                return;
                                             }
-                                            Err(TrySendError::Disconnected(_)) => return,
+                                            match batch_tx.try_send(payload) {
+                                                Ok(()) => break,
+                                                Err(TrySendError::Full(p)) => {
+                                                    payload = p;
+                                                }
+                                                Err(TrySendError::Disconnected(_)) => return,
+                                            }
                                         }
                                     }
-                                }
-                            })
-                            .expect("spawn b-producer thread"),
-                    );
-                }
-
-                let spine = ArrowSpine::new(worker_storage);
-
-                while batch_rx.len() < capacity_batches {
-                    std::thread::yield_now();
-                }
-                if worker_index == 0 {
-                    eprintln!("prefill complete (queue full: {capacity_batches} batches)");
-                }
-
-                barrier.wait();
-                let start = Instant::now();
-                let end_time = start + duration;
-                let mut records: u64 = 0;
-                let mut bytes: u64 = 0;
-
-                loop {
-                    let now = Instant::now();
-                    if now >= end_time {
-                        break;
+                                })
+                                .expect("spawn b-producer thread"),
+                        );
                     }
-                    match batch_rx.try_recv() {
-                        Ok(mut payload) => {
-                            payload.pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-                            let batch = ArrowBatch::from_sorted_pairs(payload.pairs)
-                                .expect("arrow batch");
-                            spine.insert(batch);
-                            records += payload.len as u64;
-                            bytes += payload.len as u64 * input_size_bytes as u64;
-                        }
-                        Err(TryRecvError::Empty) => {
-                            eprintln!("warning: empty buffer, increase producers or pre-buffering");
-                        }
-                        Err(TryRecvError::Disconnected) => break,
-                    }
-                }
 
-                stop.store(true, AtomicOrdering::Release);
-                drop(batch_rx);
-                for producer in producers {
-                    let _ = producer.join();
-                }
-                let elapsed = start.elapsed();
-                tx.send(WorkerResult {
-                    records,
-                    bytes,
-                    elapsed,
+                    let spine = ArrowSpine::new(worker_storage);
+
+                    while batch_rx.len() < capacity_batches {
+                        std::thread::yield_now();
+                    }
+                    if worker_index == 0 {
+                        eprintln!("prefill complete (queue full: {capacity_batches} batches)");
+                    }
+
+                    barrier.wait();
+                    let start = Instant::now();
+                    let end_time = start + duration;
+                    let mut records: u64 = 0;
+                    let mut bytes: u64 = 0;
+
+                    loop {
+                        let now = Instant::now();
+                        if now >= end_time {
+                            break;
+                        }
+                        match batch_rx.try_recv() {
+                            Ok(mut payload) => {
+                                payload.pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+                                let batch = ArrowBatch::from_sorted_pairs(payload.pairs)
+                                    .expect("arrow batch");
+                                spine.insert(batch);
+                                records += payload.len as u64;
+                                bytes += payload.len as u64 * input_size_bytes as u64;
+                            }
+                            Err(TryRecvError::Empty) => {
+                                eprintln!(
+                                    "warning: empty buffer, increase producers or pre-buffering"
+                                );
+                            }
+                            Err(TryRecvError::Disconnected) => break,
+                        }
+                    }
+
+                    stop.store(true, AtomicOrdering::Release);
+                    drop(batch_rx);
+                    for producer in producers {
+                        let _ = producer.join();
+                    }
+                    let elapsed = start.elapsed();
+                    tx.send(WorkerResult {
+                        records,
+                        bytes,
+                        elapsed,
+                    })
+                    .expect("send worker result");
                 })
-                .expect("send worker result");
-            })
-            .expect("spawn worker"));
+                .expect("spawn worker"),
+        );
     }
 
     drop(tx);
@@ -835,7 +848,8 @@ fn main() {
     let threads_list = parse_csv_env("THREADS", DEFAULT_THREADS);
     let batch_sizes = parse_batch_sizes();
     let duration_secs = parse_env_u64("DURATION", DEFAULT_DURATION_SECS);
-    let input_size_bytes = parse_env_u64("INPUT_SIZE_BYTES", DEFAULT_INPUT_SIZE_BYTES as u64) as usize;
+    let input_size_bytes =
+        parse_env_u64("INPUT_SIZE_BYTES", DEFAULT_INPUT_SIZE_BYTES as u64) as usize;
     let storage_path = env::var("STORAGE_PATH")
         .ok()
         .map(|value| value.trim().to_string())
@@ -858,7 +872,9 @@ fn main() {
         }
     }
 
-    println!("threads,input_size_bytes,records,batch_size,bytes,elapsed_s,bytes_per_sec,records_per_sec");
+    println!(
+        "threads,input_size_bytes,records,batch_size,bytes,elapsed_s,bytes_per_sec,records_per_sec"
+    );
     for line in csv_lines {
         println!("{line}");
     }
