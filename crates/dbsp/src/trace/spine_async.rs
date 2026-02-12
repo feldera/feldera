@@ -1097,6 +1097,57 @@ where
     }
 }
 
+/// Samples `sample_size` keys from a set of batches.
+///
+/// See [`BatchReader::sample_keys`](`crate::trace::BatchReader::sample_keys`) for more details.
+pub(crate) fn sample_keys_from_batches<B, RG>(
+    factories: &B::Factories,
+    batches: &[Arc<B>],
+    rng: &mut RG,
+    sample_size: usize,
+    sample: &mut DynVec<B::Key>,
+) where
+    B: Batch,
+    B::Time: PartialEq<()>,
+    RG: Rng,
+{
+    let total_keys = batches.iter().map(|batch| batch.key_count()).sum::<usize>();
+
+    if sample_size == 0 || total_keys == 0 {
+        // Avoid division by zero.
+        return;
+    }
+
+    // Sample each batch, picking the number of keys proportional to
+    // batch size.
+    let mut intermediate = factories.keys_factory().default_box();
+    intermediate.reserve(sample_size);
+
+    for batch in batches {
+        batch.sample_keys(
+            rng,
+            ((batch.key_count() as u128) * (sample_size as u128) / (total_keys as u128)) as usize,
+            intermediate.as_mut(),
+        );
+    }
+
+    // Drop duplicate keys and keys that appear with 0 weight, i.e.,
+    // get canceled out across multiple batches.
+    intermediate.deref_mut().sort_unstable();
+    intermediate.dedup();
+
+    let mut cursor = SpineCursor::new_cursor(factories, batches.to_vec());
+    for key in intermediate.dyn_iter_mut() {
+        cursor.seek_key(key);
+        if let Some(current_key) = cursor.get_key()
+            && current_key == key
+        {
+            debug_assert!(cursor.val_valid() && !cursor.weight().is_zero());
+            sample.push_ref(key);
+        }
+    }
+}
+
 impl<B> BatchReader for Spine<B>
 where
     B: Batch,
@@ -1154,43 +1205,13 @@ where
         Self::Time: PartialEq<()>,
         RG: Rng,
     {
-        let batches = self.merger.get_batches();
-        let total_keys = batches.iter().map(|batch| batch.key_count()).sum::<usize>();
-
-        if sample_size == 0 || total_keys == 0 {
-            // Avoid division by zero.
-            return;
-        }
-
-        // Sample each batch, picking the number of keys proportional to
-        // batch size.
-        let mut intermediate = self.factories.keys_factory().default_box();
-        intermediate.reserve(sample_size);
-
-        for batch in &batches {
-            batch.sample_keys(
-                rng,
-                ((batch.key_count() as u128) * (sample_size as u128) / (total_keys as u128))
-                    as usize,
-                intermediate.as_mut(),
-            );
-        }
-
-        // Drop duplicate keys and keys that appear with 0 weight, i.e.,
-        // get canceled out across multiple batches.
-        intermediate.deref_mut().sort_unstable();
-        intermediate.dedup();
-
-        let mut cursor = SpineCursor::new_cursor(&self.factories, batches);
-        for key in intermediate.dyn_iter_mut() {
-            cursor.seek_key(key);
-            if let Some(current_key) = cursor.get_key()
-                && current_key == key
-            {
-                debug_assert!(cursor.val_valid() && !cursor.weight().is_zero());
-                sample.push_ref(key);
-            }
-        }
+        sample_keys_from_batches(
+            &self.factories,
+            &self.merger.get_batches(),
+            rng,
+            sample_size,
+            sample,
+        );
     }
 
     async fn fetch<KR>(

@@ -15,6 +15,7 @@ use crate::NumEntries;
 use crate::dynamic::{DynVec, Factory};
 use crate::storage::tracking_bloom_filter::BloomFilterStats;
 use crate::trace::cursor::{CursorFactory, CursorList};
+use crate::trace::spine_async::sample_keys_from_batches;
 use crate::trace::{Batch, BatchReader, BatchReaderFactories, Cursor, Spine, merge_batches};
 
 pub trait WithSnapshot: Sized {
@@ -231,13 +232,18 @@ where
         self.batches.iter().map(|b| b.filter_stats()).sum()
     }
 
-    fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut DynVec<Self::Key>)
+    fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         Self::Time: PartialEq<()>,
         RG: Rng,
     {
-        // This method probably shouldn't be in the BatchReader
-        unimplemented!("Shouldn't be called on a snapshot");
+        sample_keys_from_batches(
+            &self.factories,
+            self.batches.as_slice(),
+            rng,
+            sample_size,
+            sample,
+        );
     }
 
     async fn fetch<K>(
