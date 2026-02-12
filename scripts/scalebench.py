@@ -120,7 +120,7 @@ def make_sql(program: str, datagen_workers: int, payload_bytes: int) -> str:
             f"    payload{i} BIGINT NOT NULL" for i in range(u64_count)
         )
         table_fields += "\n"
-        fields = None
+        fields = {f"payload{i}": {"strategy": "uniform"} for i in range(u64_count)}
     elif program == "binary":
         table_fields = "    payload BINARY NOT NULL\n"
         fields = {
@@ -423,11 +423,7 @@ def extract_metrics(payload: Dict[str, Any], pipeline_name: str) -> Dict[str, An
     storage = metrics.get("storage") or {}
     uptime = metrics.get("uptime") or {}
     state_amp = metrics.get("state-amplification") or {}
-    buffered = (
-        metrics.get("buffered_input_records")
-        or metrics.get("buffered-input-records")
-        or {}
-    )
+    buffered = metrics.get("buffered-input-records") or {}
 
     return {
         "throughput_value": throughput.get("value"),
