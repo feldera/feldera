@@ -380,6 +380,9 @@ pub struct AvroEncoder {
     /// Buffer to store serialized avro records, reused across `encode` invocations.
     value_buffer: Vec<u8>,
 
+    key_schema_id: u32,
+    value_schema_id: u32,
+
     /// `True` if the serialized result should not include the schema ID.
     skip_schema_id: bool,
 
@@ -710,6 +713,8 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
             key_sql_schema: key_schema.clone(),
             key_avro_schema,
             value_buffer,
+            key_schema_id,
+            value_schema_id,
             skip_schema_id: config.skip_schema_id,
             update_format: config.update_format,
             cdc_field: config.cdc_field,
@@ -825,13 +830,20 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
             else {
                 break;
             };
+            let mut value_buffer = vec![0u8; 5];
+            let mut key_buffer = vec![0u8; 5];
+
+            if !self.skip_schema_id {
+                value_buffer[1..].clone_from_slice(&self.value_schema_id.to_be_bytes());
+                key_buffer[1..].clone_from_slice(&self.key_schema_id.to_be_bytes());
+            }
             let mut encoder = AvroParallelEncoder {
                 value_sql_schema: self.value_sql_schema.clone(),
                 value_avro_schema: self.value_avro_schema.clone(),
                 key_sql_schema: self.key_sql_schema.clone(),
                 key_avro_schema: self.key_avro_schema.clone(),
-                value_buffer: vec![0u8; 5],
-                key_buffer: vec![0u8; 5],
+                value_buffer,
+                key_buffer,
                 skip_schema_id: self.skip_schema_id,
                 update_format: self.update_format.clone(),
                 cdc_field: self.cdc_field.clone(),
