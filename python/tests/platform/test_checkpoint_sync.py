@@ -243,6 +243,7 @@ class TestCheckpointSync(SharedTestPipeline):
         if expect_empty:
             got_before = []
 
+        # Validate that the outputs before starting from checkpoint is the same as after.
         self.assertCountEqual(got_before, got_after)
 
         self.pipeline.stop(force=True)
