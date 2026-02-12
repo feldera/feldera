@@ -17,7 +17,7 @@ Example usage:
 
 ```
 $ ./scripts/scalebench.py --mem-bw --program u64 --workers 1,4,8,16,20 \
-  --payload 8 --duration 120 --repetition 1 \
+  --payload-bytes 8 --duration 120 --repetition 1 \
   --version-suffix dbsp-sorting
 ```
 """
@@ -41,7 +41,7 @@ from typing import Any, Dict, Iterable, Tuple
 from feldera import FelderaClient, PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 
-PROGRAMS = ["u64", "binary", "string", "binary_primary_key"]
+PROGRAMS = ["u64", "u64N", "binary", "string", "binary_primary_key"]
 WORKER_COUNTS = [1, 2, 4, 8, 12, 16, 20]
 DEFAULT_PAYLOAD_BYTES = [8, 128, 512, 4096, 32768]
 BENCH_DURATION_S = 120
@@ -91,6 +91,14 @@ def normalize_payload_bytes(
                 "Program u64 does not support payload sizes other than 8 bytes."
             )
         return [8]
+    if program == "u64N":
+        invalid = [size for size in payload_bytes if size % 8 != 0]
+        if invalid:
+            invalid_csv = ",".join(str(size) for size in invalid)
+            raise SystemExit(
+                "Program u64N requires payload sizes that are multiples of 8 bytes. "
+                f"Invalid values: {invalid_csv}"
+            )
     return payload_bytes
 
 
@@ -98,6 +106,21 @@ def make_sql(program: str, datagen_workers: int, payload_bytes: int) -> str:
     if program == "u64":
         table_fields = "    payload BIGINT NOT NULL\n"
         fields = None
+    elif program == "u64N":
+        if payload_bytes % 8 != 0:
+            raise ValueError(
+                f"Program u64N requires payload-bytes to be a multiple of 8, got {payload_bytes}"
+            )
+        u64_count = payload_bytes // 8
+        if u64_count <= 0:
+            raise ValueError(
+                f"Program u64N requires payload-bytes >= 8, got {payload_bytes}"
+            )
+        table_fields = ",\n".join(
+            f"    payload{i} BIGINT NOT NULL" for i in range(u64_count)
+        )
+        table_fields += "\n"
+        fields = {f"payload{i}": {"strategy": "uniform"} for i in range(u64_count)}
     elif program == "binary":
         table_fields = "    payload BINARY NOT NULL\n"
         fields = {
@@ -400,11 +423,7 @@ def extract_metrics(payload: Dict[str, Any], pipeline_name: str) -> Dict[str, An
     storage = metrics.get("storage") or {}
     uptime = metrics.get("uptime") or {}
     state_amp = metrics.get("state-amplification") or {}
-    buffered = (
-        metrics.get("buffered_input_records")
-        or metrics.get("buffered-input-records")
-        or {}
-    )
+    buffered = metrics.get("buffered-input-records") or {}
 
     return {
         "throughput_value": throughput.get("value"),
@@ -495,7 +514,7 @@ def main() -> int:
         "--payload-bytes",
         dest="payload_bytes",
         type=str,
-        help="Comma-separated payload sizes in bytes, e.g. 8,8192.",
+        help=("Comma-separated payload sizes in bytes, e.g. 8,8192."),
     )
     parser.add_argument(
         "--program",
