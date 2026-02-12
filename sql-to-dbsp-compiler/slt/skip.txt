@@ -21,4 +21,5 @@ SELECT ALL + CASE - 59 WHEN + 55 * - 56 + - - 95 THEN - 78 + 98 * CASE - COUNT (
 SELECT ALL - ( 27 ) * - 92 / + + 0 / CASE + ( + 27 ) WHEN - 36 THEN NULL WHEN - NULLIF ( - COUNT ( + 36 ), - 78 ) THEN + 46 ELSE NULL END * + 53 + - - 8
 // test/random/expr/slt_good_99.test: test 5803, division by 0
 SELECT + MIN ( 95 ) / - + 0 * + CASE - - COUNT ( + 54 ) WHEN + 27 * + ( - - 48 ) - - 45 THEN COUNT ( * ) * + 21 ELSE NULL END * 41
-
+// test/random/expr/slt_good_100.test: test 8766, division by zero
+SELECT ALL - 29 * + 42 - + + 30 / - - 0 / CASE + 46 WHEN - 96 + - + 73 THEN NULL WHEN 94 THEN - NULLIF ( 37, 90 ) END - - 97
