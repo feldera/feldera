@@ -1,5 +1,5 @@
 /**
- * Runs the function on initial call
+ * Runs the function on initial call and then every interval of durationMs, with the optional offset for the second call.
  * @param f
  * @param durationMs
  * @param offsetMs

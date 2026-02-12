@@ -8,7 +8,9 @@ use crate::db::pg_setup;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
 use crate::db::types::monitor::{
-    ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent, NewClusterMonitorEvent,
+    ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
+    ExtendedPipelineMonitorEvent, NewClusterMonitorEvent, PipelineMonitorEvent,
+    PipelineMonitorEventId,
 };
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
@@ -881,15 +883,17 @@ impl Storage for StoragePostgres {
         let pipeline =
             operations::pipeline::get_pipeline_by_id_for_monitoring(&txn, tenant_id, pipeline_id)
                 .await?;
-        operations::pipeline::set_deployment_resources_desired_status(
-            &txn,
-            tenant_id,
-            &pipeline.name,
-            ResourcesDesiredStatus::Stopped,
-            None,
-            None,
-        )
-        .await?;
+        if pipeline.deployment_resources_desired_status != ResourcesDesiredStatus::Stopped {
+            operations::pipeline::set_deployment_resources_desired_status(
+                &txn,
+                tenant_id,
+                &pipeline.name,
+                ResourcesDesiredStatus::Stopped,
+                None,
+                None,
+            )
+            .await?;
+        }
         operations::pipeline::set_deployment_resources_status_stopping(
             &txn,
             tenant_id,
@@ -1308,6 +1312,95 @@ impl Storage for StoragePostgres {
             .await?;
         txn.commit().await?;
         Ok((num_deleted_due_to_timestamp, num_deleted_due_to_limit))
+    }
+
+    async fn list_pipeline_monitor_events(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+    ) -> Result<Vec<PipelineMonitorEvent>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let events = operations::pipeline_monitor::list_pipeline_monitor_events_short(
+            &txn,
+            tenant_id,
+            pipeline_name,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(events)
+    }
+
+    async fn get_pipeline_monitor_event_short(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+        event_id: PipelineMonitorEventId,
+    ) -> Result<PipelineMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event = operations::pipeline_monitor::get_pipeline_monitor_event_short(
+            &txn,
+            tenant_id,
+            pipeline_name,
+            event_id,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn get_pipeline_monitor_event_extended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+        event_id: PipelineMonitorEventId,
+    ) -> Result<ExtendedPipelineMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event = operations::pipeline_monitor::get_pipeline_monitor_event_extended(
+            &txn,
+            tenant_id,
+            pipeline_name,
+            event_id,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn get_latest_pipeline_monitor_event_short(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+    ) -> Result<PipelineMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event = operations::pipeline_monitor::get_latest_pipeline_monitor_event_short(
+            &txn,
+            tenant_id,
+            pipeline_name,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(event)
+    }
+
+    async fn get_latest_pipeline_monitor_event_extended(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: String,
+    ) -> Result<ExtendedPipelineMonitorEvent, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let event = operations::pipeline_monitor::get_latest_pipeline_monitor_event_extended(
+            &txn,
+            tenant_id,
+            pipeline_name,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(event)
     }
 }
 

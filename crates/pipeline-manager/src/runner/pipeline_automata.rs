@@ -193,6 +193,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// updated in the database, unless the status itself changed.
     const DETAILS_UPDATE_MIN_INTERVAL: Duration = Duration::from_secs(10);
 
+    /// If nothing changes, this will create the same event.
+    const DETAILS_UPDATE_MAX_INTERVAL: Duration = Duration::from_secs(600);
+
     /// Creates a new automaton for a given pipeline.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -1630,6 +1633,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 && self
                     .prev_details_update
                     .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MIN_INTERVAL))
+            || self
+                .prev_details_update
+                .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MAX_INTERVAL)
         {
             self.prev_details_update = Some(Instant::now());
             self.prev_resources_status_details = Some(latest_resources_status_details.clone());
@@ -1663,10 +1669,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 "Pipeline could not be stopped (will retry): {e}"
             );
             let latest_details = json!(format!("Unable to stop (will retry) due to: {e}"));
-            if Some(&latest_details) != self.prev_resources_status_details.as_ref()
+            if (Some(&latest_details) != self.prev_resources_status_details.as_ref()
                 && self
                     .prev_details_update
-                    .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MIN_INTERVAL)
+                    .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MIN_INTERVAL))
+                || self
+                    .prev_details_update
+                    .is_none_or(|t| t.elapsed() >= Self::DETAILS_UPDATE_MAX_INTERVAL)
             {
                 self.prev_details_update = Some(Instant::now());
                 self.prev_resources_status_details = Some(latest_details.clone());
