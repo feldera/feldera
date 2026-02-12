@@ -475,6 +475,7 @@ metrics"""
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        ignore_deployment_error: bool = False,
     ):
         """
         .. _start:
@@ -489,12 +490,18 @@ metrics"""
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to start.
         :param wait: Set True to wait for the pipeline to start. True by default
+        :param ignore_deployment_error: Set True to ignore deployment errors while waiting
+            for START transition. False by default.
 
         :raises RuntimeError: If the pipeline is not in STOPPED state.
         """
 
         self.client.start_pipeline(
-            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+            self.name,
+            bootstrap_policy=bootstrap_policy,
+            wait=wait,
+            timeout_s=timeout_s,
+            ignore_deployment_error=ignore_deployment_error,
         )
 
     def start_paused(

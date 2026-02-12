@@ -238,8 +238,10 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         states: list[str],
         timeout_s: float | None = None,
         start: bool = True,
+        ignore_deployment_error: bool = False,
     ) -> PipelineStatus:
         start_time = time.monotonic()
+        poll_interval_s = 0.1
         states = [state.lower() for state in states]
 
         while True:
@@ -261,6 +263,14 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 and len(resp.deployment_error or {}) > 0
                 and resp.deployment_desired_status == "Stopped"
             ):
+                if ignore_deployment_error:
+                    logging.debug(
+                        "ignoring stopped deployment error while waiting for %s to start: %s",
+                        pipeline_name,
+                        (resp.deployment_error or {}).get("message", ""),
+                    )
+                    time.sleep(poll_interval_s)
+                    continue
                 err_msg = "Unable to START the pipeline:\n" if start else ""
                 raise RuntimeError(
                     f"""{err_msg}Unable to transition the pipeline to one of the states: {states}.
@@ -270,7 +280,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             logging.debug(
                 "still starting %s, waiting for 100 more milliseconds", pipeline_name
             )
-            time.sleep(0.1)
+            time.sleep(poll_interval_s)
 
     def create_pipeline(self, pipeline: Pipeline, wait: bool = True) -> Pipeline:
         """
@@ -444,6 +454,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        ignore_deployment_error: bool = False,
     ) -> Optional[PipelineStatus]:
         """
 
@@ -453,6 +464,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param wait: Set True to wait for the pipeline to start. True by default
         :param timeout_s: The amount of time in seconds to wait for the
             pipeline to start.
+        :param ignore_deployment_error: Set True to ignore deployment errors while waiting for
+            START transition. If `timeout_s` is not provided, a default timeout is
+            used to avoid indefinite waiting.
         """
 
         params = {"initial": initial}
@@ -467,8 +481,22 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if not wait:
             return None
 
+        effective_timeout_s = timeout_s
+        if ignore_deployment_error and effective_timeout_s is None:
+            # ignore_deployment_error can intentionally skip the stopped+error failure guard.
+            # Bound the wait so callers don't get an unbounded polling loop.
+            effective_timeout_s = 60.0
+            logging.warning(
+                "start_pipeline(ignore_deployment_error=True) called without timeout; "
+                "defaulting to %.0fs",
+                effective_timeout_s,
+            )
+
         return self.__wait_for_pipeline_state_one_of(
-            pipeline_name, [initial, "AwaitingApproval"], timeout_s
+            pipeline_name,
+            [initial, "AwaitingApproval"],
+            effective_timeout_s,
+            ignore_deployment_error=ignore_deployment_error,
         )
 
     def start_pipeline(
@@ -477,6 +505,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        ignore_deployment_error: bool = False,
     ) -> Optional[PipelineStatus]:
         """
 
@@ -485,10 +514,17 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             True by default
         :param timeout_s: The amount of time in seconds to wait for the
             pipeline to start.
+        :param ignore_deployment_error: Set True to ignore deployment errors while waiting
+            for START transition.
         """
 
         return self._inner_start_pipeline(
-            pipeline_name, "running", bootstrap_policy, wait, timeout_s
+            pipeline_name,
+            "running",
+            bootstrap_policy,
+            wait,
+            timeout_s,
+            ignore_deployment_error,
         )
 
     def start_pipeline_as_paused(
