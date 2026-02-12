@@ -313,8 +313,7 @@ with (
       "name": "kafka_output",
       "config": {
         "bootstrap.servers": "127.0.0.1:19092",
-        "topic": "my_topic",
-        "auto.offset.reset": "earliest"
+        "topic": "my_topic"
       }
     },
     "format": {
