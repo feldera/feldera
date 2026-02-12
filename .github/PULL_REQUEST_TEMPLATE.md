@@ -1,5 +1,11 @@
+### Describe Manual Test Plan
+
+<!-- Add a few sentences describing the steps you took to test this change. -->
+
 ## Checklist
 
+- [ ] Unit tests added/updated
+- [ ] Integration tests added/updated
 - [ ] Documentation updated
 - [ ] Changelog updated
 
