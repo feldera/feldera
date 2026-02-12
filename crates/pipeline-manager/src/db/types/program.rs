@@ -18,7 +18,6 @@ use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::string::ParseError;
 use thiserror::Error as ThisError;
-use tracing::error;
 use tracing::warn;
 use utoipa::ToSchema;
 
