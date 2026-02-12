@@ -565,3 +565,181 @@ where
         })
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::utils::Tup2;
+    use crate::{
+        dynamic::DowncastTrait,
+        indexed_zset,
+        trace::{BatchReader, BatchReaderFactories, merge_batches_by_reference},
+    };
+    use proptest::{collection::vec, prelude::*};
+
+    pub type TestBatch = crate::OrdIndexedZSet<u64, u64>;
+
+    /// Collect (key, value, weight) tuples from a cursor by iterating forward.
+    pub fn cursor_to_tuples<C>(cursor: &mut C) -> Vec<(u64, u64, i64)>
+    where
+        C: Cursor<crate::dynamic::DynData, crate::dynamic::DynData, (), crate::DynZWeight>,
+    {
+        let mut result = Vec::new();
+        while cursor.key_valid() {
+            while cursor.val_valid() {
+                let k = *cursor.key().downcast_checked::<u64>();
+                let v = *cursor.val().downcast_checked::<u64>();
+                let w = *cursor.weight().downcast_checked::<i64>();
+                if w != 0 {
+                    result.push((k, v, w));
+                }
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+        result
+    }
+
+    /// Collect tuples from batches via merge_batches_by_reference (uses cursor_to_tuples).
+    pub fn merged_batch_to_tuples(batches: &[TestBatch]) -> Vec<(u64, u64, i64)> {
+        if batches.is_empty() {
+            return Vec::new();
+        }
+        let factories = batches[0].factories();
+        let merged =
+            merge_batches_by_reference(&factories, batches.iter().map(|b| &**b), &None, &None);
+        let mut cursor = merged.cursor();
+        cursor_to_tuples(&mut cursor)
+    }
+
+    #[test]
+    fn cursor_list_matches_merge_batches() {
+        let batch1: TestBatch = indexed_zset! { 1 => { 1 => 1, 2 => 2 }, 2 => { 1 => 1 } };
+        let batch2: TestBatch = indexed_zset! { 1 => { 2 => -1, 3 => 2 }, 3 => { 1 => 1 } };
+        let batch3: TestBatch = indexed_zset! { 2 => { 2 => 1 }, 4 => { 1 => 1 } };
+
+        let batches = vec![batch1, batch2, batch3];
+        let cursors: Vec<_> = batches.iter().map(|b| b.cursor()).collect();
+        let weight_factory = batches[0].factories().weight_factory();
+        let mut cursor_list = CursorList::new(weight_factory, cursors);
+
+        let cursor_output = cursor_to_tuples(&mut cursor_list);
+
+        let expected = merged_batch_to_tuples(&batches);
+
+        assert_eq!(cursor_output, expected);
+    }
+
+    #[test]
+    fn cursor_list_empty_batches() {
+        let batch1: TestBatch = indexed_zset! {};
+        let batch2: TestBatch = indexed_zset! { 1 => { 1 => 1 } };
+        let batch3: TestBatch = indexed_zset! {};
+
+        let batches = vec![batch1, batch2, batch3];
+        let cursors: Vec<_> = batches.iter().map(|b| b.cursor()).collect();
+        let weight_factory = batches[0].factories().weight_factory();
+        let mut cursor_list = CursorList::new(weight_factory, cursors);
+
+        let cursor_output = cursor_to_tuples(&mut cursor_list);
+        let expected = merged_batch_to_tuples(&batches);
+
+        assert_eq!(cursor_output, expected);
+        assert_eq!(cursor_output, vec![(1, 1, 1)]);
+    }
+
+    #[test]
+    fn cursor_list_single_batch() {
+        let batch: TestBatch = indexed_zset! { 1 => { 1 => 1, 2 => 2 }, 2 => { 1 => -1 } };
+
+        let batches = vec![batch];
+        let cursors: Vec<_> = batches.iter().map(|b| b.cursor()).collect();
+        let weight_factory = batches[0].factories().weight_factory();
+        let mut cursor_list = CursorList::new(weight_factory, cursors);
+
+        let cursor_output = cursor_to_tuples(&mut cursor_list);
+        let expected = merged_batch_to_tuples(&batches);
+
+        assert_eq!(cursor_output, expected);
+    }
+
+    #[test]
+    fn cursor_list_weights_consolidate() {
+        // Multiple batches with same (k,v) - weights should sum
+        let batch1: TestBatch = indexed_zset! { 1 => { 1 => 2, 2 => 1 } };
+        let batch2: TestBatch = indexed_zset! { 1 => { 1 => 3, 2 => -1 } };
+        let batch3: TestBatch = indexed_zset! { 1 => { 1 => -1 } };
+
+        let batches = vec![batch1, batch2, batch3];
+        let cursors: Vec<_> = batches.iter().map(|b| b.cursor()).collect();
+        let weight_factory = batches[0].factories().weight_factory();
+        let mut cursor_list = CursorList::new(weight_factory, cursors);
+
+        let cursor_output = cursor_to_tuples(&mut cursor_list);
+        let expected = merged_batch_to_tuples(&batches);
+
+        assert_eq!(cursor_output, expected);
+        // (1,1): 2+3-1=4, (1,2): 1-1=0 (filtered out)
+        assert_eq!(cursor_output, vec![(1, 1, 4)]);
+    }
+
+    fn batches(
+        (max_key, max_value, weight_min, weight_max, max_batch_size, max_num_batches): (
+            u64,
+            u64,
+            i64,
+            i64,
+            usize,
+            usize,
+        ),
+    ) -> impl Strategy<Value = Vec<TestBatch>> {
+        let tuple_strategy = (0..max_key, 0..max_value, weight_min..=weight_max)
+            .prop_map(|(k, v, w)| Tup2(Tup2(k, v), w));
+        vec(
+            vec(tuple_strategy, 0..max_batch_size)
+                .prop_map(|tuples| TestBatch::from_tuples((), tuples)),
+            1..=max_num_batches,
+        )
+    }
+
+    fn test_cursor_list_matches_merge_batches(batches: &[TestBatch]) {
+        let cursors: Vec<_> = batches.iter().map(|b| b.cursor()).collect();
+        let weight_factory = batches[0].factories().weight_factory();
+        let mut cursor_list = CursorList::new(weight_factory, cursors);
+
+        let cursor_output = cursor_to_tuples(&mut cursor_list);
+        let expected = merged_batch_to_tuples(&batches);
+
+        assert_eq!(cursor_output, expected);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn proptest_cursor_list_matches_merge_batches1(batches in batches((100, 100, 0, 2, 100, 100))) {
+            test_cursor_list_matches_merge_batches(&batches);
+        }
+
+        #[test]
+        fn proptest_cursor_list_matches_merge_batches2(batches in batches((100, 100, -2, 2, 100, 100))) {
+            test_cursor_list_matches_merge_batches(&batches);
+        }
+
+        #[test]
+        fn proptest_cursor_list_matches_merge_batches3(batches in batches((1, 1, -2, 2, 100, 100))) {
+            test_cursor_list_matches_merge_batches(&batches);
+        }
+
+        #[test]
+        fn proptest_cursor_list_matches_merge_batches4(batches in batches((1000, 1, -2, 2, 100, 100))) {
+            test_cursor_list_matches_merge_batches(&batches);
+        }
+
+        #[test]
+        fn proptest_cursor_list_matches_merge_batches5(batches in batches((1, 1000, -2, 2, 100, 100))) {
+            test_cursor_list_matches_merge_batches(&batches);
+        }
+
+    }
+}
