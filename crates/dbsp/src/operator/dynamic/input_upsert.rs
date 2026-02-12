@@ -9,7 +9,9 @@ use crate::{
         operator_traits::{BinaryOperator, Operator, TernaryOperator},
     },
     declare_trait_object,
-    dynamic::{ClonableTrait, Data, DataTrait, DynOpt, DynPairs, Erase, Factory, WithFactory},
+    dynamic::{
+        ClonableTrait, Data, DataTrait, DynOpt, DynPairs, Erase, Factory, LeanVec, WithFactory,
+    },
     operator::{
         Z1,
         dynamic::{
@@ -21,6 +23,7 @@ use crate::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Rkyv, Spine,
         cursor::Cursor,
     },
+    utils::Tup2,
 };
 use feldera_macros::IsNone;
 use rkyv::{Archive, Deserialize, Serialize};
@@ -129,68 +132,83 @@ where
 
 pub type PatchFunc<V, U> = Box<dyn Fn(&mut V, &U)>;
 
-pub struct InputUpsertFactories<B: IndexedZSet> {
+pub struct InputUpsertFactories<B: IndexedZSet, U: DataTrait + ?Sized> {
     pub batch_factories: B::Factories,
     pub opt_key_factory: &'static dyn Factory<DynOpt<B::Key>>,
     pub opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
+    pub pairs_factory: &'static dyn Factory<DynPairs<B::Key, DynUpdate<B::Val, U>>>,
 }
 
-impl<B: IndexedZSet> Clone for InputUpsertFactories<B> {
+impl<B: IndexedZSet, U: DataTrait + ?Sized> Clone for InputUpsertFactories<B, U> {
     fn clone(&self) -> Self {
         Self {
             batch_factories: self.batch_factories.clone(),
             opt_key_factory: self.opt_key_factory,
             opt_val_factory: self.opt_val_factory,
+            pairs_factory: self.pairs_factory,
         }
     }
 }
 
-impl<B> InputUpsertFactories<B>
+impl<B, U> InputUpsertFactories<B, U>
 where
     B: Batch + IndexedZSet,
+    U: DataTrait + ?Sized,
 {
-    pub fn new<KType, VType>() -> Self
+    pub fn new<KType, VType, UType>() -> Self
     where
         KType: DBData + Erase<B::Key>,
         VType: DBData + Erase<B::Val>,
+        UType: DBData + Erase<U>,
     {
         Self {
             batch_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
             opt_val_factory: WithFactory::<Option<VType>>::FACTORY,
+            pairs_factory: WithFactory::<LeanVec<Tup2<KType, Update<VType, UType>>>>::FACTORY,
         }
     }
 }
 
-pub struct InputUpsertWithWaterlineFactories<B: IndexedZSet, E: DataTrait + ?Sized> {
+pub struct InputUpsertWithWaterlineFactories<
+    B: IndexedZSet,
+    U: DataTrait + ?Sized,
+    E: DataTrait + ?Sized,
+> {
     pub batch_factories: B::Factories,
     pub opt_key_factory: &'static dyn Factory<DynOpt<B::Key>>,
     pub opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
     pub val_factory: &'static dyn Factory<B::Val>,
+    pub pairs_factory: &'static dyn Factory<DynPairs<B::Key, DynUpdate<B::Val, U>>>,
     errors_factory: <OrdZSet<E> as BatchReader>::Factories,
 }
 
-impl<B: IndexedZSet, E: DataTrait + ?Sized> Clone for InputUpsertWithWaterlineFactories<B, E> {
+impl<B: IndexedZSet, U: DataTrait + ?Sized, E: DataTrait + ?Sized> Clone
+    for InputUpsertWithWaterlineFactories<B, U, E>
+{
     fn clone(&self) -> Self {
         Self {
             batch_factories: self.batch_factories.clone(),
             opt_key_factory: self.opt_key_factory,
             opt_val_factory: self.opt_val_factory,
             val_factory: self.val_factory,
+            pairs_factory: self.pairs_factory,
             errors_factory: self.errors_factory.clone(),
         }
     }
 }
 
-impl<B, E> InputUpsertWithWaterlineFactories<B, E>
+impl<B, U, E> InputUpsertWithWaterlineFactories<B, U, E>
 where
     B: Batch + IndexedZSet,
+    U: DataTrait + ?Sized,
     E: DataTrait + ?Sized,
 {
-    pub fn new<KType, VType, EType>() -> Self
+    pub fn new<KType, VType, UType, EType>() -> Self
     where
         KType: DBData + Erase<B::Key>,
         VType: DBData + Erase<B::Val>,
+        UType: DBData + Erase<U>,
         EType: DBData + Erase<E>,
     {
         Self {
@@ -198,6 +216,7 @@ where
             opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
             opt_val_factory: WithFactory::<Option<VType>>::FACTORY,
             val_factory: WithFactory::<VType>::FACTORY,
+            pairs_factory: WithFactory::<LeanVec<Tup2<KType, Update<VType, UType>>>>::FACTORY,
             errors_factory: BatchReaderFactories::new::<EType, (), ZWeight>(),
         }
     }
@@ -235,18 +254,13 @@ where
     pub fn input_upsert<B>(
         &self,
         persistent_id: Option<&str>,
-        factories: &InputUpsertFactories<B>,
+        factories: &InputUpsertFactories<B, U>,
         patch_func: PatchFunc<V, U>,
     ) -> Stream<RootCircuit, B>
     where
         B: IndexedZSet<Key = K, Val = V>,
     {
         let circuit = self.circuit();
-
-        assert!(
-            self.is_sharded(),
-            "input_upsert operator applied to a non-sharded collection"
-        );
 
         // We build the following circuit to implement the upsert semantics.
         // The collection is accumulated into a trace using integrator
@@ -269,6 +283,8 @@ where
         // ```
         circuit.region("input_upsert", || {
             let bounds = <TraceBounds<K, V>>::unbounded();
+
+            let sharded = self.dyn_shard_pairs(factories.pairs_factory);
 
             let z1 = Z1Trace::new(
                 &factories.batch_factories,
@@ -296,7 +312,7 @@ where
                         patch_func,
                     ),
                     &delayed_trace,
-                    self,
+                    &sharded,
                 )
                 .mark_distinct();
             delta.mark_sharded();
@@ -327,7 +343,7 @@ where
     pub fn input_upsert_with_waterline<B, W, E>(
         &self,
         persistent_id: Option<&str>,
-        factories: &InputUpsertWithWaterlineFactories<B, E>,
+        factories: &InputUpsertWithWaterlineFactories<B, U, E>,
         patch_func: PatchFunc<V, U>,
         init_waterline: Box<dyn Fn() -> Box<W>>,
         extract_ts: Box<dyn Fn(&B::Key, &B::Val, &mut W)>,
@@ -346,11 +362,6 @@ where
         Box<W>: Checkpoint + Clone + NumEntries + Rkyv,
     {
         let circuit = self.circuit();
-
-        assert!(
-            self.is_sharded(),
-            "input_upsert_with_waterline operator applied to a non-sharded collection"
-        );
 
         // ```text
         //                   ┌─────────────────────────────────────────────►
@@ -377,6 +388,8 @@ where
 
         circuit.region("input_upsert_waterline", || {
             let bounds = <TraceBounds<K, V>>::unbounded();
+
+            let sharded = self.dyn_shard_pairs(factories.pairs_factory);
 
             let z1 = Z1Trace::new(
                 &factories.batch_factories,
@@ -416,7 +429,7 @@ where
                         error_stream_val.clone(),
                     ),
                     &delayed_trace,
-                    self,
+                    &sharded,
                     &delayed_waterline,
                 )
                 .mark_distinct();
@@ -695,7 +708,7 @@ where
     W: DataTrait + ?Sized,
     E: DataTrait + ?Sized,
 {
-    factories: InputUpsertWithWaterlineFactories<B, E>,
+    factories: InputUpsertWithWaterlineFactories<B, U, E>,
     patch_func: PatchFunc<T::Val, U>,
     filter_func: Box<dyn Fn(&W, &B::Key, &B::Val) -> bool>,
     report_func: Box<dyn Fn(&W, &B::Key, &B::Val, ZWeight, &mut E)>,
@@ -719,7 +732,7 @@ where
     E: DataTrait + ?Sized,
 {
     pub fn new(
-        factories: InputUpsertWithWaterlineFactories<B, E>,
+        factories: InputUpsertWithWaterlineFactories<B, U, E>,
         patch_func: PatchFunc<T::Val, U>,
         filter_func: Box<dyn Fn(&W, &B::Key, &B::Val) -> bool>,
         report_func: Box<dyn Fn(&W, &B::Key, &B::Val, ZWeight, &mut E)>,

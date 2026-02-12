@@ -4,14 +4,16 @@
 // TODOs:
 // - different sharding modes.
 
+use rkyv::{archived_root, ser::Serializer as _};
+
 use crate::{
     Circuit, Runtime, Stream,
     circuit::circuit_builder::StreamId,
     circuit_cache_key,
-    dynamic::Data,
+    dynamic::{Data, DataTrait, DynPairs, Factory},
     operator::communication::new_exchange_operators,
     trace::{
-        Batch, BatchReader, Builder, deserialize_indexed_wset, merge_batches,
+        Batch, BatchReader, Builder, Serializer, deserialize_indexed_wset, merge_batches,
         serialize_indexed_wset,
     },
 };
@@ -155,6 +157,60 @@ where
     }
 }
 
+impl<C, K, V> Stream<C, Vec<Box<DynPairs<K, V>>>>
+where
+    C: Circuit,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+{
+    #[track_caller]
+    pub fn dyn_shard_pairs(
+        &self,
+        pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
+    ) -> Stream<C, Vec<Box<DynPairs<K, V>>>> {
+        if self.is_sharded() {
+            return self.clone();
+        }
+
+        let location = Location::caller();
+
+        let (sender, receiver) = new_exchange_operators(
+            Some(location),
+            Vec::new,
+            move |input_pairs: Vec<Box<DynPairs<K, V>>>,
+                  output_pairs: &mut Vec<Box<DynPairs<K, V>>>| {
+                shard_pairs(input_pairs, &all_workers(), output_pairs, pairs_factory);
+            },
+            |batch| {
+                let mut s = Serializer::default();
+                let offset = batch.serialize(&mut s).unwrap();
+                s.serialize_value(&offset).unwrap();
+                s.into_serializer().into_inner().into_vec()
+            },
+            move |data| {
+                let offset = unsafe { archived_root::<usize>(&data) };
+                let mut output = pairs_factory.default_box();
+
+                unsafe { output.deserialize_from_bytes(&data, *offset as usize) };
+                output
+            },
+            |output_pairs: &mut Vec<Box<DynPairs<K, V>>>, batch: Box<DynPairs<K, V>>| {
+                output_pairs.push(batch);
+            },
+        )
+        .unwrap();
+
+        let output = self.circuit().add_exchange(sender, receiver, self);
+
+        output.set_persistent_id(
+            self.get_persistent_id()
+                .map(|name| format!("{name}.shard"))
+                .as_deref(),
+        );
+        output
+    }
+}
+
 // Partitions the batch into shards covering `workers` (out of
 // `all_workers()`), based on the hash of the key.
 pub fn shard_batch<IB, OB>(
@@ -215,6 +271,29 @@ pub fn shard_batch<IB, OB>(
     }
     for _ in workers.end..Runtime::num_workers() {
         outputs.push(OB::dyn_empty(factories));
+    }
+}
+
+// Partitions the batch into shards covering `workers` (out of
+// `all_workers()`), based on the hash of the key.
+pub fn shard_pairs<K, V>(
+    input_pairs: Vec<Box<DynPairs<K, V>>>,
+    workers: &Range<usize>,
+    output_pairs: &mut Vec<Box<DynPairs<K, V>>>,
+    pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
+) where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+{
+    output_pairs.clear();
+    output_pairs.resize(workers.len(), pairs_factory.default_box());
+
+    for mut pairs in input_pairs {
+        for pair in pairs.dyn_iter_mut() {
+            let k = pair.fst();
+            let shard_index = k.default_hash() as usize % workers.len();
+            output_pairs[shard_index].push_val(pair);
+        }
     }
 }
 

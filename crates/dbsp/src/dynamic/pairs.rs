@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    DBData, declare_trait_object,
+    DBData, NumEntries, declare_trait_object,
     dynamic::erase::Erase,
     utils::{Tup2, stable_sort_by},
 };
@@ -62,6 +62,18 @@ impl<T1: DataTrait + ?Sized, T2: DataTrait + ?Sized> Index<usize> for DynPairs<T
 impl<T1: DataTrait + ?Sized, T2: DataTrait + ?Sized> IndexMut<usize> for DynPairs<T1, T2> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         Vector::index_mut(self, index)
+    }
+}
+
+impl<T1: DataTrait + ?Sized, T2: DataTrait + ?Sized> NumEntries for DynPairs<T1, T2> {
+    const CONST_NUM_ENTRIES: Option<usize> = None;
+
+    fn num_entries_shallow(&self) -> usize {
+        self.len()
+    }
+
+    fn num_entries_deep(&self) -> usize {
+        self.len()
     }
 }
 
