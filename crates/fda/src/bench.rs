@@ -51,6 +51,7 @@ struct RawMetrics {
     uptime_msecs: i64,
     incarnation_uuid: String,
     storage_bytes: i64,
+    buffered_input_records: i64,
     total_processed_records: i64,
     input_bytes: i64,
     input_errors: bool,
@@ -113,6 +114,7 @@ impl From<&feldera_rest_api::types::ControllerStatus> for RawMetrics {
             uptime_msecs: global_metrics.uptime_msecs,
             incarnation_uuid: global_metrics.incarnation_uuid.to_string(),
             storage_bytes: global_metrics.storage_bytes,
+            buffered_input_records: global_metrics.buffered_input_records,
             total_processed_records: global_metrics.total_processed_records,
             input_bytes,
             input_errors,
@@ -156,6 +158,9 @@ struct PipelineMetrics {
         skip_serializing_if = "Option::is_none"
     )]
     state_amplification: Option<Metric<f64>>,
+    /// Amount of buffering for inputs
+    #[serde(rename = "buffered-input-records")]
+    buffered_input_records: Metric<i64>,
 }
 
 impl PipelineMetrics {
@@ -203,6 +208,34 @@ impl PipelineMetrics {
             upper_value: None,
         };
 
+        // Calculate memory metrics
+        let buffered_input_records = Metric {
+            value: metrics
+                .iter()
+                .map(|m| m.buffered_input_records)
+                .sum::<i64>()
+                / metrics.iter().len() as i64,
+            lower_value: metrics
+                .iter()
+                .map(|m| m.buffered_input_records)
+                .min_by(|a, b| a.cmp(b)),
+            upper_value: metrics
+                .iter()
+                .map(|m| m.buffered_input_records)
+                .max_by(|a, b| a.cmp(b)),
+        };
+
+        if buffered_input_records.lower_value.unwrap_or_default() == 0 {
+            eprintln!(
+                "Input buffering was 0 for {} samples, we're likely not sending enough data to the pipeline for evaluating its true performance.",
+                metrics
+                    .iter()
+                    .map(|m| m.buffered_input_records)
+                    .filter(|b| *b == 0)
+                    .count()
+            );
+        }
+
         // Calculate input bytes for state amplification
         let input_bytes = metrics.iter().last().map(|m| m.input_bytes).unwrap();
 
@@ -218,6 +251,7 @@ impl PipelineMetrics {
             memory,
             storage,
             state_amplification,
+            buffered_input_records,
             uptime: Metric::simple(last.uptime_msecs),
         }
     }
