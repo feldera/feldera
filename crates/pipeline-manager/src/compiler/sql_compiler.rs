@@ -573,7 +573,7 @@ pub(crate) async fn perform_sql_compilation(
         assert!(sql_compiler_executable_file_path.exists());
     }
 
-    let runtime_crates_path = config.dbsp_override_path.clone();
+    let runtime_crates_path = runtime_selector.runtime_sources(config);
     // Call executable with arguments
     //
     // In the future, it might be that flags can be passed to the SQL compiler through

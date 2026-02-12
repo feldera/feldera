@@ -1379,18 +1379,15 @@ async fn prepare_workspace(
     // Sources: config.compiler_working_directory
     // ---------------------
     // Make sure the runtime version is checked out.
-    let runtime_sources = if requested_runtime_version.is_platform() {
-        config.dbsp_override_path.clone()
-    } else {
-        let repo_location =
-            PathBuf::from(&config.compiler_working_directory).join("feldera-checkout");
+    let runtime_sources = requested_runtime_version.runtime_sources(config);
+    if !requested_runtime_version.is_platform() {
+        let repo_location = PathBuf::from(&runtime_sources);
         checkout_runtime_version(
             &repo_location,
             requested_runtime_version,
             &PathBuf::from(&config.dbsp_override_path),
         )
         .await?;
-        repo_location.to_string_lossy().to_string()
     };
 
     // Workspace: Cargo.toml

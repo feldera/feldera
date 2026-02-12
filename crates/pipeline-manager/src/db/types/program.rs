@@ -1,3 +1,4 @@
+use crate::config::CompilerConfig;
 use crate::db::error::DBError;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::utils::validate_name;
@@ -15,6 +16,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::string::ParseError;
 use thiserror::Error as ThisError;
@@ -340,6 +342,18 @@ impl From<RuntimeSelector> for Option<String> {
 }
 
 impl RuntimeSelector {
+    /// Returns a path to sources of the runtime which the compilation should be using.
+    pub fn runtime_sources(&self, config: &CompilerConfig) -> String {
+        if self.is_platform() {
+            config.dbsp_override_path.clone()
+        } else {
+            assert!(has_unstable_feature("runtime_version"));
+            let repo_location =
+                PathBuf::from(&config.compiler_working_directory).join("feldera-checkout");
+            repo_location.to_string_lossy().to_string()
+        }
+    }
+
     /// Is this the platform's default runtime version?
     pub fn is_platform(&self) -> bool {
         matches!(self, RuntimeSelector::Platform(_))
