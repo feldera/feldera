@@ -165,8 +165,9 @@ public class LinearAggregate extends IAggregate {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        builder.append("LinearAggregate[").increase();
-        builder.append("increment=")
+        return builder.append("LinearAggregate[")
+                .increase()
+                .append("increment=")
                 .append(this.map)
                 .newline()
                 .append("postProcess=")
@@ -174,9 +175,9 @@ public class LinearAggregate extends IAggregate {
                 .newline()
                 .append("emptySetResult=")
                 .append(this.emptySetResult)
-                .newline();
-        builder.newline().decrease().append("]");
-        return builder;
+                .newline()
+                .decrease()
+                .append("]");
     }
 
     public boolean equivalent(EquivalenceContext context, LinearAggregate other) {

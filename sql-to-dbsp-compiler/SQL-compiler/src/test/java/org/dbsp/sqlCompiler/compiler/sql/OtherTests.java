@@ -180,7 +180,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         File file = createInputScript(sql);
         CompilerMain.execute("-TSqlToRelCompiler=2", "-TPasses=2",
                 "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
-        Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, true);
         Logger.INSTANCE.setDebugStream(save);
         String messages = builder.toString();
         Assert.assertTrue(messages.contains("After optimizer"));

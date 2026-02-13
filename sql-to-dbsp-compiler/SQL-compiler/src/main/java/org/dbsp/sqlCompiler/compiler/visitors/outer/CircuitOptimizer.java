@@ -87,7 +87,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         AnalyzedSet<DBSPOperator> operatorsAnalyzed = new AnalyzedSet<>();
         this.add(new OptimizeWithGraph(compiler,
-                g -> new OptimizeMaps(compiler, true, g, operatorsAnalyzed), 1));
+                g -> new OptimizeProjections(compiler, true, g, operatorsAnalyzed), 1));
         this.add(new RemoveViewOperators(compiler, false));
         this.add(new UnusedFields(compiler));
         this.add(new Intern(compiler));
@@ -109,7 +109,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveFilters(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new OptimizeProjectionVisitor(compiler, g)));
         this.add(new OptimizeWithGraph(compiler,
-                g -> new OptimizeMaps(compiler, true, g, operatorsAnalyzed)));
+                g -> new OptimizeProjections(compiler, true, g, operatorsAnalyzed)));
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
         this.add(new MonotoneAnalyzer(compiler));
         // Can remove this table after the monotone analysis only
@@ -131,7 +131,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveIdentityOperators(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
         this.add(new OptimizeWithGraph(compiler,
-                g -> new OptimizeMaps(compiler, false, g, operatorsAnalyzed)));
+                g -> new OptimizeProjections(compiler, false, g, operatorsAnalyzed)));
         this.add(new SimplifyWaterline(compiler)
                 .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));
         this.add(new EliminateDump(compiler).circuitRewriter(false));

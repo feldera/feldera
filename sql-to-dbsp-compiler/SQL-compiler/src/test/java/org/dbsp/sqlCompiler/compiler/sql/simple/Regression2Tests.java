@@ -1,11 +1,17 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
+import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.util.HashString;
 import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
@@ -260,5 +266,217 @@ public class Regression2Tests extends SqlIoTest {
                 CREATE VIEW v AS SELECT
                 str SIMILAR TO '(abc|def)%' AS str
                 FROM tbl;""", "Function 'SIMILAR TO' not yet implemented");
+    }
+
+    @Test
+    public void issue5541() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT);
+                CREATE LOCAL VIEW V AS SELECT MIN(x) AS min, MAX(x) AS max FROM T;
+                CREATE VIEW W AS SELECT min FROM V;""");
+        final int[] aggregatesFound = {0};
+        InnerVisitor noMax = new InnerVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPMinMax node) {
+                Assert.assertNotEquals(DBSPMinMax.Aggregation.Max, node.aggregation);
+                aggregatesFound[0]++;
+            }
+        };
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPStreamAggregateOperator aggregate) {
+                noMax.apply(aggregate.getFunction());
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, aggregatesFound[0]);
+            }
+        });
+
+        ccs.step("INSERT INTO T VALUES(1), (2);", """
+                 min | weight
+                --------------
+                 1   | 1""");
+    }
+
+    @Test
+    public void issue5541a() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT);
+                CREATE LOCAL VIEW V AS SELECT ARRAY_AGG(x) AS a, MAX(x) AS max FROM T;
+                CREATE VIEW W AS SELECT a FROM V;""");
+        final int[] aggregatesFound = {0};
+        InnerVisitor noMax = new InnerVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPMinMax node) {
+                Utilities.enforce (node.aggregation != DBSPMinMax.Aggregation.Max);
+                aggregatesFound[0]++;
+            }
+
+            @Override
+            public void postorder(DBSPFold fold) {
+                aggregatesFound[0]++;
+            }
+        };
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPStreamAggregateOperator aggregate) {
+                noMax.apply(aggregate.getFunction());
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, aggregatesFound[0]);
+            }
+        });
+
+        ccs.step("INSERT INTO T VALUES(1), (2);", """
+                 a | weight
+                --------------
+                 { 1, 2 } | 1""");
+    }
+
+    @Test
+    public void issue5541b() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(r ROW(x INT, y INT));
+                CREATE LOCAL VIEW V AS SELECT MIN(r) AS min, MAX(r) AS max FROM T;
+                CREATE VIEW W AS SELECT min FROM V;""");
+        final int[] aggregatesFound = {0};
+        InnerVisitor noMax = new InnerVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPMinMax node) {
+                Utilities.enforce (node.aggregation != DBSPMinMax.Aggregation.Max);
+                aggregatesFound[0]++;
+            }
+
+            @Override
+            public void postorder(DBSPFold fold) {
+                aggregatesFound[0]++;
+            }
+        };
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPStreamAggregateOperator aggregate) {
+                noMax.apply(aggregate.getFunction());
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, aggregatesFound[0]);
+            }
+        });
+
+        ccs.step("INSERT INTO T VALUES(ROW(ROW(1, 2))), (ROW(ROW(3, 4)));", """
+                 a | weight
+                --------------
+                 { 1, 2 } | 1""");
+    }
+
+    @Test
+    public void issue5541c() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE T(x INT, z INT, y INT);
+                CREATE LOCAL VIEW V AS SELECT SUM(x) AS sum, AVG(z) AS max, y FROM T GROUP BY y;
+                CREATE VIEW W AS SELECT sum, y FROM V;""");
+        var ccs = this.getCCS(compiler);
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int aggregates;
+
+            @Override
+            public void postorder(DBSPAggregateLinearPostprocessOperator aggregate) {
+                aggregates++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, aggregates);
+            }
+        });
+
+        ccs.step("INSERT INTO T VALUES(1, 2, 2), (2, 3, 2), (3, 0, 1);", """
+                 sum | y | weight
+                --------------
+                  3  | 2 | 1
+                  3  | 1 | 1""");
+        TestUtil.assertMessagesContain(compiler, "Column 'z' of table 't' is unused");
+    }
+
+    @Test
+    public void testEmptyAggregate() {
+        // After optimization an aggregate is completely removed
+        String sql = """
+                CREATE TABLE LINEITEM (
+                        L_ORDERKEY    INTEGER NOT NULL,
+                        L_PARTKEY     INTEGER NOT NULL,
+                        L_SUPPKEY     INTEGER NOT NULL,
+                        L_LINENUMBER  INTEGER NOT NULL,
+                        L_QUANTITY    DECIMAL(15,2) NOT NULL,
+                        L_EXTENDEDPRICE  DECIMAL(15,2) NOT NULL,
+                        L_DISCOUNT    DECIMAL(15,2) NOT NULL,
+                        L_TAX         DECIMAL(15,2) NOT NULL,
+                        L_RETURNFLAG  CHAR(1) NOT NULL,
+                        L_LINESTATUS  CHAR(1) NOT NULL,
+                        L_SHIPDATE    DATE NOT NULL,
+                        L_COMMITDATE  DATE NOT NULL,
+                        L_RECEIPTDATE DATE NOT NULL,
+                        L_SHIPINSTRUCT CHAR(25) NOT NULL,
+                        L_SHIPMODE     CHAR(10) NOT NULL,
+                        L_COMMENT      VARCHAR(44) NOT NULL
+                );
+                
+                -- Orders
+                CREATE TABLE ORDERS  (
+                        O_ORDERKEY       INTEGER NOT NULL,
+                        O_CUSTKEY        INTEGER NOT NULL,
+                        O_ORDERSTATUS    CHAR(1) NOT NULL,
+                        O_TOTALPRICE     DECIMAL(15,2) NOT NULL,
+                        O_ORDERDATE      DATE NOT NULL,
+                        O_ORDERPRIORITY  CHAR(15) NOT NULL,
+                        O_CLERK          CHAR(15) NOT NULL,
+                        O_SHIPPRIORITY   INTEGER NOT NULL,
+                        O_COMMENT        VARCHAR(79) NOT NULL
+                );
+                
+                -- Customer
+                CREATE TABLE CUSTOMER (
+                        C_CUSTKEY     INTEGER NOT NULL,
+                        C_NAME        VARCHAR(25) NOT NULL,
+                        C_ADDRESS     VARCHAR(40) NOT NULL,
+                        C_NATIONKEY   INTEGER NOT NULL,
+                        C_PHONE       CHAR(15) NOT NULL,
+                        C_ACCTBAL     DECIMAL(15,2)   NOT NULL,
+                        C_MKTSEGMENT  CHAR(10) NOT NULL,
+                        C_COMMENT     VARCHAR(117) NOT NULL
+                );
+                
+                -- Order Priority Checking
+                create materialized view q4
+                as select
+                        o_orderpriority,
+                        count(*) as order_count
+                from
+                        orders
+                where
+                        o_orderdate >= date '1993-07-01'
+                        and o_orderdate < date '1993-07-01' + interval '3' month
+                        and exists (
+                                select
+                                        *
+                                from
+                                        lineitem
+                                where
+                                        l_orderkey = o_orderkey
+                                        and l_commitdate < l_receiptdate
+                        )
+                group by
+                        o_orderpriority
+                order by
+                        o_orderpriority;
+                """;
+        this.getCC(sql);
     }
 }

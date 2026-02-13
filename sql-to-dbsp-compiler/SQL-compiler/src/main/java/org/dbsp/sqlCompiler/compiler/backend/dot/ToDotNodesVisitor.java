@@ -32,7 +32,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.util.IndentStream;
 
 /** Visitor which emits the circuit nodes in a graphviz file.
- * The compiler options control the detail.  On verbosity=0 table and view names are ommitted. */
+ * The compiler options control the detail.  On details=0 table and view names are omitted. */
 public class ToDotNodesVisitor extends CircuitVisitor {
     protected final IndentStream stream;
     // A higher value -> more details
@@ -68,7 +68,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
-        String name = (this.compiler.options.ioOptions.verbosity > 0 ? (node.tableName + " ") : "") + node.operation;
+        String name = (this.details > 0 ? (node.tableName + " ") : "") + node.operation;
         this.stream.append(node.getNodeName(false))
                 .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
                 .append(node.getIdString())
@@ -105,7 +105,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .append(node.getIdString())
                 .append(isMultiset(node))
                 .append(annotations(node))
-                .append(this.compiler.options.ioOptions.verbosity > 0 ? " " + node.viewName.name() : "")
+                .append(this.details > 0 ? " " + node.viewName.name() : "")
                 .append("\"")
                 .append(" style=filled fillcolor=lightgrey")
                 .append("]")
@@ -159,12 +159,16 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         return result.toString();
     }
 
+    static String rustToDot(String rust) {
+        String f = escapeString(rust);
+        return f.replace("\n", "\\l");
+    }
+
     String convertFunction(DBSPExpression expression) {
         String result = "";
         if (this.details > 3) {
             String f = ToRustInnerVisitor.toRustString(this.compiler(), expression, null, true);
-            f = escapeString(f);
-            result = f.replace("\n", "\\l");
+            result = rustToDot(f);
         }
         if (this.details >= 3) {
             result += getPositions(expression);
@@ -178,7 +182,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
             DBSPAggregateOperatorBase aggregate = node.to(DBSPAggregateOperatorBase.class);
             if (aggregate.aggregateList != null) {
                 if (this.details > 3) {
-                    return escapeString(aggregate.aggregateList.toString());
+                    return rustToDot(aggregate.aggregateList.toString());
                 } else if (details >= 3) {
                     return this.getPositions(aggregate.aggregateList);
                 }
@@ -188,14 +192,14 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                     node.to(DBSPPartitionedRollingAggregateWithWaterlineOperator.class);
             if (aggregate.aggregateList != null) {
                 if (this.details > 3) {
-                    return escapeString(aggregate.aggregateList.toString());
+                    return rustToDot(aggregate.aggregateList.toString());
                 } else if (this.details >= 3) {
                     return this.getPositions(aggregate.aggregateList);
                 }
             }
         } else if (node.is(DBSPChainOperator.class) && this.details > 3) {
             String chain = node.to(DBSPChainOperator.class).chain.toString();
-            return escapeString(chain);
+            return rustToDot(chain);
         }
         if (expression == null)
             return "";

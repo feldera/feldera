@@ -2034,4 +2034,31 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 WHERE t.val.type not like '%.com%';""");
         this.checkNarrow(cc, 10);
     }
+
+    @Test
+    public void projectionBug() {
+        String sql = """
+                CREATE TABLE flows(ts TIMESTAMP NOT NULL LATENESS INTERVAL 5 SECONDS)
+                WITH ('append_only' = 'true');
+                
+                CREATE LOCAL VIEW tumble AS SELECT
+                            MIN(ts) AS ts_min,
+                            MAX(ts) AS ts_max,
+                            window_start,
+                            window_end
+                    FROM TABLE(
+                        TUMBLE(
+                            TABLE flows,
+                            DESCRIPTOR(ts),
+                            INTERVAL '1' MINUTES
+                        )
+                    )
+                    GROUP BY window_start, window_end;
+
+                CREATE VIEW final
+                    WITH ('emit_final' = 'window_end')
+                    AS SELECT window_start, window_end
+                    FROM tumble;""";
+        this.getCCS(sql);
+    }
 }
