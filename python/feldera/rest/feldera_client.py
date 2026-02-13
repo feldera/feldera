@@ -153,15 +153,35 @@ class FelderaClient:
 
         return [Pipeline.from_dict(pipeline) for pipeline in resp]
 
-    def __wait_for_compilation(self, name: str):
+    def __wait_for_compilation(
+        self,
+        name: str,
+        expected_program_version: int | None = None,
+        timeout_s: float | None = None,
+        poll_interval_s: float = 0.1,
+    ) -> Pipeline:
         wait = ["Pending", "CompilingSql", "SqlCompiled", "CompilingRust"]
+        start_time = time.monotonic()
 
         while True:
+            if timeout_s is not None:
+                elapsed = time.monotonic() - start_time
+                if elapsed > timeout_s:
+                    raise TimeoutError(
+                        f"Timed out waiting for pipeline '{name}' to compile "
+                        f"(expected program_version >= {expected_program_version})"
+                    )
+
             p = self.get_pipeline(name, PipelineFieldSelector.STATUS)
             status = p.program_status
 
             if status == "Success":
-                return self.get_pipeline(name, PipelineFieldSelector.ALL)
+                if expected_program_version is None:
+                    return self.get_pipeline(name, PipelineFieldSelector.ALL)
+
+                current_version = p.program_version or 0
+                if current_version >= expected_program_version:
+                    return self.get_pipeline(name, PipelineFieldSelector.ALL)
             elif status not in wait:
                 p = self.get_pipeline(name, PipelineFieldSelector.ALL)
 
@@ -190,7 +210,38 @@ class FelderaClient:
                 raise RuntimeError(error_message)
 
             logging.debug("still compiling %s, waiting for 100 more milliseconds", name)
-            time.sleep(0.1)
+            time.sleep(poll_interval_s)
+
+    def wait_for_program_success(
+        self,
+        pipeline_name: str,
+        expected_program_version: int | None = None,
+        timeout_s: float | None = None,
+        poll_interval_s: float = 0.1,
+    ) -> Pipeline:
+        """
+        Wait until the pipeline program has successfully compiled.
+
+        - If ``expected_program_version`` is not provided, returns when
+          ``program_status == "Success"``.
+        - If ``expected_program_version`` is provided, returns only when
+          ``program_status == "Success"`` and
+          ``program_version >= expected_program_version``.
+
+        The method fails fast when compilation reaches ``SqlError`` or
+        ``RustError`` and includes compiler error details.
+
+        :param pipeline_name: The name of the pipeline.
+        :param expected_program_version: Optional expected program version.
+        :param timeout_s: Optional timeout in seconds.
+        :param poll_interval_s: Poll interval in seconds.
+        """
+        return self.__wait_for_compilation(
+            pipeline_name,
+            expected_program_version=expected_program_version,
+            timeout_s=timeout_s,
+            poll_interval_s=poll_interval_s,
+        )
 
     def __wait_for_pipeline_state(
         self,
@@ -358,7 +409,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if not wait:
             return pipeline
 
-        return self.__wait_for_compilation(pipeline.name)
+        return self.wait_for_program_success(pipeline.name)
 
     def create_or_update_pipeline(
         self, pipeline: Pipeline, wait: bool = True
@@ -390,7 +441,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if not wait:
             return pipeline
 
-        return self.__wait_for_compilation(pipeline.name)
+        return self.wait_for_program_success(pipeline.name)
 
     def patch_pipeline(
         self,

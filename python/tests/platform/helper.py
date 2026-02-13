@@ -17,8 +17,7 @@ import json
 import logging
 import pytest
 import requests
-from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable
 from http import HTTPStatus
 from urllib.parse import quote, quote_plus
 
@@ -227,65 +226,22 @@ def connector_paused(pipeline, table: str, connector: str) -> bool:
     return connector_stats(pipeline, table, connector)["paused"]
 
 
-@dataclass
-class WaitResult:
-    ok: bool
-    last_status: Optional[str]
-    last_object: Optional[Dict[str, Any]]
-    elapsed_s: float
-
-
 def wait_for_program_success(
     pipeline_name: str,
     expected_program_version: int,
     timeout_s: float = 1800.0,
     sleep_s: float = 0.5,
-) -> WaitResult:
+) -> None:
     """
-    Poll until the pipeline's program_status is Success and program_version
-    >= expected_program_version.
-
-    Mirrors semantics of the Rust `wait_for_compiled_program` helper.
-
-    Returns a WaitResult. Raises AssertionError on compile error, TimeoutError on timeout.
+    Wait until the pipeline's program has compiled successfully and reached
+    `expected_program_version` or newer.
     """
-    deadline = time.time() + timeout_s
-    last_status = None
-    last_obj: Optional[Dict[str, Any]] = None
-
-    while True:
-        if time.time() > deadline:
-            raise TimeoutError(
-                f"Timed out waiting for pipeline '{pipeline_name}' to compile "
-                f"(expected program_version >= {expected_program_version}, "
-                f"last_status={last_status}, last_obj={last_obj})"
-            )
-        resp = get(f"{API_PREFIX}/pipelines/{pipeline_name}")
-        if resp.status_code == HTTPStatus.NOT_FOUND:
-            raise RuntimeError(
-                f"Pipeline '{pipeline_name}' disappeared during compilation wait"
-            )
-        try:
-            obj = resp.json()
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to parse pipeline JSON: {e}; body={resp.text!r}"
-            )
-        last_obj = obj
-        last_status = obj.get("program_status")
-        version = obj.get("program_version") or 0
-
-        if last_status == "Success" and version >= expected_program_version:
-            return WaitResult(
-                True, last_status, last_obj, timeout_s - (deadline - time.time())
-            )
-
-        if last_status in ("SqlError", "RustError"):
-            raise AssertionError(
-                "Compilation failed: " + json.dumps(obj.get("program_error"), indent=2)
-            )
-
-        time.sleep(sleep_s)
+    TEST_CLIENT.wait_for_program_success(
+        pipeline_name,
+        expected_program_version=expected_program_version,
+        timeout_s=timeout_s,
+        poll_interval_s=sleep_s,
+    )
 
 
 def wait_for_condition(
