@@ -1,6 +1,7 @@
 mod advance_retreat;
 mod sample;
 //pub(crate) mod tests;
+pub(crate) mod binary_heap;
 mod consolidation;
 mod graph;
 mod is_none;
