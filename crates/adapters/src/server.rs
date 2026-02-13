@@ -1053,6 +1053,30 @@ fn do_bootstrap(
     circuit_factory: CircuitFactoryFunc,
     state: &WebData<ServerState>,
 ) -> Result<(), ControllerError> {
+    if let Some(runtime_override) = option_env!("FELDERA_RUNTIME_OVERRIDE") {
+        // - runtime_override is what the platform wants to run (it's set in an env variable
+        // injected by the compiler server)
+        // - actual_runtime_sha is the git SHA of the sources compiled at build-time
+        //
+        // If the two don't match the `runtime_version` feature isn't working properly.
+        // (note that VERGEN_GIT_SHA is only set in case a custom runtime is used)
+        let actual_runtime_sha = option_env!("VERGEN_GIT_SHA")
+            .unwrap_or_else(|| "<unable to determine runtime git sha>");
+        if runtime_override == actual_runtime_sha {
+            info!(
+                "Pipeline runtime version was overridden with SHA: {}",
+                runtime_override,
+            );
+        } else {
+            return Err(ControllerError::UnexpectedRuntimeVersion {
+                error: format!(
+                    "Pipeline runtime version was overridden but the build SHA of the binary {} does not match the requested runtime version {}",
+                    actual_runtime_sha, runtime_override
+                ),
+            });
+        }
+    }
+
     let mut activation_warning = LongOperationWarning::new(Duration::from_secs(1));
     let controller_init = loop {
         match state.desired_status() {
@@ -1146,21 +1170,6 @@ fn do_bootstrap(
     drop(desired_status);
 
     info!("Pipeline initialization complete");
-    if let Some(runtime_override) = option_env!("FELDERA_RUNTIME_OVERRIDE") {
-        let actual_runtime_sha = option_env!("VERGEN_GIT_SHA")
-            .unwrap_or_else(|| "<unable to determine runtime git sha>");
-        if runtime_override == actual_runtime_sha {
-            info!(
-                "Pipeline runtime version was overridden with SHA: {}",
-                runtime_override,
-            );
-        } else {
-            panic!(
-                "Pipeline runtime version was overridden but the build SHA of the binary {} does not match the requested runtime version {}",
-                actual_runtime_sha, runtime_override
-            )
-        }
-    }
     state.set_phase(PipelinePhase::InitializationComplete);
 
     Ok(())
