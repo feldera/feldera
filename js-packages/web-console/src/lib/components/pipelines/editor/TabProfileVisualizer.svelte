@@ -34,9 +34,13 @@
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { goto } from '$app/navigation'
+  import triagePlugins, { createBundle, TriageResults } from 'virtual:feldera-triage-plugins'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   const api = usePipelineManager()
+  const toast = useToast()
+
+  let triageResults: TriageResults = $state(new TriageResults())
 
   let pipelineName = $derived(pipeline.current.name)
   $effect(() => {
@@ -46,6 +50,7 @@
         getProfileData = null
         loadedPipelineName = null
         getProfileFiles = () => []
+        triageResults = new TriageResults()
       }
     })
   })
@@ -94,6 +99,19 @@
     ;(async () => {
       try {
         const processedProfile = await processProfileFiles(profileFiles[1])
+        // Run triage plugins on the full zip contents
+        if (triagePlugins.length > 0) {
+          try {
+            const bundle = await createBundle(profileFiles[1])
+            triageResults = new TriageResults()
+            triagePlugins.forEach((p) => p.triage(bundle, triageResults))
+          } catch (error) {
+            triageResults = new TriageResults()
+            toast.toastError(error instanceof Error ? error : new Error(String(error)), 10000)
+          }
+        } else {
+          triageResults = new TriageResults()
+        }
         getProfileData = enclosure({
           profile: processedProfile.profile,
           dataflow: processedProfile.dataflow,
@@ -190,7 +208,6 @@
   }
   let errorMessage = $state('')
 
-  const toast = useToast()
   $effect(() => {
     if (errorMessage && getProfileData) {
       toast.toastError(new Error(errorMessage), 10000)
