@@ -16,6 +16,7 @@ from .helper import (
     start_pipeline,
     gen_pipeline_name,
     adhoc_query_json,
+    wait_for_condition,
 )
 
 
@@ -192,7 +193,12 @@ WITH (
         ),
     )
     assert r.status_code == HTTPStatus.OK, (r.status_code, r.text)
-    time.sleep(1.0)  # Allow connector to emit its record(s)
+    wait_for_condition(
+        "datagen connector emits at least one row",
+        lambda: _count_for_value(pipeline_name, 0) >= 2,
+        timeout_s=10,
+        sleep_s=0.2,
+    )
 
     # Obtain a completion token for the datagen connector
     r = get(

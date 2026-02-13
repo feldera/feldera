@@ -16,6 +16,7 @@ from .helper import (
     stop_pipeline,
     connector_paused,
     connector_action,
+    wait_for_condition,
     gen_pipeline_name,
 )
 
@@ -32,15 +33,6 @@ def _adhoc_count(name: str) -> int:
         return 0
     line = json.loads(txt.split("\n")[0])
     return line.get("c") or 0
-
-
-def _wait_for_condition(desc: str, predicate, timeout_s: float = 30.0, sleep_s=0.2):
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        if predicate():
-            return
-        time.sleep(sleep_s)
-    raise TimeoutError(f"Timeout waiting for condition: {desc}")
 
 
 @gen_pipeline_name
@@ -82,19 +74,19 @@ def test_checkpoint_enterprise(pipeline_name):
             f"Missing checkpoint_sequence_number in {resp.text}"
         )
 
-        # Poll /checkpoint_status until success == seq
-        deadline = time.time() + 10
-        while True:
+        # Poll /checkpoint_status until success == seq.
+        def checkpoint_seq_reached_success():
             status_resp = get(api_url(f"/pipelines/{pipeline_name}/checkpoint_status"))
-            assert status_resp.status_code == HTTPStatus.OK, status_resp.text
-            status_obj = status_resp.json()
-            if status_obj.get("success") == seq:
-                break
-            if time.time() > deadline:
-                raise TimeoutError(
-                    f"Timeout waiting for checkpoint seq={seq} (status={status_obj})"
-                )
-            time.sleep(0.2)
+            if status_resp.status_code != HTTPStatus.OK:
+                return False
+            return status_resp.json().get("success") == seq
+
+        wait_for_condition(
+            f"checkpoint seq={seq} reaches success",
+            checkpoint_seq_reached_success,
+            timeout_s=10,
+            sleep_s=0.2,
+        )
 
 
 @gen_pipeline_name
@@ -191,10 +183,11 @@ def test_suspend_enterprise(pipeline_name):
     # Start connector c1
     connector_action(pipeline_name, "t1", "c1", "start")
 
-    _wait_for_condition(
+    wait_for_condition(
         "1 record from c1",
         lambda: _adhoc_count(pipeline_name) == 1,
         timeout_s=10,
+        sleep_s=0.2,
     )
 
     # Suspend (non-force) and resume pipeline
@@ -208,10 +201,11 @@ def test_suspend_enterprise(pipeline_name):
     # Start c2 (should also allow c3 to run automatically after c2 finishes, due to start_after label)
     connector_action(pipeline_name, "t1", "c2", "start")
 
-    _wait_for_condition(
+    wait_for_condition(
         "9 total records after c2/c3",
         lambda: _adhoc_count(pipeline_name) == 9,
         timeout_s=15,
+        sleep_s=0.2,
     )
 
     # Suspend/resume again
@@ -223,9 +217,26 @@ def test_suspend_enterprise(pipeline_name):
     assert not connector_paused(pipeline_name, "t1", "c2")
     assert not connector_paused(pipeline_name, "t1", "c3")
 
-    # Wait a bit and ensure no new records (limit sets done)
+    # Ensure no new records arrive for a continuous 5s window.
     final_count = _adhoc_count(pipeline_name)
-    time.sleep(5)
+    stable_since = [None]
+
+    def no_new_records_for_5s():
+        now = time.time()
+        current = _adhoc_count(pipeline_name)
+        if current == final_count:
+            if stable_since[0] is None:
+                stable_since[0] = now
+            return now - stable_since[0] >= 5.0
+        stable_since[0] = None
+        return False
+
+    wait_for_condition(
+        "no new records for 5s after all connectors reached EOI",
+        no_new_records_for_5s,
+        timeout_s=20,
+        sleep_s=0.2,
+    )
     assert _adhoc_count(pipeline_name) == final_count, (
         "Received new records after all connectors reached EOI"
     )
