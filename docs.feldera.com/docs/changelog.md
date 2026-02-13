@@ -15,6 +15,8 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        ### Python API removed `ignore_deployment_error`
+
         The `ignore_deployment_error` parameter has been removed from the Python
         `pipeline.start()` method. Instead, make use of the newly added `dismiss_error` parameter.
         If you do not want the pipeline to start if there is a pre-existing deployment error,
@@ -24,6 +26,12 @@ import TabItem from '@theme/TabItem';
         throw an error as before. A pipeline deployment error can now also be separately dismissed
         using a dedicated endpoint and the corresponding client functions (e.g.,
         `pipeline.dismiss_error()` for the Python client).
+
+        ### Kafka input connector `synchronize_partitions` option
+
+        The Kafka input connector has a new setting `synchronize_partitions`.  When it is
+        set to `true`, the connector will read messages in order of their Kafka timestamps
+        across partitions.  Refer to the documentation for more information.
 
         ## 0.227.0
 

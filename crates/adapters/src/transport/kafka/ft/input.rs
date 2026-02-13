@@ -37,6 +37,7 @@ use rdkafka::{
 };
 use rdkafka::{Offset, TopicPartitionList};
 use serde::{Deserialize, Serialize};
+use smallvec::{SmallVec, smallvec};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::error::Error;
 use std::hash::Hasher;
@@ -465,7 +466,7 @@ impl KafkaFtInputReaderInner {
                 // Process messages for all partitions.
                 for (partition, receiver) in receivers.iter() {
                     let max = receiver.max_offset();
-                    while let Some((offset, mut msg)) = receiver.read(max) {
+                    while let Some((offset, (mut msg, _timestamp))) = receiver.read(max) {
                         let amt = msg.len();
                         total += amt;
                         hasher.add(partition, &msg);
@@ -655,20 +656,55 @@ impl KafkaFtInputReaderInner {
                 }
             }
 
-            let read_data = running && {
-                let mut read_data = false;
-
-                for (index, (partition, receiver)) in receivers.iter().enumerate() {
-                    if let Some((offset, msg)) = receiver.read(i64::MAX) {
-                        stager.push_record(&**consumer, partition, offset, msg, index);
-                        read_data = true;
+            let mut n_read = 0;
+            if running {
+                if config.synchronize_partitions {
+                    /// Returns the index(es) of the partition(s) in `receivers`
+                    /// with the earliest timestamp(s), or `None` if any of the
+                    /// receivers are out of received items.
+                    fn find_earliest(
+                        receivers: &BTreeMap<&i32, Arc<PartitionReceiver>>,
+                    ) -> Option<SmallVec<[usize; 1]>> {
+                        let mut iter = receivers.values().enumerate().map(|(index, receiver)| {
+                            receiver.peek().map(|timestamp| (index, timestamp))
+                        });
+                        let (index, mut best_timestamp) = iter.next()??;
+                        let mut best_indexes = smallvec![index];
+                        for item in iter {
+                            let (index, timestamp) = item?;
+                            if timestamp < best_timestamp {
+                                best_indexes.clear();
+                                best_indexes.push(index);
+                                best_timestamp = timestamp;
+                            } else if timestamp == best_timestamp {
+                                best_indexes.push(index);
+                            }
+                        }
+                        Some(best_indexes)
                     }
-                }
+
+                    while n_read < partitions.len()
+                        && let Some(indexes) = find_earliest(&receivers)
+                    {
+                        n_read += indexes.len();
+                        for index in indexes {
+                            let partition = partitions[index];
+                            let (offset, (msg, _timestamp)) =
+                                receivers[&partition].read(i64::MAX).unwrap();
+                            stager.push_record(&**consumer, &partition, offset, msg, index);
+                        }
+                    }
+                } else {
+                    for (index, (partition, receiver)) in receivers.iter().enumerate() {
+                        if let Some((offset, (msg, _timestamp))) = receiver.read(i64::MAX) {
+                            stager.push_record(&**consumer, partition, offset, msg, index);
+                            n_read += 1;
+                        }
+                    }
+                };
 
                 stager.maybe_stage(&**consumer, &*parser);
-
-                read_data
-            };
+            }
 
             // Keep polling even while the consumer is paused as `BaseConsumer`
             // processes control messages (including rebalancing and errors)
@@ -708,7 +744,7 @@ impl KafkaFtInputReaderInner {
                 return Ok(());
             }
 
-            if !read_data {
+            if n_read == 0 {
                 thread::park_timeout(Duration::from_secs(1));
             }
         }
@@ -951,8 +987,8 @@ struct PartitionReceiver {
     /// Initial value of `next_offset`.  Only used in log messages.
     initial_next_offset: i64,
 
-    /// Parsed messages and errors.
-    messages: Mutex<BTreeMap<i64, Option<Box<dyn InputBuffer>>>>,
+    /// Parsed messages and errors, paired with timestamps.
+    messages: Mutex<BTreeMap<i64, (Option<Box<dyn InputBuffer>>, i64)>>,
 
     eof: AtomicBool,
     fatal_error: AtomicBool,
@@ -980,12 +1016,20 @@ impl PartitionReceiver {
             metadata_requested,
         }
     }
-    pub fn read(&self, max: i64) -> Option<(i64, Option<Box<dyn InputBuffer>>)> {
+    pub fn read(&self, max: i64) -> Option<(i64, (Option<Box<dyn InputBuffer>>, i64))> {
         let mut messages = self.messages.lock().unwrap();
         match messages.first_key_value() {
             Some((offset, _)) if *offset <= max => messages.pop_first(),
             _ => None,
         }
+    }
+
+    pub fn peek(&self) -> Option<i64> {
+        self.messages
+            .lock()
+            .unwrap()
+            .first_entry()
+            .map(|entry| entry.get().1)
     }
 
     pub fn fatal_error(&self) -> bool {
@@ -1085,10 +1129,14 @@ impl PartitionReceiver {
                 let next_offset = self.next_offset();
                 if offset >= next_offset {
                     self.next_offset.store(offset + 1, Ordering::Relaxed);
+                    let timestamp = message.timestamp().to_millis().unwrap_or(i64::MIN);
                     let payload = message.payload().unwrap_or(&[]);
                     let metadata = self.create_metadata(&message);
                     let (buffer, errors) = parser.parse(payload, metadata);
-                    self.messages.lock().unwrap().insert(offset, buffer);
+                    self.messages
+                        .lock()
+                        .unwrap()
+                        .insert(offset, (buffer, timestamp));
                     consumer.parse_errors(errors);
                 } else {
                     tracing::error!(
