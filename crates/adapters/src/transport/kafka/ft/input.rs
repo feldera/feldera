@@ -11,9 +11,10 @@ use crate::{
     },
 };
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use crossbeam::queue::ArrayQueue;
 use crossbeam::sync::{Parker, Unparker};
+use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{
@@ -175,6 +176,12 @@ impl KafkaFtHasher {
             h.write_u64(hasher.finish());
         }
         h.finish()
+    }
+
+    fn take(&mut self) -> u64 {
+        let hash = self.finish();
+        self.reset();
+        hash
     }
 }
 
@@ -503,18 +510,95 @@ impl KafkaFtInputReaderInner {
 
         let mut running = false;
         let mut kafka_paused = false;
-        let mut staged_buffers = VecDeque::new();
-        let mut staged_offsets = receivers
-            .values()
-            .map(|r| {
-                let next_offset = r.next_offset();
-                next_offset..next_offset
-            })
-            .collect::<Vec<_>>();
-        let mut staged_hasher = KafkaFtHasher::new(&partitions);
-        let mut staged_inputs = Vec::new();
-        let mut staged_amt = BufferSize::default();
-        let mut timestamp = None;
+        struct StagedBuffer {
+            buffers: Box<dyn StagedBuffers>,
+            timestamp: DateTime<Utc>,
+            amt: BufferSize,
+            hash: u64,
+            offsets: Vec<Range<i64>>,
+        }
+        struct Stager {
+            buffers: VecDeque<StagedBuffer>,
+            offsets: Vec<Range<i64>>,
+            hasher: KafkaFtHasher,
+            inputs: Vec<Box<dyn InputBuffer>>,
+            amt: BufferSize,
+            timestamp: Option<DateTime<Utc>>,
+        }
+        impl Stager {
+            fn new(receivers: &BTreeMap<&i32, Arc<PartitionReceiver>>, partitions: &[i32]) -> Self {
+                Self {
+                    buffers: VecDeque::new(),
+                    offsets: receivers
+                        .values()
+                        .map(|r| {
+                            let next_offset = r.next_offset();
+                            next_offset..next_offset
+                        })
+                        .collect(),
+                    hasher: KafkaFtHasher::new(partitions),
+                    inputs: Vec::new(),
+                    amt: BufferSize::default(),
+                    timestamp: None,
+                }
+            }
+            fn take_offsets(&mut self) -> Vec<Range<i64>> {
+                let offsets = self.offsets.clone();
+                for partition_offsets in &mut self.offsets {
+                    partition_offsets.start = partition_offsets.end;
+                }
+                offsets
+            }
+            fn take_buffer(&mut self, parser: &dyn Parser) -> StagedBuffer {
+                StagedBuffer {
+                    buffers: parser.stage(std::mem::take(&mut self.inputs)),
+                    timestamp: self.timestamp.take().unwrap_or_else(Utc::now),
+                    amt: std::mem::take(&mut self.amt),
+                    hash: self.hasher.take(),
+                    offsets: self.take_offsets(),
+                }
+            }
+            fn pop_staged_buffer(&mut self, parser: &dyn Parser) -> StagedBuffer {
+                self.buffers
+                    .pop_front()
+                    .unwrap_or_else(|| self.take_buffer(parser))
+            }
+            fn push_record(
+                &mut self,
+                consumer: &dyn InputConsumer,
+                partition: &i32,
+                offset: i64,
+                msg: Option<Box<dyn InputBuffer>>,
+                index: usize,
+            ) {
+                // Set the time when we start getting new data to be staged as ingestion timestamp.
+                if self.timestamp.is_none() {
+                    self.timestamp = Some(Utc::now());
+                }
+                let amt = msg.len();
+                consumer.buffered(amt);
+                self.amt += amt;
+                self.hasher.add(partition, &msg);
+                if let Some(buffer) = msg {
+                    self.inputs.push(buffer);
+                }
+
+                let range = &mut self.offsets[index];
+                if range.is_empty() {
+                    *range = offset..offset + 1;
+                } else {
+                    range.end = offset + 1;
+                }
+            }
+
+            fn maybe_stage(&mut self, consumer: &dyn InputConsumer, parser: &dyn Parser) {
+                if self.amt.records >= consumer.max_batch_size() {
+                    let buffer = self.take_buffer(parser);
+                    self.buffers.push_back(buffer);
+                }
+            }
+        }
+        let mut stager = Stager::new(&receivers, &partitions);
 
         loop {
             let was_running = running;
@@ -526,33 +610,20 @@ impl KafkaFtInputReaderInner {
                     InputReaderCommand::Extend => running = true,
                     InputReaderCommand::Pause => running = false,
                     InputReaderCommand::Queue { .. } => {
-                        if staged_buffers.is_empty() {
-                            staged_buffers.push_back((
-                                parser.stage(std::mem::take(&mut staged_inputs)),
-                                timestamp.unwrap_or_else(Utc::now),
-                                std::mem::take(&mut staged_amt),
-                                staged_hasher.finish(),
-                                staged_offsets.clone(),
-                            ));
-                            timestamp = None;
-                            for partition_offsets in &mut staged_offsets {
-                                partition_offsets.start = partition_offsets.end;
-                            }
-                            staged_hasher.reset();
-                        }
-
-                        let (mut staged_buffers, timestamp, amt, hash, offsets) =
-                            staged_buffers.pop_front().unwrap();
-                        staged_buffers.flush();
-                        let metadata = serde_json::to_value(&Metadata { offsets }).unwrap();
+                        let mut buffer = stager.pop_staged_buffer(&*parser);
+                        buffer.buffers.flush();
+                        let metadata = serde_json::to_value(&Metadata {
+                            offsets: buffer.offsets,
+                        })
+                        .unwrap();
                         consumer.extended(
-                            amt,
+                            buffer.amt,
                             Some(Resume::Replay {
-                                hash,
+                                hash: buffer.hash,
                                 seek: metadata.clone(),
                                 replay: rmpv::Value::Nil,
                             }),
-                            vec![Watermark::new(timestamp, Some(metadata))],
+                            vec![Watermark::new(buffer.timestamp, Some(metadata))],
                         );
                     }
                     InputReaderCommand::Disconnect => return Ok(()),
@@ -587,45 +658,14 @@ impl KafkaFtInputReaderInner {
             let read_data = running && {
                 let mut read_data = false;
 
-                for ((partition, receiver), range) in
-                    receivers.iter().zip(staged_offsets.iter_mut())
-                {
+                for (index, (partition, receiver)) in receivers.iter().enumerate() {
                     if let Some((offset, msg)) = receiver.read(i64::MAX) {
-                        // Set the time when we start getting new data to be staged as ingestion timestamp.
-                        if timestamp.is_none() {
-                            timestamp = Some(Utc::now());
-                        }
-                        let amt = msg.len();
-                        consumer.buffered(amt);
-                        staged_amt += amt;
-                        staged_hasher.add(partition, &msg);
-                        if let Some(buffer) = msg {
-                            staged_inputs.push(buffer);
-                        }
-
-                        if range.is_empty() {
-                            *range = offset..offset + 1;
-                        } else {
-                            range.end = offset + 1;
-                        }
+                        stager.push_record(&**consumer, partition, offset, msg, index);
                         read_data = true;
                     }
                 }
 
-                if staged_amt.records >= consumer.max_batch_size() {
-                    staged_buffers.push_back((
-                        parser.stage(std::mem::take(&mut staged_inputs)),
-                        timestamp.unwrap_or_else(Utc::now),
-                        std::mem::take(&mut staged_amt),
-                        staged_hasher.finish(),
-                        staged_offsets.clone(),
-                    ));
-                    timestamp = None;
-                    for partition_offsets in &mut staged_offsets {
-                        partition_offsets.start = partition_offsets.end;
-                    }
-                    staged_hasher.reset();
-                }
+                stager.maybe_stage(&**consumer, &*parser);
 
                 read_data
             };
