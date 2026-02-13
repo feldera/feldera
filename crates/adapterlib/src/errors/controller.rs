@@ -806,6 +806,11 @@ pub enum ControllerError {
     UnexpectedBootstrap {
         bootstrap_info: Option<BootstrapInfo>,
     },
+
+    /// Unexpected runtime version
+    UnexpectedRuntimeVersion {
+        error: String,
+    },
 }
 
 impl ResponseError for ControllerError {
@@ -836,6 +841,7 @@ impl ResponseError for ControllerError {
             Self::InvalidInitialStatus(_) => StatusCode::GONE,
             Self::BootstrapRejectedByUser => StatusCode::CONFLICT,
             Self::UnexpectedBootstrap { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnexpectedRuntimeVersion { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -976,6 +982,7 @@ impl DbspDetailedError for ControllerError {
             Self::BootstrapRejectedByUser => Cow::from("BootstrapRejected"),
             Self::BootstrapNotAllowed { .. } => Cow::from("BootstrapNotAllowed"),
             Self::UnexpectedBootstrap { .. } => Cow::from("UnexpectedBootstrap"),
+            Self::UnexpectedRuntimeVersion { .. } => Cow::from("UnexpectedRuntimeVersion"),
         }
     }
 }
@@ -1178,6 +1185,9 @@ impl Display for ControllerError {
                     f,
                     "The pipeline's query plan was modified since the last checkpoint and requires bootstrapping; however we were not able to detect the changes in the pipeline metadata. This is a bug; please report to the developers. Bootstrap info: {bootstrap_info:?}"
                 )
+            }
+            Self::UnexpectedRuntimeVersion { error } => {
+                write!(f, "{error}")
             }
         }
     }
@@ -1556,7 +1566,8 @@ impl ControllerError {
             | Self::BootstrapNotAllowed { .. }
             | Self::UnexpectedBootstrap { .. }
             | Self::InvalidStandby(_)
-            | Self::InvalidStartupTransition { .. } => ErrorKind::Other,
+            | Self::InvalidStartupTransition { .. }
+            | Self::UnexpectedRuntimeVersion { .. } => ErrorKind::Other,
         }
     }
 }
