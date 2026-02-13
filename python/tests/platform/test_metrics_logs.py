@@ -1,5 +1,4 @@
 import json
-import time
 from http import HTTPStatus
 from urllib.parse import quote_plus
 
@@ -15,6 +14,7 @@ from .helper import (
     stop_pipeline,
     clear_pipeline,
     gen_pipeline_name,
+    wait_for_condition,
 )
 
 
@@ -108,13 +108,12 @@ def test_pipeline_stats(pipeline_name):
     assert r_out.status_code == HTTPStatus.OK, (r_out.status_code, r_out.text)
 
     # Wait for datagen completion
-    time.sleep(3)
-    deadline = time.time() + 10
-    while time.time() < deadline:
-        cnt = _adhoc_count(pipeline_name, "t1")
-        if cnt == 5:
-            break
-        time.sleep(1)
+    wait_for_condition(
+        "datagen ingests 5 rows into t1",
+        lambda: _adhoc_count(pipeline_name, "t1") == 5,
+        timeout_s=10,
+        sleep_s=1.0,
+    )
     assert _adhoc_count(pipeline_name, "t1") == 5, "Did not ingest expected 5 rows"
 
     r_stats = get(api_url(f"/pipelines/{pipeline_name}/stats"))
@@ -150,6 +149,20 @@ def test_pipeline_stats(pipeline_name):
     assert out.get("metrics", {}).get("total_processed_input_records") == 5
 
     # /time_series
+    def time_series_ready():
+        resp = get(api_url(f"/pipelines/{pipeline_name}/time_series"))
+        if resp.status_code != HTTPStatus.OK:
+            return False
+        samples = resp.json().get("samples") or []
+        return len(samples) > 1 and samples[-1].get("r") == 5
+
+    wait_for_condition(
+        "time_series has >=2 samples and reflects 5 processed records",
+        time_series_ready,
+        timeout_s=10,
+        sleep_s=0.5,
+    )
+
     r_ts = get(api_url(f"/pipelines/{pipeline_name}/time_series"))
     assert r_ts.status_code == HTTPStatus.OK, r_ts.text
     ts = r_ts.json()
@@ -177,20 +190,15 @@ def test_pipeline_logs(pipeline_name):
     )
 
     # Poll for logs availability
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        resp = get(api_url(f"/pipelines/{pipeline_name}/logs"), stream=True)
-        if resp.status_code == HTTPStatus.OK:
-            break
-        elif resp.status_code == HTTPStatus.NOT_FOUND:
-            time.sleep(0.5)
-            continue
-        else:
-            raise AssertionError(
-                f"Unexpected status while waiting for logs: {resp.status_code} {resp.text}"
-            )
-    else:
-        raise TimeoutError("Logs did not become available in time")
+    wait_for_condition(
+        "logs endpoint becomes available",
+        lambda: get(
+            api_url(f"/pipelines/{pipeline_name}/logs"), stream=True
+        ).status_code
+        == HTTPStatus.OK,
+        timeout_s=30,
+        sleep_s=0.5,
+    )
 
     # Pause pipeline
     start_pipeline_as_paused(pipeline_name)
@@ -229,17 +237,12 @@ def test_pipeline_logs(pipeline_name):
     )
 
     # Poll until logs become unavailable (404)
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        resp = get(api_url(f"/pipelines/{pipeline_name}/logs"), stream=True)
-        if resp.status_code == HTTPStatus.NOT_FOUND:
-            break
-        elif resp.status_code == HTTPStatus.OK:
-            time.sleep(0.5)
-            continue
-        else:
-            raise AssertionError(
-                f"Unexpected status while waiting for logs to disappear: {resp.status_code} {resp.text}"
-            )
-    else:
-        raise TimeoutError("Logs did not become unavailable after deletion")
+    wait_for_condition(
+        "logs endpoint becomes unavailable after deletion",
+        lambda: get(
+            api_url(f"/pipelines/{pipeline_name}/logs"), stream=True
+        ).status_code
+        == HTTPStatus.NOT_FOUND,
+        timeout_s=30,
+        sleep_s=0.5,
+    )
