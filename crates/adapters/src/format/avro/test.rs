@@ -12,11 +12,13 @@ use crate::{
         generate_test_batches_with_weights, mock_parser_pipeline,
     },
 };
+use crate::{catalog::SerBatchReader, util::run_in_posix_runtime};
 use apache_avro::{
     Schema as AvroSchema, from_avro_datum, schema::ResolvedSchema, to_avro_datum, types::Value,
 };
-use dbsp::{DBData, IndexedZSetReader, OrdZSet};
-use dbsp::{OrdIndexedZSet, utils::Tup2};
+use dbsp::trace::BatchReaderFactories;
+use dbsp::typed_batch::{DynSpineSnapshot, SpineSnapshot as TypedSpineSnapshot, TypedBatch};
+use dbsp::{DBData, IndexedZSetReader, OrdIndexedZSet, OrdZSet, ZWeight, utils::Tup2};
 use feldera_sqllib::{ByteArray, Uuid, Variant};
 use feldera_types::{
     deserialize_table_record,
@@ -32,6 +34,8 @@ use feldera_types::{
 use itertools::Itertools;
 use proptest::prelude::*;
 use proptest::proptest;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use serde::Serialize;
 use size_of::SizeOf;
 use std::{
@@ -1688,6 +1692,161 @@ fn test_non_unique_keys() {
             .contains(r#"Error description: Multiple deleted values for the same key."#)
     );
     encoder.consumer().batch_end();
+}
+
+fn datagen_indexed_spine_snapshot_test_struct(
+    seed: u64,
+    batches: usize,
+    max_batch_size: usize,
+) -> (Arc<dyn SerBatchReader>, Vec<(TestStruct, String)>) {
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut all_tuples = Vec::new();
+    let mut dyn_batches = Vec::with_capacity(batches);
+    for batch_idx in 0..batches {
+        let batch_size = rng.gen_range(0..=max_batch_size);
+        let mut tuples = Vec::with_capacity(batch_size);
+        let mut next_id = batch_idx as u32;
+
+        for _ in 0..batch_size {
+            let id = next_id;
+            next_id += batches as u32;
+
+            let key = KeyStruct { id };
+            let value = TestStruct {
+                id,
+                b: rng.r#gen(),
+                i: rng.gen_bool(0.5).then(|| rng.r#gen()),
+                s: rng.r#gen::<u32>().to_string(),
+            };
+            let weight = if rng.gen_bool(0.5) { 1 } else { -1 };
+
+            tuples.push(Tup2(Tup2(key, value.clone()), weight));
+            all_tuples.push(Tup2(Tup2(KeyStruct { id }, value), weight));
+        }
+
+        let batch = OrdIndexedZSet::<KeyStruct, TestStruct>::from_tuples((), tuples);
+
+        dyn_batches.push(Arc::new(batch.into_inner()));
+    }
+
+    let expected_output = OrdIndexedZSet::<KeyStruct, TestStruct>::from_tuples((), all_tuples)
+        .iter()
+        .map(|(_k, v, w)| {
+            (
+                v,
+                if w > 0 {
+                    "insert".to_string()
+                } else {
+                    "delete".to_string()
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let factories = BatchReaderFactories::new::<KeyStruct, TestStruct, ZWeight>();
+    let snapshot: TypedSpineSnapshot<OrdIndexedZSet<KeyStruct, TestStruct>> =
+        TypedBatch::new(DynSpineSnapshot::with_batches(&factories, dyn_batches));
+    let snapshot = Arc::new(SerBatchImpl::<
+        TypedSpineSnapshot<OrdIndexedZSet<KeyStruct, TestStruct>>,
+        KeyStruct,
+        TestStruct,
+    >::new(snapshot)) as Arc<dyn SerBatchReader>;
+
+    (snapshot, expected_output)
+}
+
+fn run_avro_encoder_spine_snapshot_indexed<K, V>(
+    avro_schema: &str,
+    key_schema: &Relation,
+    value_schema: &Relation,
+    snapshot: Arc<dyn SerBatchReader>,
+    expected_output: Vec<(V, String)>,
+) where
+    K: DBData
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + SerializeWithContext<SqlSerdeConfig>,
+    V: DBData
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + SerializeWithContext<SqlSerdeConfig>,
+{
+    let config: AvroEncoderConfig = AvroEncoderConfig {
+        schema: Some(avro_schema.to_string()),
+        key_mode: Some(AvroEncoderKeyMode::None),
+        threads: 10,
+        ..Default::default()
+    };
+
+    let consumer = MockOutputConsumer::new();
+    let consumer_data = consumer.data.clone();
+    let mut encoder = AvroEncoder::create(
+        "avro_test_endpoint",
+        &Some(key_schema.clone()),
+        &value_schema,
+        Box::new(consumer),
+        config,
+        None,
+    )
+    .unwrap();
+
+    encoder.consumer().batch_start(0);
+    encoder.encode(snapshot).unwrap();
+    encoder.consumer().batch_end();
+
+    let val_schema = encoder.value_avro_schema.clone();
+    let actual_output = consumer_data
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_k, v, headers)| {
+            let val = from_avro_datum(&val_schema, &mut &v.as_ref().unwrap()[5..], None).unwrap();
+            let value =
+                from_avro_value::<V, ()>(&val, &val_schema, &HashMap::new(), &None).unwrap();
+            let op = std::str::from_utf8(headers[0].1.as_ref().unwrap().as_slice()).unwrap();
+            (value, op.to_string())
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        actual_output.iter().sorted().collect::<Vec<_>>(),
+        expected_output.iter().sorted().collect::<Vec<_>>()
+    );
+}
+
+/// Test Avro encoder over a SpineSnapshot batch.
+///
+/// This exercises split cursors over more complex batches consisting of multiple.
+/// This test forces all batches to be FileIndexedWSet batches by setting min storage bytes to 0.
+#[test]
+fn proptest_avro_encoder_spine_snapshot_indexed_posix() {
+    run_in_posix_runtime(Some(0usize), Some(0usize), move || {
+        let (snapshot, expected_output) =
+            datagen_indexed_spine_snapshot_test_struct(0xD00D_F00D, 20, 100);
+
+        run_avro_encoder_spine_snapshot_indexed::<KeyStruct, TestStruct>(
+            TestStruct::avro_schema(),
+            &KeyStruct::relation_schema(),
+            &TestStruct::relation_schema(),
+            snapshot,
+            expected_output,
+        );
+    });
+}
+
+/// This test forces all batches to be in-memory batches by setting min storage bytes to None.
+#[test]
+fn proptest_avro_encoder_spine_snapshot_indexed_mem() {
+    run_in_posix_runtime(None, None, move || {
+        let (snapshot, expected_output) =
+            datagen_indexed_spine_snapshot_test_struct(0xD00D_F00D, 20, 100);
+
+        run_avro_encoder_spine_snapshot_indexed::<KeyStruct, TestStruct>(
+            TestStruct::avro_schema(),
+            &KeyStruct::relation_schema(),
+            &TestStruct::relation_schema(),
+            snapshot,
+            expected_output,
+        );
+    });
 }
 
 proptest! {

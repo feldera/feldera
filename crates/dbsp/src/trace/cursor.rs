@@ -195,6 +195,19 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
     /// might be desirable to call [`rewind_keys`](Self::rewind_keys) first.
     fn seek_key(&mut self, key: &K);
 
+    /// Looks up the specified key and returns true if it is present.
+    ///
+    /// The implementation can be more efficient than `seek_key`.
+    ///
+    /// This method has several constraints.
+    /// - It cannot be mixed with other seek and step methods, specifically,
+    ///   you cannot call `seek_key`, `seek_key_with`, `seek_key_with_reverse`,
+    ///   `seek_key_reverse`, `step_key`, `step_key_reverse` on the cursor if
+    ///   you also use `seek_key_exact` on it without first resetting this cursor
+    ///   using `rewind_keys` or `fast_forward_keys`.
+    ///
+    /// - When calling `seek_key_exact` multiple times on the cursor, every next
+    ///   call must be for a key that is greater than the previous key.
     fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool;
 
     /// Advances the cursor to the first key that satisfies `predicate`.

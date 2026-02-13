@@ -428,7 +428,9 @@ impl SplitCursorBuilder {
 
     pub fn build<'a>(&'a self) -> SplitCursor<'a> {
         let mut cursor = self.batch.cursor(self.format.clone()).unwrap();
-        cursor.seek_key_exact(self.start_key.as_data());
+
+        // Cannot use `seek_key_exact` here, so we can single-step the cursor afterward.
+        cursor.seek_key(self.start_key.as_data());
 
         SplitCursor {
             cursor,
@@ -555,7 +557,7 @@ impl SerCursor for SplitCursor<'_> {
 
     fn rewind_keys(&mut self) {
         self.cursor.rewind_keys();
-        self.cursor.seek_key_exact(self.start_key.as_data());
+        self.cursor.seek_key(self.start_key.as_data());
     }
 
     fn rewind_vals(&mut self) {
@@ -563,7 +565,17 @@ impl SerCursor for SplitCursor<'_> {
     }
 
     fn seek_key_exact(&mut self, key: &DynData) -> bool {
+        if let Some(ref end_key) = self.end_key
+            && key >= end_key.as_data()
+        {
+            return false;
+        }
+
         self.cursor.seek_key_exact(key)
+    }
+
+    fn seek_key(&mut self, key: &DynData) {
+        self.cursor.seek_key(key);
     }
 }
 
@@ -671,6 +683,8 @@ pub trait SerCursor: Send {
     }
 
     fn seek_key_exact(&mut self, key: &DynData) -> bool;
+
+    fn seek_key(&mut self, key: &DynData);
 }
 
 /// A handle to an output stream of a circuit that yields type-erased
@@ -852,6 +866,10 @@ impl SerCursor for CursorWithPolarity<'_> {
 
     fn seek_key_exact(&mut self, key: &DynData) -> bool {
         self.cursor.seek_key_exact(key)
+    }
+
+    fn seek_key(&mut self, key: &DynData) {
+        self.cursor.seek_key(key);
     }
 }
 

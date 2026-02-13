@@ -802,4 +802,10 @@ where
         self.update_val();
         val
     }
+
+    fn seek_key(&mut self, key: &DynData) {
+        self.cursor.seek_key(key);
+        self.update_key();
+        self.update_val();
+    }
 }
