@@ -463,8 +463,9 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
         .await
     {
         Ok(p) => p,
-        Err(e) => {
-            handle_errors_fatal(client.baseurl().clone(), "Failed to get pipeline status", 1)(e);
+        Err(_) => {
+            let _ =
+                handle_errors_fatal(client.baseurl().clone(), "Failed to get pipeline status", 1);
             unreachable!()
         }
     };
