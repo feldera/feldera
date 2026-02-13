@@ -30,7 +30,7 @@ use std::{
         Arc, Mutex, RwLock,
         atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering},
     },
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 use tarpc::{
     client, context,
@@ -602,8 +602,10 @@ where
                 let client = this.inner.clients.connect(receivers.start).await;
 
                 // Send it.
+                let mut context = context::current();
+                context.deadline = Instant::now() + Duration::from_hours(1);
                 futures.push(client.exchange(
-                    context::current(),
+                    context,
                     this.inner.exchange_id,
                     senders.clone(),
                     items,
