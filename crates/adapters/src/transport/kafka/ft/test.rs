@@ -33,8 +33,7 @@ use feldera_types::deserialize_table_record;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::secret_resolver::default_secrets_directory;
 use feldera_types::transport::kafka::{
-    KafkaInputConfig, KafkaLogLevel, KafkaStartFromConfig, default_group_join_timeout_secs,
-    default_redpanda_server,
+    KafkaInputConfig, KafkaLogLevel, KafkaStartFromConfig, default_redpanda_server,
 };
 use parquet::data_type::AsBytes;
 use proptest::prelude::*;
@@ -1343,30 +1342,23 @@ fn test_offset(
         producer.send_string("", topic);
     }
 
+    let mut kafka_options = BTreeMap::new();
+    let auto_offset_reset = match start_from {
+        KafkaStartFromConfig::Earliest => Some("earliest"),
+        KafkaStartFromConfig::Latest => Some("latest"),
+        KafkaStartFromConfig::Offsets(_) | KafkaStartFromConfig::Timestamp(_) => None,
+    };
+    if let Some(auto_offset_reset) = auto_offset_reset {
+        kafka_options.insert("auto.offset.reset".into(), auto_offset_reset.into());
+    }
+    kafka_options.insert("bootstrap.servers".into(), default_redpanda_server());
+    kafka_options.insert("group.id".into(), "test-client".into());
+
     let config = InputEndpointConfig {
         stream: Cow::from("test_input"),
         connector_config: ConnectorConfig {
             transport: TransportConfig::KafkaInput(KafkaInputConfig {
-                kafka_options: {
-                    let mut kafka_options = BTreeMap::new();
-                    let auto_offset_reset = match start_from {
-                        KafkaStartFromConfig::Earliest => Some("earliest"),
-                        KafkaStartFromConfig::Latest => Some("latest"),
-                        KafkaStartFromConfig::Offsets(_) | KafkaStartFromConfig::Timestamp(_) => {
-                            None
-                        }
-                    };
-                    if let Some(auto_offset_reset) = auto_offset_reset {
-                        kafka_options.insert("auto.offset.reset".into(), auto_offset_reset.into());
-                    }
-                    kafka_options.insert("bootstrap.servers".into(), default_redpanda_server());
-                    kafka_options.insert("group.id".into(), "test-client".into());
-                    kafka_options
-                },
-                topic: topic.into(),
                 log_level: Some(KafkaLogLevel::Debug),
-                group_join_timeout_secs: default_group_join_timeout_secs(),
-                poller_threads: None,
                 start_from: match start_from {
                     KafkaStartFromConfig::Timestamp(_) => {
                         sleep(Duration::from_secs(2));
@@ -1381,14 +1373,7 @@ fn test_offset(
                     }
                     other => other,
                 },
-                region: None,
-                partitions: None,
-                resume_earliest_if_data_expires: false,
-                include_headers: None,
-                include_timestamp: None,
-                include_partition: None,
-                include_offset: None,
-                include_topic: None,
+                ..KafkaInputConfig::default(kafka_options, topic)
             }),
             format: Some(FormatConfig {
                 name: Cow::from("csv"),
@@ -1796,39 +1781,26 @@ fn test_input_partition(
 ) {
     let _kafka = KafkaResources::create_topics(&[(topic, n_partitions)]);
 
+    let mut kafka_options = BTreeMap::new();
+    let auto_offset_reset = match start_from {
+        KafkaStartFromConfig::Earliest => Some("earliest"),
+        KafkaStartFromConfig::Latest => Some("latest"),
+        KafkaStartFromConfig::Offsets(_) | KafkaStartFromConfig::Timestamp(_) => None,
+    };
+    if let Some(auto_offset_reset) = auto_offset_reset {
+        kafka_options.insert("auto.offset.reset".into(), auto_offset_reset.into());
+    }
+    kafka_options.insert("bootstrap.servers".into(), default_redpanda_server());
+    kafka_options.insert("group.id".into(), "test-client".into());
+
     let config = InputEndpointConfig {
         stream: Cow::from("test_input"),
         connector_config: ConnectorConfig {
             transport: TransportConfig::KafkaInput(KafkaInputConfig {
-                kafka_options: {
-                    let mut kafka_options = BTreeMap::new();
-                    let auto_offset_reset = match start_from {
-                        KafkaStartFromConfig::Earliest => Some("earliest"),
-                        KafkaStartFromConfig::Latest => Some("latest"),
-                        KafkaStartFromConfig::Offsets(_) | KafkaStartFromConfig::Timestamp(_) => {
-                            None
-                        }
-                    };
-                    if let Some(auto_offset_reset) = auto_offset_reset {
-                        kafka_options.insert("auto.offset.reset".into(), auto_offset_reset.into());
-                    }
-                    kafka_options.insert("bootstrap.servers".into(), default_redpanda_server());
-                    kafka_options.insert("group.id".into(), "test-client".into());
-                    kafka_options
-                },
-                topic: topic.into(),
                 log_level: Some(KafkaLogLevel::Debug),
-                group_join_timeout_secs: default_group_join_timeout_secs(),
-                poller_threads: None,
                 start_from: start_from.clone(),
-                region: None,
                 partitions: Some(partitions.clone()),
-                resume_earliest_if_data_expires: false,
-                include_headers: None,
-                include_timestamp: None,
-                include_partition: None,
-                include_offset: None,
-                include_topic: None,
+                ..KafkaInputConfig::default(kafka_options, topic)
             }),
             format: Some(FormatConfig {
                 name: Cow::from("csv"),
