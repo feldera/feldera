@@ -1147,10 +1147,19 @@ fn do_bootstrap(
 
     info!("Pipeline initialization complete");
     if let Some(runtime_override) = option_env!("FELDERA_RUNTIME_OVERRIDE") {
-        warn!(
-            "Pipeline runtime version was overridden and does not match platform version: {}",
-            runtime_override
-        );
+        let actual_runtime_sha = option_env!("VERGEN_GIT_SHA")
+            .unwrap_or_else(|| "<unable to determine runtime git sha>");
+        if runtime_override == actual_runtime_sha {
+            info!(
+                "Pipeline runtime version was overridden with SHA: {}",
+                runtime_override,
+            );
+        } else {
+            panic!(
+                "Pipeline runtime version was overridden but the build SHA of the binary {} does not match the requested runtime version {}",
+                actual_runtime_sha, runtime_override
+            )
+        }
     }
     state.set_phase(PipelinePhase::InitializationComplete);
 

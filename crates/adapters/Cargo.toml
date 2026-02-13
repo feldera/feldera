@@ -208,6 +208,9 @@ jemalloc_pprof = { workspace = true, features = ["symbolize"] }
 libc = { workspace = true }
 nix = { workspace = true, features = ["signal", "mman", "time", "feature"] }
 
+[build-dependencies]
+vergen-gitcl = { workspace = true }
+
 [dev-dependencies]
 actix-test = { workspace = true }
 bstr = { workspace = true, features = ["serde1"] }

@@ -3990,6 +3990,7 @@ dependencies = [
  "url",
  "utoipa",
  "uuid",
+ "vergen-gitcl",
  "xxhash-rust",
  "zip 6.0.0",
 ]
