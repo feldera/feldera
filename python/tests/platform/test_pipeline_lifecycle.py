@@ -16,12 +16,11 @@ from .helper import (
     clear_pipeline,
     delete_pipeline,
     cleanup_pipeline,
-    wait_for_deployment_status,
     api_url,
     adhoc_query_json,
     post_no_body,
 )
-from tests import enterprise_only
+from tests import TEST_CLIENT, enterprise_only
 
 
 def _wait_for_stopped_with_error(name: str, timeout_s: float = 90.0):
@@ -193,7 +192,9 @@ def test_pipeline_stop_force_after_start(pipeline_name):
         #
         # See big comment in test_pipeline_stop_with_force for
         # reasoning.
-        wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
+        TEST_CLIENT.wait_for_deployment_status(
+            pipeline_name, lambda status: status != "Stopped"
+        )
         # Shortly wait for the pipeline to transition to next state(s)
         time.sleep(delay_sec)
         # Stop force and clear the pipeline
@@ -230,12 +231,14 @@ def test_pipeline_stop_with_force(pipeline_name):
     #   pipeline while it is stopping. Wait until it is stopped before
     #   starting the pipeline again."
     start_pipeline(pipeline_name, wait=False)
-    wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
+    TEST_CLIENT.wait_for_deployment_status(
+        pipeline_name, lambda status: status != "Stopped"
+    )
     stop_pipeline(pipeline_name, force=True)
 
     # Start paused then stop (simulate by pausing immediately)
     start_pipeline_as_paused(pipeline_name)
-    wait_for_deployment_status(pipeline_name, "Paused", 30)
+    TEST_CLIENT.wait_for_deployment_status(pipeline_name, "Paused", 30)
     stop_pipeline(pipeline_name, force=True)
 
     # Start, stop (without waiting), then stop again
@@ -259,7 +262,9 @@ def test_pipeline_stop_without_force(pipeline_name):
     #
     # See test_pipeline_stop_with_force() for notes.
     start_pipeline(pipeline_name, wait=False)
-    wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
+    TEST_CLIENT.wait_for_deployment_status(
+        pipeline_name, lambda status: status != "Stopped"
+    )
     stop_pipeline(pipeline_name, force=False)
 
     # Start, wait for running, stop

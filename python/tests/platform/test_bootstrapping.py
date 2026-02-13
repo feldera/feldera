@@ -4,7 +4,6 @@ from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT, enterprise_only
 from .helper import (
     gen_pipeline_name,
-    wait_for_deployment_status,
 )
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
@@ -58,7 +57,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         print(f"Expected exception caught: {e}")
         # Reject triggers async stopping.
         # This only guarantees deployment_status is Stopped
-        wait_for_deployment_status(pipeline_name, "Stopped", 30)
+        TEST_CLIENT.wait_for_deployment_status(pipeline_name, "Stopped", 30)
         pass
 
     print(
@@ -79,7 +78,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     assert result == [{"c": 6}]
 
     pipeline.stop(force=True)
-    wait_for_deployment_status(pipeline_name, "Stopped", 30)
+    TEST_CLIENT.wait_for_deployment_status(pipeline_name, "Stopped", 30)
 
     # Since we didn't make a checkpoint during the previous run, the pipeline should be in the AWAITINGAPPROVAL state.
     print("Starting pipeline with bootstrap_policy='await_approval'")
