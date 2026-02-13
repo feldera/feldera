@@ -114,6 +114,28 @@ pub struct KafkaInputConfig {
 }
 
 impl KafkaInputConfig {
+    /// Returns a default [KafkaInputConfig] with the given `kafka_options` and
+    /// `topic`.  To be a usable configuration, `kafka_options` must contain at
+    /// least `bootstrap.servers`.
+    pub fn default(kafka_options: BTreeMap<String, String>, topic: impl Into<String>) -> Self {
+        Self {
+            kafka_options,
+            topic: topic.into(),
+            log_level: None,
+            group_join_timeout_secs: default_group_join_timeout_secs(),
+            poller_threads: None,
+            start_from: KafkaStartFromConfig::default(),
+            region: None,
+            partitions: None,
+            resume_earliest_if_data_expires: false,
+            include_headers: None,
+            include_timestamp: None,
+            include_partition: None,
+            include_offset: None,
+            include_topic: None,
+        }
+    }
+
     // Returns the number of threads to use based on configuration, defaults,
     // and system resources.
     pub fn poller_threads(&self) -> usize {
