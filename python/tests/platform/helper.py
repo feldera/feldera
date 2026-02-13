@@ -159,28 +159,10 @@ def stop_pipeline(name: str, force: bool = True, wait: bool = True):
     TEST_CLIENT.stop_pipeline(name, force=force, wait=wait)
 
 
-def wait_for_cleared_storage(name: str, timeout_s: float = 60.0):
-    deadline = time.time() + timeout_s
-    last = None
-    while time.time() < deadline:
-        r = get_pipeline(name, "status")
-        if r.status_code != HTTPStatus.OK:
-            time.sleep(0.25)
-            continue
-        obj = r.json()
-        last = obj.get("storage_status")
-        if last == "Cleared":
-            return obj
-        time.sleep(0.25)
-    raise TimeoutError(
-        f"Timed out waiting for pipeline '{name}' to clear storage (last={last})"
-    )
-
-
 def clear_pipeline(name: str, wait: bool = True):
     r = post_no_body(f"{API_PREFIX}/pipelines/{name}/clear")
     if wait and r.status_code == HTTPStatus.ACCEPTED:
-        wait_for_cleared_storage(name)
+        TEST_CLIENT.clear_storage(name, timeout_s=60.0)
     return r
 
 
