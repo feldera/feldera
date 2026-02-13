@@ -57,7 +57,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         print(f"Expected exception caught: {e}")
         # Reject triggers async stopping.
         # This only guarantees deployment_status is Stopped
-        TEST_CLIENT.wait_for_deployment_status(pipeline_name, "Stopped", 30)
+        pipeline.wait_for_status(PipelineStatus.STOPPED, timeout=30)
         pass
 
     print(
@@ -78,7 +78,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     assert result == [{"c": 6}]
 
     pipeline.stop(force=True)
-    TEST_CLIENT.wait_for_deployment_status(pipeline_name, "Stopped", 30)
+    pipeline.wait_for_status(PipelineStatus.STOPPED, timeout=30)
 
     # Since we didn't make a checkpoint during the previous run, the pipeline should be in the AWAITINGAPPROVAL state.
     print("Starting pipeline with bootstrap_policy='await_approval'")

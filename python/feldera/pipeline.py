@@ -476,6 +476,7 @@ metrics"""
         wait: bool = True,
         timeout_s: Optional[float] = None,
         ignore_deployment_error: bool = False,
+        observe_start: bool = False,
     ):
         """
         .. _start:
@@ -492,6 +493,8 @@ metrics"""
         :param wait: Set True to wait for the pipeline to start. True by default
         :param ignore_deployment_error: Set True to ignore deployment errors while waiting
             for START transition. False by default.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            moves away from STOPPED.
 
         :raises RuntimeError: If the pipeline is not in STOPPED state.
         """
@@ -502,6 +505,7 @@ metrics"""
             wait=wait,
             timeout_s=timeout_s,
             ignore_deployment_error=ignore_deployment_error,
+            observe_start=observe_start,
         )
 
     def start_paused(
@@ -509,13 +513,25 @@ metrics"""
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        observe_start: bool = False,
     ):
         """
         Starts the pipeline in the paused state.
+
+        :param bootstrap_policy: The bootstrap policy to use.
+        :param wait: Set True to wait for the pipeline to start. True by default.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to start.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            moves away from STOPPED.
         """
 
         return self.client.start_pipeline_as_paused(
-            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+            self.name,
+            bootstrap_policy=bootstrap_policy,
+            wait=wait,
+            timeout_s=timeout_s,
+            observe_start=observe_start,
         )
 
     def start_standby(
@@ -523,13 +539,25 @@ metrics"""
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        observe_start: bool = False,
     ):
         """
         Starts the pipeline in the standby state.
+
+        :param bootstrap_policy: The bootstrap policy to use.
+        :param wait: Set True to wait for the pipeline to start. True by default.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to start.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            moves away from STOPPED.
         """
 
         self.client.start_pipeline_as_standby(
-            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+            self.name,
+            bootstrap_policy=bootstrap_policy,
+            wait=wait,
+            timeout_s=timeout_s,
+            observe_start=observe_start,
         )
 
     def restart(
