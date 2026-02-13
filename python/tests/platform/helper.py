@@ -18,12 +18,18 @@ import logging
 import pytest
 import requests
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional, Callable
+from typing import Any, Dict, Iterable, Optional
 from http import HTTPStatus
 from urllib.parse import quote, quote_plus
 
 from feldera.testutils_oidc import get_oidc_test_helper
-from tests import FELDERA_REQUESTS_VERIFY, API_KEY, BASE_URL, unique_pipeline_name
+from tests import (
+    FELDERA_REQUESTS_VERIFY,
+    API_KEY,
+    BASE_URL,
+    TEST_CLIENT,
+    unique_pipeline_name,
+)
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 API_PREFIX = "/v0"
@@ -116,39 +122,6 @@ def delete(path: str, **kw) -> requests.Response:
     return http_request("DELETE", path, **kw)
 
 
-def wait_for_deployment_status(
-    name: str, desired: str | Callable[[str], bool], timeout_s: float = 60.0
-):
-    """
-    Wait until pipeline 'name' has 'desired' deployment status:
-
-    - If 'desired' is a string, until that is the status.
-
-    - If 'desired' is a function, until it returns true when passed
-      the deployment status.
-    """
-    print(f"Waiting up to {timeout_s} seconds for {name} to transition to {desired}")
-    start = time.time()
-    deadline = start + timeout_s
-    last = None
-    while time.time() < deadline:
-        r = get_pipeline(name, "status")
-        if r.status_code != HTTPStatus.OK:
-            time.sleep(0.25)
-            continue
-        obj = r.json()
-        status = obj.get("deployment_status")
-        if status != last:
-            print(f"After {time.time() - start:.1f} seconds: status is {status}")
-        last = status
-        if last == desired if isinstance(desired, str) else desired(last):
-            return obj
-        time.sleep(0.25)
-    raise TimeoutError(
-        f"Timed out waiting for pipeline '{name}' deployment_status={desired} (last={last})\nCurrent pipeline descriptor:\n{obj}"
-    )
-
-
 def create_pipeline(name: str, sql: str):
     r = post_json(
         api_url("/pipelines"),
@@ -172,7 +145,7 @@ def start_pipeline(name: str, wait: bool = True):
         f"Unexpected start response: {r.status_code} {r.text}"
     )
     if wait:
-        wait_for_deployment_status(name, "Running", 120)
+        TEST_CLIENT.wait_for_deployment_status(name, "Running", 120)
     return r
 
 
@@ -182,7 +155,7 @@ def resume_pipeline(name: str, wait: bool = True):
         f"Unexpected resume response: {r.status_code} {r.text}"
     )
     if wait:
-        wait_for_deployment_status(name, "Running", 30)
+        TEST_CLIENT.wait_for_deployment_status(name, "Running", 30)
     return r
 
 
@@ -192,7 +165,7 @@ def start_pipeline_as_paused(name: str, wait: bool = True):
         f"Unexpected pause response: {r.status_code} {r.text}"
     )
     if wait:
-        wait_for_deployment_status(name, "Paused", 120)
+        TEST_CLIENT.wait_for_deployment_status(name, "Paused", 120)
     return r
 
 
@@ -202,7 +175,7 @@ def pause_pipeline(name: str, wait: bool = True):
         f"Unexpected pause response: {r.status_code} {r.text}"
     )
     if wait:
-        wait_for_deployment_status(name, "Paused", 30)
+        TEST_CLIENT.wait_for_deployment_status(name, "Paused", 30)
     return r
 
 
@@ -213,7 +186,7 @@ def stop_pipeline(name: str, force: bool = True, wait: bool = True):
     assert r.status_code == HTTPStatus.ACCEPTED, (
         f"Unexpected stop response: {r.status_code} {r.text}"
     )
-    wait_for_deployment_status(name, "Stopped", 30)
+    TEST_CLIENT.wait_for_deployment_status(name, "Stopped", 30)
     return r
 
 

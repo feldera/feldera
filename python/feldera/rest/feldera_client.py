@@ -3,7 +3,7 @@ import logging
 import pathlib
 import time
 from decimal import Decimal
-from typing import Any, Dict, Generator, Mapping, Optional
+from typing import Any, Callable, Dict, Generator, Mapping, Optional
 from urllib.parse import quote
 
 import requests
@@ -281,6 +281,56 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 "still starting %s, waiting for 100 more milliseconds", pipeline_name
             )
             time.sleep(poll_interval_s)
+
+    def wait_for_deployment_status(
+        self,
+        pipeline_name: str,
+        desired: str | Callable[[str], bool],
+        timeout_s: float = 60.0,
+        poll_interval_s: float = 0.25,
+    ) -> Pipeline:
+        """
+        Wait until pipeline 'pipeline_name' has 'desired' deployment status:
+
+        - If 'desired' is a string, until that is the status.
+        - If 'desired' is a function, until it returns true when passed
+          the deployment status.
+
+        :param pipeline_name: The name of the pipeline.
+        :param desired: Desired deployment status string or predicate.
+        :param timeout_s: Timeout in seconds.
+        :param poll_interval_s: Poll interval in seconds.
+        """
+
+        print(
+            f"Waiting up to {timeout_s} seconds for {pipeline_name} to transition to {desired}"
+        )
+        start = time.monotonic()
+        deadline = start + timeout_s
+        last = None
+        latest = None
+
+        while time.monotonic() < deadline:
+            try:
+                latest = self.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS)
+            except FelderaAPIError:
+                time.sleep(poll_interval_s)
+                continue
+
+            status = latest.deployment_status
+            if status != last:
+                print(
+                    f"After {time.monotonic() - start:.1f} seconds: status is {status}"
+                )
+            last = status
+            if last == desired if isinstance(desired, str) else desired(last):
+                return latest
+            time.sleep(poll_interval_s)
+
+        raise TimeoutError(
+            f"Timed out waiting for pipeline '{pipeline_name}' deployment_status={desired} (last={last})\n"
+            f"Current pipeline descriptor:\n{latest.__dict__ if latest is not None else None}"
+        )
 
     def create_pipeline(self, pipeline: Pipeline, wait: bool = True) -> Pipeline:
         """
