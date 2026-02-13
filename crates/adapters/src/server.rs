@@ -28,6 +28,7 @@ use actix_web::{
     get,
     http::StatusCode,
     http::header,
+    middleware,
     post, rt,
     web::{self, Data as WebData, Payload, Query},
 };
@@ -814,6 +815,7 @@ pub fn run_server(
                         res
                     })
                 })
+                .wrap(middleware::Compress::default())
                 .wrap(observability::actix_middleware());
             build_app(app, state)
         }
