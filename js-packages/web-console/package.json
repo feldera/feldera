@@ -128,5 +128,8 @@
     "build-icons": "bun run scripts/build-webfont.ts -- -s src/assets/icons/feldera-material-icons -d src/assets/fonts/ -n feldera-material-icons -p fd --fix && bun run scripts/build-webfont.ts -- -s src/assets/icons/generic -d src/assets/fonts/ -n generic-icons -p gc && bun run format"
   },
   "trustedDependencies": ["@axa-fr/oidc-client", "sk-oidc-oauth", "svelte-preprocess"],
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "support-bundle-triage": "../../../packages/support-bundle-triage"
+  }
 }

@@ -86,6 +86,9 @@
     "js-packages/web-console": {
       "name": "web-console",
       "version": "0.0.1",
+      "dependencies": {
+        "support-bundle-triage": "../../../packages/support-bundle-triage",
+      },
       "devDependencies": {
         "@auth/sveltekit": "1.11.1",
         "@axa-fr/oidc-client": "7.26.1-alpha.1797",
@@ -2064,6 +2067,8 @@
     "vite-plugin-virtual/vite": ["vite@5.4.21", "", { "dependencies": { "esbuild": "^0.21.3", "postcss": "^8.4.43", "rollup": "^4.20.0" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^18.0.0 || >=20.0.0", "less": "*", "lightningcss": "^1.21.0", "sass": "*", "sass-embedded": "*", "stylus": "*", "sugarss": "*", "terser": "^5.4.0" }, "optionalPeers": ["@types/node", "less", "lightningcss", "sass", "sass-embedded", "stylus", "sugarss", "terser"], "bin": { "vite": "bin/vite.js" } }, "sha512-o5a9xKjbtuhY6Bi5S3+HvbRERmouabWbyUcpXXUA1u+GNUKoROi9byOJ8M0nHbHYHkYICiMlqxkg1KkYmm25Sw=="],
 
     "web-console/@skeletonlabs/skeleton": ["@skeletonlabs/skeleton@4.7.3", "", { "peerDependencies": { "tailwindcss": "^4.0.0" } }, "sha512-yIkyOaUPT3/d6uqZKMHMMWjibv89dDUVeNjqUT+OPlpnyF/GH9BokNPToWtSKUkIPoybiZSeK2Vxmj14JCRo9Q=="],
+
+    "web-console/support-bundle-triage": ["support-bundle-triage@file:../packages/support-bundle-triage", { "dependencies": { "but-unzip": "^0.1.7" }, "devDependencies": { "@sveltejs/vite-plugin-svelte": "^6.2.1", "@tsconfig/svelte": "^5.0.6", "@types/node": "^24.10.1", "svelte": "^5.43.8", "svelte-check": "^4.3.4", "typescript": "~5.9.3", "vite": "^7.2.4" } }],
 
     "wrap-ansi/ansi-styles": ["ansi-styles@4.3.0", "", { "dependencies": { "color-convert": "^2.0.1" } }, "sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg=="],
 

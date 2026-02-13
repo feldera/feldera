@@ -32,9 +32,14 @@
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { goto } from '$app/navigation'
+  import triagePlugins from 'virtual:feldera-triage-plugins'
+  import { unzip } from 'but-unzip'
+  import type { TriageResult } from '$lib/types/triage'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   const api = usePipelineManager()
+
+  let triageResults: TriageResult[] = $state([])
 
   let pipelineName = $derived(pipeline.current.name)
   $effect(() => {
@@ -44,6 +49,7 @@
         getProfileData = null
         loadedPipelineName = null
         getProfileFiles = () => []
+        triageResults = []
       }
     })
   })
@@ -56,6 +62,8 @@
         errorMessage = message
         return false
       }
+
+      console.log('triage plugin length', triagePlugins.length)
 
       loadedPipelineName = sourceName
       getProfileFiles = () => suitableProfiles
@@ -92,6 +100,17 @@
     ;(async () => {
       try {
         const processedProfile = await processProfileFiles(profileFiles[1])
+        // Run triage plugins on the full zip contents
+        if (triagePlugins.length > 0) {
+          try {
+            const results = await Promise.all(triagePlugins.map((p) => p.triage(profileFiles[1])))
+            triageResults = results.flat()
+          } catch {
+            triageResults = []
+          }
+        } else {
+          triageResults = []
+        }
         getProfileData = enclosure({
           profile: processedProfile.profile,
           dataflow: processedProfile.dataflow,
@@ -221,14 +240,12 @@
     accept=".zip"
     bind:this={fileInput}
     onchange={uploadSupportBundle}
-    class="hidden"
-  />
+    class="hidden" />
   <div class="{nonNull(downloadProgress.percent) ? '' : 'opacity-0'} transition-opacity">
     <Progress
       class="-mt-1 h-1 sm:-mt-4"
       value={downloadProgress.percent ? downloadProgress.percent : null}
-      max={100}
-    >
+      max={100}>
       <Progress.Track>
         <Progress.Range class="bg-primary-500" />
       </Progress.Track>
@@ -236,14 +253,25 @@
   </div>
   {#if getProfileData}
     {@const { profile, dataflow, sources } = getProfileData()}
+    {#each triageResults as result}
+      <div
+        class="mx-2 mb-2 rounded p-2 text-sm {result.severity === 'error'
+          ? 'preset-outlined-error-500'
+          : result.severity === 'warning'
+            ? 'preset-outlined-warning-500'
+            : 'preset-outlined-surface-500'}"
+        transition:slide>
+        <span class="font-semibold">{result.rule}:</span>
+        {result.message}
+      </div>
+    {/each}
     <ProfilerLayout
       profileData={profile}
       dataflowData={dataflow}
       programCode={sources}
       onHighlightSourceRanges={highlightSourceRanges}
       toolbarClass="pb-2 sm:-mt-2"
-      diagramClass="bg-white-dark rounded"
-    >
+      diagramClass="bg-white-dark rounded">
       {#snippet toolbarStart()}
         <!-- File Menu Popup -->
         <Popup>
@@ -253,8 +281,7 @@
           {#snippet content(close)}
             <div
               transition:fade={{ duration: 100 }}
-              class="absolute top-10 left-0 z-30 w-max min-w-[200px]"
-            >
+              class="absolute top-10 left-0 z-30 w-max min-w-[200px]">
               <div class="bg-white-dark flex flex-col rounded-container shadow-md">
                 <!-- Download Profile -->
                 <button
@@ -262,15 +289,13 @@
                   onclick={() => {
                     loadProfileData()
                     close()
-                  }}
-                >
+                  }}>
                   Download profile
                 </button>
 
                 <!-- Collect New Data Toggle -->
                 <label
-                  class="flex cursor-pointer items-center justify-between gap-3 px-4 py-2 hover:preset-tonal-surface"
-                >
+                  class="flex cursor-pointer items-center justify-between gap-3 px-4 py-2 hover:preset-tonal-surface">
                   <span>Collect new data</span>
                   <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
                 </label>
@@ -284,8 +309,7 @@
                   onclick={() => {
                     triggerFileUpload()
                     close()
-                  }}
-                >
+                  }}>
                   Upload support bundle
                 </button>
               </div>
@@ -296,8 +320,7 @@
         <!-- Profile Timestamp Selector -->
         <ProfileTimestampSelector
           profileFiles={getProfileFiles()}
-          bind:selectedTimestamp={selectedProfile}
-        />
+          bind:selectedTimestamp={selectedProfile} />
       {/snippet}
     </ProfilerLayout>
   {:else}

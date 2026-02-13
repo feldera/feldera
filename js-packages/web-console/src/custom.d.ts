@@ -7,3 +7,9 @@ declare module 'virtual:felderaApiJsonSchemas.json' {
   }[]
   export default module
 }
+
+declare module 'virtual:feldera-triage-plugins' {
+  import type { TriagePlugin } from '$lib/types/triage'
+  const plugins: TriagePlugin[]
+  export default plugins
+}
