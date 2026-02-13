@@ -1715,6 +1715,17 @@ where
         self.leaves.get(leaf_id)
     }
 
+    /// Advance the next segment ID counter past a given value.
+    ///
+    /// Ensures that future `allocate_segment_id()` calls return IDs
+    /// higher than `min_id`. Used after publishing segment_id_base to
+    /// workers to skip past the range they'll use.
+    pub fn advance_segment_id_past(&mut self, min_id: u64) {
+        if min_id >= self.next_segment_id {
+            self.next_segment_id = min_id + 1;
+        }
+    }
+
 }
 
 impl<I, L> Default for NodeStorage<I, L>

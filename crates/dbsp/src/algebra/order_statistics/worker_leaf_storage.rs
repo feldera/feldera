@@ -31,6 +31,8 @@ use crate::node_storage::{
 use crate::node_storage::serialize_to_bytes;
 use crate::storage::backend::{FileReader, StorageBackend, StoragePath};
 use crate::storage::file::Serializer;
+use size_of::SizeOf;
+
 use crate::DBData;
 
 use super::parallel_routing::build_cached_summary;
@@ -142,6 +144,13 @@ pub(crate) struct WorkerLeafStorage<V: Ord + Clone> {
 
     /// Spill threshold in bytes (flush when dirty_bytes >= this).
     spill_threshold_bytes: usize,
+
+    /// Current owned leaf range: [start, end) — persistent across steps.
+    /// Updated during cascade rebalancing.
+    owned_range: (usize, usize),
+
+    /// Whether this worker has bootstrapped (cloned initial leaves from owner).
+    bootstrapped: bool,
 }
 
 impl<V: DBData> WorkerLeafStorage<V>
@@ -168,6 +177,8 @@ where
             segment_path_prefix,
             spill_directory,
             spill_threshold_bytes,
+            owned_range: (0, 0),
+            bootstrapped: false,
         }
     }
 
@@ -630,6 +641,35 @@ where
         self.dirty_bytes
     }
 
+    /// Check if a storage backend is configured.
+    pub fn has_storage_backend(&self) -> bool {
+        self.storage_backend.is_some()
+    }
+
+    // =========================================================================
+    // Owned Range Tracking
+    // =========================================================================
+
+    /// Set the owned leaf range [start, end).
+    pub fn set_owned_range(&mut self, range: (usize, usize)) {
+        self.owned_range = range;
+    }
+
+    /// Get the current owned leaf range [start, end).
+    pub fn owned_range(&self) -> (usize, usize) {
+        self.owned_range
+    }
+
+    /// Check if this worker has bootstrapped (cloned initial leaves from owner).
+    pub fn is_bootstrapped(&self) -> bool {
+        self.bootstrapped
+    }
+
+    /// Mark this worker as bootstrapped.
+    pub fn mark_bootstrapped(&mut self) {
+        self.bootstrapped = true;
+    }
+
     /// Update storage backend configuration.
     pub fn set_storage_backend(&mut self, backend: Option<Arc<dyn StorageBackend>>) {
         self.storage_backend = backend;
@@ -651,7 +691,49 @@ where
         self.dirty_leaves.clear();
         self.dirty_bytes = 0;
         self.leaf_disk_locations.clear();
+        self.owned_range = (0, 0);
+        self.bootstrapped = false;
         // Don't clear segments — files may still exist on disk.
+    }
+
+    // =========================================================================
+    // Metric Accessors
+    // =========================================================================
+
+    /// Total size of all segment files on disk (bytes).
+    pub fn storage_size(&self) -> u64 {
+        self.segments.iter().map(|s| s.size_bytes).sum()
+    }
+
+    /// Number of leaves currently evicted to disk.
+    pub fn evicted_leaf_count(&self) -> usize {
+        self.leaves.values().filter(|s| s.is_evicted()).count()
+    }
+}
+
+impl<V: DBData> SizeOf for WorkerLeafStorage<V>
+where
+    V: Archive + RkyvSerialize<Serializer>,
+{
+    fn size_of_children(&self, context: &mut size_of::Context) {
+        // Estimate leaf data size
+        for slot in self.leaves.values() {
+            match slot {
+                WorkerLeafSlot::Present(leaf) => {
+                    // Each entry is (V, ZWeight)
+                    let entry_size = std::mem::size_of::<V>() + std::mem::size_of::<ZWeight>();
+                    context.add(leaf.entries.len() * entry_size);
+                }
+                WorkerLeafSlot::Evicted(_) => {
+                    // Summary is small, just the struct size
+                    context.add(std::mem::size_of::<CachedLeafSummary>());
+                }
+            }
+        }
+        // HashMap overhead
+        context.add(self.leaves.capacity() * std::mem::size_of::<(usize, WorkerLeafSlot<V>)>());
+        context.add(self.dirty_leaves.capacity() * std::mem::size_of::<usize>());
+        context.add(self.leaf_disk_locations.capacity() * std::mem::size_of::<(usize, LeafDiskLocation)>());
     }
 }
 
@@ -679,6 +761,9 @@ pub(crate) struct LeafTransferData<V> {
 /// Report from a worker after processing its assigned entries.
 ///
 /// The owner uses this to update internal node structure.
+/// Supports two modes:
+/// - **Persistent path**: `leaf_summaries` + `segment_info` (lightweight metadata, leaves on disk)
+/// - **Fallback path**: `modified_leaves` (full leaf data, for no-storage-backend / in-memory tests)
 #[derive(Clone)]
 pub(crate) struct WorkerReport<V> {
     /// Per-leaf weight deltas: (leaf_id, weight_delta).
@@ -697,8 +782,14 @@ pub(crate) struct WorkerReport<V> {
     /// Returned to the owner for sequential handling.
     pub unprocessed_entries: Vec<(V, ZWeight)>,
     /// Modified leaves: (leaf_id, new_leaf_data).
-    /// The owner replaces these in its tree during reconciliation.
+    /// Fallback for no-storage-backend: owner replaces these in its tree.
     pub modified_leaves: Vec<(usize, LeafNode<V>)>,
+    /// Lightweight leaf summaries for the persistent path.
+    /// Owner calls `replace_leaf_with_evicted()` per summary.
+    pub leaf_summaries: Vec<(usize, CachedLeafSummary)>,
+    /// Worker segment file info for the persistent path.
+    /// Owner calls `register_worker_segment()` with this data.
+    pub segment_info: Option<WorkerSegmentReport>,
 }
 
 impl<V> WorkerReport<V> {
@@ -712,8 +803,29 @@ impl<V> WorkerReport<V> {
             entries_processed: 0,
             unprocessed_entries: Vec::new(),
             modified_leaves: Vec::new(),
+            leaf_summaries: Vec::new(),
+            segment_info: None,
         }
     }
+}
+
+/// Segment file metadata reported by a worker to the owner.
+///
+/// The owner uses this to register the worker's segment file and update
+/// its `leaf_disk_locations` so that future reads of those leaves resolve
+/// to the worker's segment.
+#[derive(Clone)]
+pub(crate) struct WorkerSegmentReport {
+    /// Segment ID allocated by the owner for this worker.
+    pub segment_id: SegmentId,
+    /// Path of the segment file on disk.
+    pub path: StoragePath,
+    /// Reader for the segment file.
+    pub reader: Arc<dyn FileReader>,
+    /// Leaf index: leaf_id → (offset, size) within the segment file.
+    pub leaf_index: HashMap<usize, (u64, u32)>,
+    /// Total size of the segment file in bytes.
+    pub file_size: u64,
 }
 
 /// Information about a leaf split performed by a worker.

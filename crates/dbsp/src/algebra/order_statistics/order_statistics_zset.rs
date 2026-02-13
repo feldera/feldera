@@ -1296,122 +1296,6 @@ where
         self.storage.evicted_leaf_count()
     }
 
-    /// Reconcile parallel write results from workers.
-    ///
-    /// Called by the owner after gathering `LeafWriteResult`s from all workers.
-    /// Workers have already:
-    /// 1. Cloned leaves, merged entries, handled splits
-    /// 2. Written modified original leaves to disk as segment files
-    ///
-    /// The owner:
-    /// 1. Registers worker segment files
-    /// 2. Replaces in-memory leaves with Evicted slots
-    /// 3. Allocates IDs for split leaves and places them in storage
-    /// 4. Updates internal nodes for splits
-    /// 5. Recalculates subtree sums
-    /// 6. Updates total_weight and num_keys
-    pub(crate) fn reconcile_parallel_writes(
-        &mut self,
-        results: Vec<crate::algebra::order_statistics::parallel_routing::LeafWriteResult<T>>,
-    ) {
-        use crate::algebra::order_statistics::parallel_routing::SplitLeafInfo;
-
-        let mut total_weight_delta: ZWeight = 0;
-        let mut total_key_count_delta: i64 = 0;
-        let mut all_splits: Vec<SplitLeafInfo<T>> = Vec::new();
-
-        for result in results {
-            total_weight_delta += result.total_weight_delta;
-            total_key_count_delta += result.total_key_count_delta;
-
-            // 1. Register worker segment files
-            if let Some(segment) = result.segment {
-                self.storage.register_worker_segment(
-                    segment.segment_id,
-                    segment.path,
-                    segment.reader,
-                    segment.leaf_index,
-                    segment.file_size,
-                );
-            }
-
-            // 2. Replace in-memory leaves with Evicted slots
-            for disk_leaf in &result.disk_leaves {
-                self.storage.replace_leaf_with_evicted(
-                    disk_leaf.leaf_id,
-                    disk_leaf.cached_summary.clone(),
-                );
-            }
-
-            // 3. Collect split leaves for processing
-            all_splits.extend(result.split_leaves);
-        }
-
-        // 4. Process split leaves: allocate IDs, set up next_leaf chains, update internal nodes
-        // Group splits by original_leaf_id to maintain order
-        let mut splits_by_original: std::collections::HashMap<usize, Vec<SplitLeafInfo<T>>> =
-            std::collections::HashMap::new();
-        for split in all_splits {
-            splits_by_original
-                .entry(split.original_leaf_id)
-                .or_default()
-                .push(split);
-        }
-
-        // For each original leaf that was split
-        for (original_leaf_id, splits) in &splits_by_original {
-            let original_leaf_loc = LeafLocation::new(*original_leaf_id);
-
-            // Get the original leaf's next_leaf (from the evicted summary — we can't read it
-            // from the evicted slot. But we recorded it in the split leaf chain:
-            // the last split leaf inherited the original's next_leaf)
-            // Since the worker set up the chain: modified_leaf → split[0] → split[1] → ... → original_next,
-            // the last split has the original next_leaf already.
-
-            // Allocate IDs for each split leaf
-            let mut split_locs: Vec<LeafLocation> = Vec::new();
-            for split in splits {
-                let loc = self.storage.alloc_leaf(split.leaf.clone());
-                let leaf_loc = loc.as_leaf().expect("alloc_leaf returns Leaf location");
-                split_locs.push(leaf_loc);
-            }
-
-            // Set up next_leaf chain: original → split[0] → split[1] → ... → last_split (has original's next)
-            // The modified original leaf is now on disk (Evicted). We can't set its next_leaf
-            // directly. Instead, we need to reload it, set next_leaf, and re-evict or mark dirty.
-            // However, the leaf data on disk already has the correct entries but wrong next_leaf.
-            // For correctness, we need to reload, fix next_leaf, and mark dirty.
-            if !split_locs.is_empty() {
-                // Reload the original leaf to fix its next_leaf
-                self.storage
-                    .load_leaf_from_disk(original_leaf_loc)
-                    .expect("Failed to reload leaf for next_leaf fix");
-                let original_leaf_mut = self.storage.get_leaf_mut(original_leaf_loc);
-                original_leaf_mut.next_leaf = Some(split_locs[0]);
-
-                // Chain split leaves together
-                for i in 0..split_locs.len() - 1 {
-                    self.storage.get_leaf_mut(split_locs[i]).next_leaf = Some(split_locs[i + 1]);
-                }
-                // Last split leaf already has the correct next_leaf (inherited from original)
-
-                // Insert split children into parent internal nodes
-                for (i, split) in splits.iter().enumerate() {
-                    let new_child_loc = NodeLocation::Leaf(split_locs[i]);
-                    self.insert_split_child(split.split_key.clone(), new_child_loc);
-                }
-            }
-        }
-
-        // 5. Recalculate all subtree sums (needed even without splits,
-        // because leaf weights changed from merging entries)
-        self.recalculate_all_subtree_sums();
-
-        // 6. Update totals
-        self.total_weight += total_weight_delta;
-        self.num_keys = (self.num_keys as i64 + total_key_count_delta) as usize;
-    }
-
     /// Insert a new child node resulting from a leaf split.
     ///
     /// Navigates from root to find the parent internal node of the split key,
@@ -1553,6 +1437,60 @@ where
             Some(LeafSlot::Present(leaf)) => leaf.total_weight(),
             Some(LeafSlot::Evicted(summary)) => summary.weight_sum,
             None => 0,
+        }
+    }
+
+    /// Incrementally update subtree sums by propagating per-leaf weight deltas
+    /// through internal nodes, without reading any leaf data.
+    ///
+    /// This is much faster than `recalculate_all_subtree_sums()` when only a
+    /// subset of leaves changed: it visits O(modified_leaves × tree_height)
+    /// internal nodes via HashMap lookups, never touching leaf slots.
+    ///
+    /// # Arguments
+    /// - `leaf_deltas`: Map from leaf slot ID to the total weight delta for that leaf.
+    ///
+    /// # When to use
+    /// - After parallel routing when no structural changes (splits) occurred.
+    /// - When splits occurred, use `recalculate_all_subtree_sums()` instead
+    ///   (new leaves have placeholder zeros that need real values).
+    pub(crate) fn apply_subtree_weight_deltas(
+        &mut self,
+        leaf_deltas: &std::collections::HashMap<usize, ZWeight>,
+    ) {
+        if leaf_deltas.is_empty() {
+            return;
+        }
+        if let Some(root) = self.root {
+            self.apply_deltas_recursive(root, leaf_deltas);
+        }
+    }
+
+    /// Recursive helper for `apply_subtree_weight_deltas`.
+    /// Returns the total weight delta for the subtree rooted at `loc`.
+    fn apply_deltas_recursive(
+        &mut self,
+        loc: NodeLocation,
+        leaf_deltas: &std::collections::HashMap<usize, ZWeight>,
+    ) -> ZWeight {
+        match loc {
+            NodeLocation::Leaf(leaf_loc) => {
+                // O(1) HashMap lookup — never read leaf data
+                leaf_deltas.get(&leaf_loc.id).copied().unwrap_or(0)
+            }
+            NodeLocation::Internal { id, .. } => {
+                let children: Vec<NodeLocation> =
+                    self.storage.get_internal(id).children.clone();
+                let mut total_delta = 0;
+                for (i, child) in children.iter().enumerate() {
+                    let delta = self.apply_deltas_recursive(*child, leaf_deltas);
+                    if delta != 0 {
+                        self.storage.get_internal_mut(id).subtree_sums[i] += delta;
+                        total_delta += delta;
+                    }
+                }
+                total_delta
+            }
         }
     }
 

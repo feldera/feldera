@@ -131,7 +131,7 @@ class TestPercentileSpill(unittest.TestCase):
             self.assertAlmostEqual(
                 float(actual[key]),
                 pg_result[key],
-                places=6,
+                places=9,
                 msg=f"{stage_name}: {key} mismatch (Feldera vs PostgreSQL)",
             )
 
@@ -141,11 +141,17 @@ class TestPercentileSpill(unittest.TestCase):
                 f"PG_TESTS_AUDIT: {AUDIT_SCHEMA} schema ready — "
                 f"data_table ({NUM_ROWS} rows), percentile_view"
             )
+        def wait_for_idle():
+            # Wait for the pipeline to be idle before checking results.
+            # This ensures all updates have been processed.
+            self.pipeline.wait_for_idle(
+                idle_interval_s=0.5,  # Require at least 0.5s of idle time to avoid transient states
+            )
 
         # --- Phase 1: Send initial rows to Feldera (PG already populated in setUp) ---
         self.pipeline.start()
         send_rows(self.pipeline, "data_table", self.initial_rows)
-        self.pipeline.wait_for_idle()
+        wait_for_idle()
         self._check_percentiles("Phase 1 (initial)")
 
         # --- Phase 2: Modify first third — push above original range ---
@@ -159,7 +165,7 @@ class TestPercentileSpill(unittest.TestCase):
         rows_2 = [{"id": i, "val": v} for i, v in updates]
         pg_update(self.pg_conn, "data_table", "id", "val", updates)
         send_rows(self.pipeline, "data_table", rows_2)
-        self.pipeline.wait_for_idle()
+        wait_for_idle()
         self._check_percentiles("Phase 2 (first third modified)")
 
         # --- Phase 3: Modify last third — push below original range ---
@@ -173,7 +179,7 @@ class TestPercentileSpill(unittest.TestCase):
         rows_3 = [{"id": i, "val": v} for i, v in updates]
         pg_update(self.pg_conn, "data_table", "id", "val", updates)
         send_rows(self.pipeline, "data_table", rows_3)
-        self.pipeline.wait_for_idle()
+        wait_for_idle()
         self._check_percentiles("Phase 3 (last third modified)")
 
         # --- Phase 4: Delete every other row ---
@@ -182,7 +188,7 @@ class TestPercentileSpill(unittest.TestCase):
         delete_ids = list(range(0, NUM_ROWS, 2))  # even ids
         pg_delete(self.pg_conn, "data_table", "id", delete_ids)
         send_deletes(self.pipeline, "data_table", delete_ids)
-        self.pipeline.wait_for_idle()
+        wait_for_idle()
         self._check_percentiles("Phase 4 (every other row deleted)")
 
         # --- Phase 5: Re-insert deleted rows with new extreme values ---
@@ -195,7 +201,7 @@ class TestPercentileSpill(unittest.TestCase):
         ]
         pg_insert(self.pg_conn, "data_table", reinsert_rows)
         send_rows(self.pipeline, "data_table", reinsert_rows)
-        self.pipeline.wait_for_idle()
+        wait_for_idle()
         self._check_percentiles("Phase 5 (deleted rows re-inserted)")
 
         # --- Phase 6: Bulk delete first half, then modify second half ---
@@ -212,7 +218,7 @@ class TestPercentileSpill(unittest.TestCase):
         pg_update(self.pg_conn, "data_table", "id", "val", updates)
         send_deletes(self.pipeline, "data_table", first_half_ids)
         send_rows(self.pipeline, "data_table", rows_6)
-        self.pipeline.wait_for_idle()
+        wait_for_idle()
         self._check_percentiles("Phase 6 (first half deleted, second half modified)")
 
 

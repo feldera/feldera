@@ -708,13 +708,11 @@ mod tests {
         );
     }
 
-    /// Test percentile operator with 2 workers to exercise parallel routing paths.
+    /// Test percentile operator with 2 workers.
     ///
-    /// With 2 workers, `ParallelRouting::new()` returns `Some(...)`, and the
-    /// operator uses `process_delta_with_partition` + exchange-based parallel routing
-    /// when a single key has >= 256 entries. We test both:
-    /// 1. Small batches (below threshold, sequential path)
-    /// 2. Large batch (above threshold, parallel routing path)
+    /// With 2 workers, we test both:
+    /// 1. Small batches
+    /// 2. Large batch
     #[test]
     fn test_percentile_cont_multi_worker() {
         let (mut circuit, (input, output)) = Runtime::init_circuit(2, |circuit| {

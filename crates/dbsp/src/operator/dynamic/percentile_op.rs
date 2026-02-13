@@ -81,7 +81,7 @@ use crate::{
 };
 use feldera_storage::{FileCommitter, StoragePath};
 
-use crate::algebra::order_statistics::parallel_routing::{ParallelRouting, VirtualShardRouting};
+use crate::algebra::order_statistics::parallel_routing::VirtualShardRouting;
 
 use super::super::require_persistent_id;
 
@@ -294,8 +294,6 @@ where
     /// Output batch size statistics for profiling
     output_batch_stats: BatchSizeStats,
 
-    /// Exchange-based parallel routing infrastructure (None if single-threaded).
-    parallel_routing: Option<ParallelRouting<V>>,
     /// Virtual shard routing infrastructure (None if single-threaded).
     virtual_shard: Option<VirtualShardRouting<V>>,
 }
@@ -312,6 +310,9 @@ where
         self.prev_output.size_of_children(context);
         self.percentiles.size_of_children(context);
         self.is_continuous.size_of_children(context);
+        if let Some(ref vs) = self.virtual_shard {
+            vs.size_of_children(context);
+        }
     }
 }
 
@@ -334,7 +335,6 @@ where
     ) -> Self {
         assert_eq!(percentiles.len(), is_continuous.len(),
             "percentiles and is_continuous must have the same length");
-        let parallel_routing = ParallelRouting::new();
         let virtual_shard = VirtualShardRouting::new();
         Self {
             trees: BTreeMap::new(),
@@ -349,7 +349,6 @@ where
             global_id: GlobalNodeId::root(),
             input_batch_stats: BatchSizeStats::new(),
             output_batch_stats: BatchSizeStats::new(),
-            parallel_routing,
             virtual_shard,
         }
     }
@@ -408,6 +407,17 @@ where
             "num keys" => MetaItem::Int(num_keys),
             "evicted leaves" => MetaItem::Count(total_evicted),
         });
+
+        // Worker-reported metrics (visible on all workers, merged via Count/Bytes)
+        if let Some(ref vs) = self.virtual_shard {
+            let ws = &vs.leaf_storage;
+            let worker_storage = ws.storage_size();
+            meta.extend(metadata! {
+                "worker storage size" => MetaItem::bytes(worker_storage as usize),
+                "worker leaves" => MetaItem::Count(ws.num_leaves()),
+                "worker evicted leaves" => MetaItem::Count(ws.evicted_leaf_count()),
+            });
+        }
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -423,10 +433,8 @@ where
                 }
             }
         }
-        // Clear worker leaf storage (non-owner workers hold temporary leaf copies)
-        if let Some(ref mut vs) = self.virtual_shard {
-            vs.leaf_storage.clear();
-        }
+        // Workers keep their leaves persistently across steps.
+        // Flush/evict happens inside virtual_shard_step (Phase 2e).
     }
 
     fn checkpoint(
@@ -547,6 +555,12 @@ where
         self.percentiles = archived.percentiles.iter().map(|p| f64::from_bits((*p).into())).collect();
         self.ascending = archived.ascending;
         self.is_continuous = archived.is_continuous.iter().map(|&c| c != 0).collect();
+
+        // Clear worker leaf storage after restore — workers must re-bootstrap
+        // from the restored tree since their persistent leaves are stale.
+        if let Some(ref mut vs) = self.virtual_shard {
+            vs.leaf_storage.clear();
+        }
 
         Ok(())
     }
@@ -791,24 +805,25 @@ where
             });
         }
 
-        // Use virtual shard routing if available, otherwise fall back to Exchange-based.
+        // Use virtual shard routing for parallel tree mutation.
         let tree = if is_tree_owner {
             self.trees.get_mut(&tup0_key)
         } else {
             None
         };
-        if let Some(ref mut vs) = self.virtual_shard {
-            let _ = vs.virtual_shard_step(tree, local_entries).await;
-        } else {
-            let routing = self.parallel_routing.as_mut().unwrap();
-            let _ = routing.parallel_step(tree, local_entries).await;
-        }
+        let vs = self.virtual_shard.as_mut().unwrap();
+        let vs_result = vs.virtual_shard_step(tree, local_entries).await.ok();
 
-        // Flush if needed
+        // Only flush when splits occurred (workers already flushed their modified
+        // leaves in Phase 2; the only dirty leaves on the owner after reconciliation
+        // are newly allocated split leaves from Phase 3).
         if is_tree_owner {
-            if let Some(tree) = self.trees.get_mut(&tup0_key) {
-                if tree.should_flush() {
-                    let _ = tree.flush_and_evict();
+            let needs_flush = vs_result.as_ref().map_or(true, |r| r.had_splits);
+            if needs_flush {
+                if let Some(tree) = self.trees.get_mut(&tup0_key) {
+                    if tree.should_flush() {
+                        let _ = tree.flush_and_evict();
+                    }
                 }
             }
         }
@@ -822,34 +837,6 @@ where
         }
     }
 
-    /// Evaluate for sharded multi-key case.
-    ///
-    /// Data is pre-sharded by key hash so each worker has distinct keys.
-    /// No parallel routing is used here — it only benefits single-key
-    /// (Tup0) queries where all data lands on one worker. For multi-key
-    /// queries, each worker already has ~1/N keys, so sequential processing
-    /// is efficient. All workers must still participate in the Exchange
-    /// barriers (empty payloads) to prevent deadlock.
-    async fn eval_sharded_with_parallel(
-        &mut self,
-        delta: &OrdIndexedZSet<K, V>,
-    ) -> Vec<K> {
-        // Process all entries sequentially (each worker has its own keys).
-        let changed_keys = process_delta(
-            delta,
-            &mut self.trees,
-            &mut self.tree_ids,
-            &mut self.next_tree_id,
-            &self.storage_config,
-        );
-
-        // All workers must participate in the Exchange barriers.
-        // Worker 0 publishes empty step data as coordinator.
-        let routing = self.parallel_routing.as_mut().unwrap();
-        let _ = routing.parallel_step(None, vec![]).await;
-
-        changed_keys
-    }
 }
 
 // =============================================================================
@@ -873,16 +860,13 @@ where
         let is_tup0 = TypeId::of::<K>() == TypeId::of::<Tup0>();
 
         // Dispatch based on key type and parallel routing availability.
-        let has_multi_worker = self.virtual_shard.is_some() || self.parallel_routing.is_some();
-        let changed_keys = if is_tup0 && has_multi_worker {
+        let changed_keys = if is_tup0 && self.virtual_shard.is_some() {
             // Unsharded single-key case: each worker has ~1/N entries from
             // round-robin distribution (shard was skipped in percentile.rs).
             self.eval_unsharded_single_key(delta).await
-        } else if has_multi_worker {
-            // Sharded multi-key case: data is pre-sharded by key hash.
-            self.eval_sharded_with_parallel(delta).await
         } else {
-            // Single worker: process everything sequentially.
+            // Sharded multi-key case (data pre-sharded by key hash, each
+            // worker owns distinct keys) or single worker: process sequentially.
             process_delta(
                 delta,
                 &mut self.trees,
@@ -892,8 +876,9 @@ where
             )
         };
 
-        // Compute new outputs for each changed key
+        // Compute new outputs for each changed key.
         let num_percentiles = self.percentiles.len();
+
         let new_outputs: Vec<Option<O>> = changed_keys.iter().map(|key| {
             let tree_empty = self.trees.get(key).map_or(true, |t| t.is_empty());
             if tree_empty {
@@ -913,17 +898,31 @@ where
                 }
             } else {
                 let tree = self.trees.get_mut(key).unwrap();
+                let ascending = self.ascending;
+
                 let results: Vec<PercentileResult<V>> = self.percentiles.iter().enumerate().map(|(i, p)| {
                     if self.is_continuous[i] {
-                        PercentileResult::Cont(
-                            tree.select_percentile_bounds(*p, self.ascending)
-                        )
+                        match tree.select_percentile_bounds(*p, ascending) {
+                            Some((lower, upper, fraction)) => {
+                                PercentileResult::Cont(Some((lower, upper, fraction)))
+                            }
+                            None => {
+                                PercentileResult::Cont(None)
+                            }
+                        }
                     } else {
-                        PercentileResult::Disc(
-                            tree.select_percentile_disc(*p, self.ascending).cloned()
-                        )
+                        match tree.select_percentile_disc(*p, ascending) {
+                            Some(val) => {
+                                let val = val.clone();
+                                PercentileResult::Disc(Some(val))
+                            }
+                            None => {
+                                PercentileResult::Disc(None)
+                            }
+                        }
                     }
                 }).collect();
+
                 Some((self.build_output)(&results))
             }
         }).collect();
@@ -1119,3 +1118,7 @@ where
 #[cfg(test)]
 #[path = "percentile_op_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "percentile_op_bench.rs"]
+mod percentile_op_bench;

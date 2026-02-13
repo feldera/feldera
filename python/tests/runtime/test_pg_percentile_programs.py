@@ -304,7 +304,7 @@ class TestPgPercentilePrograms(unittest.TestCase):
                     )
                 try:
                     self.assertAlmostEqual(
-                        float(f_val), float(p_val), places=4,
+                        float(f_val), float(p_val), places=9,
                         msg=f"{view_name}[{i}].{col}",
                     )
                 except (ValueError, TypeError):

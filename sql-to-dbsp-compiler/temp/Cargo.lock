@@ -2932,7 +2932,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -2999,7 +2999,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp_adapters"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "actix",
  "actix-web",
@@ -3505,7 +3505,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-adapterlib"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3534,7 +3534,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-datagen"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "anyhow",
  "async-channel 2.3.1",
@@ -3560,7 +3560,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-fxp"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "dbsp",
  "feldera-size-of",
@@ -3576,7 +3576,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-ir"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3586,7 +3586,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-macros"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -3596,7 +3596,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-observability"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "actix-http",
  "awc",
@@ -3626,7 +3626,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-sqllib"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "arcstr",
  "base58",
@@ -3664,7 +3664,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-storage"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "anyhow",
  "feldera-size-of",
@@ -3686,7 +3686,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-types"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -4188,7 +4188,7 @@ dependencies = [
 
 [[package]]
 name = "hashing"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "dbsp",
  "feldera-size-of",
@@ -6489,7 +6489,7 @@ dependencies = [
 
 [[package]]
 name = "readers"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "async-std",
  "csv",
@@ -7361,7 +7361,7 @@ dependencies = [
 
 [[package]]
 name = "sltsqlvalue"
-version = "0.239.0"
+version = "0.241.0"
 dependencies = [
  "dbsp",
  "feldera-sqllib",
