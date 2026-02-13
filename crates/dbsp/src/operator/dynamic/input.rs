@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
 use crate::{
-    Circuit, DBData, DynZWeight, NumEntries, Stream, ZWeight,
+    Circuit, DBData, DynZWeight, NumEntries, Runtime, Stream, ZWeight,
     algebra::{
         IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories, ZSet,
     },
@@ -165,7 +165,7 @@ where
     B: IndexedZSet,
     U: DataTrait + ?Sized,
 {
-    upsert_factories: InputUpsertFactories<B>,
+    upsert_factories: InputUpsertFactories<B, U>,
     input_pair_factory: &'static dyn Factory<DynPair<B::Key, DynUpdate<B::Val, U>>>,
     input_pairs_factory: &'static dyn Factory<DynPairs<B::Key, DynUpdate<B::Val, U>>>,
     upsert_pair_factory: &'static dyn Factory<DynPair<B::Key, DynOpt<DynUnit>>>,
@@ -183,7 +183,7 @@ where
         UType: DBData + Erase<U>,
     {
         Self {
-            upsert_factories: InputUpsertFactories::new::<KType, VType>(),
+            upsert_factories: InputUpsertFactories::new::<KType, VType, UType>(),
             input_pair_factory: WithFactory::<Tup2<KType, Update<VType, UType>>>::FACTORY,
             input_pairs_factory: WithFactory::<LeanVec<Tup2<KType, Update<VType, UType>>>>::FACTORY,
             upsert_pair_factory: WithFactory::<Tup2<KType, Option<()>>>::FACTORY,
@@ -212,7 +212,7 @@ where
     U: DataTrait + ?Sized,
     E: DataTrait + ?Sized,
 {
-    upsert_factories: InputUpsertWithWaterlineFactories<B, E>,
+    upsert_factories: InputUpsertWithWaterlineFactories<B, U, E>,
     input_pair_factory: &'static dyn Factory<DynPair<B::Key, DynUpdate<B::Val, U>>>,
     input_pairs_factory: &'static dyn Factory<DynPairs<B::Key, DynUpdate<B::Val, U>>>,
     upsert_pair_factory: &'static dyn Factory<DynPair<B::Key, DynOpt<DynUnit>>>,
@@ -232,7 +232,8 @@ where
         EType: DBData + Erase<E>,
     {
         Self {
-            upsert_factories: InputUpsertWithWaterlineFactories::new::<KType, VType, EType>(),
+            upsert_factories: InputUpsertWithWaterlineFactories::new::<KType, VType, UType, EType>(
+            ),
             input_pair_factory: WithFactory::<Tup2<KType, Update<VType, UType>>>::FACTORY,
             input_pairs_factory: WithFactory::<LeanVec<Tup2<KType, Update<VType, UType>>>>::FACTORY,
             upsert_pair_factory: WithFactory::<Tup2<KType, Option<()>>>::FACTORY,
@@ -567,20 +568,21 @@ impl RootCircuit {
         V: DataTrait + ?Sized,
         U: DataTrait + ?Sized,
     {
-        let sorted = input_stream
-            .apply_owned(move |mut upserts| {
-                // Sort the vectors by key, preserving the history of updates for each key.
-                // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
-                upserts.retain_mut(|pairs| {
-                    pairs.sort_by_key();
-                    !pairs.is_empty()
-                });
+        let sorted = input_stream.apply_owned(move |mut upserts| {
+            // Sort the vectors by key, preserving the history of updates for each key.
+            // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
+            upserts.retain_mut(|pairs| {
+                pairs.sort_by_key();
+                !pairs.is_empty()
+            });
 
-                upserts
-            })
-            // UpsertHandle shards its inputs.
-            .mark_sharded();
+            upserts
+        });
 
+        if Runtime::runtime().is_none_or(|rt| rt.layout().is_solo()) {
+            // UpsertHandle shards its inputs across workers on the current host only.
+            sorted.mark_sharded();
+        }
         sorted.input_upsert::<B>(persistent_id, &factories.upsert_factories, patch_func)
     }
 
@@ -611,19 +613,21 @@ impl RootCircuit {
         E: DataTrait + ?Sized,
         Box<W>: Checkpoint + Clone + NumEntries + Rkyv,
     {
-        let sorted = input_stream
-            .apply_owned(move |mut upserts| {
-                // Sort the vectors by key, preserving the history of updates for each key.
-                // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
-                upserts.retain_mut(|pairs| {
-                    pairs.sort_by_key();
-                    !pairs.is_empty()
-                });
+        let sorted = input_stream.apply_owned(move |mut upserts| {
+            // Sort the vectors by key, preserving the history of updates for each key.
+            // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
+            upserts.retain_mut(|pairs| {
+                pairs.sort_by_key();
+                !pairs.is_empty()
+            });
 
-                upserts
-            })
-            // UpsertHandle shards its inputs.
-            .mark_sharded();
+            upserts
+        });
+
+        if Runtime::runtime().is_none_or(|rt| rt.layout().is_solo()) {
+            // UpsertHandle shards its inputs across workers on the current host only.
+            sorted.mark_sharded();
+        }
 
         sorted.input_upsert_with_waterline::<B, W, E>(
             persistent_id,
