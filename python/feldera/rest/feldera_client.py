@@ -282,7 +282,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             )
             time.sleep(poll_interval_s)
 
-    def wait_for_deployment_status(
+    def _wait_for_deployment_status(
         self,
         pipeline_name: str,
         desired: str | Callable[[str], bool],
@@ -505,6 +505,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         wait: bool = True,
         timeout_s: Optional[float] = None,
         ignore_deployment_error: bool = False,
+        observe_start: bool = False,
     ) -> Optional[PipelineStatus]:
         """
 
@@ -517,6 +518,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param ignore_deployment_error: Set True to ignore deployment errors while waiting for
             START transition. If `timeout_s` is not provided, a default timeout is
             used to avoid indefinite waiting.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            is no longer STOPPED (i.e., start request has been observed by control plane).
+            Uses `timeout_s` if provided, otherwise defaults to 30 seconds.
         """
 
         params = {"initial": initial}
@@ -529,6 +533,13 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         )
 
         if not wait:
+            if observe_start:
+                observe_timeout_s = 30.0 if timeout_s is None else timeout_s
+                self._wait_for_deployment_status(
+                    pipeline_name,
+                    lambda status: status != "Stopped",
+                    timeout_s=observe_timeout_s,
+                )
             return None
 
         effective_timeout_s = timeout_s
@@ -556,6 +567,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         wait: bool = True,
         timeout_s: Optional[float] = None,
         ignore_deployment_error: bool = False,
+        observe_start: bool = False,
     ) -> Optional[PipelineStatus]:
         """
 
@@ -566,6 +578,8 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             pipeline to start.
         :param ignore_deployment_error: Set True to ignore deployment errors while waiting
             for START transition.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            moves away from STOPPED.
         """
 
         return self._inner_start_pipeline(
@@ -575,6 +589,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             wait,
             timeout_s,
             ignore_deployment_error,
+            observe_start,
         )
 
     def start_pipeline_as_paused(
@@ -583,6 +598,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: float | None = None,
+        observe_start: bool = False,
     ) -> Optional[PipelineStatus]:
         """
         :param pipeline_name: The name of the pipeline to start as paused.
@@ -590,10 +606,17 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             True by default
         :param timeout_s: The amount of time in seconds to wait for the
             pipeline to start.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            moves away from STOPPED.
         """
 
         return self._inner_start_pipeline(
-            pipeline_name, "paused", bootstrap_policy, wait, timeout_s
+            pipeline_name,
+            "paused",
+            bootstrap_policy,
+            wait,
+            timeout_s,
+            observe_start=observe_start,
         )
 
     def start_pipeline_as_standby(
@@ -602,6 +625,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        observe_start: bool = False,
     ):
         """
         :param pipeline_name: The name of the pipeline to start as standby.
@@ -609,10 +633,17 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             True by default
         :param timeout_s: The amount of time in seconds to wait for the
             pipeline to start.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            moves away from STOPPED.
         """
 
         self._inner_start_pipeline(
-            pipeline_name, "standby", bootstrap_policy, wait, timeout_s
+            pipeline_name,
+            "standby",
+            bootstrap_policy,
+            wait,
+            timeout_s,
+            observe_start=observe_start,
         )
 
     def resume_pipeline(
