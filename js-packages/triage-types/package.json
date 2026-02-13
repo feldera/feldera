@@ -1,0 +1,26 @@
+{
+  "name": "triage-types",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepare": "bun run clean && bun run build",
+    "check": "tsc --noEmit"
+  },
+  "keywords": ["feldera", "triage"],
+  "license": "MIT",
+  "description": "Shared types for the Feldera support bundle triage plugin system",
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}
