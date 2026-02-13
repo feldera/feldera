@@ -18,7 +18,7 @@ use crate::{
 use crate::{InputBuffer, InputReader, Parser, TransportInputEndpoint};
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
-use csv::ReaderBuilder as CsvReaderBuilder;
+use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
 use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::BufferSize;
@@ -37,7 +37,9 @@ use feldera_types::transport::kafka::{
 };
 use parquet::data_type::AsBytes;
 use proptest::prelude::*;
+use rand::thread_rng;
 use rdkafka::message::{BorrowedMessage, Header, Headers};
+use rdkafka::producer::BaseRecord;
 use rdkafka::{Message, Timestamp};
 use rmpv::Value as RmpValue;
 use serde_json::{Value as JsonValue, json};
@@ -47,6 +49,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fs::create_dir;
 use std::hash::Hasher;
+use std::iter::repeat_with;
 use std::ops::Range;
 use std::sync::atomic::AtomicUsize;
 use std::thread::sleep;
@@ -128,6 +131,7 @@ fn test_kafka_output_errors() {
 fn create_reader(
     topic: &str,
     resume_info: Option<JsonValue>,
+    synchronize_partitions: bool,
 ) -> (
     Box<dyn TransportInputEndpoint>,
     DummyInputReceiver,
@@ -138,7 +142,8 @@ fn create_reader(
       "config": {
         "topic": topic,
         "log_level": "debug",
-        "start_from": "earliest"
+         "start_from": "earliest",
+         "synchronize_partitions": synchronize_partitions,
       }
     }))
     .unwrap();
@@ -186,12 +191,82 @@ fn big_input() {
     test_input("big_input", &[100, 1000, 10000]);
 }
 
+#[test]
+fn test_synchronization() {
+    init_test_logger();
+
+    const TOPIC: &str = "synchronization";
+    const N_PARTITIONS: usize = 32;
+    const N_MESSAGES: usize = 4096;
+    let mut _kafka_resources = KafkaResources::create_topics(&[(TOPIC, N_PARTITIONS as i32)]);
+
+    let (_endpoint, receiver, reader) = create_reader(TOPIC, None, true);
+    reader.extend();
+
+    // This is the number of records we expect to read when we produce
+    // `N_MESSAGES` records, since we can read all the records except that we
+    // end up blocked when one of the partitions is exhausted.
+    let n = N_MESSAGES - N_PARTITIONS + 1;
+
+    // Produce N_MESSAGES messages into random partitions[*], with timestamps
+    // that match their record IDs.
+    //
+    // [*] The last N_PARTITIONS of the messages go to each of the partitions in
+    // order so that we have a sentinel at the end of each partition.  If we
+    // distributed all of them randomly then we'd end up reading an
+    // unpredictable number of messages from the consumer because (probably)
+    // we'd consume all the messages from one of the partitions and then we
+    // wouldn't be able to read any of the remaining ones.
+    let producer = TestProducer::new();
+    let now = Timestamp::now().to_millis().unwrap();
+    let mut rng = thread_rng();
+    let mut expect_lens = vec![0; N_PARTITIONS];
+    for (id, partition) in repeat_with(|| rng.gen_range(0..N_PARTITIONS))
+        .take(N_MESSAGES - N_PARTITIONS)
+        .chain(0..N_PARTITIONS)
+        .enumerate()
+    {
+        if id < n {
+            expect_lens[partition] += 1;
+        }
+
+        let mut writer = CsvWriterBuilder::new()
+            .has_headers(false)
+            .from_writer(Vec::new());
+        writer.serialize(TestStruct::for_id(id as u32)).unwrap();
+        writer.flush().unwrap();
+        let bytes = writer.into_inner().unwrap();
+
+        let record = <BaseRecord<(), [u8], ()>>::to(TOPIC)
+            .payload(&bytes)
+            .timestamp(now + id as i64)
+            .partition(partition as i32);
+        producer.producer.send(record).unwrap();
+    }
+
+    println!("waiting for connector to buffer {n} messages.");
+    receiver.expect_buffering(n);
+
+    // Tell the adapter to queue the batch and wait for it to do it, then check
+    // that the connector successfully merged all the records on the basis of
+    // timestamp.
+    println!("queuing and expecting {n} records",);
+    reader.queue(false);
+    let metadata = Metadata {
+        offsets: expect_lens.into_iter().map(|len| 0..len).collect(),
+    };
+    receiver.expect(vec![ConsumerCall::Extended {
+        num_records: n,
+        metadata: serde_json::to_value(&metadata).unwrap(),
+    }]);
+}
+
 fn test_input(topic: &str, batch_sizes: &[u32]) {
     init_test_logger();
 
     let mut _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
 
-    let (_endpoint, receiver, reader) = create_reader(topic, None);
+    let (_endpoint, receiver, reader) = create_reader(topic, None, false);
     reader.extend();
 
     fn metadata(batch: &Range<u32>) -> JsonValue {
@@ -255,7 +330,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
             } else {
                 None
             };
-            let (_endpoint, receiver, reader) = create_reader(topic, resume_info);
+            let (_endpoint, receiver, reader) = create_reader(topic, resume_info, false);
             receiver.inner.drop_buffered.store(true, Ordering::Release);
 
             for batch in &batches[seek..seek + replay] {
