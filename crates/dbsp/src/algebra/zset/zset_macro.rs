@@ -97,7 +97,7 @@ macro_rules! zset_set {
 
 #[cfg(test)]
 mod test {
-    use crate::{indexed_zset, typed_batch::IndexedZSetReader, zset};
+    use crate::typed_batch::IndexedZSetReader;
 
     #[test]
     fn zset_test() {

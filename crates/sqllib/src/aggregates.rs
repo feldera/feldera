@@ -193,7 +193,6 @@ macro_rules! some_aggregate {
         }
     };
 }
-pub(crate) use some_aggregate;
 
 // Macro to create variants of an aggregation function
 // There must exist a function f(left: T, right: T) -> T ($base_name is f)
@@ -239,8 +238,6 @@ macro_rules! some_aggregate_non_null {
         }
     };
 }
-pub(crate) use some_aggregate_non_null;
-
 macro_rules! for_all_int_aggregate {
     ($base_name: ident, $func_name: ident) => {
         some_aggregate!($base_name, $func_name, i8, i8);
@@ -349,8 +346,6 @@ macro_rules! universal_aggregate {
         }
     };
 }
-pub(crate) use universal_aggregate;
-
 #[doc(hidden)]
 pub fn agg_min__<T>(left: T, right: T) -> T
 where
@@ -463,8 +458,6 @@ macro_rules! universal_aggregate2 {
         }
     };
 }
-pub(crate) use universal_aggregate2;
-
 #[doc(hidden)]
 pub fn agg_max1__<L, R>(left: (L, R), right: (L, R)) -> (L, R)
 where
