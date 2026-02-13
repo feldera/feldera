@@ -152,7 +152,7 @@ inventory = "0.3"
 itertools = "0.14.0"
 jemalloc_pprof = "0.7.0"
 json_to_table = "0.9.0"
-jsonwebtoken = { version = "10.2.0", features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "10.3.0", features = ["aws_lc_rs"] }
 lexical-core = "1.0.5"
 libc = "0.2.153"
 like = "0.3.1"
@@ -183,7 +183,7 @@ pg-client-config = "0.1.2"
 postgres = "0.19.10"
 postgres-openssl = "0.5.1"
 postgresql_embedded = { version = "0.20.0", features = ["bundled"] }
-pprof = "0.13.0"
+pprof = "0.14.0"
 pretty_assertions = "1.4.0"
 prettyplease = "0.2.22"
 progenitor = "0.7.0"
