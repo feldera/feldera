@@ -28,8 +28,7 @@ use actix_web::{
     get,
     http::StatusCode,
     http::header,
-    middleware,
-    post, rt,
+    middleware, post, rt,
     web::{self, Data as WebData, Payload, Query},
 };
 use arrow::ipc::writer::StreamWriter;
