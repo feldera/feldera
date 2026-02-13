@@ -190,3 +190,4 @@ The model provides two things:
    with its formal semantics) and efficiently. Efficiency here means, in a
    nutshell, that the cost of processing a set of input events is proportional to
    the size of the input rather than the entire state of the database.
+ 
