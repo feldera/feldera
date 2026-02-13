@@ -23,6 +23,7 @@ tolerance](/pipelines/fault-tolerance).
 | `include_partition`            | boolean          | false   | Whether to include Kafka partition in connector metadata (see [Accessing Kafka metadata](#metadata)). |
 | `include_offset`               | boolean          | false   | Whether to include Kafka offset name in connector metadata (see [Accessing Kafka metadata](#metadata)). |
 | `include_timestamp`            | boolean          | false   | Whether to include Kafka timestamp in connector metadata (see [Accessing Kafka metadata](#metadata)). |
+| `synchronize_partitions`       | boolean          | false   | Whether to read records in order of Kafka timestamp across partitions (see [Synchronizing partitions](#synchronizing-partitions)) |
 
 The connector passes additional options directly to [**librdkafka**](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).  Some of the relevant options:
 
@@ -391,6 +392,59 @@ it.
 `start_from` is set to a list of partition offsets, this is not
 possible.  Instead, force-stop the pipeline, clear its storage, change
 the configuration, and restart the pipeline from an empty state.
+
+## Synchronizing partitions
+
+When lateness is enabled on a Feldera table, Feldera only produces
+correct output if input arrives approximately in order within the
+bounds of the lateness.  If `synchronize_partitions` is `false` (the
+default), the Kafka input connector can reorder input when there are
+multiple partitions:
+
+- If partitions start at different times, then reading all the
+  partitions in parallel will naturally consume data out of order.
+
+- Even if they start at the same time, partitions might contain events
+  at different rates.
+
+- Even if the partitions start at the same time and have the same number
+  of events per unit time, if partitions are spread across brokers,
+  different brokers may fetch data at different rates.
+
+- Even if all of the partitions are on a single broker, one cannot
+  expect all of the partitions to naturally remain exactly in sync
+  forever.
+
+Set `synchronize_partitions` to `true` to address the issue by
+synchronizing ingestion across partitions, ingesting records in order
+of their Kafka event timestamps.
+
+Pitfalls of this solution include:
+
+- Kafka event timestamps are not necessarily monotonically increasing
+  even within a single partition.  If timestamps jump backward beyond
+  the lateness, then this can also cause correctness problems.
+
+  (This can be avoided by keeping clocks on Kafka producers and brokers
+  synchronized.)
+
+- If an event with a timestamp far in the future is added to a
+  partition, that event, and all those that follow it, will never be
+  processed.
+
+- If one or a few partitions have timestamps far behind the others, only
+  those partitions will be processed until all the old events are
+  processed.  (This is the flip side of the previous pitfall.)
+
+- One or more empty partitions will prevent any data from being
+  processed at all, because there is no way to know the timestamp for
+  the first event that will be added to that partition.
+
+- In a topic with `N` nonempty partitions, at least `N - 1` events
+  will always be left unprocessed (one in each of `N - 1` partitions),
+  because there is no way to know the timestamp for the next event to
+  be added to the partition whose events have been completely
+  processed.
 
 ## Additional resources
 
