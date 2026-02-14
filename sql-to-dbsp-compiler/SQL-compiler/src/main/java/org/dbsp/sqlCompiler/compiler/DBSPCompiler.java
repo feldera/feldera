@@ -34,7 +34,12 @@ import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperatorTable;
+import org.apache.calcite.sql.SqlWriter;
+import org.apache.calcite.sql.SqlWriterConfig;
+import org.apache.calcite.sql.dialect.CalciteSqlDialect;
+import org.apache.calcite.sql.dialect.SnowflakeSqlDialect;
 import org.apache.calcite.sql.parser.SqlParseException;
+import org.apache.calcite.sql.pretty.SqlPrettyWriter;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.sql.validate.SqlUserDefinedAggFunction;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
@@ -51,6 +56,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RenameIdentifiers;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
@@ -86,6 +92,8 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -506,10 +514,48 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return true;
     }
 
+    void renameIdentifiers(List<ParsedStatement> statements) {
+        final PrintStream outputStream;
+        try {
+            @Nullable String outputFile = this.options.ioOptions.outputFile;
+            if (outputFile.isEmpty()) {
+                outputStream = System.out;
+            } else {
+                outputStream = new PrintStream(Files.newOutputStream(Paths.get(outputFile)));
+            }
+        } catch (IOException e) {
+            this.compiler().reportError(SourcePositionRange.INVALID,
+                    "Error writing to output file", e.getMessage());
+            return;
+        }
+
+        RenameIdentifiers renamer = new RenameIdentifiers();
+        for (ParsedStatement stat: statements) {
+            if (stat.visible()) {
+                SqlNode renamed = renamer.visitNode(stat.statement());
+                Utilities.enforce(renamed != null);
+                final SqlWriter sqlWriter = new SqlPrettyWriter(
+                        SqlWriterConfig.of()
+                                .withDialect(CalciteSqlDialect.DEFAULT)
+                                .withQuoteAllIdentifiers(false)
+                );
+                renamed.unparse(sqlWriter, 0, 0);
+                outputStream.println(sqlWriter + ";");
+            }
+        }
+        outputStream.close();
+    }
+
     @Nullable DBSPCircuit runAllCompilerStages() {
         List<ParsedStatement> parsed = this.runParser();
         if (this.hasErrors())
             return null;
+
+        if (this.options.ioOptions.anonymize) {
+            this.renameIdentifiers(parsed);
+            return null;
+        }
+
         try {
             // across all tables
             List<ForeignKey> foreignKeys = new ArrayList<>();

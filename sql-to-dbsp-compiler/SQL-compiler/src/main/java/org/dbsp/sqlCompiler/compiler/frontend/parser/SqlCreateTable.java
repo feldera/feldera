@@ -69,7 +69,6 @@ public class SqlCreateTable extends SqlCreate {
                 even = !even;
             }
             writer.endList(frame);
-            writer.newlineAndIndent();
         }
     }
 
