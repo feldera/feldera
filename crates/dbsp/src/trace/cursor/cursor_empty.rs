@@ -66,6 +66,10 @@ where
         panic!("CursorEmpty::weight")
     }
 
+    fn weight_checked(&mut self) -> &R {
+        panic!("CursorEmpty::weight_checked")
+    }
+
     fn step_key(&mut self) {
         panic!("CursorEmpty::step_key")
     }

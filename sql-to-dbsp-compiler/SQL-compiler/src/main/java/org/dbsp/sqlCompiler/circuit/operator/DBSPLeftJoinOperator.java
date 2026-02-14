@@ -18,7 +18,7 @@ import java.util.Objects;
 
 /** Corresponds to a DBSP left_join operator.
  * Output is always a ZSet. This operator is incremental-only (there is no "Stream" version). */
-public final class DBSPLeftJoinOperator extends DBSPJoinBaseOperator {
+public final class DBSPLeftJoinOperator extends DBSPJoinBaseOperator implements IIncremental {
     public DBSPLeftJoinOperator(
             CalciteRelNode node, DBSPTypeZSet outputType,
             DBSPExpression function, boolean isMultiset,

@@ -339,6 +339,10 @@ where
         self.cursor.weight()
     }
 
+    fn weight_checked(&mut self) -> &R {
+        self.weight()
+    }
+
     fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R)) {
         self.cursor.map_values(logic)
     }

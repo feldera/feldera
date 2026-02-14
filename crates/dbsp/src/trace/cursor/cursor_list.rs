@@ -341,18 +341,23 @@ where
     where
         T: PartialEq<()>,
     {
-        debug_assert!(self.key_valid());
-        debug_assert!(self.val_valid());
-        debug_assert!(self.cursors[self.current_val[0]].val_valid());
-        // Weight should already be computed by `is_zero_weight`, which is always
-        // called as part of every operation that moves the cursor.
+        self.weight_checked()
+    }
 
-        // self.weight.as_mut().set_zero();
-        // for &index in self.current_val.iter() {
-        //     self.cursors[index].map_times(&mut |_, w| self.weight.add_assign(w));
-        // }
-        debug_assert!(!self.weight.is_zero());
-        &self.weight
+    fn weight_checked(&mut self) -> &R {
+        if TypeId::of::<T>() == TypeId::of::<()>() {
+            debug_assert!(self.key_valid());
+            debug_assert!(self.val_valid());
+            debug_assert!(self.cursors[self.current_val[0]].val_valid());
+
+            // Weight should already be computed by `is_zero_weight`, which is always
+            // called as part of every operation that moves the cursor.
+            debug_assert!(!self.weight.is_zero());
+
+            &self.weight
+        } else {
+            panic!("CursorList::weight_checked called on non-unit timestamp type");
+        }
     }
 
     fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R))

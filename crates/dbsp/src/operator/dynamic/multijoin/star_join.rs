@@ -22,7 +22,7 @@ use crate::{
     utils::Tup2,
 };
 use dyn_clone::DynClone;
-use std::marker::PhantomData;
+use std::{any::TypeId, marker::PhantomData};
 
 pub struct StarJoinFactories<I, O, T>
 where
@@ -392,14 +392,23 @@ where
         self.weight_times[self.current_index].0.clear();
         let (previous_weight, previous_time) = self.previous_weight_time();
 
-        self.trace_cursors[self.current_index].map_times(&mut |time, weight| {
-            let weight = **weight * previous_weight;
-            let time = time.join(&previous_time);
+        if TypeId::of::<C::Time>() != TypeId::of::<()>() {
+            self.trace_cursors[self.current_index].map_times(&mut |time, weight| {
+                let weight = **weight * previous_weight;
+                let time = time.join(&previous_time);
+
+                self.weight_times[self.current_index]
+                    .0
+                    .push((weight, time.clone()));
+            });
+        } else {
+            let weight =
+                **self.trace_cursors[self.current_index].weight_checked() * previous_weight;
 
             self.weight_times[self.current_index]
                 .0
-                .push((weight, time.clone()));
-        });
+                .push((weight, Default::default()));
+        }
         self.weight_times[self.current_index].1 = 0;
     }
 
@@ -410,9 +419,13 @@ where
             == self.weight_times[self.current_index].0.len() - 1
         {
             self.trace_cursors[self.current_index].step_val();
+            if !self.trace_cursors[self.current_index].val_valid() {
+                return;
+            }
+
             // println!(
             //     "{} advance_weight_times: moving cursor {} to value: {:?}",
-            //     Runtime::worker_index(),
+            //     crate::Runtime::worker_index(),
             //     self.current_index,
             //     self.trace_cursors[self.current_index].get_val()
             // );
@@ -774,20 +787,23 @@ mod tests {
                 let stream4 = stream4.map_index(|(k, v)| (*k, Some(*v)));
 
                 // Inner join
-                let inner_join_index_output = stream1
-                    .star_join_index4(
-                        (&stream2, false),
-                        (&stream3, false),
-                        (&stream4, false),
-                        |k, v1, v2, v3, v4| Some((*k, Tup4(*v1, *v2, v3.clone(), *v4))),
-                    )
-                    .accumulate_output();
+                let inner_join_index_output = star_join_index4(
+                    &stream1,
+                    (&stream2, false),
+                    (&stream3, false),
+                    (&stream4, false),
+                    |k, v1, v2, v3, v4| Some((*k, Tup4(*v1, *v2, v3.clone(), *v4))),
+                )
+                .accumulate_output();
 
-                let inner_join_index_output2 = stream1
-                    .inner_star_join_index4(&stream2, &stream3, &stream4, |k, v1, v2, v3, v4| {
-                        Some((*k, Tup4(*v1, *v2, v3.clone(), *v4)))
-                    })
-                    .accumulate_output();
+                let inner_join_index_output2 = inner_star_join_index4(
+                    &stream1,
+                    &stream2,
+                    &stream3,
+                    &stream4,
+                    |k, v1, v2, v3, v4| Some((*k, Tup4(*v1, *v2, v3.clone(), *v4))),
+                )
+                .accumulate_output();
 
                 let inner_join_index_expected_output = stream1
                     .join_index(&stream2, |k, v1, v2| Some((*k, Tup2(*v1, *v2))))
@@ -799,20 +815,23 @@ mod tests {
                     })
                     .accumulate_output();
 
-                let inner_join_output = stream1
-                    .star_join4(
-                        (&stream2, false),
-                        (&stream3, false),
-                        (&stream4, false),
-                        |_k, v1, v2, v3, v4| Some(Tup4(*v1, *v2, v3.clone(), *v4)),
-                    )
-                    .accumulate_output();
+                let inner_join_output = star_join4(
+                    &stream1,
+                    (&stream2, false),
+                    (&stream3, false),
+                    (&stream4, false),
+                    |_k, v1, v2, v3, v4| Some(Tup4(*v1, *v2, v3.clone(), *v4)),
+                )
+                .accumulate_output();
 
-                let inner_join_output2 = stream1
-                    .inner_star_join4(&stream2, &stream3, &stream4, |_k, v1, v2, v3, v4| {
-                        Some(Tup4(*v1, *v2, v3.clone(), *v4))
-                    })
-                    .accumulate_output();
+                let inner_join_output2 = inner_star_join4(
+                    &stream1,
+                    &stream2,
+                    &stream3,
+                    &stream4,
+                    |_k, v1, v2, v3, v4| Some(Tup4(*v1, *v2, v3.clone(), *v4)),
+                )
+                .accumulate_output();
 
                 let inner_join_expected_output = stream1
                     .join(&stream2, |k, v1, v2| Tup2(*k, Tup2(*v1, *v2)))
@@ -826,20 +845,23 @@ mod tests {
                     })
                     .accumulate_output();
 
-                let inner_join_flatmap_output = stream1
-                    .star_join_flatmap4(
-                        (&stream2, false),
-                        (&stream3, false),
-                        (&stream4, false),
-                        |_k, v1, v2, v3, v4| Some(Tup4(*v1, *v2, v3.clone(), *v4)),
-                    )
-                    .accumulate_output();
+                let inner_join_flatmap_output = star_join_flatmap4(
+                    &stream1,
+                    (&stream2, false),
+                    (&stream3, false),
+                    (&stream4, false),
+                    |_k, v1, v2, v3, v4| Some(Tup4(*v1, *v2, v3.clone(), *v4)),
+                )
+                .accumulate_output();
 
-                let inner_join_flatmap_output2 = stream1
-                    .inner_star_join_flatmap4(&stream2, &stream3, &stream4, |_k, v1, v2, v3, v4| {
-                        Some(Tup4(*v1, *v2, v3.clone(), *v4))
-                    })
-                    .accumulate_output();
+                let inner_join_flatmap_output2 = inner_star_join_flatmap4(
+                    &stream1,
+                    &stream2,
+                    &stream3,
+                    &stream4,
+                    |_k, v1, v2, v3, v4| Some(Tup4(*v1, *v2, v3.clone(), *v4)),
+                )
+                .accumulate_output();
 
                 let inner_join_flatmap_expected_output = stream1
                     .join(&stream2, |k, v1, v2| Tup2(*k, Tup2(*v1, *v2)))
@@ -854,14 +876,14 @@ mod tests {
                     .accumulate_output();
 
                 // Outer join 1
-                let left_join_index1_output = stream1
-                    .star_join_index4(
-                        (&stream2, true),
-                        (&stream3, true),
-                        (&stream4, true),
-                        |k, v1, v2, v3, v4| Some((*k, Tup4(*v1, *v2, v3.clone(), *v4))),
-                    )
-                    .accumulate_output();
+                let left_join_index1_output = star_join_index4(
+                    &stream1,
+                    (&stream2, true),
+                    (&stream3, true),
+                    (&stream4, true),
+                    |k, v1, v2, v3, v4| Some((*k, Tup4(*v1, *v2, v3.clone(), *v4))),
+                )
+                .accumulate_output();
 
                 let left_join_index1_expected_output = stream1
                     .left_join_index(&stream2, |k, v1, v2| Some((*k, Tup2(*v1, *v2))))
@@ -874,14 +896,14 @@ mod tests {
                     .accumulate_output();
 
                 // Outer join 2
-                let left_join_index2_output = stream1
-                    .star_join_index4(
-                        (&stream2, true),
-                        (&stream3, false),
-                        (&stream4, true),
-                        |k, v1, v2, v3, v4| Some((*k, Tup4(*v1, *v2, v3.clone(), *v4))),
-                    )
-                    .accumulate_output();
+                let left_join_index2_output = star_join_index4(
+                    &stream1,
+                    (&stream2, true),
+                    (&stream3, false),
+                    (&stream4, true),
+                    |k, v1, v2, v3, v4| Some((*k, Tup4(*v1, *v2, v3.clone(), *v4))),
+                )
+                .accumulate_output();
 
                 let left_join_index2_expected_output = stream1
                     .left_join_index(&stream2, |k, v1, v2| Some((*k, Tup2(*v1, *v2))))
@@ -1037,7 +1059,8 @@ mod tests {
 
                                 let edges_indexed = edges.map_index(|Tup2(k, v)| (*k, *v));
 
-                                let paths = edges.plus(&paths_inverted_indexed.inner_star_join3(
+                                let paths = edges.plus(&inner_star_join3_nested(
+                                    &paths_inverted_indexed,
                                     &edges_indexed,
                                     &key_points,
                                     |_via, from, to, &()| Tup2(*from, *to),

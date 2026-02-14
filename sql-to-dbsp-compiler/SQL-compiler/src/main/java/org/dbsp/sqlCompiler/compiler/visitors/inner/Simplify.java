@@ -454,7 +454,7 @@ public class Simplify extends ExpressionTranslator {
             DBSPBlockExpression block = source.to(DBSPBlockExpression.class);
             Utilities.enforce(block.lastExpression != null);
             result = new DBSPBlockExpression(block.contents,
-                    block.lastExpression.field(expression.fieldNo).simplify());
+                    block.lastExpression.field(expression.fieldNo));
         } else if (source.is(DBSPIfExpression.class)) {
             DBSPIfExpression conditional = source.to(DBSPIfExpression.class);
             result = new DBSPIfExpression(source.getNode(), conditional.condition,

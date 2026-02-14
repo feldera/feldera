@@ -182,9 +182,8 @@ public final class DBSPZSetExpression extends DBSPExpression
                 }
             }
             for (int i = 0; i < tuple.size(); i++) {
-                DBSPFieldExpression expr = expression.field(i);
-                DBSPExpression simple = expr.simplify();
-                fields[i] = this.castRecursive(simple, tuple.tupFields[i]);
+                DBSPExpression expr = expression.field(i);
+                fields[i] = this.castRecursive(expr, tuple.tupFields[i]);
             }
             return tuple.makeTuple(fields);
         } else if (type.is(DBSPTypeMap.class)) {

@@ -443,6 +443,10 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<K, DynUnit, (), R>
         self.cursor.current_diff()
     }
 
+    fn weight_checked(&mut self) -> &R {
+        self.weight()
+    }
+
     fn map_values(&mut self, logic: &mut dyn FnMut(&DynUnit, &R)) {
         if self.val_valid() {
             logic(&(), self.cursor.current_diff())

@@ -24,7 +24,7 @@ import java.util.List;
  * elements in the left input are compared with the two scalars
  * in the pair; when they fall between the two limits,
  * they are emitted to the output ZSet. */
-public final class DBSPWindowOperator extends DBSPBinaryOperator implements IContainsIntegrator {
+public final class DBSPWindowOperator extends DBSPBinaryOperator implements IContainsIntegrator, IIncremental {
     public final boolean lowerInclusive;
     public final boolean upperInclusive;
 
@@ -32,7 +32,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements ICon
             CalciteRelNode node, CalciteObject object,
             boolean lowerInclusive, boolean upperInclusive,
             OutputPort data, OutputPort control) {
-        super(node, "window", new NoExpression(object, DBSPTypeVoid.INSTANCE), data.outputType(),
+        super(node, "window", new NoExpression(DBSPTypeVoid.INSTANCE), data.outputType(),
                 data.isMultiset(), data, control);
         // Check that the left input and output are indexed ZSets
         this.getOutputIndexedZSetType();

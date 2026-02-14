@@ -8,7 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 
 import javax.annotation.Nullable;
 
-public class LeftJoinExpansion extends OperatorExpansion implements CommonJoinExpansion {
+public class LeftJoinDeltaExpansion extends OperatorDeltaExpansion implements CommonJoinDeltaExpansion {
     public final DBSPDelayedIntegralOperator leftIntegrator;
     public final DBSPDelayedIntegralOperator rightIntegrator;
     public final DBSPStreamJoinOperator leftDelta;
@@ -18,14 +18,14 @@ public class LeftJoinExpansion extends OperatorExpansion implements CommonJoinEx
     public final DBSPMapOperator map;
     public final DBSPSumOperator sum;
 
-    public LeftJoinExpansion(DBSPDelayedIntegralOperator leftIntegrator,
-                             DBSPDelayedIntegralOperator rightIntegrator,
-                             DBSPStreamJoinOperator leftDelta,
-                             DBSPStreamJoinOperator rightDelta,
-                             DBSPStreamJoinOperator join,
-                             DBSPAntiJoinOperator anti,
-                             DBSPMapOperator map,
-                             DBSPSumOperator sum) {
+    public LeftJoinDeltaExpansion(DBSPDelayedIntegralOperator leftIntegrator,
+                                  DBSPDelayedIntegralOperator rightIntegrator,
+                                  DBSPStreamJoinOperator leftDelta,
+                                  DBSPStreamJoinOperator rightDelta,
+                                  DBSPStreamJoinOperator join,
+                                  DBSPAntiJoinOperator anti,
+                                  DBSPMapOperator map,
+                                  DBSPSumOperator sum) {
         this.leftIntegrator = leftIntegrator;
         this.rightDelta = rightDelta;
         this.rightIntegrator = rightIntegrator;

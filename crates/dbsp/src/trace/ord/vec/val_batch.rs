@@ -22,6 +22,7 @@ use feldera_storage::FileReader;
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
+use std::any::TypeId;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::sync::Arc;
 
@@ -503,8 +504,16 @@ where
     where
         T: PartialEq<()>,
     {
-        debug_assert!(&self.cursor.valid());
-        self.cursor.child.child.current_diff()
+        self.weight_checked()
+    }
+
+    fn weight_checked(&mut self) -> &R {
+        if TypeId::of::<T>() == TypeId::of::<()>() {
+            debug_assert!(&self.cursor.child.child.valid());
+            self.cursor.child.child.current_diff()
+        } else {
+            panic!("VecValCursor::weight_checked called on non-unit timestamp type");
+        }
     }
 
     fn key_valid(&self) -> bool {

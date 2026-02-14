@@ -21,10 +21,9 @@ import java.util.Objects;
 
 /** This class represents a join followed by a filter followed by a map.
  * The operator is eventually lowered to a join_flatmap,
- * where the synthesized function
- * returns None when filter(function) is false, and Some(map(function))
- * otherwise. */
-public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
+ * where the synthesized function returns None when filter(function) is false, and Some(map(function))
+ * otherwise.  So the type of the function does NOT always match the output type of the operator. */
+public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator implements IIncremental {
     // If the following is null, the function represents the combined function/filter
     // and the function returns Option.
     @Nullable

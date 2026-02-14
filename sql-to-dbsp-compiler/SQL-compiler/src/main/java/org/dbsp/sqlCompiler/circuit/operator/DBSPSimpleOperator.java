@@ -141,7 +141,9 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
 
     protected void checkParameterCount(DBSPExpression function, int expected) {
         DBSPClosureExpression closure = function.to(DBSPClosureExpression.class);
-        Utilities.enforce(closure.parameters.length == expected);
+        Utilities.enforce(closure.parameters.length == expected,
+                () -> "Expected function with " + expected +
+                        " parameters, but got instead " + closure.parameters.length);
     }
 
     public DBSPTypeIndexedZSet getOutputIndexedZSetType() {

@@ -204,7 +204,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         // NULL tuple literal
                         fields[i] = source.getType().to(DBSPTypeTupleBase.class).getFieldExpressionType(i).none();
                     } else {
-                        fields[i] = expandTupleCast(node, safeSource.field(i).simplify(), tuple.getFieldType(i));
+                        fields[i] = expandTupleCast(node, safeSource.field(i), tuple.getFieldType(i));
                     }
                 }
                 DBSPExpression convertedTuple;
@@ -356,14 +356,40 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     }
 
     // Like makeBinaryExpression, but accepts multiple operands.
-    static DBSPExpression makeBinaryExpressions(
+    public static DBSPExpression makeBinaryExpressions(
             CalciteObject node, DBSPType type, DBSPOpcode opcode, List<DBSPExpression> operands) {
         Utilities.enforce(operands.size() >= 2,
                 () -> "Expected at least two operands for binary expression " + opcode);
-        DBSPExpression accumulator = operands.get(0);
-        for (int i = 1; i < operands.size(); i++)
-            accumulator = makeBinaryExpression(node, type, opcode, accumulator, operands.get(i));
-        return accumulator.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
+
+        boolean sameType = true;
+        for (DBSPExpression expr: operands) {
+            if (!expr.getType().sameType(type)) {
+                sameType = false;
+                break;
+            }
+        }
+
+        if (!sameType) {
+            // Combine from left to right
+            DBSPExpression accumulator = operands.get(0);
+            for (int i = 1; i < operands.size(); i++)
+                accumulator = makeBinaryExpression(node, type, opcode, accumulator, operands.get(i));
+            return accumulator.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
+        } else {
+            // If all expressions have the same type, use a balanced binary tree
+            List<DBSPExpression> results = new ArrayList<>();
+            for (int i = 0; i < (operands.size() / 2) * 2; i += 2) {
+                DBSPExpression tmp = makeBinaryExpression(node, type, opcode, operands.get(i), operands.get(i + 1));
+                results.add(tmp);
+            }
+            if (operands.size() % 2 == 1) {
+                results.add(operands.get(operands.size() - 1));
+            }
+            if (results.size() == 1) {
+                return results.get(0).cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
+            }
+            return makeBinaryExpressions(node, type, opcode, results);
+        }
     }
 
     @SuppressWarnings("unused")

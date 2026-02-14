@@ -101,6 +101,7 @@ public final class MultiCratesWriter extends RustWriter {
                 size-of = { version = "0.1.5", package = "feldera-size-of" }
                 serde_json = { version = "1.0.127", features = ["arbitrary_precision"] }
                 rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
+                seq-macro = { version = "0.3.6" }
                 tikv-jemallocator = { version = "0.6.0", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }""";
 
         String relativePath = "../..";
@@ -142,7 +143,7 @@ public final class MultiCratesWriter extends RustWriter {
                     this.rootDirectory, MultiCrates.CRATES_DIRECTORY, MultiCratesWriter.getTestName(), writer,
                     crates.enterprise(), true);
             RustWriter.StructuresUsed locallyUsed = new RustWriter.StructuresUsed();
-            RustWriter.FindResources finder = new RustWriter.FindResources(compiler, locallyUsed);
+            FindInnerResources finder = new FindInnerResources(compiler, locallyUsed);
 
             for (var node : this.testNodes) {
                 if (node.is(IDBSPInnerNode.class))

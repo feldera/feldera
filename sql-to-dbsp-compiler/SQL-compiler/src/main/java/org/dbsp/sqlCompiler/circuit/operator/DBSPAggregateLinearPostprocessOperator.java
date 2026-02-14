@@ -20,10 +20,9 @@ import java.util.Objects;
 
 public final class DBSPAggregateLinearPostprocessOperator
         extends DBSPUnaryOperator
-        implements ILinearAggregate {
+        implements ILinearAggregate, IIncremental {
     public final DBSPClosureExpression postProcess;
 
-    // This operator is incremental-only
     public DBSPAggregateLinearPostprocessOperator(
             CalciteRelNode node,
             DBSPTypeIndexedZSet outputType,

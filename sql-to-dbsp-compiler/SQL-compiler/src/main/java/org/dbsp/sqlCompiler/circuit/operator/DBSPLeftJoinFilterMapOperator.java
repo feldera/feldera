@@ -24,7 +24,7 @@ import java.util.Objects;
  * where the synthesized function
  * returns None when filter(function) is false, and Some(map(function))
  * otherwise. */
-public final class DBSPLeftJoinFilterMapOperator extends DBSPJoinBaseOperator {
+public final class DBSPLeftJoinFilterMapOperator extends DBSPJoinBaseOperator implements IIncremental {
     // If the following is null, the function represents the combined function/filter
     // and the function returns Option.
     @Nullable

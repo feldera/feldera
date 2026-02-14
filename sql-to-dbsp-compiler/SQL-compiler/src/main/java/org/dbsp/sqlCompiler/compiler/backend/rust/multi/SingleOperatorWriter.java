@@ -83,6 +83,10 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
 
     @Override
     public void write(DBSPCompiler compiler) {
+        RustWriter.StructuresUsed used = new RustWriter.StructuresUsed();
+        RustWriter.FindOuterResources findOuterResources = new RustWriter.FindOuterResources(compiler, used);
+        this.operator.accept(findOuterResources);
+
         boolean useHandles = compiler.options.ioOptions.emitHandles;
         this.builder()
                 .append(RustWriter.COMMON_PREAMBLE)
@@ -95,9 +99,18 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
         for (String dep: this.dependencies)
             this.builder().append("use ").append(dep).append("::*;").newline();
 
-        boolean hasOutput = (!operator.is(DBSPViewBaseOperator.class) || useHandles) &&
-                !operator.is(IGCOperator.class) &&
-                !operator.is(DBSPInternOperator.class);
+        for (RustWriter.StarJoin sj: used.starJoinsUsed) {
+            this.builder().append("define_")
+                    .append(sj.kind())
+                    .append("!(")
+                    .append(sj.inputs())
+                    .append(");")
+                    .newline();
+        }
+
+        boolean hasOutput = (!this.operator.is(DBSPViewBaseOperator.class) || useHandles) &&
+                !this.operator.is(IGCOperator.class) &&
+                !this.operator.is(DBSPInternOperator.class);
         this.builder().append("pub fn create_")
                 .append(name)
                 .append("(circuit: &")
