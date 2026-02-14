@@ -2526,8 +2526,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     ///
     /// The cost of checking this condition precisely can be high for some
     /// operators, which implement approximate checks instead.  For instance,
-    /// delay operators ([`Z1`](`crate::operator::Z1`) and
-    /// [`Z1Nested`](`crate::operator::Z1Nested`)) require storing the last
+    /// delay operators ([`Z1`](`crate::operator::Z1`) require storing the last
     /// two versions of the state instead of one and comparing them at each
     /// cycle.  Instead, they conservatively check for _specific_ fixed points,
     /// namely fixed points where both input and output of the operator are zero

@@ -18,7 +18,6 @@ use crate::{
 use size_of::SizeOf;
 
 circuit_cache_key!(DifferentiateId<C, D>(StreamId => Stream<C, D>));
-circuit_cache_key!(NestedDifferentiateId<C, D>(StreamId => Stream<C, D>));
 
 impl<C, D> Stream<C, D>
 where
@@ -37,22 +36,6 @@ where
     #[track_caller]
     pub fn differentiate(&self) -> Stream<C, D> {
         self.differentiate_with_initial_value(D::zero())
-    }
-
-    /// Nested stream differentiation.
-    #[track_caller]
-    pub fn differentiate_nested(&self) -> Stream<C, D> {
-        self.circuit()
-            .cache_get_or_insert_with(NestedDifferentiateId::new(self.stream_id()), || {
-                let differentiated = self.circuit().add_binary_operator(
-                    Minus::new(),
-                    &self.try_sharded_version(),
-                    &self.try_sharded_version().delay_nested(),
-                );
-                differentiated.mark_sharded_if(self);
-                differentiated
-            })
-            .clone()
     }
 }
 

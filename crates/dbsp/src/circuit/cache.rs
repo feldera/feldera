@@ -8,8 +8,7 @@
 //! feedback loop with an adder and a `z^-1` operator.  The output of this
 //! circuit is cached, so that the next identical call will return the same
 //! stream without creating a new copy of the same operators.  Stream integral
-//! is one example of a derived stream.  Others include
-//! [nested integral](`crate::circuit::Stream::integrate_nested`), [delayed
+//! is one example of a derived stream.  Others include [delayed
 //! stream](`crate::circuit::Stream::delay`), etc.  Caching allows simplifying
 //! high-level APIs like nested incremental join that combine several derived
 //! streams.  Without caching, such methods would have to either construct all
