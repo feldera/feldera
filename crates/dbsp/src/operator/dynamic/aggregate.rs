@@ -1267,21 +1267,6 @@ pub mod test {
                 let sum_inc_linear: Stream<_, OrdIndexedZSet<u64, i64>> =
                     input.aggregate_linear(sum_linear).gather(0);
 
-                // let sum_noninc = input
-                //     .integrate_nested()
-                //     .integrate()
-                //     .stream_aggregate(sum)
-                //     .differentiate()
-                //     .differentiate_nested()
-                //     .gather(0);
-                // let sum_noninc_linear = input
-                //     .integrate_nested()
-                //     .integrate()
-                //     .stream_aggregate_linear(sum_linear)
-                //     .differentiate()
-                //     .differentiate_nested()
-                //     .gather(0);
-
                 // Compare outputs of all four implementations.
 
                 // sum_inc.accumulate_apply2(&sum_noninc, |d1, d2| {
@@ -1323,15 +1308,6 @@ pub mod test {
                 // sum_inc_linear.accumulate_apply2(&sum_noninc_linear, |d1, d2| {
                 //     assert_eq!(d1.iter().collect::<Vec<_>>(), d2.iter().collect::<Vec<_>>())
                 // });
-
-                // let min_inc = input.aggregate(Min).gather(0);
-                // let min_noninc = input
-                //     .integrate_nested()
-                //     .integrate()
-                //     .stream_aggregate(Min)
-                //     .differentiate()
-                //     .differentiate_nested()
-                //     .gather(0);
 
                 // min_inc.accumulate_apply2(&min_noninc, |d1, d2| {
                 //     assert_eq!(d1.iter().collect::<Vec<_>>(), d2.iter().collect::<Vec<_>>())
