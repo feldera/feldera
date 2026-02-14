@@ -250,6 +250,12 @@ def wait_for_condition(
 ) -> None:
     """
     Proxy to Feldera client generic condition waiter.
+
+    Usage guidance:
+    - Use this helper in tests that only have names/REST helpers and no
+      `Pipeline` object in scope.
+    - If a `Pipeline` object exists, prefer calling
+      `pipeline.client.wait_for_condition(...)` directly.
     """
     TEST_CLIENT.wait_for_condition(
         description,

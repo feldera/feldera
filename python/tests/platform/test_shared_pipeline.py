@@ -339,12 +339,13 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.start()
         data = [{"id": 2147483647}]
         self.pipeline.input_json("tbl", data, wait=False)
-        while True:
-            status = self.pipeline.status()
-            expected = PipelineStatus.STOPPED
-            if status == expected and len(self.pipeline.deployment_error()) > 0:
-                break
-            time.sleep(1)
+        self.pipeline.client.wait_for_condition(
+            "pipeline stops with deployment error after worker panic",
+            lambda: self.pipeline.status() == PipelineStatus.STOPPED
+            and len(self.pipeline.deployment_error()) > 0,
+            timeout_s=120.0,
+            poll_interval_s=1.0,
+        )
         self.pipeline.stop(force=True)
 
     def test_adhoc_execute(self):

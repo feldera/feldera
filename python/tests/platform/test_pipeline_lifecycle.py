@@ -19,6 +19,7 @@ from .helper import (
     api_url,
     adhoc_query_json,
     post_no_body,
+    wait_for_condition,
 )
 from tests import enterprise_only
 
@@ -126,22 +127,15 @@ def test_pipeline_start_without_compiling(pipeline_name):
     )
     assert r.status_code == HTTPStatus.CREATED
 
-    # Poll status transitions
-
-    # TODO reduce with parallel compilation
-    # 30minutes because we compile a lot of tests in parallel so things might be queued for along time
-    max_deadline = 1800
-    deadline = time.monotonic() + max_deadline
-    while time.monotonic() < deadline:
-        obj = get_pipeline(pipeline_name, "status").json()
-        status = obj.get("program_status")
-        if status not in ("Pending", "CompilingSql"):
-            break
-        time.sleep(1)
-    else:
-        raise TimeoutError(
-            f"Took longer than {max_deadline} seconds to move past CompilingSql"
-        )
+    # Wait until program status moves beyond early compilation states.
+    # Keep a long timeout because parallel test runs can queue compilation.
+    wait_for_condition(
+        "program status moves past Pending/CompilingSql",
+        lambda: get_pipeline(pipeline_name, "status").json().get("program_status")
+        not in ("Pending", "CompilingSql"),
+        timeout_s=1800.0,
+        sleep_s=1.0,
+    )
 
     start_pipeline(pipeline_name, wait=False)
 
