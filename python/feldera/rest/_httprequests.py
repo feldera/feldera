@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import time
 from typing import Any, Callable, List, Mapping, Optional, Sequence, Union
 
@@ -71,6 +72,13 @@ class HttpRequests:
         Returns:
             bool: True if cluster became healthy within timeout, False otherwise
         """
+        if not math.isfinite(max_wait_seconds) or max_wait_seconds <= 0:
+            logging.warning(
+                "invalid health recovery timeout %r; defaulting to 300s",
+                max_wait_seconds,
+            )
+            max_wait_seconds = 300
+
         start_time = time.time()
         check_interval = 5
 
