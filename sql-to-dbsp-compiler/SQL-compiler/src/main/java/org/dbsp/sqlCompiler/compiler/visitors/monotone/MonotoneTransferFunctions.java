@@ -619,7 +619,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         boolean rm = right.mayBeMonotone();
 
         // Assume type is not monotone
-        IMaybeMonotoneType resultType = new NonMonotoneType(expression.type);
+        IMaybeMonotoneType resultType = NonMonotoneType.nonMonotone(expression.type);
         if ((expression.opcode == DBSPOpcode.ADD) && lm && rm) {
             // The addition of two monotone expressions is monotone
             resultType = new MonotoneType(expression.type);
@@ -765,7 +765,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         boolean allArgsMonotone = Linq.all(arguments, MonotoneExpression::mayBeMonotone);
         boolean allArgsConstant = Linq.all(expression.arguments, this.constantExpressions::contains);
         DBSPExpression reduced = null;
-        IMaybeMonotoneType resultType = new NonMonotoneType(expression.getType());
+        IMaybeMonotoneType resultType = NonMonotoneType.nonMonotone(expression.getType());
         boolean isDeterministic = true;
         if (allArgsMonotone || allArgsConstant) {
             DBSPExpression[] reducedArgs = Linq.map(

@@ -168,6 +168,9 @@ public class CompilerMain {
             return compiler.messages;
         // The following runs all compilation stages
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        if (options.ioOptions.anonymize)
+            // The front-end has already emitted the output, we are done.
+            return compiler.messages;
         if (compiler.hasErrors())
             return compiler.messages;
         Utilities.enforce(circuit != null);
