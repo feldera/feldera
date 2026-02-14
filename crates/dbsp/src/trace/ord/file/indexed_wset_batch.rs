@@ -725,6 +725,10 @@ where
         self.diff.as_ref()
     }
 
+    fn weight_checked(&mut self) -> &R {
+        self.weight()
+    }
+
     fn key_valid(&self) -> bool {
         self.key_cursor.has_value()
     }

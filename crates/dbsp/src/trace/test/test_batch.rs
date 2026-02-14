@@ -20,6 +20,7 @@ use rand::{Rng, SeedableRng, seq::IteratorRandom, thread_rng};
 use rand_chacha::ChaChaRng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
+use std::any::TypeId;
 use std::{
     collections::{BTreeMap, BTreeSet, btree_map::Entry},
     fmt::{self, Debug},
@@ -1069,7 +1070,15 @@ where
     where
         T: PartialEq<()>,
     {
-        self.data[self.index].1.as_ref()
+        self.weight_checked()
+    }
+
+    fn weight_checked(&mut self) -> &R {
+        if TypeId::of::<T>() == TypeId::of::<()>() {
+            self.data[self.index].1.as_ref()
+        } else {
+            panic!("TestBatchCursor::weight_checked called on non-unit timestamp type");
+        }
     }
 
     fn step_key(&mut self) {
