@@ -12,10 +12,7 @@ No automatic cleanup; pipelines are left in place for inspection after failures.
 
 from __future__ import annotations
 
-import time
-import math
 import json
-import logging
 import pytest
 import requests
 from typing import Any, Dict, Iterable
@@ -252,36 +249,14 @@ def wait_for_condition(
     sleep_s: float = 0.2,
 ) -> None:
     """
-    Generic polling helper.
-    predicate: callable returning truthy when condition met (can be sync or async).
+    Proxy to Feldera client generic condition waiter.
     """
-    if timeout_s is None:
-        timeout_s = 30.0
-    elif not math.isfinite(timeout_s) or timeout_s <= 0:
-        logging.warning(
-            "wait_for_condition(%s): invalid timeout %r; using 30.0s",
-            description,
-            timeout_s,
-        )
-        timeout_s = 30.0
-
-    start = time.monotonic()
-    deadline = start + timeout_s
-    attempt = 0
-    while True:
-        now = time.monotonic()
-        if now > deadline:
-            raise TimeoutError(f"Timeout waiting for condition: {description}")
-        attempt += 1
-        try:
-            result = predicate()
-        except Exception as e:  # noqa: BLE001
-            logging.debug("Predicate raised %s (attempt %d), continuing", e, attempt)
-            result = False
-
-        if result:
-            return
-        time.sleep(sleep_s)
+    TEST_CLIENT.wait_for_condition(
+        description,
+        predicate,
+        timeout_s=timeout_s,
+        poll_interval_s=sleep_s,
+    )
 
 
 def extract_object_by_name(
