@@ -303,7 +303,7 @@ class FelderaClient:
             )
 
         :param description: Human-readable description used in timeout/errors.
-        :param predicate: Callable returning truthy when condition is met.
+        :param predicate: Callable returning True when condition is met.
         :param timeout_s: Maximum wait time in seconds. If None or invalid,
             defaults to 30 seconds.
         :param poll_interval_s: Poll interval in seconds. If invalid,
