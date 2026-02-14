@@ -161,6 +161,72 @@ Starting a Pipeline
 
     pipeline.start()
 
+Waiting for Compilation Success
+===============================
+
+Use :meth:`.FelderaClient.wait_for_program_success` when create/update is
+non-blocking and you need a deterministic compilation barrier.
+
+.. code-block:: python
+
+    # Create/update asynchronously.
+    client.create_or_update_pipeline(pipeline, wait=False)
+
+    # Wait for compile success of at least program version 2.
+    client.wait_for_program_success(
+        "my_pipeline",
+        expected_program_version=2,
+        timeout_s=300.0,
+        poll_interval_s=0.2,
+    )
+
+Starting Asynchronously and Observing Transition
+================================================
+
+Use ``observe_start=True`` with non-blocking start to wait until control-plane
+status leaves ``Stopped``.
+
+.. code-block:: python
+
+    # Returns after the start request is observed in deployment status.
+    pipeline.start(wait=False, observe_start=True)
+
+Waiting for Data with a Custom Predicate
+========================================
+
+Use :meth:`.FelderaClient.wait_for_condition` with a custom predicate to wait
+for query-visible state.
+
+.. code-block:: python
+
+    def t1_has_5_rows() -> bool:
+        rows = list(pipeline.query("SELECT COUNT(*) AS c FROM t1"))
+        return bool(rows) and int(rows[0]["c"]) == 5
+
+    client.wait_for_condition(
+        "table t1 reaches 5 rows",
+        t1_has_5_rows,
+        timeout_s=30.0,
+        poll_interval_s=0.5,
+    )
+
+Handling Expected Deployment Error on Start
+===========================================
+
+Use ``ignore_deployment_error=True`` only when a stop-with-error state is
+expected from a previous failed start and you want to keep waiting for a fresh
+start transition.
+
+.. code-block:: python
+
+    from feldera.enums import BootstrapPolicy
+
+    pipeline.start(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        ignore_deployment_error=True,
+        timeout_s=60.0,
+    )
+
 Analyzing Existing Feldera Pipeline for Errors
 ==============================================
 

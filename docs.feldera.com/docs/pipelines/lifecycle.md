@@ -248,3 +248,22 @@ convenience has a combination status which combines resources status and runtime
 
 The diagram is the resources status diagram with the box for `Provisioned` replaced with the diagram of
 runtime status.
+
+## Python SDK synchronization helpers
+
+Pipeline lifecycle operations are asynchronous: the request is accepted first,
+and the resulting state transition is processed and propagated by the backend
+over time. To synchronize reliably with these transitions, use Python client
+SDK built-in methods instead of custom synchronization loops.
+
+- [`FelderaClient.wait_for_program_success`](pathname:///python/feldera.html#feldera.rest.feldera_client.FelderaClient.wait_for_program_success):
+  wait for compilation status `Success` (optionally for a target program
+  version).
+- [`Pipeline.start(wait=False, observe_start=True)`](pathname:///python/feldera.html#feldera.pipeline.Pipeline.start):
+  issue non-blocking start and wait until deployment status is observed moving
+  away from `Stopped`.
+- [`Pipeline.start(..., ignore_deployment_error=True)`](pathname:///python/feldera.html#feldera.pipeline.Pipeline.start):
+  keep waiting through an expected previous stop error while a fresh start
+  transition is being observed.
+- [`FelderaClient.wait_for_condition`](pathname:///python/feldera.html#feldera.rest.feldera_client.FelderaClient.wait_for_condition):
+  generic bounded polling helper for custom asynchronous conditions.

@@ -208,6 +208,15 @@ curl -s GET http://127.0.0.1:8080/v0/pipelines/supply-chain | jq '.deployment_st
 
 ... which will say 'Running` when the pipeline has started:
 
+> Pipeline lifecycle transitions are asynchronous. A `202 Accepted` response
+> means the request was accepted, not that the final target state has already
+> been reached. Always poll status fields to observe completion of start/stop
+> operations.
+
+> Python SDK users can use bounded wait helpers instead of custom polling
+> loops: `wait_for_program_success`, `start(..., observe_start=True)`, and
+> `wait_for_condition`. See [Pipeline lifecycle](/pipelines/lifecycle#python-sdk-synchronization-helpers).
+
 > Note: Connectors are only initialized when a pipeline starts to use them.
 > A pipeline will not start if a connector is unable to connect to its
 > data source or sink (e.g., if a URL is misspelled).
