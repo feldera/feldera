@@ -9,8 +9,8 @@ use crate::{
             BACKGROUND_CACHE_OCCUPANCY, CIRCUIT_IDLE_TIME_SECONDS, CIRCUIT_METRICS,
             CIRCUIT_RUNTIME_ELAPSED_SECONDS, CIRCUIT_RUNTIME_SECONDS, CIRCUIT_WAIT_TIME_SECONDS,
             CircuitMetric, FOREGROUND_CACHE_OCCUPANCY, INVOCATIONS_COUNT, MetaItem, MetricId,
-            MetricReading, OperatorMeta, RUNTIME_PERCENT, RUNTIME_SECONDS, STEPS_COUNT,
-            USED_MEMORY_BYTES,
+            MetricReading, OperatorMeta, RUNTIME_PERCENT, RUNTIME_SECONDS,
+            SPINE_STORAGE_SIZE_BYTES, STEPS_COUNT, USED_MEMORY_BYTES,
         },
         runtime::ThreadType,
     },
@@ -245,6 +245,11 @@ impl DbspProfile {
     // This function is used by some Java tests, do not delete.
     pub fn total_used_bytes(&self) -> Result<HumanBytes, MetaItem> {
         self.attribute_total_as_bytes(&USED_MEMORY_BYTES)
+    }
+
+    /// Returns the total spine storage size in bytes across all operators.
+    pub fn total_storage_size(&self) -> Result<HumanBytes, MetaItem> {
+        self.attribute_total_as_bytes(&SPINE_STORAGE_SIZE_BYTES)
     }
 }
 
