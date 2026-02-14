@@ -150,6 +150,7 @@ class TestCheckpointSync(SharedTestPipeline):
         time.sleep(1)
 
         if automated_sync_interval is not None:
+
             def checkpoint_sync_completed() -> bool:
                 try:
                     synced = self.pipeline.last_successful_checkpoint_sync()
