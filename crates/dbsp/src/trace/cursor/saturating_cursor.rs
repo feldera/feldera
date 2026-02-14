@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{any::TypeId, marker::PhantomData};
 
 use crate::{
     DynZWeight, Timestamp,
@@ -129,6 +129,18 @@ where
             1.erase()
         } else {
             self.cursor.weight()
+        }
+    }
+
+    fn weight_checked(&mut self) -> &DynZWeight {
+        if self.on_ghost_key {
+            if TypeId::of::<T>() == TypeId::of::<()>() {
+                1.erase()
+            } else {
+                panic!("SaturatingCursor::weight_checked called on non-unit timestamp type");
+            }
+        } else {
+            self.cursor.weight_checked()
         }
     }
 

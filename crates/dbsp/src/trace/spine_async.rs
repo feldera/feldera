@@ -1336,6 +1336,10 @@ impl<B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<B> {
         self.with_cursor_mut(|cursor| cursor.weight())
     }
 
+    fn weight_checked(&mut self) -> &B::R {
+        self.with_cursor_mut(|cursor| cursor.weight_checked())
+    }
+
     fn map_values(&mut self, logic: &mut dyn FnMut(&B::Val, &B::R))
     where
         B::Time: PartialEq<()>,

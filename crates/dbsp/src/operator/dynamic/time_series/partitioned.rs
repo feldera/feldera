@@ -127,6 +127,10 @@ where
         self.cursor.weight()
     }
 
+    fn weight_checked(&mut self) -> &R {
+        self.weight()
+    }
+
     fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R)) {
         while self.cursor.val_valid() {
             if self.cursor.val().fst() == self.key.as_ref() {

@@ -1705,16 +1705,14 @@ where
                             joint_cursor.trace_cursor.val().clone_to(val.as_mut());
 
                             (self.join_func.borrow_mut())(joint_cursor.delta_cursor.key(), v1, &val, &mut |k, v| {
-                                joint_cursor.trace_cursor
-                                    .map_times(&mut |_ts: &T::Time, w2: &T::R| {
-                                        let (kv, w) = output_tuple.split_mut();
-                                        let (key, val) = kv.split_mut();
+                                let total_weight = **joint_cursor.trace_cursor.weight_checked();
+                                let (kv, w) = output_tuple.split_mut();
+                                let (key, val) = kv.split_mut();
 
-                                        **w = w1.mul_by_ref(&**w2);
-                                        k.clone_to(key);
-                                        v.clone_to(val);
-                                        output_tuples.push_val(output_tuple.as_mut());
-                                    });
+                                **w = w1 * total_weight;
+                                k.clone_to(key);
+                                v.clone_to(val);
+                                output_tuples.push_val(output_tuple.as_mut());
                             });
 
                             // Push a sufficiently large chunk of update to the batcher. The batcher

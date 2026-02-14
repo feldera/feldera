@@ -22,7 +22,7 @@ use crate::{
     utils::Tup2,
 };
 use dyn_clone::DynClone;
-use std::marker::PhantomData;
+use std::{any::TypeId, marker::PhantomData};
 
 pub struct StarJoinFactories<I, O, T>
 where
@@ -392,14 +392,23 @@ where
         self.weight_times[self.current_index].0.clear();
         let (previous_weight, previous_time) = self.previous_weight_time();
 
-        self.trace_cursors[self.current_index].map_times(&mut |time, weight| {
-            let weight = **weight * previous_weight;
-            let time = time.join(&previous_time);
+        if TypeId::of::<C::Time>() != TypeId::of::<()>() {
+            self.trace_cursors[self.current_index].map_times(&mut |time, weight| {
+                let weight = **weight * previous_weight;
+                let time = time.join(&previous_time);
+
+                self.weight_times[self.current_index]
+                    .0
+                    .push((weight, time.clone()));
+            });
+        } else {
+            let weight =
+                **self.trace_cursors[self.current_index].weight_checked() * previous_weight;
 
             self.weight_times[self.current_index]
                 .0
-                .push((weight, time.clone()));
-        });
+                .push((weight, Default::default()));
+        }
         self.weight_times[self.current_index].1 = 0;
     }
 
@@ -410,9 +419,10 @@ where
             == self.weight_times[self.current_index].0.len() - 1
         {
             self.trace_cursors[self.current_index].step_val();
+
             // println!(
             //     "{} advance_weight_times: moving cursor {} to value: {:?}",
-            //     Runtime::worker_index(),
+            //     crate::Runtime::worker_index(),
             //     self.current_index,
             //     self.trace_cursors[self.current_index].get_val()
             // );
