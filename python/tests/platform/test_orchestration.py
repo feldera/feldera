@@ -1,4 +1,3 @@
-import time
 from http import HTTPStatus
 
 from .helper import (
@@ -16,6 +15,7 @@ from .helper import (
     connector_action,
     pipeline_stats,
     connector_paused,
+    wait_for_condition,
 )
 
 
@@ -76,7 +76,14 @@ def test_pipeline_orchestration_basic(pipeline_name):
         # Pause connector
         resp = connector_action(cur_pipeline_name, table_name, connector_name, "pause")
         assert resp.status_code == HTTPStatus.OK, (resp.status_code, resp.text)
-        time.sleep(0.5)  # TODO: why is this necessary? might not be, remove if not
+        wait_for_condition(
+            "connector pause observed",
+            lambda: _basic_orchestration_info(
+                cur_pipeline_name, table_name, connector_name
+            )[1],
+            timeout_s=10,
+            sleep_s=0.2,
+        )
         p_paused, c_paused, processed = _basic_orchestration_info(
             cur_pipeline_name, table_name, connector_name
         )
@@ -96,7 +103,14 @@ def test_pipeline_orchestration_basic(pipeline_name):
         # Start connector
         resp = connector_action(cur_pipeline_name, table_name, connector_name, "start")
         assert resp.status_code == HTTPStatus.OK, (resp.status_code, resp.text)
-        time.sleep(0.5)
+        wait_for_condition(
+            "connector start observed",
+            lambda: not _basic_orchestration_info(
+                cur_pipeline_name, table_name, connector_name
+            )[1],
+            timeout_s=10,
+            sleep_s=0.2,
+        )
         p_paused, c_paused, processed = _basic_orchestration_info(
             cur_pipeline_name, table_name, connector_name
         )

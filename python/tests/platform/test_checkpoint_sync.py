@@ -99,7 +99,7 @@ class TestCheckpointSync(SharedTestPipeline):
         self.pipeline.input_json("t0", data)
         self.pipeline.execute("INSERT INTO t0 VALUES (21, 'exists')")
 
-        start = time.time()
+        start = time.monotonic()
         timeout = 5
 
         while True:
@@ -107,7 +107,7 @@ class TestCheckpointSync(SharedTestPipeline):
             if processed == total:
                 break
 
-            if time.time() - start > timeout:
+            if time.monotonic() - start > timeout:
                 raise TimeoutError(
                     f"timed out while waiting for pipeline to process {total} records"
                 )
@@ -122,34 +122,36 @@ class TestCheckpointSync(SharedTestPipeline):
                 f"adhoc query returned {len(got_before)} but {processed} records were processed: {got_before}"
             )
 
-        chk_timeout = time.monotonic() + 30
         chk_uuid = None
 
         if not automated_checkpoint:
             self.pipeline.checkpoint(wait=True)
         else:
-            # wait for at least one automated checkpoint to be created with current data
-            while True:
+            # Wait for at least one automated checkpoint to be created with current data.
+            chk_uuid_holder = {"value": None}
+
+            def checkpoint_created() -> bool:
                 chks = self.pipeline.checkpoints()
                 chk = next((x for x in chks if x.processed_records == processed), None)
+                if chk is None:
+                    return False
+                chk_uuid_holder["value"] = chk.uuid
+                return True
 
-                if chk is not None:
-                    chk_uuid = chk.uuid
-                    break
-
-                if time.monotonic() > chk_timeout:
-                    raise TimeoutError(
-                        "timed out waiting for automated checkpoint to be created"
-                    )
-                time.sleep(0.5)
+            self.pipeline.client.wait_for_condition(
+                "automated checkpoint is created for current processed records",
+                checkpoint_created,
+                timeout_s=30.0,
+                poll_interval_s=0.5,
+            )
+            chk_uuid = chk_uuid_holder["value"]
 
         print("Checkpoint UUID:", chk_uuid, file=sys.stderr)
         time.sleep(1)
 
         if automated_sync_interval is not None:
-            timeout = time.monotonic() + 30
-            success = None
-            while time.monotonic() < timeout and success is None:
+
+            def checkpoint_sync_completed() -> bool:
                 try:
                     synced = self.pipeline.last_successful_checkpoint_sync()
                     print(
@@ -157,16 +159,20 @@ class TestCheckpointSync(SharedTestPipeline):
                     )
                     if synced is not None and chk_uuid is not None:
                         if synced >= UUID(chk_uuid):
-                            success = synced
-                    else:
-                        success = synced
+                            return True
+                        return False
+                    if synced is not None:
+                        return True
+                    return False
                 except RuntimeError:
-                    time.sleep(0.5)
-                    continue
-            if success is None:
-                raise TimeoutError(
-                    "timed out waiting for automated checkpoint sync to complete"
-                )
+                    return False
+
+            self.pipeline.client.wait_for_condition(
+                "automated checkpoint sync completes",
+                checkpoint_sync_completed,
+                timeout_s=30.0,
+                poll_interval_s=0.5,
+            )
         else:
             uuid = self.pipeline.sync_checkpoint(wait=True)
             print("Synced Checkpoint UUID:", uuid, file=sys.stderr)

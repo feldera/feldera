@@ -1,9 +1,10 @@
 import json
 import logging
+import math
 import pathlib
 import time
 from decimal import Decimal
-from typing import Any, Dict, Generator, Mapping, Optional
+from typing import Any, Callable, Dict, Generator, Mapping, Optional
 from urllib.parse import quote
 
 import requests
@@ -34,6 +35,33 @@ def _validate_no_none_keys_in_map(data):
 
 def _prepare_boolean_input(value: bool) -> str:
     return "true" if value else "false"
+
+
+def _normalize_wait_timeout(
+    timeout_s: float | None, default_timeout_s: float, operation: str
+) -> float:
+    """
+    Ensure wait loops always use a finite timeout.
+    """
+    if timeout_s is None:
+        return default_timeout_s
+    if not math.isfinite(timeout_s):
+        logging.warning(
+            "%s called with non-finite timeout %r; defaulting to %.1fs",
+            operation,
+            timeout_s,
+            default_timeout_s,
+        )
+        return default_timeout_s
+    if timeout_s <= 0:
+        logging.warning(
+            "%s called with non-positive timeout %r; defaulting to %.1fs",
+            operation,
+            timeout_s,
+            default_timeout_s,
+        )
+        return default_timeout_s
+    return timeout_s
 
 
 class FelderaClient:
@@ -153,15 +181,39 @@ class FelderaClient:
 
         return [Pipeline.from_dict(pipeline) for pipeline in resp]
 
-    def __wait_for_compilation(self, name: str):
+    def __wait_for_compilation(
+        self,
+        name: str,
+        expected_program_version: int | None = None,
+        timeout_s: float | None = None,
+        poll_interval_s: float = 0.1,
+    ) -> Pipeline:
         wait = ["Pending", "CompilingSql", "SqlCompiled", "CompilingRust"]
+        start_time = time.monotonic()
+        timeout_s = _normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=1800.0,
+            operation="wait_for_program_success",
+        )
 
         while True:
+            elapsed = time.monotonic() - start_time
+            if elapsed > timeout_s:
+                raise TimeoutError(
+                    f"Timed out waiting for pipeline '{name}' to compile "
+                    f"(expected program_version >= {expected_program_version})"
+                )
+
             p = self.get_pipeline(name, PipelineFieldSelector.STATUS)
             status = p.program_status
 
             if status == "Success":
-                return self.get_pipeline(name, PipelineFieldSelector.ALL)
+                if expected_program_version is None:
+                    return self.get_pipeline(name, PipelineFieldSelector.ALL)
+
+                current_version = p.program_version or 0
+                if current_version >= expected_program_version:
+                    return self.get_pipeline(name, PipelineFieldSelector.ALL)
             elif status not in wait:
                 p = self.get_pipeline(name, PipelineFieldSelector.ALL)
 
@@ -190,7 +242,104 @@ class FelderaClient:
                 raise RuntimeError(error_message)
 
             logging.debug("still compiling %s, waiting for 100 more milliseconds", name)
-            time.sleep(0.1)
+            time.sleep(poll_interval_s)
+
+    def wait_for_program_success(
+        self,
+        pipeline_name: str,
+        expected_program_version: int | None = None,
+        timeout_s: float | None = None,
+        poll_interval_s: float = 0.1,
+    ) -> Pipeline:
+        """
+        Wait until the pipeline program has successfully compiled.
+
+        - If ``expected_program_version`` is not provided, returns when
+          ``program_status == "Success"``.
+        - If ``expected_program_version`` is provided, returns only when
+          ``program_status == "Success"`` and
+          ``program_version >= expected_program_version``.
+
+        The method fails fast when compilation reaches ``SqlError`` or
+        ``RustError`` and includes compiler error details.
+
+        :param pipeline_name: The name of the pipeline.
+        :param expected_program_version: Optional expected program version.
+        :param timeout_s: Optional timeout in seconds. If None or invalid,
+            defaults to 1800 seconds.
+        :param poll_interval_s: Poll interval in seconds.
+        """
+        return self.__wait_for_compilation(
+            pipeline_name,
+            expected_program_version=expected_program_version,
+            timeout_s=timeout_s,
+            poll_interval_s=poll_interval_s,
+        )
+
+    def wait_for_condition(
+        self,
+        description: str,
+        predicate: Callable[[], bool],
+        timeout_s: float | None = 30.0,
+        poll_interval_s: float = 0.2,
+    ) -> None:
+        """
+        Wait until ``predicate`` returns ``True``.
+
+        This is a generic polling utility for asynchronous operations where
+        callers need to wait for an observable condition before continuing.
+        Typical usage:
+
+        .. code-block:: python
+
+            client.wait_for_condition(
+                "pipeline reaches running",
+                lambda: client.get_pipeline(
+                    name, PipelineFieldSelector.STATUS
+                ).deployment_status
+                == "Running",
+                timeout_s=30.0,
+                poll_interval_s=0.2,
+            )
+
+        :param description: Human-readable description used in timeout/errors.
+        :param predicate: Callable returning True when condition is met.
+        :param timeout_s: Maximum wait time in seconds. If None or invalid,
+            defaults to 30 seconds.
+        :param poll_interval_s: Poll interval in seconds. If invalid,
+            defaults to 0.2 seconds.
+        :raises TimeoutError: If predicate does not become true in time.
+        """
+        timeout_s = _normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=30.0,
+            operation=f"wait_for_condition({description})",
+        )
+        if not math.isfinite(poll_interval_s) or poll_interval_s <= 0:
+            logging.warning(
+                "wait_for_condition(%s) called with invalid poll interval %r; defaulting to 0.2s",
+                description,
+                poll_interval_s,
+            )
+            poll_interval_s = 0.2
+
+        start = time.monotonic()
+        deadline = start + timeout_s
+        attempt = 0
+        while True:
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"Timeout waiting for condition: {description}")
+            attempt += 1
+            try:
+                result = predicate()
+            except Exception as e:  # noqa: BLE001
+                logging.debug(
+                    "Predicate raised %s (attempt %d), continuing", e, attempt
+                )
+                result = False
+            if result:
+                return
+            time.sleep(poll_interval_s)
 
     def __wait_for_pipeline_state(
         self,
@@ -200,15 +349,19 @@ class FelderaClient:
         start: bool = True,
     ):
         start_time = time.monotonic()
+        timeout_s = _normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=300.0,
+            operation=f"wait_for_pipeline_state({state})",
+        )
 
         while True:
-            if timeout_s is not None:
-                elapsed = time.monotonic() - start_time
-                if elapsed > timeout_s:
-                    raise TimeoutError(
-                        f"Timed out waiting for pipeline {pipeline_name} to "
-                        f"transition to '{state}' state"
-                    )
+            elapsed = time.monotonic() - start_time
+            if elapsed > timeout_s:
+                raise TimeoutError(
+                    f"Timed out waiting for pipeline {pipeline_name} to "
+                    f"transition to '{state}' state"
+                )
 
             resp = self.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS)
             status = resp.deployment_status
@@ -243,15 +396,19 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         start_time = time.monotonic()
         poll_interval_s = 0.1
         states = [state.lower() for state in states]
+        timeout_s = _normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=300.0,
+            operation="wait_for_pipeline_state_one_of",
+        )
 
         while True:
-            if timeout_s is not None:
-                elapsed = time.monotonic() - start_time
-                if elapsed > timeout_s:
-                    raise TimeoutError(
-                        f"Timed out waiting for pipeline {pipeline_name} to"
-                        f"transition to one of the states: {states}"
-                    )
+            elapsed = time.monotonic() - start_time
+            if elapsed > timeout_s:
+                raise TimeoutError(
+                    f"Timed out waiting for pipeline {pipeline_name} to"
+                    f"transition to one of the states: {states}"
+                )
 
             resp = self.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS)
             status = resp.deployment_status
@@ -282,6 +439,61 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             )
             time.sleep(poll_interval_s)
 
+    def _wait_for_deployment_status(
+        self,
+        pipeline_name: str,
+        desired: str | Callable[[str], bool],
+        timeout_s: float = 60.0,
+        poll_interval_s: float = 0.25,
+    ) -> Pipeline:
+        """
+        Wait until pipeline 'pipeline_name' has 'desired' deployment status:
+
+        - If 'desired' is a string, until that is the status.
+        - If 'desired' is a function, until it returns true when passed
+          the deployment status.
+
+        :param pipeline_name: The name of the pipeline.
+        :param desired: Desired deployment status string or predicate.
+        :param timeout_s: Timeout in seconds. If invalid, defaults to 60 seconds.
+        :param poll_interval_s: Poll interval in seconds.
+        """
+        timeout_s = _normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=60.0,
+            operation="wait_for_deployment_status",
+        )
+
+        print(
+            f"Waiting up to {timeout_s} seconds for {pipeline_name} to transition to {desired}"
+        )
+        start = time.monotonic()
+        deadline = start + timeout_s
+        last = None
+        latest = None
+
+        while time.monotonic() < deadline:
+            try:
+                latest = self.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS)
+            except FelderaAPIError:
+                time.sleep(poll_interval_s)
+                continue
+
+            status = latest.deployment_status
+            if status != last:
+                print(
+                    f"After {time.monotonic() - start:.1f} seconds: status is {status}"
+                )
+            last = status
+            if last == desired if isinstance(desired, str) else desired(last):
+                return latest
+            time.sleep(poll_interval_s)
+
+        raise TimeoutError(
+            f"Timed out waiting for pipeline '{pipeline_name}' deployment_status={desired} (last={last})\n"
+            f"Current pipeline descriptor:\n{latest.__dict__ if latest is not None else None}"
+        )
+
     def create_pipeline(self, pipeline: Pipeline, wait: bool = True) -> Pipeline:
         """
         Create a pipeline if it doesn't exist and wait for it to compile
@@ -308,7 +520,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if not wait:
             return pipeline
 
-        return self.__wait_for_compilation(pipeline.name)
+        return self.wait_for_program_success(pipeline.name)
 
     def create_or_update_pipeline(
         self, pipeline: Pipeline, wait: bool = True
@@ -340,7 +552,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if not wait:
             return pipeline
 
-        return self.__wait_for_compilation(pipeline.name)
+        return self.wait_for_program_success(pipeline.name)
 
     def patch_pipeline(
         self,
@@ -455,6 +667,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         wait: bool = True,
         timeout_s: Optional[float] = None,
         ignore_deployment_error: bool = False,
+        observe_start: bool = False,
     ) -> Optional[PipelineStatus]:
         """
 
@@ -465,8 +678,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param timeout_s: The amount of time in seconds to wait for the
             pipeline to start.
         :param ignore_deployment_error: Set True to ignore deployment errors while waiting for
-            START transition. If `timeout_s` is not provided, a default timeout is
-            used to avoid indefinite waiting.
+            START transition.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            is no longer STOPPED (i.e., start request has been observed by control plane).
         """
 
         params = {"initial": initial}
@@ -479,18 +693,25 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         )
 
         if not wait:
+            if observe_start:
+                observe_timeout_s = _normalize_wait_timeout(
+                    timeout_s,
+                    default_timeout_s=30.0,
+                    operation="start_pipeline(observe_start=True)",
+                )
+                self._wait_for_deployment_status(
+                    pipeline_name,
+                    lambda status: status != "Stopped",
+                    timeout_s=observe_timeout_s,
+                )
             return None
 
-        effective_timeout_s = timeout_s
-        if ignore_deployment_error and effective_timeout_s is None:
-            # ignore_deployment_error can intentionally skip the stopped+error failure guard.
-            # Bound the wait so callers don't get an unbounded polling loop.
-            effective_timeout_s = 60.0
-            logging.warning(
-                "start_pipeline(ignore_deployment_error=True) called without timeout; "
-                "defaulting to %.0fs",
-                effective_timeout_s,
-            )
+        default_start_timeout_s = 60.0 if ignore_deployment_error else 300.0
+        effective_timeout_s = _normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=default_start_timeout_s,
+            operation="start_pipeline",
+        )
 
         return self.__wait_for_pipeline_state_one_of(
             pipeline_name,
@@ -506,6 +727,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         wait: bool = True,
         timeout_s: Optional[float] = None,
         ignore_deployment_error: bool = False,
+        observe_start: bool = False,
     ) -> Optional[PipelineStatus]:
         """
 
@@ -513,9 +735,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param wait: Set True to wait for the pipeline to start.
             True by default
         :param timeout_s: The amount of time in seconds to wait for the
-            pipeline to start.
+            pipeline to start. If None or invalid, defaults to 300 seconds
+            (or 60 seconds if ignore_deployment_error=True).
         :param ignore_deployment_error: Set True to ignore deployment errors while waiting
             for START transition.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            moves away from STOPPED.
         """
 
         return self._inner_start_pipeline(
@@ -525,6 +750,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             wait,
             timeout_s,
             ignore_deployment_error,
+            observe_start,
         )
 
     def start_pipeline_as_paused(
@@ -533,6 +759,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: float | None = None,
+        observe_start: bool = False,
     ) -> Optional[PipelineStatus]:
         """
         :param pipeline_name: The name of the pipeline to start as paused.
@@ -540,10 +767,17 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             True by default
         :param timeout_s: The amount of time in seconds to wait for the
             pipeline to start.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            moves away from STOPPED.
         """
 
         return self._inner_start_pipeline(
-            pipeline_name, "paused", bootstrap_policy, wait, timeout_s
+            pipeline_name,
+            "paused",
+            bootstrap_policy,
+            wait,
+            timeout_s,
+            observe_start=observe_start,
         )
 
     def start_pipeline_as_standby(
@@ -552,6 +786,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        observe_start: bool = False,
     ):
         """
         :param pipeline_name: The name of the pipeline to start as standby.
@@ -559,10 +794,17 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             True by default
         :param timeout_s: The amount of time in seconds to wait for the
             pipeline to start.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            moves away from STOPPED.
         """
 
         self._inner_start_pipeline(
-            pipeline_name, "standby", bootstrap_policy, wait, timeout_s
+            pipeline_name,
+            "standby",
+            bootstrap_policy,
+            wait,
+            timeout_s,
+            observe_start=observe_start,
         )
 
     def resume_pipeline(
@@ -638,7 +880,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             Set False to automatically checkpoint before stopping.
         :param wait: Set True to wait for the pipeline to stop. True by default
         :param timeout_s: The amount of time in seconds to wait for the pipeline
-            to stop.
+            to stop. If None or invalid, defaults to 300 seconds.
         """
 
         params = {"force": str(force).lower()}
@@ -651,10 +893,15 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if not wait:
             return
 
+        timeout_s = _normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=300.0,
+            operation="stop_pipeline",
+        )
         start = time.monotonic()
 
         while True:
-            if timeout_s is not None and time.monotonic() - start > timeout_s:
+            if time.monotonic() - start > timeout_s:
                 raise FelderaTimeoutError(
                     f"timeout error: pipeline '{pipeline_name}' did not stop in {timeout_s} seconds"
                 )
@@ -679,16 +926,21 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         :param pipeline_name: The name of the pipeline
         :param timeout_s: The amount of time in seconds to wait for the storage
-            to clear.
+            to clear. If None or invalid, defaults to 300 seconds.
         """
         self.http.post(
             path=f"/pipelines/{pipeline_name}/clear",
         )
 
+        timeout_s = _normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=300.0,
+            operation="clear_storage",
+        )
         start = time.monotonic()
 
         while True:
-            if timeout_s is not None and time.monotonic() - start > timeout_s:
+            if time.monotonic() - start > timeout_s:
                 raise FelderaTimeoutError(
                     f"timeout error: pipeline '{pipeline_name}' did not clear storage in {timeout_s} seconds"
                 )
@@ -739,7 +991,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             If False, the function initiates the commit and returns immediately without waiting for completion. The default value is True.
 
         :param timeout_s: Maximum time (in seconds) to wait for the transaction to commit when `wait` is True.
-            If None, the function will wait indefinitely.
+            If None or invalid, defaults to 300 seconds.
 
         :raises RuntimeError: If there is currently no transaction in progress.
         :raises ValueError: If the provided `transaction_id` does not match the current transaction.
@@ -767,16 +1019,19 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             path=f"/pipelines/{pipeline_name}/commit_transaction",
         )
 
-        start_time = time.monotonic()
-
         if not wait:
             return
 
+        timeout_s = _normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=300.0,
+            operation="commit_transaction",
+        )
+        start_time = time.monotonic()
         while True:
-            if timeout_s is not None:
-                elapsed = time.monotonic() - start_time
-                if elapsed > timeout_s:
-                    raise TimeoutError("Timed out waiting for transaction to commit")
+            elapsed = time.monotonic() - start_time
+            if elapsed > timeout_s:
+                raise TimeoutError("Timed out waiting for transaction to commit")
 
             stats = self.get_pipeline_stats(pipeline_name)
             if stats["global_metrics"]["transaction_id"] != transaction_id:
@@ -986,24 +1241,28 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param pipeline_name: The name of the pipeline
         :param token: The token to check for completion
         :param timeout_s: The amount of time in seconds to wait for the pipeline
-            to process these records.
+            to process these records. If None or invalid, defaults to 300 seconds.
         """
 
+        timeout_s = _normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=300.0,
+            operation="wait_for_token",
+        )
         start = time.monotonic()
-        end = start + timeout_s if timeout_s else None
+        end = start + timeout_s
         initial_backoff = 0.1
         max_backoff = 5
         exponent = 1.2
         retries = 0
 
         while True:
-            if end:
-                if time.monotonic() > end:
-                    raise FelderaTimeoutError(
-                        f"timeout error: pipeline '{pipeline_name}' did not"
-                        + f" process records represented by token {token} within"
-                        + f" {timeout_s}"
-                    )
+            if time.monotonic() > end:
+                raise FelderaTimeoutError(
+                    f"timeout error: pipeline '{pipeline_name}' did not"
+                    + f" process records represented by token {token} within"
+                    + f" {timeout_s}"
+                )
 
             if self.completion_token_processed(pipeline_name, token):
                 break

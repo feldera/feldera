@@ -16,17 +16,17 @@ from .helper import (
     clear_pipeline,
     delete_pipeline,
     cleanup_pipeline,
-    wait_for_deployment_status,
     api_url,
     adhoc_query_json,
     post_no_body,
+    wait_for_condition,
 )
 from tests import enterprise_only
 
 
 def _wait_for_stopped_with_error(name: str, timeout_s: float = 90.0):
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
         r = get_pipeline(name, "status")
         if r.status_code == HTTPStatus.OK:
             obj = r.json()
@@ -127,22 +127,15 @@ def test_pipeline_start_without_compiling(pipeline_name):
     )
     assert r.status_code == HTTPStatus.CREATED
 
-    # Poll status transitions
-
-    # TODO reduce with parallel compilation
-    # 30minutes because we compile a lot of tests in parallel so things might be queued for along time
-    max_deadline = 1800
-    deadline = time.time() + max_deadline
-    while time.time() < deadline:
-        obj = get_pipeline(pipeline_name, "status").json()
-        status = obj.get("program_status")
-        if status not in ("Pending", "CompilingSql"):
-            break
-        time.sleep(1)
-    else:
-        raise TimeoutError(
-            f"Took longer than {max_deadline} seconds to move past CompilingSql"
-        )
+    # Wait until program status moves beyond early compilation states.
+    # Keep a long timeout because parallel test runs can queue compilation.
+    wait_for_condition(
+        "program status moves past Pending/CompilingSql",
+        lambda: get_pipeline(pipeline_name, "status").json().get("program_status")
+        not in ("Pending", "CompilingSql"),
+        timeout_s=1800.0,
+        sleep_s=1.0,
+    )
 
     start_pipeline(pipeline_name, wait=False)
 
@@ -188,12 +181,9 @@ def test_pipeline_stop_force_after_start(pipeline_name):
 
     for delay_sec in [0, 0.1, 0.5, 1, 3, 10]:
         print(f"Testing with {delay_sec} second delay")
-        start_pipeline(pipeline_name)
-        # Wait for the pipeline to transition away from "Stopped"
-        #
-        # See big comment in test_pipeline_stop_with_force for
-        # reasoning.
-        wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
+        # Issue non-blocking start and wait only until the request is observed
+        # (status leaves STOPPED) to avoid start/stop races.
+        start_pipeline(pipeline_name, wait=False, observe_start=True)
         # Shortly wait for the pipeline to transition to next state(s)
         time.sleep(delay_sec)
         # Stop force and clear the pipeline
@@ -229,13 +219,11 @@ def test_pipeline_stop_with_force(pipeline_name):
     # - start_pipeline_as_paused() fails with "Cannot restart the
     #   pipeline while it is stopping. Wait until it is stopped before
     #   starting the pipeline again."
-    start_pipeline(pipeline_name, wait=False)
-    wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
+    start_pipeline(pipeline_name, wait=False, observe_start=True)
     stop_pipeline(pipeline_name, force=True)
 
     # Start paused then stop (simulate by pausing immediately)
     start_pipeline_as_paused(pipeline_name)
-    wait_for_deployment_status(pipeline_name, "Paused", 30)
     stop_pipeline(pipeline_name, force=True)
 
     # Start, stop (without waiting), then stop again
@@ -258,8 +246,7 @@ def test_pipeline_stop_without_force(pipeline_name):
     # Start then stop (non-force)
     #
     # See test_pipeline_stop_with_force() for notes.
-    start_pipeline(pipeline_name, wait=False)
-    wait_for_deployment_status(pipeline_name, lambda status: status != "Stopped")
+    start_pipeline(pipeline_name, wait=False, observe_start=True)
     stop_pipeline(pipeline_name, force=False)
 
     # Start, wait for running, stop

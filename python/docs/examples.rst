@@ -161,6 +161,72 @@ Starting a Pipeline
 
     pipeline.start()
 
+Waiting for Compilation Success
+===============================
+
+Use :meth:`.FelderaClient.wait_for_program_success` when create/update is
+non-blocking and you need a deterministic compilation barrier.
+
+.. code-block:: python
+
+    # Create/update asynchronously.
+    client.create_or_update_pipeline(pipeline, wait=False)
+
+    # Wait for compile success of at least program version 2.
+    client.wait_for_program_success(
+        "my_pipeline",
+        expected_program_version=2,
+        timeout_s=300.0,
+        poll_interval_s=0.2,
+    )
+
+Starting Asynchronously and Observing Transition
+================================================
+
+Use ``observe_start=True`` with non-blocking start to wait until control-plane
+status leaves ``Stopped``.
+
+.. code-block:: python
+
+    # Returns after the start request is observed in deployment status.
+    pipeline.start(wait=False, observe_start=True)
+
+Waiting for Data with a Custom Predicate
+========================================
+
+Use :meth:`.FelderaClient.wait_for_condition` with a custom predicate to wait
+for query-visible state.
+
+.. code-block:: python
+
+    def t1_has_5_rows() -> bool:
+        rows = list(pipeline.query("SELECT COUNT(*) AS c FROM t1"))
+        return bool(rows) and int(rows[0]["c"]) == 5
+
+    client.wait_for_condition(
+        "table t1 reaches 5 rows",
+        t1_has_5_rows,
+        timeout_s=30.0,
+        poll_interval_s=0.5,
+    )
+
+Handling Expected Deployment Error on Start
+===========================================
+
+Use ``ignore_deployment_error=True`` only when a stop-with-error state is
+expected from a previous failed start and you want to keep waiting for a fresh
+start transition.
+
+.. code-block:: python
+
+    from feldera.enums import BootstrapPolicy
+
+    pipeline.start(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        ignore_deployment_error=True,
+        timeout_s=60.0,
+    )
+
 Analyzing Existing Feldera Pipeline for Errors
 ==============================================
 
@@ -244,6 +310,29 @@ To check the status of this completion token use :meth:`.Pipeline.completion_tok
 
     # wait until the pipeline processes this completion token
     pipeline.wait_for_token(token)
+
+Waiting for a Custom Condition
+==============================
+
+For asynchronous workflows, you can use :meth:`.FelderaClient.wait_for_condition`
+to wait for any observable state transition.
+
+.. code-block:: python
+
+    from feldera.enums import PipelineFieldSelector
+
+    # Start asynchronously and wait for status transition explicitly
+    client.start_pipeline("my_pipeline", wait=False)
+
+    client.wait_for_condition(
+        "pipeline reaches running",
+        lambda: client.get_pipeline(
+            "my_pipeline", PipelineFieldSelector.STATUS
+        ).deployment_status
+        == "Running",
+        timeout_s=30.0,
+        poll_interval_s=0.2,
+    )
 
 Executing ad-hoc SQL Queries
 ============================

@@ -1,4 +1,5 @@
 import logging
+import math
 import pathlib
 import time
 from collections import deque
@@ -81,17 +82,28 @@ class Pipeline:
         Wait for the pipeline to reach the specified status.
 
         :param expected_status: The status to wait for
-        :param timeout: Maximum time to wait in seconds. If None, waits forever (default: None)
+        :param timeout: Maximum time to wait in seconds. If None or non-finite,
+            defaults to 300 seconds.
         :raises TimeoutError: If the expected status is not reached within the timeout
         """
-        start_time = time.time()
+        if timeout is None:
+            timeout = 300
+        elif not math.isfinite(timeout) or timeout <= 0:
+            logging.warning(
+                "wait_for_status(%s) called with invalid timeout %r; defaulting to 300s",
+                expected_status.name,
+                timeout,
+            )
+            timeout = 300
+
+        start_time = time.monotonic()
 
         while True:
             current_status = self.status()
             if current_status == expected_status:
                 return
 
-            if timeout is not None and time.time() - start_time >= timeout:
+            if timeout is not None and time.monotonic() - start_time >= timeout:
                 raise TimeoutError(
                     f"Pipeline did not reach {expected_status.name} status within {timeout} seconds"
                 )
@@ -322,8 +334,7 @@ class Pipeline:
         :param force_stop: If True, the pipeline will be forcibly stopped after
             completion. False by default. No checkpoints will be made.
         :param timeout_s: Optional. The maximum time (in seconds) to wait for
-            the pipeline to complete. The default is None, which means wait
-            indefinitely.
+            the pipeline to complete. If None or non-finite, defaults to 3600 seconds.
 
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
@@ -336,20 +347,28 @@ class Pipeline:
         ]:
             raise RuntimeError("Pipeline must be running to wait for completion")
 
+        if timeout_s is None:
+            timeout_s = 3600.0
+        elif not math.isfinite(timeout_s) or timeout_s <= 0:
+            logging.warning(
+                "wait_for_completion called with invalid timeout %r; defaulting to 3600s",
+                timeout_s,
+            )
+            timeout_s = 3600.0
+
         start_time = time.monotonic()
 
         while True:
-            if timeout_s is not None:
-                elapsed = time.monotonic() - start_time
-                if elapsed > timeout_s:
-                    raise TimeoutError(
-                        f"timeout ({timeout_s}s) reached while waiting for"
-                        f" pipeline '{self.name}' to complete"
-                    )
-                logging.debug(
-                    f"waiting for pipeline {self.name} to complete: elapsed"
-                    f" time {elapsed}s, timeout: {timeout_s}s"
+            elapsed = time.monotonic() - start_time
+            if elapsed > timeout_s:
+                raise TimeoutError(
+                    f"timeout ({timeout_s}s) reached while waiting for"
+                    f" pipeline '{self.name}' to complete"
                 )
+            logging.debug(
+                f"waiting for pipeline {self.name} to complete: elapsed"
+                f" time {elapsed}s, timeout: {timeout_s}s"
+            )
 
             pipeline_complete: bool = self.is_complete()
             if pipeline_complete is None:
@@ -392,7 +411,8 @@ class Pipeline:
         have been processed).
 
         :param idle_interval_s: Idle interval duration (default is 5.0 seconds).
-        :param timeout_s: Timeout waiting for idle (default is 600.0 seconds).
+        :param timeout_s: Timeout waiting for idle. If None or non-finite,
+            defaults to 600.0 seconds.
         :param poll_interval_s: Polling interval, should be set substantially
             smaller than the idle interval (default is 0.2 seconds).
         :raises ValueError: If idle interval is larger than timeout, poll interval
@@ -400,12 +420,21 @@ class Pipeline:
         :raises RuntimeError: If the metrics are missing or the timeout was
             reached.
         """
-        if timeout_s is not None and idle_interval_s > timeout_s:
+        if timeout_s is None:
+            timeout_s = 600.0
+        elif not math.isfinite(timeout_s) or timeout_s <= 0:
+            logging.warning(
+                "wait_for_idle called with invalid timeout %r; defaulting to 600s",
+                timeout_s,
+            )
+            timeout_s = 600.0
+
+        if idle_interval_s > timeout_s:
             raise ValueError(
                 f"idle interval ({idle_interval_s}s) cannot be larger than"
                 f" timeout ({timeout_s}s)"
             )
-        if timeout_s is not None and poll_interval_s > timeout_s:
+        if poll_interval_s > timeout_s:
             raise ValueError(
                 f"poll interval ({poll_interval_s}s) cannot be larger than"
                 f" timeout ({timeout_s}s)"
@@ -451,7 +480,7 @@ metrics"""
                 return
 
             # Timeout
-            if timeout_s is not None and now_s - start_time_s >= timeout_s:
+            if now_s - start_time_s >= timeout_s:
                 raise RuntimeError(f"waiting for idle reached timeout ({timeout_s}s)")
             time.sleep(poll_interval_s)
 
@@ -476,6 +505,7 @@ metrics"""
         wait: bool = True,
         timeout_s: Optional[float] = None,
         ignore_deployment_error: bool = False,
+        observe_start: bool = False,
     ):
         """
         .. _start:
@@ -492,6 +522,8 @@ metrics"""
         :param wait: Set True to wait for the pipeline to start. True by default
         :param ignore_deployment_error: Set True to ignore deployment errors while waiting
             for START transition. False by default.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            moves away from STOPPED.
 
         :raises RuntimeError: If the pipeline is not in STOPPED state.
         """
@@ -502,6 +534,7 @@ metrics"""
             wait=wait,
             timeout_s=timeout_s,
             ignore_deployment_error=ignore_deployment_error,
+            observe_start=observe_start,
         )
 
     def start_paused(
@@ -509,13 +542,25 @@ metrics"""
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        observe_start: bool = False,
     ):
         """
         Starts the pipeline in the paused state.
+
+        :param bootstrap_policy: The bootstrap policy to use.
+        :param wait: Set True to wait for the pipeline to start. True by default.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to start.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            moves away from STOPPED.
         """
 
         return self.client.start_pipeline_as_paused(
-            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+            self.name,
+            bootstrap_policy=bootstrap_policy,
+            wait=wait,
+            timeout_s=timeout_s,
+            observe_start=observe_start,
         )
 
     def start_standby(
@@ -523,13 +568,25 @@ metrics"""
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        observe_start: bool = False,
     ):
         """
         Starts the pipeline in the standby state.
+
+        :param bootstrap_policy: The bootstrap policy to use.
+        :param wait: Set True to wait for the pipeline to start. True by default.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to start.
+        :param observe_start: If True and `wait` is False, wait until deployment status
+            moves away from STOPPED.
         """
 
         self.client.start_pipeline_as_standby(
-            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+            self.name,
+            bootstrap_policy=bootstrap_policy,
+            wait=wait,
+            timeout_s=timeout_s,
+            observe_start=observe_start,
         )
 
     def restart(
@@ -724,7 +781,7 @@ metrics"""
 
         :param wait: If true, will block until the checkpoint completes.
         :param timeout_s: The maximum time (in seconds) to wait for the
-            checkpoint to complete.
+            checkpoint to complete. If None or non-finite, defaults to 300 seconds.
 
         :return: The checkpoint sequence number.
 
@@ -736,7 +793,16 @@ metrics"""
         if not wait:
             return seq
 
-        start = time.time()
+        if timeout_s is None:
+            timeout_s = 300.0
+        elif not math.isfinite(timeout_s) or timeout_s <= 0:
+            logging.warning(
+                "checkpoint(wait=True) called with invalid timeout %r; defaulting to 300s",
+                timeout_s,
+            )
+            timeout_s = 300.0
+
+        start = time.monotonic()
 
         while True:
             elapsed = time.monotonic() - start
@@ -785,7 +851,8 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
         :param wait: If true, will block until the checkpoint sync operation
             completes.
         :param timeout_s: The maximum time (in seconds) to wait for the
-            checkpoint to complete syncing.
+            checkpoint to complete syncing. If None or non-finite, defaults to
+            300 seconds.
 
         :raises FelderaAPIError: If no checkpoints have been made.
         :raises RuntimeError: If syncing the checkpoint fails.
@@ -796,7 +863,16 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
         if not wait:
             return uuid
 
-        start = time.time()
+        if timeout_s is None:
+            timeout_s = 300.0
+        elif not math.isfinite(timeout_s) or timeout_s <= 0:
+            logging.warning(
+                "sync_checkpoint(wait=True) called with invalid timeout %r; defaulting to 300s",
+                timeout_s,
+            )
+            timeout_s = 300.0
+
+        start = time.monotonic()
 
         while True:
             elapsed = time.monotonic() - start

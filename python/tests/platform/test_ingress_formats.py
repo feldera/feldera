@@ -12,7 +12,9 @@ from .helper import (
     gen_pipeline_name,
     adhoc_query_json,
     create_pipeline,
+    wait_for_condition,
 )
+from tests import TEST_CLIENT
 
 
 def _ingress(
@@ -24,6 +26,7 @@ def _ingress(
     update_format: str = "raw",
     array: bool = False,
     content_type: str | None = None,
+    wait: bool = True,
 ):
     params = [f"format={format}", f"update_format={update_format}"]
     if array:
@@ -39,7 +42,16 @@ def _ingress(
         headers["Content-Type"] = (
             "application/json" if format == "json" else "text/plain"
         )
-    return http_request("POST", path, data=body.encode("utf-8"), headers=headers)
+    resp = http_request("POST", path, data=body.encode("utf-8"), headers=headers)
+
+    # Ingestion is asynchronous. For successful requests, wait for completion
+    # token processing so immediate query assertions don't race ingestion.
+    if wait and resp.status_code == HTTPStatus.OK:
+        token = (resp.json() or {}).get("token")
+        assert token, f"Expected completion token in ingress response: {resp.text}"
+        TEST_CLIENT.wait_for_token(pipeline, token, timeout_s=30.0)
+
+    return resp
 
 
 def _change_stream_start(pipeline: str, object_name: str):
@@ -60,7 +72,7 @@ def _read_json_events(resp, expected_count: int, timeout_s: float = 10.0):
     Read expected_count JSON events from a streaming response.
     """
     events = []
-    start = time.time()
+    start = time.monotonic()
     for line in resp.iter_lines():
         if not line:
             continue
@@ -71,7 +83,7 @@ def _read_json_events(resp, expected_count: int, timeout_s: float = 10.0):
             raise AssertionError(f"Invalid JSON line: {line!r} ({e})")
         if len(events) >= expected_count:
             break
-        if time.time() - start > timeout_s:
+        if time.monotonic() - start > timeout_s:
             raise TimeoutError(
                 f"Timeout reading events (wanted {expected_count}, got {len(events)})"
             )
@@ -84,7 +96,7 @@ class JsonLineReader:
         self._iter = resp.iter_lines()
 
     def read_events(self, n, timeout_s=10.0):
-        events, start = [], time.time()
+        events, start = [], time.monotonic()
         while len(events) < n:
             try:
                 line = next(self._iter)
@@ -92,7 +104,7 @@ class JsonLineReader:
                 # server closed the stream
                 break
             if not line:
-                if time.time() - start > timeout_s:
+                if time.monotonic() - start > timeout_s:
                     raise TimeoutError(
                         f"Timeout waiting for {n} events, got {len(events)}"
                     )
@@ -235,6 +247,23 @@ def test_json_ingress(pipeline_name):
     # Expect BAD_REQUEST due to parse error, but first and last ingested
     assert r.status_code == HTTPStatus.BAD_REQUEST, r.text
     assert "Errors parsing input data (1 errors)" in r.text
+
+    def _csv_partial_rows_visible() -> bool:
+        rows = adhoc_query_json(pipeline_name, "select * from t1")
+        has_15 = any(row["c1"] == 15 for row in rows)
+        has_16 = any(row["c1"] == 16 for row in rows)
+        return has_15 and has_16
+
+    # This test intentionally uses raw REST ingress to validate BAD_REQUEST
+    # behavior, so it does not call FelderaClient.push_to_pipeline(wait=True).
+    # Wait explicitly until partially accepted rows are query-visible.
+    wait_for_condition(
+        "csv partial-ingest rows become visible after parse error",
+        _csv_partial_rows_visible,
+        timeout_s=10,
+        sleep_s=0.2,
+    )
+
     got = adhoc_query_json(pipeline_name, "select * from t1 order by c1, c2, c3")
     # Verify 15 & 16 present along with earlier rows (20,30,60, etc.)
     assert any(row["c1"] == 15 for row in got)

@@ -87,6 +87,17 @@ Key Concepts
 
       - This tells Feldera to go ahead and start processing the data.
 
+* :meth:`.FelderaClient.wait_for_program_success`
+   - Waits for program compilation to finish successfully.
+   - Useful when creating/updating pipelines asynchronously (``wait=False``) and
+     then waiting for a specific compiled version before starting.
+
+* :meth:`.FelderaClient.wait_for_condition`
+   - Generic bounded polling helper for asynchronous workflows.
+   - Repeatedly evaluates a user-defined predicate until it returns ``True`` or timeout is reached.
+   - Useful when the predicate checks API-accessible fields/statuses (for
+     example deployment or runtime status) or query-visible state.
+
 * :meth:`.Pipeline.wait_for_completion`
    - Blocks this pipeline until completion, i.e., until the end-of-file (EOI)
      has been reached for all input sources.

@@ -1,7 +1,6 @@
 # TODO: these tests should be part of runtime tests
 
 import os
-import time
 import json
 import uuid
 from http import HTTPStatus
@@ -16,7 +15,9 @@ from .helper import (
     start_pipeline,
     gen_pipeline_name,
     adhoc_query_json,
+    wait_for_condition,
 )
+from tests import TEST_CLIENT
 
 
 def _ingress_with_token(
@@ -41,26 +42,6 @@ def _ingress_with_token(
     token = body.get("token")
     assert token, f"Expected completion token in response: {body}"
     return token
-
-
-def _wait_token(pipeline: str, token: str, timeout_s: float = 30.0):
-    path = api_url(f"/pipelines/{pipeline}/completion_status?token={token}")
-    deadline = time.time() + timeout_s
-    while True:
-        r = get(path)
-        assert r.status_code in (HTTPStatus.OK, HTTPStatus.ACCEPTED), (
-            r.status_code,
-            r.text,
-        )
-        status = r.json().get("status")
-        if status == "complete":
-            return
-        assert status == "inprogress"
-        if time.time() > deadline:
-            raise TimeoutError(
-                f"Timed out waiting for completion token={token} (last status={status})"
-            )
-        time.sleep(0.1)
 
 
 def _count_for_value(pipeline: str, value: int):
@@ -96,7 +77,7 @@ def test_completion_tokens(pipeline_name):
             format="json",
             update_format="raw",
         )
-        _wait_token(pipeline_name, token)
+        TEST_CLIENT.wait_for_token(pipeline_name, token, timeout_s=30.0)
         assert _count_for_value(pipeline_name, i) == 1, f"Value {i} expected count 1"
 
 
@@ -181,7 +162,7 @@ WITH (
             format="json",
             update_format="raw",
         )
-        _wait_token(pipeline_name, token)
+        TEST_CLIENT.wait_for_token(pipeline_name, token, timeout_s=30.0)
         assert _count_for_value(pipeline_name, i) == 1
 
     # Start the datagen connector
@@ -192,7 +173,12 @@ WITH (
         ),
     )
     assert r.status_code == HTTPStatus.OK, (r.status_code, r.text)
-    time.sleep(1.0)  # Allow connector to emit its record(s)
+    wait_for_condition(
+        "datagen connector emits at least one row",
+        lambda: _count_for_value(pipeline_name, 0) >= 2,
+        timeout_s=10,
+        sleep_s=0.2,
+    )
 
     # Obtain a completion token for the datagen connector
     r = get(
@@ -204,7 +190,7 @@ WITH (
     token = r.json().get("token")
     assert token, f"Missing token in connector completion_token response: {r.text}"
 
-    _wait_token(pipeline_name, token)
+    TEST_CLIENT.wait_for_token(pipeline_name, token, timeout_s=30.0)
 
     # Datagen (limit 1) produces c1=0 row; we inserted c1=0 already -> expected count becomes 2
     rows = adhoc_query_json(pipeline_name, "select count(*) as c from t1 where c1 = 0")
