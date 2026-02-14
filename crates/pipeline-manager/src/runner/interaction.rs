@@ -24,10 +24,10 @@ use crate::db::types::resources_status::ResourcesStatus;
 use actix_http::encoding::Decoder;
 use feldera_types::runtime_status::RuntimeStatus;
 
-/// Max non-streaming HTTP response body returned by the pipeline.
+/// Max non-streaming decompressed HTTP response body size returned by the pipeline.
 /// The awc default is 2MiB, which is not enough to, for example, retrieve
 /// a large circuit profile.
-const RESPONSE_SIZE_LIMIT: usize = 20 * 1024 * 1024;
+const RESPONSE_SIZE_LIMIT: usize = 100 * 1024 * 1024;
 
 pub(crate) struct CachedPipelineDescr {
     pipeline: ExtendedPipelineDescrMonitoring,
@@ -498,13 +498,18 @@ impl RunnerInteraction {
         let mut new_request = client
             .request(request.method().clone(), &url)
             .timeout(timeout)
-            .force_close();
+            .force_close()
+            .no_decompress();
 
-        // Add headers of the original request
+        // Do not request compressed responses from the pipeline process for
+        // streaming endpoints: `.no_decompress()` above suppresses awc's own
+        // `Accept-Encoding` header, and we strip the client's `Accept-Encoding`
+        // below.  Compression causes gzip frame buffering that blocks streaming
+        // clients (see the `Content-Encoding: identity` override below).
         for header in request
             .headers()
             .into_iter()
-            .filter(|(h, _)| *h != "connection")
+            .filter(|(h, _)| *h != "connection" && *h != "accept-encoding")
         {
             new_request = new_request.append_header(header);
         }
