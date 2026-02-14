@@ -24,8 +24,8 @@ from tests import enterprise_only
 
 
 def _wait_for_stopped_with_error(name: str, timeout_s: float = 90.0):
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
         r = get_pipeline(name, "status")
         if r.status_code == HTTPStatus.OK:
             obj = r.json()
@@ -131,8 +131,8 @@ def test_pipeline_start_without_compiling(pipeline_name):
     # TODO reduce with parallel compilation
     # 30minutes because we compile a lot of tests in parallel so things might be queued for along time
     max_deadline = 1800
-    deadline = time.time() + max_deadline
-    while time.time() < deadline:
+    deadline = time.monotonic() + max_deadline
+    while time.monotonic() < deadline:
         obj = get_pipeline(pipeline_name, "status").json()
         status = obj.get("program_status")
         if status not in ("Pending", "CompilingSql"):

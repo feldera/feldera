@@ -72,7 +72,7 @@ def _read_json_events(resp, expected_count: int, timeout_s: float = 10.0):
     Read expected_count JSON events from a streaming response.
     """
     events = []
-    start = time.time()
+    start = time.monotonic()
     for line in resp.iter_lines():
         if not line:
             continue
@@ -83,7 +83,7 @@ def _read_json_events(resp, expected_count: int, timeout_s: float = 10.0):
             raise AssertionError(f"Invalid JSON line: {line!r} ({e})")
         if len(events) >= expected_count:
             break
-        if time.time() - start > timeout_s:
+        if time.monotonic() - start > timeout_s:
             raise TimeoutError(
                 f"Timeout reading events (wanted {expected_count}, got {len(events)})"
             )
@@ -96,7 +96,7 @@ class JsonLineReader:
         self._iter = resp.iter_lines()
 
     def read_events(self, n, timeout_s=10.0):
-        events, start = [], time.time()
+        events, start = [], time.monotonic()
         while len(events) < n:
             try:
                 line = next(self._iter)
@@ -104,7 +104,7 @@ class JsonLineReader:
                 # server closed the stream
                 break
             if not line:
-                if time.time() - start > timeout_s:
+                if time.monotonic() - start > timeout_s:
                     raise TimeoutError(
                         f"Timeout waiting for {n} events, got {len(events)}"
                     )

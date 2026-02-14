@@ -96,14 +96,14 @@ class Pipeline:
             )
             timeout = 300
 
-        start_time = time.time()
+        start_time = time.monotonic()
 
         while True:
             current_status = self.status()
             if current_status == expected_status:
                 return
 
-            if timeout is not None and time.time() - start_time >= timeout:
+            if timeout is not None and time.monotonic() - start_time >= timeout:
                 raise TimeoutError(
                     f"Pipeline did not reach {expected_status.name} status within {timeout} seconds"
                 )
