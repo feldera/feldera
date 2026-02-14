@@ -65,9 +65,16 @@ use uuid::Uuid;
 use crate::{
     config::{InputEndpointConfig, OutputEndpointConfig},
     program_schema::SqlIdentifier,
-    runtime_status::RuntimeDesiredStatus,
+    runtime_status::{ExtendedRuntimeStatus, ExtendedRuntimeStatusError, RuntimeDesiredStatus},
     suspend::TemporarySuspendError,
 };
+
+/// `/coordination/status` update, streamed by pipeline to coordinator.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct CoordinationStatus {
+    pub incarnation_uuid: Uuid,
+    pub status: Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError>,
+}
 
 /// `/coordination/activate` request, sent by coordinator to pipeline to
 /// transition out of [RuntimeDesiredStatus::Coordination].
@@ -293,4 +300,17 @@ pub struct Completion {
     /// in step `n` is fully processed when `total_completed_steps >= n`.
     #[serde(rename = "c")]
     pub total_completed_steps: Step,
+}
+
+/// `/coordination/restart` arguments.
+///
+/// This pipeline request restarts the pipeline process.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RestartArgs {
+    /// The incarnation UUID of the pipeline process to restart.
+    ///
+    /// If this doesn't match the incarnation UUID of the running pipeline, then
+    /// the request returns an error (since it has presumably already
+    /// restarted).
+    pub incarnation_uuid: Uuid,
 }

@@ -2088,6 +2088,7 @@ impl CircuitThread {
             input_statistics,
             output_statistics,
             pipeline_diff,
+            incarnation_uuid,
         } = controller_init;
 
         let storage = circuit_config
@@ -2221,6 +2222,7 @@ impl CircuitThread {
             &output_statistics,
             step_receiver,
             checkpoint_receiver,
+            incarnation_uuid,
         )?;
 
         controller
@@ -3772,6 +3774,9 @@ pub struct ControllerInit {
     /// When starting from a checkpoint, contains the diff between the checkpointed and the
     /// current pipeline config computed using `compute_pipeline_diff`
     pub pipeline_diff: Option<PipelineDiff>,
+
+    /// The incarnation UUID to report in controller statistics.
+    pub incarnation_uuid: Uuid,
 }
 
 impl ControllerInit {
@@ -3790,6 +3795,7 @@ impl ControllerInit {
             input_statistics: HashMap::new(),
             output_statistics: HashMap::new(),
             pipeline_diff: None,
+            incarnation_uuid: Uuid::nil(),
         })
     }
 
@@ -3961,7 +3967,12 @@ impl ControllerInit {
             processed_records,
             initial_start_time: Some(initial_start_time),
             pipeline_diff: Some(pipeline_diff),
+            incarnation_uuid: Uuid::nil(),
         })
+    }
+
+    pub fn set_incarnation_uuid(&mut self, incarnation_uuid: Uuid) {
+        self.incarnation_uuid = incarnation_uuid;
     }
 
     fn circuit_config(
@@ -4916,11 +4927,13 @@ impl ControllerInner {
         output_statistics: &HashMap<String, CheckpointOutputEndpointMetrics>,
         step_receiver: tokio::sync::watch::Receiver<StepStatus>,
         checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
+        incarnation_uuid: Uuid,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(
             config.clone(),
             processed_records,
             initial_start_time,
+            incarnation_uuid,
         ));
         let circuit_thread_parker = Parker::new();
         let backpressure_thread_parker = Parker::new();
