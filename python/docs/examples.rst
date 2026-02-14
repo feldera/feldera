@@ -245,6 +245,29 @@ To check the status of this completion token use :meth:`.Pipeline.completion_tok
     # wait until the pipeline processes this completion token
     pipeline.wait_for_token(token)
 
+Waiting for a Custom Condition
+==============================
+
+For asynchronous workflows, you can use :meth:`.FelderaClient.wait_for_condition`
+to wait for any observable state transition.
+
+.. code-block:: python
+
+    from feldera.enums import PipelineFieldSelector
+
+    # Start asynchronously and wait for status transition explicitly
+    client.start_pipeline("my_pipeline", wait=False)
+
+    client.wait_for_condition(
+        "pipeline reaches running",
+        lambda: client.get_pipeline(
+            "my_pipeline", PipelineFieldSelector.STATUS
+        ).deployment_status
+        == "Running",
+        timeout_s=30.0,
+        poll_interval_s=0.2,
+    )
+
 Executing ad-hoc SQL Queries
 ============================
 

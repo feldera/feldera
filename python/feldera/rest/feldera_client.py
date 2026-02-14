@@ -276,6 +276,71 @@ class FelderaClient:
             poll_interval_s=poll_interval_s,
         )
 
+    def wait_for_condition(
+        self,
+        description: str,
+        predicate: Callable[[], bool],
+        timeout_s: float | None = 30.0,
+        poll_interval_s: float = 0.2,
+    ) -> None:
+        """
+        Wait until ``predicate`` returns ``True``.
+
+        This is a generic polling utility for asynchronous operations where
+        callers need to wait for an observable condition before continuing.
+        Typical usage:
+
+        .. code-block:: python
+
+            client.wait_for_condition(
+                "pipeline reaches running",
+                lambda: client.get_pipeline(
+                    name, PipelineFieldSelector.STATUS
+                ).deployment_status
+                == "Running",
+                timeout_s=30.0,
+                poll_interval_s=0.2,
+            )
+
+        :param description: Human-readable description used in timeout/errors.
+        :param predicate: Callable returning truthy when condition is met.
+        :param timeout_s: Maximum wait time in seconds. If None or invalid,
+            defaults to 30 seconds.
+        :param poll_interval_s: Poll interval in seconds. If invalid,
+            defaults to 0.2 seconds.
+        :raises TimeoutError: If predicate does not become true in time.
+        """
+        timeout_s = _normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=30.0,
+            operation=f"wait_for_condition({description})",
+        )
+        if not math.isfinite(poll_interval_s) or poll_interval_s <= 0:
+            logging.warning(
+                "wait_for_condition(%s) called with invalid poll interval %r; defaulting to 0.2s",
+                description,
+                poll_interval_s,
+            )
+            poll_interval_s = 0.2
+
+        start = time.monotonic()
+        deadline = start + timeout_s
+        attempt = 0
+        while True:
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"Timeout waiting for condition: {description}")
+            attempt += 1
+            try:
+                result = predicate()
+            except Exception as e:  # noqa: BLE001
+                logging.debug(
+                    "Predicate raised %s (attempt %d), continuing", e, attempt
+                )
+                result = False
+            if result:
+                return
+            time.sleep(poll_interval_s)
+
     def __wait_for_pipeline_state(
         self,
         pipeline_name: str,
