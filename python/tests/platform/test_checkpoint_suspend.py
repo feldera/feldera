@@ -222,7 +222,7 @@ def test_suspend_enterprise(pipeline_name):
     stable_since = [None]
 
     def no_new_records_for_5s():
-        now = time.time()
+        now = time.monotonic()
         current = _adhoc_count(pipeline_name)
         if current == final_count:
             if stable_since[0] is None:

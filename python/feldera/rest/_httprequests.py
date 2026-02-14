@@ -79,21 +79,21 @@ class HttpRequests:
             )
             max_wait_seconds = 300
 
-        start_time = time.time()
+        start_time = time.monotonic()
         check_interval = 5
 
         logging.info(
             f"Waiting for cluster health recovery (max {max_wait_seconds}s)..."
         )
 
-        while time.time() - start_time < max_wait_seconds:
+        while time.monotonic() - start_time < max_wait_seconds:
             if self._check_cluster_health():
-                elapsed = time.time() - start_time
+                elapsed = time.monotonic() - start_time
                 logging.info(f"Instance health recovered after {elapsed:.1f}s")
                 return True
 
             time.sleep(check_interval)
-            elapsed = time.time() - start_time
+            elapsed = time.monotonic() - start_time
             logging.debug(
                 f"Still waiting for health recovery ({elapsed:.1f}s elapsed)..."
             )

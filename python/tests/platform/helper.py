@@ -265,11 +265,11 @@ def wait_for_condition(
         )
         timeout_s = 30.0
 
-    start = time.time()
+    start = time.monotonic()
     deadline = start + timeout_s
     attempt = 0
     while True:
-        now = time.time()
+        now = time.monotonic()
         if now > deadline:
             raise TimeoutError(f"Timeout waiting for condition: {description}")
         attempt += 1

@@ -99,7 +99,7 @@ class TestCheckpointSync(SharedTestPipeline):
         self.pipeline.input_json("t0", data)
         self.pipeline.execute("INSERT INTO t0 VALUES (21, 'exists')")
 
-        start = time.time()
+        start = time.monotonic()
         timeout = 5
 
         while True:
@@ -107,7 +107,7 @@ class TestCheckpointSync(SharedTestPipeline):
             if processed == total:
                 break
 
-            if time.time() - start > timeout:
+            if time.monotonic() - start > timeout:
                 raise TimeoutError(
                     f"timed out while waiting for pipeline to process {total} records"
                 )
