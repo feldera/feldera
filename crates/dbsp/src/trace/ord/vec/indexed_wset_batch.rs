@@ -564,6 +564,10 @@ where
         self.cursor.child.current_diff()
     }
 
+    fn weight_checked(&mut self) -> &R {
+        self.weight()
+    }
+
     fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R)) {
         while self.val_valid() {
             logic(self.val(), self.cursor.child.current_diff());

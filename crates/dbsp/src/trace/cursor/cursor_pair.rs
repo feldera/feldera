@@ -333,6 +333,17 @@ where
         &self.weight
     }
 
+    fn weight_checked(&mut self) -> &R {
+        debug_assert!(self.val_valid());
+        debug_assert!(!self.weight.is_zero());
+
+        if TypeId::of::<T>() == TypeId::of::<()>() {
+            &self.weight
+        } else {
+            panic!("CursorPair::weight_checked called on non-unit timestamp type");
+        }
+    }
+
     fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R))
     where
         T: PartialEq<()>,

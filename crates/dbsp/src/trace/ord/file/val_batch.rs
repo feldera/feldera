@@ -26,6 +26,7 @@ use feldera_storage::{FileReader, StoragePath};
 use rand::{Rng, seq::index::sample};
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
+use std::any::TypeId;
 use std::sync::Arc;
 use std::{
     fmt,
@@ -528,18 +529,26 @@ where
     where
         T: PartialEq<()>,
     {
-        debug_assert!(self.key_valid());
-        debug_assert!(self.val_valid());
-        self.weight.set_zero();
+        self.weight_checked()
+    }
 
-        self.timediff_factory.with(&mut |timediffs| {
-            for timediff in self.times(timediffs).dyn_iter() {
-                self.weight.add_assign(timediff.snd());
-            }
-        });
+    fn weight_checked(&mut self) -> &R {
+        if TypeId::of::<T>() == TypeId::of::<()>() {
+            debug_assert!(self.key_valid());
+            debug_assert!(self.val_valid());
+            self.weight.set_zero();
 
-        debug_assert!(!self.weight.is_zero());
-        &self.weight
+            self.timediff_factory.with(&mut |timediffs| {
+                for timediff in self.times(timediffs).dyn_iter() {
+                    self.weight.add_assign(timediff.snd());
+                }
+            });
+
+            debug_assert!(!self.weight.is_zero());
+            &self.weight
+        } else {
+            panic!("FileValCursor::weight_checked called on non-unit timestamp type");
+        }
     }
 
     fn key_valid(&self) -> bool {

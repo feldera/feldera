@@ -176,6 +176,18 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
     where
         T: PartialEq<()>;
 
+    /// Returns the weight associated with the current key/value pair is `T` is `()`;
+    /// panics otherwise.
+    ///
+    /// Can be used in contexts where the weight is known to be `()` at runtime, but
+    /// not at compile time. This is more efficient and ergonomic than using [`Self::map_times`]
+    /// to compute the weight.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `T` is not `()`.
+    fn weight_checked(&mut self) -> &R;
+
     /// Apply a function to all values associated with the current key.
     fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R))
     where
@@ -444,6 +456,10 @@ where
         (**self).weight()
     }
 
+    fn weight_checked(&mut self) -> &R {
+        (**self).weight_checked()
+    }
+
     fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R))
     where
         T: PartialEq<()>,
@@ -621,6 +637,10 @@ where
         T: PartialEq<()>,
     {
         self.0.weight()
+    }
+
+    fn weight_checked(&mut self) -> &R {
+        self.0.weight_checked()
     }
 
     fn key_valid(&self) -> bool {

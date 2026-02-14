@@ -25,6 +25,7 @@ use feldera_storage::{FileReader, StoragePath};
 use rand::{Rng, seq::index::sample};
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
+use std::any::TypeId;
 use std::{
     fmt::{self, Debug},
     sync::Arc,
@@ -494,15 +495,23 @@ where
     where
         T: PartialEq<()>,
     {
-        let val_cursor = unsafe {
-            self.cursor
-                .next_column()
-                .unwrap_storage()
-                .first()
-                .unwrap_storage()
-        };
-        unsafe { val_cursor.aux(&mut self.diff) }.unwrap();
-        self.diff.as_ref()
+        self.weight_checked()
+    }
+
+    fn weight_checked(&mut self) -> &R {
+        if TypeId::of::<T>() == TypeId::of::<()>() {
+            let val_cursor = unsafe {
+                self.cursor
+                    .next_column()
+                    .unwrap_storage()
+                    .first()
+                    .unwrap_storage()
+            };
+            unsafe { val_cursor.aux(&mut self.diff) }.unwrap();
+            self.diff.as_ref()
+        } else {
+            panic!("FileKeyCursor::weight_checked called on non-unit timestamp type");
+        }
     }
 
     fn key_valid(&self) -> bool {
