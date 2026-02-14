@@ -93,7 +93,7 @@ pub use sample::{MAX_QUANTILES, MAX_SAMPLE_SIZE};
 pub use sum::Sum;
 pub use time_series::OrdPartitionedIndexedZSet;
 pub use transaction_z1::TransactionZ1;
-pub use z1::{DelayedFeedback, DelayedNestedFeedback, Z1, Z1Nested};
+pub use z1::{DelayedFeedback, Z1};
 
 /// Returns a `NoPersistentId` error if `persistent_id` is `None`.
 fn require_persistent_id<'a>(

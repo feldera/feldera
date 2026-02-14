@@ -2,7 +2,7 @@
 
 use crate::Runtime;
 use crate::circuit::circuit_builder::StreamId;
-use crate::circuit::metadata::{MEMORY_ALLOCATIONS_COUNT, SIZE_DISTRIBUTION, STATE_RECORDS_COUNT};
+use crate::circuit::metadata::{MEMORY_ALLOCATIONS_COUNT, STATE_RECORDS_COUNT};
 use crate::{
     Error, NumEntries,
     algebra::HasZero,
@@ -19,14 +19,13 @@ use crate::{
     storage::file::to_bytes,
 };
 use feldera_storage::{FileCommitter, StoragePath};
-use size_of::{Context, SizeOf};
+use size_of::SizeOf;
 use std::sync::Arc;
 use std::{borrow::Cow, mem::replace};
 
 use super::require_persistent_id;
 
 circuit_cache_key!(DelayedId<C, D>(StreamId => Stream<C, D>));
-circuit_cache_key!(NestedDelayedId<C, D>(StreamId => Stream<C, D>));
 
 /// Like [`FeedbackConnector`] but specialized for [`Z1`] feedback operator.
 ///
@@ -99,47 +98,6 @@ where
     }
 }
 
-/// Like [`FeedbackConnector`] but specialized for [`Z1Nested`] feedback
-/// operator.
-///
-/// Use this API instead of the low-level [`Circuit::add_feedback`] API to
-/// create feedback loops with `Z1Nested` operator.  In addition to being more
-/// concise, this API takes advantage of [caching](`crate::circuit::cache`).
-pub struct DelayedNestedFeedback<C, D> {
-    feedback: FeedbackConnector<C, D, D, Z1Nested<D>>,
-    output: Stream<C, D>,
-}
-
-impl<C, D> DelayedNestedFeedback<C, D>
-where
-    C: Circuit,
-    D: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
-{
-    /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
-    /// close the loop.
-    pub fn new(circuit: &C) -> Self
-    where
-        D: HasZero,
-    {
-        let (output, feedback) = circuit.add_feedback(Z1Nested::new(D::zero()));
-        Self { feedback, output }
-    }
-
-    /// Output stream of the `Z1Nested` operator.
-    pub fn stream(&self) -> &Stream<C, D> {
-        &self.output
-    }
-
-    /// Connect `input` stream to the input of the `Z1Nested` operator.
-    pub fn connect(self, input: &Stream<C, D>) {
-        let Self { feedback, output } = self;
-        let circuit = output.circuit().clone();
-
-        feedback.connect_with_preference(input, OwnershipPreference::STRONGLY_PREFER_OWNED);
-        circuit.cache_insert(NestedDelayedId::new(input.stream_id()), output);
-    }
-}
-
 impl<C, D> Stream<C, D>
 where
     C: Circuit,
@@ -172,23 +130,6 @@ where
 
                 self.circuit()
                     .add_unary_operator(Z1::new(initial.clone()), self)
-                    .set_persistent_id(delay_pid.as_deref())
-            })
-            .clone()
-    }
-
-    /// Applies [`Z1Nested`] operator to `self`.
-    #[track_caller]
-    pub fn delay_nested(&self) -> Stream<C, D>
-    where
-        D: Eq + Clone + HasZero + SizeOf + NumEntries + 'static,
-    {
-        self.circuit()
-            .cache_get_or_insert_with(NestedDelayedId::new(self.stream_id()), || {
-                let delay_pid = self.get_persistent_id().map(|pid| format!("{pid}.delay"));
-
-                self.circuit()
-                    .add_unary_operator(Z1Nested::new(D::zero()), self)
                     .set_persistent_id(delay_pid.as_deref())
             })
             .clone()
@@ -391,217 +332,11 @@ where
     }
 }
 
-/// z^-1 operator over streams of streams.
-///
-/// The operator stores a complete nested stream consumed at the last iteration
-/// of the parent clock and outputs it at the next parent clock cycle.
-/// It outputs a stream of zeros in the first parent clock tick.
-///
-/// One important subtlety is that mathematically speaking nested streams are
-/// infinite, but we can only compute and store finite prefixes of such
-/// streams.  When asked to produce output beyond the stored prefix, the z^-1
-/// operator repeats the last value in the stored prefix.  The assumption
-/// here is that the circuit was evaluated to a fixed point at the previous
-/// parent timestamp, and hence the rest of the stream will contain the same
-/// fixed point value.  This is not generally true for all circuits, and
-/// users should keep this in mind when instantiating the operator.
-///
-/// It is a [strict
-/// operator](`crate::circuit::operator_traits::StrictOperator`).
-///
-/// # Examples
-///
-/// Input (one row per parent timestamps):
-///
-/// ```text
-/// 1 2 3 4
-/// 1 1 1 1 1
-/// 2 2 2 0 0
-/// ```
-///
-/// Output:
-///
-/// ```text
-/// 0 0 0 0
-/// 1 2 3 4 4
-/// 1 1 1 1 1
-/// ```
-pub struct Z1Nested<T> {
-    zero: T,
-    timestamp: usize,
-    values: Vec<T>,
-}
-
-impl<T> Z1Nested<T> {
-    const fn new(zero: T) -> Self {
-        Self {
-            zero,
-            timestamp: 0,
-            values: Vec::new(),
-        }
-    }
-
-    fn reset(&mut self) {
-        self.timestamp = 0;
-        self.values.clear();
-    }
-}
-
-impl<T> Operator for Z1Nested<T>
-where
-    T: Eq + SizeOf + NumEntries + Clone + 'static,
-{
-    fn name(&self) -> Cow<'static, str> {
-        Cow::from("Z^-1 (nested)")
-    }
-
-    fn clock_start(&mut self, scope: Scope) {
-        if scope == 0 {
-            self.values.truncate(self.timestamp);
-        }
-        self.timestamp = 0;
-    }
-
-    fn clock_end(&mut self, scope: Scope) {
-        if scope > 0 {
-            self.reset();
-        }
-    }
-
-    fn metadata(&self, meta: &mut OperatorMeta) {
-        let total_size: usize = self
-            .values
-            .iter()
-            .map(|batch| batch.num_entries_deep())
-            .sum();
-
-        let batch_sizes = self
-            .values
-            .iter()
-            .map(|batch| MetaItem::Int(batch.num_entries_deep()))
-            .collect();
-
-        let total_bytes = {
-            let mut context = Context::new();
-            for value in &self.values {
-                value.size_of_with_context(&mut context);
-            }
-            context.total_size()
-        };
-
-        meta.extend(metadata! {
-            STATE_RECORDS_COUNT => MetaItem::Count(total_size),
-            SIZE_DISTRIBUTION => MetaItem::Array(batch_sizes),
-            ALLOCATED_MEMORY_BYTES => MetaItem::bytes(total_bytes.total_bytes()),
-            USED_MEMORY_BYTES => MetaItem::bytes(total_bytes.used_bytes()),
-            MEMORY_ALLOCATIONS_COUNT => MetaItem::Count(total_bytes.distinct_allocations()),
-            SHARED_MEMORY_BYTES => MetaItem::bytes(total_bytes.shared_bytes()),
-        });
-    }
-
-    fn fixedpoint(&self, scope: Scope) -> bool {
-        if scope == 0 {
-            self.values
-                .iter()
-                .skip(self.timestamp - 1)
-                .all(|v| *v == self.zero)
-        } else {
-            false
-        }
-    }
-}
-
-impl<T> UnaryOperator<T, T> for Z1Nested<T>
-where
-    T: Eq + SizeOf + NumEntries + Clone + 'static,
-{
-    async fn eval(&mut self, i: &T) -> T {
-        debug_assert!(self.timestamp <= self.values.len());
-
-        if self.timestamp == self.values.len() {
-            self.values.push(self.zero.clone());
-        } else if self.timestamp == self.values.len() - 1 {
-            self.values.push(self.values.last().unwrap().clone());
-        }
-
-        let result = replace(&mut self.values[self.timestamp], i.clone());
-
-        self.timestamp += 1;
-        result
-    }
-
-    async fn eval_owned(&mut self, i: T) -> T {
-        debug_assert!(self.timestamp <= self.values.len());
-
-        if self.timestamp == self.values.len() {
-            self.values.push(self.zero.clone());
-        } else if self.timestamp == self.values.len() - 1 {
-            self.values.push(self.values.last().unwrap().clone());
-        }
-
-        let result = replace(&mut self.values[self.timestamp], i);
-        self.timestamp += 1;
-
-        result
-    }
-
-    fn input_preference(&self) -> OwnershipPreference {
-        OwnershipPreference::PREFER_OWNED
-    }
-}
-
-impl<T> StrictOperator<T> for Z1Nested<T>
-where
-    T: Eq + SizeOf + NumEntries + Clone + 'static,
-{
-    fn get_output(&mut self) -> T {
-        if self.timestamp >= self.values.len() {
-            assert_eq!(self.timestamp, self.values.len());
-            self.values.push(self.zero.clone());
-        } else if self.timestamp == self.values.len() - 1 {
-            self.values.push(self.values.last().unwrap().clone())
-        }
-
-        replace(
-            // Safe due to the check above.
-            unsafe { self.values.get_unchecked_mut(self.timestamp) },
-            self.zero.clone(),
-        )
-    }
-
-    fn get_final_output(&mut self) -> T {
-        self.get_output()
-    }
-}
-
-impl<T> StrictUnaryOperator<T, T> for Z1Nested<T>
-where
-    T: Eq + SizeOf + NumEntries + Clone + 'static,
-{
-    async fn eval_strict(&mut self, i: &T) {
-        debug_assert!(self.timestamp < self.values.len());
-
-        self.values[self.timestamp] = i.clone();
-        self.timestamp += 1;
-    }
-
-    async fn eval_strict_owned(&mut self, i: T) {
-        debug_assert!(self.timestamp < self.values.len());
-
-        self.values[self.timestamp] = i;
-        self.timestamp += 1;
-    }
-
-    fn input_preference(&self) -> OwnershipPreference {
-        OwnershipPreference::PREFER_OWNED
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::{
         circuit::operator_traits::{Operator, StrictOperator, StrictUnaryOperator, UnaryOperator},
-        operator::{Z1, Z1Nested},
+        operator::Z1,
     };
 
     #[tokio::test]
@@ -647,82 +382,5 @@ mod test {
         z1.clock_end(0);
 
         assert_eq!(res, expected_result);
-    }
-
-    #[tokio::test]
-    async fn z1_nested_test() {
-        let mut z1 = Z1Nested::new(0);
-
-        // Test `UnaryOperator` API.
-
-        z1.clock_start(1);
-
-        let mut res = Vec::new();
-        z1.clock_start(0);
-        res.push(z1.eval_owned(1).await);
-        res.push(z1.eval(&2).await);
-        res.push(z1.eval(&3).await);
-        z1.clock_end(0);
-        assert_eq!(res.as_slice(), &[0, 0, 0]);
-
-        let mut res = Vec::new();
-        z1.clock_start(0);
-        res.push(z1.eval_owned(4).await);
-        res.push(z1.eval_owned(5).await);
-        z1.clock_end(0);
-        assert_eq!(res.as_slice(), &[1, 2]);
-
-        let mut res = Vec::new();
-        z1.clock_start(0);
-        res.push(z1.eval_owned(6).await);
-        res.push(z1.eval_owned(7).await);
-        res.push(z1.eval(&8).await);
-        res.push(z1.eval(&9).await);
-        z1.clock_end(0);
-        assert_eq!(res.as_slice(), &[4, 5, 5, 5]);
-
-        z1.clock_end(1);
-
-        // Test `StrictUnaryOperator` API.
-        z1.clock_start(1);
-
-        let mut res = Vec::new();
-        z1.clock_start(0);
-        res.push(z1.get_output());
-        z1.eval_strict(&1).await;
-        res.push(z1.get_output());
-        z1.eval_strict(&2).await;
-        res.push(z1.get_output());
-        z1.eval_strict(&3).await;
-        z1.clock_end(0);
-        assert_eq!(res.as_slice(), &[0, 0, 0]);
-
-        let mut res = Vec::new();
-
-        z1.clock_start(0);
-        res.push(z1.get_output());
-        z1.eval_strict_owned(4).await;
-        res.push(z1.get_output());
-        z1.eval_strict_owned(5).await;
-        z1.clock_end(0);
-
-        assert_eq!(res.as_slice(), &[1, 2]);
-
-        let mut res = Vec::new();
-
-        z1.clock_start(0);
-        res.push(z1.get_output());
-        z1.eval_strict_owned(6).await;
-        res.push(z1.get_output());
-        z1.eval_strict_owned(7).await;
-        res.push(z1.get_output());
-        z1.eval_strict_owned(8).await;
-        res.push(z1.get_output());
-        z1.eval_strict_owned(9).await;
-        z1.clock_end(0);
-
-        assert_eq!(res.as_slice(), &[4, 5, 5, 5]);
-
-        z1.clock_end(1);
     }
 }

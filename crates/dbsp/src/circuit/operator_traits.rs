@@ -208,10 +208,9 @@ pub trait Operator: 'static {
     ///
     /// # Warning
     ///
-    /// Two operators currently violate this requirement:
-    /// [`Z1`](`crate::operator::Z1`) and
-    /// [`Z1Nested`](`crate::operator::Z1Nested`). The latter will get phased
-    /// out soon.  The former is work-in-progress. It can be safely used inside
+    /// One operator currently violates this requirement:
+    /// [`Z1`](`crate::operator::Z1`)
+    /// It can be safely used inside
     /// nested circuits when carrying changes to collections across iterations
     /// of the fixed point computation, but not as part of an integrator circuit
     /// ([`Stream::integrate`](`crate::circuit::Stream::integrate`)).
@@ -532,11 +531,9 @@ where
 /// a strict operator can be used as part of a feedback loop where its output is
 /// needed before input for the current timestamp is available.
 ///
-/// The only strict operators that DBSP makes available are [Z1] and its variant
-/// [Z1Nested].
+/// The only strict operators that DBSP makes available is [Z1].
 ///
 /// [Z1]: crate::operator::Z1
-/// [Z1Nested]: crate::operator::Z1Nested
 /// [Z1Trace]: crate::operator::dynamic::trace::Z1Trace
 pub trait StrictOperator<O>: Operator {
     /// Returns the output value computed based on data consumed by the operator

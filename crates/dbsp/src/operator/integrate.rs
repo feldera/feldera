@@ -10,16 +10,11 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, IndexedZSet as DynIndexedZSet},
     circuit::{Circuit, OwnershipPreference, Stream},
     circuit_cache_key,
-    operator::{
-        Plus,
-        differentiate::DifferentiateId,
-        z1::{DelayedFeedback, DelayedNestedFeedback},
-    },
+    operator::{Plus, differentiate::DifferentiateId, z1::DelayedFeedback},
 };
 use size_of::SizeOf;
 
 circuit_cache_key!(IntegralId<C, D>(StreamId => Stream<C, D>));
-circuit_cache_key!(NestedIntegralId<C, D>(StreamId => Stream<C, D>));
 
 impl<C, D> Stream<C, D>
 where
@@ -123,57 +118,6 @@ where
             })
             .clone()
     }
-
-    /// Integrate stream of streams.
-    ///
-    /// Computes the sum of nested streams, i.e., rather than integrating values
-    /// in each nested stream, this function sums up entire input streams
-    /// across all parent timestamps, where the sum of streams is defined as
-    /// a stream of point-wise sums of their elements: `integral[i,j] =
-    /// sum(input[k,j]), k<=i`, where `stream[i,j]` is the value of `stream`
-    /// at time `[i,j]`, `i` is the parent timestamp, and `j` is the child
-    /// timestamp.
-    ///
-    /// Yields the sum element-by-element as the input stream is fed to the
-    /// integral.
-    ///
-    /// # Examples
-    ///
-    /// Input stream (one row per parent timestamps):
-    ///
-    /// ```text
-    /// 1 2 3 4
-    /// 1 1 1 1 1
-    /// 2 2 2 0 0
-    /// ```
-    ///
-    /// Integral:
-    ///
-    /// ```text
-    /// 1 2 3 4
-    /// 2 3 4 5 1
-    /// 4 5 6 5 1
-    /// ```
-    #[track_caller]
-    pub fn integrate_nested(&self) -> Stream<C, D> {
-        self.circuit()
-            .cache_get_or_insert_with(NestedIntegralId::new(self.stream_id()), || {
-                self.circuit().region("integrate_nested", || {
-                    let feedback = DelayedNestedFeedback::new(self.circuit());
-                    let integral = self.circuit().add_binary_operator_with_preference(
-                        Plus::new(),
-                        (
-                            feedback.stream(),
-                            OwnershipPreference::STRONGLY_PREFER_OWNED,
-                        ),
-                        (self, OwnershipPreference::PREFER_OWNED),
-                    );
-                    feedback.connect(&integral);
-                    integral
-                })
-            })
-            .clone()
-    }
 }
 
 impl<C, T, K, V, R, B> Stream<ChildCircuit<C, T>, TypedBatch<K, V, R, B>>
@@ -196,13 +140,8 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        Circuit, RootCircuit, ZWeight,
-        algebra::HasZero,
-        monitor::TraceMonitor,
-        operator::{DelayedFeedback, Generator},
-        typed_batch::OrdZSet,
-        utils::Tup2,
-        zset,
+        Circuit, RootCircuit, ZWeight, algebra::HasZero, operator::Generator, typed_batch::OrdZSet,
+        utils::Tup2, zset,
     };
 
     #[test]
@@ -261,63 +200,6 @@ mod test {
         .0;
 
         for _ in 0..100 {
-            circuit.transaction().unwrap();
-        }
-    }
-
-    /// ```text
-    ///            ┌───────────────────────────────────────────────────────────────────────────────────┐
-    ///            │                                                                                   │
-    ///            │                           3,2,1,0,0,0                     3,2,1,0,                │
-    ///            │                           4,3,2,1,0,0                     7,5,3,1,0,              │
-    ///            │                    ┌───┐  2,1,0,0,0,0                     9,6,3,1,0,              │
-    ///  3,4,2,5   │                    │   │  5,4,3,2,1,0                     14,10,6,3,1,0           │ 6,16,19,34
-    /// ───────────┼──►delta0──────────►│ + ├──────────┬─────►integrate_nested───────────────integrate─┼─────────────►
-    ///            │          3,0,0,0,0 │   │          │                                               │
-    ///            │          4,0,0,0,0 └───┘          ▼                                               │
-    ///            │          2,0,0,0,0   ▲    ┌──┐   ┌───┐                                            │
-    ///            │          5,0,0,0,0   └────┤-1│◄──|z-1|                                            │
-    ///            │                           └──┘   └───┘                                            │
-    ///            │                                                                                   │
-    ///            └───────────────────────────────────────────────────────────────────────────────────┘
-    /// ```
-    #[test]
-    fn scalar_integrate_nested() {
-        let circuit = RootCircuit::build(move |circuit| {
-            TraceMonitor::new_panic_on_error().attach(circuit, "monitor");
-
-            let mut input = vec![3, 4, 2, 5].into_iter();
-
-            let mut expected_counters =
-                vec![3, 2, 1, 0, 4, 3, 2, 1, 0, 2, 1, 0, 0, 0, 5, 4, 3, 2, 1, 0].into_iter();
-            let mut expected_integrals =
-                vec![3, 2, 1, 0, 7, 5, 3, 1, 0, 9, 6, 3, 1, 0, 14, 10, 6, 3, 1, 0].into_iter();
-            let mut expected_outer_integrals = vec![6, 16, 19, 34].into_iter();
-
-            let source = circuit.add_source(Generator::new(move || input.next().unwrap()));
-            let integral = circuit
-                .iterate_with_condition(|child| {
-                    let source = source.delta0(child);
-                    let feedback = DelayedFeedback::new(child);
-                    let plus =
-                        source.plus(&feedback.stream().apply(|&n| if n > 0 { n - 1 } else { n }));
-                    plus.inspect(move |n| assert_eq!(*n, expected_counters.next().unwrap()));
-                    feedback.connect(&plus);
-                    let integral = plus.integrate_nested();
-                    integral.inspect(move |n| assert_eq!(*n, expected_integrals.next().unwrap()));
-                    Ok((
-                        integral.condition(|n| *n == 0),
-                        integral.apply(|rc| *rc).integrate().export(),
-                    ))
-                })
-                .unwrap();
-            integral.inspect(move |n| assert_eq!(*n, expected_outer_integrals.next().unwrap()));
-            Ok(())
-        })
-        .unwrap()
-        .0;
-
-        for _ in 0..4 {
             circuit.transaction().unwrap();
         }
     }
