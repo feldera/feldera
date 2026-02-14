@@ -10,11 +10,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, IndexedZSet as DynIndexedZSet},
     circuit::{Circuit, OwnershipPreference, Stream},
     circuit_cache_key,
-    operator::{
-        Plus,
-        differentiate::DifferentiateId,
-        z1::DelayedFeedback,
-    },
+    operator::{Plus, differentiate::DifferentiateId, z1::DelayedFeedback},
 };
 use size_of::SizeOf;
 
@@ -144,12 +140,8 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        Circuit, RootCircuit, ZWeight,
-        algebra::HasZero,
-        operator::Generator,
-        typed_batch::OrdZSet,
-        utils::Tup2,
-        zset,
+        Circuit, RootCircuit, ZWeight, algebra::HasZero, operator::Generator, typed_batch::OrdZSet,
+        utils::Tup2, zset,
     };
 
     #[test]

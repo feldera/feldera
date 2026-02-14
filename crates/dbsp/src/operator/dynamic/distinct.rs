@@ -1202,12 +1202,8 @@ mod test {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
-        Circuit, RootCircuit, Runtime,
-        indexed_zset,
-        operator::GeneratorNested,
-        typed_batch::IndexedZSetReader,
-        utils::Tup2,
-        zset,
+        Circuit, RootCircuit, Runtime, indexed_zset, operator::GeneratorNested,
+        typed_batch::IndexedZSetReader, utils::Tup2, zset,
     };
 
     fn do_distinct_inc_test_mt(workers: usize) {
