@@ -13,6 +13,7 @@ No automatic cleanup; pipelines are left in place for inspection after failures.
 from __future__ import annotations
 
 import time
+import math
 import json
 import logging
 import pytest
@@ -254,6 +255,16 @@ def wait_for_condition(
     Generic polling helper.
     predicate: callable returning truthy when condition met (can be sync or async).
     """
+    if timeout_s is None:
+        timeout_s = 30.0
+    elif not math.isfinite(timeout_s) or timeout_s <= 0:
+        logging.warning(
+            "wait_for_condition(%s): invalid timeout %r; using 30.0s",
+            description,
+            timeout_s,
+        )
+        timeout_s = 30.0
+
     start = time.time()
     deadline = start + timeout_s
     attempt = 0
