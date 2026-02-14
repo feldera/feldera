@@ -45,6 +45,9 @@ Usage: sql-to-dbsp [options] Input file to compile
       Generate an input for each CREATE TABLE, even if the table is not used
       by any view
       Default: false
+    --anonymize
+      Produce in the output file an anonymized version of the input program
+      Default: false
     --correlatedColumns
       Dump information about the columns that are used in join equality
       comparisons

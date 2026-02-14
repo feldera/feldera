@@ -237,6 +237,26 @@ public class SqlToRelCompiler implements IWritesLogs {
     // Spark, SQL Server, MySQL, SQLite
     public static final NullCollation NULL_COLLATION = NullCollation.LOW;
 
+    public static final Map<String, SqlTypeName> DEFAULT_TYPE_ALIASES = new HashMap<>();
+
+    static {
+        DEFAULT_TYPE_ALIASES.put("BYTEA", SqlTypeName.VARBINARY);
+        DEFAULT_TYPE_ALIASES.put("DATETIME", SqlTypeName.TIMESTAMP);
+        DEFAULT_TYPE_ALIASES.put("INT2", SqlTypeName.SMALLINT);
+        DEFAULT_TYPE_ALIASES.put("INT8", SqlTypeName.BIGINT);
+        DEFAULT_TYPE_ALIASES.put("INT4", SqlTypeName.INTEGER);
+        DEFAULT_TYPE_ALIASES.put("SIGNED", SqlTypeName.INTEGER);
+        DEFAULT_TYPE_ALIASES.put("INT64", SqlTypeName.BIGINT);
+        DEFAULT_TYPE_ALIASES.put("FLOAT64", SqlTypeName.DOUBLE);
+        DEFAULT_TYPE_ALIASES.put("FLOAT32", SqlTypeName.REAL);
+        DEFAULT_TYPE_ALIASES.put("FLOAT4", SqlTypeName.REAL);
+        DEFAULT_TYPE_ALIASES.put("FLOAT8", SqlTypeName.DOUBLE);
+        DEFAULT_TYPE_ALIASES.put("STRING", SqlTypeName.VARCHAR);
+        DEFAULT_TYPE_ALIASES.put("NUMBER", SqlTypeName.DECIMAL);
+        DEFAULT_TYPE_ALIASES.put("TEXT", SqlTypeName.VARCHAR);
+        DEFAULT_TYPE_ALIASES.put("BOOL", SqlTypeName.BOOLEAN);
+    }
+
     public SqlToRelCompiler(CompilerOptions options, IErrorReporter errorReporter) {
         this.options = options;
         this.errorReporter = errorReporter;
@@ -262,22 +282,9 @@ public class SqlToRelCompiler implements IWritesLogs {
         this.calciteCatalog = new Catalog("schema");
         this.rootSchema = CalciteSchema.createRootSchema(false, false).plus();
         this.rootSchema.add(calciteCatalog.schemaName, this.calciteCatalog);
-        // Register new types
-        this.rootSchema.add("BYTEA", factory -> factory.createSqlType(SqlTypeName.VARBINARY));
-        this.rootSchema.add("DATETIME", factory -> factory.createSqlType(SqlTypeName.TIMESTAMP));
-        this.rootSchema.add("INT2", factory -> factory.createSqlType(SqlTypeName.SMALLINT));
-        this.rootSchema.add("INT8", factory -> factory.createSqlType(SqlTypeName.BIGINT));
-        this.rootSchema.add("INT4", factory -> factory.createSqlType(SqlTypeName.INTEGER));
-        this.rootSchema.add("SIGNED", factory -> factory.createSqlType(SqlTypeName.INTEGER));
-        this.rootSchema.add("INT64", factory -> factory.createSqlType(SqlTypeName.BIGINT));
-        this.rootSchema.add("FLOAT64", factory -> factory.createSqlType(SqlTypeName.DOUBLE));
-        this.rootSchema.add("FLOAT32", factory -> factory.createSqlType(SqlTypeName.REAL));
-        this.rootSchema.add("FLOAT4", factory -> factory.createSqlType(SqlTypeName.REAL));
-        this.rootSchema.add("FLOAT8", factory -> factory.createSqlType(SqlTypeName.DOUBLE));
-        this.rootSchema.add("STRING", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
-        this.rootSchema.add("NUMBER", factory -> factory.createSqlType(SqlTypeName.DECIMAL));
-        this.rootSchema.add("TEXT", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
-        this.rootSchema.add("BOOL", factory -> factory.createSqlType(SqlTypeName.BOOLEAN));
+        // Register standard types
+        for (var entry: DEFAULT_TYPE_ALIASES.entrySet())
+            this.rootSchema.add(entry.getKey(), factory -> factory.createSqlType(entry.getValue()));
 
         // This planner does not do anything.
         // We use a series of planner stages later to perform the real optimizations.
@@ -1890,7 +1897,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 this.validateConnectorsProperty(node, false, view, key, value);
                 break;
             default:
-                throw new CompilationError("Unknown property " + Utilities.singleQuote(keyString), node);
+                throw new CompilationError("Unknown view property " + Utilities.singleQuote(keyString), node);
         }
     }
 
@@ -1962,7 +1969,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 this.validateNumericProperty(node, key, value);
                 break;
             default:
-                throw new CompilationError("Unknown property " + Utilities.singleQuote(keyString), node);
+                throw new CompilationError("Unknown table property " + Utilities.singleQuote(keyString), node);
         }
     }
 

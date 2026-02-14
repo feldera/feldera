@@ -157,6 +157,8 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
     /** Options related to input and output. */
     @SuppressWarnings("CanBeFinal")
     public static class IO implements IDiff<IO>, IValidate {
+        @Parameter(names = "--anonymize", description = "Produce in the output file an anonymized version of the input program")
+        public boolean anonymize = false;
         @DynamicParameter(names = "-T",
                 description = "Specify logging level for a class (can be repeated)")
         public Map<String, String> loggingLevel = new HashMap<>();
@@ -255,7 +257,8 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Override
         public String toString() {
             return "IO{" +
-                    "\n\tcorrelatedColumns=" + this.correlatedColumns +
+                    "\n\tanonymize=" + this.anonymize +
+                    ",\n\tcorrelatedColumns=" + this.correlatedColumns +
                     ",\n\tcrates=" + this.crates +
                     ",\n\temitHandles=" + this.emitHandles +
                     ",\n\temitJpeg=" + this.emitJpeg +

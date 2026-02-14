@@ -1061,6 +1061,9 @@ public class MetadataTests extends BaseSQLTests {
                       Generate an input for each CREATE TABLE, even if the table is not used\s
                       by any view
                       Default: false
+                    --anonymize
+                      Produce in the output file an anonymized version of the input program
+                      Default: false
                     --correlatedColumns
                       Dump information about the columns that are used in join equality\s
                       comparisons\s
@@ -1892,5 +1895,36 @@ public class MetadataTests extends BaseSQLTests {
         Utilities.deleteFile(json, false);
         Assert.assertNotNull(jsonContents2);
         Assert.assertNotEquals(jsonContents1, jsonContents2);
+    }
+
+    @Test
+    public void testAnonymize() throws IOException, SQLException {
+        File input = createInputScript("""
+                CREATE TYPE TYP AS ("Z" INT);
+                CREATE FUNCTION jsonstring_as_typ(l VARCHAR) RETURNS TYP;
+                CREATE TABLE T(x INT, y INT LATENESS 0, "Z" TYP ARRAY, W STRING) WITH ('connectors' = '[]');
+                CREATE VIEW V WITH ('emit_final' = 'y', 'connectors' = '[]') AS
+                SELECT jsonstring_as_typ(W), y, SUM(T.x) as sum, COUNT(T."Z"[1]) FROM T GROUP BY T.y, W;""");
+        File out = File.createTempFile("out", ".sql", new File("."));
+        out.deleteOnExit();
+        // Original program is valid
+        CompilerMessages execute = CompilerMain.execute("--noRust", "-i", input.getPath());
+        Assert.assertEquals(0, execute.exitCode);
+        // Anonymize
+        execute = CompilerMain.execute("--anonymize", "-o", out.getPath(), input.getPath());
+        Assert.assertEquals(0, execute.exitCode);
+        String result = Utilities.readFile(out.getAbsolutePath());
+        Assert.assertEquals("""
+                CREATE TYPE ID_0 AS (ID_1 INTEGER);
+                CREATE FUNCTION jsonstring_as_ID_0 (ID_3 VARCHAR) RETURNS ID_0;
+                CREATE TABLE ID_4 (ID_5 INTEGER, ID_6 INTEGER LATENESS 0, ID_1 ID_0 ARRAY, ID_7 string);
+                CREATE VIEW ID_8 WITH ('emit_final' = 'ID_6') AS
+                SELECT jsonstring_as_ID_0(ID_7), ID_6, SUM(ID_4.ID_5) AS ID_9, COUNT(ID_4.ID_1[1])
+                FROM ID_4
+                GROUP BY ID_4.ID_6, ID_7;""", result);
+        // Anonymized program is valid
+        execute = CompilerMain.execute("--noRust", "-i", out.getPath());
+        Assert.assertEquals(0, execute.exitCode);
+        Utilities.deleteFile(input, false);
     }
 }
