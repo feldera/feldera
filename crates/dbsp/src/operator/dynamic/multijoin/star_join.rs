@@ -419,6 +419,9 @@ where
             == self.weight_times[self.current_index].0.len() - 1
         {
             self.trace_cursors[self.current_index].step_val();
+            if !self.trace_cursors[self.current_index].val_valid() {
+                return;
+            }
 
             // println!(
             //     "{} advance_weight_times: moving cursor {} to value: {:?}",
