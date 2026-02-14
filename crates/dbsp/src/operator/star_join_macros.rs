@@ -179,8 +179,8 @@ macro_rules! inner_star_join_index_body {
         let mut join_factories = StarJoinFactories::new::<$ok_ty, $ov_ty>();
         $(
             join_factories.add_input_factories(
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
             );
         )+
 
@@ -226,8 +226,8 @@ macro_rules! inner_star_join_index_root_body {
         let mut join_factories = StarJoinFactories::new::<$ok_ty, $ov_ty>();
         $(
             join_factories.add_input_factories(
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
             );
         )+
 
@@ -273,8 +273,8 @@ macro_rules! star_join_index_body {
         let mut join_factories = StarJoinFactories::new::<$ok_ty, $ov_ty>();
         $(
             join_factories.add_input_factories(
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
             );
         )+
 
@@ -319,8 +319,8 @@ macro_rules! inner_star_join_flatmap_body {
         let mut join_factories = StarJoinFactories::new::<$ov_ty, ()>();
         $(
             join_factories.add_input_factories(
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
             );
         )+
 
@@ -365,8 +365,8 @@ macro_rules! inner_star_join_flatmap_root_body {
         let mut join_factories = StarJoinFactories::new::<$ov_ty, ()>();
         $(
             join_factories.add_input_factories(
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
             );
         )+
 
@@ -411,8 +411,8 @@ macro_rules! star_join_flatmap_body {
         let mut join_factories = StarJoinFactories::new::<$ov_ty, ()>();
         $(
             join_factories.add_input_factories(
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
             );
         )+
 
@@ -457,8 +457,8 @@ macro_rules! inner_star_join_root_body {
         let mut join_factories = StarJoinFactories::new::<$ov_ty, ()>();
         $(
             join_factories.add_input_factories(
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
             );
         )+
 
@@ -504,8 +504,8 @@ macro_rules! inner_star_join_body {
         let mut join_factories = StarJoinFactories::new::<$ov_ty, ()>();
         $(
             join_factories.add_input_factories(
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
             );
         )+
 
@@ -550,8 +550,8 @@ macro_rules! star_join_body {
         let mut join_factories = StarJoinFactories::new::<$ov_ty, ()>();
         $(
             join_factories.add_input_factories(
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
-                BatchReaderFactories::new::<$k_ty, $val_ty, ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
+                BatchReaderFactories::new::<$k_ty, $val_ty, $crate::ZWeight>(),
             );
         )+
 

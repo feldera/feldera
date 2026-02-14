@@ -145,6 +145,10 @@ harness = false
 name = "input_map_ingest"
 harness = false
 
+[[bench]]
+name = "star_join"
+harness = false
+
 [[example]]
 name = "orgchart"
 
