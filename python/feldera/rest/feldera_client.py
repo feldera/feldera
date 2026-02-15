@@ -464,9 +464,6 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             operation="wait_for_deployment_status",
         )
 
-        print(
-            f"Waiting up to {timeout_s} seconds for {pipeline_name} to transition to {desired}"
-        )
         start = time.monotonic()
         deadline = start + timeout_s
         last = None
@@ -479,12 +476,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 time.sleep(poll_interval_s)
                 continue
 
-            status = latest.deployment_status
-            if status != last:
-                print(
-                    f"After {time.monotonic() - start:.1f} seconds: status is {status}"
-                )
-            last = status
+            last = latest.deployment_status
             if last == desired if isinstance(desired, str) else desired(last):
                 return latest
             time.sleep(poll_interval_s)
