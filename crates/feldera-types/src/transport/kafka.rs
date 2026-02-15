@@ -111,9 +111,83 @@ pub struct KafkaInputConfig {
     /// See <https://docs.feldera.com/connectors/sources/kafka#metadata> for details.
     #[serde(default)]
     pub include_topic: Option<bool>,
+
+    /// When lateness is enabled on a Feldera table, Feldera only produces
+    /// correct output if input arrives approximately in order within the bounds
+    /// of the lateness.  The Feldera Kafka input connector can reorder input
+    /// when there are multiple partitions:
+    ///
+    /// - If partitions start at different times, then reading all the
+    ///   partitions in parallel will naturally consume data out of order.
+    ///
+    /// - Even if they start at the same time, partitions might contain events
+    ///   at different rates.
+    ///
+    /// - Even if the partitions start at the same time and have the same number
+    ///   of events per unit time, if partitions are spread across brokers,
+    ///   different brokers may fetch data at different rates.
+    ///
+    /// - Even if all of the partitions are on a single broker, one cannot
+    ///   expect all of the partitions to naturally remain exactly in sync
+    ///   forever.
+    ///
+    /// Setting this option to `true` addresses the issue by synchronizing
+    /// ingestion across partitions, ingesting records in order of their Kafka
+    /// event timestamps.
+    ///
+    /// Pitfalls of this solution include:
+    ///
+    /// - Kafka event timestamps are not necessarily monotonically increasing
+    ///   even within a single partition.  If timestamps jump backward beyond
+    ///   the lateness, then this can also cause correctness problems.
+    ///
+    ///   (This can be avoided by keeping clocks on Kafka producers and brokers
+    ///   synchronized.)
+    ///
+    /// - If an event with a timestamp far in the future is added to a
+    ///   partition, that event, and all those that follow it, will never be
+    ///   processed.
+    ///
+    /// - If one or a few partitions have timestamps far behind the others, only
+    ///   those partitions will be processed until all the old events are
+    ///   processed.  (This is the flip side of the previous pitfall.)
+    ///
+    /// - One or more empty partitions will prevent any data from being
+    ///   processed at all, because there is no way to know the timestamp for
+    ///   the first event that will be added to that partition.
+    ///
+    /// - In a topic with `N` nonempty partitions, at least `N - 1` events will
+    ///   always be left unprocessed (one in each of `N - 1` partitions), because
+    ///   there is no way to know the timestamp for the next event to be added to
+    ///   the partition whose events have been completely processed.
+    #[serde(default)]
+    pub synchronize_partitions: bool,
 }
 
 impl KafkaInputConfig {
+    /// Returns a default [KafkaInputConfig] with the given `kafka_options` and
+    /// `topic`.  To be a usable configuration, `kafka_options` must contain at
+    /// least `bootstrap.servers`.
+    pub fn default(kafka_options: BTreeMap<String, String>, topic: impl Into<String>) -> Self {
+        Self {
+            kafka_options,
+            topic: topic.into(),
+            log_level: None,
+            group_join_timeout_secs: default_group_join_timeout_secs(),
+            poller_threads: None,
+            start_from: KafkaStartFromConfig::default(),
+            region: None,
+            partitions: None,
+            resume_earliest_if_data_expires: false,
+            include_headers: None,
+            include_timestamp: None,
+            include_partition: None,
+            include_offset: None,
+            include_topic: None,
+            synchronize_partitions: false,
+        }
+    }
+
     // Returns the number of threads to use based on configuration, defaults,
     // and system resources.
     pub fn poller_threads(&self) -> usize {
@@ -532,6 +606,8 @@ mod compat {
         include_partition: Option<bool>,
         include_offset: Option<bool>,
         include_topic: Option<bool>,
+        #[serde(default)]
+        synchronize_partitions: bool,
     }
 
     impl TryFrom<KafkaInputConfigCompat> for super::KafkaInputConfig {
@@ -610,6 +686,7 @@ mod compat {
                 include_partition: compat.include_partition,
                 include_offset: compat.include_offset,
                 include_topic: compat.include_topic,
+                synchronize_partitions: compat.synchronize_partitions,
             })
         }
     }

@@ -13,6 +13,12 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
 
+        ## Unreleased
+
+        The Kafka input connector has a new setting `synchronize_partitions`.  When it is
+        set to `true`, the connector will read messages in order of their Kafka timestamps
+        across partitions.  Refer to the documentation for more information.
+
         ## 0.227.0
 
         Loading data from checkpoints made in earlier versions of feldera (0.226.0 and below)

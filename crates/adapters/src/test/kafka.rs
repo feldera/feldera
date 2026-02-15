@@ -180,7 +180,7 @@ impl Drop for KafkaResources {
 }
 
 pub struct TestProducer {
-    producer: ThreadedProducer<DefaultProducerContext>,
+    pub producer: ThreadedProducer<DefaultProducerContext>,
 }
 
 impl Default for TestProducer {
