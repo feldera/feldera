@@ -1,5 +1,3 @@
-use itertools::Itertools;
-
 use crate::{
     Circuit, DBData, DynZWeight, NumEntries, Stream, ZWeight,
     algebra::{
@@ -981,13 +979,10 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
             1 => 0,
             n => self.next_worker.fetch_add(1, Ordering::AcqRel) % n,
         };
-        self.input_handle.update_for_worker(
-            next_worker + self.input_handle.workers().start,
-            |tuples| {
-                tuple.from_vals(k, v);
-                tuples.first_mut().unwrap().push_val(&mut *tuple);
-            },
-        );
+        self.input_handle.update_for_worker(next_worker, |tuples| {
+            tuple.from_vals(k, v);
+            tuples.first_mut().unwrap().push_val(&mut *tuple);
+        });
     }
 
     /// Push multiple `(key,value)` pairs to the input stream.
@@ -1023,14 +1018,13 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
         // rest will receive `quotient`.
         let quotient = vals.len() / num_partitions;
         let remainder = vals.len() % num_partitions;
-        let worker_ofs = self.input_handle.workers().start;
         for i in 0..num_partitions {
             let mut partition_size = quotient;
             if i < remainder {
                 partition_size += 1;
             }
 
-            let worker = (next_worker + i) % num_partitions + worker_ofs;
+            let worker = (next_worker + i) % num_partitions;
             if partition_size == vals.len() {
                 self.input_handle.update_for_worker(worker, |tuples| {
                     let tuples = tuples.first_mut().unwrap();
@@ -1124,7 +1118,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
     /// This has the same concurrency implications as [Self::dyn_append],
     /// although on a per-worker basis it is atomic.
     pub fn dyn_append_staged(&self, vals: Vec<Box<DynPairs<K, V>>>) {
-        for (vals, worker) in vals.into_iter().zip_eq(0..self.num_partitions()) {
+        for (worker, vals) in vals.into_iter().enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
@@ -1345,7 +1339,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> UpsertHandle<K, V> {
     /// This has the same concurrency implications as [Self::dyn_append],
     /// although on a per-worker basis it is atomic.
     pub fn dyn_append_staged(&self, vals: Vec<Box<DynPairs<K, V>>>) {
-        for (vals, worker) in vals.into_iter().zip_eq(0..self.num_partitions()) {
+        for (worker, vals) in vals.into_iter().enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
