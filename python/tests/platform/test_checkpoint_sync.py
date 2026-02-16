@@ -3,7 +3,7 @@ import random
 import sys
 import time
 from typing import Optional
-from uuid import uuid4, UUID
+from uuid import UUID, uuid4
 
 from feldera.enums import FaultToleranceModel, PipelineStatus
 from feldera.runtime_config import RuntimeConfig, Storage
@@ -173,6 +173,16 @@ class TestCheckpointSync(SharedTestPipeline):
             if chk_uuid is not None:
                 assert UUID(uuid) >= UUID(chk_uuid)
 
+        if not clear_storage:
+            # If we aren't clearing storage, verify that the local checkpoint is preferred over the remote one.
+            self.pipeline.input_json("t0", [{"c0": 999, "c1": "local_only"}])
+            got_before = list(self.pipeline.query("SELECT * FROM v0"))
+            print(
+                f"{self.pipeline.name}: records after local only insert: {total}, {got_before}",
+                file=sys.stderr,
+            )
+            self.pipeline.checkpoint(wait=True)
+
         self.pipeline.stop(force=True)
 
         if clear_storage:
@@ -233,6 +243,7 @@ class TestCheckpointSync(SharedTestPipeline):
         if expect_empty:
             got_before = []
 
+        # Validate that the outputs before starting from checkpoint is the same as after.
         self.assertCountEqual(got_before, got_after)
 
         self.pipeline.stop(force=True)
