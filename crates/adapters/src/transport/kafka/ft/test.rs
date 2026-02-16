@@ -5,7 +5,7 @@ use crate::test::{
     generate_test_batches, mock_input_pipeline, wait, wait_for_output_count,
     wait_for_output_ordered, wait_for_output_unordered,
 };
-use crate::transport::kafka::ft::input::Metadata;
+use crate::transport::kafka::ft::input::{BACKPRESSURE, Metadata};
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::{
     Controller, InputConsumer, ParseError,
@@ -259,6 +259,112 @@ fn test_synchronization() {
         num_records: n,
         metadata: serde_json::to_value(&metadata).unwrap(),
     }]);
+}
+
+#[test]
+fn test_synchronization_backpressure() {
+    fn produce_record(
+        producer: &TestProducer,
+        topic: &str,
+        partition: i32,
+        id: u32,
+        timestamp: i64,
+    ) {
+        let mut writer = CsvWriterBuilder::new()
+            .has_headers(false)
+            .from_writer(Vec::new());
+        writer.serialize(TestStruct::for_id(id as u32)).unwrap();
+        writer.flush().unwrap();
+        let bytes = writer.into_inner().unwrap();
+
+        let record = <BaseRecord<(), [u8], ()>>::to(topic)
+            .payload(&bytes)
+            .timestamp(timestamp)
+            .partition(partition as i32);
+        producer.producer.send(record).unwrap();
+    }
+
+    init_test_logger();
+
+    const TOPIC: &str = "synchronization_backpressure";
+    const N_PARTITIONS: usize = 2;
+    let mut _kafka_resources = KafkaResources::create_topics(&[(TOPIC, N_PARTITIONS as i32)]);
+
+    let (_endpoint, receiver, reader) = create_reader(TOPIC, None, true);
+    reader.extend();
+
+    // Produce 2500 messages into partition 0, with timestamps that match their
+    // record IDs, and 1 message into partition 1 with record ID 5000 and timestamp 2000.
+    let producer = TestProducer::new();
+    let now = Timestamp::now().to_millis().unwrap();
+    for id in 0..2500 {
+        produce_record(&producer, TOPIC, 0, id, now + id as i64);
+    }
+    produce_record(&producer, TOPIC, 1, 5000, now + 2000);
+
+    // 2002 messages should get buffered (partition 0 ids 0..=2000, partition 1
+    // record id 5000).
+    let expect = 2002;
+    println!("waiting for connector to buffer {expect} messages.");
+    receiver.expect_buffering(expect);
+
+    // Tell the adapter to queue the batch and wait for it to do it, then check
+    // that the connector successfully merged all the records on the basis of
+    // timestamp.
+    println!("queuing and expecting {expect} records",);
+    reader.queue(false);
+    let metadata = Metadata {
+        offsets: [2001, 1].into_iter().map(|len| 0..len).collect(),
+    };
+    receiver.expect(vec![ConsumerCall::Extended {
+        num_records: expect,
+        metadata: serde_json::to_value(&metadata).unwrap(),
+    }]);
+
+    // There are about 500 more records to read in partition 0, but none of them
+    // can actually be buffered because they are waiting for something to show
+    // up in partition 1.  However, they should not get stuck in backpressure
+    // because there's a 1000-record minimum for that.
+    //
+    // It's hard to wait for something not to happen, so just give it a few
+    // seconds.
+    sleep(Duration::from_secs(5));
+    let partition0 = (String::from(TOPIC), 0);
+    assert!(!BACKPRESSURE.lock().unwrap().contains(&partition0));
+
+    // Produce another 1000 messages into partition 0, with timestamps that
+    // match their record IDs.
+    for id in 2500..3500 {
+        produce_record(&producer, TOPIC, 0, id, now + id as i64);
+    }
+
+    // Now there are 1500 records to read in partition 0 but they're stuck
+    // because we still have nothing in partition 1.  This should exert backpressure.
+    wait(|| BACKPRESSURE.lock().unwrap().contains(&partition0), 10000).unwrap();
+
+    // Produce one record into partition 1 that is beyond all the records in
+    // partition 0.
+    produce_record(&producer, TOPIC, 1, 5000, now + 5000);
+
+    // 1499 messages should get buffered (partition 0 ids 2001..3500).
+    let expect = 1499;
+    println!("waiting for connector to buffer {expect} messages.");
+    receiver.expect_buffering(expect);
+
+    // Tell the adapter to queue the batch and wait for it to do it, then check
+    // that the connector successfully read all the records from partition 0.
+    println!("queuing and expecting {expect} records",);
+    reader.queue(false);
+    let metadata = Metadata {
+        offsets: [2001..3500, 1..1].into_iter().collect(),
+    };
+    receiver.expect(vec![ConsumerCall::Extended {
+        num_records: expect,
+        metadata: serde_json::to_value(&metadata).unwrap(),
+    }]);
+
+    // Backpressure was fixed.
+    assert!(!BACKPRESSURE.lock().unwrap().contains(&partition0));
 }
 
 fn test_input(topic: &str, batch_sizes: &[u32]) {

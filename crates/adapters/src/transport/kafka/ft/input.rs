@@ -38,11 +38,13 @@ use rdkafka::{
 use rdkafka::{Offset, TopicPartitionList};
 use serde::{Deserialize, Serialize};
 use smallvec::{SmallVec, smallvec};
+#[cfg(test)]
+use std::collections::BTreeSet;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::error::Error;
 use std::hash::Hasher;
 use std::ops::Range;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::thread::{self, JoinHandle, Thread};
 use std::{
     iter,
@@ -960,6 +962,25 @@ impl Metadata {
     }
 }
 
+/// For testing purposes, keeps track of partitions that we're not reading from
+/// because there is already too much queued.
+#[cfg(test)]
+pub static BACKPRESSURE: Mutex<BTreeSet<(String, i32)>> = Mutex::new(BTreeSet::new());
+
+#[cfg(test)]
+fn update_backpressure(topic: &str, partition: i32, has_backpressure: bool) {
+    let mut backpressure = BACKPRESSURE.lock().unwrap();
+    let member = (topic.into(), partition);
+    if has_backpressure {
+        backpressure.insert(member);
+    } else {
+        backpressure.remove(&member);
+    }
+}
+
+#[cfg(not(test))]
+fn update_backpressure(_topic: &str, _partition: i32, _has_backpressure: bool) {}
+
 struct PartitionReceiver {
     partition: i32,
     queue: PartitionQueue<KafkaFtInputContext>,
@@ -988,7 +1009,12 @@ struct PartitionReceiver {
     initial_next_offset: i64,
 
     /// Parsed messages and errors, paired with timestamps.
+    #[allow(clippy::type_complexity)]
     messages: Mutex<BTreeMap<i64, (Option<Box<dyn InputBuffer>>, i64)>>,
+
+    /// Number of bytes of buffers in `messages`, available without taking the
+    /// lock.
+    n_bytes: AtomicUsize,
 
     eof: AtomicBool,
     fatal_error: AtomicBool,
@@ -1010,16 +1036,24 @@ impl PartitionReceiver {
             next_offset: AtomicI64::new(next_offset),
             initial_next_offset: next_offset,
             messages: Mutex::new(BTreeMap::new()),
+            n_bytes: AtomicUsize::new(0),
             eof: AtomicBool::new(false),
             fatal_error: AtomicBool::new(false),
             config: config.clone(),
             metadata_requested,
         }
     }
+
+    #[allow(clippy::type_complexity)]
     pub fn read(&self, max: i64) -> Option<(i64, (Option<Box<dyn InputBuffer>>, i64))> {
         let mut messages = self.messages.lock().unwrap();
         match messages.first_key_value() {
-            Some((offset, _)) if *offset <= max => messages.pop_first(),
+            Some((offset, _)) if *offset <= max => {
+                let (offset, (buffer, timestamp)) = messages.pop_first().unwrap();
+                self.n_bytes
+                    .fetch_sub(buffer.len().bytes, Ordering::Relaxed);
+                Some((offset, (buffer, timestamp)))
+            }
             _ => None,
         }
     }
@@ -1133,6 +1167,8 @@ impl PartitionReceiver {
                     let payload = message.payload().unwrap_or(&[]);
                     let metadata = self.create_metadata(&message);
                     let (buffer, errors) = parser.parse(payload, metadata);
+                    self.n_bytes
+                        .fetch_add(buffer.len().bytes, Ordering::Relaxed);
                     self.messages
                         .lock()
                         .unwrap()
@@ -1155,6 +1191,27 @@ impl PartitionReceiver {
         consumer: &dyn InputConsumer,
         parser: &mut dyn Parser,
     ) -> bool {
+        // Limit per-partition queuing.  This should ultimately exert
+        // backpressure on librdkafka reading from the partition (see [1]).
+        //
+        // The limit is pretty arbitrary.  It only needs to be high enough to
+        // keep up with `KafkaFtInputReaderInner::poller_thread`, which serially
+        // polls all of the partitions.
+        //
+        // For the unit tests only, we set an additional 1000-message limit
+        // because that is easier to test precisely.  Generally speaking,
+        // though, counting messages is undesirable because small messages will
+        // be dequeued quicker than we can start queuing them again.
+        //
+        // [1]: https://github.com/confluentinc/librdkafka/wiki/FAQ#what-are-partition-queues-and-why-are-some-partitions-slower-than-others
+        let backpressure = self.n_bytes.load(Ordering::Relaxed) >= 1_000_000;
+        #[cfg(test)]
+        let backpressure = backpressure || self.messages.lock().unwrap().len() >= 1000;
+        update_backpressure(&self.config.topic, self.partition, backpressure);
+        if backpressure {
+            return false;
+        }
+
         let next_offset = self.next_offset();
         let max_offset = self.max_offset();
         if next_offset > max_offset {
