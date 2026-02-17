@@ -208,8 +208,8 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
                 DBSPType outputType = node.getOutput(0).outputType();
                 if (!outputType.sameType(source.outputType)) {
                     this.compiler.reportError(decl.viewDeclaration.getPositionRange(), "Type mismatch",
-                            "Type declared for view " + decl.metadata.tableName.singleQuote() + "\n" +
-                                    decl.originalRowType.asSqlString() +
+                            "Type declared for view " + decl.originalViewName().singleQuote() + "\n" +
+                                    decl.getOutputZSetElementType().asSqlString() +
                                     "\ndoes not match the inferred type\n" +
                                             source.getOutputZSetElementType().asSqlString() +
                             "\n(The INTERNED annotations must match).");
