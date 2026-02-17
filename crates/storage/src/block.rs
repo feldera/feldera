@@ -7,20 +7,14 @@ pub struct BlockLocation {
     /// Byte offset, a multiple of 512.
     pub offset: u64,
 
-    /// Size in bytes, a multiple of 512, less than `2**31`.
-    ///
-    /// (The upper limit is because some kernel APIs return the number of bytes
-    /// read as an `i32`.)
+    /// Size in bytes, a multiple of 512.
     pub size: usize,
 }
 
 impl BlockLocation {
     /// Constructs a new [BlockLocation], validating `offset` and `size`.
     pub fn new(offset: u64, size: usize) -> Result<Self, InvalidBlockLocation> {
-        if !offset.is_multiple_of(512)
-            || !(512..1 << 31).contains(&size)
-            || !size.is_multiple_of(512)
-        {
+        if !offset.is_multiple_of(512) || !size.is_multiple_of(512) {
             Err(InvalidBlockLocation { offset, size })
         } else {
             Ok(Self { offset, size })

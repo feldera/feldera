@@ -1550,11 +1550,10 @@ where
             .into());
         }
 
-        if file_trailer.compatible_features != 0 {
+        if let Some(features) = file_trailer.unsupported_compatible_features() {
             info!(
-                "{}: storage file uses unsupported compatible features {:#x}",
+                "{}: storage file uses unsupported compatible features {features:#x}",
                 file.path(),
-                file_trailer.compatible_features
             );
         }
 
@@ -1595,21 +1594,31 @@ where
             }
         }
 
+        fn read_filter_block(
+            file_handle: &dyn FileReader,
+            offset: u64,
+            size: usize,
+        ) -> Result<TrackingBloomFilter, Error> {
+            Ok(FilterBlock::new(
+                file_handle,
+                BlockLocation::new(offset, size).map_err(|error: InvalidBlockLocation| {
+                    Error::Corruption(CorruptionError::InvalidFilterLocation(error))
+                })?,
+            )?
+            .into())
+        }
         let bloom_filter = match bloom_filter {
             Some(bloom_filter) => Some(bloom_filter),
-            None if file_trailer.filter_offset != 0 => Some(
-                FilterBlock::new(
-                    &*file,
-                    BlockLocation::new(
-                        file_trailer.filter_offset,
-                        file_trailer.filter_size as usize,
-                    )
-                    .map_err(|error: InvalidBlockLocation| {
-                        Error::Corruption(CorruptionError::InvalidFilterLocation(error))
-                    })?,
-                )?
-                .into(),
-            ),
+            None if file_trailer.has_filter64() => Some(read_filter_block(
+                &*file,
+                file_trailer.filter_offset64,
+                file_trailer.filter_size64 as usize,
+            )?),
+            None if file_trailer.filter_offset != 0 => Some(read_filter_block(
+                &*file,
+                file_trailer.filter_offset,
+                file_trailer.filter_size as usize,
+            )?),
             None => None,
         };
 
