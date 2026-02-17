@@ -10,9 +10,9 @@ use crate::storage::{
     file::{
         BLOOM_FILTER_SEED,
         format::{
-            BlockHeader, DATA_BLOCK_MAGIC, DataBlockHeader, FILE_TRAILER_BLOCK_MAGIC, FileTrailer,
-            FileTrailerColumn, FilterBlockRef, FixedLen, INDEX_BLOCK_MAGIC, IndexBlockHeader,
-            NodeType, VERSION_NUMBER, Varint,
+            BlockHeader, COMPATIBLE_FEATURE_FILTER64, DATA_BLOCK_MAGIC, DataBlockHeader,
+            FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FilterBlockRef, FixedLen,
+            INDEX_BLOCK_MAGIC, IndexBlockHeader, NodeType, VERSION_NUMBER, Varint,
         },
         reader::TreeNode,
         with_serializer,
@@ -256,7 +256,12 @@ impl ColumnWriter {
                 return Ok(FileTrailerColumn {
                     node_type: builder.child_type,
                     node_offset: entry.child.offset,
-                    node_size: entry.child.size as u32,
+                    node_size: entry.child.size.try_into().unwrap_or_else(|_| {
+                        unreachable!(
+                            "Individual blocks should be much less than 4 GiB, tried to write {:?}",
+                            &entry.child
+                        )
+                    }),
                     n_rows: entry.row_total,
                 });
             } else if !self.index_blocks[level].is_empty() {
@@ -1204,16 +1209,31 @@ impl Writer {
         };
 
         // Write the file trailer block.
-        let file_trailer = FileTrailer {
+
+        let mut file_trailer = FileTrailer {
             header: BlockHeader::new(&FILE_TRAILER_BLOCK_MAGIC),
             version: VERSION_NUMBER,
             columns: take(&mut self.finished_columns),
             compression: self.cws[0].parameters.compression,
-            filter_offset: filter_location.offset,
-            filter_size: filter_location.size.try_into().unwrap(),
+            filter_offset: 0,
+            filter_size: 0,
             compatible_features: 0,
             incompatible_features: 0,
+            filter_offset64: 0,
+            filter_size64: 0,
         };
+        if filter_location.size > 0 {
+            if let Ok(size) = u32::try_from(filter_location.size)
+                && size < i32::MAX as u32
+            {
+                file_trailer.filter_offset = filter_location.offset;
+                file_trailer.filter_size = size;
+            } else {
+                file_trailer.compatible_features |= COMPATIBLE_FEATURE_FILTER64;
+                file_trailer.filter_offset64 = filter_location.offset;
+                file_trailer.filter_size64 = filter_location.size as u64;
+            }
+        }
         let (_block, location) = self
             .writer
             .write_block(file_trailer.clone().into_block(), None)?;
