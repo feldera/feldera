@@ -1560,20 +1560,224 @@ class illarg_is_not_unknown_illegal(TstView):
         self.expected_error = " Cannot apply 'IS NOT UNKNOWN' to arguments of type"
 
 
-# OVERLAPS
-class illarg_overlaps_legal_timestamp(TstView):
+# PERIOD PREDICATES(CONTAINS, EQUALS, OVERLAPS, PRECEDES, IMMEDIATELY PRECEDES, SUCCEEDS, IMMEDIATELY SUCCEEDS)
+class illarg_period_operators_legal(TstView):
     def __init__(self):
-        self.data = [{"res": True}]
-        self.sql = """CREATE MATERIALIZED VIEW overlaps_legal_timestamp AS SELECT
-                      (tmestmp, tmestmp)
-                      OVERLAPS
-                      (TIMESTAMP '2020-06-21 14:23:44.123654',
-                       TIMESTAMP '2020-06-21 14:23:44.123654') AS res
+        self.data = [
+            {
+                "res_date": True,
+                "res_time": True,
+                "res_ts": True,
+                "res_date_equals": True,
+                "res_time_equals": True,
+                "res_ts_equals": True,
+                "res_date_overlaps": True,
+                "res_time_overlaps": True,
+                "res_ts_overlaps": True,
+                "res_date_precedes": True,
+                "res_time_precedes": True,
+                "res_ts_precedes": True,
+                "res_date_immed_precedes": True,
+                "res_time_immed_precedes": True,
+                "res_ts_immed_precedes": True,
+                "res_date_succeeds": True,
+                "res_time_succeeds": True,
+                "res_ts_succeeds": True,
+                "res_date_immed_succeeds": True,
+                "res_time_immed_succeeds": True,
+                "res_ts_immed_succeeds": True,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW period_operators_legal AS SELECT
+
+                        -- CONTAINS
+                        (DATE '2020-06-21', DATE '2020-06-25') CONTAINS DATE '2020-06-23' AS res_date,
+                        (TIME '14:00:00', TIME '16:00:00') CONTAINS TIME '15:00:00' AS res_time,
+                        (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') CONTAINS TIMESTAMP '2020-06-21 14:30:00' AS res_ts,
+
+                        -- EQUALS
+                        (DATE '2020-06-21', DATE '2020-06-23') EQUALS (DATE '2020-06-21', DATE '2020-06-23') AS res_date_equals,
+                        (TIME '14:00:00', TIME '15:00:00') EQUALS (TIME '14:00:00', TIME '15:00:00') AS res_time_equals,
+                        (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') EQUALS (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') AS res_ts_equals,
+
+                        -- OVERLAPS
+                        (DATE '2020-06-21', DATE '2020-06-23') OVERLAPS (DATE '2020-06-22', DATE '2020-06-24') AS res_date_overlaps,
+                        (TIME '14:00:00', TIME '15:00:00') OVERLAPS (TIME '14:30:00', TIME '15:30:00') AS res_time_overlaps,
+                        (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') OVERLAPS (TIMESTAMP '2020-06-21 14:30:00', TIMESTAMP '2020-06-21 15:30:00') AS res_ts_overlaps,
+
+                        -- PRECEDES
+                        (DATE '2020-06-21', DATE '2020-06-22') PRECEDES (DATE '2020-06-24', DATE '2020-06-25') AS res_date_precedes,
+                        (TIME '14:00:00', TIME '15:00:00') PRECEDES (TIME '15:30:00', TIME '16:30:00') AS res_time_precedes,
+                        (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') PRECEDES (TIMESTAMP '2020-06-21 15:30:00', TIMESTAMP '2020-06-21 16:30:00') AS res_ts_precedes,
+
+                        -- IMMEDIATELY PRECEDES
+                        (DATE '2020-06-21', DATE '2020-06-22') IMMEDIATELY PRECEDES (DATE '2020-06-22', DATE '2020-06-23') AS res_date_immed_precedes,
+                        (TIME '14:00:00', TIME '15:00:00') IMMEDIATELY PRECEDES (TIME '15:00:00', TIME '16:00:00') AS res_time_immed_precedes,
+                        (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') IMMEDIATELY PRECEDES (TIMESTAMP '2020-06-21 15:00:00', TIMESTAMP '2020-06-21 16:00:00') AS res_ts_immed_precedes,
+
+                        -- SUCCEEDS
+                        (DATE '2020-06-25', DATE '2020-06-26') SUCCEEDS (DATE '2020-06-21', DATE '2020-06-24') AS res_date_succeeds,
+                        (TIME '15:30:00', TIME '16:30:00') SUCCEEDS (TIME '14:00:00', TIME '15:00:00') AS res_time_succeeds,
+                        (TIMESTAMP '2020-06-21 15:30:00', TIMESTAMP '2020-06-21 16:30:00') SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') AS res_ts_succeeds,
+
+                        -- IMMEDIATELY SUCCEEDS
+                        (DATE '2020-06-25', DATE '2020-06-26') IMMEDIATELY SUCCEEDS (DATE '2020-06-24', DATE '2020-06-25') AS res_date_immed_succeeds,
+                        (TIME '15:00:00', TIME '16:00:00') IMMEDIATELY SUCCEEDS (TIME '14:00:00', TIME '15:00:00') AS res_time_immed_succeeds,
+                        (TIMESTAMP '2020-06-21 15:00:00', TIMESTAMP '2020-06-21 16:00:00') IMMEDIATELY SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') AS res_ts_immed_succeeds"""
+
+
+# Same test as above but with swapped order of START and END(i.e where START > END)
+class illarg_period_operators_swap_legal(TstView):
+    def __init__(self):
+        self.data = [
+            {
+                "res_date": True,
+                "res_date_equals": True,
+                "res_date_overlaps": True,
+                "res_date_precedes": True,
+                "res_date_immed_precedes": True,
+                "res_date_succeeds": True,
+                "res_date_immed_succeeds": True,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW period_operators_swap_legal AS SELECT
+
+                        -- CONTAINS
+                        (DATE '2020-06-25', DATE '2020-06-21') CONTAINS DATE '2020-06-23' AS res_date,
+
+                        -- EQUALS
+                        (DATE '2020-06-23', DATE '2020-06-21') EQUALS (DATE '2020-06-23', DATE '2020-06-21') AS res_date_equals,
+
+                        -- OVERLAPS
+                        (DATE '2020-06-23', DATE '2020-06-21') OVERLAPS (DATE '2020-06-24', DATE '2020-06-22') AS res_date_overlaps,
+
+                        -- PRECEDES
+                        (DATE '2020-06-22', DATE '2020-06-21') PRECEDES (DATE '2020-06-25', DATE '2020-06-24') AS res_date_precedes,
+
+                        -- IMMEDIATELY PRECEDES
+                        (DATE '2020-06-22', DATE '2020-06-21') IMMEDIATELY PRECEDES (DATE '2020-06-23', DATE '2020-06-22') AS res_date_immed_precedes,
+
+                        -- SUCCEEDS
+                        (DATE '2020-06-26', DATE '2020-06-25') SUCCEEDS (DATE '2020-06-24', DATE '2020-06-21') AS res_date_succeeds,
+
+                        -- IMMEDIATELY SUCCEEDS
+                        (DATE '2020-06-26', DATE '2020-06-25') IMMEDIATELY SUCCEEDS (DATE '2020-06-25', DATE '2020-06-24') AS res_date_immed_succeeds"""
+
+
+class illarg_period_operators_interval_legal(TstView):
+    def __init__(self):
+        self.data = [
+            {
+                "res_date": True,
+                "res_time": True,
+                "res_ts": True,
+                "res_date_equals": True,
+                "res_time_equals": True,
+                "res_ts_equals": True,
+                "res_date_overlaps": True,
+                "res_time_overlaps": True,
+                "res_ts_overlaps": True,
+                "res_date_precedes": True,
+                "res_time_precedes": True,
+                "res_ts_precedes": True,
+                "res_date_immed_precedes": True,
+                "res_time_immed_precedes": True,
+                "res_ts_immed_precedes": True,
+                "res_date_succeeds": True,
+                "res_time_succeeds": True,
+                "res_ts_succeeds": True,
+                "res_date_immed_succeeds": True,
+                "res_time_immed_succeeds": True,
+                "res_ts_immed_succeeds": True,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW period_operators_interval_legal AS SELECT
+
+                        -- CONTAINS
+                        (DATE '2020-06-21', INTERVAL '4' DAY) CONTAINS DATE '2020-06-23' AS res_date,
+                        (TIME '14:00:00', INTERVAL '2' HOUR) CONTAINS TIME '15:00:00' AS res_time,
+                        (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) CONTAINS TIMESTAMP '2020-06-21 14:30:00' AS res_ts,
+
+                        -- EQUALS
+                        (DATE '2020-06-21', INTERVAL '2' DAY) EQUALS (DATE '2020-06-21', INTERVAL '2' DAY) AS res_date_equals,
+                        (TIME '14:00:00', INTERVAL '1' HOUR) EQUALS (TIME '14:00:00', INTERVAL '1' HOUR) AS res_time_equals,
+                        (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) EQUALS (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) AS res_ts_equals,
+
+                        -- OVERLAPS
+                        (DATE '2020-06-21', INTERVAL '2' DAY) OVERLAPS (DATE '2020-06-22', INTERVAL '2' DAY) AS res_date_overlaps,
+                        (TIME '14:00:00', INTERVAL '1' HOUR) OVERLAPS (TIME '14:30:00', INTERVAL '1' HOUR) AS res_time_overlaps,
+                        (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) OVERLAPS (TIMESTAMP '2020-06-21 14:30:00', INTERVAL '1' HOUR) AS res_ts_overlaps,
+
+                        -- PRECEDES
+                        (DATE '2020-06-21', INTERVAL '1' DAY) PRECEDES (DATE '2020-06-24', INTERVAL '1' DAY) AS res_date_precedes,
+                        (TIME '14:00:00', INTERVAL '1' HOUR) PRECEDES (TIME '15:30:00', INTERVAL '1' HOUR) AS res_time_precedes,
+                        (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) PRECEDES (TIMESTAMP '2020-06-21 15:30:00', INTERVAL '1' HOUR) AS res_ts_precedes,
+
+                        -- IMMEDIATELY PRECEDES
+                        (DATE '2020-06-21', INTERVAL '1' DAY) IMMEDIATELY PRECEDES (DATE '2020-06-22', INTERVAL '1' DAY) AS res_date_immed_precedes,
+                        (TIME '14:00:00', INTERVAL '1' HOUR) IMMEDIATELY PRECEDES (TIME '15:00:00', INTERVAL '1' HOUR) AS res_time_immed_precedes,
+                        (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) IMMEDIATELY PRECEDES (TIMESTAMP '2020-06-21 15:00:00', INTERVAL '1' HOUR) AS res_ts_immed_precedes,
+
+                        -- SUCCEEDS
+                        (DATE '2020-06-25', INTERVAL '1' DAY) SUCCEEDS (DATE '2020-06-21', INTERVAL '3' DAY) AS res_date_succeeds,
+                        (TIME '15:30:00', INTERVAL '1' HOUR) SUCCEEDS (TIME '14:00:00', INTERVAL '1' HOUR) AS res_time_succeeds,
+                        (TIMESTAMP '2020-06-21 15:30:00', INTERVAL '1' HOUR) SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) AS res_ts_succeeds,
+
+                        -- IMMEDIATELY SUCCEEDS
+                        (DATE '2020-06-25', INTERVAL '1' DAY) IMMEDIATELY SUCCEEDS (DATE '2020-06-24', INTERVAL '1' DAY) AS res_date_immed_succeeds,
+                        (TIME '15:00:00', INTERVAL '1' HOUR) IMMEDIATELY SUCCEEDS (TIME '14:00:00', INTERVAL '1' HOUR) AS res_time_immed_succeeds,
+                        (TIMESTAMP '2020-06-21 15:00:00', INTERVAL '1' HOUR) IMMEDIATELY SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) AS res_ts_immed_succeeds
+                      """
+
+
+class illarg_period_operators_neg_interval_legal(TstView):
+    def __init__(self):
+        self.data = [
+            {
+                "res_date": False,
+                "res_ts_equals": True,
+                "res_time_overlaps": True,
+                "res_date_precedes": True,
+                "res_date_immed_precedes": True,
+                "res_date_succeeds": True,
+                "res_date_immed_succeeds": True,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW period_operators_neg_interval_legal AS SELECT
+
+                        -- CONTAINS
+                        (DATE '2020-06-21', - INTERVAL '4' DAY) CONTAINS DATE '2020-06-23' AS res_date,
+
+                        -- EQUALS
+                        (TIMESTAMP '2020-06-21 14:00:00', - INTERVAL '1' HOUR) EQUALS (TIMESTAMP '2020-06-21 14:00:00', - INTERVAL '1' HOUR) AS res_ts_equals,
+
+                        -- OVERLAPS
+                        (TIME '14:00:00', - INTERVAL '1' HOUR) OVERLAPS (TIME '14:30:00', - INTERVAL '1' HOUR) AS res_time_overlaps,
+
+                        -- PRECEDES
+                        (DATE '2020-06-21', - INTERVAL '1' DAY) PRECEDES (DATE '2020-06-24', - INTERVAL '1' DAY) AS res_date_precedes,
+
+                        -- IMMEDIATELY PRECEDES
+                        (DATE '2020-06-21', - INTERVAL '1' DAY) IMMEDIATELY PRECEDES (DATE '2020-06-22', - INTERVAL '1' DAY) AS res_date_immed_precedes,
+
+                        -- SUCCEEDS
+                        (DATE '2020-06-25', - INTERVAL '1' DAY) SUCCEEDS (DATE '2020-06-21', - INTERVAL '3' DAY) AS res_date_succeeds,
+
+                        -- IMMEDIATELY SUCCEEDS
+                        (DATE '2020-06-25', INTERVAL '1' DAY) IMMEDIATELY SUCCEEDS (DATE '2020-06-24', INTERVAL '1' DAY) AS res_date_immed_succeeds
+                      """
+
+
+# Negative Tests
+class illarg_contains_illegal_timestamp(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW contains_illegal_timestamp AS SELECT
+                      (tmestmp, tmestmp) CONTAINS INTERVAL '1' HOUR AS res
                       FROM illegal_tbl
                       WHERE id = 0"""
+        self.expected_error = "Cannot apply 'CONTAINS' to arguments of type"
 
 
-# Negative Test
 class illarg_overlaps_illegal(TstView):
     def __init__(self):
         self.sql = """CREATE MATERIALIZED VIEW overlaps_illegal AS SELECT
@@ -1585,7 +1789,7 @@ class illarg_overlaps_illegal(TstView):
         self.expected_error = "Cannot apply 'OVERLAPS' to arguments of type"
 
 
-class illarg_interval_overlap_illegal(TstView):
+class illarg_interval_overlaps_illegal(TstView):
     def __init__(self):
         self.data = []
         self.sql = """CREATE LOCAL VIEW ats_minus_ts AS SELECT
@@ -1601,20 +1805,38 @@ class illarg_interval_overlap_illegal(TstView):
         self.expected_error = "Cannot apply 'OVERLAPS' to arguments of type"
 
 
-# CONTAINS
-class illarg_contains_legal(TstView):
+class illarg_equals_illegal(TstView):
     def __init__(self):
-        self.data = [{"datee": True}]
-        self.sql = """CREATE MATERIALIZED VIEW contains_legal AS SELECT
-                      (datee, datee + INTERVAL '1' DAY) CONTAINS datee as datee
-                      FROM illegal_tbl
-                      WHERE id = 0"""
+        self.sql = """CREATE MATERIALIZED VIEW equals_illegal AS SELECT
+                        (TIME '14:00:00', TIME '15:00:00') EQUALS (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') AS res_time"""
+        self.expected_error = "Cannot apply 'EQUALS' to arguments of type"
 
 
-class illarg_contains_illegal_timestamp(TstView):
+class illarg_precedes_illegal(TstView):
     def __init__(self):
-        self.sql = """CREATE MATERIALIZED VIEW contains_illegal_timestamp AS SELECT
-                      tmestmp CONTAINS TIMESTAMP '2020-06-21 14:23:44.123654' AS res
-                      FROM illegal_tbl
-                      WHERE id = 0"""
-        self.expected_error = "Cannot apply 'CONTAINS' to arguments of type"
+        self.sql = """CREATE MATERIALIZED VIEW precedes_illegal AS SELECT
+                        (DATE '2020-06-21', INTERVAL '1' DAY) PRECEDES (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' MINUTE) AS res_time"""
+        self.expected_error = "Cannot apply 'PRECEDES' to arguments of type"
+
+
+class illarg_imm_precedes_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW imm_precedes_illegal AS SELECT
+                        (datee, INTERVAL '1' MINUTE) IMMEDIATELY PRECEDES (TIME '15:00:00', INTERVAL '1' MINUTE) AS res_ts
+                        FROM illegal_tbl
+                        WHERE id = 0"""
+        self.expected_error = "Cannot apply 'IMMEDIATELY PRECEDES' to arguments of type"
+
+
+class illarg_succeeds_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW succeeds_illegal AS SELECT
+                        (INTERVAL '1' DAY, DATE '2020-06-25') SUCCEEDS (INTERVAL '1' DAY, DATE '2020-06-25') AS res_date"""
+        self.expected_error = "Cannot apply 'SUCCEEDS' to arguments of type"
+
+
+class illarg_imm_succeeds_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW imm_succeeds_illegal AS SELECT
+                        (INTERVAL '1' HOUR, INTERVAL '1' DAY) IMMEDIATELY SUCCEEDS (INTERVAL '1' DAY, INTERVAL '1' HOUR) AS res_date_immed"""
+        self.expected_error = "Cannot apply 'IMMEDIATELY SUCCEEDS' to arguments of type"
