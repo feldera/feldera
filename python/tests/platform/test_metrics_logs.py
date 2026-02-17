@@ -2,6 +2,7 @@ from feldera.wait_constants import (
     WAIT_TIMEOUT_LIGHT_OPERATION_S,
     WAIT_POLL_INTERVAL_DEFAULT_S,
 )
+from feldera.enums import PipelineStatus
 import json
 from http import HTTPStatus
 from urllib.parse import quote_plus
@@ -127,7 +128,7 @@ def test_pipeline_stats(pipeline_name):
     assert keys == ["global_metrics", "inputs", "outputs", "suspend_error"]
 
     gm = stats["global_metrics"]
-    assert gm.get("state") == "Running"
+    assert PipelineStatus.from_str(gm.get("state")) == PipelineStatus.RUNNING
     assert gm.get("total_input_records") == 5
     assert gm.get("total_processed_records") == 5
     assert gm.get("pipeline_complete")

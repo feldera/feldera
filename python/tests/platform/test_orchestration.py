@@ -2,6 +2,7 @@ from feldera.wait_constants import (
     WAIT_TIMEOUT_LIGHT_OPERATION_S,
     WAIT_POLL_INTERVAL_DEFAULT_S,
 )
+from feldera.enums import PipelineStatus
 from http import HTTPStatus
 
 from .helper import (
@@ -25,7 +26,10 @@ from .helper import (
 
 def _basic_orchestration_info(pipeline: str, table: str, connector: str):
     stats = pipeline_stats(pipeline)
-    pipeline_paused = stats["global_metrics"]["state"] == "Paused"
+    pipeline_paused = (
+        PipelineStatus.from_str(stats["global_metrics"]["state"])
+        == PipelineStatus.PAUSED
+    )
     processed = stats["global_metrics"]["total_processed_records"]
     return pipeline_paused, connector_paused(pipeline, table, connector), processed
 
@@ -312,7 +316,10 @@ def test_pipeline_orchestration_scenarios(pipeline_name):
             apply_step(s)
 
         st = pipeline_stats(pipeline_name)
-        pipeline_paused = st["global_metrics"]["state"] == "Paused"
+        pipeline_paused = (
+            PipelineStatus.from_str(st["global_metrics"]["state"])
+            == PipelineStatus.PAUSED
+        )
         inputs = st["inputs"]
         c1_paused = next(i for i in inputs if i["endpoint_name"] == "numbers.c1")[
             "paused"

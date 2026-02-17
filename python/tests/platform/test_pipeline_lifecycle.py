@@ -2,6 +2,7 @@ from feldera.wait_constants import (
     WAIT_POLL_INTERVAL_DEFAULT_S,
     WAIT_TIMEOUT_PROGRAM_COMPILATION_S,
 )
+from feldera.enums import PipelineStatus, ProgramStatus, StorageStatus
 import time
 from http import HTTPStatus
 
@@ -34,7 +35,10 @@ def _wait_for_stopped_with_error(name: str, timeout_s: float = 90.0):
         r = get_pipeline(name, "status")
         if r.status_code == HTTPStatus.OK:
             obj = r.json()
-            if obj.get("deployment_status") == "Stopped":
+            if (
+                PipelineStatus.from_str(obj.get("deployment_status"))
+                == PipelineStatus.STOPPED
+            ):
                 err = obj.get("deployment_error")
                 if err:
                     return err
@@ -135,8 +139,10 @@ def test_pipeline_start_without_compiling(pipeline_name):
     # Keep a long timeout because parallel test runs can queue compilation.
     wait_for_condition(
         "program status moves past Pending/CompilingSql",
-        lambda: get_pipeline(pipeline_name, "status").json().get("program_status")
-        not in ("Pending", "CompilingSql"),
+        lambda: ProgramStatus.from_value(
+            get_pipeline(pipeline_name, "status").json().get("program_status")
+        )
+        not in (ProgramStatus.Pending, ProgramStatus.CompilingSql),
         timeout_s=WAIT_TIMEOUT_PROGRAM_COMPILATION_S,
         poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
     )
@@ -275,7 +281,7 @@ def test_pipeline_clear(pipeline_name):
     create_pipeline(pipeline_name, "")
 
     obj = get_pipeline(pipeline_name, "status").json()
-    assert obj.get("storage_status") == "Cleared"
+    assert StorageStatus.from_str(obj.get("storage_status")) == StorageStatus.CLEARED
 
     # Calling /clear does not have an effect
     cr = clear_pipeline(pipeline_name)
@@ -284,7 +290,7 @@ def test_pipeline_clear(pipeline_name):
     # Start (becomes InUse)
     start_pipeline(pipeline_name)
     obj = get_pipeline(pipeline_name, "status").json()
-    assert obj.get("storage_status") == "InUse"
+    assert StorageStatus.from_str(obj.get("storage_status")) == StorageStatus.INUSE
 
     # While running, clear is not possible
     cr = clear_pipeline(pipeline_name)
@@ -293,13 +299,13 @@ def test_pipeline_clear(pipeline_name):
     # Force stop -> still InUse
     stop_pipeline(pipeline_name, force=True)
     obj = get_pipeline(pipeline_name, "status").json()
-    assert obj.get("storage_status") == "InUse"
+    assert StorageStatus.from_str(obj.get("storage_status")) == StorageStatus.INUSE
 
     # Start then pause
     start_pipeline(pipeline_name)
     pause_pipeline(pipeline_name)
     obj = get_pipeline(pipeline_name, "status").json()
-    assert obj.get("storage_status") == "InUse"
+    assert StorageStatus.from_str(obj.get("storage_status")) == StorageStatus.INUSE
 
     # Clear while paused -> BAD_REQUEST
     cr = clear_pipeline(pipeline_name)
@@ -308,7 +314,7 @@ def test_pipeline_clear(pipeline_name):
     # Force stop again, it should still be InUse
     stop_pipeline(pipeline_name, force=True)
     obj = get_pipeline(pipeline_name, "status").json()
-    assert obj.get("storage_status") == "InUse"
+    assert StorageStatus.from_str(obj.get("storage_status")) == StorageStatus.INUSE
 
     # Clear (may go through Clearing then Cleared). Allow two attempts.
     first = clear_pipeline(pipeline_name, wait=False)
@@ -316,7 +322,10 @@ def test_pipeline_clear(pipeline_name):
     second = clear_pipeline(pipeline_name, wait=True)
     assert second.status_code == HTTPStatus.ACCEPTED
     assert (
-        get_pipeline(pipeline_name, "status").json().get("storage_status") == "Cleared"
+        StorageStatus.from_str(
+            get_pipeline(pipeline_name, "status").json().get("storage_status")
+        )
+        == StorageStatus.CLEARED
     )
 
 
