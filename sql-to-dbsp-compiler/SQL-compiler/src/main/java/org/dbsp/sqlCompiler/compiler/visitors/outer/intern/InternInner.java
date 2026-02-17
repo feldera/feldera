@@ -480,7 +480,13 @@ public class InternInner extends ExpressionTranslator {
     public void postorder(DBSPUnwrapExpression expression) {
         DBSPExpression source = this.getE(expression.expression);
         if (source.getType().code == INTERNED_STRING) {
-            source = this.uninternIfNecessary(expression.expression);
+            if (expression.neverFails()) {
+                // Drop the unwrap
+                this.map(expression, source);
+                return;
+            } else {
+                source = this.uninternIfNecessary(expression.expression);
+            }
         }
         DBSPExpression result = new DBSPUnwrapExpression(expression.message, source);
         this.map(expression, result);
