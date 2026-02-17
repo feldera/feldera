@@ -360,6 +360,32 @@ computation on whole days.
 <a id="abs"></a>`ABS`(interval) computes the absolute value of an
 interval.
 
+## Period predicate DATE/TIME/TIMESTAMP operators
+
+A time period is defined as a pair: `(Start, End)`, where `Start` and `End` are expressions that evaluate to `DATE`, `TIME`, or `TIMESTAMP` values. They can either be DATETIME literals, columns, or expressions that return a DATETIME value.
+
+The `END` value can also be an `INTERVAL`, in which case the time period is defined as `(Start, Interval)`. The `INTERVAL` must be type-compatible with the `Start` value. Both positive and negative intervals are supported.
+
+**Examples:**
+- Literal value:`(DATE '2020-06-21', DATE '2020-06-22')`
+- Literal value with interval: `(DATE '2020-06-21', INTERVAL '1' DAY)`
+
+The `Start` and `End` values may be provided in any order. If `Start` > `End`, the period is interpreted as `(End, Start)`. This ensures if `END` is the smaller `TIME/DATE/TIMESTAMP`, or an `INTERVAL` with a negative duration, it is treated as the beginning of the range.
+
+We support the following time period predicate operators:
+
+| Operation                | Syntax                                               | Semantics                           | Example                                                                                                     |
+| ------------------------ | ---------------------------------------------------- |-------------------------------------| ----------------------------------------------------------------------------------------------------------- |
+| **CONTAINS (value)**     | `(Start1, End1) CONTAINS V`                          | `start1 <= V AND end1 >= V`         | `(DATE '2020-06-24', DATE '2020-06-22') CONTAINS DATE '2020-06-21'` => FALSE                               |
+| **CONTAINS (period)**    | `(Start1, End1) CONTAINS (Start2, End2)`             | `start1 <= start2 AND end1 >= end2` | `(DATE '2020-06-21', DATE '2020-06-25') CONTAINS (DATE '2020-06-22', DATE '2020-06-23')` => TRUE          |
+| **OVERLAPS**             | `(Start1, End1) OVERLAPS (Start2, End2)`             | `start1 <= end2 AND end1 >= start2` | `(DATE '2020-06-21', DATE '2020-06-23') OVERLAPS (DATE '2020-06-22', DATE '2020-06-24')` => TRUE          |
+| **EQUALS**               | `(Start1, End1) EQUALS (Start2, End2)`               | `start1 = start2 AND end1 = end2`   | `(DATE '2020-06-21', DATE '2020-06-23') EQUALS (DATE '2020-06-21', DATE '2020-06-23')` => TRUE            |
+| **PRECEDES**             | `(Start1, End1) PRECEDES (Start2, End2)`             | `end1 <= start2`                    | `(DATE '2020-06-21', DATE '2020-06-22') PRECEDES (DATE '2020-06-24', DATE '2020-06-25')` => TRUE          |
+| **IMMEDIATELY PRECEDES** | `(Start1, End1) IMMEDIATELY PRECEDES (Start2, End2)` | `end1 = start2`                     | `(DATE '2020-06-21', DATE '2020-06-22') IMMEDIATELY PRECEDES (DATE '2020-06-22', DATE '2020-06-23')` => TRUE |
+| **SUCCEEDS**             | `(Start1, End1) SUCCEEDS (Start2, End2)`             | `start1 >= end2`                    | `(DATE '2020-06-24', DATE '2020-06-25') SUCCEEDS (DATE '2020-06-21', DATE '2020-06-22')` => TRUE          |
+| **IMMEDIATELY SUCCEEDS** | `(Start1, End1) IMMEDIATELY SUCCEEDS (Start2, End2)` | `start1 = end2`                     | `(DATE '2020-06-24', DATE '2020-06-25') IMMEDIATELY SUCCEEDS (DATE '2020-06-23', DATE '2020-06-24')` => TRUE |
+
+
 ## Timezones
 
 `DATE`, `TIME` and `TIMESTAMP` have no time zone.
