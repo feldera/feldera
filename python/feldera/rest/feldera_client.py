@@ -9,7 +9,14 @@ from urllib.parse import quote
 
 import requests
 
-from feldera.enums import BootstrapPolicy, PipelineFieldSelector, PipelineStatus
+from feldera.enums import (
+    BootstrapPolicy,
+    DeploymentDesiredStatus,
+    PipelineFieldSelector,
+    PipelineStatus,
+    ProgramStatus,
+    StorageStatus,
+)
 from feldera.rest._helpers import determine_client_version
 from feldera.rest._httprequests import HttpRequests
 from feldera.rest.config import Config
@@ -198,7 +205,12 @@ class FelderaClient:
         timeout_s: float | None = None,
         poll_interval_s: float = WAIT_POLL_INTERVAL_DEFAULT_S,
     ) -> Pipeline:
-        wait = ["Pending", "CompilingSql", "SqlCompiled", "CompilingRust"]
+        wait = {
+            ProgramStatus.Pending,
+            ProgramStatus.CompilingSql,
+            ProgramStatus.SqlCompiled,
+            ProgramStatus.CompilingRust,
+        }
         start_time = time.monotonic()
         timeout_s = _normalize_wait_timeout(
             timeout_s,
@@ -215,9 +227,9 @@ class FelderaClient:
                 )
 
             p = self.get_pipeline(name, PipelineFieldSelector.STATUS)
-            status = p.program_status
+            status = ProgramStatus.from_value(p.program_status)
 
-            if status == "Success":
+            if status == ProgramStatus.Success:
                 if expected_program_version is None:
                     return self.get_pipeline(name, PipelineFieldSelector.ALL)
 
@@ -228,7 +240,7 @@ class FelderaClient:
                 p = self.get_pipeline(name, PipelineFieldSelector.ALL)
 
                 # error handling for SQL compilation errors
-                if status == "SqlError":
+                if status == ProgramStatus.SqlError:
                     sql_errors = p.program_error["sql_compilation"]["messages"]
                     if sql_errors:
                         err_msg = f"Pipeline {name} failed to compile:\n"
@@ -239,7 +251,7 @@ class FelderaClient:
                             err_msg += f"Code snippet:\n{sql_error['snippet']}"
                         raise RuntimeError(err_msg)
 
-                error_message = f"The program failed to compile: {status}\n"
+                error_message = f"The program failed to compile: {status.name}\n"
 
                 rust_error = p.program_error.get("rust_compilation")
                 if rust_error is not None:
@@ -370,6 +382,7 @@ class FelderaClient:
             operation=f"wait_for_pipeline_state({state})",
         )
 
+        target_state = PipelineStatus.from_str(state)
         while True:
             elapsed = time.monotonic() - start_time
             if elapsed > timeout_s:
@@ -379,14 +392,15 @@ class FelderaClient:
                 )
 
             resp = self.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS)
-            status = resp.deployment_status
+            status = PipelineStatus.from_str(resp.deployment_status)
 
-            if status.lower() == state.lower():
+            if status == target_state:
                 break
             elif (
-                status == "Stopped"
+                status == PipelineStatus.STOPPED
                 and len(resp.deployment_error or {}) > 0
-                and resp.deployment_desired_status == "Stopped"
+                and (resp.deployment_desired_status or "").lower()
+                == DeploymentDesiredStatus.STOPPED.name.lower()
             ):
                 err_msg = "Unable to START the pipeline:\n" if start else ""
                 raise RuntimeError(
@@ -412,7 +426,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
     ) -> PipelineStatus:
         start_time = time.monotonic()
         poll_interval_s = WAIT_POLL_INTERVAL_DEFAULT_S
-        states = [state.lower() for state in states]
+        target_states = [PipelineStatus.from_str(state) for state in states]
         timeout_s = _normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
@@ -428,14 +442,15 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 )
 
             resp = self.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS)
-            status = resp.deployment_status
+            status = PipelineStatus.from_str(resp.deployment_status)
 
-            if status.lower() in states:
-                return PipelineStatus.from_str(status)
+            if status in target_states:
+                return status
             elif (
-                status == "Stopped"
+                status == PipelineStatus.STOPPED
                 and len(resp.deployment_error or {}) > 0
-                and resp.deployment_desired_status == "Stopped"
+                and (resp.deployment_desired_status or "").lower()
+                == DeploymentDesiredStatus.STOPPED.name.lower()
             ):
                 if ignore_deployment_error:
                     logging.debug(
@@ -447,7 +462,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                     continue
                 err_msg = "Unable to START the pipeline:\n" if start else ""
                 raise RuntimeError(
-                    f"""{err_msg}Unable to transition the pipeline to one of the states: {states}.
+                    f"""{err_msg}Unable to transition the pipeline to one of the states: {[s.name.lower() for s in target_states]}.
 Reason: The pipeline is in a STOPPED state due to the following error:
 {resp.deployment_error.get("message", "")}"""
                 )
@@ -925,7 +940,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 pipeline_name, PipelineFieldSelector.STATUS
             ).deployment_status
 
-            if status == "Stopped":
+            if PipelineStatus.from_str(status) == PipelineStatus.STOPPED:
                 return
 
             logging.debug(
@@ -964,7 +979,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 pipeline_name, PipelineFieldSelector.STATUS
             ).storage_status
 
-            if status == "Cleared":
+            if StorageStatus.from_str(status) == StorageStatus.CLEARED:
                 return
 
             logging.debug(
