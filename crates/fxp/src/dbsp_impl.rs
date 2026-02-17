@@ -1,3 +1,4 @@
+use dbsp::NumEntries;
 use dbsp::algebra::{HasOne, HasZero, MulByRef, OptionWeightType};
 use dbsp::utils::IsNone;
 use feldera_types::serde_with_context::{
@@ -8,6 +9,18 @@ use smallstr::SmallString;
 use std::fmt::Write;
 
 use crate::{DynamicDecimal, Fixed, FixedInteger};
+
+impl<const P: usize, const S: usize> NumEntries for Fixed<P, S> {
+    const CONST_NUM_ENTRIES: Option<usize> = Some(1);
+
+    fn num_entries_shallow(&self) -> usize {
+        1
+    }
+
+    fn num_entries_deep(&self) -> usize {
+        1
+    }
+}
 
 impl<const P: usize, const S: usize> IsNone for Fixed<P, S> {
     type Inner = Self;
