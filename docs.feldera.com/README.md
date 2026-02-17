@@ -4,8 +4,10 @@ This website is built using [Docusaurus](https://docusaurus.io/), a modern stati
 
 ### Installation
 
+Install yarn if not already present. Then install required dependencies & setup project.
+
 ```
-$ yarn
+$ yarn install
 ```
 
 ### Local Development

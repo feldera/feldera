@@ -121,3 +121,31 @@ Feldera pipelines primarily use memory for the following purposes:
 
   [`max_batch_size`]: /connectors#max_batch_size
 
+## Advanced Usage
+
+### jemalloc Configuration
+
+Users can fine-tune the performance of jemalloc with the `MALLOC_CONF` environment variable. Possible configuration values are detailed in the [jemalloc reference](https://jemalloc.net/jemalloc.3.html#tuning). [Feldera sets default `MALLOC_CONF`](https://github.com/feldera/feldera/blob/5bcdf945525c87cbc22d4036609455d8159e029b/sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/rust/BaseRustCodeGenerator.java#L102) values to collect heap profile data. values to collect heap profile data. These defaults are prof:true,prof_active:true,lg_prof_sample:19. When setting custom configuration, preserve Feldera's defaults by taking the union of both sets of values.
+
+- **With Docker**: [Docker Quickstart](/get-started/docker#docker-quickstart) users can set the `MALLOC_CONF` environment variable by passing `-e MALLOC_CONF='prof:true,prof_active:true,lg_prof_sample:19,custom_config_value:true'` where `'custom_config_value:true'` is replaced with the values the user wants to configure.
+
+  If using [Docker Compose](/get-started/docker#optional-docker-compose-quickstart), customize the pipeline manager environment.
+  ```yaml
+  services:
+    pipeline-manager:
+      # ...
+      environment:
+        # prof, prof_active, and lg_prof_sample are Feldera defaults that should be preserved
+        MALLOC_CONF: prof:true,prof_active:true,lg_prof_sample:19,background_thread:true,stats_print:true
+  ```
+
+- **With Helm (Enterprise Users Only)**: Enterprise users can add the `MALLOC_CONF` environment variable to the `values.yaml` file.
+
+  Example usage:
+  ```yaml
+  pipeline:
+    env:
+     - name: MALLOC_CONF
+     # prof, prof_active, and lg_prof_sample are Feldera defaults that should be preserved
+       value: prof:true,prof_active:true,lg_prof_sample:19,background_thread:true,stats_print:true
+  ```
