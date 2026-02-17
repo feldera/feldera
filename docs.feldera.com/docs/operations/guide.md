@@ -302,10 +302,10 @@ was changed out-of-band, thereby undoing the storage expansion.
    and looking under `ALLOWVOLUMEEXPANSION`.
 
 4. Patch the PVC of the pipeline with a higher storage request
-   (in this example, increasing `25G` to `50G`):
+   (in this example, increasing `25Gi` to `50Gi`):
    ```
    kubectl patch pvc -n $NAMESPACE $PIPELINE_PVC \
-       -p '{"spec":{"resources":{"requests":{"storage":"50G"}}}}'
+       -p '{"spec":{"resources":{"requests":{"storage":"50Gi"}}}}'
    ```
 
    Note: it is not possible to patch `spec.resources.limits.storage`,
