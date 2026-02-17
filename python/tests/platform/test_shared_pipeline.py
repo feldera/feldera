@@ -16,6 +16,10 @@ from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT, enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
+from feldera.wait_constants import (
+    WAIT_POLL_INTERVAL_DEFAULT_S,
+    WAIT_TIMEOUT_STANDARD_OPERATION_S,
+)
 
 
 class TestPipeline(SharedTestPipeline):
@@ -343,8 +347,8 @@ class TestPipeline(SharedTestPipeline):
             "pipeline stops with deployment error after worker panic",
             lambda: self.pipeline.status() == PipelineStatus.STOPPED
             and len(self.pipeline.deployment_error()) > 0,
-            timeout_s=120.0,
-            poll_interval_s=1.0,
+            timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
+            poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
         )
         self.pipeline.stop(force=True)
 
@@ -824,7 +828,7 @@ class TestPipeline(SharedTestPipeline):
                 samply_profile_bytes = self.pipeline.get_samply_profile()
                 if samply_profile_bytes:
                     break
-                time.sleep(0.1)
+                time.sleep(WAIT_POLL_INTERVAL_DEFAULT_S)
             except FelderaAPIError as e:
                 if e.status_code == 500:
                     raise

@@ -8,6 +8,10 @@ from uuid import uuid4, UUID
 from feldera.enums import FaultToleranceModel, PipelineStatus
 from feldera.runtime_config import RuntimeConfig, Storage
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
+from feldera.wait_constants import (
+    WAIT_TIMEOUT_LIGHT_OPERATION_S,
+    WAIT_POLL_INTERVAL_DEFAULT_S,
+)
 from tests import enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
 
@@ -112,7 +116,7 @@ class TestCheckpointSync(SharedTestPipeline):
                     f"timed out while waiting for pipeline to process {total} records"
                 )
 
-            time.sleep(0.1)
+            time.sleep(WAIT_POLL_INTERVAL_DEFAULT_S)
 
         got_before = list(self.pipeline.query("SELECT * FROM v0"))
         print(f"{self.pipeline.name}: records: {total}, {got_before}", file=sys.stderr)
@@ -141,13 +145,13 @@ class TestCheckpointSync(SharedTestPipeline):
             self.pipeline.client.wait_for_condition(
                 "automated checkpoint is created for current processed records",
                 checkpoint_created,
-                timeout_s=30.0,
-                poll_interval_s=0.5,
+                timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+                poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
             )
             chk_uuid = chk_uuid_holder["value"]
 
         print("Checkpoint UUID:", chk_uuid, file=sys.stderr)
-        time.sleep(1)
+        time.sleep(WAIT_POLL_INTERVAL_DEFAULT_S)
 
         if automated_sync_interval is not None:
 
@@ -170,8 +174,8 @@ class TestCheckpointSync(SharedTestPipeline):
             self.pipeline.client.wait_for_condition(
                 "automated checkpoint sync completes",
                 checkpoint_sync_completed,
-                timeout_s=30.0,
-                poll_interval_s=0.5,
+                timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+                poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
             )
         else:
             uuid = self.pipeline.sync_checkpoint(wait=True)
@@ -366,7 +370,7 @@ class TestCheckpointSync(SharedTestPipeline):
             total_additional += 1
             self.pipeline.checkpoint(wait=True)
             self.pipeline.sync_checkpoint(wait=True)
-            time.sleep(0.2)
+            time.sleep(WAIT_POLL_INTERVAL_DEFAULT_S)
 
         got_expected = (
             got_before if from_uuid else list(self.pipeline.query("SELECT * FROM v0"))

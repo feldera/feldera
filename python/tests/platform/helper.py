@@ -20,6 +20,11 @@ from http import HTTPStatus
 from urllib.parse import quote, quote_plus
 
 from feldera.testutils_oidc import get_oidc_test_helper
+from feldera.wait_constants import (
+    WAIT_POLL_INTERVAL_DEFAULT_S,
+    WAIT_TIMEOUT_LIGHT_OPERATION_S,
+    WAIT_TIMEOUT_PROGRAM_COMPILATION_S,
+)
 from tests import (
     FELDERA_REQUESTS_VERIFY,
     API_KEY,
@@ -83,7 +88,7 @@ def http_request(method: str, path: str, **kwargs) -> requests.Response:
     }  # Merge, with custom headers taking precedence
 
     # Provide a default timeout to avoid hanging tests.
-    timeout = kwargs.pop("timeout", 30)
+    timeout = kwargs.pop("timeout", WAIT_TIMEOUT_LIGHT_OPERATION_S)
     kwargs["verify"] = FELDERA_REQUESTS_VERIFY
     resp = requests.request(
         method.upper(), url, headers=headers, timeout=timeout, **kwargs
@@ -159,7 +164,7 @@ def stop_pipeline(name: str, force: bool = True, wait: bool = True):
 def clear_pipeline(name: str, wait: bool = True):
     r = post_no_body(f"{API_PREFIX}/pipelines/{name}/clear")
     if wait and r.status_code == HTTPStatus.ACCEPTED:
-        TEST_CLIENT.clear_storage(name, timeout_s=60.0)
+        TEST_CLIENT.clear_storage(name, timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S)
     return r
 
 
@@ -227,8 +232,8 @@ def connector_paused(pipeline, table: str, connector: str) -> bool:
 def wait_for_program_success(
     pipeline_name: str,
     expected_program_version: int,
-    timeout_s: float = 1800.0,
-    sleep_s: float = 0.5,
+    timeout_s: float = WAIT_TIMEOUT_PROGRAM_COMPILATION_S,
+    poll_interval_s: float = WAIT_POLL_INTERVAL_DEFAULT_S,
 ) -> None:
     """
     Wait until the pipeline's program has compiled successfully and reached
@@ -238,15 +243,15 @@ def wait_for_program_success(
         pipeline_name,
         expected_program_version=expected_program_version,
         timeout_s=timeout_s,
-        poll_interval_s=sleep_s,
+        poll_interval_s=poll_interval_s,
     )
 
 
 def wait_for_condition(
     description: str,
     predicate,
-    timeout_s: float = 30.0,
-    sleep_s: float = 0.2,
+    timeout_s: float = WAIT_TIMEOUT_LIGHT_OPERATION_S,
+    poll_interval_s: float = WAIT_POLL_INTERVAL_DEFAULT_S,
 ) -> None:
     """
     Proxy to Feldera client generic condition waiter.
@@ -261,7 +266,7 @@ def wait_for_condition(
         description,
         predicate,
         timeout_s=timeout_s,
-        poll_interval_s=sleep_s,
+        poll_interval_s=poll_interval_s,
     )
 
 

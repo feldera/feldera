@@ -1,3 +1,7 @@
+from feldera.wait_constants import (
+    WAIT_TIMEOUT_LIGHT_OPERATION_S,
+    WAIT_POLL_INTERVAL_DEFAULT_S,
+)
 import json
 from http import HTTPStatus
 from urllib.parse import quote_plus
@@ -111,8 +115,8 @@ def test_pipeline_stats(pipeline_name):
     wait_for_condition(
         "datagen ingests 5 rows into t1",
         lambda: _adhoc_count(pipeline_name, "t1") == 5,
-        timeout_s=10,
-        sleep_s=1.0,
+        timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+        poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
     )
     assert _adhoc_count(pipeline_name, "t1") == 5, "Did not ingest expected 5 rows"
 
@@ -159,8 +163,8 @@ def test_pipeline_stats(pipeline_name):
     wait_for_condition(
         "time_series has >=2 samples and reflects 5 processed records",
         time_series_ready,
-        timeout_s=10,
-        sleep_s=0.5,
+        timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+        poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
     )
 
     r_ts = get(api_url(f"/pipelines/{pipeline_name}/time_series"))
@@ -196,8 +200,8 @@ def test_pipeline_logs(pipeline_name):
             api_url(f"/pipelines/{pipeline_name}/logs"), stream=True
         ).status_code
         == HTTPStatus.OK,
-        timeout_s=30,
-        sleep_s=0.5,
+        timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+        poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
     )
 
     # Pause pipeline
@@ -243,6 +247,6 @@ def test_pipeline_logs(pipeline_name):
             api_url(f"/pipelines/{pipeline_name}/logs"), stream=True
         ).status_code
         == HTTPStatus.NOT_FOUND,
-        timeout_s=30,
-        sleep_s=0.5,
+        timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+        poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
     )

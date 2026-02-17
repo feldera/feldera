@@ -1,3 +1,7 @@
+from feldera.wait_constants import (
+    WAIT_POLL_INTERVAL_DEFAULT_S,
+    WAIT_TIMEOUT_PROGRAM_COMPILATION_S,
+)
 import time
 from http import HTTPStatus
 
@@ -34,7 +38,7 @@ def _wait_for_stopped_with_error(name: str, timeout_s: float = 90.0):
                 err = obj.get("deployment_error")
                 if err:
                     return err
-        time.sleep(0.5)
+        time.sleep(WAIT_POLL_INTERVAL_DEFAULT_S)
     raise TimeoutError(f"Timed out waiting for pipeline '{name}' to stop with an error")
 
 
@@ -133,8 +137,8 @@ def test_pipeline_start_without_compiling(pipeline_name):
         "program status moves past Pending/CompilingSql",
         lambda: get_pipeline(pipeline_name, "status").json().get("program_status")
         not in ("Pending", "CompilingSql"),
-        timeout_s=1800.0,
-        sleep_s=1.0,
+        timeout_s=WAIT_TIMEOUT_PROGRAM_COMPILATION_S,
+        poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
     )
 
     start_pipeline(pipeline_name, wait=False)

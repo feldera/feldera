@@ -1,3 +1,7 @@
+from feldera.wait_constants import (
+    WAIT_TIMEOUT_LIGHT_OPERATION_S,
+    WAIT_POLL_INTERVAL_DEFAULT_S,
+)
 # TODO: these tests should be part of runtime tests
 
 import json
@@ -49,7 +53,7 @@ def _ingress(
     if wait and resp.status_code == HTTPStatus.OK:
         token = (resp.json() or {}).get("token")
         assert token, f"Expected completion token in ingress response: {resp.text}"
-        TEST_CLIENT.wait_for_token(pipeline, token, timeout_s=30.0)
+        TEST_CLIENT.wait_for_token(pipeline, token, timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S)
 
     return resp
 
@@ -95,7 +99,7 @@ class JsonLineReader:
         self.resp = resp
         self._iter = resp.iter_lines()
 
-    def read_events(self, n, timeout_s=10.0):
+    def read_events(self, n, timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S):
         events, start = [], time.monotonic()
         while len(events) < n:
             try:
@@ -260,8 +264,8 @@ def test_json_ingress(pipeline_name):
     wait_for_condition(
         "csv partial-ingest rows become visible after parse error",
         _csv_partial_rows_visible,
-        timeout_s=10,
-        sleep_s=0.2,
+        timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+        poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
     )
 
     got = adhoc_query_json(pipeline_name, "select * from t1 order by c1, c2, c3")

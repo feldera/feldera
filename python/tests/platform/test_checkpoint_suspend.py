@@ -1,3 +1,7 @@
+from feldera.wait_constants import (
+    WAIT_TIMEOUT_LIGHT_OPERATION_S,
+    WAIT_POLL_INTERVAL_DEFAULT_S,
+)
 import time
 import json
 from http import HTTPStatus
@@ -84,8 +88,8 @@ def test_checkpoint_enterprise(pipeline_name):
         wait_for_condition(
             f"checkpoint seq={seq} reaches success",
             checkpoint_seq_reached_success,
-            timeout_s=10,
-            sleep_s=0.2,
+            timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+            poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
         )
 
 
@@ -186,8 +190,8 @@ def test_suspend_enterprise(pipeline_name):
     wait_for_condition(
         "1 record from c1",
         lambda: _adhoc_count(pipeline_name) == 1,
-        timeout_s=10,
-        sleep_s=0.2,
+        timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+        poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
     )
 
     # Suspend (non-force) and resume pipeline
@@ -204,8 +208,8 @@ def test_suspend_enterprise(pipeline_name):
     wait_for_condition(
         "9 total records after c2/c3",
         lambda: _adhoc_count(pipeline_name) == 9,
-        timeout_s=15,
-        sleep_s=0.2,
+        timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+        poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
     )
 
     # Suspend/resume again
@@ -234,8 +238,8 @@ def test_suspend_enterprise(pipeline_name):
     wait_for_condition(
         "no new records for 5s after all connectors reached EOI",
         no_new_records_for_5s,
-        timeout_s=20,
-        sleep_s=0.2,
+        timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+        poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
     )
     assert _adhoc_count(pipeline_name) == final_count, (
         "Received new records after all connectors reached EOI"

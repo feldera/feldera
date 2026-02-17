@@ -16,6 +16,16 @@ from feldera.rest.config import Config
 from feldera.rest.errors import FelderaAPIError, FelderaTimeoutError
 from feldera.rest.feldera_config import FelderaConfig
 from feldera.rest.pipeline import Pipeline
+from feldera.wait_constants import (
+    BACKOFF_EXPONENT,
+    BACKOFF_INITIAL_WAIT,
+    BACKOFF_MAX_WAIT,
+    BACKOFF_RETRIES,
+    WAIT_POLL_INTERVAL_DEFAULT_S,
+    WAIT_TIMEOUT_LIGHT_OPERATION_S,
+    WAIT_TIMEOUT_PROGRAM_COMPILATION_S,
+    WAIT_TIMEOUT_STANDARD_OPERATION_S,
+)
 
 
 def _validate_no_none_keys_in_map(data):
@@ -186,13 +196,13 @@ class FelderaClient:
         name: str,
         expected_program_version: int | None = None,
         timeout_s: float | None = None,
-        poll_interval_s: float = 0.1,
+        poll_interval_s: float = WAIT_POLL_INTERVAL_DEFAULT_S,
     ) -> Pipeline:
         wait = ["Pending", "CompilingSql", "SqlCompiled", "CompilingRust"]
         start_time = time.monotonic()
         timeout_s = _normalize_wait_timeout(
             timeout_s,
-            default_timeout_s=1800.0,
+            default_timeout_s=WAIT_TIMEOUT_PROGRAM_COMPILATION_S,
             operation="wait_for_program_success",
         )
 
@@ -241,7 +251,11 @@ class FelderaClient:
 
                 raise RuntimeError(error_message)
 
-            logging.debug("still compiling %s, waiting for 100 more milliseconds", name)
+            logging.debug(
+                "still compiling %s, waiting for %.1f more seconds",
+                name,
+                poll_interval_s,
+            )
             time.sleep(poll_interval_s)
 
     def wait_for_program_success(
@@ -249,7 +263,7 @@ class FelderaClient:
         pipeline_name: str,
         expected_program_version: int | None = None,
         timeout_s: float | None = None,
-        poll_interval_s: float = 0.1,
+        poll_interval_s: float = WAIT_POLL_INTERVAL_DEFAULT_S,
     ) -> Pipeline:
         """
         Wait until the pipeline program has successfully compiled.
@@ -280,8 +294,8 @@ class FelderaClient:
         self,
         description: str,
         predicate: Callable[[], bool],
-        timeout_s: float | None = 30.0,
-        poll_interval_s: float = 0.2,
+        timeout_s: float | None = WAIT_TIMEOUT_LIGHT_OPERATION_S,
+        poll_interval_s: float = WAIT_POLL_INTERVAL_DEFAULT_S,
     ) -> None:
         """
         Wait until ``predicate`` returns ``True``.
@@ -298,30 +312,31 @@ class FelderaClient:
                     name, PipelineFieldSelector.STATUS
                 ).deployment_status
                 == "Running",
-                timeout_s=30.0,
-                poll_interval_s=0.2,
+                timeout_s=60.0,
+                poll_interval_s=2.0,
             )
 
         :param description: Human-readable description used in timeout/errors.
         :param predicate: Callable returning True when condition is met.
         :param timeout_s: Maximum wait time in seconds. If None or invalid,
-            defaults to 30 seconds.
+            defaults to 60 seconds.
         :param poll_interval_s: Poll interval in seconds. If invalid,
-            defaults to 0.2 seconds.
+            defaults to 2.0 seconds.
         :raises TimeoutError: If predicate does not become true in time.
         """
         timeout_s = _normalize_wait_timeout(
             timeout_s,
-            default_timeout_s=30.0,
+            default_timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
             operation=f"wait_for_condition({description})",
         )
         if not math.isfinite(poll_interval_s) or poll_interval_s <= 0:
             logging.warning(
-                "wait_for_condition(%s) called with invalid poll interval %r; defaulting to 0.2s",
+                "wait_for_condition(%s) called with invalid poll interval %r; defaulting to %.1fs",
                 description,
                 poll_interval_s,
+                WAIT_POLL_INTERVAL_DEFAULT_S,
             )
-            poll_interval_s = 0.2
+            poll_interval_s = WAIT_POLL_INTERVAL_DEFAULT_S
 
         start = time.monotonic()
         deadline = start + timeout_s
@@ -351,7 +366,7 @@ class FelderaClient:
         start_time = time.monotonic()
         timeout_s = _normalize_wait_timeout(
             timeout_s,
-            default_timeout_s=300.0,
+            default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
             operation=f"wait_for_pipeline_state({state})",
         )
 
@@ -381,9 +396,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 )
 
             logging.debug(
-                "still starting %s, waiting for 100 more milliseconds", pipeline_name
+                "still starting %s, waiting for %.1f more seconds",
+                pipeline_name,
+                WAIT_POLL_INTERVAL_DEFAULT_S,
             )
-            time.sleep(0.1)
+            time.sleep(WAIT_POLL_INTERVAL_DEFAULT_S)
 
     def __wait_for_pipeline_state_one_of(
         self,
@@ -394,11 +411,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         ignore_deployment_error: bool = False,
     ) -> PipelineStatus:
         start_time = time.monotonic()
-        poll_interval_s = 0.1
+        poll_interval_s = WAIT_POLL_INTERVAL_DEFAULT_S
         states = [state.lower() for state in states]
         timeout_s = _normalize_wait_timeout(
             timeout_s,
-            default_timeout_s=300.0,
+            default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
             operation="wait_for_pipeline_state_one_of",
         )
 
@@ -435,7 +452,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 {resp.deployment_error.get("message", "")}"""
                 )
             logging.debug(
-                "still starting %s, waiting for 100 more milliseconds", pipeline_name
+                "still starting %s, waiting for %.1f more seconds",
+                pipeline_name,
+                poll_interval_s,
             )
             time.sleep(poll_interval_s)
 
@@ -443,8 +462,8 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         self,
         pipeline_name: str,
         desired: str | Callable[[str], bool],
-        timeout_s: float = 60.0,
-        poll_interval_s: float = 0.25,
+        timeout_s: float = WAIT_TIMEOUT_LIGHT_OPERATION_S,
+        poll_interval_s: float = WAIT_POLL_INTERVAL_DEFAULT_S,
     ) -> Pipeline:
         """
         Wait until pipeline 'pipeline_name' has 'desired' deployment status:
@@ -460,7 +479,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         """
         timeout_s = _normalize_wait_timeout(
             timeout_s,
-            default_timeout_s=60.0,
+            default_timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
             operation="wait_for_deployment_status",
         )
 
@@ -688,7 +707,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             if observe_start:
                 observe_timeout_s = _normalize_wait_timeout(
                     timeout_s,
-                    default_timeout_s=30.0,
+                    default_timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
                     operation="start_pipeline(observe_start=True)",
                 )
                 self._wait_for_deployment_status(
@@ -698,7 +717,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 )
             return None
 
-        default_start_timeout_s = 60.0 if ignore_deployment_error else 300.0
+        default_start_timeout_s = (
+            WAIT_TIMEOUT_LIGHT_OPERATION_S
+            if ignore_deployment_error
+            else WAIT_TIMEOUT_STANDARD_OPERATION_S
+        )
         effective_timeout_s = _normalize_wait_timeout(
             timeout_s,
             default_timeout_s=default_start_timeout_s,
@@ -887,7 +910,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         timeout_s = _normalize_wait_timeout(
             timeout_s,
-            default_timeout_s=300.0,
+            default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
             operation="stop_pipeline",
         )
         start = time.monotonic()
@@ -906,10 +929,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 return
 
             logging.debug(
-                "still stopping %s, waiting for 100 more milliseconds",
+                "still stopping %s, waiting for %.1f more seconds",
                 pipeline_name,
+                WAIT_POLL_INTERVAL_DEFAULT_S,
             )
-            time.sleep(0.1)
+            time.sleep(WAIT_POLL_INTERVAL_DEFAULT_S)
 
     def clear_storage(self, pipeline_name: str, timeout_s: Optional[float] = None):
         """
@@ -926,7 +950,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         timeout_s = _normalize_wait_timeout(
             timeout_s,
-            default_timeout_s=300.0,
+            default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
             operation="clear_storage",
         )
         start = time.monotonic()
@@ -944,10 +968,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 return
 
             logging.debug(
-                "still clearing %s, waiting for 100 more milliseconds",
+                "still clearing %s, waiting for %.1f more seconds",
                 pipeline_name,
+                WAIT_POLL_INTERVAL_DEFAULT_S,
             )
-            time.sleep(0.1)
+            time.sleep(WAIT_POLL_INTERVAL_DEFAULT_S)
 
     def start_transaction(self, pipeline_name: str) -> int:
         """
@@ -1016,7 +1041,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         timeout_s = _normalize_wait_timeout(
             timeout_s,
-            default_timeout_s=300.0,
+            default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
             operation="commit_transaction",
         )
         start_time = time.monotonic()
@@ -1029,8 +1054,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             if stats["global_metrics"]["transaction_id"] != transaction_id:
                 return
 
-            logging.debug("commit hasn't completed, waiting for 1 more second")
-            time.sleep(1.0)
+            logging.debug(
+                "commit hasn't completed, waiting for %.1f more seconds",
+                WAIT_POLL_INTERVAL_DEFAULT_S,
+            )
+            time.sleep(WAIT_POLL_INTERVAL_DEFAULT_S)
 
     def checkpoint_pipeline(self, pipeline_name: str) -> int:
         """
@@ -1238,15 +1266,15 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         timeout_s = _normalize_wait_timeout(
             timeout_s,
-            default_timeout_s=300.0,
+            default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
             operation="wait_for_token",
         )
         start = time.monotonic()
         end = start + timeout_s
-        initial_backoff = 0.1
-        max_backoff = 5
-        exponent = 1.2
-        retries = 0
+        initial_backoff = BACKOFF_INITIAL_WAIT
+        max_backoff = BACKOFF_MAX_WAIT
+        exponent = BACKOFF_EXPONENT
+        retries = BACKOFF_RETRIES
 
         while True:
             if time.monotonic() > end:

@@ -1,3 +1,7 @@
+from feldera.wait_constants import (
+    WAIT_TIMEOUT_LIGHT_OPERATION_S,
+    WAIT_POLL_INTERVAL_DEFAULT_S,
+)
 from http import HTTPStatus
 
 from .helper import (
@@ -81,8 +85,8 @@ def test_pipeline_orchestration_basic(pipeline_name):
             lambda: _basic_orchestration_info(
                 cur_pipeline_name, table_name, connector_name
             )[1],
-            timeout_s=10,
-            sleep_s=0.2,
+            timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+            poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
         )
         p_paused, c_paused, processed = _basic_orchestration_info(
             cur_pipeline_name, table_name, connector_name
@@ -108,8 +112,8 @@ def test_pipeline_orchestration_basic(pipeline_name):
             lambda: not _basic_orchestration_info(
                 cur_pipeline_name, table_name, connector_name
             )[1],
-            timeout_s=10,
-            sleep_s=0.2,
+            timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+            poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
         )
         p_paused, c_paused, processed = _basic_orchestration_info(
             cur_pipeline_name, table_name, connector_name

@@ -329,6 +329,7 @@ from decimal import Decimal
 from feldera.enums import BootstrapPolicy, PipelineStatus
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
+from feldera.wait_constants import WAIT_TIMEOUT_STANDARD_OPERATION_S
 from tests import TEST_CLIENT, enterprise_only
 from .helper import (
     gen_pipeline_name,
@@ -452,7 +453,10 @@ assert diff == {
 # and modified views and reach the RUNNING state.
 pipeline.approve()
 
-pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=300)
+pipeline.wait_for_status(
+    PipelineStatus.RUNNING,
+    timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S),
+)
 
 # The new outputs should reflect input data within the modified date range.
 result = list(pipeline.query("SELECT * FROM avg_grade_enriched order by student_name, class"))

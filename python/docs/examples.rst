@@ -173,11 +173,16 @@ non-blocking and you need a deterministic compilation barrier.
     client.create_or_update_pipeline(pipeline, wait=False)
 
     # Wait for compile success of at least program version 2.
+    from feldera.wait_constants import (
+        WAIT_POLL_INTERVAL_DEFAULT_S,
+        WAIT_TIMEOUT_STANDARD_OPERATION_S,
+    )
+
     client.wait_for_program_success(
         "my_pipeline",
         expected_program_version=2,
-        timeout_s=300.0,
-        poll_interval_s=0.2,
+        timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
+        poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
     )
 
 Starting Asynchronously and Observing Transition
@@ -199,6 +204,11 @@ for query-visible state.
 
 .. code-block:: python
 
+    from feldera.wait_constants import (
+        WAIT_POLL_INTERVAL_DEFAULT_S,
+        WAIT_TIMEOUT_LIGHT_OPERATION_S,
+    )
+
     def t1_has_5_rows() -> bool:
         rows = list(pipeline.query("SELECT COUNT(*) AS c FROM t1"))
         return bool(rows) and int(rows[0]["c"]) == 5
@@ -206,8 +216,8 @@ for query-visible state.
     client.wait_for_condition(
         "table t1 reaches 5 rows",
         t1_has_5_rows,
-        timeout_s=30.0,
-        poll_interval_s=0.5,
+        timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+        poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
     )
 
 Handling Expected Deployment Error on Start
@@ -220,11 +230,12 @@ start transition.
 .. code-block:: python
 
     from feldera.enums import BootstrapPolicy
+    from feldera.wait_constants import WAIT_TIMEOUT_LIGHT_OPERATION_S
 
     pipeline.start(
         bootstrap_policy=BootstrapPolicy.ALLOW,
         ignore_deployment_error=True,
-        timeout_s=60.0,
+        timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
     )
 
 Analyzing Existing Feldera Pipeline for Errors
@@ -320,6 +331,10 @@ to wait for any observable state transition.
 .. code-block:: python
 
     from feldera.enums import PipelineFieldSelector
+    from feldera.wait_constants import (
+        WAIT_POLL_INTERVAL_DEFAULT_S,
+        WAIT_TIMEOUT_LIGHT_OPERATION_S,
+    )
 
     # Start asynchronously and wait for status transition explicitly
     client.start_pipeline("my_pipeline", wait=False)
@@ -330,8 +345,8 @@ to wait for any observable state transition.
             "my_pipeline", PipelineFieldSelector.STATUS
         ).deployment_status
         == "Running",
-        timeout_s=30.0,
-        poll_interval_s=0.2,
+        timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
+        poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
     )
 
 Executing ad-hoc SQL Queries
