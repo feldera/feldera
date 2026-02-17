@@ -53,7 +53,9 @@ def _ingress(
     if wait and resp.status_code == HTTPStatus.OK:
         token = (resp.json() or {}).get("token")
         assert token, f"Expected completion token in ingress response: {resp.text}"
-        TEST_CLIENT.wait_for_token(pipeline, token, timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S)
+        TEST_CLIENT.wait_for_token(
+            pipeline, token, timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S
+        )
 
     return resp
 

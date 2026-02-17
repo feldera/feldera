@@ -61,7 +61,9 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         print(f"Expected exception caught: {e}")
         # Reject triggers async stopping.
         # This only guarantees deployment_status is Stopped
-        pipeline.wait_for_status(PipelineStatus.STOPPED, timeout=int(WAIT_TIMEOUT_LIGHT_OPERATION_S))
+        pipeline.wait_for_status(
+            PipelineStatus.STOPPED, timeout=int(WAIT_TIMEOUT_LIGHT_OPERATION_S)
+        )
         pass
 
     print(
@@ -82,7 +84,9 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     assert result == [{"c": 6}]
 
     pipeline.stop(force=True)
-    pipeline.wait_for_status(PipelineStatus.STOPPED, timeout=int(WAIT_TIMEOUT_LIGHT_OPERATION_S))
+    pipeline.wait_for_status(
+        PipelineStatus.STOPPED, timeout=int(WAIT_TIMEOUT_LIGHT_OPERATION_S)
+    )
 
     # Since we didn't make a checkpoint during the previous run, the pipeline should be in the AWAITINGAPPROVAL state.
     print("Starting pipeline with bootstrap_policy='await_approval'")
@@ -103,7 +107,9 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     pipeline.approve()
 
     # Wait for the pipeline to reach RUNNING status (up to 300 seconds)
-    pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S))
+    pipeline.wait_for_status(
+        PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S)
+    )
     pipeline.execute("INSERT INTO t1 VALUES (4), (5), (6);")
 
     result = list(pipeline.query("SELECT * FROM v1;"))
@@ -144,7 +150,9 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
     pipeline.approve()
 
     # Wait for the pipeline to reach RUNNING status (up to 300 seconds)
-    pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S))
+    pipeline.wait_for_status(
+        PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S)
+    )
     pipeline.execute("INSERT INTO t2 VALUES (10), (20), (30);")
 
     result = list(pipeline.query("SELECT * FROM v3;"))
@@ -185,7 +193,9 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
     pipeline.approve()
 
     # Wait for the pipeline to reach RUNNING status (up to 300 seconds)
-    pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S))
+    pipeline.wait_for_status(
+        PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S)
+    )
     result = list(pipeline.query("SELECT * FROM v3;"))
     assert result == [{"m": None}]
 
@@ -231,7 +241,9 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
     pipeline.approve()
 
     # Wait for the pipeline to reach RUNNING status (up to 300 seconds)
-    pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S))
+    pipeline.wait_for_status(
+        PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S)
+    )
     pipeline.execute("INSERT INTO t2 (y) VALUES (70), (80), (90);")
 
     # The table hasn't changed, so the previous 3 rows should still be there.
@@ -265,7 +277,9 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
     pipeline.approve()
 
     # Wait for the pipeline to reach RUNNING status (up to 300 seconds)
-    pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S))
+    pipeline.wait_for_status(
+        PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S)
+    )
 
     result = list(pipeline.query("SELECT count(*) as c FROM t1;"))
     assert result == [{"c": 6}]
@@ -498,7 +512,9 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
 
     pipeline.approve()
 
-    pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S))
+    pipeline.wait_for_status(
+        PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S)
+    )
 
     pipeline.wait_for_completion(timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S)
     result = list(pipeline.query("SELECT * FROM v1;"))
@@ -547,7 +563,9 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
 
     pipeline.approve()
 
-    pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S))
+    pipeline.wait_for_status(
+        PipelineStatus.RUNNING, timeout=int(WAIT_TIMEOUT_STANDARD_OPERATION_S)
+    )
     pipeline.wait_for_completion(timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S)
     result = list(pipeline.query("SELECT * FROM v1;"))
     assert result == [{"c": 23}]

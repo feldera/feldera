@@ -81,7 +81,9 @@ def test_completion_tokens(pipeline_name):
             format="json",
             update_format="raw",
         )
-        TEST_CLIENT.wait_for_token(pipeline_name, token, timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S)
+        TEST_CLIENT.wait_for_token(
+            pipeline_name, token, timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S
+        )
         assert _count_for_value(pipeline_name, i) == 1, f"Value {i} expected count 1"
 
 
@@ -166,7 +168,9 @@ WITH (
             format="json",
             update_format="raw",
         )
-        TEST_CLIENT.wait_for_token(pipeline_name, token, timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S)
+        TEST_CLIENT.wait_for_token(
+            pipeline_name, token, timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S
+        )
         assert _count_for_value(pipeline_name, i) == 1
 
     # Start the datagen connector
@@ -194,7 +198,9 @@ WITH (
     token = r.json().get("token")
     assert token, f"Missing token in connector completion_token response: {r.text}"
 
-    TEST_CLIENT.wait_for_token(pipeline_name, token, timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S)
+    TEST_CLIENT.wait_for_token(
+        pipeline_name, token, timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S
+    )
 
     # Datagen (limit 1) produces c1=0 row; we inserted c1=0 already -> expected count becomes 2
     rows = adhoc_query_json(pipeline_name, "select count(*) as c from t1 where c1 = 0")
