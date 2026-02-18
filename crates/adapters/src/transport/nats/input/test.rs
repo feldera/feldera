@@ -657,7 +657,7 @@ format:
     assert_nats_connect_error(result, non_routable_url, "timed out");
 }
 
-fn test_nats_config_with_metadata(metadata: HashMap<String, String>) -> TransportConfig {
+fn generate_test_nats_config(metadata: HashMap<String, String>) -> TransportConfig {
     use feldera_types::transport::nats::{
         Auth, ConnectOptions, ConsumerConfig, DeliverPolicy, NatsInputConfig, ReplayPolicy,
     };
@@ -686,27 +686,168 @@ fn test_nats_config_with_metadata(metadata: HashMap<String, String>) -> Transpor
     })
 }
 
-/// Tests that `connect_input` injects `metadata["pipeline"]` from `given_name`.
+/// Integration test: verifies that the controller injects `metadata["pipeline"]`
+/// into the actual NATS JetStream consumer when `given_name` is set.
+#[test]
+fn test_pipeline_metadata_on_nats_consumer() {
+    use futures::StreamExt;
+
+    init_test_logger();
+
+    let (_nats_process_guard, nats_url) = util::start_nats_and_get_address().unwrap();
+
+    let stream_name = "str_meta";
+    let subject_name = "sub_meta";
+    let pipeline_name = "my_test_pipeline";
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let client = util::wait_for_nats_ready(&nats_url, Duration::from_secs(5))
+            .await
+            .unwrap();
+        let jetstream = jetstream::new(client);
+        jetstream
+            .create_stream(jetstream::stream::Config {
+                name: stream_name.to_string(),
+                subjects: vec![subject_name.to_string()],
+                storage: jetstream::stream::StorageType::Memory,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let test_struct = TestStruct {
+            id: 1,
+            b: true,
+            i: Some(42),
+            s: "hello".to_string(),
+        };
+        let ack = jetstream
+            .publish(subject_name, serde_json::to_string(&test_struct).unwrap().into())
+            .await
+            .unwrap();
+        ack.await.unwrap();
+    });
+
+    let tempdir = TempDir::new().unwrap();
+    let tempdir_path = tempdir.path();
+    let storage_dir = tempdir_path.join("storage");
+    create_dir(&storage_dir).unwrap();
+    let output_path = tempdir_path.join("output.csv");
+
+    let config_str = format!(
+        r#"
+name: test
+given_name: {pipeline_name}
+workers: 4
+storage_config:
+    path: {storage_dir:?}
+storage: true
+fault_tolerance: {{}}
+clock_resolution_usecs: null
+inputs:
+    test_input1:
+        stream: test_input1
+        transport:
+            name: nats_input
+            config:
+                connection_config:
+                    server_url: {nats_url}
+                stream_name: {stream_name}
+                consumer_config:
+                    deliver_policy: All
+                    subjects: [{subject_name}]
+        format:
+            name: json
+            config:
+                update_format: raw
+outputs:
+    test_output1:
+        stream: test_output1
+        transport:
+            name: file_output
+            config:
+                path: {output_path:?}
+        format:
+            name: csv
+"#
+    );
+
+    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &[],
+                &[Some("output")],
+            ))
+        },
+        &config,
+        Box::new(|e, _tag| panic!("Controller error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+
+    wait(
+        || {
+            controller
+                .status()
+                .output_status()
+                .get(&0)
+                .unwrap()
+                .transmitted_records() >= 1
+        },
+        10_000,
+    )
+    .unwrap();
+
+    // Query NATS for consumers on the stream and verify metadata.
+    rt.block_on(async {
+        let client = util::wait_for_nats_ready(&nats_url, Duration::from_secs(5))
+            .await
+            .unwrap();
+        let jetstream = jetstream::new(client);
+        let stream = jetstream.get_stream(stream_name).await.unwrap();
+
+        let mut consumers = stream.consumers();
+        let mut found = false;
+        while let Some(info) = consumers.next().await {
+            let info = info.unwrap();
+            if let Some(pipeline_val) = info.config.metadata.get("pipeline") {
+                assert_eq!(
+                    pipeline_val, pipeline_name,
+                    "consumer metadata 'pipeline' should match given_name"
+                );
+                found = true;
+            }
+        }
+        assert!(found, "expected at least one consumer with 'pipeline' metadata");
+    });
+
+    controller.stop().unwrap();
+}
+
+/// Tests that `transport_metadata_mut` + `entry().or_insert_with()` injects
+/// `metadata["pipeline"]` when the key is absent.
 #[test]
 fn test_pipeline_metadata_injected_into_nats_config() {
-    let mut transport_config = test_nats_config_with_metadata(HashMap::new());
+    let mut transport_config = generate_test_nats_config(HashMap::new());
     let given_name = "my_pipeline".to_string();
 
-    if let TransportConfig::NatsInput(ref mut cfg) = transport_config {
-        cfg.consumer_config
-            .metadata
-            .entry("pipeline".to_string())
-            .or_insert_with(|| given_name.clone());
-    }
+    let metadata = transport_config.transport_metadata_mut().unwrap();
+    metadata
+        .entry("pipeline".to_string())
+        .or_insert_with(|| given_name.clone());
 
-    if let TransportConfig::NatsInput(ref cfg) = transport_config {
-        assert_eq!(
-            cfg.consumer_config.metadata.get("pipeline"),
-            Some(&"my_pipeline".to_string())
-        );
-    } else {
-        panic!("expected NatsInput variant");
-    }
+    assert_eq!(
+        transport_config
+            .transport_metadata_mut()
+            .unwrap()
+            .get("pipeline"),
+        Some(&"my_pipeline".to_string())
+    );
 }
 
 /// Tests that user-specified `metadata["pipeline"]` is not overwritten.
@@ -715,25 +856,22 @@ fn test_pipeline_metadata_not_overwritten() {
     let mut metadata = HashMap::new();
     metadata.insert("pipeline".to_string(), "user_specified".to_string());
 
-    let mut transport_config = test_nats_config_with_metadata(metadata);
+    let mut transport_config = generate_test_nats_config(metadata);
     let given_name = "controller_pipeline".to_string();
 
-    if let TransportConfig::NatsInput(ref mut cfg) = transport_config {
-        cfg.consumer_config
-            .metadata
-            .entry("pipeline".to_string())
-            .or_insert_with(|| given_name.clone());
-    }
+    let metadata = transport_config.transport_metadata_mut().unwrap();
+    metadata
+        .entry("pipeline".to_string())
+        .or_insert_with(|| given_name.clone());
 
-    if let TransportConfig::NatsInput(ref cfg) = transport_config {
-        assert_eq!(
-            cfg.consumer_config.metadata.get("pipeline"),
-            Some(&"user_specified".to_string()),
-            "user-specified pipeline metadata should not be overwritten"
-        );
-    } else {
-        panic!("expected NatsInput variant");
-    }
+    assert_eq!(
+        transport_config
+            .transport_metadata_mut()
+            .unwrap()
+            .get("pipeline"),
+        Some(&"user_specified".to_string()),
+        "user-specified pipeline metadata should not be overwritten"
+    );
 }
 
 mod util {
