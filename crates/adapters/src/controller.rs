@@ -7592,12 +7592,17 @@ impl ControllerInner {
         endpoint_config: &InputEndpointConfig,
         resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
-        let endpoint = input_transport_config_to_endpoint(
-            &endpoint_config.connector_config.transport,
-            endpoint_name,
-            &self.secrets_dir,
-        )
-        .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
+        let mut transport_config = endpoint_config.connector_config.transport.clone();
+        if let Some(metadata) = transport_config.transport_metadata_mut()
+            && let Some(ref name) = self.status.pipeline_config.given_name
+        {
+            metadata
+                .entry("pipeline".to_string())
+                .or_insert_with(|| name.clone());
+        }
+        let endpoint =
+            input_transport_config_to_endpoint(&transport_config, endpoint_name, &self.secrets_dir)
+                .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
 
         // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
         // input connector.  Such endpoints are instantiated inside `add_input_endpoint`.
