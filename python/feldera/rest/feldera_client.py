@@ -34,6 +34,8 @@ from feldera.wait_constants import (
     WAIT_TIMEOUT_STANDARD_OPERATION_S,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _validate_no_none_keys_in_map(data):
     def validate_no_none_keys(d: Dict[Any, Any]) -> None:
@@ -63,7 +65,7 @@ def _normalize_wait_timeout(
     if timeout_s is None:
         return default_timeout_s
     if not math.isfinite(timeout_s):
-        logging.warning(
+        logger.warning(
             "%s called with non-finite timeout %r; defaulting to %.1fs",
             operation,
             timeout_s,
@@ -71,7 +73,7 @@ def _normalize_wait_timeout(
         )
         return default_timeout_s
     if timeout_s <= 0:
-        logging.warning(
+        logger.warning(
             "%s called with non-positive timeout %r; defaulting to %.1fs",
             operation,
             timeout_s,
@@ -138,12 +140,12 @@ class FelderaClient:
             client_version = determine_client_version()
             server_config = self.get_config()
             if client_version != server_config.version:
-                logging.warning(
+                logger.warning(
                     f"Feldera client is on version {client_version} while server is at "
                     f"{server_config.version}. There could be incompatibilities."
                 )
         except Exception as e:
-            logging.error(f"Failed to connect to Feldera API: {e}")
+            logger.error(f"Failed to connect to Feldera API: {e}")
             raise e
 
     @staticmethod
@@ -263,7 +265,7 @@ class FelderaClient:
 
                 raise RuntimeError(error_message)
 
-            logging.debug(
+            logger.debug(
                 "still compiling %s, waiting for %.1f more seconds",
                 name,
                 poll_interval_s,
@@ -342,7 +344,7 @@ class FelderaClient:
             operation=f"wait_for_condition({description})",
         )
         if not math.isfinite(poll_interval_s) or poll_interval_s <= 0:
-            logging.warning(
+            logger.warning(
                 "wait_for_condition(%s) called with invalid poll interval %r; defaulting to %.1fs",
                 description,
                 poll_interval_s,
@@ -360,7 +362,7 @@ class FelderaClient:
             try:
                 result = predicate()
             except Exception as e:  # noqa: BLE001
-                logging.debug(
+                logger.debug(
                     "Predicate raised %s (attempt %d), continuing", e, attempt
                 )
                 result = False
@@ -409,7 +411,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 {resp.deployment_error.get("message", "")}"""
                 )
 
-            logging.debug(
+            logger.debug(
                 "still starting %s, waiting for %.1f more seconds",
                 pipeline_name,
                 WAIT_POLL_INTERVAL_DEFAULT_S,
@@ -453,7 +455,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 == DeploymentDesiredStatus.STOPPED.name.lower()
             ):
                 if ignore_deployment_error:
-                    logging.debug(
+                    logger.debug(
                         "ignoring stopped deployment error while waiting for %s to start: %s",
                         pipeline_name,
                         (resp.deployment_error or {}).get("message", ""),
@@ -466,7 +468,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 Reason: The pipeline is in a STOPPED state due to the following error:
 {resp.deployment_error.get("message", "")}"""
                 )
-            logging.debug(
+            logger.debug(
                 "still starting %s, waiting for %.1f more seconds",
                 pipeline_name,
                 poll_interval_s,
@@ -497,6 +499,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             default_timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
             operation="wait_for_deployment_status",
         )
+        logger.debug(
+            "Waiting up to %s seconds for %s to transition to %r",
+            timeout_s,
+            pipeline_name,
+            desired,
+        )
 
         start = time.monotonic()
         deadline = start + timeout_s
@@ -510,8 +518,15 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 time.sleep(poll_interval_s)
                 continue
 
-            last = latest.deployment_status
-            if last == desired if isinstance(desired, str) else desired(last):
+            status = latest.deployment_status
+            if status != last:
+                logger.debug(
+                    "After %.1f seconds: status is %s",
+                    time.monotonic() - start,
+                    status,
+                )
+            last = status
+            if status == desired if isinstance(desired, str) else desired(status):
                 return latest
             time.sleep(poll_interval_s)
 
@@ -943,7 +958,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             if PipelineStatus.from_str(status) == PipelineStatus.STOPPED:
                 return
 
-            logging.debug(
+            logger.debug(
                 "still stopping %s, waiting for %.1f more seconds",
                 pipeline_name,
                 WAIT_POLL_INTERVAL_DEFAULT_S,
@@ -982,7 +997,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             if StorageStatus.from_str(status) == StorageStatus.CLEARED:
                 return
 
-            logging.debug(
+            logger.debug(
                 "still clearing %s, waiting for %.1f more seconds",
                 pipeline_name,
                 WAIT_POLL_INTERVAL_DEFAULT_S,
@@ -1069,7 +1084,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             if stats["global_metrics"]["transaction_id"] != transaction_id:
                 return
 
-            logging.debug(
+            logger.debug(
                 "commit hasn't completed, waiting for %.1f more seconds",
                 WAIT_POLL_INTERVAL_DEFAULT_S,
             )
@@ -1303,7 +1318,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 break
 
             elapsed = time.monotonic() - start
-            logging.debug(
+            logger.debug(
                 f"still waiting for inputs represented by {token} to be processed; elapsed: {elapsed}s"
             )
 
