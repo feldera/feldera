@@ -11,6 +11,7 @@ from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 from feldera.wait_constants import (
     WAIT_TIMEOUT_LIGHT_OPERATION_S,
     WAIT_POLL_INTERVAL_DEFAULT_S,
+    WAIT_TIMEOUT_STANDARD_OPERATION_S,
 )
 from tests import enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
@@ -349,7 +350,7 @@ class TestCheckpointSync(SharedTestPipeline):
 
         # Wait until standby pulls the first checkpoint
         start = time.monotonic()
-        end = start + 120
+        end = start + WAIT_TIMEOUT_STANDARD_OPERATION_S
         for log in standby.logs():
             if "checkpoint pulled successfully" in log:
                 break
