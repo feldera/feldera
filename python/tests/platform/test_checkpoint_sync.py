@@ -7,7 +7,11 @@ from uuid import uuid4, UUID
 
 from feldera.enums import FaultToleranceModel, PipelineStatus
 from feldera.runtime_config import RuntimeConfig, Storage
-from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
+from feldera.testutils import (
+    FELDERA_TEST_NUM_HOSTS,
+    FELDERA_TEST_NUM_WORKERS,
+    single_host_only,
+)
 from tests import enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
 
@@ -56,6 +60,7 @@ def storage_cfg(
 
 class TestCheckpointSync(SharedTestPipeline):
     @enterprise_only
+    @single_host_only
     def test_checkpoint_sync(
         self,
         from_uuid: bool = False,
@@ -241,54 +246,66 @@ class TestCheckpointSync(SharedTestPipeline):
             self.pipeline.clear_storage()
 
     @enterprise_only
+    @single_host_only
     def test_from_uuid(self):
         self.test_checkpoint_sync(from_uuid=True)
 
     @enterprise_only
+    @single_host_only
     def test_without_clearing_storage(self):
         self.test_checkpoint_sync(clear_storage=False)
 
     @enterprise_only
+    @single_host_only
     def test_automated_checkpoint(self):
         self.test_checkpoint_sync(ft_interval=5, automated_checkpoint=True)
 
     @enterprise_only
+    @single_host_only
     def test_automated_checkpoint_sync(self):
         self.test_checkpoint_sync(
             ft_interval=5, automated_checkpoint=True, automated_sync_interval=10
         )
 
     @enterprise_only
+    @single_host_only
     def test_automated_checkpoint_sync1(self):
         self.test_checkpoint_sync(ft_interval=5, automated_sync_interval=10)
 
     @enterprise_only
+    @single_host_only
     def test_autherr_fail(self):
         with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch|Forbidden"):
             self.test_checkpoint_sync(auth_err=True, strict=True)
 
     @enterprise_only
+    @single_host_only
     def test_autherr(self):
         self.test_checkpoint_sync(auth_err=True, strict=False, expect_empty=True)
 
     @enterprise_only
+    @single_host_only
     def test_nonexistent_checkpoint_fail(self):
         with self.assertRaisesRegex(RuntimeError, "were not found in source"):
             self.test_checkpoint_sync(random_uuid=True, from_uuid=True, strict=True)
 
     @enterprise_only
+    @single_host_only
     def test_nonexistent_checkpoint(self):
         self.test_checkpoint_sync(random_uuid=True, from_uuid=True, expect_empty=True)
 
     @enterprise_only
+    @single_host_only
     def test_standby_activation(self):
         self.test_checkpoint_sync(standby=True)
 
     @enterprise_only
+    @single_host_only
     def test_standby_activation_from_uuid(self):
         self.test_checkpoint_sync(standby=True, from_uuid=True)
 
     @enterprise_only
+    @single_host_only
     def test_standby_fallback(self, from_uuid: bool = False):
         # Step 1: Start main pipeline
         storage_config = storage_cfg(self.pipeline.name)
@@ -402,5 +419,6 @@ class TestCheckpointSync(SharedTestPipeline):
         self.pipeline.clear_storage()
 
     @enterprise_only
+    @single_host_only
     def test_standby_fallback_from_uuid(self):
         self.test_standby_fallback(from_uuid=True)

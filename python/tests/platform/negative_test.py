@@ -4,6 +4,7 @@ from feldera.testutils import (
     unique_pipeline_name,
     FELDERA_TEST_NUM_WORKERS,
     FELDERA_TEST_NUM_HOSTS,
+    single_host_only,
 )
 from tests import TEST_CLIENT
 from feldera.runtime_config import RuntimeConfig
@@ -117,6 +118,7 @@ Code snippet:
         pipeline = Pipeline.get(name, TEST_CLIENT)
         assert pipeline.errors()[0]["sql_compilation"]["exit_code"] != 0
 
+    @single_host_only
     def test_initialization_error(self):
         sql = """
         CREATE TABLE t0 (

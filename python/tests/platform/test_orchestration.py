@@ -17,6 +17,7 @@ from .helper import (
     pipeline_stats,
     connector_paused,
 )
+from feldera.testutils import single_host_only
 
 
 def _basic_orchestration_info(pipeline: str, table: str, connector: str):
@@ -27,6 +28,7 @@ def _basic_orchestration_info(pipeline: str, table: str, connector: str):
 
 
 @gen_pipeline_name
+@single_host_only
 def test_pipeline_orchestration_basic(pipeline_name):
     """
     Tests the orchestration of the pipeline, which means the starting and pausing of the
@@ -107,6 +109,7 @@ def test_pipeline_orchestration_basic(pipeline_name):
 
 
 @gen_pipeline_name
+@single_host_only
 def test_pipeline_orchestration_errors(pipeline_name):
     """
     Port of Rust pipeline_orchestration_errors:
