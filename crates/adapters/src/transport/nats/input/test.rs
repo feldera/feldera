@@ -1,7 +1,7 @@
 use crate::test::{
     DEFAULT_TIMEOUT_MS, TestStruct, init_test_logger, mock_input_pipeline, test_circuit, wait,
 };
-use crate::{Controller, PipelineConfig};
+use crate::{Controller, PipelineConfig, TransportConfig};
 use anyhow::Result as AnyResult;
 use async_nats::{self, jetstream};
 use csv::ReaderBuilder as CsvReaderBuilder;
@@ -9,7 +9,7 @@ use feldera_types::deserialize_without_context;
 use feldera_types::program_schema::Relation;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::{fs::create_dir, thread::sleep, time::Duration};
+use std::{collections::HashMap, fs::create_dir, thread::sleep, time::Duration};
 use tempfile::TempDir;
 
 #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone)]
@@ -655,6 +655,85 @@ format:
     );
 
     assert_nats_connect_error(result, non_routable_url, "timed out");
+}
+
+fn test_nats_config_with_metadata(metadata: HashMap<String, String>) -> TransportConfig {
+    use feldera_types::transport::nats::{
+        Auth, ConnectOptions, ConsumerConfig, DeliverPolicy, NatsInputConfig, ReplayPolicy,
+    };
+
+    TransportConfig::NatsInput(NatsInputConfig {
+        connection_config: ConnectOptions {
+            server_url: "nats://localhost:4222".to_string(),
+            auth: Auth::default(),
+            connection_timeout_secs: 10,
+            request_timeout_secs: 10,
+        },
+        stream_name: "test_stream".to_string(),
+        consumer_config: ConsumerConfig {
+            name: None,
+            description: None,
+            filter_subjects: vec![],
+            replay_policy: ReplayPolicy::Instant,
+            rate_limit: 0,
+            deliver_policy: DeliverPolicy::All,
+            max_waiting: 0,
+            metadata,
+            max_batch: None,
+            max_bytes: None,
+            max_expires: None,
+        },
+    })
+}
+
+/// Tests that `connect_input` injects `metadata["pipeline"]` from `given_name`.
+#[test]
+fn test_pipeline_metadata_injected_into_nats_config() {
+    let mut transport_config = test_nats_config_with_metadata(HashMap::new());
+    let given_name = "my_pipeline".to_string();
+
+    if let TransportConfig::NatsInput(ref mut cfg) = transport_config {
+        cfg.consumer_config
+            .metadata
+            .entry("pipeline".to_string())
+            .or_insert_with(|| given_name.clone());
+    }
+
+    if let TransportConfig::NatsInput(ref cfg) = transport_config {
+        assert_eq!(
+            cfg.consumer_config.metadata.get("pipeline"),
+            Some(&"my_pipeline".to_string())
+        );
+    } else {
+        panic!("expected NatsInput variant");
+    }
+}
+
+/// Tests that user-specified `metadata["pipeline"]` is not overwritten.
+#[test]
+fn test_pipeline_metadata_not_overwritten() {
+    let mut metadata = HashMap::new();
+    metadata.insert("pipeline".to_string(), "user_specified".to_string());
+
+    let mut transport_config = test_nats_config_with_metadata(metadata);
+    let given_name = "controller_pipeline".to_string();
+
+    if let TransportConfig::NatsInput(ref mut cfg) = transport_config {
+        cfg.consumer_config
+            .metadata
+            .entry("pipeline".to_string())
+            .or_insert_with(|| given_name.clone());
+    }
+
+    if let TransportConfig::NatsInput(ref cfg) = transport_config {
+        assert_eq!(
+            cfg.consumer_config.metadata.get("pipeline"),
+            Some(&"user_specified".to_string()),
+            "user-specified pipeline metadata should not be overwritten"
+        );
+    } else {
+        panic!("expected NatsInput variant");
+    }
 }
 
 mod util {
