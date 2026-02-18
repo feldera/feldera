@@ -1487,7 +1487,7 @@ impl DeltaTableInputEndpointInner {
         let mut stream = match dataframe.execute_stream().await {
             Err(e) => {
                 self.consumer
-                    .error(true, anyhow!("error retrieving {descr}: {e}"), None);
+                    .error(true, anyhow!("error retrieving {descr}: {e:?}"), None);
                 return;
             }
             Ok(stream) => stream,
