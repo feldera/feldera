@@ -1,6 +1,5 @@
 import json
 import logging
-import math
 import pathlib
 import time
 from decimal import Decimal
@@ -33,6 +32,7 @@ from feldera.wait_constants import (
     WAIT_TIMEOUT_PROGRAM_COMPILATION_S,
     WAIT_TIMEOUT_STANDARD_OPERATION_S,
 )
+from feldera.wait_utils import normalize_poll_interval, normalize_wait_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -54,33 +54,6 @@ def _validate_no_none_keys_in_map(data):
 
 def _prepare_boolean_input(value: bool) -> str:
     return "true" if value else "false"
-
-
-def _normalize_wait_timeout(
-    timeout_s: float | None, default_timeout_s: float, operation: str
-) -> float:
-    """
-    Ensure wait loops always use a finite timeout.
-    """
-    if timeout_s is None:
-        return default_timeout_s
-    if not math.isfinite(timeout_s):
-        logger.warning(
-            "%s called with non-finite timeout %r; defaulting to %.1fs",
-            operation,
-            timeout_s,
-            default_timeout_s,
-        )
-        return default_timeout_s
-    if timeout_s <= 0:
-        logger.warning(
-            "%s called with non-positive timeout %r; defaulting to %.1fs",
-            operation,
-            timeout_s,
-            default_timeout_s,
-        )
-        return default_timeout_s
-    return timeout_s
 
 
 class FelderaClient:
@@ -214,7 +187,7 @@ class FelderaClient:
             ProgramStatus.CompilingRust,
         ]
         start_time = time.monotonic()
-        timeout_s = _normalize_wait_timeout(
+        timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_PROGRAM_COMPILATION_S,
             operation="wait_for_program_success",
@@ -338,19 +311,16 @@ class FelderaClient:
             defaults to 2.0 seconds.
         :raises TimeoutError: If predicate does not become true in time.
         """
-        timeout_s = _normalize_wait_timeout(
+        timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
             operation=f"wait_for_condition({description})",
         )
-        if not math.isfinite(poll_interval_s) or poll_interval_s <= 0:
-            logger.warning(
-                "wait_for_condition(%s) called with invalid poll interval %r; defaulting to %.1fs",
-                description,
-                poll_interval_s,
-                WAIT_POLL_INTERVAL_DEFAULT_S,
-            )
-            poll_interval_s = WAIT_POLL_INTERVAL_DEFAULT_S
+        poll_interval_s = normalize_poll_interval(
+            poll_interval_s,
+            default_poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
+            operation=f"wait_for_condition({description})",
+        )
 
         start = time.monotonic()
         deadline = start + timeout_s
@@ -376,7 +346,7 @@ class FelderaClient:
         start: bool = True,
     ):
         start_time = time.monotonic()
-        timeout_s = _normalize_wait_timeout(
+        timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
             operation=f"wait_for_pipeline_state({state})",
@@ -427,7 +397,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         start_time = time.monotonic()
         poll_interval_s = WAIT_POLL_INTERVAL_DEFAULT_S
         target_states = [PipelineStatus.from_str(state) for state in states]
-        timeout_s = _normalize_wait_timeout(
+        timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
             operation="wait_for_pipeline_state_one_of",
@@ -492,7 +462,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param timeout_s: Timeout in seconds. If invalid, defaults to 60 seconds.
         :param poll_interval_s: Poll interval in seconds.
         """
-        timeout_s = _normalize_wait_timeout(
+        timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
             operation="wait_for_deployment_status",
@@ -733,7 +703,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         if not wait:
             if observe_start:
-                observe_timeout_s = _normalize_wait_timeout(
+                observe_timeout_s = normalize_wait_timeout(
                     timeout_s,
                     default_timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
                     operation="start_pipeline(observe_start=True)",
@@ -750,7 +720,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             if ignore_deployment_error
             else WAIT_TIMEOUT_STANDARD_OPERATION_S
         )
-        effective_timeout_s = _normalize_wait_timeout(
+        effective_timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=default_start_timeout_s,
             operation="start_pipeline",
@@ -936,7 +906,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if not wait:
             return
 
-        timeout_s = _normalize_wait_timeout(
+        timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
             operation="stop_pipeline",
@@ -976,7 +946,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             path=f"/pipelines/{pipeline_name}/clear",
         )
 
-        timeout_s = _normalize_wait_timeout(
+        timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
             operation="clear_storage",
@@ -1067,7 +1037,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if not wait:
             return
 
-        timeout_s = _normalize_wait_timeout(
+        timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
             operation="commit_transaction",
@@ -1292,7 +1262,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             to process these records. If None or invalid, defaults to 300 seconds.
         """
 
-        timeout_s = _normalize_wait_timeout(
+        timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
             operation="wait_for_token",

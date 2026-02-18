@@ -11,6 +11,9 @@ WAIT_TIMEOUT_PROGRAM_COMPILATION_S = 1800.0
 
 # Poll interval defaults (seconds)
 WAIT_POLL_INTERVAL_DEFAULT_S = 2.0
+# wait_for_idle samples counters over an idle window and needs a finer cadence
+# than general lifecycle polling.
+WAIT_POLL_INTERVAL_IDLE_DEFAULT_S = 0.2
 WAIT_IDLE_INTERVAL_DEFAULT_S = 5.0
 
 # Exponential backoff defaults for completion-token polling

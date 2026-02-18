@@ -1,5 +1,4 @@
 import logging
-import math
 import pathlib
 import time
 from collections import deque
@@ -39,10 +38,12 @@ from feldera.types import CheckpointMetadata
 from feldera.wait_constants import (
     WAIT_IDLE_INTERVAL_DEFAULT_S,
     WAIT_POLL_INTERVAL_DEFAULT_S,
+    WAIT_POLL_INTERVAL_IDLE_DEFAULT_S,
     WAIT_TIMEOUT_HEAVY_OPERATION_S,
     WAIT_TIMEOUT_LONGEST_OPERATION_S,
     WAIT_TIMEOUT_STANDARD_OPERATION_S,
 )
+from feldera.wait_utils import normalize_wait_timeout
 
 
 class Pipeline:
@@ -93,16 +94,11 @@ class Pipeline:
             defaults to 300 seconds.
         :raises TimeoutError: If the expected status is not reached within the timeout
         """
-        if timeout is None:
-            timeout = int(WAIT_TIMEOUT_STANDARD_OPERATION_S)
-        elif not math.isfinite(timeout) or timeout <= 0:
-            logging.warning(
-                "wait_for_status(%s) called with invalid timeout %r; defaulting to %.1fs",
-                expected_status.name,
-                timeout,
-                WAIT_TIMEOUT_STANDARD_OPERATION_S,
-            )
-            timeout = int(WAIT_TIMEOUT_STANDARD_OPERATION_S)
+        timeout_s = normalize_wait_timeout(
+            timeout,
+            default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
+            operation=f"wait_for_status({expected_status.name})",
+        )
 
         start_time = time.monotonic()
 
@@ -111,9 +107,9 @@ class Pipeline:
             if current_status == expected_status:
                 return
 
-            if timeout is not None and time.monotonic() - start_time >= timeout:
+            if time.monotonic() - start_time >= timeout_s:
                 raise TimeoutError(
-                    f"Pipeline did not reach {expected_status.name} status within {timeout} seconds"
+                    f"Pipeline did not reach {expected_status.name} status within {timeout_s} seconds"
                 )
 
             time.sleep(WAIT_POLL_INTERVAL_DEFAULT_S)
@@ -355,15 +351,11 @@ class Pipeline:
         ]:
             raise RuntimeError("Pipeline must be running to wait for completion")
 
-        if timeout_s is None:
-            timeout_s = WAIT_TIMEOUT_LONGEST_OPERATION_S
-        elif not math.isfinite(timeout_s) or timeout_s <= 0:
-            logging.warning(
-                "wait_for_completion called with invalid timeout %r; defaulting to %.1fs",
-                timeout_s,
-                WAIT_TIMEOUT_LONGEST_OPERATION_S,
-            )
-            timeout_s = WAIT_TIMEOUT_LONGEST_OPERATION_S
+        timeout_s = normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=WAIT_TIMEOUT_LONGEST_OPERATION_S,
+            operation="wait_for_completion",
+        )
 
         start_time = time.monotonic()
 
@@ -409,7 +401,7 @@ class Pipeline:
         self,
         idle_interval_s: float = WAIT_IDLE_INTERVAL_DEFAULT_S,
         timeout_s: float | None = None,
-        poll_interval_s: float = WAIT_POLL_INTERVAL_DEFAULT_S,
+        poll_interval_s: float = WAIT_POLL_INTERVAL_IDLE_DEFAULT_S,
     ):
         """
         Wait for the pipeline to become idle and then returns.
@@ -423,21 +415,17 @@ class Pipeline:
         :param timeout_s: Timeout waiting for idle. If None or non-finite,
             defaults to 600.0 seconds.
         :param poll_interval_s: Polling interval, should be set substantially
-            smaller than the idle interval (default is 2.0 seconds).
+            smaller than the idle interval (default is 0.2 seconds).
         :raises ValueError: If idle interval is larger than timeout, poll interval
             is larger than timeout, or poll interval is larger than idle interval.
         :raises RuntimeError: If the metrics are missing or the timeout was
             reached.
         """
-        if timeout_s is None:
-            timeout_s = WAIT_TIMEOUT_HEAVY_OPERATION_S
-        elif not math.isfinite(timeout_s) or timeout_s <= 0:
-            logging.warning(
-                "wait_for_idle called with invalid timeout %r; defaulting to %.1fs",
-                timeout_s,
-                WAIT_TIMEOUT_HEAVY_OPERATION_S,
-            )
-            timeout_s = WAIT_TIMEOUT_HEAVY_OPERATION_S
+        timeout_s = normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=WAIT_TIMEOUT_HEAVY_OPERATION_S,
+            operation="wait_for_idle",
+        )
 
         if idle_interval_s > timeout_s:
             raise ValueError(
@@ -803,21 +791,17 @@ metrics"""
         if not wait:
             return seq
 
-        if timeout_s is None:
-            timeout_s = WAIT_TIMEOUT_STANDARD_OPERATION_S
-        elif not math.isfinite(timeout_s) or timeout_s <= 0:
-            logging.warning(
-                "checkpoint(wait=True) called with invalid timeout %r; defaulting to %.1fs",
-                timeout_s,
-                WAIT_TIMEOUT_STANDARD_OPERATION_S,
-            )
-            timeout_s = WAIT_TIMEOUT_STANDARD_OPERATION_S
+        timeout_s = normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
+            operation="checkpoint(wait=True)",
+        )
 
         start = time.monotonic()
 
         while True:
             elapsed = time.monotonic() - start
-            if timeout_s is not None and elapsed > timeout_s:
+            if elapsed > timeout_s:
                 raise TimeoutError(
                     f"""timeout ({timeout_s}s) reached while waiting for \
 pipeline '{self.name}' to make checkpoint '{seq}'"""
@@ -874,21 +858,17 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
         if not wait:
             return uuid
 
-        if timeout_s is None:
-            timeout_s = WAIT_TIMEOUT_STANDARD_OPERATION_S
-        elif not math.isfinite(timeout_s) or timeout_s <= 0:
-            logging.warning(
-                "sync_checkpoint(wait=True) called with invalid timeout %r; defaulting to %.1fs",
-                timeout_s,
-                WAIT_TIMEOUT_STANDARD_OPERATION_S,
-            )
-            timeout_s = WAIT_TIMEOUT_STANDARD_OPERATION_S
+        timeout_s = normalize_wait_timeout(
+            timeout_s,
+            default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
+            operation="sync_checkpoint(wait=True)",
+        )
 
         start = time.monotonic()
 
         while True:
             elapsed = time.monotonic() - start
-            if timeout_s is not None and elapsed > timeout_s:
+            if elapsed > timeout_s:
                 raise TimeoutError(
                     f"""timeout ({timeout_s}s) reached while waiting for \
 pipeline '{self.name}' to sync checkpoint '{uuid}'"""
