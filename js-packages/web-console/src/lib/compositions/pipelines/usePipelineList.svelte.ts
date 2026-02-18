@@ -4,8 +4,18 @@ import type { PipelineThumb } from '$lib/services/pipelineManager'
 import { type PipelineManagerApi, usePipelineManager } from '../usePipelineManager.svelte'
 
 let pipelines = $state<PipelineThumb[] | undefined>(undefined)
+
+// Flag to discard the next in-flight polling response that would overwrite an optimistic update.
+let discardNextUpdate = false
+
 const reload = async (api: PipelineManagerApi) => {
-  pipelines = await api.getPipelines()
+  discardNextUpdate = false // Make sure to only discard in-flight responses
+  const result = await api.getPipelines()
+  if (discardNextUpdate) {
+    discardNextUpdate = false
+    return
+  }
+  pipelines = result
 }
 
 export const useUpdatePipelineList = () => {
@@ -19,10 +29,17 @@ export const useUpdatePipelineList = () => {
         return
       }
       pipelines[idx] = updater(pipelines[idx])
+    },
+    discardPendingListRefresh() {
+      discardNextUpdate = true
     }
   }
 }
 
+/**
+ * Refresh the pipeline list every 2 seconds.
+ * A single instance of this hook should be mounted at one time.
+ */
 export const useRefreshPipelineList = () => {
   const api = usePipelineManager()
   onMount(() => {
