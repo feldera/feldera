@@ -13,6 +13,14 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
 
+        ## 0.248.0
+
+        The NATS input connector now automatically injects the pipeline name into
+        the JetStream consumer's metadata under the `pipeline` key. This enables
+        correlation of NATS consumer metrics with Feldera pipeline metrics in
+        Prometheus when using `prometheus-nats-exporter` with
+        `-jsz_consumer_meta_keys=pipeline`.
+
         ## 0.227.0
 
         Loading data from checkpoints made in earlier versions of feldera (0.226.0 and below)
