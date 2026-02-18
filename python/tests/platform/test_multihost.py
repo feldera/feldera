@@ -1,7 +1,7 @@
 from feldera.enums import PipelineStatus
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
-from tests import TEST_CLIENT, enterprise_only
+from tests import TEST_CLIENT
 from .helper import gen_pipeline_name
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
@@ -59,7 +59,7 @@ CREATE MATERIALIZED VIEW Count AS SELECT COUNT(*) from input1;
         runtime_config=RuntimeConfig(
             workers=FELDERA_TEST_NUM_WORKERS,
             hosts=FELDERA_TEST_NUM_HOSTS,
-            fault_tolerance_model=None
+            fault_tolerance_model=None,
         ),
     ).create_or_replace()
 
