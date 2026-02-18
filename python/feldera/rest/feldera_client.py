@@ -190,7 +190,7 @@ class FelderaClient:
         timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_PROGRAM_COMPILATION_S,
-            operation="wait_for_program_success",
+            context="wait_for_program_success",
         )
 
         while True:
@@ -314,12 +314,12 @@ class FelderaClient:
         timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
-            operation=f"wait_for_condition({description})",
+            context=f"wait_for_condition({description})",
         )
         poll_interval_s = normalize_poll_interval(
             poll_interval_s,
             default_poll_interval_s=WAIT_POLL_INTERVAL_DEFAULT_S,
-            operation=f"wait_for_condition({description})",
+            context=f"wait_for_condition({description})",
         )
 
         start = time.monotonic()
@@ -349,7 +349,7 @@ class FelderaClient:
         timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
-            operation=f"wait_for_pipeline_state({state})",
+            context=f"wait_for_pipeline_state({state})",
         )
 
         target_state = PipelineStatus.from_str(state)
@@ -400,7 +400,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
-            operation="wait_for_pipeline_state_one_of",
+            context="wait_for_pipeline_state_one_of",
         )
 
         while True:
@@ -646,7 +646,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 observe_timeout_s = normalize_wait_timeout(
                     timeout_s,
                     default_timeout_s=WAIT_TIMEOUT_LIGHT_OPERATION_S,
-                    operation="start_pipeline(observe_start=True)",
+                    context="start_pipeline(observe_start=True)",
                 )
                 self.wait_for_condition(
                     f"{pipeline_name} leaves Stopped after start",
@@ -668,7 +668,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         effective_timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=default_start_timeout_s,
-            operation="start_pipeline",
+            context="start_pipeline",
         )
 
         return self.__wait_for_pipeline_state_one_of(
@@ -854,7 +854,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
-            operation="stop_pipeline",
+            context="stop_pipeline",
         )
         start = time.monotonic()
 
@@ -894,7 +894,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
-            operation="clear_storage",
+            context="clear_storage",
         )
         start = time.monotonic()
 
@@ -985,7 +985,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
-            operation="commit_transaction",
+            context="commit_transaction",
         )
         start_time = time.monotonic()
         while True:
@@ -1210,7 +1210,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
-            operation="wait_for_token",
+            context="wait_for_token",
         )
         start = time.monotonic()
         end = start + timeout_s

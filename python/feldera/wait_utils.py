@@ -5,17 +5,19 @@ logger = logging.getLogger(__name__)
 
 
 def normalize_wait_timeout(
-    timeout_s: float | None, default_timeout_s: float, operation: str
+    timeout_s: float | None, default_timeout_s: float, context: str
 ) -> float:
     """
     Ensure wait loops always use a finite timeout.
+
+    :param context: Human-readable caller label used in warning logs.
     """
     if timeout_s is None:
         return default_timeout_s
     if not math.isfinite(timeout_s):
         logger.warning(
             "%s called with non-finite timeout %r; defaulting to %.1fs",
-            operation,
+            context,
             timeout_s,
             default_timeout_s,
         )
@@ -23,7 +25,7 @@ def normalize_wait_timeout(
     if timeout_s <= 0:
         logger.warning(
             "%s called with non-positive timeout %r; defaulting to %.1fs",
-            operation,
+            context,
             timeout_s,
             default_timeout_s,
         )
@@ -32,15 +34,17 @@ def normalize_wait_timeout(
 
 
 def normalize_poll_interval(
-    poll_interval_s: float, default_poll_interval_s: float, operation: str
+    poll_interval_s: float, default_poll_interval_s: float, context: str
 ) -> float:
     """
     Ensure wait loops always use a finite positive poll interval.
+
+    :param context: Human-readable caller label used in warning logs.
     """
     if not math.isfinite(poll_interval_s) or poll_interval_s <= 0:
         logger.warning(
             "%s called with invalid poll interval %r; defaulting to %.1fs",
-            operation,
+            context,
             poll_interval_s,
             default_poll_interval_s,
         )

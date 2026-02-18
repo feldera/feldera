@@ -97,7 +97,7 @@ class Pipeline:
         timeout_s = normalize_wait_timeout(
             timeout,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
-            operation=f"wait_for_status({expected_status.name})",
+            context=f"wait_for_status({expected_status.name})",
         )
 
         start_time = time.monotonic()
@@ -354,7 +354,7 @@ class Pipeline:
         timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_LONGEST_OPERATION_S,
-            operation="wait_for_completion",
+            context="wait_for_completion",
         )
 
         start_time = time.monotonic()
@@ -424,7 +424,7 @@ class Pipeline:
         timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_HEAVY_OPERATION_S,
-            operation="wait_for_idle",
+            context="wait_for_idle",
         )
 
         if idle_interval_s > timeout_s:
@@ -794,7 +794,7 @@ metrics"""
         timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
-            operation="checkpoint(wait=True)",
+            context="checkpoint(wait=True)",
         )
 
         start = time.monotonic()
@@ -861,7 +861,7 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
         timeout_s = normalize_wait_timeout(
             timeout_s,
             default_timeout_s=WAIT_TIMEOUT_STANDARD_OPERATION_S,
-            operation="sync_checkpoint(wait=True)",
+            context="sync_checkpoint(wait=True)",
         )
 
         start = time.monotonic()
